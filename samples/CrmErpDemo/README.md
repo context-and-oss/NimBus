@@ -363,6 +363,73 @@ aspire run --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.cs
 
 In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver and WebApp call `AddCosmosDbMessageStore()` instead.
 
+## Deploy to Azure
+
+`aspire deploy` publishes the demo to Azure Container Apps in a resource group of its own. The AppHost's publish mode replaces the local-only pieces. Running it locally is unchanged.
+
+| Local (`aspire run`) | Azure (`aspire deploy`) |
+|---|---|
+| NimBus Service Bus emulator | Azure Service Bus (Standard), local auth disabled; every app connects with its managed identity |
+| SQL Server container + DbGate | Azure SQL (`crm`, `erp`, `nimbus`), Entra-only; each app's identity gets `db_owner` |
+| Vite dev servers for crm-web / erp-web | `crm-api` and `erp-api` serve the built UIs from `wwwroot` |
+| Local-dev auth bypass on nimbus-ops | NimBus Identity sign-in with a bootstrap admin |
+| Provisioner runs before the subscribers | Provisioner is a manually started Container Apps job |
+| agent-zone, enrichment-agent | Not deployed: the agent cannot authenticate to the sign-in-protected agent API yet |
+
+Only `crm-api`, `erp-api` and `nimbus-ops` are public. Everything else is internal to the Container Apps environment. The Aspire dashboard URL is printed at the end of the deploy.
+
+> [!WARNING]
+> `crm-api` and `erp-api` keep the demo's anonymous API, including `DELETE /api/admin/data`. Use fictional data only, and tear the environment down when you are done.
+
+### Prerequisites
+
+- Everything in [Prerequisites](#prerequisites), plus the [Aspire CLI](https://aspire.dev/get-started/install-cli/), Azure CLI (`az login`) and Docker (the images are built locally and pushed to the environment's registry).
+- Owner, or Contributor + Role Based Access Control Administrator, on the subscription. The deploy creates role assignments.
+- A region with Container Apps and Azure SQL capacity. `swedencentral` is known to work.
+
+### Deploy
+
+Deploy settings and parameters are environment variables on the `aspire deploy` process. The AppHost's user secrets are not read, because deploy runs in the Production environment. `ops-admin-email` and `ops-admin-password` are the nimbus-ops bootstrap admin. It is created on the first start against an empty user store, so changing them later has no effect.
+
+```bash
+Azure__SubscriptionId=<subscription-id> Azure__Location=swedencentral Azure__ResourceGroup=rg-crmerp-demo Parameters__ops_admin_email=admin@example.com Parameters__ops_admin_password='<a strong password>' aspire deploy --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj
+```
+
+If your account can see more than one tenant, also set `Azure__TenantId`. The first deploy takes about 20 minutes. `flow-webhook-key` (the shared key for the Resolver's realtime Flow updates) is generated and kept in the deployment state. Redeploying the same command updates the apps in place.
+
+Then create the Service Bus topology by starting the provisioner job once. Run it again after a deploy that changes the event catalog:
+
+```bash
+az containerapp job start -g rg-crmerp-demo -n provisioner
+```
+
+```bash
+az containerapp job execution list -g rg-crmerp-demo -n provisioner --query "[0].properties.status" -o tsv
+```
+
+Until the job has run, the subscribers log "messaging entity could not be found" errors. They keep retrying, and the demo starts working once the job reports `Succeeded`.
+
+List the public URLs with:
+
+```bash
+az containerapp list -g rg-crmerp-demo --query "[?properties.configuration.ingress.external].properties.configuration.ingress.fqdn" -o tsv
+```
+
+### Smoke test
+
+1. Open the `crm-api` URL from the deploy output. It serves crm-web. Create an account.
+2. Open the `erp-api` URL (erp-web). The customer appears, and crm-web shows its ERP customer number.
+3. Open the `nimbus-ops` URL and sign in with the bootstrap admin. The account's events are Completed under **Endpoints**, and **Flow** animates new traffic.
+4. A PartnerPortal lead arrives in crm-web's contacts about every 45 seconds.
+
+### Tear down
+
+```bash
+aspire destroy --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj
+```
+
+`aspire destroy` deletes the whole resource group. While it runs, the environment costs roughly the Service Bus Standard base charge, a Basic container registry and Container Apps consumption for the always-on apps. Azure SQL uses the serverless free offer.
+
 ## End-to-end happy path
 
 1. Open **crm-web** from the Aspire dashboard.

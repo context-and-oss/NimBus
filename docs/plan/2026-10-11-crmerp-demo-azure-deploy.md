@@ -123,3 +123,19 @@ The NimBus Identity bootstrap user is created with no roles, so on a fresh store
    - see a PartnerPortal lead arrive in CRM.
 6. Capture screenshots of the deployed nimbus-ops UI for the PR.
 7. Docs: add a "Deploy to Azure" section to `samples/CrmErpDemo/README.md` covering prerequisites, parameters, the deploy command, starting the provisioner job, smoke checks and teardown.
+
+## Outcome (2026-10-11)
+- **S1:** option 4a works. `NimBusPlatformAssemblyPath` reaches MSBuild because Aspire builds the images from the AppHost process, and the image contains `CrmErpDemo.Contracts.dll`. Functions settings take the namespace **host name** (`AzureServiceBusResource.HostName`), not the `https://…:443/` endpoint.
+- **S2:** referencing `Microsoft.Data.SqlClient.Extensions.Azure` registers the Entra ID providers with no code. It was added to the four SQL libraries, with a regression test in each.
+- **S3:** each app identity gets `db_owner`. Service Bus is Standard with `disableLocalAuth: true`.
+- Found while deploying:
+  - Crm.Web's production build had been broken since the Tailwind 4 bump in #230; it is now migrated.
+  - `aspire deploy` runs in the Production environment, so parameters must be `Parameters__*` environment variables, not AppHost user secrets.
+- Verified on `rg-crmerp-demo` (swedencentral):
+  - The provisioner job succeeded over managed identity.
+  - CRM → ERP → CRM round trip.
+  - PartnerPortal CloudEvents leads arrive in CRM.
+  - The Resolver executes successfully.
+  - nimbus-ops `/health` is Healthy, and the bootstrap admin was created as platform admin.
+  - No `fail:` log entries after provisioning.
+- Not verified by the agent: signing in to nimbus-ops. Entering the admin password on a hosted site is left to the user.
