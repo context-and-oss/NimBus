@@ -74,7 +74,7 @@ export default function AccountForm() {
 
   return (
     <div className="max-w-xl space-y-4">
-    <form onSubmit={submit} className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
+    <form onSubmit={submit} className="bg-white rounded-lg shadow-xs border border-slate-200 p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{id ? 'Edit account' : 'New account'}</h1>
         {!id && (
@@ -103,7 +103,7 @@ export default function AccountForm() {
       </div>
     </form>
     {id && !form.isDeleted && (
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-3">
+      <div className="bg-white rounded-lg shadow-xs border border-slate-200 p-6 space-y-3">
         <h2 className="text-sm font-semibold text-slate-700">ERP integration</h2>
         <div className="flex flex-wrap gap-2 items-center">
           <button

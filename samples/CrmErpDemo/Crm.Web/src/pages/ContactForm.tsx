@@ -43,7 +43,7 @@ export default function ContactForm() {
 
   return (
     <div className="max-w-xl space-y-4">
-    <form onSubmit={submit} className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
+    <form onSubmit={submit} className="bg-white rounded-lg shadow-xs border border-slate-200 p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{id ? 'Edit contact' : 'New contact'}</h1>
         {!id && (

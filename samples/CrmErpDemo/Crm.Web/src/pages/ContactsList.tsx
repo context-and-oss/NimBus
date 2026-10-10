@@ -16,7 +16,7 @@ export default function ContactsList() {
         <h1 className="text-2xl font-semibold">Contacts</h1>
         <Link to="/contacts/new" className="ml-auto px-3 py-2 bg-blue-600 text-white rounded-md text-sm">New contact</Link>
       </header>
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-lg shadow-xs border border-slate-200 overflow-hidden">
         <table className="min-w-full text-sm">
           <thead className="bg-slate-100 text-slate-600 text-left">
             <tr>
