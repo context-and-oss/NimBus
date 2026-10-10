@@ -76,15 +76,15 @@ Options considered:
   migration marker covers every legacy container, with no legacy writes past the recorded
   high-water mark. `nb deploy apps` and `nb setup` check it before deploying, and a rollback resets
   the marker.
-- **Storage containers page.** Admin → Storage containers stays so operators can delete migrated
-  legacy containers. A later 5.x minor retires it, together with the WebApp's Cosmos DB Operator
-  role assignment.
+- **Storage page.** Topology → Storage stays so operators can delete migrated
+  legacy containers. A later 5.x minor deprecates it, and v6.0.0 removes it, together with its API
+  and the WebApp's Cosmos DB Operator role assignment.
 - **Out of scope.** The `messages` and `audits` containers, the other platform containers and the
-  storage contracts' members and signatures are unchanged. A prerequisite fix makes
+  storage contracts' members and signatures are unchanged. A prerequisite fix made
   `GetEventsByFilter`'s endpoint filter exact on the SQL Server and in-memory providers, which
-  match it by prefix today. The WebApp API changes only for the two purge operations, which return
-  `202` (or `409` while a purge runs), and for a `503` on tracking operations while the migration is
-  pending.
+  matched it by prefix; it shipped in v4.3.0 (#196). The WebApp API changes only for the two purge
+  operations, which return `202` (or `409` while a purge runs, `503` when its start can't be
+  audited), and for a `503` on tracking operations while the migration is pending.
 
 ## Consequences
 
@@ -95,7 +95,7 @@ Options considered:
   400 RU/s minimum becomes one autoscale container at ~$35 to ~$350 a month (US list prices).
 - Idle endpoints' capacity is available to busy ones, and the cross-endpoint failed search is one
   query against one container.
-- Once the Storage containers page is retired, the WebApp no longer needs a control-plane Cosmos
+- Once the Storage page is retired, the WebApp no longer needs a control-plane Cosmos
   role.
 - Endpoint-scoped queries stay routed to the endpoint's partitions as the container grows, and no
   endpoint can hit the 20 GB logical partition limit.
