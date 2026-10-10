@@ -16,6 +16,10 @@ internal sealed class IdentityInitializerHostedService : IHostedService
         @"^[A-Za-z_][A-Za-z0-9_]*$",
         RegexOptions.Compiled);
 
+    // The platform-admin marker the WebApp authorizes site Owners by. Identity roles surface
+    // as "groups" claims (NimBusClaimsTransformation), so membership makes the user an Owner.
+    private const string PlatformAdminRole = "EIP_Management";
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly NimBusIdentityOptions _options;
     private readonly ILogger<IdentityInitializerHostedService> _logger;
@@ -39,7 +43,8 @@ internal sealed class IdentityInitializerHostedService : IHostedService
             await EnsureSchemaAndTablesAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<NimBusUser>>();
-            await BootstrapAdminAsync(userManager, cancellationToken).ConfigureAwait(false);
+            var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+            await BootstrapAdminAsync(userManager, roleManager, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -110,7 +115,7 @@ internal sealed class IdentityInitializerHostedService : IHostedService
         }
     }
 
-    private async Task BootstrapAdminAsync(UserManager<NimBusUser> userManager, CancellationToken ct)
+    private async Task BootstrapAdminAsync(UserManager<NimBusUser> userManager, RoleManager<IdentityRole> roleManager, CancellationToken ct)
     {
         var email = _options.Bootstrap.Email;
         var password = _options.Bootstrap.Password;
@@ -134,16 +139,40 @@ internal sealed class IdentityInitializerHostedService : IHostedService
         };
 
         var result = await userManager.CreateAsync(user, password).ConfigureAwait(false);
-        if (result.Succeeded)
-        {
-            _logger.LogInformation("Bootstrap admin {Email} created.", email);
-        }
-        else
+        if (!result.Succeeded)
         {
             _logger.LogError(
                 "Bootstrap admin {Email} could not be created: {Errors}",
                 email,
                 string.Join("; ", result.Errors.Select(e => e.Description)));
+            return;
         }
+
+        // Without the platform-admin role the bootstrap admin is denied everywhere on a
+        // fresh store and cannot grant anyone access.
+        if (!await roleManager.RoleExistsAsync(PlatformAdminRole).ConfigureAwait(false))
+        {
+            var createRole = await roleManager.CreateAsync(new IdentityRole(PlatformAdminRole)).ConfigureAwait(false);
+            if (!createRole.Succeeded)
+            {
+                LogBootstrapRoleFailure(email, createRole);
+                return;
+            }
+        }
+
+        var addToRole = await userManager.AddToRoleAsync(user, PlatformAdminRole).ConfigureAwait(false);
+        if (!addToRole.Succeeded)
+        {
+            LogBootstrapRoleFailure(email, addToRole);
+            return;
+        }
+
+        _logger.LogInformation("Bootstrap admin {Email} created as platform admin.", email);
     }
+
+    private void LogBootstrapRoleFailure(string email, IdentityResult result) =>
+        _logger.LogError(
+            "Bootstrap admin {Email} was created but could not be made platform admin: {Errors}",
+            email,
+            string.Join("; ", result.Errors.Select(e => e.Description)));
 }
