@@ -62,6 +62,13 @@
     <Content Update="@(Content)" Pack="false" />
   </ItemGroup>
 
+  <!-- Opt-in: bundle an external platform catalog assembly into the publish output (for
+       example a container image), so NimBus:PlatformAssembly can name it by file name.
+       Pass -p:NimBusPlatformAssemblyPath=<path to the built catalog .dll>. -->
+  <ItemGroup Condition="'$(NimBusPlatformAssemblyPath)' != ''">
+    <ResolvedFileToPublish Include="$(NimBusPlatformAssemblyPath)" RelativePath="$([System.IO.Path]::GetFileName('$(NimBusPlatformAssemblyPath)'))" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Any Open Api Specifications -->
     <OAS3 Include="$(ProjectDir)./*-spec.yaml" />
