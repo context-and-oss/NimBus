@@ -91,6 +91,11 @@ e2e?.MapE2eOutboxControls();
 e2e?.MapPost("/handoff-jobs/{eventId}/release", (string eventId, HandoffJobTracker tracker) =>
     tracker.Release(eventId) ? Results.NoContent() : Results.NotFound());
 app.UseCors();
+// The Azure deployment copies the built web UI into wwwroot (aspire publish/deploy), so the
+// UI's relative /api calls stay same-origin. Locally the Vite dev server serves the UI and
+// there is no wwwroot, so these are no-ops.
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.MapDefaultEndpoints();
 
 // See Crm.Api/Program.cs — same retry + non-fatal startup pattern.
@@ -162,5 +167,7 @@ app.MapAdminEndpoints();
 app.MapAlertsEndpoints();
 app.MapHandoffEndpoints();
 app.MapAuditEndpoints();
+
+app.MapFallbackToFile("index.html");
 
 app.Run();

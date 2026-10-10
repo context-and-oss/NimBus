@@ -55,6 +55,11 @@ if (E2eSettings.IsEnabled(builder.Configuration, builder.Environment))
 var app = builder.Build();
 app.MapE2eControls()?.MapE2eWireControls("CrmEndpoint");
 app.UseCors();
+// The Azure deployment copies the built web UI into wwwroot (aspire publish/deploy), so the
+// UI's relative /api calls stay same-origin. Locally the Vite dev server serves the UI and
+// there is no wwwroot, so these are no-ops.
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.MapDefaultEndpoints();
 
 // Ensure DB tables exist for the demo.
@@ -126,5 +131,7 @@ app.MapContactEndpoints();
 app.MapAuditEndpoints();
 app.MapErpIntegrationEndpoints();
 app.MapAdminEndpoints();
+
+app.MapFallbackToFile("index.html");
 
 app.Run();

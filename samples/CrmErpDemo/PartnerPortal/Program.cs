@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 
 // PartnerPortal — a simulated EXTERNAL third-party system with no NimBus dependency.
@@ -26,15 +27,18 @@ const string leadEventType = "com.partnerportal.crm.PartnerLeadSubmitted";
 const string structuredContentType = "application/cloudevents+json";
 const string cloudEventsPropertyPrefix = "cloudEvents:";
 
-var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__servicebus")
+var serviceBus = Environment.GetEnvironmentVariable("ConnectionStrings__servicebus")
     ?? throw new InvalidOperationException(
         "ConnectionStrings__servicebus is required -- a Service Bus namespace connection string " +
-        "(or 'Endpoint=sb://localhost;...;UseDevelopmentEmulator=true' for the local emulator).");
+        "(or 'Endpoint=sb://localhost;...;UseDevelopmentEmulator=true' for the local emulator), " +
+        "or the namespace endpoint URL to authenticate with a managed identity.");
 
 var leadIntervalSeconds = int.TryParse(Environment.GetEnvironmentVariable("PARTNER_LEAD_INTERVAL_SECONDS"), out var s) && s > 0 ? s : 45;
 var sendInvalid = string.Equals(Environment.GetEnvironmentVariable("PARTNER_SEND_INVALID"), "true", StringComparison.OrdinalIgnoreCase);
 
-await using var client = new ServiceBusClient(connectionString);
+await using var client = serviceBus.Contains("Endpoint=", StringComparison.OrdinalIgnoreCase)
+    ? new ServiceBusClient(serviceBus)
+    : new ServiceBusClient(new Uri(serviceBus).Host, new DefaultAzureCredential());
 using var shutdown = new CancellationTokenSource();
 
 ConsoleCancelEventHandler cancelHandler = (_, e) =>

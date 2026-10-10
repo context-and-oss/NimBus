@@ -1,3 +1,4 @@
+using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using CrmErpDemo.Contracts.Events;
 using DataPlatform.Adapter.Functions.Handlers;
@@ -18,10 +19,13 @@ builder.Services
     .AddOpenTelemetry()
     .UseFunctionsWorkerDefaults();
 
-// ServiceBusClient is provided from the AzureWebJobsServiceBus connection string.
+// ServiceBusClient uses the same AzureWebJobsServiceBus connection as the triggers: a
+// namespace plus managed identity in Azure, a connection string locally.
 builder.Services.AddSingleton<ServiceBusClient>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
+    if (cfg["AzureWebJobsServiceBus:fullyQualifiedNamespace"] is { Length: > 0 } fullyQualifiedNamespace)
+        return new ServiceBusClient(fullyQualifiedNamespace, new DefaultAzureCredential());
     var connection = cfg["AzureWebJobsServiceBus"]
         ?? throw new InvalidOperationException("AzureWebJobsServiceBus is required.");
     return new ServiceBusClient(connection);

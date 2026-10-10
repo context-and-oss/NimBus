@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\..\src\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
     <ProjectReference Include="..\CrmErpDemo.Contracts\CrmErpDemo.Contracts.csproj" />
   </ItemGroup>
