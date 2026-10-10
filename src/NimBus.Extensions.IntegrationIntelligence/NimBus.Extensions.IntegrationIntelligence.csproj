@@ -16,6 +16,8 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.62.1" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+    <!-- SqlClient 7 ships the Entra ID ("Authentication=Active Directory ...") providers separately; referencing it registers them. -->
+    <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" Version="7.0.2" />
     <PackageReference Include="dbup-sqlserver" Version="7.2.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
