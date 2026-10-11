@@ -142,8 +142,7 @@ internal sealed class IdentityInitializerHostedService : IHostedService
         if (!result.Succeeded)
         {
             _logger.LogError(
-                "Bootstrap admin {Email} could not be created: {Errors}",
-                email,
+                "Bootstrap admin could not be created: {Errors}",
                 string.Join("; ", result.Errors.Select(e => e.Description)));
             return;
         }
@@ -155,7 +154,7 @@ internal sealed class IdentityInitializerHostedService : IHostedService
             var createRole = await roleManager.CreateAsync(new IdentityRole(PlatformAdminRole)).ConfigureAwait(false);
             if (!createRole.Succeeded)
             {
-                LogBootstrapRoleFailure(email, createRole);
+                LogBootstrapRoleFailure(createRole);
                 return;
             }
         }
@@ -163,16 +162,16 @@ internal sealed class IdentityInitializerHostedService : IHostedService
         var addToRole = await userManager.AddToRoleAsync(user, PlatformAdminRole).ConfigureAwait(false);
         if (!addToRole.Succeeded)
         {
-            LogBootstrapRoleFailure(email, addToRole);
+            LogBootstrapRoleFailure(addToRole);
             return;
         }
 
-        _logger.LogInformation("Bootstrap admin {Email} created as platform admin.", email);
+        // The address is personal data, so it stays out of the logs.
+        _logger.LogInformation("Bootstrap admin created as platform admin.");
     }
 
-    private void LogBootstrapRoleFailure(string email, IdentityResult result) =>
+    private void LogBootstrapRoleFailure(IdentityResult result) =>
         _logger.LogError(
-            "Bootstrap admin {Email} was created but could not be made platform admin: {Errors}",
-            email,
+            "Bootstrap admin was created but could not be made platform admin: {Errors}",
             string.Join("; ", result.Errors.Select(e => e.Description)));
 }
