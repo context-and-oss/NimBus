@@ -1,408 +1,452 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NimBus Features — The Full Catalog</title>
-    <meta name="description" content="Every NimBus feature in one place: session-ordered messaging, retry and recovery, the Resolver audit trail, operations tooling, developer experience, and extensions.">
-    <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-            --bg-dark: #1E1E1E;
-            --bg-darker: #181818;
-            --bg-light: #F8FAFC;
-            --bg-white: #FFFFFF;
-            --blue: #0078D4;
-            --blue-light: #2B9AFF;
-            --blue-dark: #005A9E;
-            --text-primary: #1A1A2E;
-            --text-secondary: #4A5568;
-            --text-light: #E2E8F0;
-            --text-muted: #94A3B8;
-            --code-bg: #282C34;
-            --border: #E2E8F0;
-            --border-dark: #333;
-            --green: #3E9E5E;
-            --amber: #C77A12;
-            --purple: #8A54C4;
-            --mono: 'Consolas', 'Monaco', 'Courier New', monospace;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: var(--text-primary);
-            background: var(--bg-white);
-        }
-
-        .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
-        a { color: var(--blue); }
-        :focus-visible { outline: 2px solid var(--blue-light); outline-offset: 2px; }
-
-        /* ── Top nav ── */
-        .nav {
-            background: var(--bg-darker);
-            border-bottom: 1px solid var(--border-dark);
-            padding: 14px 0;
-            position: sticky; top: 0; z-index: 20;
-        }
-        .nav .container { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-        .nav .brand { color: var(--text-light); font-weight: 700; text-decoration: none; letter-spacing: 0.5px; }
-        .nav .brand span { color: var(--blue-light); }
-        .nav .links { display: flex; gap: 22px; }
-        .nav .links a { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; font-weight: 500; }
-        .nav .links a:hover, .nav .links a.active { color: var(--blue-light); }
-
-        /* ── Hero ── */
-        .p-hero { background: var(--bg-dark); color: var(--text-light); padding: 66px 0 72px; }
-        .p-hero .eyebrow {
-            font-family: var(--mono); font-size: 0.78rem; font-weight: 600;
-            text-transform: uppercase; letter-spacing: 3px; color: var(--blue-light); margin-bottom: 18px;
-        }
-        .p-hero h1 { font-size: 2.6rem; font-weight: 800; line-height: 1.14; max-width: 22ch; letter-spacing: -0.02em; }
-        .p-hero p { color: var(--text-muted); font-size: 1.12rem; max-width: 64ch; margin-top: 20px; line-height: 1.7; }
-        .p-hero .facts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
-        .p-hero .fact {
-            display: flex; align-items: center; gap: 9px; font-size: 0.85rem; color: var(--text-light);
-            background: rgba(255,255,255,0.04); border: 1px solid var(--border-dark);
-            border-radius: 999px; padding: 8px 15px;
-        }
-        .p-hero .fact .fd { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-
-        /* ── Sections ── */
-        .section { padding: 72px 0; }
-        .section-dark { background: var(--bg-dark); color: var(--text-light); }
-        .section-light { background: var(--bg-light); }
-        .section-white { background: var(--bg-white); }
-        .section-lead { max-width: 66ch; margin-bottom: 36px; }
-        .section-eyebrow {
-            font-family: var(--mono); font-size: 0.74rem; font-weight: 600;
-            text-transform: uppercase; letter-spacing: 2px; color: var(--blue); margin-bottom: 12px;
-        }
-        .section-dark .section-eyebrow { color: var(--blue-light); }
-        .section-title { font-size: 1.9rem; font-weight: 700; line-height: 1.18; letter-spacing: -0.01em; }
-        .section-lead p { color: var(--text-secondary); font-size: 1.08rem; margin-top: 12px; }
-        .section-dark .section-lead p { color: var(--text-muted); }
-
-        /* ── Feature cards ── */
-        .feats { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
-        .feat {
-            background: var(--bg-white); border: 1px solid var(--border); border-radius: 12px;
-            padding: 22px; display: flex; flex-direction: column; gap: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        }
-        .feat h3 { font-size: 1.05rem; font-weight: 700; line-height: 1.3; }
-        .feat p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.65; flex-grow: 1; }
-        .feat .pkgs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-        .pkg {
-            font-family: var(--mono); font-size: 0.72rem; color: var(--blue-dark);
-            background: var(--bg-light); border: 1px solid var(--border);
-            padding: 0.25em 0.6em; border-radius: 6px; white-space: nowrap;
-        }
-        .section-dark .feat { background: var(--bg-darker); border-color: var(--border-dark); box-shadow: none; }
-        .section-dark .feat h3 { color: var(--text-light); }
-        .section-dark .feat p { color: var(--text-muted); }
-        .section-dark .pkg { color: var(--blue-light); background: rgba(43,154,255,0.08); border-color: var(--border-dark); }
-
-        /* ── CTA row ── */
-        .cta { text-align: center; }
-        .btn { display: inline-block; padding: 13px 30px; border-radius: 6px; font-size: 1rem; font-weight: 600; text-decoration: none; transition: all 0.2s; }
-        .btn-primary { background: var(--blue); color: #fff; }
-        .btn-primary:hover, .btn-primary:focus-visible { background: var(--blue-light); }
-        .btn-outline { border: 1.5px solid var(--border); color: var(--text-primary); }
-        .btn-outline:hover, .btn-outline:focus-visible { border-color: var(--blue); color: var(--blue); }
-
-        /* ── Footer ── */
-        .footer { background: var(--bg-darker); color: var(--text-muted); padding: 44px 0 30px; border-top: 1px solid var(--border-dark); }
-        .footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 40px; }
-        .footer h4 { color: var(--text-light); font-size: 0.9rem; margin-bottom: 14px; }
-        .footer p { font-size: 0.85rem; line-height: 1.7; }
-        .footer a { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; display: block; padding: 3px 0; }
-        .footer a:hover { color: var(--blue-light); }
-        .footer-bottom { margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--border-dark); text-align: center; font-size: 0.8rem; }
-
-        @media (max-width: 768px) {
-            .p-hero { padding: 44px 0 50px; }
-            .p-hero h1 { font-size: 1.9rem; }
-            .section { padding: 52px 0; }
-            .section-title { font-size: 1.5rem; }
-            .footer-grid { grid-template-columns: 1fr; gap: 26px; }
-            .nav .links { gap: 16px; }
-        }
-        @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
-    </style>
-</head>
-<body>
-
-<nav class="nav">
-    <div class="container">
-        <a href="index.html" class="brand">Nim<span>Bus</span></a>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NimBus features — the catalog</title>
+    <meta
+      name="description"
+      content="NimBus features grouped by job: session-ordered messaging, retry and recovery, the Resolver audit trail, operations tooling, developer experience, and extensions."
+    />
+    <link rel="stylesheet" href="overview.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <nav aria-label="Main navigation">
+      <div class="wrap">
+        <a class="brand" href="./">NimBus</a>
         <div class="links">
-            <a href="index.html">Home</a>
-            <a href="index.html#demo-video">Demo video</a>
-            <a href="platform.html">How it works</a>
-            <a href="features.html" class="active">Features</a>
-            <a href="getting-started.html">Try locally</a>
-            <a href="https://github.com/akakaule/NimBus">GitHub</a>
+          <a href="platform.html">How it works</a
+          ><a href="features.html" aria-current="page">Features</a
+          ><a href="getting-started.html">Try locally</a
+          ><a href="https://github.com/context-and-oss/NimBus">GitHub</a>
         </div>
-    </div>
-</nav>
-
-<header class="p-hero">
-    <div class="container">
-        <div class="eyebrow">Feature Catalog</div>
-        <h1>Everything NimBus does, on one page.</h1>
-        <p>The complete feature set — from session-ordered delivery and failure recovery to the operator console, CLI, and extension framework. Grouped by what you're trying to get done.</p>
-        <div class="facts">
-            <span class="fact"><span class="fd" style="background:var(--blue-light)"></span>Messaging &amp; delivery</span>
-            <span class="fact"><span class="fd" style="background:var(--amber)"></span>Reliability &amp; recovery</span>
-            <span class="fact"><span class="fd" style="background:var(--green)"></span>Operations &amp; observability</span>
-            <span class="fact"><span class="fd" style="background:var(--purple)"></span>Developer experience &amp; extensions</span>
+      </div>
+    </nav>
+    <main id="main">
+      <header>
+        <div class="wrap">
+          <div class="eyebrow">Feature catalog</div>
+          <h1>The NimBus feature catalog.</h1>
+          <p>
+            Session-ordered delivery, failure recovery, the operator console,
+            the CLI, and the extension framework, grouped by what you're trying
+            to get done.
+          </p>
+          <div class="jump">
+            <a href="#messaging">Messaging &amp; delivery</a
+            ><a href="#reliability">Reliability &amp; recovery</a
+            ><a href="#operations">Operations &amp; observability</a
+            ><a href="#developer">Developer experience</a
+            ><a href="#extensions">Extensions</a>
+          </div>
         </div>
-    </div>
-</header>
-
-<!-- ── Messaging & delivery ── -->
-<section class="section section-light">
-    <div class="container">
-        <div class="section-lead">
-            <div class="section-eyebrow">Messaging &amp; delivery</div>
-            <h2 class="section-title">Typed events, delivered in order</h2>
-            <p>The messaging model: publish typed events, route them by type, and process them in strict per-key order.</p>
+      </header>
+      <section id="messaging">
+        <div class="wrap">
+          <div class="eyebrow">Messaging &amp; delivery</div>
+          <h2>Typed events, delivered in order</h2>
+          <p class="intro">
+            Publish typed events, route them by type, and process them in strict
+            per-key order.
+          </p>
+          <div class="grid">
+            <article class="card">
+              <h3>Event-driven pub/sub</h3>
+              <p>
+                Endpoints publish and consume typed events through Azure Service
+                Bus topics and subscriptions: one topic per endpoint, routed by
+                event type.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.SDK</span
+                ><span class="pkg">Akaule.NimBus.ServiceBus</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Session-based FIFO ordering</h3>
+              <p>
+                Messages sharing a <code>[SessionKey]</code> are handled strictly
+                in order, one at a time. A stuck message blocks only its own
+                session.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Core</span
+                ><span class="pkg">Akaule.NimBus.ServiceBus</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Request / response</h3>
+              <p>
+                Typed request/response conversations over Service Bus sessions,
+                with timeout handling built in.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.SDK</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Message scheduling</h3>
+              <p>
+                Schedule events for future delivery and cancel scheduled
+                messages before they fire.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.SDK</span
+                ><span class="pkg">Akaule.NimBus.ServiceBus</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Declarative topology</h3>
+              <p>
+                Declare endpoints in code, export the platform config, and
+                provision topics, subscriptions, and routing rules from it,
+                idempotently.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus</span
+                ><span class="pkg">Akaule.NimBus.Management.ServiceBus</span
+                ><span class="pkg">Akaule.NimBus.CommandLine</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Pluggable storage</h3>
+              <p>
+                SQL Server or Cosmos DB behind one storage contract, with a
+                conformance suite that keeps every provider honest.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.MessageStore.SqlServer</span
+                ><span class="pkg">Akaule.NimBus.MessageStore.CosmosDb</span>
+              </div>
+            </article>
+          </div>
         </div>
-        <div class="feats">
-            <div class="feat">
-                <h3>Event-driven pub/sub</h3>
-                <p>Endpoints publish and consume typed events through Azure Service Bus topics and subscriptions — one topic per endpoint, routed by event type.</p>
-                <div class="pkgs"><span class="pkg">NimBus.SDK</span><span class="pkg">NimBus.ServiceBus</span></div>
-            </div>
-            <div class="feat">
-                <h3>Session-based FIFO ordering</h3>
-                <p>Messages sharing a <code style="font-family:var(--mono)">[SessionKey]</code> are handled strictly in order, one at a time. A stuck message blocks only its own session.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Core</span><span class="pkg">NimBus.ServiceBus</span></div>
-            </div>
-            <div class="feat">
-                <h3>Request / response</h3>
-                <p>Typed request/response conversations over Service Bus sessions, with timeout handling built in.</p>
-                <div class="pkgs"><span class="pkg">NimBus.SDK</span></div>
-            </div>
-            <div class="feat">
-                <h3>Message scheduling</h3>
-                <p>Schedule events for future delivery and cancel scheduled messages before they fire.</p>
-                <div class="pkgs"><span class="pkg">NimBus.SDK</span><span class="pkg">NimBus.ServiceBus</span></div>
-            </div>
-            <div class="feat">
-                <h3>Declarative topology</h3>
-                <p>Declare endpoints in code, export the platform config, and provision topics, subscriptions, and routing rules from it — idempotently.</p>
-                <div class="pkgs"><span class="pkg">NimBus</span><span class="pkg">NimBus.Management.ServiceBus</span><span class="pkg">NimBus.CommandLine</span></div>
-            </div>
-            <div class="feat">
-                <h3>Pluggable storage</h3>
-                <p>Cosmos DB or SQL Server behind one storage contract — with a conformance suite that keeps every provider honest.</p>
-                <div class="pkgs"><span class="pkg">NimBus.MessageStore.CosmosDb</span><span class="pkg">NimBus.MessageStore.SqlServer</span></div>
-            </div>
+      </section>
+      <section id="reliability" class="soft">
+        <div class="wrap">
+          <div class="eyebrow">Reliability &amp; recovery</div>
+          <h2>Every failure has a defined path</h2>
+          <p class="intro">
+            Retries, dead-lettering, session blocking, and operator-driven
+            recovery, with recorded outcomes for operators to investigate.
+          </p>
+          <div class="grid">
+            <article class="card">
+              <h3>Retry policies with backoff</h3>
+              <p>
+                Per-event and per-exception-pattern retry policies with fixed,
+                linear, or exponential backoff strategies.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Core</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Permanent-failure classification</h3>
+              <p>
+                Unrecoverable exceptions are classified and dead-lettered
+                immediately, so no retries are spent on a payload that can never
+                succeed.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Core</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Session blocking &amp; deferral</h3>
+              <p>
+                When a message fails, later messages in the same session are
+                deferred automatically until that session is unblocked at the
+                receiving endpoint.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Core</span
+                ><span class="pkg">Akaule.NimBus.ServiceBus</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Deferred replay</h3>
+              <p>
+                Once a session is unblocked, its deferred messages are
+                re-published in FIFO order, so the backlog drains itself.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.ServiceBus</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Resubmit / skip flows</h3>
+              <p>
+                Failed events can be resubmitted or skipped from the WebApp while
+                keeping the Resolver's history consistent.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Manager</span
+                ><span class="pkg">Akaule.NimBus.WebApp</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Transactional outbox</h3>
+              <p>
+                Persist outgoing messages in a SQL Server outbox inside your
+                business transaction; a dispatcher publishes them afterwards. The
+                outbox ties the intent to publish to the database commit;
+                consumers should remain idempotent.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Outbox.SqlServer</span>
+              </div>
+            </article>
+          </div>
         </div>
-    </div>
-</section>
-
-<!-- ── Reliability & recovery ── -->
-<section class="section section-dark">
-    <div class="container">
-        <div class="section-lead">
-            <div class="section-eyebrow">Reliability &amp; recovery</div>
-            <h2 class="section-title" style="color:var(--text-light)">Every failure has a defined path</h2>
-            <p>Retries, dead-lettering, session blocking, and operator-driven recovery with recorded outcomes for operators to investigate.</p>
+      </section>
+      <section id="operations">
+        <div class="wrap">
+          <div class="eyebrow">Operations &amp; observability</div>
+          <h2>Inspect failures and recover work</h2>
+          <p class="intro">
+            The operational layer that raw Service Bus doesn't give you: a
+            queryable audit of every message, a console to act on it, and
+            automation for the rest.
+          </p>
+          <div class="grid">
+            <article class="card">
+              <h3>Resolver state tracking</h3>
+              <p>
+                The Resolver records every message's outcome, such as Pending,
+                Completed, Failed, Deferred, Dead-lettered, or Skipped, as one
+                queryable audit trail.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.MessageStore.Abstractions</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Management WebApp</h3>
+              <p>
+                An authenticated console for inspecting endpoints, events, and
+                messages, with live updates, resubmit/skip actions, alerts, and
+                audit views.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.WebApp</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3><code>nb</code> command-line tool</h3>
+              <p>
+                Provision infrastructure, apply topology, deploy apps, purge
+                queues, and clean up sessions, from a laptop or a pipeline.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.CommandLine</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Health checks</h3>
+              <p>
+                Health probes for Service Bus and the message store, served on
+                <code>/health</code>, <code>/alive</code>, and
+                <code>/ready</code>. The platform heartbeat probes every endpoint
+                and checks that the Resolver is running.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.ServiceBus</span
+                ><span class="pkg">Akaule.NimBus.WebApp</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Built-in middleware</h3>
+              <p>
+                Logging, OpenTelemetry metrics, and message validation ship as
+                pipeline behaviors. Register the behaviors your application
+                needs.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Core</span
+                ><span class="pkg">Akaule.NimBus.OpenTelemetry</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Failure notifications</h3>
+              <p>
+                Failures, dead-letters, and session blocks fan out to pluggable
+                notification channels such as webhooks or email.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Extensions.Notifications</span>
+              </div>
+            </article>
+          </div>
         </div>
-        <div class="feats">
-            <div class="feat">
-                <h3>Retry policies with backoff</h3>
-                <p>Per-event and per-exception-pattern retry policies with fixed, linear, or exponential backoff strategies.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Core</span></div>
-            </div>
-            <div class="feat">
-                <h3>Permanent-failure classification</h3>
-                <p>Unrecoverable exceptions are classified and dead-lettered immediately — no retry budget wasted on a payload that can never succeed.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Core</span></div>
-            </div>
-            <div class="feat">
-                <h3>Session blocking &amp; deferral</h3>
-                <p>When a message fails, later messages in the same session are deferred automatically until that session is unblocked at the receiving endpoint.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Core</span><span class="pkg">NimBus.ServiceBus</span></div>
-            </div>
-            <div class="feat">
-                <h3>Deferred replay</h3>
-                <p>Once a session is unblocked, its deferred messages are re-published in FIFO order — the backlog drains itself.</p>
-                <div class="pkgs"><span class="pkg">NimBus.ServiceBus</span></div>
-            </div>
-            <div class="feat">
-                <h3>Resubmit / skip flows</h3>
-                <p>Failed events can be resubmitted or skipped from the WebApp while keeping the Resolver's history consistent.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Manager</span><span class="pkg">NimBus.WebApp</span></div>
-            </div>
-            <div class="feat">
-                <h3>Transactional outbox</h3>
-                <p>Persist outgoing messages in a SQL Server outbox inside your business transaction; a dispatcher publishes them afterwards. The outbox ties the intent to publish to the database commit; consumers should remain idempotent.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Outbox.SqlServer</span></div>
-            </div>
+      </section>
+      <section id="developer" class="soft">
+        <div class="wrap">
+          <div class="eyebrow">Developer experience</div>
+          <h2>Typed handlers, explicit configuration, local testing</h2>
+          <p class="intro">
+            You bring events and handlers; NimBus brings the hosting, pipeline,
+            and a full local development story.
+          </p>
+          <div class="grid">
+            <article class="card">
+              <h3>Typed publisher / subscriber API</h3>
+              <p>
+                Register publishers and subscribers through DI, then configure
+                receiver hosting with <code>AddNimBusReceiver</code> for Workers
+                or Service Bus triggers for Azure Functions.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">AddNimBusPublisher</span
+                ><span class="pkg">AddNimBusSubscriber</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Event modeling attributes</h3>
+              <p>
+                <code>[SessionKey]</code> sets the ordering scope; validation and
+                description attributes drive schema checks and documentation.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Core</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Pipeline middleware hooks</h3>
+              <p>
+                Wrap message handling with your own cross-cutting behaviors,
+                using the same delegate-chain pattern as the built-ins.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">IMessagePipelineBehavior</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Lifecycle observers</h3>
+              <p>
+                Passive hooks for received, completed, failed, and dead-lettered
+                events: observe without touching the pipeline.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Core</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>In-memory test transport</h3>
+              <p>
+                Run the full pipeline, including ordering, retries, and outcomes,
+                in unit tests with no Azure connection at all.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Testing</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Aspire local orchestration</h3>
+              <p>
+                The CRM/ERP Aspire sample runs the provisioner, Resolver, WebApp,
+                and adapters with the NimBus Service Bus emulator and SQL Server
+                by default.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.ServiceBusEmulator</span
+                ><span class="pkg">Akaule.NimBus.ServiceDefaults</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>AI-agent integration</h3>
+              <p>
+                A schema registry and REST agent API let AI agents discover event
+                types and participate on the bus as first-class endpoints. An
+                operator MCP endpoint lets agents monitor endpoints, investigate
+                failures, and recover single failed messages under the WebApp's
+                permissions and audit.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Agents</span
+                ><span class="pkg">/api/agent</span
+                ><span class="pkg">/mcp</span>
+              </div>
+            </article>
+          </div>
         </div>
-    </div>
-</section>
-
-<!-- ── Operations & observability ── -->
-<section class="section section-white">
-    <div class="container">
-        <div class="section-lead">
-            <div class="section-eyebrow">Operations &amp; observability</div>
-            <h2 class="section-title">Inspect failures and recover work</h2>
-            <p>The operational layer that raw Service Bus doesn't give you: a queryable audit of every message, a console to act on it, and automation for the rest.</p>
+      </section>
+      <section id="extensions">
+        <div class="wrap">
+          <div class="eyebrow">Extension framework</div>
+          <h2>Opt-in by design</h2>
+          <p class="intro">
+            Extensions package up services, middleware, and observers behind one
+            registration. Without any, NimBus runs with its default core
+            behavior.
+          </p>
+          <div class="grid">
+            <article class="card">
+              <h3><code>INimBusExtension</code> model</h3>
+              <p>
+                Extension packages register services, pipeline behaviors, and
+                lifecycle observers through a single <code>AddNimBus()</code>
+                call, composed with a fluent builder.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">INimBusExtension</span
+                ><span class="pkg">INimBusBuilder</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Notifications extension</h3>
+              <p>
+                Configurable notifications on lifecycle events (failure and
+                dead-letter by default) through pluggable
+                <code>INotificationChannel</code> implementations.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Extensions.Notifications</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Identity extension</h3>
+              <p>
+                ASP.NET Core Identity username/password sign-in for the WebApp,
+                with email confirmation and reset flows, and optional dual login
+                with Entra ID.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Extensions.Identity</span>
+              </div>
+            </article>
+          </div>
         </div>
-        <div class="feats">
-            <div class="feat">
-                <h3>Resolver state tracking</h3>
-                <p>A central Resolver records every message's outcome — Pending, Completed, Failed, Deferred — as one queryable audit trail.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Resolver</span><span class="pkg">NimBus.MessageStore.Abstractions</span></div>
-            </div>
-            <div class="feat">
-                <h3>Management WebApp</h3>
-                <p>An authenticated console for inspecting endpoints, events, and messages — with live updates, resubmit/skip actions, alerts, and audit views.</p>
-                <div class="pkgs"><span class="pkg">NimBus.WebApp</span></div>
-            </div>
-            <div class="feat">
-                <h3><code style="font-family:var(--mono)">nb</code> command-line tool</h3>
-                <p>Provision infrastructure, apply topology, deploy apps, purge queues, and clean up sessions — from a laptop or a pipeline.</p>
-                <div class="pkgs"><span class="pkg">NimBus.CommandLine</span></div>
-            </div>
-            <div class="feat">
-                <h3>Health checks</h3>
-                <p>Health probes for Service Bus and the message store, plus resolver-lag checks that flag a Resolver falling behind.</p>
-                <div class="pkgs"><span class="pkg">NimBus.ServiceBus</span><span class="pkg">NimBus.MessageStore.Abstractions</span></div>
-            </div>
-            <div class="feat">
-                <h3>Built-in middleware</h3>
-                <p>Logging, OpenTelemetry metrics, and message validation ship as pipeline behaviors — register the behaviors your application needs.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Core</span><span class="pkg">NimBus.OpenTelemetry</span></div>
-            </div>
-            <div class="feat">
-                <h3>Failure notifications</h3>
-                <p>Failures, dead-letters, and session blocks fan out to pluggable notification channels such as webhooks or email.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Extensions.Notifications</span></div>
-            </div>
+      </section>
+      <section class="soft">
+        <div class="wrap">
+          <h2>See it in action</h2>
+          <p class="intro">
+            Run the CRM/ERP sample on your machine, or read how a message moves
+            through the platform.
+          </p>
+          <div class="actions">
+            <a class="button" href="getting-started.html">Try locally</a
+            ><a class="button secondary" href="platform.html">How it works</a>
+          </div>
         </div>
-    </div>
-</section>
-
-<!-- ── Developer experience ── -->
-<section class="section section-light">
-    <div class="container">
-        <div class="section-lead">
-            <div class="section-eyebrow">Developer experience</div>
-            <h2 class="section-title">Typed handlers, explicit configuration, local testing</h2>
-            <p>You bring events and handlers; NimBus brings the hosting, pipeline, and a full local development story.</p>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap">
+        <span>NimBus · Open-source .NET integration on Azure Service Bus</span>
+        <div>
+          <a href="https://github.com/context-and-oss/NimBus/tree/master/docs"
+            >Documentation</a
+          ><a
+            href="https://github.com/context-and-oss/NimBus/blob/master/docs/deployment.md"
+            >Deploy to Azure</a
+          ><a href="https://github.com/context-and-oss/NimBus/blob/master/LICENSE"
+            >MIT License</a
+          >
         </div>
-        <div class="feats">
-            <div class="feat">
-                <h3>Typed publisher / subscriber API</h3>
-                <p>Register publishers and subscribers through DI, then configure receiver hosting with AddNimBusReceiver for Workers or Service Bus triggers for Azure Functions.</p>
-                <div class="pkgs"><span class="pkg">AddNimBusPublisher</span><span class="pkg">AddNimBusSubscriber</span></div>
-            </div>
-            <div class="feat">
-                <h3>Event modeling attributes</h3>
-                <p><code style="font-family:var(--mono)">[SessionKey]</code> sets the ordering scope; validation and description attributes drive schema checks and documentation.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Core</span></div>
-            </div>
-            <div class="feat">
-                <h3>Pipeline middleware hooks</h3>
-                <p>Wrap message handling with your own cross-cutting behaviors — the same delegate-chain pattern the built-ins use.</p>
-                <div class="pkgs"><span class="pkg">IMessagePipelineBehavior</span></div>
-            </div>
-            <div class="feat">
-                <h3>Lifecycle observers</h3>
-                <p>Passive hooks for received, completed, failed, and dead-lettered events — observe without touching the pipeline.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Core</span></div>
-            </div>
-            <div class="feat">
-                <h3>In-memory test transport</h3>
-                <p>Run the full pipeline — ordering, retries, outcomes — in unit tests with no Azure connection at all.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Testing</span></div>
-            </div>
-            <div class="feat">
-                <h3>Aspire local orchestration</h3>
-                <p>The CRM/ERP Aspire sample runs the provisioner, Resolver, WebApp, and adapters with a local Service Bus emulator and SQL Server by default.</p>
-                <div class="pkgs"><span class="pkg">NimBus.AppHost</span><span class="pkg">NimBus.ServiceDefaults</span></div>
-            </div>
-            <div class="feat">
-                <h3>AI-agent integration</h3>
-                <p>A schema registry and REST agent API let AI agents discover event types and participate on the bus as first-class endpoints. An operator MCP endpoint lets agents monitor endpoints, investigate failures and recover single failed messages under the Web UI's permissions and audit.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Agents</span><span class="pkg">/api/agent</span><span class="pkg">/mcp</span></div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ── Extensions ── -->
-<section class="section section-dark">
-    <div class="container">
-        <div class="section-lead">
-            <div class="section-eyebrow">Extension framework</div>
-            <h2 class="section-title" style="color:var(--text-light)">Opt-in by design</h2>
-            <p>Extensions package up services, middleware, and observers behind one registration. Without any, NimBus runs with its default core behavior.</p>
-        </div>
-        <div class="feats">
-            <div class="feat">
-                <h3>INimBusExtension model</h3>
-                <p>Extension packages register services, pipeline behaviors, and lifecycle observers through a single <code style="font-family:var(--mono)">AddNimBus()</code> call, composed with a fluent builder.</p>
-                <div class="pkgs"><span class="pkg">INimBusExtension</span><span class="pkg">INimBusBuilder</span></div>
-            </div>
-            <div class="feat">
-                <h3>Notifications extension</h3>
-                <p>Configurable notifications on lifecycle events — failure and dead-letter by default — through pluggable <code style="font-family:var(--mono)">INotificationChannel</code> implementations.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Extensions.Notifications</span></div>
-            </div>
-            <div class="feat">
-                <h3>Identity extension</h3>
-                <p>ASP.NET Core Identity username/password auth for the WebApp, with email confirmation and reset flows — and optional dual login with Entra ID.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Extensions.Identity</span></div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ── CTA ── -->
-<section class="section section-white">
-    <div class="container cta">
-        <h2 class="section-title" style="margin-bottom:24px">See it in action</h2>
-        <a href="getting-started.html" class="btn btn-primary">Try locally</a>
-        <a href="platform.html" class="btn btn-outline" style="margin-left:12px">How It Works</a>
-    </div>
-</section>
-
-<footer class="footer">
-    <div class="container">
-        <div class="footer-grid">
-            <div>
-                <h4>NimBus</h4>
-                <p>The operational platform for Azure Service Bus. Built by consultants who run it in production. Open-sourced for the community.</p>
-            </div>
-            <div>
-                <h4>Documentation</h4>
-                <a href="platform.html">How It Works</a>
-                <a href="features.html">Features</a>
-                <a href="getting-started.html">Getting Started</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/architecture.md">Architecture</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/message-flows.md">Message Flows</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/cli.md">CLI Reference</a>
-            </div>
-            <div>
-                <h4>Project</h4>
-                <a href="https://github.com/akakaule/NimBus">GitHub Repository</a>
-                <a href="https://github.com/akakaule/NimBus/tree/master/docs/adr">Decision Records</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/LICENSE">MIT License</a>
-            </div>
-        </div>
-        <div class="footer-bottom">NimBus &mdash; Azure Service Bus. Simplified. Observed. Controlled.</div>
-    </div>
-</footer>
-
-</body>
+      </div>
+    </footer>
+  </body>
 </html>

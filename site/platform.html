@@ -1,432 +1,363 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>How NimBus Works — Platform Overview</title>
-    <meta name="description" content="How a message travels through NimBus: routed by type, delivered in session order, and recorded at every hop — plus the failure model, anatomy, and deployment.">
-    <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-            --bg-dark: #1E1E1E;
-            --bg-darker: #181818;
-            --bg-light: #F8FAFC;
-            --bg-white: #FFFFFF;
-            --blue: #0078D4;
-            --blue-light: #2B9AFF;
-            --blue-dark: #005A9E;
-            --text-primary: #1A1A2E;
-            --text-secondary: #4A5568;
-            --text-light: #E2E8F0;
-            --text-muted: #94A3B8;
-            --code-bg: #282C34;
-            --border: #E2E8F0;
-            --border-dark: #333;
-            /* semantic — matched to the home page's diagram colors */
-            --green: #3E9E5E;
-            --green-soft: #E4F3E9;
-            --red: #D0455B;
-            --red-soft: #FBE6E9;
-            --amber: #C77A12;
-            --amber-soft: #F8EDD9;
-            --purple: #8A54C4;
-            --purple-soft: #F0E7F9;
-            --mono: 'Consolas', 'Monaco', 'Courier New', monospace;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: var(--text-primary);
-            background: var(--bg-white);
-        }
-
-        .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
-        a { color: var(--blue); }
-        :focus-visible { outline: 2px solid var(--blue-light); outline-offset: 2px; }
-
-        /* ── Top nav ── */
-        .nav {
-            background: var(--bg-darker);
-            border-bottom: 1px solid var(--border-dark);
-            padding: 14px 0;
-            position: sticky; top: 0; z-index: 20;
-        }
-        .nav .container { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-        .nav .brand { color: var(--text-light); font-weight: 700; text-decoration: none; letter-spacing: 0.5px; }
-        .nav .brand span { color: var(--blue-light); }
-        .nav .links { display: flex; gap: 22px; }
-        .nav .links a { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; font-weight: 500; }
-        .nav .links a:hover, .nav .links a.active { color: var(--blue-light); }
-
-        /* ── Hero ── */
-        .p-hero { background: var(--bg-dark); color: var(--text-light); padding: 66px 0 72px; }
-        .p-hero .eyebrow {
-            font-family: var(--mono); font-size: 0.78rem; font-weight: 600;
-            text-transform: uppercase; letter-spacing: 3px; color: var(--blue-light); margin-bottom: 18px;
-        }
-        .p-hero h1 { font-size: 2.6rem; font-weight: 800; line-height: 1.14; max-width: 20ch; letter-spacing: -0.02em; }
-        .p-hero p { color: var(--text-muted); font-size: 1.12rem; max-width: 64ch; margin-top: 20px; line-height: 1.7; }
-        .p-hero .facts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
-        .p-hero .fact {
-            display: flex; align-items: center; gap: 9px; font-size: 0.85rem; color: var(--text-light);
-            background: rgba(255,255,255,0.04); border: 1px solid var(--border-dark);
-            border-radius: 999px; padding: 8px 15px;
-        }
-        .p-hero .fact .fd { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-
-        /* ── Sections ── */
-        .section { padding: 72px 0; }
-        .section-dark { background: var(--bg-dark); color: var(--text-light); }
-        .section-light { background: var(--bg-light); }
-        .section-white { background: var(--bg-white); }
-        .section-lead { max-width: 66ch; margin-bottom: 36px; }
-        .section-eyebrow {
-            font-family: var(--mono); font-size: 0.74rem; font-weight: 600;
-            text-transform: uppercase; letter-spacing: 2px; color: var(--blue); margin-bottom: 12px;
-        }
-        .section-dark .section-eyebrow { color: var(--blue-light); }
-        .section-title { font-size: 1.9rem; font-weight: 700; line-height: 1.18; letter-spacing: -0.01em; }
-        .section-lead p { color: var(--text-secondary); font-size: 1.08rem; margin-top: 12px; }
-        .section-dark .section-lead p { color: var(--text-muted); }
-        .chip {
-            display: inline-flex; align-items: center; gap: 0.4em; font-family: var(--mono);
-            font-size: 0.78rem; padding: 0.3em 0.65em; border-radius: 6px;
-            background: var(--bg-white); border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap;
-        }
-        .section-dark .chip { background: var(--bg-darker); border-color: var(--border-dark); color: var(--text-muted); }
-        .chip .fd { width: 7px; height: 7px; border-radius: 50%; }
-
-        /* ── Transit map ── */
-        .map { overflow-x: auto; padding-bottom: 8px; margin: 0 -4px; }
-        .lanes { min-width: 880px; padding: 4px; display: grid; grid-template-columns: repeat(5, 1fr); }
-        .lanes .st { grid-row: 1; padding: 0 8px; position: relative; }
-        .st .node {
-            background: var(--bg-white); border: 1px solid var(--border); border-radius: 12px;
-            padding: 16px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-            display: flex; flex-direction: column; gap: 6px; min-height: 128px;
-        }
-        .st .k { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 1.5px; text-transform: uppercase; color: var(--blue); font-weight: 700; }
-        .st .nm { font-weight: 700; font-size: 1rem; line-height: 1.2; }
-        .st .ds { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.45; }
-        .st:not(:last-child)::after {
-            content: ""; position: absolute; top: 62px; right: -1px; width: 16px; height: 3px;
-            transform: translateX(50%); border-radius: 2px;
-            background: repeating-linear-gradient(90deg, var(--blue-light) 0 6px, transparent 6px 12px);
-            background-size: 12px 3px; animation: flow 0.7s linear infinite; z-index: 2;
-        }
-        @keyframes flow { to { background-position: 12px 0; } }
-        .lanes .tick { grid-row: 2; display: flex; justify-content: center; padding-top: 4px; }
-        .lanes .tick i { display: block; width: 2px; height: 26px; background: linear-gradient(var(--purple), transparent); }
-        .lanes .rail {
-            grid-row: 3; grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-            background: var(--purple-soft); border: 1px solid var(--purple); border-left-width: 4px;
-            border-radius: 10px; padding: 14px 18px;
-        }
-        .rail .rk { font-family: var(--mono); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--purple); font-weight: 700; }
-        .rail .rt { font-size: 0.92rem; color: var(--text-secondary); }
-        .maptags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
-
-        /* ── Differentiators (dark) ── */
-        .diffs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
-        .diff {
-            background: var(--bg-darker); border: 1px solid var(--border-dark); border-radius: 12px;
-            padding: 28px; position: relative; overflow: hidden;
-        }
-        .diff::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--blue); }
-        .diff .dn { font-family: var(--mono); font-size: 1.3rem; font-weight: 700; color: var(--blue-light); }
-        .diff h3 { font-size: 1.2rem; color: var(--text-light); margin: 12px 0 8px; }
-        .diff p { color: var(--text-muted); font-size: 0.95rem; line-height: 1.7; }
-
-        /* ── Failure paths (white) ── */
-        .paths { display: flex; flex-direction: column; gap: 12px; }
-        .path {
-            display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
-            background: var(--bg-white); border: 1px solid var(--border); border-left: 4px solid var(--pl);
-            border-radius: 12px; padding: 16px 22px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        }
-        .path.transient { --pl: var(--amber); } .path.permanent { --pl: var(--red); }
-        .path.unexpected { --pl: var(--purple); } .path.handoff { --pl: var(--blue); }
-        .path .cause { font-weight: 700; font-size: 1rem; }
-        .path .how { color: var(--text-secondary); font-size: 0.9rem; margin-top: 2px; }
-        .path .to {
-            font-family: var(--mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px;
-            padding: 0.45em 0.8em; border-radius: 20px; white-space: nowrap; font-weight: 700;
-        }
-        .path.transient .to { background: var(--amber-soft); color: var(--amber); }
-        .path.permanent .to { background: var(--red-soft); color: var(--red); }
-        .path.unexpected .to { background: var(--purple-soft); color: var(--purple); }
-        .path.handoff .to { background: #E1EFFB; color: var(--blue-dark); }
-        .lifecycle { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
-        .lifecycle .leg { font-family: var(--mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted); margin-right: 4px; }
-        .lifecycle .lc { font-family: var(--mono); font-size: 0.76rem; padding: 0.42em 0.8em; border-radius: 8px; border: 1px solid var(--border); display: flex; align-items: center; gap: 7px; }
-        .lifecycle .lc .d { width: 8px; height: 8px; border-radius: 50%; }
-
-        /* ── Anatomy (dark) ── */
-        .blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
-        .block { background: var(--bg-darker); border: 1px solid var(--border-dark); border-radius: 12px; padding: 22px; display: flex; flex-direction: column; gap: 8px; }
-        .block .bh { display: flex; align-items: center; gap: 11px; }
-        .block .ic { width: 32px; height: 32px; border-radius: 8px; flex: none; display: grid; place-items: center; background: rgba(43,154,255,0.12); color: var(--blue-light); font-family: var(--mono); font-weight: 700; }
-        .block .bn { font-weight: 700; font-size: 1rem; color: var(--text-light); }
-        .block p { color: var(--text-muted); font-size: 0.88rem; line-height: 1.6; }
-        .block .tk { font-family: var(--mono); font-size: 0.76rem; color: var(--blue-light); margin-top: 2px; }
-
-        /* ── Deploy (light) ── */
-        .deploy { display: grid; grid-template-columns: 1.35fr 1fr; gap: 20px; }
-        .steps { background: var(--bg-white); border: 1px solid var(--border); border-radius: 14px; padding: 26px; }
-        .flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-family: var(--mono); font-size: 0.82rem; margin-bottom: 18px; }
-        .flow .s { background: var(--bg-light); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; }
-        .flow .ar { color: var(--blue-light); font-weight: 700; }
-        .steps ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
-        .steps li { font-size: 0.92rem; color: var(--text-secondary); display: flex; gap: 10px; align-items: baseline; }
-        .steps li::before { content: ""; flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); transform: translateY(6px); }
-        .aside { background: var(--bg-white); border: 1px solid var(--border); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 12px; justify-content: center; }
-        .aside .big { font-family: var(--mono); font-size: 2rem; font-weight: 800; color: var(--blue); line-height: 1; }
-        .aside .cap { font-size: 0.9rem; color: var(--text-secondary); }
-        .code-inline { font-family: var(--mono); color: var(--blue-dark); background: var(--bg-light); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border); }
-
-        /* ── CTA row ── */
-        .cta { text-align: center; }
-        .btn { display: inline-block; padding: 13px 30px; border-radius: 6px; font-size: 1rem; font-weight: 600; text-decoration: none; transition: all 0.2s; }
-        .btn-primary { background: var(--blue); color: #fff; }
-        .btn-primary:hover, .btn-primary:focus-visible { background: var(--blue-light); }
-        .btn-outline { border: 1.5px solid var(--border); color: var(--text-primary); }
-        .btn-outline:hover, .btn-outline:focus-visible { border-color: var(--blue); color: var(--blue); }
-
-        /* ── Footer ── */
-        .footer { background: var(--bg-darker); color: var(--text-muted); padding: 44px 0 30px; border-top: 1px solid var(--border-dark); }
-        .footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 40px; }
-        .footer h4 { color: var(--text-light); font-size: 0.9rem; margin-bottom: 14px; }
-        .footer p { font-size: 0.85rem; line-height: 1.7; }
-        .footer a { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; display: block; padding: 3px 0; }
-        .footer a:hover { color: var(--blue-light); }
-        .footer-bottom { margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--border-dark); text-align: center; font-size: 0.8rem; }
-
-        @media (max-width: 768px) {
-            .p-hero { padding: 44px 0 50px; }
-            .p-hero h1 { font-size: 1.9rem; }
-            .section { padding: 52px 0; }
-            .section-title { font-size: 1.5rem; }
-            .diffs { grid-template-columns: 1fr; }
-            .deploy { grid-template-columns: 1fr; }
-            .footer-grid { grid-template-columns: 1fr; gap: 26px; }
-            .nav .links { gap: 16px; }
-        }
-        @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
-    </style>
-</head>
-<body>
-
-<nav class="nav">
-    <div class="container">
-        <a href="index.html" class="brand">Nim<span>Bus</span></a>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How NimBus works — platform overview</title>
+    <meta
+      name="description"
+      content="How a message travels through NimBus: routed by type, delivered in session order, and recorded at every step, plus the failure model, the pieces of an app, and deployment."
+    />
+    <link rel="stylesheet" href="overview.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <nav aria-label="Main navigation">
+      <div class="wrap">
+        <a class="brand" href="./">NimBus</a>
         <div class="links">
-            <a href="index.html">Home</a>
-            <a href="index.html#demo-video">Demo video</a>
-            <a href="platform.html" class="active">How it works</a>
-            <a href="features.html">Features</a>
-            <a href="getting-started.html">Try locally</a>
-            <a href="https://github.com/akakaule/NimBus">GitHub</a>
+          <a href="platform.html" aria-current="page">How it works</a
+          ><a href="features.html">Features</a
+          ><a href="getting-started.html">Try locally</a
+          ><a href="https://github.com/context-and-oss/NimBus">GitHub</a>
         </div>
-    </div>
-</nav>
-
-<header class="p-hero">
-    <div class="container">
-        <div class="eyebrow">Platform Overview</div>
-        <h1>Ordered integrations with a history you can act on.</h1>
-        <p>NimBus is a .NET integration platform on Azure Service Bus, with session ordering at each receiving endpoint, processing history in SQL Server or Cosmos DB, and an operator console for recovery. Deploy it in your own environment and connect applications through adapters.</p>
-        <div class="facts">
-            <span class="fact"><span class="fd" style="background:var(--blue-light)"></span>Azure Service Bus transport</span>
-            <span class="fact"><span class="fd" style="background:var(--purple)"></span>Cosmos DB or SQL Server store</span>
-            <span class="fact"><span class="fd" style="background:var(--amber)"></span>Session-ordered</span>
-            <span class="fact"><span class="fd" style="background:var(--green)"></span>Processing history</span>
+      </div>
+    </nav>
+    <main id="main">
+      <header>
+        <div class="wrap">
+          <div class="eyebrow">How it works</div>
+          <h1>Ordered integrations with a history you can act on.</h1>
+          <p>
+            NimBus is a .NET integration platform on Azure Service Bus, with
+            session ordering at each receiving endpoint, processing history in
+            SQL Server or Cosmos DB, and an operator console for recovery. Deploy
+            it in your own environment and connect applications through
+            adapters.
+          </p>
         </div>
-    </div>
-</header>
-
-<!-- ── Message journey ── -->
-<section class="section section-light">
-    <div class="container">
-        <div class="section-lead">
-            <div class="section-eyebrow">How a message travels</div>
-            <h2 class="section-title">Published once, routed by type, delivered in order — and recorded at every hop</h2>
-            <p>A publisher drops one event on its endpoint's topic. NimBus's routing rules forward it to whoever consumes that type, delivers it to the handler in session order, and reports every state change to the Resolver.</p>
+      </header>
+      <section>
+        <div class="wrap">
+          <div class="eyebrow">How a message travels</div>
+          <h2>Published once, routed by type, delivered in order</h2>
+          <p class="intro">
+            A publisher sends one event to its endpoint's topic. Routing rules
+            forward a copy to every endpoint that consumes that type, the
+            receiver hands it to your handler in session order, and each outcome
+            is reported to the Resolver.
+          </p>
+          <ol class="steps five">
+            <li>
+              <h3>Publish</h3>
+              <p>The producer sends one event to its own endpoint topic.</p>
+            </li>
+            <li>
+              <h3>Route</h3>
+              <p>
+                Rules keyed on the event type forward a copy to each consuming
+                endpoint. Forwarded copies are never forwarded again.
+              </p>
+            </li>
+            <li>
+              <h3>Order</h3>
+              <p>
+                Messages with the same session key are handled one at a time,
+                in order.
+              </p>
+            </li>
+            <li>
+              <h3>Handle</h3>
+              <p>Your handler processes the event.</p>
+            </li>
+            <li>
+              <h3>Settle</h3>
+              <p>
+                The message completes, or follows one of the failure paths
+                below.
+              </p>
+            </li>
+          </ol>
+          <p class="note">
+            <strong>The Resolver</strong> receives every outcome and keeps one
+            queryable record of each message's status, from Pending to Completed
+            or Failed.
+          </p>
+          <p class="more">
+            <a
+              href="https://github.com/context-and-oss/NimBus/blob/master/docs/message-flows.md"
+              >Message flows in detail →</a
+            >
+          </p>
         </div>
-        <div class="map">
-            <div class="lanes">
-                <div class="st"><div class="node"><span class="k">Publish</span><span class="nm">Producer sends</span><span class="ds">One event onto its endpoint topic.</span></div></div>
-                <div class="st"><div class="node"><span class="k">Route</span><span class="nm">By event type</span><span class="ds">Rules forward it to each consumer of that type.</span></div></div>
-                <div class="st"><div class="node"><span class="k">Order</span><span class="nm">Per session</span><span class="ds">Same key means strict order, one at a time.</span></div></div>
-                <div class="st"><div class="node"><span class="k">Handle</span><span class="nm">Consumer runs</span><span class="ds">Your handler processes the event.</span></div></div>
-                <div class="st"><div class="node"><span class="k">Outcome</span><span class="nm">Settled</span><span class="ds">Completed, or sent down a failure path.</span></div></div>
-
-                <div class="tick"><i></i></div><div class="tick"><i></i></div><div class="tick"><i></i></div><div class="tick"><i></i></div><div class="tick"><i></i></div>
-
-                <div class="rail">
-                    <span class="rk">Resolver</span>
-                    <span class="rt">Every hop reports here — one central, queryable audit of each message's state, from <span class="chip" style="padding:.15em .5em">Pending</span> to <span class="chip" style="padding:.15em .5em">Completed</span> or <span class="chip" style="padding:.15em .5em">Failed</span>.</span>
-                </div>
-            </div>
+      </section>
+      <section class="soft">
+        <div class="wrap">
+          <div class="eyebrow">What sets it apart</div>
+          <h2>Four things raw Service Bus doesn't hand you</h2>
+          <div class="grid two">
+            <article class="card">
+              <h3>Session-ordered processing</h3>
+              <p>
+                Messages sharing a key are handled strictly in order. A poison
+                message blocks only its own session; the rest of the bus keeps
+                moving.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The Resolver</h3>
+              <p>
+                One centralized record of every message's outcome, start to
+                finish. The recorded processing history is queryable from the
+                operator console.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Operator WebApp</h3>
+              <p>
+                A live console to watch flows and resubmit or skip stuck
+                messages, so you recover from failures without a redeploy.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Declarative topology</h3>
+              <p>
+                You declare endpoints in code. NimBus provisions the topics,
+                subscriptions, and routing rules to match, idempotently.
+              </p>
+            </article>
+          </div>
         </div>
-        <div class="maptags">
-            <span class="chip"><span class="fd" style="background:var(--blue)"></span>routing keyed on event type</span>
-            <span class="chip">loop-guarded forwards</span>
-            <span class="chip">session locks preserve order</span>
+      </section>
+      <section>
+        <div class="wrap">
+          <div class="eyebrow">When a handler fails</div>
+          <h2>Every failure has a defined path</h2>
+          <p class="intro">
+            What the handler throws decides where the message goes. You
+            configure retry policies and failure classifiers; NimBus routes the
+            rest.
+          </p>
+          <ul class="paths">
+            <li>
+              <div>
+                <h3>Transient error</h3>
+                <p>
+                  The handler throws <code>TransientException</code>, for example
+                  after a timeout or a 503. The message is abandoned and Service
+                  Bus redelivers it.
+                </p>
+              </div>
+              <span class="status">Redelivered</span>
+            </li>
+            <li>
+              <div>
+                <h3>Permanent error</h3>
+                <p>
+                  A bad payload or an unrecoverable 4xx, classified as permanent.
+                  The message goes straight to the dead-letter queue without
+                  using retries.
+                </p>
+              </div>
+              <span class="status">Dead-lettered</span>
+            </li>
+            <li>
+              <div>
+                <h3>Unexpected error</h3>
+                <p>
+                  Any other exception fails the message and blocks its session.
+                  A matching retry policy schedules a retry; otherwise the
+                  session waits for an operator to resubmit or skip.
+                </p>
+              </div>
+              <span class="status">Failed</span>
+            </li>
+            <li>
+              <div>
+                <h3>Expected, harmless failure</h3>
+                <p>
+                  A failure classifier can discard it. The message completes
+                  without a retry or a dead-letter, and the session carries on.
+                </p>
+              </div>
+              <span class="status">Skipped</span>
+            </li>
+            <li>
+              <div>
+                <h3>Long-running work</h3>
+                <p>
+                  The handler hands the work off to an external system. The
+                  session waits, in order, until the work completes or fails.
+                </p>
+              </div>
+              <span class="status">Pending handoff</span>
+            </li>
+          </ul>
+          <p class="intro">
+            Messages that arrive behind a blocked message are recorded as
+            Deferred and replay in order once the session is unblocked. The
+            Resolver's main statuses are Pending, Completed, Failed, Deferred,
+            Dead-lettered, and Skipped.
+          </p>
+          <p class="more">
+            <a
+              href="https://github.com/context-and-oss/NimBus/blob/master/docs/error-handling.md"
+              >Error handling in detail →</a
+            >
+          </p>
         </div>
-    </div>
-</section>
-
-<!-- ── Differentiators ── -->
-<section class="section section-dark">
-    <div class="container">
-        <div class="section-lead">
-            <div class="section-eyebrow">What sets it apart</div>
-            <h2 class="section-title" style="color:var(--text-light)">Four things raw Service Bus doesn't hand you</h2>
+      </section>
+      <section class="soft">
+        <div class="wrap">
+          <div class="eyebrow">The pieces</div>
+          <h2>The anatomy of a NimBus app</h2>
+          <p class="intro">
+            Configure the SDK, storage, pipeline, and receiver hosting through
+            dependency injection. You bring the events and handlers; NimBus
+            brings ordering, routing, storage, and recovery.
+          </p>
+          <div class="grid four">
+            <article class="card">
+              <h3>Events</h3>
+              <p>
+                Plain classes. <code>[SessionKey]</code> sets the ordering scope,
+                and <code>[Sensitive]</code> masks a property for operators
+                without PII access.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Endpoints &amp; platform</h3>
+              <p>
+                Declare what each endpoint produces and consumes. The platform
+                definition is the single source of topology truth.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Pluggable storage</h3>
+              <p>
+                SQL Server or Cosmos DB behind one contract, with a conformance
+                suite keeping them honest.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Pipeline middleware</h3>
+              <p>
+                Logging, metrics, and validation are built in. An opt-in circuit
+                breaker pauses an endpoint when its failure rate spikes.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Transactional outbox</h3>
+              <p>
+                Record outgoing messages in your SQL business transaction and
+                dispatch them after commit. Handlers should remain idempotent.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Hosting &amp; SDK</h3>
+              <p>
+                Run handlers in a .NET Worker or an Azure Function, registered
+                with <code>AddNimBusPublisher</code> and
+                <code>AddNimBusSubscriber</code>.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Agent-ready</h3>
+              <p>
+                A schema registry and REST agent API let AI agents join the bus;
+                the operator MCP endpoint lets them investigate and recover
+                failures.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Notifications</h3>
+              <p>
+                Failures, dead-letters, and session blocks fan out to webhook,
+                Teams, or email channels.
+              </p>
+            </article>
+          </div>
         </div>
-        <div class="diffs">
-            <div class="diff">
-                <div class="dn">01</div>
-                <h3>Session-ordered processing</h3>
-                <p>Messages sharing a key are handled strictly in order. A poison message blocks only its own session — the rest of the bus keeps moving.</p>
-            </div>
-            <div class="diff">
-                <div class="dn">02</div>
-                <h3>The Resolver</h3>
-                <p>One centralized record of every message's outcome, start to finish. The recorded processing history is queryable from the operator console.</p>
-            </div>
-            <div class="diff">
-                <div class="dn">03</div>
-                <h3>Operator WebApp</h3>
-                <p>A live console to watch flows and resubmit or skip stuck messages — recover from failures without a redeploy.</p>
-            </div>
-            <div class="diff">
-                <div class="dn">04</div>
-                <h3>Declarative topology</h3>
-                <p>You declare endpoints in code. NimBus provisions the topics, subscriptions, and routing rules to match — idempotently.</p>
-            </div>
+      </section>
+      <section>
+        <div class="wrap">
+          <div class="eyebrow">Standing it up</div>
+          <h2>One command, or your own pipeline</h2>
+          <div
+            class="flow"
+            aria-label="Deployment runs infrastructure, then topology, then apps"
+          >
+            <span>Azure infrastructure</span><b aria-hidden="true">→</b
+            ><span>Service Bus topology</span><b aria-hidden="true">→</b
+            ><span>Applications</span>
+          </div>
+          <ul>
+            <li>
+              <code>nb setup</code> chains Bicep infrastructure, topology
+              provisioning, and app deployment, in that order.
+            </li>
+            <li>
+              The repository ships a GitHub Actions workflow that signs in with
+              OIDC, with no stored secrets, and an Azure DevOps pipeline.
+            </li>
+            <li>
+              The Resolver runs on Flex Consumption by default, or on Elastic
+              Premium; the management WebApp runs on App Service.
+            </li>
+          </ul>
+          <p class="more">
+            <a
+              href="https://github.com/context-and-oss/NimBus/blob/master/docs/deployment.md"
+              >Deployment guide →</a
+            >
+            ·
+            <a
+              href="https://github.com/context-and-oss/NimBus/blob/master/docs/cli.md"
+              >CLI reference →</a
+            >
+            ·
+            <a
+              href="https://github.com/context-and-oss/NimBus/blob/master/docs/architecture.md"
+              >Architecture →</a
+            >
+            ·
+            <a
+              href="https://github.com/context-and-oss/NimBus/tree/master/docs/adr"
+              >Decision records →</a
+            >
+          </p>
         </div>
-    </div>
-</section>
-
-<!-- ── Failure paths ── -->
-<section class="section section-white">
-    <div class="container">
-        <div class="section-lead">
-            <div class="section-eyebrow">When a handler fails</div>
-            <h2 class="section-title">Every failure has a defined path — nothing is left ambiguous</h2>
-            <p>The kind of exception decides where the message goes. You configure the retry policy; NimBus routes the rest.</p>
+      </section>
+      <section class="soft">
+        <div class="wrap">
+          <h2>Ready to try it?</h2>
+          <p class="intro">
+            The CRM/ERP sample runs the whole platform on your machine, with no
+            Azure account needed.
+          </p>
+          <div class="actions">
+            <a class="button" href="getting-started.html">Try locally</a
+            ><a class="button secondary" href="features.html"
+              >Explore the features</a
+            >
+          </div>
         </div>
-        <div class="paths">
-            <div class="path transient">
-                <div><div class="cause">Transient error</div><div class="how">A timeout, a 503 — worth trying again.</div></div>
-                <span class="to">retry &amp; redeliver</span>
-            </div>
-            <div class="path permanent">
-                <div><div class="cause">Permanent error</div><div class="how">Bad payload, validation, an unrecoverable 4xx.</div></div>
-                <span class="to">straight to dead-letter</span>
-            </div>
-            <div class="path unexpected">
-                <div><div class="cause">Unexpected error</div><div class="how">Something the handler didn't anticipate.</div></div>
-                <span class="to">fail &amp; block the session</span>
-            </div>
-            <div class="path handoff">
-                <div><div class="cause">Long-running work</div><div class="how">Waiting on an external job to finish.</div></div>
-                <span class="to">park as pending-handoff</span>
-            </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap">
+        <span>NimBus · Open-source .NET integration on Azure Service Bus</span>
+        <div>
+          <a href="https://github.com/context-and-oss/NimBus/tree/master/docs"
+            >Documentation</a
+          ><a
+            href="https://github.com/context-and-oss/NimBus/blob/master/docs/deployment.md"
+            >Deploy to Azure</a
+          ><a href="https://github.com/context-and-oss/NimBus/blob/master/LICENSE"
+            >MIT License</a
+          >
         </div>
-        <div class="lifecycle">
-            <span class="leg">outcome states</span>
-            <span class="lc"><span class="d" style="background:var(--amber)"></span>Pending</span>
-            <span class="lc"><span class="d" style="background:var(--green)"></span>Completed</span>
-            <span class="lc"><span class="d" style="background:var(--red)"></span>Failed</span>
-            <span class="lc"><span class="d" style="background:#C9A227"></span>Deferred</span>
-            <span class="lc"><span class="d" style="background:var(--purple)"></span>Session-blocked</span>
-        </div>
-    </div>
-</section>
-
-<!-- ── Anatomy ── -->
-<section class="section section-dark">
-    <div class="container">
-        <div class="section-lead">
-            <div class="section-eyebrow">The pieces</div>
-            <h2 class="section-title" style="color:var(--text-light)">The anatomy of a NimBus app</h2>
-            <p>Configure the SDK, storage, pipeline, and receiver hosting through dependency injection. You bring the events and handlers; NimBus brings ordering, routing, storage, and recovery.</p>
-        </div>
-        <div class="blocks">
-            <div class="block"><div class="bh"><span class="ic">E</span><span class="bn">Events</span></div><p>Plain classes. A <span class="tk">[SessionKey]</span> attribute sets the ordering scope for that event.</p></div>
-            <div class="block"><div class="bh"><span class="ic">P</span><span class="bn">Endpoints &amp; Platform</span></div><p>Declare what each endpoint produces and consumes; the Platform is the single source of topology truth.</p></div>
-            <div class="block"><div class="bh"><span class="ic">S</span><span class="bn">Pluggable storage</span></div><p>Cosmos DB or SQL Server behind one contract — with a conformance suite keeping them honest.</p></div>
-            <div class="block"><div class="bh"><span class="ic">M</span><span class="bn">Pipeline middleware</span></div><p>Logging, metrics, validation — plus circuit-breaker, rate-limiting, and PII masking as opt-ins.</p></div>
-            <div class="block"><div class="bh"><span class="ic">O</span><span class="bn">Transactional outbox</span></div><p>Record outgoing messages in your SQL business transaction; dispatch them after commit. Handlers should remain idempotent.</p></div>
-            <div class="block"><div class="bh"><span class="ic">H</span><span class="bn">Hosting &amp; SDK</span></div><p>Run as a Worker or Azure Function.</p><p class="tk">AddNimBusPublisher / AddNimBusSubscriber</p></div>
-            <div class="block"><div class="bh"><span class="ic">A</span><span class="bn">Agent-ready</span></div><p>A schema registry with REST and MCP surfaces so AI agents can join the bus as first-class participants.</p></div>
-            <div class="block"><div class="bh"><span class="ic">N</span><span class="bn">Notifications</span></div><p>Failures, dead-letters, and session blocks fan out to webhook or email channels.</p></div>
-        </div>
-    </div>
-</section>
-
-<!-- ── Deploy ── -->
-<section class="section section-light">
-    <div class="container">
-        <div class="section-lead">
-            <div class="section-eyebrow">Standing it up</div>
-            <h2 class="section-title">One command, or your own pipeline</h2>
-        </div>
-        <div class="deploy">
-            <div class="steps">
-                <div class="flow"><span class="s">infra</span><span class="ar">&rarr;</span><span class="s">topology</span><span class="ar">&rarr;</span><span class="s">apps</span></div>
-                <ul>
-                    <li><span class="code-inline">nb setup</span> chains Bicep infrastructure, topology provisioning, and app deploy in order.</li>
-                    <li>GitHub Actions with OIDC federated credentials — no stored secrets.</li>
-                    <li>The Resolver runs on Flex Consumption; the management WebApp on App Service.</li>
-                </ul>
-            </div>
-            <div class="aside">
-                <div class="big">3 layers</div>
-                <div class="cap">Azure resources, Service Bus topology, and application code — the same three steps whether it's one command from a laptop or a CI pipeline.</div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ── CTA ── -->
-<section class="section section-white">
-    <div class="container cta">
-        <h2 class="section-title" style="margin-bottom:24px">Ready to try it?</h2>
-        <a href="getting-started.html" class="btn btn-primary">Try locally</a>
-        <a href="index.html" class="btn btn-outline" style="margin-left:12px">Back to Home</a>
-    </div>
-</section>
-
-<footer class="footer">
-    <div class="container">
-        <div class="footer-grid">
-            <div>
-                <h4>NimBus</h4>
-                <p>The operational platform for Azure Service Bus. Built by consultants who run it in production. Open-sourced for the community.</p>
-            </div>
-            <div>
-                <h4>Documentation</h4>
-                <a href="platform.html">How It Works</a>
-                <a href="features.html">Features</a>
-                <a href="getting-started.html">Getting Started</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/architecture.md">Architecture</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/message-flows.md">Message Flows</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/cli.md">CLI Reference</a>
-            </div>
-            <div>
-                <h4>Project</h4>
-                <a href="https://github.com/akakaule/NimBus">GitHub Repository</a>
-                <a href="https://github.com/akakaule/NimBus/tree/master/docs/adr">Decision Records</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/LICENSE">MIT License</a>
-            </div>
-        </div>
-        <div class="footer-bottom">NimBus &mdash; Azure Service Bus. Simplified. Observed. Controlled.</div>
-    </div>
-</footer>
-
-</body>
+      </div>
+    </footer>
+  </body>
 </html>

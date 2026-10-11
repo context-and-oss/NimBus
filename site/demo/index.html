@@ -3,37 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NimBus · Interactive Data Flow Simulation</title>
+<title>NimBus · Interactive data flow simulation</title>
+<meta name="description" content="Watch simulated traffic flow through a NimBus topology: session blocking, deferral, operator or AI recovery, and the Resolver audit trail.">
+<link rel="stylesheet" href="../overview.css">
 <style>
-  :root{
+  .sim{
     --bg:#0b1220; --panel:#111a2c; --panel2:#0e1626; --border:#1e2a44;
     --text:#e2e8f0; --muted:#8aa0bf; --faint:#5b7299;
+    background:var(--bg);color:var(--text);font-size:14px;line-height:1.45;
+    border-top:1px solid var(--border);
   }
-  *{box-sizing:border-box}
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
-    font:14px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif;}
-  body{min-width:1280px}
-  header{display:flex;align-items:center;justify-content:space-between;gap:16px;
-    padding:14px 22px;border-bottom:1px solid var(--border);background:var(--panel2)}
-  header h1{margin:0;font-size:19px;font-weight:650;letter-spacing:.2px}
-  header h1 .nb{color:#60a5fa}
-  header p{margin:2px 0 0;font-size:12px;color:var(--muted)}
-  .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .sim p{margin:0}
+  .sim code{color:inherit;background:rgba(255,255,255,.06);border-color:var(--border)}
+  .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    padding:12px 22px;background:var(--panel2);border-bottom:1px solid var(--border)}
   .controls button{background:#1b2a47;border:1px solid #2c3e63;color:var(--text);
     padding:6px 12px;border-radius:8px;font-size:12.5px;cursor:pointer}
   .controls button:hover{background:#23365a}
   .controls button.armed{background:#5b1d1d;border-color:#f87171;color:#fecaca}
   .controls label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
   .controls input[type=range]{width:110px;accent-color:#60a5fa}
-  main{display:flex;gap:0;align-items:stretch}
+  .sim-body{display:flex;align-items:flex-start}
   .canvas{flex:1;min-width:0;padding:10px 6px 16px 14px}
-  svg{width:100%;height:auto;display:block}
-  aside{width:392px;flex:none;border-left:1px solid var(--border);background:var(--panel);
+  .scroller{overflow-x:auto}
+  .scroller svg{width:100%;min-width:860px;height:auto;display:block}
+  .sim aside{width:392px;flex:none;border-left:1px solid var(--border);background:var(--panel);
     padding:14px 16px;display:flex;flex-direction:column;gap:12px;
-    height:calc(100vh - 67px);overflow-y:auto;position:sticky;top:0}
-  aside h2{margin:0;font-size:14px;font-weight:650}
-  aside h2 small{color:var(--muted);font-weight:400}
-  aside h3{margin:8px 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint)}
+    height:100vh;overflow-y:auto;position:sticky;top:0}
+  .sim aside h2{margin:0;font-size:14px;line-height:1.45;letter-spacing:0;font-weight:650}
+  .sim aside h2 small{color:var(--muted);font-weight:400}
+  .sim aside h3{margin:8px 0 2px;font-size:11px;line-height:1.45;text-transform:uppercase;letter-spacing:.8px;color:var(--faint)}
   .gauges{display:flex;gap:8px}
   .gauge{flex:1;background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
   .gauge b{display:block;font-size:20px;font-weight:650}
@@ -64,6 +63,11 @@
   .legend .it{display:flex;align-items:center;gap:5px}
   .legend .dot{width:9px;height:9px;border-radius:50%}
   .footnote{font-size:11px;color:var(--faint);margin:8px 6px 0;max-width:1100px}
+  @media (max-width:1279px){
+    .sim-body{flex-direction:column;align-items:stretch}
+    .sim aside{width:auto;height:auto;position:static;border-left:0;border-top:1px solid var(--border)}
+    #log{max-height:320px}
+  }
   /* SVG */
   .busbox{fill:#0d1830;stroke:#22335a;stroke-width:1.2;rx:14}
   .bustitle{fill:#9db4d8;font-size:14px;font-weight:650}
@@ -95,33 +99,49 @@
 </style>
 </head>
 <body>
-<header>
-  <div>
-    <h1><span class="nb">NimBus</span> · Interactive Data Flow Simulation</h1>
-    <p>CRM · ERP · Storefront → Azure Service Bus → endpoints &amp; AI agents, with session blocking, deferral, AI remediation and the Resolver audit trail. Simulated traffic over the real NimBus topology.</p>
+<a class="skip" href="#main">Skip to content</a>
+<nav aria-label="Main navigation">
+  <div class="wrap">
+    <a class="brand" href="../">NimBus</a>
+    <div class="links">
+      <a href="../platform.html">How it works</a
+      ><a href="../features.html">Features</a
+      ><a href="../getting-started.html">Try locally</a
+      ><a href="https://github.com/context-and-oss/NimBus">GitHub</a>
+    </div>
   </div>
-  <div class="controls">
+</nav>
+<main id="main">
+<header class="compact">
+  <div class="wrap">
+    <div class="eyebrow">Interactive simulation</div>
+    <h1>Watch messages flow through NimBus.</h1>
+    <p>Simulated CRM, ERP, and storefront traffic on a NimBus topology. Inject a payment failure to watch a session block, defer later messages, and recover.</p>
+  </div>
+</header>
+<div class="sim">
+  <div class="controls" role="group" aria-label="Simulation controls">
     <button id="btnPause">⏸ Pause</button>
     <label>Speed <input type="range" id="speed" min="0.5" max="3" step="0.25" value="1"><span id="speedVal">1.0×</span></label>
     <button id="btnOrder">🛒 Publish order</button>
     <button id="btnFail">💥 Inject payment failure</button>
     <label><input type="checkbox" id="aiTog" checked> ✦ Ops Agent auto-remediation</label>
   </div>
-</header>
-<main>
-  <section class="canvas">
-    <svg id="viz" viewBox="0 0 1280 890" aria-label="NimBus platform data flow diagram"></svg>
+  <div class="sim-body">
+  <div class="canvas">
+    <div class="scroller"><svg id="viz" viewBox="0 0 1280 890" aria-label="NimBus platform data flow diagram"></svg></div>
     <div class="legend" id="legend"></div>
     <p class="footnote">
       Topology mirrors real NimBus conventions: one Service Bus topic per endpoint (topic name = endpoint id),
       event-type forward subscriptions route copies to each subscriber's endpoint topic, and
       <code>[SessionKey]</code>-ordered sessions block on failure — successors park on the endpoint's
       <em>Deferred</em> subscription. Every handler outcome flows through the central <em>Resolver</em> topic into
-      Cosmos DB (ResolutionStatus: Pending · Deferred · Failed · DeadLettered · Completed · Skipped), where the
+      the message store, SQL Server or Cosmos DB (ResolutionStatus: Pending · Deferred · Failed · DeadLettered · Completed · Skipped), where the
       WebApp and the Ops Triage AI agent act on blocked sessions via the <em>Manager</em> topic.
-      The AI agents are illustrative consumers — they are not part of the NimBus codebase.
+      The AI agents are illustrative. Real agents can join the bus through the REST agent API, and operator agents
+      investigate and recover failures through the WebApp's MCP endpoint.
     </p>
-  </section>
+  </div>
   <aside>
     <h2>NimBus WebApp <small>· live dashboard (SignalR)</small></h2>
     <div class="gauges">
@@ -136,6 +156,8 @@
     <h3>Live audit log</h3>
     <div id="log"></div>
   </aside>
+  </div>
+</div>
 </main>
 <script>
 'use strict';
@@ -163,8 +185,8 @@ const NODES = {
                   sub:['operator dashboard · SignalR','resubmit / skip / audit trail']},
   resolverWorker:{x:620, y:740, w:220, h:92, kind:'platform', tag:'PLATFORM', title:'Resolver Worker',
                   sub:['tracks outcome of every message','ResolutionStatus state machine']},
-  cosmos:        {x:900, y:740, w:210, h:92, kind:'platform', tag:'PLATFORM', title:'Cosmos DB',
-                  sub:['per-endpoint containers','full audit trail']},
+  cosmos:        {x:900, y:740, w:210, h:92, kind:'platform', tag:'PLATFORM', title:'Message store',
+                  sub:['SQL Server or Cosmos DB','full audit trail']},
 };
 const CHIP_X=330, CHIP_W=320, CHIP_H=44;
 const CHIPS = {
@@ -236,7 +258,7 @@ const EDGE_DEFS = [
   ['forecast','left',38,     't_resolver','right',12,   {tip:'Agent outcome → Resolver topic', k:[120,150], bow:18}],
   // platform plumbing
   ['t_resolver','bottom',0,  'resolverWorker','top',0,  {tip:'Service Bus trigger → Resolver Worker'}],
-  ['resolverWorker','right',0,'cosmos','left',0,        {tip:'StoreMessage + UpdateState → Cosmos DB'}],
+  ['resolverWorker','right',0,'cosmos','left',0,        {tip:'StoreMessage + UpdateState → message store'}],
   ['cosmos','bottom',0,      'webapp','bottom',0,       {tip:'Queries + SignalR push to the WebApp', dashed:true}],
   ['webapp','right',0,       'opsAgent','left',0,       {tip:'Ops Agent polls the WebApp API for blocked sessions', dashed:true}],
   ['webapp','top',0,         't_manager','left',0,      {tip:'Operator resubmit / skip → Manager topic', dashed:true}],
