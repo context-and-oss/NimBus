@@ -22,17 +22,37 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
 
     private readonly IMessageTrackingStore _store;
     private readonly IAuditLogService _audit;
+    private readonly HandoffSettlementTracker _inFlight;
     private readonly ILogger<HandoffSettlementService> _logger;
 
-    /// <summary>Initialises the service with the message store, audit log, and logger.</summary>
+    /// <summary>
+    /// Initialises the service with the message store, audit log, the process-wide record of
+    /// settlements in flight, and logger.
+    /// </summary>
     public HandoffSettlementService(
         IMessageTrackingStore store,
         IAuditLogService audit,
+        HandoffSettlementTracker inFlight,
         ILogger<HandoffSettlementService> logger)
     {
         _store = store;
         _audit = audit;
+        _inFlight = inFlight;
         _logger = logger;
+    }
+
+    /// <summary>Initialises the service with the message store, audit log, and logger.</summary>
+    /// <remarks>
+    /// The service gets a private <see cref="HandoffSettlementTracker"/>, so settlements in
+    /// flight are not shared with other instances or with agent receive.
+    /// </remarks>
+    [Obsolete("Pass the shared HandoffSettlementTracker singleton. This constructor will be removed in the next major version.")]
+    public HandoffSettlementService(
+        IMessageTrackingStore store,
+        IAuditLogService audit,
+        ILogger<HandoffSettlementService> logger)
+        : this(store, audit, new HandoffSettlementTracker(TimeProvider.System), logger)
+    {
     }
 
     /// <inheritdoc/>
@@ -94,7 +114,27 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
             "Handoff settle ({AuditType}). EndpointId: {EndpointId}, EventId: {EventId}, MessageId: {MessageId}, Auditor: {Auditor}",
             auditType, endpointId, eventId, messageId, auditorName);
 
-        await settle(pendingEntry, auditorName);
+        // The row reads Pending+Handoff until the Resolver projects the settlement, so the
+        // guard above cannot see one this instance already sent. Claim the parked message so
+        // a second settle in that window gets the same 400 it would get once projected.
+        if (!_inFlight.TryBegin(endpointId, eventId, pendingEvent.LastMessageId))
+        {
+            _logger.LogWarning(
+                "Handoff settle rejected: a settlement is already in flight. EndpointId: {EndpointId}, EventId: {EventId}, Auditor: {Auditor}",
+                endpointId, eventId, auditorName);
+            return new BadRequestObjectResult("Event is not a pending handoff: a settlement is already in flight.");
+        }
+
+        try
+        {
+            await settle(pendingEntry, auditorName);
+        }
+        catch
+        {
+            // Nothing was sent, so nothing is in flight: release the claim for a retry.
+            _inFlight.Abandon(endpointId, eventId, pendingEvent.LastMessageId);
+            throw;
+        }
 
         await _audit.LogAuditAsync(auditType, httpContext,
             data: auditComment, eventId: eventId, endpointId: endpointId,
@@ -102,5 +142,12 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
             cancellationToken: cancellationToken);
 
         return new OkResult();
+    }
+
+    /// <inheritdoc/>
+    public bool IsSettlementInFlight(string endpointId, UnresolvedEvent parkedEvent)
+    {
+        ArgumentNullException.ThrowIfNull(parkedEvent);
+        return _inFlight.IsInFlight(endpointId, parkedEvent.EventId, parkedEvent.LastMessageId);
     }
 }

@@ -71,6 +71,7 @@ public sealed class AgentSettleContractTests
         var settlement = new HandoffSettlementService(
             store,
             audit,
+            new HandoffSettlementTracker(TimeProvider.System),
             NullLogger<HandoffSettlementService>.Instance);
         var implementation = new AgentImplementation(
             store,

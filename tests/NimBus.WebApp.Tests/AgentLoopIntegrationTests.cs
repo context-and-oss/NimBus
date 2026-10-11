@@ -144,7 +144,7 @@ public class AgentLoopIntegrationTests
         var handoffs = new CapturingHandoffClientFactory();
         var registry = new AgentSubscriptionRegistry();
         var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
-        var settlement = new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance);
+        var settlement = new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance);
         var impl = new AgentImplementation(
             store,
             platform,

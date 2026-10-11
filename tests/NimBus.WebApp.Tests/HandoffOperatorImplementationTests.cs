@@ -204,6 +204,7 @@ public sealed class HandoffOperatorImplementationTests
         var settlement = new HandoffSettlementService(
             store,
             audit,
+            new HandoffSettlementTracker(TimeProvider.System),
             NullLogger<HandoffSettlementService>.Instance);
         var controller = new EventImplementation(
             applicationInsightsService: null!,

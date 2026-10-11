@@ -169,7 +169,7 @@ public class AgentImplementationTests
         // Real audit + settlement services over the same in-memory store, so settle
         // tests can assert the audit row the shared HandoffSettlementService writes.
         var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
-        var settlement = new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance);
+        var settlement = new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance);
         var impl = new AgentImplementation(
             store,
             platform,
@@ -519,7 +519,7 @@ public class AgentImplementationTests
             new CapturingPublisher(),
             store,
             new CapturingHandoffClientFactory(),
-            new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance),
+            new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance),
             new AgentSubscriptionRegistry(),
             config: null!,
             httpContextAccessor: null!,
@@ -735,7 +735,7 @@ public class AgentImplementationTests
         var handoffs = new CapturingHandoffClientFactory();
         var impl = new AgentImplementation(
             store, new FakePlatform(), new CapturingPublisher(), store, handoffs,
-            new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance),
+            new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance),
             new AgentSubscriptionRegistry(), config: null!, httpContextAccessor: null!,
             NullLogger<AgentImplementation>.Instance);
 
@@ -754,7 +754,7 @@ public class AgentImplementationTests
         var store = new InMemoryMessageStore();
         await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
         var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
-        var svc = new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance);
+        var svc = new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance);
 
         var settled = 0;
         var result = await svc.SettleAsync(
@@ -769,6 +769,122 @@ public class AgentImplementationTests
         Assert.AreEqual(1, rows.Count, "The shared core must always write the audit row");
         Assert.AreEqual(NimBus.MessageStore.MessageAuditType.CompleteHandoff, rows[0].AuditType);
         Assert.AreEqual("operator-carol", rows[0].AuditorName, "The given auditor must be recorded");
+    }
+
+    // ── Settlement in flight (receive → settle → receive before the Resolver projects) ──
+
+    // Settle only sends the control message; the row stays Pending+Handoff in the store
+    // until the Resolver projects it. These tests never touch the store after settling,
+    // which is exactly that window.
+
+    [TestMethod]
+    public async Task GetAgentReceive_after_settle_before_resolver_projects_does_not_redeliver()
+    {
+        var (impl, store, _, _, _) = BuildAgent();
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+        var first = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
+        var received = (AgentReceivedMessage)((OkObjectResult)first.Result!).Value!;
+        var settled = await impl.PostAgentSettleAsync(new AgentSettleRequest
+        {
+            Coordinates = received.Coordinates,
+            Outcome = AgentSettleRequestOutcome.Complete,
+        });
+        Assert.IsInstanceOfType(settled, typeof(OkResult));
+
+        var second = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
+
+        Assert.IsInstanceOfType(second.Result, typeof(NoContentResult),
+            "A hand-off with a settlement in flight must not be handed out again");
+    }
+
+    [TestMethod]
+    public async Task PostAgentSettle_twice_before_resolver_projects_settles_and_audits_once()
+    {
+        var (impl, store, _, handoffs, _) = BuildAgent(AgentContext("enrichment-agent"));
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+        var first = await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
+        var second = await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
+
+        Assert.IsInstanceOfType(first, typeof(OkResult));
+        Assert.IsInstanceOfType(second, typeof(BadRequestObjectResult),
+            "A second settle must get the same 400 it would get once the Resolver has projected");
+        Assert.AreEqual(1, handoffs.CompleteCount, "CompleteHandoff must be sent once");
+        var rows = (await store.GetMessageAudits("evt-1")).ToList();
+        Assert.AreEqual(1, rows.Count, "One settled hand-off must leave exactly one audit row (ADR-002)");
+    }
+
+    [TestMethod]
+    public async Task PostAgentSettle_complete_then_fail_before_resolver_projects_sends_only_the_first()
+    {
+        var (impl, store, _, handoffs, _) = BuildAgent();
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+        await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
+        var second = await impl.PostAgentSettleAsync(
+            SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: "boom"));
+
+        Assert.IsInstanceOfType(second, typeof(BadRequestObjectResult));
+        Assert.AreEqual(1, handoffs.CompleteCount);
+        Assert.AreEqual(0, handoffs.FailCount, "A conflicting second outcome must not be sent");
+    }
+
+    [TestMethod]
+    public async Task PostAgentSettle_send_failure_releases_the_claim_so_a_retry_settles()
+    {
+        var store = new InMemoryMessageStore();
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+        var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
+        var svc = new HandoffSettlementService(
+            store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => svc.SettleAsync(
+            ZoneId, "evt-1", "msg-1", NimBus.MessageStore.MessageAuditType.CompleteHandoff, null, "agent",
+            httpContext: null, (_, _) => throw new InvalidOperationException("Service Bus unavailable")));
+        var parked = await store.GetEvent(ZoneId, "evt-1");
+        Assert.IsFalse(svc.IsSettlementInFlight(ZoneId, parked!), "A settlement that was never sent is not in flight");
+
+        var retry = await svc.SettleAsync(
+            ZoneId, "evt-1", "msg-1", NimBus.MessageStore.MessageAuditType.CompleteHandoff, null, "agent",
+            httpContext: null, (_, _) => Task.CompletedTask);
+
+        Assert.IsInstanceOfType(retry, typeof(OkResult), "The retry must settle");
+        Assert.AreEqual(1, (await store.GetMessageAudits("evt-1")).Count(), "Only the sent settlement is audited");
+    }
+
+    [TestMethod]
+    public async Task GetAgentReceive_event_reparked_by_a_new_message_is_delivered_again()
+    {
+        var (impl, store, _, _, _) = BuildAgent();
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-1");
+        await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete, messageId: "msg-1"));
+
+        // e.g. the event was resubmitted and parked again: a new message, a new hand-off.
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-2");
+        var result = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
+
+        var received = (AgentReceivedMessage)((OkObjectResult)result.Result!).Value!;
+        Assert.AreEqual("msg-2", received.Coordinates.MessageId);
+    }
+
+    [TestMethod]
+    public void HandoffSettlementTracker_claim_expires_after_the_hold_time()
+    {
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var tracker = new HandoffSettlementTracker(time);
+
+        Assert.IsTrue(tracker.TryBegin(ZoneId, "evt-1", "msg-1"));
+        Assert.IsFalse(tracker.TryBegin(ZoneId, "evt-1", "msg-1"), "A second claim must lose while the first holds");
+        Assert.IsTrue(tracker.IsInFlight(ZoneId, "evt-1", "msg-1"));
+        Assert.IsFalse(tracker.IsInFlight(ZoneId, "evt-1", "msg-2"), "Claims are per parked message");
+        Assert.IsFalse(tracker.IsInFlight("OtherZone", "evt-1", "msg-1"), "Claims are per endpoint");
+
+        time.Advance(HandoffSettlementTracker.HoldTime);
+
+        Assert.IsFalse(tracker.IsInFlight(ZoneId, "evt-1", "msg-1"),
+            "A Resolver that never projects must not hide the hand-off forever");
+        Assert.IsTrue(tracker.TryBegin(ZoneId, "evt-1", "msg-1"));
     }
 
     // ── PostAgentPublishAsync ────────────────────────────────────────────

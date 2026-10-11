@@ -172,6 +172,13 @@ public class AgentImplementation : IAgentApiController
     // losing /settle then 400s on the Pending+Handoff status guard. This is
     // acceptable for the v1 demo-grade flow; a claim/lease is flagged for the spec's
     // deferred-recovery section.
+    //
+    // After a settle, the row still reads Pending+Handoff until the Resolver projects
+    // the settlement. Receive skips a row whose settlement this instance has in flight
+    // (HandoffSettlementTracker) and keeps polling until the projection moves it out of
+    // the query; otherwise an agent that loops straight back to receive gets the event
+    // it just settled. The record is per process, so across scaled-out instances that
+    // window stays at-least-once.
     public async Task<ActionResult<AgentReceivedMessage>> GetAgentReceiveAsync(string eventTypeId, int? waitSeconds)
     {
         var zoneId = AgentZone.ResolveEndpointId(_config);
@@ -201,7 +208,7 @@ public class AgentImplementation : IAgentApiController
             // (throttling, connectivity) are left to propagate as 500.
             var parked = await _store.GetNextPendingHandoffEvent(zoneId, eventTypeIds);
 
-            if (parked != null)
+            if (parked != null && !_settlement.IsSettlementInFlight(zoneId, parked))
             {
                 return new OkObjectResult(new AgentReceivedMessage
                 {

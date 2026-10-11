@@ -247,6 +247,9 @@ public partial class Startup
         // Shared hand-off settlement core used by both the operator (EventImplementation)
         // and agent (AgentImplementation) settle endpoints so neither can skip the audit row.
         services.AddScoped<IHandoffSettlementService, HandoffSettlementService>();
+        // Settlements sent but not yet projected by the Resolver. Singleton so a receive or
+        // second settle on another request sees them (per process, not across instances).
+        services.AddSingleton(sp => new HandoffSettlementTracker(sp.GetService<TimeProvider>() ?? TimeProvider.System));
         services.AddScoped<NimBus.WebApp.Services.Operations.IOperatorCommands, NimBus.WebApp.Services.Operations.OperatorCommandCoordinator>();
     }
 }
