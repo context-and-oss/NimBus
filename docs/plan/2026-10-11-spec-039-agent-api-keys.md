@@ -124,3 +124,18 @@ Each step writes its failing test first.
 - **Policy scheme union.** If the policy names only `AgentApiKey`, MVC authenticates the action with only that scheme and signed-in people lose the agent API. Step 5's per-mode tests guard this.
 - **Cache window.** A revoked key keeps working for up to 30 seconds on other instances. This is documented, and it matches MCP access settings.
 - **Last-used writes.** They are throttled and best-effort, so a lost write only makes "last used" stale.
+
+## PR 1 outcome (2026-10-11)
+
+- Steps 1-9 are done.
+- **Gate:**
+  - Release build: 0 errors.
+  - Full Release test suite: 3,745 passed, 0 failed, with SQL Server and the Cosmos emulator live.
+  - ClientApp Vitest: 712 passed.
+- **Design correction (step 5):** the `AgentApi` policy names the deployment's *effective* default authenticate scheme, resolved from `AuthenticationOptions`, not a name per branch. Entra-only resolves to `OpenIdConnect` and dual mode to `Identity.Application`. The spec's table records this.
+- **Manual check** (CrmErpDemo with `NIMBUS_IDENTITY=true`):
+  - The Owner issued a key through the API.
+  - The key reaches `/api/agent/catalog`, gets 401 on `/api/me` and `/api/admin/*`, and gets 403 when `X-Agent-Id` names another agent.
+  - The EnrichmentAgent with the key subscribed, received, published and settled. Its audit rows name `enrichment-agent`, and the key's last use was recorded.
+- **Found and fixed on the way:** `NimBusClaimsTransformation` threw "Collection was modified" for every Identity user with a role. It was latent until the bootstrap admin got `EIP_Management` in #242, so any signed-in bootstrap admin got 500s.
+- **Found, out of scope:** the agent can receive and settle the same pending hand-off twice, producing two `completeHandoff` audit rows. It looks like a pre-existing race between settle and the Resolver; it is tracked separately.
