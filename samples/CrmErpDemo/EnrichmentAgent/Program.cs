@@ -19,6 +19,9 @@ else
 builder.Services.AddNimBusAgent<EnrichmentHandler, CrmContactCreated>(o =>
 {
     o.AgentId = "enrichment-agent";
+    // Issued in nimbus-ops under Settings → Agent keys; needed when nimbus-ops requires sign-in
+    // (NimBus__Agent__ApiKey). The local AppHost's development sign-in bypass works without one.
+    o.ApiKey = builder.Configuration["NimBus:Agent:ApiKey"];
     o.Subscribe("CrmContactCreated");
     o.DefineOutput(EnrichmentHandler.EnrichedEventTypeId, EnrichmentHandler.EnrichedSchema, "Enriched CRM Contact");
 });

@@ -68,6 +68,8 @@ public static class AgentServiceCollectionExtensions
         {
             client.BaseAddress = new Uri(options.BaseAddress);
             client.DefaultRequestHeaders.Add("X-Agent-Id", options.AgentId);
+            if (!string.IsNullOrWhiteSpace(options.ApiKey))
+                client.DefaultRequestHeaders.Add("X-NimBus-Agent-Key", options.ApiKey.Trim());
         });
 
         services.AddHostedService<AgentLoopWorker<TInput>>();
