@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.AgentApiKeys;
 using NimBus.Extensions.Identity;
 
 namespace NimBus.WebApp;
@@ -172,6 +173,10 @@ public partial class Startup
             // and the Identity branches rely on NimBusClaimsTransformation.
             services.AddTransient<IClaimsTransformation, EntraAdminClaimsTransformation>();
         }
+
+        // Spec 039: agents authenticate to /api/agent/* with an API key in every mode. The key
+        // scheme is never a default, so a key admits nothing else.
+        services.AddNimBusAgentApiKeys();
 
         // The NSwag-generated controllers cannot carry per-action attributes,
         // so the stats endpoint's anonymous exemption is applied via an

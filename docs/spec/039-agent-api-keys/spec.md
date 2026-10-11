@@ -65,11 +65,20 @@ AgentApiKeySettings { Id = "AgentApiKeys", Revision, UpdatedBy, UpdatedAtUtc,
   - **no `groups` claim and no `oid`**, so it can never match the `EIP_Management` marker or an ACL entry.
   - Rate-limit partitions and audit rows therefore name the agent.
 - **Scope:** the scheme is registered in every sign-in mode but is never a default or forward target. The only place that names it is an `AgentApi` authorization policy:
-  - the policy is `AddAuthenticationSchemes(<the mode's sign-in scheme>, AgentApiKey)` plus an authenticated user;
+  - the policy is `AddAuthenticationSchemes(<default authenticate scheme>, AgentApiKey)` plus an authenticated user;
   - an application-model convention (like `AllowAnonymousActionsConvention`) adds it to the generated `AgentApiController`;
-  - the mode's sign-in scheme is `LocalDev`, `Identity.Application` or `Az`;
-  - MVC authenticates an action only with the schemes its combined policy names, so naming the sign-in scheme keeps signed-in people working on the agent API as today;
+  - MVC authenticates an action only with the schemes its combined policy names, so naming the default scheme keeps signed-in people working on the agent API as today;
   - every other endpoint authenticates only with the default scheme, so a key admits nothing else.
+- **Which default scheme:** it is read from the final `AuthenticationOptions` (`DefaultAuthenticateScheme ?? DefaultScheme`) when the policy is built, not hard-coded per sign-in branch. The branches' own names are misleading:
+
+  | Mode | Default authenticate scheme |
+  |---|---|
+  | LocalDev | `LocalDev` |
+  | Identity-only | `Identity.Application` |
+  | Dual | `Identity.Application`; `AddIdentity` sets it explicitly |
+  | Entra-only | `OpenIdConnect`; Microsoft.Identity.Web's web-app setup sets it, not the `Az` policy scheme |
+
+  `AgentApiKeyStartupWiringTests` pins this table.
 - **Agent id:**
   - When the caller authenticated with a key, `AgentImplementation` takes the agent id from `nimbus:agent_id`. A different `X-Agent-Id` header gets 403, so a mismatch is visible rather than silently ignored.
   - Signed-in people keep today's header behaviour. Tightening the human path is out of scope (see Non-goals).
