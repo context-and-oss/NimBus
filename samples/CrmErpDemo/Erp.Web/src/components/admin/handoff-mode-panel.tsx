@@ -152,7 +152,7 @@ function InFlightJobsPanel() {
             const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
             return (
               <li key={j.eventId} className="flex items-center gap-3 text-slate-700">
-                <span className="px-1.5 py-0.5 bg-slate-100 rounded">{j.externalJobId}</span>
+                <span className="px-1.5 py-0.5 bg-slate-100 rounded-sm">{j.externalJobId}</span>
                 <span className="text-slate-500">{j.eventId.slice(0, 8)}</span>
                 <span className={remaining === 0 ? 'text-rose-600' : 'text-indigo-600'}>
                   {remaining === 0 ? 'settling…' : `${remaining}s remaining`}

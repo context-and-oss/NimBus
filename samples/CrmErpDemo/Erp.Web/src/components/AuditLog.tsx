@@ -39,7 +39,7 @@ export default function AuditLog({ entityType, entityId }: Props) {
   const groups = group(entries ?? []);
 
   return (
-    <section className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-3">
+    <section className="bg-white rounded-lg shadow-xs border border-slate-200 p-6 space-y-3">
       <h2 className="text-base font-semibold text-slate-700">Audit log</h2>
       {error && <div className="text-sm text-red-700">Failed to load audit history: {error}</div>}
       {entries === null && !error && <div className="text-sm text-slate-400">Loading…</div>}
@@ -52,10 +52,10 @@ export default function AuditLog({ entityType, entityId }: Props) {
             <li key={g.key} className="relative">
               <span className={`absolute left-[-22px] top-1.5 w-3 h-3 rounded-full border-2 border-white ${dotClass(g.action)}`} />
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className={`px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide ${badgeClass(g.action)}`}>{g.action}</span>
+                <span className={`px-1.5 py-0.5 rounded-sm font-semibold uppercase tracking-wide ${badgeClass(g.action)}`}>{g.action}</span>
                 <span className="font-mono text-slate-500">{formatTimestamp(g.timestamp)}</span>
                 {g.origin && (
-                  <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">via {g.origin}</span>
+                  <span className="px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-600 font-mono">via {g.origin}</span>
                 )}
               </div>
               {g.action === 'Updated' && (
@@ -73,7 +73,7 @@ export default function AuditLog({ entityType, entityId }: Props) {
               {g.action === 'Created' && g.rows[0]?.newValue && (
                 <details className="mt-1 text-sm">
                   <summary className="text-xs text-slate-500 cursor-pointer hover:underline">Initial values</summary>
-                  <pre className="mt-1 px-2 py-1 bg-slate-50 border border-slate-100 rounded text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">{prettyJson(g.rows[0].newValue)}</pre>
+                  <pre className="mt-1 px-2 py-1 bg-slate-50 border border-slate-100 rounded-sm text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">{prettyJson(g.rows[0].newValue)}</pre>
                 </details>
               )}
             </li>

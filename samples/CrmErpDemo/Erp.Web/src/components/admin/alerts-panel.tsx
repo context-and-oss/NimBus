@@ -104,7 +104,7 @@ export default function AlertsPanel() {
                 <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${s.badge}`}>
+                    <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-semibold uppercase ${s.badge}`}>
                       {a.severity}
                     </span>
                     <span className="text-sm font-medium text-slate-700 truncate">{a.title}</span>
