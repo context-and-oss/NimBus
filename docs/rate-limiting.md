@@ -13,7 +13,7 @@ Exceeding a limit returns **HTTP 429**.
 | Policy | Endpoint(s) | Limiter | Default | Partitioned by |
 |---|---|---|---|---|
 | `nimbus-agent-receive` | `GET /api/agent/receive` | Concurrency | 20 permits + 5 queued | nothing (global) |
-| `nimbus-admin` | `/api/admin/*` (21 routes) | Fixed window | 60 per 60 s | user id |
+| `nimbus-admin` | every `/api/admin/*` route | Fixed window | 60 per 60 s | user id |
 | `nimbus-search` | `POST /api/messages/search`, `POST /api/audits/search` | Fixed window | 120 per 60 s | user id |
 | `nimbus-login` | `POST /account/login` | Fixed window | 50 per 300 s | client IP |
 | `nimbus-intelligence` | `POST /api/integration-intelligence/failures/{eventId}/{messageId}/classification` | Fixed window | 10 per 60 s | user id |
@@ -86,6 +86,12 @@ a rate component on this endpoint, which is deliberately out of scope here.
 
 Set `RateLimiting:AgentReceive:QueueLimit = 0` for a hard 20-slot cap, at the
 cost of 429-ing an agent-host restart herd instead of absorbing it.
+
+Agent API keys ([Spec 039](spec/039-agent-api-keys/spec.md)) are checked during
+authentication, which runs before the rate limiter, so failed key attempts are not
+throttled. Keys carry a 256-bit secret, which makes guessing one infeasible, and every
+refusal is logged with the key id and client IP. A successful agent request is
+partitioned by its agent (`agent:<agentId>`) wherever a policy partitions by user.
 
 One pathological interaction worth knowing: if 20 callers each hold a 60-second
 poll and a 21st queues, the client-observed time approaches 120 s while the SDK's

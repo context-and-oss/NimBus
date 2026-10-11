@@ -31,6 +31,29 @@ Entra OIDC flow.
 > startup when set in a non-Development environment. There's no way to
 > ship them to production accidentally.
 
+## Agent API keys
+
+Agents built on `NimBus.Agents` call the agent API (`/api/agent/*`) without a person signed in. A site Owner issues each agent its own key under **Settings → Agent keys** in nimbus-ops, or through `POST /api/admin/agent-keys`. The design is [Spec 039](spec/039-agent-api-keys/spec.md).
+
+- **Works in every sign-in mode**, Identity-only included. The key travels in the `X-NimBus-Agent-Key` header and has a scheme of its own, `AgentApiKey`, which is never a default.
+- **Admits only `/api/agent/*`.** A key gets 401 on every other endpoint, and its principal carries no admin marker and no object id, so it cannot hold a site or endpoint role. Signed-in people keep using the agent API as before.
+- **The key names the agent.** Schema definitions, subscriptions and the audit row of a settled hand-off record the key's agent. A request whose `X-Agent-Id` names a different agent gets 403.
+- **Shown once, stored hashed.** The full key (`nbak_<keyId>_<secret>`) appears once, when it is issued. nimbus-ops stores only a SHA-256 of the secret. Issuing, revoking and removing are Owner-only and always audited, with the key id but never the key.
+- **Revocation takes effect within 30 seconds** on every instance, and at once on the instance that saved it. A key can also carry an expiry. "Last used" is updated at most every 5 minutes per instance.
+
+Give the key to the agent through configuration, never source code:
+
+```csharp
+builder.Services.AddNimBusAgent<MyHandler, MyEvent>(o =>
+{
+    o.AgentId = "enrichment-agent";             // must match the key's agent
+    o.ApiKey = builder.Configuration["NimBus:Agent:ApiKey"];
+    o.Subscribe("MyEvent");
+});
+```
+
+The local Aspire AppHost's development sign-in bypass admits agents without a key.
+
 ## Enabling username/password
 
 The Identity provider needs three things: the package wired in (already

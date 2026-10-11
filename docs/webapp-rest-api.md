@@ -16,7 +16,7 @@ are still on the roadmap.
 - **Spec version:** `0.0.1` (pre-1.0; see [Versioning + stability](#versioning--stability) below).
 - **Route prefix:** every operation lives under `/api/…`.
 - **Surface size:** 115 operations across 12 tags (Admin, Event, Endpoint, AccessControl, Agent, Metrics, EventType, StorageHook, Application, Message, Audit, Heartbeat).
-- **Auth:** ASP.NET Identity cookie *and/or* Microsoft Entra ID (interactive browser flow + bearer-token flow). Effectively all `/api/…` endpoints require an authenticated principal. Two are reachable anonymously by design: `GET /api/app/stats` (a liveness shape that discloses nothing to an anonymous caller — see [Application](#application)) and `POST /api/storagehook/cosmos/{endpointId}` (gated by a shared webhook key rather than a principal). Beyond `/api/…`, `/health`, `/alive` and `/ready` are anonymous.
+- **Auth:** ASP.NET Identity cookie *and/or* Microsoft Entra ID (interactive browser flow + bearer-token flow). Effectively all `/api/…` endpoints require an authenticated principal. Two are reachable anonymously by design: `GET /api/app/stats` (a liveness shape that discloses nothing to an anonymous caller — see [Application](#application)) and `POST /api/storagehook/cosmos/{endpointId}` (gated by a shared webhook key rather than a principal). The agent API (`/api/agent/*`) also accepts an agent API key in `X-NimBus-Agent-Key`, which admits nothing else — see [Agent API keys](authentication.md#agent-api-keys). Beyond `/api/…`, `/health`, `/alive` and `/ready` are anonymous.
 - **Schema generation:** NSwag reads `api-spec.yaml` pre-build and emits server contracts (`Controllers/ApiContract.g.cs`) plus a TypeScript client (`ClientApp/src/api-client/index.ts`) — see [Code generation](#code-generation).
 
 ## Audience
@@ -376,10 +376,10 @@ access from a third-party origin, see
 Honest list of work needed before this API can be claimed as fully
 external-grade. Each item is its own focused workstream:
 
-1. **API-key / service-principal auth.** Today the only credential path is an
-   Entra ID token tied to an app registration. Some integrators want a simpler
-   API-key path (rotateable, per-caller scopes) that doesn't require Entra at
-   all. Not implemented.
+1. **API-key / service-principal auth — agents only.** Agents have Owner-issued,
+   revocable API keys for `/api/agent/*` ([Spec 039](spec/039-agent-api-keys/spec.md)).
+   The rest of the API still needs a signed-in person or an Entra ID token; a
+   general integrator key path with per-caller scopes is not implemented.
 2. **`ProblemDetails` error envelope (RFC 7807).** Standardise error
    responses so callers can branch on a stable schema instead of per-endpoint
    shapes. Touches every `*Implementation.cs` under
