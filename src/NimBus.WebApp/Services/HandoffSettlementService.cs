@@ -121,7 +121,7 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
         {
             _logger.LogWarning(
                 "Handoff settle rejected: a settlement is already in flight. EndpointId: {EndpointId}, EventId: {EventId}, Auditor: {Auditor}",
-                endpointId, eventId, auditorName);
+                ForLog(endpointId), ForLog(eventId), ForLog(auditorName));
             return new BadRequestObjectResult("Event is not a pending handoff: a settlement is already in flight.");
         }
 
@@ -150,4 +150,9 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
         ArgumentNullException.ThrowIfNull(parkedEvent);
         return _inFlight.IsInFlight(endpointId, parkedEvent.EventId, parkedEvent.LastMessageId);
     }
+
+    // The event id and the auditor (an agent's X-Agent-Id header) come from the caller;
+    // strip line breaks so they cannot forge log entries.
+    private static string ForLog(string? value)
+        => (value ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ');
 }
