@@ -1600,6 +1600,137 @@ paths:
                 $ref: '#/components/schemas/McpActivity'
         '403':
           description: Forbidden
+  /api/admin/agent-keys:
+    get:
+      summary: List the agent API keys
+      description: >-
+        Spec 039. Site Owner only. Every issued key with its status and last use, never the
+        secret, plus an antiforgery token for the write operations.
+      operationId: get-admin-agent-keys
+      tags:
+        - AgentKeys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyState'
+        '403':
+          description: Forbidden
+    post:
+      summary: Issue an agent API key
+      description: >-
+        Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the
+        full key once; only its hash is stored. The key authenticates as agentId on
+        /api/agent/* and nowhere else, on every instance within 30 seconds.
+      operationId: post-admin-agent-keys
+      tags:
+        - AgentKeys
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentApiKeyCreate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyIssued'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+        '403':
+          description: Forbidden
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+  /api/admin/agent-keys/{keyId}/revoke:
+    post:
+      summary: Revoke an agent API key
+      description: >-
+        Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. The key stops
+        working on every instance within 30 seconds and stays listed until it is removed.
+      operationId: post-admin-agent-key-revoke
+      tags:
+        - AgentKeys
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyState'
+        '403':
+          description: Forbidden
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+  /api/admin/agent-keys/{keyId}:
+    delete:
+      summary: Remove a revoked or expired agent API key
+      description: >-
+        Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active key
+        must be revoked first (400 StillActive).
+      operationId: delete-admin-agent-key
+      tags:
+        - AgentKeys
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyState'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+        '403':
+          description: Forbidden
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
   /api/admin/heartbeat/send:
     post:
       summary: Send a heartbeat to every monitored endpoint now
@@ -4027,6 +4158,9 @@ components:
             - commandNotSent
             - updateMcpSettings
             - mcpAccessRefused
+            - agentApiKeyCreated
+            - agentApiKeyRevoked
+            - agentApiKeyRemoved
         comment:
           type: string
           nullable: true
@@ -5331,6 +5465,9 @@ components:
             - commandNotSent
             - updateMcpSettings
             - mcpAccessRefused
+            - agentApiKeyCreated
+            - agentApiKeyRevoked
+            - agentApiKeyRemoved
         createdAtFrom:
           type: string
           format: date-time
@@ -5981,6 +6118,101 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/McpAccessChange'
+    AgentApiKeyStatus:
+      title: AgentApiKeyStatus
+      type: string
+      enum:
+        - active
+        - revoked
+        - expired
+    AgentApiKeyInfo:
+      title: AgentApiKeyInfo
+      type: object
+      description: An issued agent API key (Spec 039). Never carries the secret.
+      properties:
+        keyId:
+          type: string
+        prefix:
+          type: string
+          description: The non-secret start of the key, nbak_<keyId>, to recognise it.
+        agentId:
+          type: string
+        name:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/AgentApiKeyStatus'
+        createdAtUtc:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          nullable: true
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedBy:
+          type: string
+          nullable: true
+        lastUsedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: Recorded at most every 5 minutes per instance; null when never used.
+    AgentApiKeyState:
+      title: AgentApiKeyState
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentApiKeyInfo'
+        csrfToken:
+          type: string
+          description: Send as the X-NimBus-CSRF header on writes.
+    AgentApiKeyCreate:
+      title: AgentApiKeyCreate
+      type: object
+      properties:
+        agentId:
+          type: string
+          description: Letters, digits, '.', '_' or '-', up to 64 characters, starting with a letter or digit.
+        name:
+          type: string
+          nullable: true
+          description: A label for the Settings page, up to 100 characters.
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the key stops working; null for no expiry. Must be in the future.
+    AgentApiKeyIssued:
+      title: AgentApiKeyIssued
+      type: object
+      properties:
+        key:
+          type: string
+          description: The full key. Shown once; it cannot be retrieved again.
+        issued:
+          $ref: '#/components/schemas/AgentApiKeyInfo'
+        state:
+          $ref: '#/components/schemas/AgentApiKeyState'
+    AgentApiKeyProblem:
+      title: AgentApiKeyProblem
+      type: object
+      properties:
+        code:
+          type: string
+          description: Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken.
+        errors:
+          type: array
+          items:
+            type: string
     McpActivityCount:
       title: McpActivityCount
       type: object
@@ -6293,6 +6525,9 @@ components:
             - commandNotSent
             - updateMcpSettings
             - mcpAccessRefused
+            - agentApiKeyCreated
+            - agentApiKeyRevoked
+            - agentApiKeyRemoved
         comment:
           type: string
           nullable: true
@@ -6434,3 +6669,4 @@ tags:
   - name: Agent
   - name: Simulation
   - name: McpAccess
+  - name: AgentKeys

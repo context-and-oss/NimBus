@@ -2283,6 +2283,128 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public interface IAgentKeysApiController
+    {
+
+        /// <summary>
+        /// List the agent API keys
+        /// </summary>
+
+        /// <remarks>
+        /// Spec 039. Site Owner only. Every issued key with its status and last use, never the secret, plus an antiforgery token for the write operations.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyState>> GetAdminAgentKeysAsync();
+
+        /// <summary>
+        /// Issue an agent API key
+        /// </summary>
+
+        /// <remarks>
+        /// Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full key once; only its hash is stored. The key authenticates as agentId on /api/agent/* and nowhere else, on every instance within 30 seconds.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyIssued>> PostAdminAgentKeysAsync(AgentApiKeyCreate body);
+
+        /// <summary>
+        /// Revoke an agent API key
+        /// </summary>
+
+        /// <remarks>
+        /// Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. The key stops working on every instance within 30 seconds and stays listed until it is removed.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyState>> PostAdminAgentKeyRevokeAsync(string keyId);
+
+        /// <summary>
+        /// Remove a revoked or expired agent API key
+        /// </summary>
+
+        /// <remarks>
+        /// Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active key must be revoked first (400 StillActive).
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyState>> DeleteAdminAgentKeyAsync(string keyId);
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentKeysApiController : Microsoft.AspNetCore.Mvc.Controller
+    {
+        private IAgentKeysApiController _implementation;
+
+        public AgentKeysApiController(IAgentKeysApiController implementation)
+        {
+            _implementation = implementation;
+        }
+
+        /// <summary>
+        /// List the agent API keys
+        /// </summary>
+        /// <remarks>
+        /// Spec 039. Site Owner only. Every issued key with its status and last use, never the secret, plus an antiforgery token for the write operations.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/agent-keys")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyState>> GetAdminAgentKeys()
+        {
+
+            return _implementation.GetAdminAgentKeysAsync();
+        }
+
+        /// <summary>
+        /// Issue an agent API key
+        /// </summary>
+        /// <remarks>
+        /// Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full key once; only its hash is stored. The key authenticates as agentId on /api/agent/* and nowhere else, on every instance within 30 seconds.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/agent-keys")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyIssued>> PostAdminAgentKeys([Microsoft.AspNetCore.Mvc.FromBody] AgentApiKeyCreate body)
+        {
+
+            return _implementation.PostAdminAgentKeysAsync(body);
+        }
+
+        /// <summary>
+        /// Revoke an agent API key
+        /// </summary>
+        /// <remarks>
+        /// Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. The key stops working on every instance within 30 seconds and stays listed until it is removed.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/agent-keys/{keyId}/revoke")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyState>> PostAdminAgentKeyRevoke(string keyId)
+        {
+
+            return _implementation.PostAdminAgentKeyRevokeAsync(keyId);
+        }
+
+        /// <summary>
+        /// Remove a revoked or expired agent API key
+        /// </summary>
+        /// <remarks>
+        /// Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active key must be revoked first (400 StillActive).
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpDelete, Microsoft.AspNetCore.Mvc.Route("api/admin/agent-keys/{keyId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyState>> DeleteAdminAgentKey(string keyId)
+        {
+
+            return _implementation.DeleteAdminAgentKeyAsync(keyId);
+        }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public interface IMessageApiController
     {
 
@@ -17508,6 +17630,518 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum AgentApiKeyStatus
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"active")]
+        Active = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"revoked")]
+        Revoked = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"expired")]
+        Expired = 2,
+
+    }
+
+    /// <summary>
+    /// An issued agent API key (Spec 039). Never carries the secret.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentApiKeyInfo : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _keyId;
+        private string _prefix;
+        private string _agentId;
+        private string _name;
+        private AgentApiKeyStatus _status;
+        private System.DateTime _createdAtUtc;
+        private string _createdBy;
+        private System.DateTime? _expiresAtUtc;
+        private System.DateTime? _revokedAtUtc;
+        private string _revokedBy;
+        private System.DateTime? _lastUsedAtUtc;
+
+        [Newtonsoft.Json.JsonProperty("keyId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string KeyId    {
+            get { return _keyId; }
+            set
+            {
+                if (_keyId != value)
+                {
+                    _keyId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The non-secret start of the key, nbak_&lt;keyId&gt;, to recognise it.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("prefix", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Prefix    {
+            get { return _prefix; }
+            set
+            {
+                if (_prefix != value)
+                {
+                    _prefix = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("agentId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string AgentId    {
+            get { return _agentId; }
+            set
+            {
+                if (_agentId != value)
+                {
+                    _agentId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public AgentApiKeyStatus Status    {
+            get { return _status; }
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("createdAtUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime CreatedAtUtc    {
+            get { return _createdAtUtc; }
+            set
+            {
+                if (_createdAtUtc != value)
+                {
+                    _createdAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("createdBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CreatedBy    {
+            get { return _createdBy; }
+            set
+            {
+                if (_createdBy != value)
+                {
+                    _createdBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("expiresAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ExpiresAtUtc    {
+            get { return _expiresAtUtc; }
+            set
+            {
+                if (_expiresAtUtc != value)
+                {
+                    _expiresAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("revokedAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? RevokedAtUtc    {
+            get { return _revokedAtUtc; }
+            set
+            {
+                if (_revokedAtUtc != value)
+                {
+                    _revokedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("revokedBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string RevokedBy    {
+            get { return _revokedBy; }
+            set
+            {
+                if (_revokedBy != value)
+                {
+                    _revokedBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Recorded at most every 5 minutes per instance; null when never used.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("lastUsedAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastUsedAtUtc    {
+            get { return _lastUsedAtUtc; }
+            set
+            {
+                if (_lastUsedAtUtc != value)
+                {
+                    _lastUsedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentApiKeyInfo FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentApiKeyInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentApiKeyState : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<AgentApiKeyInfo> _keys;
+        private string _csrfToken;
+
+        [Newtonsoft.Json.JsonProperty("keys", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<AgentApiKeyInfo> Keys    {
+            get { return _keys; }
+            set
+            {
+                if (_keys != value)
+                {
+                    _keys = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Send as the X-NimBus-CSRF header on writes.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("csrfToken", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CsrfToken    {
+            get { return _csrfToken; }
+            set
+            {
+                if (_csrfToken != value)
+                {
+                    _csrfToken = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentApiKeyState FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentApiKeyState>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentApiKeyCreate : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _agentId;
+        private string _name;
+        private System.DateTime? _expiresAtUtc;
+
+        /// <summary>
+        /// Letters, digits, '.', '_' or '-', up to 64 characters, starting with a letter or digit.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("agentId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string AgentId    {
+            get { return _agentId; }
+            set
+            {
+                if (_agentId != value)
+                {
+                    _agentId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// A label for the Settings page, up to 100 characters.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When the key stops working; null for no expiry. Must be in the future.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("expiresAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ExpiresAtUtc    {
+            get { return _expiresAtUtc; }
+            set
+            {
+                if (_expiresAtUtc != value)
+                {
+                    _expiresAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentApiKeyCreate FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentApiKeyCreate>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentApiKeyIssued : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _key;
+        private AgentApiKeyInfo _issued;
+        private AgentApiKeyState _state;
+
+        /// <summary>
+        /// The full key. Shown once; it cannot be retrieved again.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("key", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Key    {
+            get { return _key; }
+            set
+            {
+                if (_key != value)
+                {
+                    _key = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("issued", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public AgentApiKeyInfo Issued    {
+            get { return _issued; }
+            set
+            {
+                if (_issued != value)
+                {
+                    _issued = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("state", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public AgentApiKeyState State    {
+            get { return _state; }
+            set
+            {
+                if (_state != value)
+                {
+                    _state = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentApiKeyIssued FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentApiKeyIssued>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentApiKeyProblem : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _code;
+        private System.Collections.Generic.List<string> _errors;
+
+        /// <summary>
+        /// Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("code", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Code    {
+            get { return _code; }
+            set
+            {
+                if (_code != value)
+                {
+                    _code = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("errors", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Errors    {
+            get { return _errors; }
+            set
+            {
+                if (_errors != value)
+                {
+                    _errors = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentApiKeyProblem FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentApiKeyProblem>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class McpActivityCount : System.ComponentModel.INotifyPropertyChanged
     {
         private string _name;
@@ -20092,6 +20726,15 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"mcpAccessRefused")]
         McpAccessRefused = 36,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyCreated")]
+        AgentApiKeyCreated = 37,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyRevoked")]
+        AgentApiKeyRevoked = 38,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyRemoved")]
+        AgentApiKeyRemoved = 39,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -20389,6 +21032,15 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"mcpAccessRefused")]
         McpAccessRefused = 36,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyCreated")]
+        AgentApiKeyCreated = 37,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyRevoked")]
+        AgentApiKeyRevoked = 38,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyRemoved")]
+        AgentApiKeyRemoved = 39,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -20607,6 +21259,15 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"mcpAccessRefused")]
         McpAccessRefused = 36,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyCreated")]
+        AgentApiKeyCreated = 37,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyRevoked")]
+        AgentApiKeyRevoked = 38,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyRemoved")]
+        AgentApiKeyRemoved = 39,
 
     }
 

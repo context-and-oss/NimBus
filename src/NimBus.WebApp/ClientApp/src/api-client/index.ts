@@ -3373,6 +3373,242 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * List the agent API keys
+     * @return OK
+     */
+    getAdminAgentKeys(): Promise<AgentApiKeyState> {
+        let url_ = this.baseUrl + "/api/admin/agent-keys";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminAgentKeys(_response);
+        });
+    }
+
+    protected processGetAdminAgentKeys(response: Response): Promise<AgentApiKeyState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AgentApiKeyState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AgentApiKeyState>(null as any);
+    }
+
+    /**
+     * Issue an agent API key
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminAgentKeys(body?: AgentApiKeyCreate | undefined): Promise<AgentApiKeyIssued> {
+        let url_ = this.baseUrl + "/api/admin/agent-keys";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminAgentKeys(_response);
+        });
+    }
+
+    protected processPostAdminAgentKeys(response: Response): Promise<AgentApiKeyIssued> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AgentApiKeyIssued.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = AgentApiKeyProblem.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = AgentApiKeyProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AgentApiKeyIssued>(null as any);
+    }
+
+    /**
+     * Revoke an agent API key
+     * @return OK
+     */
+    postAdminAgentKeyRevoke(keyId: string): Promise<AgentApiKeyState> {
+        let url_ = this.baseUrl + "/api/admin/agent-keys/{keyId}/revoke";
+        if (keyId === undefined || keyId === null)
+            throw new globalThis.Error("The parameter 'keyId' must be defined.");
+        url_ = url_.replace("{keyId}", encodeURIComponent("" + keyId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminAgentKeyRevoke(_response);
+        });
+    }
+
+    protected processPostAdminAgentKeyRevoke(response: Response): Promise<AgentApiKeyState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AgentApiKeyState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = AgentApiKeyProblem.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = AgentApiKeyProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AgentApiKeyState>(null as any);
+    }
+
+    /**
+     * Remove a revoked or expired agent API key
+     * @return OK
+     */
+    deleteAdminAgentKey(keyId: string): Promise<AgentApiKeyState> {
+        let url_ = this.baseUrl + "/api/admin/agent-keys/{keyId}";
+        if (keyId === undefined || keyId === null)
+            throw new globalThis.Error("The parameter 'keyId' must be defined.");
+        url_ = url_.replace("{keyId}", encodeURIComponent("" + keyId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteAdminAgentKey(_response);
+        });
+    }
+
+    protected processDeleteAdminAgentKey(response: Response): Promise<AgentApiKeyState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AgentApiKeyState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = AgentApiKeyProblem.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = AgentApiKeyProblem.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = AgentApiKeyProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AgentApiKeyState>(null as any);
+    }
+
+    /**
      * Send a heartbeat to every monitored endpoint now
      * @return OK
      */
@@ -17557,6 +17793,385 @@ export interface IMcpAccessProblem {
     [key: string]: any;
 }
 
+export enum AgentApiKeyStatus {
+    Active = "active",
+    Revoked = "revoked",
+    Expired = "expired",
+}
+
+/** An issued agent API key (Spec 039). Never carries the secret. */
+export class AgentApiKeyInfo implements IAgentApiKeyInfo {
+    keyId?: string;
+    /** The non-secret start of the key, nbak_<keyId>, to recognise it. */
+    prefix?: string;
+    agentId?: string;
+    name?: string | undefined;
+    status?: AgentApiKeyStatus;
+    createdAtUtc?: moment.Moment;
+    createdBy?: string | undefined;
+    expiresAtUtc?: moment.Moment | undefined;
+    revokedAtUtc?: moment.Moment | undefined;
+    revokedBy?: string | undefined;
+    /** Recorded at most every 5 minutes per instance; null when never used. */
+    lastUsedAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IAgentApiKeyInfo) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.keyId = _data["keyId"];
+            this.prefix = _data["prefix"];
+            this.agentId = _data["agentId"];
+            this.name = _data["name"];
+            this.status = _data["status"];
+            this.createdAtUtc = _data["createdAtUtc"] ? moment(_data["createdAtUtc"].toString()) : undefined as any;
+            this.createdBy = _data["createdBy"];
+            this.expiresAtUtc = _data["expiresAtUtc"] ? moment(_data["expiresAtUtc"].toString()) : undefined as any;
+            this.revokedAtUtc = _data["revokedAtUtc"] ? moment(_data["revokedAtUtc"].toString()) : undefined as any;
+            this.revokedBy = _data["revokedBy"];
+            this.lastUsedAtUtc = _data["lastUsedAtUtc"] ? moment(_data["lastUsedAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): AgentApiKeyInfo {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentApiKeyInfo();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["keyId"] = this.keyId;
+        data["prefix"] = this.prefix;
+        data["agentId"] = this.agentId;
+        data["name"] = this.name;
+        data["status"] = this.status;
+        data["createdAtUtc"] = this.createdAtUtc ? this.createdAtUtc.toISOString() : undefined as any;
+        data["createdBy"] = this.createdBy;
+        data["expiresAtUtc"] = this.expiresAtUtc ? this.expiresAtUtc.toISOString() : undefined as any;
+        data["revokedAtUtc"] = this.revokedAtUtc ? this.revokedAtUtc.toISOString() : undefined as any;
+        data["revokedBy"] = this.revokedBy;
+        data["lastUsedAtUtc"] = this.lastUsedAtUtc ? this.lastUsedAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): AgentApiKeyInfo {
+        const json = this.toJSON();
+        let result = new AgentApiKeyInfo();
+        result.init(json);
+        return result;
+    }
+}
+
+/** An issued agent API key (Spec 039). Never carries the secret. */
+export interface IAgentApiKeyInfo {
+    keyId?: string;
+    /** The non-secret start of the key, nbak_<keyId>, to recognise it. */
+    prefix?: string;
+    agentId?: string;
+    name?: string | undefined;
+    status?: AgentApiKeyStatus;
+    createdAtUtc?: moment.Moment;
+    createdBy?: string | undefined;
+    expiresAtUtc?: moment.Moment | undefined;
+    revokedAtUtc?: moment.Moment | undefined;
+    revokedBy?: string | undefined;
+    /** Recorded at most every 5 minutes per instance; null when never used. */
+    lastUsedAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class AgentApiKeyState implements IAgentApiKeyState {
+    keys?: AgentApiKeyInfo[];
+    /** Send as the X-NimBus-CSRF header on writes. */
+    csrfToken?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IAgentApiKeyState) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["keys"])) {
+                this.keys = [] as any;
+                for (let item of _data["keys"])
+                    this.keys!.push(AgentApiKeyInfo.fromJS(item));
+            }
+            this.csrfToken = _data["csrfToken"];
+        }
+    }
+
+    static fromJS(data: any): AgentApiKeyState {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentApiKeyState();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.keys)) {
+            data["keys"] = [];
+            for (let item of this.keys)
+                data["keys"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["csrfToken"] = this.csrfToken;
+        return data;
+    }
+
+    clone(): AgentApiKeyState {
+        const json = this.toJSON();
+        let result = new AgentApiKeyState();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAgentApiKeyState {
+    keys?: AgentApiKeyInfo[];
+    /** Send as the X-NimBus-CSRF header on writes. */
+    csrfToken?: string;
+
+    [key: string]: any;
+}
+
+export class AgentApiKeyCreate implements IAgentApiKeyCreate {
+    /** Letters, digits, '.', '_' or '-', up to 64 characters, starting with a letter or digit. */
+    agentId?: string;
+    /** A label for the Settings page, up to 100 characters. */
+    name?: string | undefined;
+    /** When the key stops working; null for no expiry. Must be in the future. */
+    expiresAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IAgentApiKeyCreate) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.agentId = _data["agentId"];
+            this.name = _data["name"];
+            this.expiresAtUtc = _data["expiresAtUtc"] ? moment(_data["expiresAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): AgentApiKeyCreate {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentApiKeyCreate();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["agentId"] = this.agentId;
+        data["name"] = this.name;
+        data["expiresAtUtc"] = this.expiresAtUtc ? this.expiresAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): AgentApiKeyCreate {
+        const json = this.toJSON();
+        let result = new AgentApiKeyCreate();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAgentApiKeyCreate {
+    /** Letters, digits, '.', '_' or '-', up to 64 characters, starting with a letter or digit. */
+    agentId?: string;
+    /** A label for the Settings page, up to 100 characters. */
+    name?: string | undefined;
+    /** When the key stops working; null for no expiry. Must be in the future. */
+    expiresAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class AgentApiKeyIssued implements IAgentApiKeyIssued {
+    /** The full key. Shown once; it cannot be retrieved again. */
+    key?: string;
+    issued?: AgentApiKeyInfo;
+    state?: AgentApiKeyState;
+
+    [key: string]: any;
+
+    constructor(data?: IAgentApiKeyIssued) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.key = _data["key"];
+            this.issued = _data["issued"] ? AgentApiKeyInfo.fromJS(_data["issued"]) : undefined as any;
+            this.state = _data["state"] ? AgentApiKeyState.fromJS(_data["state"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): AgentApiKeyIssued {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentApiKeyIssued();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["key"] = this.key;
+        data["issued"] = this.issued ? this.issued.toJSON() : undefined as any;
+        data["state"] = this.state ? this.state.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): AgentApiKeyIssued {
+        const json = this.toJSON();
+        let result = new AgentApiKeyIssued();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAgentApiKeyIssued {
+    /** The full key. Shown once; it cannot be retrieved again. */
+    key?: string;
+    issued?: AgentApiKeyInfo;
+    state?: AgentApiKeyState;
+
+    [key: string]: any;
+}
+
+export class AgentApiKeyProblem implements IAgentApiKeyProblem {
+    /** Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken. */
+    code?: string;
+    errors?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: IAgentApiKeyProblem) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.code = _data["code"];
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): AgentApiKeyProblem {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentApiKeyProblem();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["code"] = this.code;
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        return data;
+    }
+
+    clone(): AgentApiKeyProblem {
+        const json = this.toJSON();
+        let result = new AgentApiKeyProblem();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAgentApiKeyProblem {
+    /** Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken. */
+    code?: string;
+    errors?: string[];
+
+    [key: string]: any;
+}
+
 export class McpActivityCount implements IMcpActivityCount {
     name?: string;
     count?: number;
@@ -19331,6 +19946,9 @@ export enum MessageAuditAuditType {
     CommandNotSent = "commandNotSent",
     UpdateMcpSettings = "updateMcpSettings",
     McpAccessRefused = "mcpAccessRefused",
+    AgentApiKeyCreated = "agentApiKeyCreated",
+    AgentApiKeyRevoked = "agentApiKeyRevoked",
+    AgentApiKeyRemoved = "agentApiKeyRemoved",
 }
 
 export class MessageContent implements IMessageContent {
@@ -19474,6 +20092,9 @@ export enum AuditSearchFilterAuditType {
     CommandNotSent = "commandNotSent",
     UpdateMcpSettings = "updateMcpSettings",
     McpAccessRefused = "mcpAccessRefused",
+    AgentApiKeyCreated = "agentApiKeyCreated",
+    AgentApiKeyRevoked = "agentApiKeyRevoked",
+    AgentApiKeyRemoved = "agentApiKeyRemoved",
 }
 
 export enum StalePendingRowVerdict {
@@ -19553,6 +20174,9 @@ export enum AuditEntryAuditType {
     CommandNotSent = "commandNotSent",
     UpdateMcpSettings = "updateMcpSettings",
     McpAccessRefused = "mcpAccessRefused",
+    AgentApiKeyCreated = "agentApiKeyCreated",
+    AgentApiKeyRevoked = "agentApiKeyRevoked",
+    AgentApiKeyRemoved = "agentApiKeyRemoved",
 }
 
 export enum AgentSettleRequestOutcome {

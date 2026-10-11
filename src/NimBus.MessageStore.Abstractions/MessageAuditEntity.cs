@@ -179,4 +179,16 @@ public enum MessageAuditType
     /// client are recorded as Data. Always recorded, deduplicated per caller and reason.
     /// </summary>
     McpAccessRefused,
+
+    /// <summary>
+    /// A site Owner issued an agent API key (Spec 039). The key id, agent id and name are
+    /// recorded as Data, never the key. Always recorded.
+    /// </summary>
+    AgentApiKeyCreated,
+
+    /// <summary>A site Owner revoked an agent API key (Spec 039). Always recorded.</summary>
+    AgentApiKeyRevoked,
+
+    /// <summary>A site Owner removed a revoked or expired agent API key (Spec 039). Always recorded.</summary>
+    AgentApiKeyRemoved,
 }

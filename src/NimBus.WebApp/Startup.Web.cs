@@ -126,6 +126,10 @@ public partial class Startup
         services.AddScoped<NimBus.WebApp.Mcp.Access.McpAccessSettingsService>();
         services.AddScoped<NimBus.WebApp.Mcp.Access.McpActivityService>();
         services.AddTransient<IMcpAccessApiController, McpAccessImplementation>();
+        // Spec 039: Settings → Agent keys. The key scheme itself is registered with the sign-in
+        // stack (Startup.Security).
+        services.AddScoped<NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyService>();
+        services.AddTransient<IAgentKeysApiController, AgentKeysImplementation>();
         services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();
         services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
 

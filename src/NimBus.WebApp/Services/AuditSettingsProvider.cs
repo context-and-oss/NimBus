@@ -61,6 +61,9 @@ public sealed class AuditSettingsProvider : IAuditSettingsProvider
         MessageAuditType.CommandNotSent,
         MessageAuditType.UpdateMcpSettings,
         MessageAuditType.McpAccessRefused,
+        MessageAuditType.AgentApiKeyCreated,
+        MessageAuditType.AgentApiKeyRevoked,
+        MessageAuditType.AgentApiKeyRemoved,
     };
 
     /// <summary>
