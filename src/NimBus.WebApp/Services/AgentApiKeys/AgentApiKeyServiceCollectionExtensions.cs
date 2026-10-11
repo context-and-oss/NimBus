@@ -63,7 +63,10 @@ internal sealed class AgentApiAuthorizationConvention : IControllerModelConventi
 {
     public void Apply(ControllerModel controller)
     {
-        if (controller.ControllerType == typeof(AgentApiController))
-            controller.Filters.Add(new AuthorizeFilter(AgentApiKeyDefaults.PolicyName));
+        if (controller.ControllerType != typeof(AgentApiController))
+            return;
+
+        controller.Filters.Add(new AuthorizeFilter(AgentApiKeyDefaults.PolicyName));
+        controller.Filters.Add(new AgentIdBindingFilter());
     }
 }

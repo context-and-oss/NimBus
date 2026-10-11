@@ -147,11 +147,36 @@ public class AgentApiAuthorizationTests
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    private static Task<HttpResponseMessage> SendAsync(string path, string? key = null, bool signedIn = false)
+    [TestMethod]
+    public async Task A_key_with_its_own_agent_id_header_is_accepted()
+    {
+        using var response = await SendAsync("/api/agent/catalog", key: _key, agentIdHeader: "enrichment-agent");
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task A_key_claiming_another_agent_id_is_forbidden()
+    {
+        using var response = await SendAsync("/api/agent/catalog", key: _key, agentIdHeader: "someone-else");
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task A_signed_in_person_keeps_choosing_the_agent_id_header()
+    {
+        using var response = await SendAsync("/api/agent/catalog", signedIn: true, agentIdHeader: "someone-else");
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    private static Task<HttpResponseMessage> SendAsync(string path, string? key = null, bool signedIn = false, string? agentIdHeader = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, path);
         if (key is not null) request.Headers.Add(AgentApiKeyDefaults.HeaderName, key);
         if (signedIn) request.Headers.Add(SignInHeader, "1");
+        if (agentIdHeader is not null) request.Headers.Add("X-Agent-Id", agentIdHeader);
         return _client.SendAsync(request);
     }
 

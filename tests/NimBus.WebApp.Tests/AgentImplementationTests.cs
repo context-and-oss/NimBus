@@ -193,6 +193,16 @@ public class AgentImplementationTests
         return new HttpContextAccessor { HttpContext = ctx };
     }
 
+    // An accessor whose caller authenticated with an agent API key (Spec 039) and sent no header.
+    private static IHttpContextAccessor AgentKeyContext(string agentId)
+    {
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            new[] { new System.Security.Claims.Claim(NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.AgentIdClaim, agentId) },
+            NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.SchemeName);
+        var ctx = new DefaultHttpContext { User = new System.Security.Claims.ClaimsPrincipal(identity) };
+        return new HttpContextAccessor { HttpContext = ctx };
+    }
+
     // Seeds a Pending+Handoff event under the Agent Zone endpoint, exactly as Task 7's
     // Agent Zone subscriber parks each agent event.
     private static Task SeedPendingHandoff(
@@ -711,6 +721,20 @@ public class AgentImplementationTests
         Assert.AreEqual(NimBus.MessageStore.MessageAuditType.FailHandoff, rows[0].AuditType);
         Assert.AreEqual("agent-bob", rows[0].AuditorName,
             "Auditor must be the settling agent (X-Agent-Id), not anonymous");
+    }
+
+    [TestMethod]
+    public async Task PostAgentSettle_with_an_agent_key_audits_the_key_agent()
+    {
+        var (impl, store, _, _, _) = BuildAgent(AgentKeyContext("enrichment-agent"));
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+        var result = await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
+
+        Assert.IsInstanceOfType(result, typeof(OkResult));
+        var rows = (await store.GetMessageAudits("evt-1")).ToList();
+        Assert.AreEqual("enrichment-agent", rows[0].AuditorName,
+            "A key-authenticated agent is audited as the key's agent, with or without X-Agent-Id");
     }
 
     [TestMethod]

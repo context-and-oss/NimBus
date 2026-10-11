@@ -15,6 +15,7 @@ using NimBus.MessageStore.States;
 using NimBus.SDK;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.AgentApiKeys;
 // Aliased to disambiguate from the NSwag-generated NimBus.WebApp.ManagementApi.* types.
 using CoreMessage = NimBus.Core.Messages.Message;
 using CoreMessageType = NimBus.Core.Messages.MessageType;
@@ -25,9 +26,9 @@ namespace NimBus.WebApp.Controllers.ApiContract;
 
 public class AgentImplementation : IAgentApiController
 {
-    // Header carrying a demo-grade agent identity. Full API-key auth is deferred;
-    // an X-Agent-Id header is the stand-in for v1 (spec 022).
-    private const string AgentIdHeader = "X-Agent-Id";
+    // The agent identity a signed-in caller may claim. A caller with an agent API key is
+    // identified by the key instead (Spec 039).
+    private const string AgentIdHeader = AgentIdBindingFilter.HeaderName;
     private const string DefaultAgentId = "demo-agent";
 
     // The pending sub-status discriminator the Agent Zone subscriber parks events under.
@@ -399,11 +400,17 @@ public class AgentImplementation : IAgentApiController
         }
     }
 
-    // Demo-grade agent identity: read the X-Agent-Id header, defaulting to
-    // "demo-agent" when absent. Full API-key auth is deferred (spec 022).
+    // A caller that authenticated with an agent API key is the key's agent (Spec 039); a
+    // mismatched X-Agent-Id never reaches here (AgentIdBindingFilter returns 403). Signed-in
+    // people keep the header, defaulting to "demo-agent" when absent.
     private string CurrentAgentId()
     {
-        var header = _httpContextAccessor?.HttpContext?.Request?.Headers[AgentIdHeader].ToString();
+        var context = _httpContextAccessor?.HttpContext;
+        var keyAgent = context?.User.FindFirst(AgentApiKeyDefaults.AgentIdClaim)?.Value;
+        if (!string.IsNullOrEmpty(keyAgent))
+            return keyAgent;
+
+        var header = context?.Request?.Headers[AgentIdHeader].ToString();
         return string.IsNullOrWhiteSpace(header) ? DefaultAgentId : header.Trim();
     }
 }
