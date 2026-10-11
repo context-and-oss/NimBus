@@ -626,4 +626,149 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.AreEqual(1, fetched.Heartbeats.Count);
         Assert.IsNull(fetched.Heartbeats[0].SdkVersion, "a probe that has not been answered carries no SDK version");
     }
+
+    [TestMethod]
+    public async Task GetAgentApiKeySettings_always_returns_the_singleton_record()
+    {
+        var store = CreateStore();
+
+        var settings = await store.GetAgentApiKeySettings();
+
+        // A shared backend may already carry saved keys, so the empty default is asserted on
+        // the type and only the never-null contract against the store.
+        Assert.IsNotNull(settings);
+        Assert.AreEqual(AgentApiKeySettings.SingletonId, settings.Id);
+        Assert.IsNotNull(settings.Keys);
+        Assert.IsNull(new AgentApiKeySettings().Revision);
+        Assert.AreEqual(0, new AgentApiKeySettings().Keys.Count);
+    }
+
+    [TestMethod]
+    public async Task TrySetAgentApiKeySettings_round_trips_every_field()
+    {
+        var store = CreateStore();
+        var sample = SampleAgentApiKeySettings();
+
+        await SaveAgentApiKeySettingsAsync(store, sample);
+        var stored = await store.GetAgentApiKeySettings();
+
+        Assert.AreEqual(sample.Revision, stored.Revision);
+        Assert.AreEqual(sample.UpdatedBy, stored.UpdatedBy);
+        Assert.AreEqual(sample.UpdatedAtUtc!.Value.Ticks, stored.UpdatedAtUtc!.Value.Ticks);
+        Assert.AreEqual(2, stored.Keys.Count);
+
+        var active = stored.Keys.Single(k => k.KeyId == "abcdefghijkl");
+        Assert.AreEqual("enrichment-agent", active.AgentId);
+        Assert.AreEqual("Production enrichment", active.Name);
+        Assert.AreEqual("q83vEjRWeJ1mN9u5Hl1YGqHk8Ywq4cG4x3V5D8pX1Ak=", active.SecretHash);
+        Assert.AreEqual(T0.Ticks, active.CreatedAtUtc.Ticks);
+        Assert.AreEqual("owner@example.com", active.CreatedBy);
+        Assert.AreEqual(T0.AddDays(90).Ticks, active.ExpiresAtUtc!.Value.Ticks);
+        Assert.IsNull(active.RevokedAtUtc);
+        Assert.IsNull(active.RevokedBy);
+
+        var revoked = stored.Keys.Single(k => k.KeyId == "mnopqrstuvwx");
+        Assert.IsNull(revoked.Name);
+        Assert.IsNull(revoked.ExpiresAtUtc);
+        Assert.AreEqual(T0.AddHours(1).Ticks, revoked.RevokedAtUtc!.Value.Ticks);
+        Assert.AreEqual("owner@example.com", revoked.RevokedBy);
+    }
+
+    [TestMethod]
+    public async Task TrySetAgentApiKeySettings_refuses_a_stale_revision_and_keeps_the_record()
+    {
+        var store = CreateStore();
+        var saved = await SaveAgentApiKeySettingsAsync(store, SampleAgentApiKeySettings());
+
+        var stale = SampleAgentApiKeySettings();
+        stale.Keys.Clear();
+        stale.Revision = Guid.NewGuid().ToString();
+        Assert.IsFalse(await store.TrySetAgentApiKeySettings(stale, Guid.NewGuid().ToString()));
+
+        // Null means "create": refused because a record exists.
+        Assert.IsFalse(await store.TrySetAgentApiKeySettings(stale, null));
+
+        var stored = await store.GetAgentApiKeySettings();
+        Assert.AreEqual(saved, stored.Revision);
+        Assert.AreEqual(2, stored.Keys.Count);
+    }
+
+    [TestMethod]
+    public async Task TrySetAgentApiKeySettings_lets_exactly_one_of_two_concurrent_writers_win()
+    {
+        var store = CreateStore();
+        var current = await SaveAgentApiKeySettingsAsync(store, SampleAgentApiKeySettings());
+
+        var first = SampleAgentApiKeySettings();
+        first.Revision = Guid.NewGuid().ToString();
+        var second = SampleAgentApiKeySettings();
+        second.Revision = Guid.NewGuid().ToString();
+
+        var results = await Task.WhenAll(
+            store.TrySetAgentApiKeySettings(first, current),
+            store.TrySetAgentApiKeySettings(second, current));
+
+        Assert.AreEqual(1, results.Count(r => r));
+        var winner = results[0] ? first.Revision : second.Revision;
+        Assert.AreEqual(winner, (await store.GetAgentApiKeySettings()).Revision);
+    }
+
+    [TestMethod]
+    public async Task RecordAgentApiKeyUse_records_and_overwrites_per_key()
+    {
+        var store = CreateStore();
+        // Key ids scoped to this test so a shared backend's other rows don't interfere.
+        var keyA = _scope + "-a";
+        var keyB = _scope + "-b";
+
+        await store.RecordAgentApiKeyUse(keyA, T0);
+        await store.RecordAgentApiKeyUse(keyB, T0.AddMinutes(1));
+        await store.RecordAgentApiKeyUse(keyA, T0.AddMinutes(10));
+
+        var usage = (await store.GetAgentApiKeyUsage())
+            .Where(u => u.KeyId == keyA || u.KeyId == keyB)
+            .ToDictionary(u => u.KeyId, u => u.LastUsedAtUtc);
+
+        Assert.AreEqual(2, usage.Count);
+        Assert.AreEqual(T0.AddMinutes(10).Ticks, usage[keyA].Ticks);
+        Assert.AreEqual(T0.AddMinutes(1).Ticks, usage[keyB].Ticks);
+    }
+
+    /// <summary>Saves <paramref name="settings"/> over whatever is stored and returns its new revision.</summary>
+    private static async Task<string> SaveAgentApiKeySettingsAsync(IEndpointMetadataStore store, AgentApiKeySettings settings)
+    {
+        var current = await store.GetAgentApiKeySettings();
+        settings.Revision = Guid.NewGuid().ToString();
+        Assert.IsTrue(await store.TrySetAgentApiKeySettings(settings, current.Revision));
+        return settings.Revision;
+    }
+
+    private static AgentApiKeySettings SampleAgentApiKeySettings() => new()
+    {
+        UpdatedBy = "owner@example.com",
+        UpdatedAtUtc = T0.AddHours(1),
+        Keys =
+        {
+            new AgentApiKey
+            {
+                KeyId = "abcdefghijkl",
+                AgentId = "enrichment-agent",
+                Name = "Production enrichment",
+                SecretHash = "q83vEjRWeJ1mN9u5Hl1YGqHk8Ywq4cG4x3V5D8pX1Ak=",
+                CreatedAtUtc = T0,
+                CreatedBy = "owner@example.com",
+                ExpiresAtUtc = T0.AddDays(90),
+            },
+            new AgentApiKey
+            {
+                KeyId = "mnopqrstuvwx",
+                AgentId = "triage-agent",
+                SecretHash = "3Yz2vT0pG8hJ6kL4mN1qR7sU9wX5aB2cD4eF6gH8iJ0=",
+                CreatedAtUtc = T0,
+                CreatedBy = "owner@example.com",
+                RevokedAtUtc = T0.AddHours(1),
+                RevokedBy = "owner@example.com",
+            },
+        },
+    };
 }

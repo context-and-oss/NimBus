@@ -50,6 +50,9 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     // Compare-and-set on the revision, so the read and the write share one lock.
     private readonly object _mcpAccessLock = new();
     private McpAccessSettings? _mcpAccessSettings;
+    private readonly object _agentApiKeysLock = new();
+    private AgentApiKeySettings? _agentApiKeySettings;
+    private readonly ConcurrentDictionary<string, DateTime> _agentApiKeyUsage = new(StringComparer.Ordinal);
 
     private (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -911,6 +914,41 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
             _mcpAccessSettings = stored;
             return Task.FromResult(true);
         }
+    }
+
+    public virtual Task<AgentApiKeySettings> GetAgentApiKeySettings()
+    {
+        lock (_agentApiKeysLock)
+        {
+            return Task.FromResult(_agentApiKeySettings?.Clone() ?? new AgentApiKeySettings());
+        }
+    }
+
+    public virtual Task<bool> TrySetAgentApiKeySettings(AgentApiKeySettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        lock (_agentApiKeysLock)
+        {
+            if (!string.Equals(_agentApiKeySettings?.Revision, expectedRevision, StringComparison.Ordinal))
+                return Task.FromResult(false);
+
+            var stored = settings.Clone();
+            stored.Id = AgentApiKeySettings.SingletonId;
+            _agentApiKeySettings = stored;
+            return Task.FromResult(true);
+        }
+    }
+
+    public virtual Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage()
+        => Task.FromResult(_agentApiKeyUsage
+            .Select(u => new AgentApiKeyUsage { KeyId = u.Key, LastUsedAtUtc = u.Value })
+            .ToList());
+
+    public virtual Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyId);
+        _agentApiKeyUsage[keyId] = usedAtUtc;
+        return Task.CompletedTask;
     }
 
     public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)

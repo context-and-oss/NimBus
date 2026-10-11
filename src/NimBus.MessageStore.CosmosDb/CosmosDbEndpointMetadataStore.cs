@@ -348,6 +348,96 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         }
     }
 
+    public async Task<AgentApiKeySettings> GetAgentApiKeySettings()
+    {
+        var container = await _getSettingsContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<AgentApiKeySettings>(
+                AgentApiKeySettings.SingletonId,
+                new PartitionKey(AgentApiKeySettings.SingletonId));
+            return response.Resource ?? new AgentApiKeySettings();
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new AgentApiKeySettings();
+        }
+    }
+
+    public async Task<bool> TrySetAgentApiKeySettings(AgentApiKeySettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The keys must carry their new revision.", nameof(settings));
+        settings.Id = AgentApiKeySettings.SingletonId;
+        var partitionKey = new PartitionKey(AgentApiKeySettings.SingletonId);
+
+        // Same compare-and-set shape as TrySetMcpAccessSettings.
+        var container = await _getSettingsContainer();
+        try
+        {
+            if (expectedRevision is null)
+            {
+                await container.CreateItemAsync(settings, partitionKey);
+                return true;
+            }
+
+            var current = await container.ReadItemAsync<AgentApiKeySettings>(AgentApiKeySettings.SingletonId, partitionKey);
+            if (!string.Equals(current.Resource?.Revision, expectedRevision, StringComparison.Ordinal))
+                return false;
+
+            await container.UpsertItemAsync(settings, partitionKey, new ItemRequestOptions { IfMatchEtag = current.ETag });
+            return true;
+        }
+        catch (CosmosException e) when (e.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
+    public async Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage()
+    {
+        var container = await _getSettingsContainer();
+        var query = new QueryDefinition("SELECT * FROM c WHERE STARTSWITH(c.id, @prefix)")
+            .WithParameter("@prefix", AgentApiKeyUsageDocument.IdPrefix);
+        var usage = new List<AgentApiKeyUsage>();
+        using var iterator = container.GetItemQueryIterator<AgentApiKeyUsageDocument>(query);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var document in await iterator.ReadNextAsync())
+            {
+                usage.Add(new AgentApiKeyUsage { KeyId = document.KeyId, LastUsedAtUtc = document.LastUsedAtUtc });
+            }
+        }
+        return usage;
+    }
+
+    public async Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyId);
+        // One small document per key in the settings container (partitioned on /id).
+        var document = new AgentApiKeyUsageDocument
+        {
+            Id = AgentApiKeyUsageDocument.IdPrefix + keyId,
+            KeyId = keyId,
+            LastUsedAtUtc = usedAtUtc,
+        };
+        var container = await _getSettingsContainer();
+        await container.UpsertItemAsync(document, new PartitionKey(document.Id));
+    }
+
+    private sealed class AgentApiKeyUsageDocument
+    {
+        public const string IdPrefix = "AgentApiKeyUsage-";
+
+        [Newtonsoft.Json.JsonProperty("id")]
+        public string Id { get; set; } = string.Empty;
+
+        public string KeyId { get; set; } = string.Empty;
+
+        public DateTime LastUsedAtUtc { get; set; }
+    }
+
     public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         // The ETag precondition is what makes at most one scaled-out instance send

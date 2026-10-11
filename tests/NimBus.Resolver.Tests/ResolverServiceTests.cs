@@ -903,6 +903,10 @@ public class ResolverServiceTests
         public Task<AuditSettings> GetAuditSettings() => Task.FromResult(new AuditSettings());
         public Task<McpAccessSettings> GetMcpAccessSettings() => Task.FromResult(new McpAccessSettings());
         public Task<bool> TrySetMcpAccessSettings(McpAccessSettings settings, string? expectedRevision) => Task.FromResult(true);
+        public Task<AgentApiKeySettings> GetAgentApiKeySettings() => Task.FromResult(new AgentApiKeySettings());
+        public Task<bool> TrySetAgentApiKeySettings(AgentApiKeySettings settings, string? expectedRevision) => Task.FromResult(true);
+        public Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage() => Task.FromResult(new List<AgentApiKeyUsage>());
+        public Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc) => Task.CompletedTask;
         public Task<bool> SetAuditSettings(AuditSettings settings) => Task.FromResult(true);
         public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore) => Task.FromResult(true);
         public Task<List<HeartbeatOverviewItem>> GetHeartbeatOverview() => Task.FromResult(new List<HeartbeatOverviewItem>());

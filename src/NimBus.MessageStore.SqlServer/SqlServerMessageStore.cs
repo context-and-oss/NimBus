@@ -179,6 +179,11 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<McpAccessSettings> GetMcpAccessSettings() => _endpointMetadata.GetMcpAccessSettings();
     public Task<bool> TrySetMcpAccessSettings(McpAccessSettings settings, string? expectedRevision)
         => _endpointMetadata.TrySetMcpAccessSettings(settings, expectedRevision);
+    public Task<AgentApiKeySettings> GetAgentApiKeySettings() => _endpointMetadata.GetAgentApiKeySettings();
+    public Task<bool> TrySetAgentApiKeySettings(AgentApiKeySettings settings, string? expectedRevision)
+        => _endpointMetadata.TrySetAgentApiKeySettings(settings, expectedRevision);
+    public Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage() => _endpointMetadata.GetAgentApiKeyUsage();
+    public Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc) => _endpointMetadata.RecordAgentApiKeyUse(keyId, usedAtUtc);
     // ───────── Durable endpoint heartbeat history — implementation in SqlServerHeartbeatHistoryStore ─────────
     public Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
         => _heartbeatHistory.GetHeartbeatUptimeDays(fromDayUtc);

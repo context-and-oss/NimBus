@@ -46,6 +46,8 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         "EndpointAcknowledgements",
         "AuditSettings",
         "McpAccessSettings",
+        "AgentApiKeys",
+        "AgentApiKeyUsage",
     };
 
     private static readonly string[] RequiredViews =
