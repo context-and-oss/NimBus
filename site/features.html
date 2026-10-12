@@ -131,6 +131,30 @@
                 ><span class="pkg">Akaule.NimBus.MessageStore.CosmosDb</span>
               </div>
             </article>
+            <article class="card">
+              <h3>CloudEvents interop</h3>
+              <p>
+                An endpoint can opt in to publishing or consuming CloudEvents
+                1.0, in binary or structured JSON mode. Subscribers can detect
+                the format, and sessions, retries, and tracking keep working.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.SDK</span
+                ><span class="pkg">UseCloudEvents</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Commands</h3>
+              <p>
+                Deriving a message from <code>Command</code> marks it as an
+                instruction with exactly one consumer. Topology provisioning
+                fails if a command has no consumer, or more than one.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Abstractions</span
+                ><span class="pkg">Command</span>
+              </div>
+            </article>
           </div>
         </div>
       </section>
@@ -146,11 +170,13 @@
             <article class="card">
               <h3>Retry policies with backoff</h3>
               <p>
-                Per-event and per-exception-pattern retry policies with fixed,
-                linear, or exponential backoff strategies.
+                Retry policies per event type, exception type, or exception
+                text, with fixed, linear, or exponential backoff, optional
+                jitter, and support for server <code>Retry-After</code> hints.
               </p>
               <div class="pkgs">
-                <span class="pkg">Akaule.NimBus.Core</span>
+                <span class="pkg">Akaule.NimBus.Core</span
+                ><span class="pkg">IRetryAfterHint</span>
               </div>
             </article>
             <article class="card">
@@ -209,6 +235,47 @@
                 <span class="pkg">Akaule.NimBus.Outbox.SqlServer</span>
               </div>
             </article>
+            <article class="card">
+              <h3>Consumer inbox</h3>
+              <p>
+                An opt-in inbox records each successfully handled
+                <code>MessageId</code> per endpoint and skips a redelivered
+                duplicate instead of running the handler again. It stores to SQL
+                Server or Cosmos DB, with an in-memory store for tests.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Inbox.SqlServer</span
+                ><span class="pkg">Akaule.NimBus.MessageStore.CosmosDb</span
+                ><span class="pkg">UseInbox</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Endpoint circuit breaker</h3>
+              <p>
+                An opt-in breaker stops an endpoint's receivers when handler
+                failures pass a threshold, so queued messages stay on the
+                subscription in order. It then probes with one session at a time
+                and restores full concurrency once the probes succeed.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.SDK</span
+                ><span class="pkg">WithCircuitBreaker</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Pending handoff for long-running work</h3>
+              <p>
+                A handler can hand a message to an external job and return. The
+                session stays blocked, in order, until the job reports back and
+                the message is completed or failed, without the handler running
+                again.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.SDK</span
+                ><span class="pkg">MarkPendingHandoff</span
+                ><span class="pkg">IHandoffClient</span>
+              </div>
+            </article>
           </div>
         </div>
       </section>
@@ -259,12 +326,12 @@
               <p>
                 Health probes for Service Bus and the message store, served on
                 <code>/health</code>, <code>/alive</code>, and
-                <code>/ready</code>. The platform heartbeat probes every endpoint
-                and checks that the Resolver is running.
+                <code>/ready</code>.
               </p>
               <div class="pkgs">
                 <span class="pkg">Akaule.NimBus.ServiceBus</span
-                ><span class="pkg">Akaule.NimBus.WebApp</span>
+                ><span class="pkg">Akaule.NimBus.MessageStore.SqlServer</span
+                ><span class="pkg">Akaule.NimBus.MessageStore.CosmosDb</span>
               </div>
             </article>
             <article class="card">
@@ -282,11 +349,74 @@
             <article class="card">
               <h3>Failure notifications</h3>
               <p>
-                Failures, dead-letters, and session blocks fan out to pluggable
-                notification channels such as webhooks or email.
+                Failures, dead-letters, and session blocks fan out to
+                notification channels: a webhook, Microsoft Teams, or email.
               </p>
               <div class="pkgs">
                 <span class="pkg">Akaule.NimBus.Extensions.Notifications</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Platform heartbeat</h3>
+              <p>
+                The WebApp sends a probe to every endpoint and the Resolver, and
+                shows each one's status, round-trip time, and SDK version.
+                Endpoints answer automatically, with no handler to write.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.WebApp</span
+                ><span class="pkg">/Heartbeat</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Failed messages page</h3>
+              <p>
+                One page lists every unresolved failure across the endpoints you
+                can read, with a failures-over-time chart, filters, and list,
+                by-endpoint, and by-error views. Resubmit or skip from any view.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.WebApp</span
+                ><span class="pkg">/Failed</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Role-based access</h3>
+              <p>
+                Reader, Contributor, and Owner roles apply site-wide and per
+                endpoint, managed on the Access Control page. A separate PII
+                Reader role sees raw values in <code>[Sensitive]</code> fields,
+                which are otherwise redacted, partly revealed, or hashed.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.WebApp</span
+                ><span class="pkg">[Sensitive]</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Subscription incident response</h3>
+              <p>
+                When a producer floods the bus, site Owners can find the
+                backlog on the Topology page and stop or clear it per
+                subscription without touching other endpoints. Every action is
+                audited.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.WebApp</span
+                ><span class="pkg">/Topology</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Private networking (preview)</h3>
+              <p>
+                <code>nb infra apply --network-mode private</code> deploys
+                Service Bus Premium, the store, and both apps behind private
+                endpoints in your VNet, with public access off. It hasn't yet
+                been verified on a live Azure deployment.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.CommandLine</span
+                ><span class="pkg">--network-mode private</span>
               </div>
             </article>
           </div>
@@ -366,6 +496,48 @@
               </div>
             </article>
             <article class="card">
+              <h3>Local stack from packages</h3>
+              <p>
+                An adapter repository's Aspire AppHost can run the Service Bus
+                emulator, topology provisioning, the Resolver, and the WebApp
+                from NuGet tool packages, with no NimBus source checkout.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.AspireHosting</span
+                ><span class="pkg">Akaule.NimBus.ServiceBusEmulator</span
+                ><span class="pkg">Akaule.NimBus.Resolver.Host</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>AsyncAPI and EventCatalog export</h3>
+              <p>
+                <code>nb asyncapi</code> exports the platform as an AsyncAPI 3.0
+                document, validates one, and diffs two, exiting non-zero on a
+                breaking change so it can gate a build.
+                <code>nb catalog export</code> writes a runnable EventCatalog
+                site.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.CommandLine</span
+                ><span class="pkg">nb asyncapi</span
+                ><span class="pkg">nb catalog export</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Simulate traffic</h3>
+              <p>
+                A site Owner can turn on a Simulate page that publishes
+                schema-valid generated events and stands in for chosen
+                consumers, each with a failure mode. Traffic goes through the
+                real bus and Resolver; production environments are always
+                blocked.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.WebApp</span
+                ><span class="pkg">/Simulate</span>
+              </div>
+            </article>
+            <article class="card">
               <h3>AI-agent integration</h3>
               <p>
                 A schema registry and REST agent API let AI agents discover event
@@ -409,8 +581,9 @@
               <h3>Notifications extension</h3>
               <p>
                 Configurable notifications on lifecycle events (failure and
-                dead-letter by default) through pluggable
-                <code>INotificationChannel</code> implementations.
+                dead-letter by default) through webhook, Microsoft Teams, and
+                email channels, or your own <code>INotificationChannel</code>,
+                with per-channel severity filters and rate limiting.
               </p>
               <div class="pkgs">
                 <span class="pkg">Akaule.NimBus.Extensions.Notifications</span>
@@ -425,6 +598,32 @@
               </p>
               <div class="pkgs">
                 <span class="pkg">Akaule.NimBus.Extensions.Identity</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Failure classification</h3>
+              <p>
+                Off by default. An operator asks for one failed or dead-lettered
+                message to be classified, sending size-limited, redacted
+                evidence to the TypeSafe provider. The result is stored with its
+                history and comes with fixed guidance: retry may help, change
+                likely required, investigate, or uncertain. It never changes
+                message state.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Extensions.IntegrationIntelligence</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Entra tokens for adapter HTTP clients</h3>
+              <p>
+                <code>AddAzureBearerToken</code> adds a cached Microsoft Entra
+                bearer token to an <code>IHttpClientFactory</code> client, for
+                calls to Dataverse, Business Central, or Finance and Operations.
+              </p>
+              <div class="pkgs">
+                <span class="pkg">Akaule.NimBus.Extensions.Http</span
+                ><span class="pkg">AddAzureBearerToken</span>
               </div>
             </article>
           </div>
