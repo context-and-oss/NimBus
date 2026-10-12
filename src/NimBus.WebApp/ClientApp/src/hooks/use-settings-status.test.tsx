@@ -25,6 +25,7 @@ vi.mock("api-client", async () => {
 const originalFetch = globalThis.fetch;
 const mcpState = { saved: { enabled: true }, policyLoaded: true, deployment: { mode: "entra" }, csrfToken: "csrf-test" };
 const fiState = { active: { enabled: false }, savedApiKey: "none" };
+const agentKeysState = { keys: [{ keyId: "abcdefghijkl", status: "active" }], csrfToken: "csrf-test" };
 
 function routedFetch(overrides: Record<string, () => Response> = {}) {
   const fetchMock = vi.fn((url: string) => {
@@ -34,6 +35,7 @@ function routedFetch(overrides: Record<string, () => Response> = {}) {
     if (url.startsWith("/api/admin/mcp/activity")) return Promise.resolve(Response.json({ actions: 3, refused: 1 }));
     if (url.startsWith("/api/admin/failure-intelligence")) return Promise.resolve(Response.json(fiState));
     if (url.startsWith("/api/admin/mcp/turn-off")) return Promise.resolve(Response.json(mcpState));
+    if (url.startsWith("/api/admin/agent-keys")) return Promise.resolve(Response.json(agentKeysState));
     return Promise.resolve(new Response(null, { status: 404 }));
   });
   globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -64,6 +66,7 @@ describe("useSettingsStatus", () => {
     expect(result.current.snapshot.fi).toMatchObject(fiState);
     expect(result.current.snapshot.simulation).toMatchObject({ allowed: true });
     expect(result.current.snapshot.audit).toBeDefined();
+    await waitFor(() => expect(result.current.snapshot.agentKeys).toMatchObject(agentKeysState));
   });
 
   it("marks only the feature whose API failed", async () => {

@@ -4,6 +4,7 @@ import {
   type McpActivity,
   type McpState,
 } from "components/admin/mcp-access-model";
+import { activeKeyCount, type AgentKeysState } from "components/admin/agent-keys-model";
 
 // Status, summary and quick action for each row of the Settings list
 // (Spec 038 §7). Pure: the data comes from use-settings-status.
@@ -47,6 +48,7 @@ export interface SettingsSnapshot {
   simulation?: api.SimulationStatus | "error";
   audit?: api.AuditSettings | "error";
   heartbeat?: { settings: api.HeartbeatSettings; overview: api.HeartbeatOverviewRow[] } | "error";
+  agentKeys?: AgentKeysState | "error";
 }
 
 const UNAVAILABLE: FeatureStatus = {
@@ -167,6 +169,21 @@ function heartbeat(data: NonNullable<SettingsSnapshot["heartbeat"]>): FeatureSta
   };
 }
 
+function agentKeys(state: NonNullable<SettingsSnapshot["agentKeys"]>): FeatureStatus {
+  if (state === "error") return UNAVAILABLE;
+  const active = activeKeyCount(state);
+  // Issuing a key widens access, so it opens the panel rather than acting inline.
+  return active > 0
+    ? { tone: "ok", label: `${active} active`, summary: "Agents sign in to the agent API with these keys", on: true }
+    : {
+        tone: "off",
+        label: "No active keys",
+        summary: "Agents can't call the agent API where sign-in is required",
+        on: false,
+        quick: { kind: "open", label: "Issue key…", tab: "keys" },
+      };
+}
+
 /** A row's status, or undefined while that feature's state is still loading. */
 export function featureStatus(featureId: string, snapshot: SettingsSnapshot): FeatureStatus | undefined {
   switch (featureId) {
@@ -180,6 +197,8 @@ export function featureStatus(featureId: string, snapshot: SettingsSnapshot): Fe
       return snapshot.audit && audit(snapshot.audit);
     case "heartbeat":
       return snapshot.heartbeat && heartbeat(snapshot.heartbeat);
+    case "agent-keys":
+      return snapshot.agentKeys && agentKeys(snapshot.agentKeys);
     default:
       return undefined;
   }

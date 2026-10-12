@@ -68,6 +68,17 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     ],
   },
   {
+    id: "agent-keys",
+    group: "AI & agents",
+    name: "Agent keys",
+    description:
+      "Issue and revoke the keys agents built on NimBus.Agents use to call the agent API.",
+    applies: "Applies to every instance within 30 s",
+    tabs: [
+      { id: "keys", label: "Keys", keywords: "agent api key issue revoke remove expiry last used nimbus.agents" },
+    ],
+  },
+  {
     id: "heartbeat",
     group: "Monitoring",
     name: "Heartbeat probing",
