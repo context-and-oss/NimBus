@@ -233,7 +233,7 @@ export default function AgentKeysSettings() {
         )}
 
         <Card>
-          <CardContent className="p-0">
+          <CardContent className="overflow-x-auto p-0">
             {state.keys.length === 0 ? (
               <div className="px-5 py-8 text-center">
                 <p className="font-medium">No agent keys yet</p>
@@ -258,7 +258,7 @@ export default function AgentKeysSettings() {
                   {state.keys.map((k) => (
                     <tr key={k.keyId} className="border-b border-border last:border-0">
                       <td className="px-4 py-2">
-                        <div className="font-medium">{k.agentId}</div>
+                        <div className="whitespace-nowrap font-medium">{k.agentId}</div>
                         {k.name && <div className="text-xs text-muted-foreground">{k.name}</div>}
                       </td>
                       <td className="px-4 py-2 font-mono text-xs">{k.prefix}</td>
