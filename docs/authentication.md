@@ -33,7 +33,14 @@ Entra OIDC flow.
 
 ## Agent API keys
 
-Agents built on `NimBus.Agents` call the agent API (`/api/agent/*`) without a person signed in. A site Owner issues each agent its own key under **Settings → Agent keys** in nimbus-ops, or through `POST /api/admin/agent-keys`. The design is [Spec 039](spec/039-agent-api-keys/spec.md).
+Agents built on `NimBus.Agents` call the agent API (`/api/agent/*`) without a person signed in. A site Owner issues each agent its own key through the nimbus-ops admin API; nimbus-ops has no page for agent keys yet. The design is [Spec 039](spec/039-agent-api-keys/spec.md).
+
+| Request | Does |
+|---|---|
+| `GET /api/admin/agent-keys` | Lists the keys, without their secrets, and returns the `csrfToken` that the requests below must send as the `X-NimBus-CSRF` header |
+| `POST /api/admin/agent-keys` | Issues a key. Body: `agentId` (required), optional `name` and `expiresAtUtc`. The response's `key` is the full key |
+| `POST /api/admin/agent-keys/{keyId}/revoke` | Revokes a key |
+| `DELETE /api/admin/agent-keys/{keyId}` | Removes a revoked or expired key |
 
 - **Works in every sign-in mode**, Identity-only included. The key travels in the `X-NimBus-Agent-Key` header and has a scheme of its own, `AgentApiKey`, which is never a default.
 - **Admits only `/api/agent/*`.** A key gets 401 on every other endpoint, and its principal carries no admin marker and no object id, so it cannot hold a site or endpoint role. Signed-in people keep using the agent API as before.
