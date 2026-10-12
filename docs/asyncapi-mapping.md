@@ -39,8 +39,8 @@ Two ways to produce the same full-platform document:
 - **Management WebApp** — the **Topology** page's header offers
   **Download YAML** and **Download JSON** buttons. The endpoint is
   `GET /api/admin/asyncapi?format=yaml|json` (missing/empty `format` defaults to YAML; any other
-  value is a `400`). It is admin-only — restricted to the `EIP_Management` security group, the same
-  gate as the platform-config view — and returns the document as a `nimbus-asyncapi.yaml` /
+  value is a `400`). It is site **Owner** only — the same gate as the rest of `/api/admin`,
+  including `GET /api/admin/platform-config` — and returns the document as a `nimbus-asyncapi.yaml` /
   `nimbus-asyncapi.json` attachment. Both paths reuse the one exporter
   (`NimBus.ServiceBus.AsyncApi.AsyncApiExporter`), so the WebApp download and the CLI output are
   identical for the same platform.

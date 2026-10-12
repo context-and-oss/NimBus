@@ -1,8 +1,9 @@
 # Platform Heartbeat
 
-Operator reference for the **Health** tab in the NimBus WebApp admin page, which
-answers two questions: *are my endpoints reachable?* and *is NimBus itself
-running?*
+Operator reference for the platform heartbeat in the NimBus WebApp — the
+**Heartbeat** page (`/Heartbeat`) and **Settings → Heartbeat probing**
+(`/Settings/heartbeat`) — which answers two questions: *are my endpoints
+reachable?* and *is NimBus itself running?*
 
 The heartbeat probes every catalog endpoint without adapter authors writing a
 handler. The WebApp sends an ordinary `EventRequest` with
@@ -12,19 +13,24 @@ business event can collide with the probe); a subscriber on a current SDK answer
 `StrictMessageHandler`, and an older subscriber answers `UnsupportedResponse`,
 which still proves the endpoint is reachable.
 
-Access is site **Owner**, same as the rest of `/admin`. Every mutating action is
-audited (`UpdateHeartbeatSettings`, `SendHeartbeatNow`, `EnableEndpointHeartbeat`,
-`DisableEndpointHeartbeat`).
+The Heartbeat page is open to site Readers and above. Its **Platform services**
+card and the **Configure probing** link are shown to site Owners only, and
+**Settings → Heartbeat probing** is site **Owner** only, same as the rest of
+`/api/admin`. Every mutating action is audited (`UpdateHeartbeatSettings`,
+`SendHeartbeatNow`, `EnableEndpointHeartbeat`, `DisableEndpointHeartbeat`).
 
 ## Operator controls
+
+The controls live in **Settings → Heartbeat probing**: the schedule and **Send
+now** on its **Probing** tab, the per-endpoint switch on its **Endpoints** tab.
 
 | Control | Meaning |
 | --- | --- |
 | **Enabled** | Global switch for the scheduled per-endpoint fan-out. **Off by default.** It does not govern the Resolver probe or the timeout sweep — both run regardless. |
-| **Interval** | Seconds between scheduled fan-outs. Default 300, clamped to a minimum of 30. |
-| **Timeout** | Seconds a probe may stay `Pending` before the sweep settles it to `Off`. Default 60, clamped to between 5 and the interval — a timeout longer than the interval could never elapse between probes. |
+| **Interval seconds** | Seconds between scheduled fan-outs. Default 300, clamped to a minimum of 30. |
+| **Timeout seconds** | Seconds a probe may stay `Pending` before the sweep settles it to `Off`. Default 60, clamped to between 5 and the interval — a timeout longer than the interval could never elapse between probes. |
 | **Send now** | Writes a `Pending` row per included endpoint and probes them straight away, without waiting for the next interval. |
-| **Per-endpoint toggle** | Opts one endpoint out of the fan-out. An endpoint with no stored preference is included. |
+| **Included** (per endpoint) | Opts one endpoint out of the fan-out. An endpoint with no stored preference is included. |
 
 The background service ticks every 30 seconds. On each tick it sweeps timed-out
 probes, probes the Resolver, and — only when `Enabled` is on and the interval has
@@ -55,11 +61,13 @@ The reply's `MessageType` decides the outcome: `ResolutionResponse` → `On`,
 `UnsupportedResponse` → `Unsupported`, `ErrorResponse` and `DeferralResponse` →
 `Off`, anything else → `Unknown`.
 
-The overview shows round-trip time, last-seen timestamp and reported SDK
-version, all taken from the last real response — a timed-out probe carries none.
-A blank SDK version next to `Unsupported` means the adapter is running a
-pre-heartbeat SDK. "Last sent" reflects the most recent probe whatever its
-outcome.
+Round-trip time, last-seen timestamp and reported SDK version are all taken
+from the last real response — a timed-out probe carries none. The Heartbeat
+page's **Adapter status** table shows the SDK version; an `Unsupported` endpoint
+that reported none reads *pre-heartbeat SDK*, meaning the adapter is running a
+pre-heartbeat SDK. The per-endpoint round-trip and timestamps are returned by
+`GET /api/admin/heartbeat/overview`; the last-sent time reflects the most recent
+probe whatever its outcome.
 
 Endpoints the store has never seen are still listed, synthesized as `Unknown`
 from the platform catalog, so a fresh deployment shows the full endpoint list
@@ -76,7 +84,7 @@ blocked-session guard. Three consequences worth knowing:
 
 - **A blocked session still answers.** An endpoint whose session is blocked by a
   failed event is not dead, and the probe reports it as alive. This is the case
-  operators most often need the Health tab for.
+  operators most often need the Heartbeat page for.
 - **Probes never enter inbox deduplication.** Every probe carries a fresh id, so
   recording them would be pure waste.
 - **User handlers never run.** The reply is built and the message completed
@@ -124,7 +132,7 @@ instead of replying over the bus.
 
 Before this existed, every endpoint reading `Off` at once was the only hint that
 the Resolver had stopped — it is the Resolver that records every heartbeat reply.
-The Health tab now says so directly.
+The Platform services card now says so directly.
 
 ## Storage
 
@@ -198,7 +206,7 @@ records the probe as in flight; the Resolver's row is considered in flight
 precisely while it carries a probe message id.
 
 Status changes reach the browser live over SignalR, published from the Resolver
-through the storage hook. If the Health tab stops updating on its own but a
+through the storage hook. If the Heartbeat page stops updating on its own but a
 refresh shows fresh data, suspect the hook or the SignalR connection rather than
 the heartbeat.
 

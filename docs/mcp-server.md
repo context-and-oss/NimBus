@@ -90,8 +90,8 @@ There are two layers:
 
 - **The deployment** decides whether `/mcp` can exist and whom NimBus trusts for tokens:
   `NimBus__Mcp__Enabled`, `NimBus__Mcp__EnableForLocalDevelopment`, `NimBus__Mcp__Entra__*`,
-  `NimBus__Mcp__AllowedOrigins__*` and the `RateLimiting__Mcp*` limits. The tab shows them but
-  cannot change them.
+  `NimBus__Mcp__AllowedOrigins__*` and the `RateLimiting__Mcp*` limits. The panel's
+  **Overview** and **Limits** tabs show them but cannot change them.
 - **The Owner's policy** can only narrow that. A call proceeds only when the policy, the Entra scope
   or app role, the NimBus role on the endpoint and the message state all allow it.
 
@@ -116,7 +116,7 @@ the instance that saved it applies it at once. **Turn off now** turns the endpoi
 latest saved policy, whatever revision the page last read. The policy fails closed: if it cannot
 be read, an instance keeps the last policy it loaded, and until it has loaded one at all it
 answers `503 [Unavailable]`. With no saved policy, everything the deployment allows is on, as
-before the tab existed.
+before the policy existed.
 
 The policy is one record in shared storage (`IEndpointMetadataStore.GetMcpAccessSettings`;
 SQL Server migration `0023_McpAccessSettings.sql`, a fixed-id document in the Cosmos settings
