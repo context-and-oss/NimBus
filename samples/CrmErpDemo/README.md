@@ -374,7 +374,7 @@ In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver
 | Vite dev servers for crm-web / erp-web | `crm-api` and `erp-api` serve the built UIs from `wwwroot` |
 | Local-dev auth bypass on nimbus-ops | NimBus Identity sign-in with a bootstrap admin |
 | Provisioner runs before the subscribers | Provisioner is a manually started Container Apps job |
-| agent-zone, enrichment-agent | Not deployed: the agent cannot authenticate to the sign-in-protected agent API yet |
+| enrichment-agent signs in through the local-dev bypass | enrichment-agent signs in with an agent API key issued in nimbus-ops (Spec 039) |
 
 Only `crm-api`, `erp-api` and `nimbus-ops` are public. Everything else is internal to the Container Apps environment. The Aspire dashboard URL is printed at the end of the deploy.
 
@@ -415,12 +415,21 @@ List the public URLs with:
 az containerapp list -g rg-crmerp-demo --query "[?properties.configuration.ingress.external].properties.configuration.ingress.fqdn" -o tsv
 ```
 
+### Give the enrichment agent its key
+
+nimbus-ops requires sign-in in Azure, so the enrichment agent needs an agent API key. The key can only be issued once nimbus-ops is running, so the first deploy has none. Until it does, the agent logs 401s and the Agent Zone holds new CRM contacts as Pending.
+
+1. Sign in to nimbus-ops as the bootstrap admin. Open **Settings → Agent keys** and issue a key for agent id `enrichment-agent`. Copy it: it is shown once.
+2. Redeploy with the key added to the same command, as `Parameters__enrichment_agent_key='<the key>'`. Pass it on every later deploy too, or the agent loses it. To use Claude for classification, also add `Parameters__anthropic_api_key`; without it the agent uses its deterministic classifier.
+3. The held contacts are enriched within a minute. In **Settings → Agent keys** the key now shows when it was last used.
+
 ### Smoke test
 
 1. Open the `crm-api` URL from the deploy output. It serves crm-web. Create an account.
 2. Open the `erp-api` URL (erp-web). The customer appears, and crm-web shows its ERP customer number.
 3. Open the `nimbus-ops` URL and sign in with the bootstrap admin. The account's events are Completed under **Endpoints**, and **Flow** animates new traffic.
 4. A PartnerPortal lead arrives in crm-web's contacts about every 45 seconds.
+5. A new contact is enriched by the agent. Its hand-off on **AgentZoneEndpoint** is Completed, and the audit names `enrichment-agent`.
 
 ### Tear down
 
