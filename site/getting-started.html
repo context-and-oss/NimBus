@@ -40,6 +40,12 @@
           <h2>1. Prepare your machine</h2>
           <ul>
             <li>.NET 10 SDK and Git.</li>
+            <li>
+              The
+              <a href="https://aspire.dev/get-started/install-cli/"
+                >Aspire CLI</a
+              >, for example <code>dotnet tool install -g Aspire.Cli</code>.
+            </li>
             <li>Node.js 22+ for the CRM, ERP, and management frontends.</li>
             <li>
               A running Docker-compatible container runtime for SQL Server and
@@ -60,10 +66,11 @@
 cd NimBus
 npm --prefix samples/CrmErpDemo/Crm.Web install
 npm --prefix samples/CrmErpDemo/Erp.Web install
-dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost</code></pre>
+aspire run --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj</code></pre>
           <p>
             The first build downloads dependencies and container images. Open
-            the Aspire dashboard URL printed in the terminal. Wait for
+            the Aspire dashboard with the login link printed in the terminal.
+            Wait for
             <code>provisioner</code> to finish and the application resources to
             become healthy.
           </p>
@@ -98,7 +105,14 @@ dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost</code></pre>
               >sample guide</a
             >
             explains the adapters, topology, storage options, and recovery
-            scenarios.
+            scenarios. Integrating Dynamics 365 Sales with Business Central?
+            The
+            <a
+              href="https://github.com/context-and-oss/NimBus/blob/master/samples/DynamicsBcDemo/README.md"
+              >Dynamics 365 Sales and Business Central sample</a
+            >
+            shows that pairing, with CRM owning the pipeline and ERP owning the
+            buying customer.
           </p>
           <h2>4. Explore recovery</h2>
           <p>
