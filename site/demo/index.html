@@ -137,9 +137,9 @@
       <code>[SessionKey]</code>-ordered sessions block on failure — successors park on the endpoint's
       <em>Deferred</em> subscription. Every handler outcome flows through the central <em>Resolver</em> topic into
       the message store, SQL Server or Cosmos DB (ResolutionStatus: Pending · Deferred · Failed · DeadLettered · Completed · Skipped), where the
-      WebApp and the Ops Triage AI agent act on blocked sessions via the <em>Manager</em> topic.
-      The AI agents are illustrative. Real agents can join the bus through the REST agent API, and operator agents
-      investigate and recover failures through the WebApp's MCP endpoint.
+      WebApp acts on blocked sessions by sending recovery commands to the <em>Manager</em> topic, for an operator
+      or for the Ops Triage AI agent, which works through the WebApp's operator MCP endpoint.
+      The AI agents are illustrative. Real agents can join the bus through the REST agent API.
     </p>
   </div>
   <aside>
@@ -180,7 +180,7 @@ const NODES = {
   forecast:      {x:1050,y:436, w:210, h:92, kind:'agent', tag:'✦ AI AGENT', title:'Demand Forecast Agent',
                   sub:['LLM agent on the event stream','reads orders, stock & signups']},
   opsAgent:      {x:320, y:740, w:220, h:92, kind:'agent', tag:'✦ AI AGENT', title:'Ops Triage Agent',
-                  sub:['watches failed sessions','resubmits / skips via Manager']},
+                  sub:['watches failed sessions','resubmits / skips via MCP']},
   webapp:        {x:40,  y:740, w:240, h:92, kind:'platform', tag:'PLATFORM', title:'NimBus WebApp',
                   sub:['operator dashboard · SignalR','resubmit / skip / audit trail']},
   resolverWorker:{x:620, y:740, w:220, h:92, kind:'platform', tag:'PLATFORM', title:'Resolver Worker',
@@ -260,9 +260,9 @@ const EDGE_DEFS = [
   ['t_resolver','bottom',0,  'resolverWorker','top',0,  {tip:'Service Bus trigger → Resolver Worker'}],
   ['resolverWorker','right',0,'cosmos','left',0,        {tip:'StoreMessage + UpdateState → message store'}],
   ['cosmos','bottom',0,      'webapp','bottom',0,       {tip:'Queries + SignalR push to the WebApp', dashed:true}],
-  ['webapp','right',0,       'opsAgent','left',0,       {tip:'Ops Agent polls the WebApp API for blocked sessions', dashed:true}],
+  ['webapp','right',-10,     'opsAgent','left',-10,     {tip:'Ops Agent reads blocked sessions through the WebApp MCP endpoint', dashed:true}],
+  ['opsAgent','left',10,     'webapp','right',10,       {tip:'Ops Agent asks the WebApp MCP endpoint to resubmit / skip', dashed:true}],
   ['webapp','top',0,         't_manager','left',0,      {tip:'Operator resubmit / skip → Manager topic', dashed:true}],
-  ['opsAgent','top',0,       't_manager','bottom',0,    {tip:'AI agent resubmit / skip → Manager topic', dashed:true}],
   ['t_manager','right',0,    't_billing','right',14,    {tip:'Manager forward sub → recovery command to BillingEndpoint', dashed:true}],
 ];
 
@@ -607,7 +607,8 @@ async function remediate(session,action,source){
     await go('webapp>opsAgent',{color:'#94a3b8',r:4});
     await process('opsAgent',900);
     log(`✦ Ops Triage Agent: ${session.id} blocked by failed OrderPlaced → decided to ${action.toUpperCase()}`,stKey);
-    await go('opsAgent>t_manager',{color:col});
+    await go('opsAgent>webapp',{color:col});
+    await go('webapp>t_manager',{color:col});
   }else{
     log(`Operator via WebApp: ${action.toUpperCase()} session ${session.id}`,stKey);
     await go('webapp>t_manager',{color:col});
