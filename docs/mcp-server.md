@@ -42,6 +42,29 @@ data from the failing handler. Timestamps are UTC. Errors start with a code in b
 `[EndpointNotFound]` or `[PermissionDenied]`. A resource the caller cannot read is reported exactly
 like one that does not exist.
 
+## Prompts
+
+The server also offers workflow prompts ([Spec 040](spec/040-mcp-operator-prompts-and-plugin/spec.md)).
+A prompt is fixed text that tells the agent which tools to call, in which order. It reads no data
+and checks no role: everything it leads to goes through the tools above, with their authorization,
+redaction and audit. Claude Code lists each prompt as a command, for example `/nimbus:triage (MCP)`
+for a server added as `nimbus`, and takes the arguments space-separated, in the order below.
+
+| Prompt | Arguments | What it does | Changes anything? |
+| --- | --- | --- | --- |
+| `triage` | `endpointId` (optional), `period` (optional: `1h`, `12h`, `1d` (default), `3d`, `7d`, `30d`) | Finds failed, dead-lettered and unsupported messages on every readable endpoint (or one), groups them by cause, and suggests which one to investigate first | No |
+| `investigate-message` | `endpointId`, `eventId` | Explains why one message failed and what it blocks in its session, and recommends resubmit, skip, fix first, report, or Web UI recovery | No |
+| `recover-message` | `endpointId`, `eventId`, `action` (optional: `resubmit` or `skip`) | Investigates, previews the action with `nimbus_prepare_action`, and runs it only after the user confirms and agrees the audit reason | Yes, after confirmation |
+| `failure-report` | `period` (optional, as `triage`) | A short incident-style summary of failures across the site. Without a site-wide Reader role it covers only the endpoints you can read | No |
+
+`recover-message` is listed only while `nimbus_prepare_action` is available to the caller: a site
+Owner can remove it by switching off both resubmit and skip, or by denying the client changes, in
+[Settings → MCP access](#managing-access-in-the-webapp). Requesting it anyway answers
+`[PermissionDenied] recover-message is turned off by an administrator.` and is audited like a
+refused tool. An invalid argument (an id longer than 200 characters or with control characters, an
+unknown period or action) answers `[InvalidArgument]`. An endpoint you cannot read surfaces as
+`[EndpointNotFound]` from the first tool the agent calls.
+
 ## Changing messages
 
 Resubmit and skip take two steps, so the user can see what will happen before it does:

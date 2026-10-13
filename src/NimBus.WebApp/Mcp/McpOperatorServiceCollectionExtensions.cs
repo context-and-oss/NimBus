@@ -10,6 +10,7 @@ using ModelContextProtocol.Protocol;
 using Microsoft.AspNetCore.Authorization;
 using NimBus.WebApp.Mcp.Access;
 using NimBus.WebApp.Mcp.Operations;
+using NimBus.WebApp.Mcp.Prompts;
 using NimBus.WebApp.Mcp.Tools;
 using NimBus.WebApp.RateLimiting;
 
@@ -78,9 +79,12 @@ public static class McpOperatorServiceCollectionExtensions
             .WithTools<OperatorMessageTools>(ToolSerializerOptions)
             .WithTools<OperatorInsightTools>(ToolSerializerOptions)
             .WithTools<OperatorActionTools>(ToolSerializerOptions)
+            .WithPrompts([typeof(OperatorPrompts)])
             .WithRequestFilters(filters => filters
                 .AddListToolsFilter(McpToolAccess.FilterList)
-                .AddCallToolFilter(McpToolAccess.FilterCall));
+                .AddCallToolFilter(McpToolAccess.FilterCall)
+                .AddListPromptsFilter(McpPromptAccess.FilterList)
+                .AddGetPromptFilter(McpPromptAccess.FilterGet));
 
         services.AddScoped<OperatorEndpointCatalog>();
         services.AddScoped<OperatorQueries>();

@@ -76,7 +76,8 @@ public static class McpToolAccess
             };
         };
 
-    private static (McpAccessPolicy? Policy, McpCaller Caller, HttpContext? Http) Resolve(IServiceProvider? services)
+    /// <summary>The live policy, the caller and the HTTP context of an MCP request.</summary>
+    internal static (McpAccessPolicy? Policy, McpCaller Caller, HttpContext? Http) Resolve(IServiceProvider? services)
     {
         ArgumentNullException.ThrowIfNull(services);
         var http = services.GetService<IHttpContextAccessor>()?.HttpContext;
