@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import * as api from "api-client";
 import type { McpActivity, McpState } from "components/admin/mcp-access-model";
 import type { FiSummary, SettingsSnapshot } from "components/settings/feature-status";
+import { AGENT_KEYS_URL, type AgentKeysState } from "components/admin/agent-keys-model";
 
 // Loads what the Settings list shows for each feature (Spec 038 §7.1), from the
 // same endpoints the feature's own panel uses. Each feature loads on its own, so
@@ -43,6 +44,7 @@ export function useSettingsStatus() {
       return { state, activity };
     });
     void load("fi", () => json<FiSummary>(FAILURE_INTELLIGENCE, signal));
+    void load("agentKeys", () => json<AgentKeysState>(AGENT_KEYS_URL, signal));
     void load("simulation", () => client.getAdminSimulation());
     void load("audit", () => client.getAdminAuditSettings());
     void load("heartbeat", async () => {

@@ -370,31 +370,41 @@ if (isPublish)
     partnerPortal.PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
 }
 
-// Agent Zone + EnrichmentAgent (spec 022) run locally only. The agent authenticates to
-// nimbus-ops with nothing but an X-Agent-Id header, which the Azure deployment's
-// sign-in rejects, and without the agent the Agent Zone would park every
-// CrmContactCreated forever.
-IResourceBuilder<ProjectResource>? enrichmentAgent = null;
-if (!isPublish)
-{
-    // Agent Zone. The park host subscribes to AgentZoneEndpoint and parks
-    // every inbound CrmContactCreated as Pending+Handoff. Wired exactly like the
-    // Crm.Adapter worker subscriber (WithReference(servicebus) + gate on the
-    // provisioner): the AgentZoneEndpoint topology is created by the provisioner —
-    // the same topology gate the other subscribers rely on.
-    builder.AddProject<Projects.CrmErpDemo_AgentZone>("agent-zone")
-        .WithReference(servicebus)
-        .WaitForCompletion(provisioner);
+// Agent Zone (spec 022). The park host subscribes to AgentZoneEndpoint and parks
+// every inbound CrmContactCreated as Pending+Handoff. Wired exactly like the
+// Crm.Adapter worker subscriber (WithReference(servicebus) + gate on the
+// provisioner): the AgentZoneEndpoint topology is created by the provisioner —
+// the same topology gate the other subscribers rely on.
+var agentZone = builder.AddProject<Projects.CrmErpDemo_AgentZone>("agent-zone")
+    .WithReference(servicebus)
+    .WaitForCompletion(provisioner);
 
-    // EnrichmentAgent. Runs the receive->classify->define->publish->settle
-    // loop against the agent REST API on nimbus-ops. nimbus-ops is registered
-    // unconditionally above, so the agent binds to it directly — service discovery
-    // rewrites "https+http://nimbus-ops" to the resolved endpoint. ANTHROPIC_API_KEY
-    // is forwarded when present; absent, the agent uses its deterministic classifier.
-    enrichmentAgent = builder.AddProject<Projects.EnrichmentAgent>("enrichment-agent")
-        .WithReference(nimbusOps)
-        .WaitFor(nimbusOps)
-        .WithEnvironment("ANTHROPIC_API_KEY", builder.Configuration["ANTHROPIC_API_KEY"] ?? "");
+// EnrichmentAgent. Runs the receive->classify->define->publish->settle
+// loop against the agent REST API on nimbus-ops. nimbus-ops is registered
+// unconditionally above, so the agent binds to it directly — service discovery
+// rewrites "https+http://nimbus-ops" to the resolved endpoint. Without an
+// Anthropic API key the agent uses its deterministic classifier.
+var enrichmentAgent = builder.AddProject<Projects.EnrichmentAgent>("enrichment-agent")
+    .WithReference(nimbusOps)
+    .WaitFor(nimbusOps);
+
+if (isPublish)
+{
+    agentZone.PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
+    enrichmentAgent.PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
+
+    // nimbus-ops requires sign-in in Azure, so the agent needs an agent API key (Spec 039).
+    // An Owner issues it in the deployed nimbus-ops (Settings → Agent keys), so the first
+    // deploy has none: the agent then gets 401 and the Agent Zone holds contacts as Pending
+    // until a redeploy passes Parameters__enrichment_agent_key. Container Apps refuses empty
+    // secrets, so each optional secret is only declared once it has a value.
+    WithOptionalSecret(enrichmentAgent, "enrichment-agent-key", "NimBus__Agent__ApiKey");
+    WithOptionalSecret(enrichmentAgent, "anthropic-api-key", "ANTHROPIC_API_KEY");
+}
+else
+{
+    // Locally the development sign-in bypass admits the agent without a key.
+    enrichmentAgent.WithEnvironment("ANTHROPIC_API_KEY", builder.Configuration["ANTHROPIC_API_KEY"] ?? "");
 }
 
 // Explicit test profile. Normal demo runs never expose E2E controls.
@@ -415,7 +425,7 @@ if (builder.Configuration.GetValue<bool>("E2E:Enabled"))
     provisioner.WithEnvironment("E2E__Enabled", "true").WithEnvironment("E2E__Key", e2eKey);
     dataPlatformAdapter.WithEnvironment("AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions", "64")
         .WithEnvironment("AzureFunctionsJobHost__extensions__serviceBus__sessionIdleTimeout", "00:00:01");
-    enrichmentAgent!.WithEnvironment("ANTHROPIC_API_KEY", "");
+    enrichmentAgent.WithEnvironment("ANTHROPIC_API_KEY", "");
 }
 builder.Build().Run();
 
@@ -430,6 +440,17 @@ void WithFunctionsServiceBus<T>(IResourceBuilder<T> resource) where T : IResourc
         resource.WithEnvironment("AzureWebJobsServiceBus__fullyQualifiedNamespace", serviceBusNamespace);
     else
         resource.WithEnvironment("AzureWebJobsServiceBus", servicebus.Resource.ConnectionStringExpression);
+}
+
+// A secret deploy-time input the deployment works without: declared (as Parameters__<name>,
+// dashes as underscores) only when the deploy process supplies a value.
+void WithOptionalSecret<T>(IResourceBuilder<T> resource, string parameterName, string variable) where T : IResourceWithEnvironment
+{
+    // An environment variable can't carry the dashes, so look for both spellings, as Aspire does.
+    var supplied = builder.Configuration[$"Parameters:{parameterName}"]
+        ?? builder.Configuration[$"Parameters:{parameterName.Replace('-', '_')}"];
+    if (!string.IsNullOrEmpty(supplied))
+        resource.WithEnvironment(variable, builder.AddParameter(parameterName, secret: true));
 }
 
 static void PinToOneReplica(Azure.Provisioning.AppContainers.ContainerApp app)

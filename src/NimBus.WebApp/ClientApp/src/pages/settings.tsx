@@ -24,6 +24,7 @@ import FailureIntelligenceSettings from "components/admin/failure-intelligence-s
 import HeartbeatCard from "components/admin/heartbeat-card";
 import SimulationSettings from "components/admin/simulation-settings";
 import AuditSettings from "components/admin/audit-settings";
+import AgentKeysSettings from "components/admin/agent-keys-settings";
 import { useSettingsStatus } from "hooks/use-settings-status";
 import { notifyError, notifySuccess } from "functions/notifications.functions";
 import { SETTINGS_FEATURES, type SettingsFeature } from "models/manage-pages";
@@ -33,6 +34,7 @@ import { cn } from "lib/utils";
 const PANELS: Record<string, () => ReactNode> = {
   mcp: () => <McpAccessSettings />,
   "failure-intelligence": () => <FailureIntelligenceSettings />,
+  "agent-keys": () => <AgentKeysSettings />,
   heartbeat: () => <HeartbeatCard />,
   simulation: () => <SimulationSettings />,
   audit: () => <AuditSettings />,

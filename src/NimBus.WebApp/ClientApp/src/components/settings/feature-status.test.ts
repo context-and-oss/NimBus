@@ -195,6 +195,31 @@ describe("featureStatus", () => {
     });
   });
 
+  describe("Agent keys", () => {
+    const keys = (...statuses: ("active" | "revoked" | "expired")[]) => ({
+      csrfToken: "csrf",
+      keys: statuses.map((status, i) => ({ keyId: `k${i}`, status }) as never),
+    });
+
+    it("counts active keys", () => {
+      expect(status("agent-keys", { agentKeys: keys("active", "active", "revoked") })).toMatchObject({
+        tone: "ok",
+        label: "2 active",
+        on: true,
+      });
+    });
+
+    it("offers to issue a key when none is active", () => {
+      const s = status("agent-keys", { agentKeys: keys("expired") });
+      expect(s).toMatchObject({ tone: "off", label: "No active keys", on: false });
+      expect(s?.quick).toEqual({ kind: "open", label: "Issue key…", tab: "keys" });
+    });
+
+    it("is unavailable when the keys could not be read", () => {
+      expect(status("agent-keys", { agentKeys: "error" })).toMatchObject({ label: "Unavailable" });
+    });
+  });
+
   describe("Audit logging", () => {
     it("counts recorded action types", () => {
       const s = status("audit", {
