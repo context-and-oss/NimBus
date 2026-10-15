@@ -20,7 +20,7 @@
          A security FLOOR, not a version to keep current: nothing here calls
          MessagePack, and Aspire — which does, for the dashboard's resource stream —
          is built against 2.x. Raise it only when Aspire does. -->
-    <PackageReference Include="MessagePack" Version="2.5.302" />
+    <PackageReference Include="MessagePack" Version="2.5.303" />
   </ItemGroup>
 
   <ItemGroup>
