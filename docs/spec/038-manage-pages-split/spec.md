@@ -166,15 +166,18 @@ The list is grouped by blast radius, keeping today's colours and captions:
 
 ### 7.1 Rows
 
-A small registry (`settings/feature-registry.ts`) describes each feature: id, group, icon, name, one-line description, keyword index, a status hook, a summary hook, a quick action, and its drawer tabs. The list renders from that registry. Adding a feature means adding one registry entry and one drawer component.
+A small registry (`settings/feature-registry.ts`) describes each feature: id, group, icon, name, one-line description, keyword index, a status hook, a summary hook, a call to action, a quick action, and its drawer tabs. The list renders from that registry. Adding a feature means adding one registry entry and one drawer component.
 
-| Group | Feature | Status (example) | Summary (example) | Quick action |
-|---|---|---|---|---|
-| AI & agents | MCP access | ● Serving / ○ Off / Not deployed | 2 actions · 0 refused · 24 h | **Turn off now** (when serving) |
-| AI & agents | Failure intelligence | ● On / ○ Off / Restart required | No API key configured | **Set up…** → drawer |
-| Monitoring | Heartbeat probing | ● On | 8 of 12 endpoints · every 5 min | **Send now** |
-| Testing | Simulation | ● On / ○ Off / Blocked in production | Allowed in dev · auto-stop 30 min | **Enable…** → drawer / **Open Simulate** |
-| Compliance | Audit logging | 14 of 16 recorded | Access-denied and settings changes always recorded | — |
+| Group | Feature | Status (example) | Summary (example) | Row link | Quick action |
+|---|---|---|---|---|---|
+| AI & agents | MCP access | ● Serving / ○ Off / Not deployed | 2 actions · 0 refused · 24 h | **Turn on ›** (when off) | **Turn off now** (when serving) |
+| AI & agents | Failure intelligence | ● On / ○ Off / Restart required | No API key configured | **Set up ›** / **Turn on ›** / **Fix key ›** | — |
+| AI & agents | Agent keys | 2 active / No active keys | Agents can't call the agent API where sign-in is required | **Issue key ›** (when none active) | — |
+| Monitoring | Heartbeat probing | ● On | 8 of 12 endpoints · every 5 min | Configure › | **Send now** |
+| Testing | Simulation | ● On / ○ Off / Blocked in production | Allowed in dev · auto-stop 30 min | **Enable ›** (when off) | **Open Simulate** (when on) |
+| Compliance | Audit logging | 14 of 16 recorded | Access-denied and settings changes always recorded | Configure › | — |
+
+Every row is one link into its drawer. It reads **Configure ›** unless the feature's state calls for a next step; then the link names that step and opens the drawer on the tab where it happens. A row never shows a second control that opens the same drawer.
 
 Status and summary reuse the data each settings component already loads. Examples: MCP's `/api/admin/mcp/activity`, Failure intelligence's `state.active` and `restartRequired`, and Simulation's `useSimulationStatus`. The Settings page loads these summaries itself. It does not mount every drawer.
 
@@ -183,7 +186,7 @@ Status and summary reuse the data each settings component already loads. Example
 A row may act **inline only** when the action narrows access *and* applies at once with no consent, key or restart:
 
 - **Allowed inline:** MCP **Turn off now**, which calls `/api/admin/mcp/turn-off` behind today's confirmation; Heartbeat **Send now**; Simulation **Open Simulate**.
-- **Opens the drawer instead:** anything that widens access, needs a key or consent, or needs a restart. For example: MCP *Turn on…* opens Overview, Failure intelligence *Set up…* opens Activation & provider, and Simulation *Enable…* opens Simulate mode.
+- **Becomes the row link's label instead:** anything that widens access, needs a key or consent, or needs a restart. The link opens the drawer, where the feature's own review and confirmation run. For example: MCP *Turn on ›* opens Overview, Failure intelligence *Set up ›* opens Activation & provider, Agent keys *Issue key ›* opens Keys, and Simulation *Enable ›* opens Simulate mode.
 
 The first mockup (Alternative B v1) put plain on/off toggles on each row. That would have bypassed MCP's widening confirmation and Failure intelligence's key and consent checks, so this spec drops them.
 

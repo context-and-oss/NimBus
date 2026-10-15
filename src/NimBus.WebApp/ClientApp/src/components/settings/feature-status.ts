@@ -6,7 +6,7 @@ import {
 } from "components/admin/mcp-access-model";
 import { activeKeyCount, type AgentKeysState } from "components/admin/agent-keys-model";
 
-// Status, summary and quick action for each row of the Settings list
+// Status, summary, call to action and quick action for each row of the Settings list
 // (Spec 038 §7). Pure: the data comes from use-settings-status.
 
 export type StatusTone = "ok" | "warn" | "danger" | "off";
@@ -14,13 +14,19 @@ export type StatusTone = "ok" | "warn" | "danger" | "off";
 /**
  * A row's inline action. Spec 038 §7.2: a row acts inline only when the action
  * narrows access and applies at once with no consent, key or restart. Anything
- * else opens the panel (`open`) so the feature's own review and confirmation run.
+ * else is the row's call to action ({@link FeatureStatus.cta}), which opens the
+ * panel so the feature's own review and confirmation run.
  */
 export type QuickAction =
   | { kind: "turn-off-mcp"; label: string }
   | { kind: "send-heartbeat"; label: string }
-  | { kind: "link"; label: string; to: string }
-  | { kind: "open"; label: string; tab: string };
+  | { kind: "link"; label: string; to: string };
+
+/** Replaces the row link's "Configure" label and opens the panel on `tab`. */
+export interface CallToAction {
+  label: string;
+  tab: string;
+}
 
 export interface FeatureStatus {
   tone: StatusTone;
@@ -28,6 +34,7 @@ export interface FeatureStatus {
   summary: string;
   /** Counted by the "On" filter. */
   on: boolean;
+  cta?: CallToAction;
   quick?: QuickAction;
 }
 
@@ -85,7 +92,7 @@ function mcp(data: NonNullable<SettingsSnapshot["mcp"]>): FeatureStatus {
         label: "Off",
         summary: "Agents get 503 [Disabled]",
         on: false,
-        quick: { kind: "open", label: "Turn on…", tab: "overview" },
+        cta: { label: "Turn on", tab: "overview" },
       };
   }
 }
@@ -100,7 +107,7 @@ function failureIntelligence(fi: NonNullable<SettingsSnapshot["fi"]>): FeatureSt
       label: "Key unreadable",
       summary: "Enter the API key again or remove it",
       on: fi.active.enabled,
-      quick: { kind: "open", label: "Fix key…", tab: "provider" },
+      cta: { label: "Fix key", tab: "provider" },
     };
   if (fi.restartRequired)
     return { tone: "warn", label: "Restart required", summary: "Saved settings differ from this instance", on: fi.active.enabled };
@@ -115,8 +122,8 @@ function failureIntelligence(fi: NonNullable<SettingsSnapshot["fi"]>): FeatureSt
     };
   }
   return keyConfigured
-    ? { tone: "off", label: "Off", summary: "Contributors can't request analysis", on: false, quick: { kind: "open", label: "Turn on…", tab: "provider" } }
-    : { tone: "off", label: "Off", summary: "No API key configured", on: false, quick: { kind: "open", label: "Set up…", tab: "provider" } };
+    ? { tone: "off", label: "Off", summary: "Contributors can't request analysis", on: false, cta: { label: "Turn on", tab: "provider" } }
+    : { tone: "off", label: "Off", summary: "No API key configured", on: false, cta: { label: "Set up", tab: "provider" } };
 }
 
 function simulation(status: NonNullable<SettingsSnapshot["simulation"]>): FeatureStatus {
@@ -138,7 +145,7 @@ function simulation(status: NonNullable<SettingsSnapshot["simulation"]>): Featur
         label: "Off",
         summary: `Allowed in ${environment} · ${autoStop}`,
         on: false,
-        quick: { kind: "open", label: "Enable…", tab: "mode" },
+        cta: { label: "Enable", tab: "mode" },
       };
 }
 
@@ -172,7 +179,7 @@ function heartbeat(data: NonNullable<SettingsSnapshot["heartbeat"]>): FeatureSta
 function agentKeys(state: NonNullable<SettingsSnapshot["agentKeys"]>): FeatureStatus {
   if (state === "error") return UNAVAILABLE;
   const active = activeKeyCount(state);
-  // Issuing a key widens access, so it opens the panel rather than acting inline.
+  // Issuing a key widens access, so it is the call to action rather than an inline action.
   return active > 0
     ? { tone: "ok", label: `${active} active`, summary: "Agents sign in to the agent API with these keys", on: true }
     : {
@@ -180,7 +187,7 @@ function agentKeys(state: NonNullable<SettingsSnapshot["agentKeys"]>): FeatureSt
         label: "No active keys",
         summary: "Agents can't call the agent API where sign-in is required",
         on: false,
-        quick: { kind: "open", label: "Issue key…", tab: "keys" },
+        cta: { label: "Issue key", tab: "keys" },
       };
 }
 
