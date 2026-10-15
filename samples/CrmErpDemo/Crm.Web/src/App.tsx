@@ -11,6 +11,7 @@ import {
 } from './simulator';
 import CircuitBreakerPanel from './components/admin/circuit-breaker-panel';
 import DataResetPanel from './components/admin/data-reset-panel';
+import SignedInBadge from './components/SignedInBadge';
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
   `px-4 py-2 rounded-md text-sm font-medium ${
@@ -58,6 +59,7 @@ export default function App() {
             {sim.running ? `Simulating · ${sim.actions}` : 'Simulate'}
           </button>
           <span className="text-xs text-slate-400">NimBus · CRM + ERP demo</span>
+          <SignedInBadge />
         </div>
       </header>
       <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">

@@ -1,3 +1,5 @@
+import { apiFetch } from './auth';
+
 export interface Account {
   id: string;
   legalName: string;
@@ -65,51 +67,51 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export const api = {
-  listAccounts: () => fetch('/api/accounts').then(json<Account[]>),
-  getAccount: (id: string) => fetch(`/api/accounts/${id}`).then(json<Account>),
+  listAccounts: () => apiFetch('/api/accounts').then(json<Account[]>),
+  getAccount: (id: string) => apiFetch(`/api/accounts/${id}`).then(json<Account>),
   createAccount: (a: Partial<Account>) =>
-    fetch('/api/accounts', {
+    apiFetch('/api/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(a),
     }).then(json<Account>),
   updateAccount: (id: string, a: Partial<Account>) =>
-    fetch(`/api/accounts/${id}`, {
+    apiFetch(`/api/accounts/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(a),
     }).then(json<Account>),
 
   deleteAccount: (id: string) =>
-    fetch(`/api/accounts/${id}`, { method: 'DELETE' }).then(json<Account>),
+    apiFetch(`/api/accounts/${id}`, { method: 'DELETE' }).then(json<Account>),
 
-  listContacts: () => fetch('/api/contacts').then(json<Contact[]>),
-  getContact: (id: string) => fetch(`/api/contacts/${id}`).then(json<Contact>),
+  listContacts: () => apiFetch('/api/contacts').then(json<Contact[]>),
+  getContact: (id: string) => apiFetch(`/api/contacts/${id}`).then(json<Contact>),
   createContact: (c: Partial<Contact>) =>
-    fetch('/api/contacts', {
+    apiFetch('/api/contacts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(c),
     }).then(json<Contact>),
   updateContact: (id: string, c: Partial<Contact>) =>
-    fetch(`/api/contacts/${id}`, {
+    apiFetch(`/api/contacts/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(c),
     }).then(json<Contact>),
   deleteContact: (id: string) =>
-    fetch(`/api/contacts/${id}`, { method: 'DELETE' }).then(json<Contact>),
+    apiFetch(`/api/contacts/${id}`, { method: 'DELETE' }).then(json<Contact>),
 
   getAuditLog: (entityType: 'Account' | 'Contact', entityId: string) =>
-    fetch(`/api/audit/${entityType}/${entityId}`).then(json<AuditEntry[]>),
+    apiFetch(`/api/audit/${entityType}/${entityId}`).then(json<AuditEntry[]>),
 
   // Request/reply showcase: synchronous ERP credit check (blocks up to ~10s).
   creditCheck: (accountId: string) =>
-    fetch(`/api/accounts/${accountId}/credit-check`, { method: 'POST' }).then(json<CreditCheckResult>),
+    apiFetch(`/api/accounts/${accountId}/credit-check`, { method: 'POST' }).then(json<CreditCheckResult>),
 
   // Command showcase: fire-and-forget PlaceCustomerOnCreditHold to ERP.
   placeCreditHold: (accountId: string, reason?: string) =>
-    fetch(`/api/accounts/${accountId}/credit-hold`, {
+    apiFetch(`/api/accounts/${accountId}/credit-hold`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason: reason ?? null }),
@@ -119,18 +121,18 @@ export const api = {
 
   // Circuit-breaker showcase: the CRM API outage toggle + the live circuit
   // state the adapter pushes into crm-api.
-  getErrorMode: () => fetch('/api/admin/error-mode').then(json<ModeState>),
+  getErrorMode: () => apiFetch('/api/admin/error-mode').then(json<ModeState>),
   setErrorMode: (enabled: boolean) =>
-    fetch('/api/admin/error-mode', {
+    apiFetch('/api/admin/error-mode', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     }).then(json<ModeState>),
-  getCircuitState: () => fetch('/api/admin/circuit-state').then(json<CircuitStateSnapshot>),
+  getCircuitState: () => apiFetch('/api/admin/circuit-state').then(json<CircuitStateSnapshot>),
 
   // Demo reset: wipes all CRM business data (no delete events published).
   deleteAllData: () =>
-    fetch('/api/admin/data', { method: 'DELETE' }).then(json<DataResetResult>),
+    apiFetch('/api/admin/data', { method: 'DELETE' }).then(json<DataResetResult>),
 };
 
 export interface DataResetResult {
