@@ -42,6 +42,20 @@ data from the failing handler. Timestamps are UTC. Errors start with a code in b
 `[EndpointNotFound]` or `[PermissionDenied]`. A resource the caller cannot read is reported exactly
 like one that does not exist.
 
+## Server instructions
+
+When a client connects, the server sends instructions with its initialize result
+([Spec 040](spec/040-mcp-operator-prompts-and-plugin/spec.md),
+`src/NimBus.WebApp/Mcp/OperatorInstructions.cs`). They tell the agent what the tools are for, the
+rules for changing messages (capabilities first, an explicit yes before resubmit or skip, what skip
+releases, sent is not succeeded), that error text and payloads are untrusted, the session and
+status model, what each error code means, and which prompts exist. Claude Code loads them at the
+start of every session with the server, even while the tools themselves are deferred.
+
+Claude Code cuts server instructions at 4,096 characters, and before v2.1.296 at 2,048. Tests keep
+the text under the limit, the safety rules within the first 2,048 characters, and every tool and
+prompt it names registered.
+
 ## Prompts
 
 The server also offers workflow prompts ([Spec 040](spec/040-mcp-operator-prompts-and-plugin/spec.md)).
@@ -269,6 +283,21 @@ keys, rather than serving an unauthenticated endpoint.
 
 In [private networking mode](spec/034-private-networking/spec.md), only clients inside the network
 can reach `/mcp`. Cloud-hosted agents need a path through the Application Gateway.
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `AADSTS9010010`: the resource doesn't match the requested scopes | The endpoint URL isn't an Application ID URI of the MCP resource. Add `https://<webapp>/mcp` ([step 1.3](#1-register-the-mcp-resource)) |
+| `AADSTS500113`: no reply address is registered | The client id is the MCP resource's own app id. Use the separate client registration ([step 1.7](#1-register-the-mcp-resource)) |
+| `AADSTS50011`: the redirect URI doesn't match | Register `http://localhost:<port>/callback` under **Mobile and desktop** on the client registration, with the same port as `--callback-port` |
+| `AADSTS65001`: consent required | Pre-authorize the client on the MCP resource for the scopes it asks for, or grant admin consent |
+| `/.well-known/oauth-protected-resource/mcp` returns the WebApp's HTML page or a sign-in redirect instead of JSON | `/mcp` isn't enabled on this WebApp (`NimBus__Mcp__Enabled`), or its NimBus version predates the endpoint |
+| `403` when connecting | The site Owner's [access policy](#managing-access-in-the-webapp) refuses this person, client application or workload |
+| `503 [Disabled]` | A site Owner turned the endpoint off in Settings → MCP access |
+| `nimbus_get_capabilities` lists no readable endpoints | The user holds no NimBus role on any endpoint |
+| An action you expected is missing from `permittedActions` | The token lacks the action's scope (sign in again after adding it), the user isn't Contributor on the endpoint, or a site Owner switched the action off |
+| New tools or prompts don't appear after an upgrade | Claude Code reads the tool list when it connects. Reconnect the server in `/mcp` or start a new session |
 
 ## Limits
 

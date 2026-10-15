@@ -68,11 +68,15 @@ public static class McpOperatorServiceCollectionExtensions
         services.AddSingleton<McpAccessRefusals>();
         services.AddScoped<IAuthorizationHandler, McpAccessRequirementHandler>();
 
-        services.AddMcpServer(server => server.ServerInfo = new Implementation
+        services.AddMcpServer(server =>
             {
-                Name = "nimbus-operator",
-                Title = "NimBus operator",
-                Version = ServerVersion(),
+                server.ServerInfo = new Implementation
+                {
+                    Name = "nimbus-operator",
+                    Title = "NimBus operator",
+                    Version = ServerVersion(),
+                };
+                server.ServerInstructions = OperatorInstructions.Text;
             })
             .WithHttpTransport(http => http.Stateless = true)
             .WithTools<OperatorDiscoveryTools>(ToolSerializerOptions)

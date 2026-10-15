@@ -1,22 +1,26 @@
-# Spec 040 — Operator MCP prompts and Claude Code plugin
+# Spec 040 — Operator MCP prompts and server instructions
 
-Status: PR 1 (server prompts, §3) implemented 2026-10-12 on branch `claude/mcp-operator-prompts`;
-§3.4 and §3.5 describe it as built. PR 2 (plugin, §4 and §5) not started.
+Status: implemented. PR 1, the server prompts (§3), merged as context-and-oss/NimBus#259 and
+shipped in v4.8.0. PR 2, the server instructions (§4) and docs (§5), is on branch
+`claude/mcp-operator-instructions`. PR 2 replaces the Claude Code plugin of this spec's first
+revision; §4.4 records why. The folder keeps its original name so links stay valid.
 Baseline: master `1654486b`. Builds on [Spec 035](../035-mcp-operator-access/spec.md) (Phases 1
 and 2a) and [Spec 037](../037-mcp-admin-access/spec.md).
-Scope: `NimBus.WebApp` (`Mcp/`, one line in the MCP access **Connect** card in `ClientApp/`), a new
-`plugins/nimbus-operator/` Claude Code plugin, a repo-root `.claude-plugin/marketplace.json`,
-`tests/NimBus.WebApp.Tests`, and docs. Unchanged: the tool catalog and its contracts, scopes, roles,
+Scope: `NimBus.WebApp` (`Mcp/`), `tests/NimBus.WebApp.Tests`, and docs. Unchanged: the tool catalog and its contracts, scopes, roles,
 the Spec 037 access policy and its storage, `api-spec.yaml`, and every `NimBus__Mcp__*` setting.
 
 ## 1. Why
 
-The operator MCP server has 16 tools and no guidance on how to combine them. Two things are missing:
+The operator MCP server has 16 tools and no guidance on how to combine them. Three things are
+missing:
 
 - **Workflows.** Triage and recovery need the tools in a set order. For example, call
   `nimbus_get_capabilities` first, use `nimbus_get_message` before `nimbus_prepare_action`, and
   show the preview and wait for the user before a skip. Today each user's agent has to work this out
   from the tool descriptions, and each one does it differently.
+- **Knowledge.** The tool descriptions explain each tool, not the platform: that a failed event
+  blocks its session, what each status means, what skip releases, which error codes call for a
+  re-read rather than a retry.
 - **Connecting.** Entra has no dynamic client registration. Each Claude Code user has to add the
   server with the right URL, client id and callback port
   ([mcp-server.md, step 1.7 and Verify](../../mcp-server.md#azure-entra-id)). The **Connect** card
@@ -26,8 +30,9 @@ The operator MCP server has 16 tools and no guidance on how to combine them. Two
 A standalone self-hosted MCP server, like `noskillish/bankmcp`, was considered and rejected.
 `/mcp` already runs in the customer's own WebApp and subscription, with no NimBus-operated service
 in the data path. A local stdio server would either bypass the Resolver command path, ACLs,
-redaction and audit, or proxy `/mcp`. Spec 035 retired `NimBus.Mcp` for exactly that reason. Two
-ideas from bankmcp are worth adopting: server-side **MCP prompts** and a **Claude Code plugin**.
+redaction and audit, or proxy `/mcp`. Spec 035 retired `NimBus.Mcp` for exactly that reason.
+bankmcp's server-side **MCP prompts** are worth adopting. Its Claude Code plugin was tried and
+dropped in favour of **server instructions** (§4.4). Connecting is addressed in the docs (§5).
 
 ## 2. Decisions
 
@@ -41,13 +46,11 @@ ideas from bankmcp are worth adopting: server-side **MCP prompts** and a **Claud
 3. **Prompts follow tool availability.** A prompt that leads to a change tool is hidden from
    `prompts/list` and refused on `prompts/get` when the Spec 037 policy makes that tool unavailable
    to the caller. Prompts get no separate policy switch.
-4. **The plugin is thin.** It connects the server and adds one skill with domain knowledge (statuses,
-   sessions, error codes, the rules for changing messages). It does not repeat the prompts'
-   workflows.
-5. **The plugin adds no permission allow rules.** Claude Code still asks before each MCP tool call
-   unless the user has allowed it. The docs recommend allowing only the read tools.
-6. **The plugin lives in this repo** at `plugins/nimbus-operator/`, published through a repo-root
-   marketplace named `nimbus`.
+4. **Knowledge lives on the server as MCP server instructions**, sent when a client connects. Like
+   the prompts, they reach every MCP client and ship with the tools they describe. They don't
+   repeat the prompts' workflows or the tool descriptions.
+5. **No client-side package.** There is no Claude Code plugin, skill or permission rule to install.
+   Claude Code still asks before each MCP tool call unless the user has allowed it.
 
 ## 3. MCP prompts
 
@@ -141,140 +144,95 @@ The pipeline tests use `McpTestHost`:
   tool fails the build instead of leaving a prompt that points at nothing. The read-only prompts
   must not name `nimbus_prepare_action` or any key of `McpToolAccess.ChangeTools`.
 
-## 4. Claude Code plugin
+## 4. Server instructions
 
-### 4.1 Layout
+Built in PR 2 in place of the planned Claude Code plugin (§4.4 says why).
 
-```text
-.claude-plugin/marketplace.json          # marketplace "nimbus", one plugin
-plugins/nimbus-operator/
-  .claude-plugin/plugin.json             # name, version, description, author, userConfig, mcpServers
-  skills/nimbus-operator/SKILL.md        # domain knowledge, model-invoked
-  skills/connect/SKILL.md                # /nimbus-operator:connect, user-invoked setup and checks
-  README.md
-```
+### 4.1 What they say
 
-Install:
+`src/NimBus.WebApp/Mcp/OperatorInstructions.cs` holds the text, which `AddNimBusOperatorMcp` sets
+as `McpServerOptions.ServerInstructions`. The SDK sends it in the initialize result. It covers, in
+this order:
 
-```bash
-claude plugin marketplace add context-and-oss/NimBus
-```
+1. **What the server is for**, phrased so tool search finds it: endpoint health, failed and
+   dead-lettered messages, sessions, metrics, recovery.
+2. **Rules**: `nimbus_get_capabilities` first and only what it permits; no change without the
+   user's explicit yes, using the two-step resubmit/skip flow with the agreed reason and a new
+   `idempotencyKey`; what skip releases and never repeating one; sent is not succeeded, and the
+   ~10-second `[MessageNotFound]` window; untrusted error text and payloads, with payloads only on
+   request; `webUiUrl`, and Web UI-only recovery for deferred messages and handoffs.
+3. **Model**: endpoint, event and message ids; session ordering and blocking; each status (Failed,
+   DeadLettered, Unsupported, Deferred, Pending with the Handoff sub-status, Completed, Skipped);
+   classifications are advisory; UTC.
+4. **Errors**: each bracketed code and what to do.
+5. **Prompts**: the four names.
 
-```bash
-claude plugin install nimbus-operator@nimbus
-```
+The text is static: it holds no data and doesn't vary by caller or policy. Changes that a site
+Owner switches off still show up as `[PermissionDenied]` and in `permittedActions`, which rule 1
+points to. Following the SDK's guidance, it describes how the tools fit together rather than
+repeating their descriptions.
 
-The marketplace must sit at the repo root. `claude plugin marketplace add` has no path option, and
-relative plugin sources (`"source": "./plugins/nimbus-operator"`) resolve from the marketplace root.
-The name `nimbus-operator` avoids the prefixes Claude Code reserves (`claude-`, `anthropic-`).
+### 4.2 Length
 
-### 4.2 Connecting the server
+Claude Code loads server instructions at session start even while tools are deferred, and cuts them
+at **4,096 characters**. Before v2.1.296 the cut was at **2,048**. The text is 2,918 characters, so
+the rules come first and end before character 2,048. Line endings are normalized to `\n`, so the
+length doesn't depend on the checkout's line endings.
 
-`plugin.json` declares the server inline with user-supplied values:
+### 4.3 Tests (`tests/NimBus.WebApp.Tests/Mcp/OperatorInstructionsTests.cs`)
 
-```json
-{
-  "name": "nimbus-operator",
-  "userConfig": {
-    "endpoint_url": { "type": "string", "title": "NimBus MCP endpoint", "description": "https://<webapp>/mcp, or https://localhost:18443/mcp under Aspire", "required": true },
-    "client_id": { "type": "string", "title": "MCP client application id", "description": "The Entra client registration from mcp-server.md step 1.7. Leave empty under Aspire.", "required": false }
-  },
-  "mcpServers": {
-    "nimbus": {
-      "type": "http",
-      "url": "${user_config.endpoint_url}",
-      "oauth": { "clientId": "${user_config.client_id}", "callbackPort": 8765 }
-    }
-  }
-}
-```
+- A client connecting through `McpTestHost` receives the text as `ServerInstructions`. This test
+  fails before the text is wired into `AddMcpServer`.
+- The text is at most 4,096 characters, and each safety rule (capabilities first, explicit yes,
+  never repeat a skip, untrusted) ends before character 2,048.
+- Every `nimbus_*` name in it is a registered tool, using the prompt drift guard's regex and
+  reflection.
+- It mentions every prompt, found by reflection over `McpServerPromptAttribute`.
+- It contains no `\r`.
 
-- **Fixed callback port 8765.** `claude plugin validate` (Claude Code 2.1.295) accepts this
-  manifest but rejects `"callbackPort": "${user_config.…}"`, because the field must be a literal
-  number. The plugin therefore fixes the port, and the Entra client registration must list
-  `http://localhost:8765/callback`. The pilot client `NimBus MCP Client (dev)` already uses 8765.
-  `mcp-server.md` step 1.7 changes from "pick any free port" to "8765 if you use the plugin".
-- **No secrets.** The client is a public client, so the plugin asks for no client secret. Neither
-  value is sensitive.
-- A user who already ran `claude mcp add … nimbus …` removes that entry (`claude mcp remove nimbus`)
-  so the tools don't appear twice.
+### 4.4 Why not a Claude Code plugin
 
-**To verify first (PR 2, step 1).** Schema validation passes, but the docs don't confirm three
-runtime behaviours:
+The plan (§4 of the first revision of this spec) was a `nimbus-operator` plugin in this repo:
+a marketplace at the repo root, a knowledge skill, and a `connect` skill, with the server declared
+in `plugin.json` from user-supplied values. It was built on branch `claude/mcp-operator-plugin`
+(commit `c361ddd1`, never pushed) and dropped on 2026-10-15:
 
-1. `${user_config.client_id}` is substituted into `oauth.clientId`.
-2. An empty `client_id` doesn't break a tokenless Aspire connection.
-3. The command name of a prompt served by a plugin-provided server (expected
-   `/mcp__plugin_nimbus-operator_nimbus__triage`).
+- **The plugin couldn't connect the server.** Tested on 2026-10-13 with Claude Code 2.1.295, using
+  a separate `CLAUDE_CONFIG_DIR` and `claude plugin install … --config …`. Claude Code substitutes
+  `${user_config.…}` into a server's `url`, but sent `oauth.clientId` to Entra as the literal
+  placeholder (`client_id=%24%7Buser_config.client_id%7D`). `claude plugin validate` accepted it
+  anyway, and rejected a placeholder in `callbackPort`. Entra has no dynamic client registration,
+  so it needs a real client id. Without that, `connect` only ran the `claude mcp add` that the
+  Connect card already shows.
+- **Server instructions carry the knowledge better.** Every MCP client gets them, not only Claude
+  Code. They ship with the server, so they can't drift from its tools, and there is nothing to
+  install or update.
+- **The install command was fragile.** `claude plugin marketplace add owner/repo` clones over SSH
+  and fails on machines without a GitHub SSH key.
 
-Check all three with `claude --plugin-dir` against the Aspire stack and the dev WebApp. If (1)
-fails, drop `mcpServers` from the plugin. The `connect` skill then generates and runs the
-`claude mcp add --transport http --client-id … --callback-port 8765 nimbus …` command instead.
-Record the outcome of (3) in the README and the skill.
+The connect troubleshooting moved into `docs/mcp-server.md` (§5).
 
-### 4.3 `nimbus-operator` skill
+## 5. Docs
 
-The skill is model-invoked. Its `description` triggers on NimBus failures, dead letters, endpoints,
-sessions and resubmit/skip. It holds the knowledge the tool descriptions don't:
-
-- **The model.** An endpoint, the event types it produces and consumes, and what a session is: a
-  failed message blocks later messages in its session, which wait as Deferred. What each status
-  means: Pending, Deferred, Failed, DeadLettered, Unsupported, Completed, Skipped, Resolved.
-- **Start with `nimbus_get_capabilities`.** Its `permittedActions` and readable endpoints decide
-  what to offer. Never assume a change tool exists.
-- **Changing messages.** The two-step token flow. Skip releases the session, so confirm it
-  explicitly. The 5-per-minute change limit. The ~10-second `[MessageNotFound]` window after a
-  command. Deferred messages and handoffs are recovered in the Web UI.
-- **Error codes and what to do next**, for example `[StaleMessage]` → read again, `[OutcomeUnknown]`
-  → read before retrying, `[RateLimited]` → wait.
-- **Untrusted data**, as in §3.1.
-- **Workflows.** Point to the server prompts by name and command. Don't restate their steps.
-
-The skill names tools only by their bare names. The tests in §3.5 extend the drift guard to
-`plugins/nimbus-operator/skills/**/SKILL.md`, finding the repo root by walking up to
-`deploy/bicep/deploy.webapp.bicep` as `FindRepositoryRoot` in `NimBus.CommandLine.Tests` does.
-
-### 4.4 `connect` skill
-
-`/nimbus-operator:connect` is user-invoked (`disable-model-invocation: true`). It:
-
-1. shows the configured endpoint URL and client id;
-2. checks `GET https://<webapp>/.well-known/oauth-protected-resource/mcp`. This is skipped for a
-   localhost URL, which has no metadata in local-dev mode;
-3. tells the user to run `/mcp` and authenticate `nimbus` (`claude mcp login` from a shell);
-4. calls `nimbus_get_capabilities` and reports the environment, caller and permitted actions;
-5. on known failures, prints the fix from `mcp-server.md`: `AADSTS9010010` (add the endpoint URL as
-   an identifier URI), `AADSTS500113` (wrong client id), and a redirect mismatch (register
-   `http://localhost:8765/callback`).
-
-### 4.5 Versioning
-
-`plugin.json` `version` follows the NimBus release version. The release checklist in
-`docs/versioning.md#cutting-a-release` gains one step: bump `plugins/nimbus-operator/.claude-plugin/plugin.json`
-and the marketplace entry to the release version. The plugin works against older servers because it
-reads `nimbus_get_capabilities` and `prompts/list` at run time. Without the prompts (servers before
-this spec), the skill still works, and the `/mcp__…` commands don't appear.
-
-## 5. WebApp and docs
-
-- **Connect card** (`ClientApp/src/components/admin/mcp-access-settings.tsx`): add the two plugin
-  commands, with a note to enter the endpoint URL and, when the policy approves specific clients, the
-  selected client id. The existing `claude mcp add` command keeps its `<port>` placeholder, with a
-  hint that 8765 matches the plugin. Per AGENTS.md, the PR includes a screenshot.
-- **`docs/mcp-server.md`**: a **Prompts** section (the §3.1 table and §3.2 availability), a **Claude
-  Code plugin** section (install, settings, port 8765, `connect`), and the port note in step 1.7.
-- **`plugins/nimbus-operator/README.md`**: install, settings and troubleshooting, linking to
-  `mcp-server.md` rather than copying the Entra steps.
+- **`docs/mcp-server.md`**:
+  - a **Server instructions** section: what they cover, the 4,096 and 2,048 character limits, and
+    the tests that guard them;
+  - a **Troubleshooting** table: `AADSTS9010010`, `AADSTS500113`, `AADSTS50011`, `AADSTS65001`, a
+    metadata URL that answers with HTML or a sign-in redirect (`/mcp` off: the SPA fallback answers
+    unknown paths, so it isn't a 404), `403` from the access policy, `503 [Disabled]`, no readable
+    endpoints, a missing permitted action, and tools that don't appear until the client reconnects.
+- The WebApp's **Connect an agent** card is unchanged. It already shows the `claude mcp add`
+  command with the selected client, and warns about the two most common mistakes (the resource
+  app id as the client, and the callback port).
 
 ## 6. Delivery
 
 | PR | Scope | Exit |
 | --- | --- | --- |
 | 1 Prompts | §3: `OperatorPrompts`, `McpPromptAccess`, registration, tests, the docs Prompts section | Tests green. Prompts listed and runnable from Claude Code against the Aspire stack. |
-| 2 Plugin | §4 and §5: the runtime check in §4.2 first, then the plugin, marketplace, drift guard over the skills, Connect card, docs, versioning step | `claude plugin validate plugins/nimbus-operator` passes. A fresh install against the dev WebApp signs in, `connect` succeeds, and one `triage` run completes. Screenshot in the PR. |
+| 2 Instructions | §4 and §5: `OperatorInstructions`, registration, tests, the docs sections | Tests green. Against the dev WebApp, Claude Code receives the instructions, lists the prompts, and one `triage` and one confirmed `recover-message` run complete. |
 
-The PRs are independent: the plugin works without the prompts. Ship PR 1 first so the plugin's
-skill can point to the prompts.
+PR 1 shipped first, so the instructions can name the prompts.
 
 ## 7. Out of scope
 
@@ -282,8 +240,9 @@ skill can point to the prompts.
 - `.mcpb` bundles. They package local stdio servers for Claude Desktop. Desktop and claude.ai reach
   `/mcp` as a custom connector, and the prompts reach them that way.
 - Data-carrying prompts or MCP resources (for example a live overview resource).
-- A Codex or other non-Claude plugin format. The skill is plain Markdown and can be copied into
-  `.agents/skills/` later.
+- A Claude Code plugin or any other client-side package (§4.4).
+- Instructions that vary by caller or policy. The text is static, and `permittedActions` carries
+  the per-caller view.
 - Hooks that enforce confirmation. Claude Code's per-tool permission prompt and the server's action
   tokens already cover this.
 - An `nb mcp` CLI command.
@@ -292,5 +251,4 @@ skill can point to the prompts.
 
 1. Is `failure-report` worth having next to `triage` plus `nimbus_get_metrics`, or should it be a
    `scope=site` option of `triage`?
-2. Fixed port 8765: acceptable for every customer, or should the plugin offer two or three
-   documented ports?
+2. Should the Connect card link to the troubleshooting table, or repeat its most common rows?
