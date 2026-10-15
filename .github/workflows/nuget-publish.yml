@@ -37,7 +37,8 @@ jobs:
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Restore
-        run: dotnet restore src/NimBus.slnx
+        # Release, so NuGet audit findings fail the restore; see dotnet.yml.
+        run: dotnet restore src/NimBus.slnx -p:Configuration=Release
 
       - name: Prepare the Aspire CLI bundle
         # Two AppHosts set AspireUseCliBundle and would otherwise race to set the bundle up

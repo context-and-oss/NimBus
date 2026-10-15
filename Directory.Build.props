@@ -38,6 +38,9 @@
     Level=moderate raises NU1901-NU1904 warnings on CVSS 4.0+ advisories.
     Release builds promote those to errors via the TreatWarningsAsErrors block
     below, so vulnerable dependencies fail CI without an extra workflow step.
+    The findings are raised at restore time, so this only holds when the restore
+    itself runs in Release. CI restores with Configuration=Release before a build
+    that skips restore; a Debug restore records them as plain warnings.
   -->
   <PropertyGroup Label="NuGet audit">
     <NuGetAudit>true</NuGetAudit>

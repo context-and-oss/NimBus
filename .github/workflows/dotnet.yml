@@ -71,7 +71,10 @@ jobs:
       with:
         node-version: 22
     - name: Restore dependencies
-      run: dotnet restore src/NimBus.slnx
+      # Restore in Release: NuGet audit findings (NU1901-NU1904) are raised during
+      # restore and are only promoted to errors under Release's TreatWarningsAsErrors.
+      # A Debug restore records them as warnings that the --no-restore build replays.
+      run: dotnet restore src/NimBus.slnx -p:Configuration=Release
     - name: Prepare the Aspire CLI bundle
       # CrmErpDemo.AppHost and DynamicsBcDemo.AppHost set AspireUseCliBundle. On a runner
       # without the bundle, each runs this same setup into ~/.aspire during the parallel
