@@ -28,7 +28,7 @@
          where a break would surface as a serialization failure on some dashboard path
          rather than at build time. 3.x buys nothing here; 2.5.302 already clears the
          advisory. Raise this only when Aspire itself moves. -->
-    <PackageReference Include="MessagePack" Version="2.5.302" />
+    <PackageReference Include="MessagePack" Version="2.5.303" />
   </ItemGroup>
 
   <ItemGroup>
