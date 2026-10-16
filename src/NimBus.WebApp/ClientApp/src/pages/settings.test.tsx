@@ -122,7 +122,8 @@ describe("Settings page", () => {
     }
     const links = {
       "MCP access": "/Settings/mcp",
-      "Failure intelligence": "/Settings/failure-intelligence",
+      // Its row link carries the Set up call to action.
+      "Failure intelligence": "/Settings/failure-intelligence?tab=provider",
       "Heartbeat probing": "/Settings/heartbeat",
       Simulation: "/Settings/simulation",
       "Audit logging": "/Settings/audit",
@@ -183,10 +184,16 @@ describe("Settings page", () => {
     await waitFor(() => expect(mocks.sendHeartbeat).toHaveBeenCalledTimes(1));
   });
 
-  it("opens the panel on the right tab for an action that needs review", () => {
+  it("labels the row link with an action that needs review, instead of a second control", () => {
     renderAt("/Settings");
 
-    fireEvent.click(within(row("Failure intelligence")).getByRole("link", { name: "Set up…" }));
+    const links = within(row("Failure intelligence")).getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0].textContent).toContain("Set up ›");
+    expect(links[0].textContent).not.toContain("Configure");
+    expect(within(row("Audit logging")).getByRole("link").textContent).toContain("Configure ›");
+
+    fireEvent.click(links[0]);
 
     expect(location()).toBe("/Settings/failure-intelligence?tab=provider");
     expect(
