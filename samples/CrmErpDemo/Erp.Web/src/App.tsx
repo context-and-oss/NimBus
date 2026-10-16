@@ -8,6 +8,7 @@ import HandoffModePanel from './components/admin/handoff-mode-panel';
 import ProcessingDelayPanel from './components/admin/processing-delay-panel';
 import AlertsPanel from './components/admin/alerts-panel';
 import DataResetPanel from './components/admin/data-reset-panel';
+import SignedInBadge from './components/SignedInBadge';
 import { api, type FailureReason } from './api';
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
@@ -29,6 +30,7 @@ export default function App() {
             <ServiceModeToggle />
             <ErrorModeToggle />
             <span className="text-xs text-slate-400">NimBus · CRM + ERP demo</span>
+            <SignedInBadge />
           </div>
         </div>
       </header>

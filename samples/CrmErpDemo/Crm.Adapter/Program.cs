@@ -1,5 +1,6 @@
 using Crm.Adapter.Clients;
 using CrmErpDemo.Contracts.E2E;
+using CrmErpDemo.Contracts.Security;
 using Crm.Adapter.Handlers;
 using Crm.Adapter.Observability;
 using Microsoft.Extensions.Configuration;
@@ -24,6 +25,9 @@ var crmApiBaseUrl = builder.Configuration["services:crm-api:https:0"]
     ?? builder.Configuration["services:crm-api:http:0"]
     ?? builder.Configuration["Crm:ApiBaseUrl"]
     ?? throw new InvalidOperationException("Crm API base URL is required (service discovery or Crm:ApiBaseUrl).");
+
+// In Azure crm-api requires sign-in; the adapter presents the demo service key (Demo__ServiceKey).
+builder.Services.AddDemoServiceKey(builder.Configuration, crmApiBaseUrl);
 
 // Circuit-breaker showcase: the outage flag is read fail-open on a dedicated
 // short-timeout client (never surfaces TaskCanceledException into the handler

@@ -3,6 +3,7 @@ using Azure.Messaging.ServiceBus;
 using CrmErpDemo.Contracts.E2E;
 using CrmErpDemo.Contracts.Dtos;
 using CrmErpDemo.Contracts.Events;
+using CrmErpDemo.Contracts.Security;
 using Erp.Adapter.Functions.Clients;
 using Erp.Adapter.Functions.HandoffMode;
 using Erp.Adapter.Functions.Handlers;
@@ -49,6 +50,10 @@ static string ResolveErpApiBaseUrl(IConfiguration cfg) =>
         ?? cfg["services:erp-api:http:0"]
         ?? cfg["Erp:ApiBaseUrl"]
         ?? throw new InvalidOperationException("Erp API base URL is required (service discovery or Erp:ApiBaseUrl).");
+
+// In Azure erp-api requires sign-in; every client below, the notification webhook included,
+// presents the demo service key (Demo__ServiceKey).
+builder.Services.AddDemoServiceKey(builder.Configuration, ResolveErpApiBaseUrl(builder.Configuration));
 
 builder.Services.AddHttpClient<IErpApiClient, ErpApiClient>(c =>
     c.BaseAddress = new Uri(ResolveErpApiBaseUrl(builder.Configuration)));
