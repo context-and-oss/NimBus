@@ -3,10 +3,15 @@
 Status: **proposed** (2026-09-26). The repo owner decided its open questions on 2026-09-28 (§13).
 Revised on 2026-10-05 after a review
 ([2026-10-04-spec-036-review.md](../../plan/2026-10-04-spec-036-review.md)); §16 lists the changes.
-Nothing is implemented. Target release: v5.0.0. Decision record:
-[ADR-017](../../adr/017-single-cosmos-tracking-container.md) (proposed), which supersedes ADR-008
-when accepted.
-Baseline: master `f16a0369`; the review rechecked the code at `e9996280`.
+Revised again on 2026-10-08 after a second review of the spec and a review of its implementation
+plan ([spec review](../../plan/2026-10-07-spec-036-spec-review.md),
+[plan review](../../plan/2026-10-07-spec-036-implementation-plan-review.md)).
+Nothing is implemented. Target release: v5.0.0. Implementation plan:
+[2026-10-07-spec-036-implementation-plan.md](../../plan/2026-10-07-spec-036-implementation-plan.md).
+Decision record: [ADR-017](../../adr/017-single-cosmos-tracking-container.md) (proposed), which
+supersedes ADR-008 when accepted.
+Baseline: master `f16a0369`; the review rechecked the code at `e9996280`, and the 2026-10-08
+revision at `7403c596` (v4.6.0 + 1).
 Scope: `NimBus.MessageStore.CosmosDb`, the `nb` CLI (`infra apply`, `topology apply`, `setup`,
 `deploy apps`, `container copy` and a new `container migrate`), the WebApp's Cosmos admin paths
 (purge, copy, storage containers), its Cosmos request priority and its two purge operations in
@@ -14,8 +19,8 @@ Scope: `NimBus.MessageStore.CosmosDb`, the `nb` CLI (`infra apply`, `topology ap
 signatures of the storage contracts in `NimBus.MessageStore.Abstractions`, the `messages` and
 `audits` containers, the Service Bus topology and the message flow. Three prerequisites land
 first, outside this spec (§9): an exact endpoint filter in `GetEventsByFilter` on the SQL Server
-and in-memory providers (§5.4), a 4.x patch that reserves `unresolvedevents`, and a
-maintenance-branch procedure in `docs/versioning.md`.
+and in-memory providers (§5.4, done in v4.3.0), a 4.x minor release that reserves
+`unresolvedevents`, and a maintenance-branch procedure in `docs/versioning.md`.
 Why: the per-endpoint layout (ADR-008) costs each endpoint a fixed minimum throughput. It needs a
 control-plane provisioning step per endpoint, which managed identity can't do at runtime, and it
 couples endpoint ids to container names. None of the benefits ADR-008 cites is in use today (§2.2).
@@ -60,9 +65,9 @@ emulator feature and a short migration outage. §7 weighs them.
 | Creation | (a) `nb topology apply` and `nb setup` call `EndpointContainerProvisioner` (`TopologyCommands.cs:121`, `SetupCommand.cs:137`), which runs `az cosmosdb sql container create`. (b) `CosmosDbClient.GetEndpointContainer` (`CosmosDbClient.cs:203`) creates the container lazily. This works only with account keys, because data-plane RBAC can't create containers; under managed identity the first message on an unprovisioned endpoint fails with 403. (c) `nb container copy` and the WebApp's Copy Endpoint Data create the container in the target account |
 | Naming rules | An endpoint id may not equal one of the 13 reserved container ids (`CosmosContainerDefaults.ReservedContainerIds`, `CosmosContainerDefaults.cs:31`). Five call sites check this |
 | Access | The Resolver and WebApp identities hold Cosmos DB Built-in Data Contributor at account scope (`roleAssignments.bicep:63-67`). Nothing is granted per container |
-| Endpoint purge | Deletes the endpoint container, then drops the cached handle so the next access re-creates it (`CosmosDbMessageTrackingStore.Writes.cs:229`). Two WebApp entry points call it, and both await it inside the HTTP request: the endpoint page's purge, refused in Production and Staging unless the caller is a site Owner (`EndpointImplementation.cs:490-498`), and Admin → Delete all events, which requires a site Owner and works in every environment (`AdminImplementation.cs:228`) |
+| Endpoint purge | Deletes the endpoint container, then drops the cached handle so the next access re-creates it (`CosmosDbMessageTrackingStore.Writes.cs:271`). Two WebApp entry points call it, and both await it inside the HTTP request: the endpoint page's purge, refused in Production and Staging unless the caller is a site Owner (`EndpointImplementation.cs:476-519`), which then runs `ClearEndpoint` to delete and re-create the endpoint's Service Bus subscription (`EndpointManagement.cs:18-27`); and Operations → Delete all events, which requires a site Owner, works in every environment and writes no audit entry (`AdminImplementation.cs:228`) |
 | Cross-endpoint reads | The failed-messages page and the histogram query each endpoint container, eight at a time, and merge the results (`CosmosDbMessageTrackingStore.Search.cs:194`) |
-| Storage admin | Admin → Storage containers lets a site Owner delete any container that is neither reserved nor named after a catalog endpoint (`AdminImplementation.cs:325`). It deletes through ARM when `CosmosAccountResourceId` is set (`ArmCosmosContainerAdmin`) |
+| Storage admin | Topology → Storage lets a site Owner delete any container that is neither reserved nor named after a catalog endpoint (`AdminImplementation.cs:325`). It deletes through ARM when `CosmosAccountResourceId` is set (`ArmCosmosContainerAdmin`) |
 | SQL Server provider | One `UnresolvedEvents` table with an `EndpointId` column and indexes `(EndpointId, Status)`, `(EndpointId, SessionId, Status)` and `(EndpointId, UpdatedAtUtc DESC)` (`Schema/0003_Events.sql:37-39`) |
 | Upstream | DIS, which NimBus is forked from, keeps per-endpoint containers (`BH.DIS.MessageStore/CosmosDbClient.cs`) |
 
@@ -137,9 +142,11 @@ Three levels (`/endpointId`, `/sessionId`, `/id`) were rejected (§12).
   the single failed-search query (§5.4). Cosmos sorts `event.UpdatedAt` as its ISO string, and the
   default serializer trims trailing zeros from the fraction, so that order isn't chronological
   within a second. Today's `FailedEventPageCursor` merge compares ticks instead.
-- Rows that `nb container migrate` copies also carry `migratedFromTs`, the source row's `_ts`
-  (§6.1). Every v5 write omits or nulls it (§5.3), so a row whose `migratedFromTs` is defined and
-  non-null is one nothing has changed since the copy.
+- Rows that `nb container migrate` copies also carry `migratedFromTs` and `migratedFromEtag`, the
+  source row's `_ts` and `_etag` (§6.1). Every v5 write omits or nulls both (§5.3), so a row whose
+  `migratedFromTs` is defined and non-null is one nothing has changed since the copy. The ETag
+  identifies the source version exactly; `_ts` has one-second resolution, so it can't tell two
+  changes within one second apart.
 - The partition key is `new PartitionKeyBuilder().Add(endpointId).Add(id).Build()`.
 - `EventDbo` is a private nested class today (`CosmosDbMessageTrackingStore.cs:85`). It and the
   query projection types become internal types, so the scopes (§5.3) can use them.
@@ -164,8 +171,9 @@ internal sealed class EndpointScope
     public string EndpointId { get; }
 
     // Point operations take row ids and build the full key (EndpointId, id) themselves.
-    // Create, Upsert and Replace stamp endpointId and updatedAtTicks and omit migratedFromTs.
-    // PatchAsync appends PatchOperation.Set("/migratedFromTs", null) and never touches key paths.
+    // Create, Upsert and Replace stamp endpointId and updatedAtTicks and omit migratedFromTs and
+    // migratedFromEtag. PatchAsync appends PatchOperation.Set("/migratedFromTs", null) and
+    // PatchOperation.Set("/migratedFromEtag", null) and never touches key paths.
     public Task<ItemResponse<EventDbo>> ReadAsync(string id, ItemRequestOptions? options = null);
     public Task<ItemResponse<EventDbo>> CreateAsync(EventDbo row, ItemRequestOptions? options = null);
     public Task<ItemResponse<EventDbo>> UpsertAsync(EventDbo row, ItemRequestOptions? options = null);
@@ -251,11 +259,13 @@ The copy tools reach the container through the same scopes, via the public copy 
 `NimBus.MessageStore.CosmosDb` (§5.7).
 
 The migration (§6.1) needs writes the endpoint scope deliberately doesn't offer: it must keep
-`migratedFromTs` and delete stale copies. So the accessor also hands out an internal
-`MigrationScope`, bound to one endpoint id, for `nb container migrate` only. It builds the full
-key, stamps `endpointId` from its own binding, keeps `migratedFromTs`, and offers create,
-`IfMatch` replace and `IfMatch` delete. Its reads and verify queries go through
-`EndpointScope.Query`, so the recorded-query and key tests cover them too (§8).
+`migratedFromTs` and `migratedFromEtag` and delete stale copies. So the accessor also hands out an
+internal `MigrationScope`, bound to one endpoint id, for `nb container migrate` only. It builds the
+full key, stamps `endpointId` from its own binding, keeps both stamps, and offers create, `IfMatch`
+replace and `IfMatch` delete. Its reads and verify queries go through `EndpointScope.Query`, so
+the recorded-query and key tests cover them too (§8). The accessor hands out the endpoint and set
+scopes only once the layout guard reports ready (§6.5); the migration scope bypasses the guard,
+because the migration runs while the layout is pending.
 
 ### 5.4 Operation by operation
 
@@ -265,6 +275,7 @@ key, stamps `endpointId` from its own binding, keeps `migratedFromTs`, and offer
 | `UploadPendingMessage`, `UploadDeferredMessage` (guarded writes, Spec 030) | Read, then create or ETag-conditional upsert | The same with the full key. The compare-and-swap is unchanged |
 | `UploadFailedMessage`, `UploadDeadletteredMessage`, `UploadUnsupportedMessage`, `UploadCompletedMessage`, `UploadSkippedMessage` | Upsert | Upsert with `endpointId` stamped |
 | `TrySkipDeferredMessage`, `TryCompletePendingMessage` | Read, then conditional replace or upsert | The same with the full key |
+| `TryArchiveUnresolvedEvent`, `TryRestoreArchivedEvent` (Spec 035, added after this spec's baseline) | Read, then `IfMatch` replace that flips `deleted` and `ttl` (`Writes.cs:70-110`) | The same with the full key. The replace goes through `EndpointScope.ReplaceAsync`, so it clears both migration stamps. While the layout is pending they throw like every tracking member, so the operator tools that call them (`OperatorCommandCoordinator.cs:351,391`, REST and MCP) refuse with the guard's error before any side effect |
 | `RemoveMessage`, `ArchiveFailedEvent` | Patch | Patch with the full key |
 | `GetEventsByIds` | `ReadManyItemsAsync` with `(id, key(id))` pairs | `(id, key(endpointId, id))` pairs |
 | `DownloadEndpointStateCount`, `DownloadEndpointStatePaging`, `GetEventsByFilter`, `GetCompletedEventsOnEndpoint`, `GetEndpointErrorList`, `GetInvalidEventsOnSession`, `GetPendingEventsOnSession`, `GetEvent(endpointId, eventId)`, `GetPendingHandoffByExternalJobId`, `GetNextPendingHandoffEvent` | Query over the whole endpoint container | The same query with the endpoint predicate, routed by prefix |
@@ -272,11 +283,14 @@ key, stamps `endpointId` from its own binding, keeps `migratedFromTs`, and offer
 | `GetFailedEventsAcrossEndpoints`, `GetFailedEventHistogram` | One query per endpoint container, eight at a time, merged by `FailedEventPageCursor` | One query each through an `EndpointSetScope` (§5.3). The search orders by `updatedAtTicks` descending (§5.2) and pages with the query's own continuation token, wrapped as described below. The histogram reads `endpointId` from the rows and keeps its 50,000-row cap. `FailedEventPageCursor`'s merge and the per-endpoint fan-out are deleted (§13 item 7) |
 | `PurgeMessages(endpointId)` | Deletes the container | §5.5 |
 
-**The endpoint filter of `GetEventsByFilter`.** The contract documents `EventFilter.EndPointId` as a
-case-insensitive prefix (`IMessageTrackingStore.cs:166`). The SQL Server and in-memory providers
-implement it that way (`SqlServerMessageTrackingStore.Search.cs:157`, `InMemoryMessageStore.cs:265`).
-Cosmos is exact, because the endpoint id selects the container, and it stays exact through the
-scope. On SQL Server the prefix match leaks rows in two ways:
+**The endpoint filter of `GetEventsByFilter`.** *Done: #196 (`a1266587`), shipped in v4.3.0. The
+contract now documents an exact match, SQL Server uses `EndpointId = @EndpointId`
+(`SqlServerMessageTrackingStore.Search.cs:160`), in-memory uses an ordinal-ignore-case equality
+(`InMemoryMessageStore.cs:308`), and `GetEventsByFilter_matches_endpointId_exactly_not_by_prefix`
+pins it. The rest of this paragraph records why it was needed.* The contract documented
+`EventFilter.EndPointId` as a case-insensitive prefix, and the SQL Server and in-memory providers
+implemented it that way. Cosmos is exact, because the endpoint id selects the container, and it
+stays exact through the scope. On SQL Server the prefix match leaked rows in two ways:
 
 - The WebApp authorizes Reader on the route endpoint and passes that endpoint as the filter
   (`EventImplementation.Search.cs:32,65`), so a Reader on `Billing` sees `BillingV2` rows.
@@ -284,9 +298,9 @@ scope. On SQL Server the prefix match leaks rows in two ways:
   it was asked to skip (`AdminService.Purge.cs:549-560`), so it also rewrites sibling endpoints'
   events.
 
-A prerequisite fix, separate from this spec (§9), makes the endpoint filter exact on every provider
-and updates the contract comment. The other ID-like filters stay prefix matches. The isolation
-conformance tests (§8) depend on this fix.
+The prerequisite fix (§9) made the endpoint filter exact on every provider and updated the contract
+comment. The other ID-like filters stay prefix matches. The isolation conformance tests (§8) depend
+on this fix.
 
 **Paging the failed search.** The single query keeps the guarantees `FailedEventPageCursor` gives
 today:
@@ -310,13 +324,25 @@ today:
 
 ### 5.5 Purging an endpoint
 
-**In the store.** `PurgeMessages(endpointId)` pages `SELECT c.id FROM c WHERE c.endpointId = @e`
-and deletes each row with bounded parallelism. The session purge already does this
-(`Writes.cs:192`). The endpoint purge uses a lower default parallelism than the session purge's 8
-(proposed: 2), so it can't saturate the budget the Resolver writes against. A delete that returns
-404 counts as done: another purge or TTL got there first. Both purges adopt that rule. The method
-returns `false` on any other failure, as its contract says today, and a rerun deletes whatever is
-left.
+**In the store.** `PurgeMessages(endpointId)` deletes the rows that existed when the purge started,
+and only those. Today's container delete takes a few seconds, so live traffic barely overlaps it.
+A purge row by row can run for an hour, so it has to cope with the Resolver writing the same
+endpoint meanwhile:
+
+- It records `purgeStart`, the current Unix time in seconds, before its first read.
+- It pages `SELECT c.id, c._etag FROM c WHERE c.endpointId = @e AND c._ts < @purgeStart`. A row
+  written in the start second or later is a row the purge didn't mean to delete, so it survives.
+- It deletes each row `IfMatch` its `_etag`, with bounded parallelism. A `412` means the Resolver
+  rewrote the row after the scan read it, so the row survives and counts as kept. A `404` counts
+  as done: another purge or TTL got there first.
+- The session purge (`Writes.cs:234`) already pages and deletes; it adopts the same 404 rule. It
+  stays unconditional, as today.
+- The endpoint purge uses a lower default parallelism than the session purge's 8 (proposed: 2), so
+  it can't saturate the budget the Resolver writes against.
+
+The method returns `false` on any other failure, as its contract says today, and a rerun deletes
+whatever is left. Its result distinguishes nothing more: the counts of deleted and kept rows go
+into the purge's audit entry (below).
 
 **In the WebApp: a background operation.** A container delete returns quickly; a delete per row
 doesn't. At parallelism 2, an endpoint with 100,000 rows takes minutes and one with 1,000,000 rows
@@ -324,24 +350,40 @@ about an hour. App Service ends a request after about 230 seconds
 ([request timeout](https://learn.microsoft.com/troubleshoot/azure/app-service/web-request-times-out-app-service)),
 so the purge can't run inside the request:
 
-- Both entry points authorize and validate as today. They then capture the caller's identity,
-  queue the purge on an in-process background worker, write an audit entry that records the start,
-  and return `202 Accepted`.
+- Both entry points authorize and validate as today. They then:
+  1. take the endpoint's purge lease (below), or return `409 Conflict`;
+  2. write the start audit entry through the required audit path
+     (`IAuditLogService.LogRequiredAuditAsync`), which ignores the audit selection (Settings → Compliance) and
+     throws when the row can't be persisted. If it throws, they release the lease and return `503`
+     without purging. A purge never runs unaudited;
+  3. capture the caller's identity, queue the purge on an in-process background worker and return
+     `202 Accepted`.
+- **Order of work for the endpoint page's purge.** The worker runs `ClearEndpoint` first, then
+  `PurgeMessages(endpointId)`. Clearing first drops the messages queued for the endpoint before
+  the row scan starts. Rows the Resolver writes afterwards, for messages already in flight, carry a
+  `_ts` at or after `purgeStart` or fail the `IfMatch`, so they survive and reflect real work. If
+  `ClearEndpoint` fails, the worker doesn't purge rows. Operations → Delete all events doesn't clear the
+  subscription, as today.
 - The worker runs in its own `IServiceScope`, because the request's `HttpContext` and DI scope are
   gone once the `202` is sent (`EndpointImplementation.cs:70` captures the context per request).
-  It runs `PurgeMessages(endpointId)` and then today's follow-up: the endpoint page's
-  `ClearEndpoint`. It then writes the purge audit entry with the outcome and duration, passing the
-  captured identity as `auditorNameOverride` (`AuditLogService.LogAuditAsync`).
-- **One at a time.** One purge runs per endpoint on each WebApp instance. A second request for the
-  same endpoint on that instance gets `409 Conflict`. Purges on two scaled-out instances can
-  overlap; that costs throughput but is harmless, because deletes are idempotent.
+  It writes the outcome audit entry (success or failure, deleted and kept row counts, duration)
+  through a new `LogRequiredAuditAsync` overload that takes the captured identity as the auditor
+  and needs no `HttpContext`. If that write fails, the worker retries it with backoff and logs an
+  error that carries the outcome, so the result is never lost silently.
+- **One at a time, across instances.** The purge lease is a document `purge-lease-<endpointId>` in
+  the `settings` container. Taking it is a create; a live lease makes the create fail with `409`,
+  which the API returns. The holder renews it every minute (`leaseUntil` = now + 3 minutes, `IfMatch`
+  its ETag), and a lease whose `leaseUntil` has passed can be taken over `IfMatch`, so a crashed
+  instance doesn't block the endpoint for longer than three minutes. The worker deletes the lease
+  when it finishes. Today's per-request execution has no such exclusion; it didn't need one while a
+  purge took seconds.
 - **Cancellation.** `PurgeMessages` takes no cancellation token, and the contract stays unchanged,
   so a purge stops only when the process stops. The audit log then shows a start without an
-  outcome, and a rerun deletes what is left.
+  outcome, the lease expires, and a rerun deletes what is left.
 - **Progress.** The endpoint's counts fall as rows go, and the outcome lands in the audit log.
 - **API.** In `api-spec.yaml`:
   - `post-endpoint-purge` and `post-admin-delete-all` return `202` instead of `200`, plus `409` for
-    a purge already running.
+    a purge already running and `503` when the start can't be audited.
   - `post-admin-delete-all` drops its `BulkOperationResult` body.
   - The endpoint purge's failure no longer surfaces in the response, because it happens after the
     `202`; the audit log records it.
@@ -358,12 +400,13 @@ Other points:
 - **Cost.** Each delete is charged like a write and draws on the shared budget. Both purge entry
   points run in the WebApp, so their requests run at low priority (§5.10).
 - **Who can purge in production.** The endpoint page's purge is refused in Production and Staging
-  unless the caller is a site Owner (`EndpointImplementation.cs:490-498`). Admin → Delete all events
+  unless the caller is a site Owner (`EndpointImplementation.cs:490-498`). Operations → Delete all events
   requires a site Owner in every environment. So site Owners have two purge paths in production,
   and both now cost throughput. Both confirmations say that the purge runs in the background, takes
   time and consumes throughput in proportion to the endpoint's rows.
-- **Behaviour change.** Deleting a container was all-or-nothing. The new purge can stop part-way;
-  it reports failure in the audit log, and a rerun finishes the job.
+- **Behaviour change.** Deleting a container was all-or-nothing, and it also deleted rows written
+  while it ran. The new purge can stop part-way; it reports failure in the audit log, and a rerun
+  finishes the job. It never deletes a row written after it started.
 - **Side benefit.** Purge no longer needs container-management rights, so it works under
   data-plane RBAC (§2.2).
 
@@ -379,6 +422,14 @@ Other points:
   routine apply never resets an operator's setting. When the container doesn't exist yet, as on a
   fresh deployment or the first v5 apply of an upgrade (§6.2 step 2), it uses the default.
   `deploy.yml` and the Azure Pipelines template pass the flag through.
+- **The Resolver's paused trigger survives `nb infra apply`.** The Function App templates replace
+  the app settings wholesale (`functionApp.bicep:84`, `flexConsumptionFunctionApp.bicep:81`), so
+  today a routine apply would clear `AzureWebJobs.Resolver.Disabled` and resume a paused Resolver
+  mid-migration. Both templates read the app's current settings and carry that one setting forward,
+  the way `webApp.bicep` already preserves `AzureAd__*` and `ServiceBusManagement__*`
+  (`InfrastructureDeployer.cs:531-534`). With that, a pipeline that starts during the cutover can't
+  resume the Resolver: its `infra apply` keeps the trigger paused, and its `deploy apps` refuses
+  while the layout is pending (§6.5).
 - **CLI.** `nb topology apply` and `nb setup` stop provisioning Cosmos containers, and
   `EndpointContainerProvisioner` is deleted. The `--storage-provider` option of `nb topology apply`
   existed only for that step. It is still accepted through v5.x, with a deprecation warning, and
@@ -397,7 +448,7 @@ Other points:
 - **Layout guard.** The provider checks the migration marker before it serves tracking requests
   (§6.5).
 - **Reserved ids.** `CosmosContainerDefaults.ReservedContainerIds` gains `unresolvedevents`. A 4.x
-  patch reserves it too, before v5.0.0 ships, so a v4 WebApp's Storage containers page protects it
+  release (v4.7.0) reserves it too, before v5.0.0 ships, so a v4 WebApp's Storage page protects it
   during the cutover and after a rollback (§6.3, §9).
 - **Bicep sync test.** `CosmosBicepContainerSyncTests` (#152) requires every reserved id to be
   declared in `cosmosDB.bicep` with the store's partition key. It parses only single-path keys, so
@@ -428,13 +479,15 @@ Other points:
   job of `nb container migrate` (§6).
 - Copying `messages` is unchanged.
 
-### 5.8 Admin → Storage containers
+### 5.8 Topology → Storage
 
 - `IsProtectedContainer` (`AdminImplementation.cs:325`) keeps protecting reserved ids, which now
   include `unresolvedevents`.
 - It stops protecting containers merely because they are named after a catalog endpoint, with one
   exception: a legacy endpoint container stays protected until the migration marker (§6.5) lists it
-  as migrated or excluded.
+  as migrated or excluded. An excluded container can't hold unresolved rows of a catalog endpoint,
+  because `--exclude` refuses those (§6.1 step 2), so deleting it loses at most terminal history.
+  The page labels excluded containers "not migrated" so the operator sees that before deleting.
 - The page reads the marker through the public `TrackingLayout` reader (§6.5), once per request.
   `IsProtectedContainer` is a synchronous check over ids today (`AdminImplementation.cs:325`), so it
   takes the loaded marker as an argument.
@@ -444,14 +497,20 @@ Other points:
   for this page. The `CosmosAccountResourceId` setting, which selects `ArmCosmosContainerAdmin`,
   exists for the same reason. When the legacy containers are gone, orphaned endpoint containers
   can no longer appear.
-- **Retirement (§13 item 5).** A later 5.x minor removes the page, its
-  `/api/admin/storage/cosmos/containers` endpoint, the role assignment and the setting from the
-  Bicep. Its release notes list the removed page under Compatibility. The public
-  `ICosmosContainerAdmin` and `CosmosContainerAdmin` in `NimBus.MessageStore.CosmosDb` become
-  `[Obsolete]` in that minor and are deleted in v6.0.0 ([versioning](../../versioning.md)).
-  Deployments don't delete role assignments that the template stops declaring, so operators remove
-  the existing one themselves. Legacy containers left after that are deleted in the Azure portal or
-  with `az cosmosdb sql container delete`.
+- **Retirement (§13 item 5): deprecated in a 5.x minor, removed in v6.0.0.** Removing a page and an
+  API route is a change a consumer can observe, which `docs/versioning.md` reserves for a major. So:
+  - **A later 5.x minor deprecates** the page and its API. The page shows a notice that it goes in
+    v6.0.0 and points to `az cosmosdb sql container delete`. The operations under
+    `/api/admin/storage/cosmos/containers` are marked `deprecated: true` in `api-spec.yaml`. The
+    public `ICosmosContainerAdmin` and `CosmosContainerAdmin` in `NimBus.MessageStore.CosmosDb`
+    become `[Obsolete]`. The release notes list all three under Compatibility. Everything keeps
+    working, so the role assignment and the `CosmosAccountResourceId` setting stay.
+  - **v6.0.0 removes** the page, the API operations, `ICosmosContainerAdmin`,
+    `CosmosContainerAdmin`, the WebApp's Cosmos DB Operator role assignment and the
+    `CosmosAccountResourceId` setting from the Bicep, and lists them under ⚠️ Breaking.
+    Deployments don't delete role assignments that the template stops declaring, so operators remove
+    the existing one themselves. Legacy containers left after that are deleted in the Azure portal or
+    with `az cosmosdb sql container delete`.
 
 ### 5.9 Public API and configuration
 
@@ -459,7 +518,10 @@ Other points:
   `TrackingContainer()`.
 - `EndpointPartitionKeyPath`, `EndpointContainer(string)` and `EnsureNotReservedEndpointId(string)`
   become `[Obsolete]`, with their current behaviour as the bridge, and are removed in v6.0.0
-  ([versioning](../../versioning.md)). `EndpointContainerDefaultTimeToLive` keeps its value
+  ([versioning](../../versioning.md)). Release builds treat compiler warnings, CS0618 included, as
+  errors (`Directory.Build.props:49`), so they become obsolete only once no code in `src/` calls them,
+  and the tests that pin the bridges (`CosmosContainerDefaultsTests.cs:18,43,53`) suppress CS0618
+  locally. `EndpointContainerDefaultTimeToLive` keeps its value
   and also serves the tracking container.
 - Three public, documented types in `NimBus.MessageStore.CosmosDb`: the migration logic (§6.1), the
   tracking-row copy (§5.7) and the `TrackingLayout` reader (§6.5).
@@ -483,13 +545,25 @@ Other points:
   meaning of `EventFilter.EndPointId` (§5.4). `api-spec.yaml` changes only for the two purge
   operations (§5.5) and a documented `503` problem response on the tracking operations while the
   layout is pending (§6.5).
-- The public adapter interfaces in `CosmosAbstractions.cs` gain two members:
+- The public adapter interfaces in `CosmosAbstractions.cs` gain three members:
   - `ICosmosContainerAdapter.ToFeedIterator<T>(IQueryable<T>)`, whose default calls the SDK
     extension (§5.3).
   - An `ICosmosDatabaseAdapter.CreateContainerIfNotExistsAsync` overload that takes
     `ThroughputProperties?` (§5.6). Its default fails closed: it throws when throughput is
     non-null, like today's default does for container settings. A silent fallback would recreate
     the 400 RU/s manual container §5.6 avoids.
+  - `ICosmosDatabaseAdapter.GetContainersAsync(CancellationToken)`, returning each container's
+    `ContainerProperties` (id and partition key definition), for the layout guard (§6.5).
+    `CosmosDbClient` can be built from an `ICosmosClientAdapter` alone (`CosmosDbClient.cs:105`), so
+    the guard can't fall back to a raw `CosmosClient`. The default throws `NotSupportedException`.
+    The guard catches it and reports the layout as pending with a reason that names the member, so
+    a store on an adapter without it fails closed: it throws the guard's exception and never serves
+    tracking data from an unchecked layout.
+- A public `TrackingLayoutPendingException` in `NimBus.MessageStore.CosmosDb`, a subclass of
+  `StorageProviderTransientException` with a one-minute `RetryAfter`, is what the guard throws
+  (§6.5). The Resolver keeps handling it as a transient store failure. The WebApp maps this subclass,
+  and only this subclass, to `503`; nothing in the WebApp maps store exceptions to HTTP statuses
+  today.
 
 ### 5.10 Priority-based execution
 
@@ -522,7 +596,7 @@ The command takes the same connection options as the other `nb container` comman
 |---|---|
 | `--dry-run` | Reads and reports only. Writes neither rows nor the marker |
 | `--endpoint <id>` | Repeatable. Migrates only these containers. Default: every detected legacy container |
-| `--exclude <id>` | Repeatable. Skips a container and records it as excluded in the marker |
+| `--exclude <id>` | Repeatable. Skips a container and records it as excluded in the marker. Refused for a catalog endpoint's container that holds unresolved rows (step 2) |
 | `-a\|--assembly`, `--platform-package`, `--platform-feed`, `--platform` | The platform catalog, parsed as `nb topology apply` parses it. Optional; used to tell orphans apart |
 | `--include-orphans` | Also migrates detected containers that aren't named after a catalog endpoint |
 | `--apply-elapsed-ttl` | In TTL-off source containers, skips rows whose `ttl` has elapsed instead of copying them (step 3) |
@@ -562,7 +636,15 @@ The command takes the same connection options as the other `nb container` comman
    `--include-orphans` is given. Without a catalog it can't tell orphans apart and says so; their
    rows are migrated, and outside the catalog no WebApp purge reaches them. `nb container delete
    <endpoint> -s <statuses>` removes them in the new layout. Skipped orphans and `--exclude`d
-   containers are recorded in the marker's `excluded` map (step 5).
+   containers are recorded in the marker's `excluded` map (step 5), with `reason: orphan` or
+   `reason: operator`.
+
+   **Excluding is refused for live data.** `--exclude` refuses a container named after a catalog
+   endpoint that holds unresolved rows (Pending, Deferred, Failed, DeadLettered or Unsupported, not
+   deleted). Excluding one would hide its Failed rows from v5 while their sessions stay blocked in
+   Service Bus. To skip such a container anyway, the operator resolves or purges its rows under v4
+   first. Without a catalog, `--exclude` refuses any container that holds unresolved rows, because
+   it can't tell an orphan from a live endpoint.
 
    The command prints each selected container with its row count, TTL mode and last write, then
    asks for confirmation unless `--yes` is given.
@@ -571,7 +653,7 @@ The command takes the same connection options as the other `nb container` comman
    - drops the system properties (`_rid`, `_self`, `_etag`, `_attachments`, `_ts`);
    - sets `endpointId` to the container id;
    - sets `updatedAtTicks` from `event.UpdatedAt` (§5.2);
-   - sets `migratedFromTs` to the source row's `_ts` (§5.2);
+   - sets `migratedFromTs` and `migratedFromEtag` to the source row's `_ts` and `_etag` (§5.2);
    - sets `ttl` by the source container's TTL mode:
      - **TTL on** (`DefaultTimeToLive` is `-1` or positive). Cosmos already hides expired rows from
        the query. A positive `ttl` becomes the remaining lifetime, `ttl - (now_ref - _ts)`. Rows
@@ -599,10 +681,13 @@ The command takes the same connection options as the other `nb container` comman
    - creates the row with the full key. On `409 Conflict` it reads the target row, so a rerun
      converges. A target "carries a stamp" when its `migratedFromTs` is defined and non-null.
      - **The target carries a stamp.** Nothing has written it since a migration copied it. The
-       command replaces it, `IfMatch` its ETag, when the source `_ts` is newer than the stamp.
+       command replaces it, `IfMatch` the target's ETag, when the source `_etag` differs from
+       `migratedFromEtag`. Comparing ETags, not `_ts`, catches two source changes within one
+       second.
      - **The target has no stamp.** v5 wrote it (§5.3). The command replaces it, `IfMatch` its
-       ETag, only when the source `_ts` is newer than the target's `_ts`. That happens only when v4
-       changed the row after a rollback (§6.3).
+       ETag, when the source `_ts` is at or after the target's `_ts`. That happens only when v4
+       changed the row after a rollback (§6.3); v4 then wrote last, because v5 stopped writing at
+       the rollback. A tie within one second goes to the source for the same reason.
      - Otherwise the row counts as already present.
 
    **Reconcile.** For a container that was copied before, the rerun also cleans up stamped target
@@ -612,15 +697,19 @@ The command takes the same connection options as the other `nb container` comman
    row now falls under a skip rule: rows that v4 purged, removed or let expire after the first
    copy. It reports them as removed. Unstamped rows are never deleted.
 
-   After each container it re-reads `MAX(c._ts)` and keeps the value as `sourceMaxTs`. If it
-   changed during the copy, a writer was active, and the command fails that endpoint. A rerun then
-   repairs the rows copied before the change.
+   After each container it re-reads `MAX(c._ts)` and keeps the value as `sourceMaxTs`. If it rose
+   during the copy, a writer was active, and the command fails that endpoint. A rerun then repairs
+   the rows copied before the change. A fall isn't a writer: TTL expiry of the newest row lowers
+   the maximum without any write, so the command records the new value and continues.
 4. **Verify.** The source side comes from the copy's own stream at `now_ref`, not from a re-query,
    because skipped rows keep expiring in the source while the run continues. For each endpoint and
    each (`status`, `deleted`) pair, the rows that matched a copy rule must equal the rows the run
    owns in the target:
-   - stamped rows;
+   - stamped rows whose `migratedFromEtag` equals the source row's `_etag` in the stream;
    - unstamped rows kept because they are newer (step 3), when their id appears in the source.
+
+   Matching on the ETag, not only on counts per (`status`, `deleted`), catches a row whose content
+   changed while its status didn't.
 
    Target rows that have no source row, written by v5 for events first seen after a cutover, are
    reported separately as target-only and aren't a mismatch. The report also gives each endpoint's
@@ -628,14 +717,18 @@ The command takes the same connection options as the other `nb container` comman
    the numbers the Monitor page shows once the WebApp is ready (§6.2 step 7).
 5. **Mark.** The command merges its result into the marker `settings/tracking-layout` (§6.5) with
    an ETag read-modify-write. Each endpoint that verified is added to `endpoints` with its row count
-   and `sourceMaxTs`, and each skipped container to `excluded`. Partial runs with `--endpoint` add
-   or update entries and never remove them; only `--reset-marker` does.
+   and `sourceMaxTs`, and each skipped container to `excluded` with its reason and its own
+   `sourceMaxTs`, so the guard's high-water check covers excluded containers too (§6.5). Partial runs
+   with `--endpoint` add or update entries and never remove them; only `--reset-marker` does.
 6. **Never touches the source.** It doesn't modify or delete legacy containers.
 
 Implementation notes:
 
-- The command doesn't use the SDK's bulk mode. The vNext emulator doesn't support .NET bulk
-  execution, so the command uses bounded parallel creates.
+- The command doesn't use the SDK's bulk mode; it uses bounded parallel creates. The first draft
+  said the vNext emulator didn't support .NET bulk; Microsoft's current feature table lists the
+  Bulk API as supported, but what the pinned dated image supports is unverified (§14 item 2). The
+  design doesn't depend on it: bounded parallel creates give the command its own control over
+  `IfMatch` replaces, 409 handling and the request rate.
 - The reconcile pass keeps the set of source ids per container in memory, which takes a few tens of
   bytes per row.
 - The copy and verify logic lives in `NimBus.MessageStore.CosmosDb`, and `nb` only wires the
@@ -647,7 +740,7 @@ Implementation notes:
 ### 6.2 Cutover runbook
 
 1. **Prerequisites.**
-   - The deployment runs the 4.x patch that reserves `unresolvedevents` (§9), or later.
+   - The deployment runs v4.7.0, the 4.x release that reserves `unresolvedevents` (§9), or later.
    - Read the release notes. Confirm that no endpoint is named `unresolvedevents`.
    - Upgrade every `nb` installation and pipeline that targets this deployment to v5. After the
      cutover, a pre-v5 `nb container` command would act on the frozen legacy containers. For
@@ -662,10 +755,11 @@ Implementation notes:
      the app itself.
    - Service Bus holds Resolver-bound messages in the Resolver subscription. Adapters keep
      processing their own subscriptions.
-   - Don't run `nb infra apply` again until step 7. The templates rewrite the Function App's app
-     settings (`functionApp.bicep:84`, `flexConsumptionFunctionApp.bicep:81`) and would re-enable
-     the trigger. That includes the Deploy NimBus workflow and the Azure Pipelines template, which
-     run `infra apply` before `deploy apps` in one job.
+   - A v5 `nb infra apply` carries the paused trigger forward (§5.6), and `nb deploy apps` and
+     `nb setup` refuse while the layout is pending (§6.5). So a Deploy NimBus workflow or Azure
+     Pipelines run that starts during the cutover fails at its deploy step without resuming the
+     Resolver. Still, don't start one: step 4 deploys directly. A pre-v5 `nb` doesn't preserve the
+     setting, which is one more reason step 1 upgrades every installation.
 4. **Deploy v5** by running `nb deploy apps --allow-pending-migration` directly, never through
    those pipelines.
    - The v5 WebApp starts with the layout guard pending (§6.5). It shows the migration notice in
@@ -687,10 +781,13 @@ Implementation notes:
      nothing.
    - Re-enable the Resolver trigger by removing the setting. The Resolver drains its backlog.
 8. **Restore throughput.** Run `nb infra apply --cosmos-tracking-max-throughput <original>`; a plain
-   apply would pin the raised value (§5.6). Lower the raised legacy containers too, because they are
+   apply would pin the raised value (§5.6). The lowest max Cosmos accepts depends on the highest
+   max ever set and on the container's storage (§6.4); a deployment whose tracking data exceeds
+   400 GB can't return to 4,000 RU/s. Lower the raised legacy containers too, because they are
    billed through the soak.
-9. After a soak period, delete the legacy containers from Admin → Storage containers. Once a later
-   5.x minor retires that page (§5.8), delete them in the Azure portal instead.
+9. After a soak period, delete the legacy containers from Topology → Storage. The page is
+   deprecated in a later 5.x minor and removed in v6.0.0 (§5.8); from v6.0.0, delete them in the
+   Azure portal instead.
 
 External readers of endpoint containers must switch to `unresolvedevents` and filter on
 `endpointId`. That includes change-feed consumers, saved Data Explorer queries and ops tools such
@@ -703,8 +800,8 @@ back takes these steps:
 
 1. Run `nb container migrate --reset-marker` with the v5 `nb`. This deletes the marker, so that any
    later v5 deploy, through the runbook, a pipeline or `nb setup`, finds the layout pending and
-   refuses until the migration is rerun. The guard's high-water check (§6.5) is the backstop if
-   this step is forgotten.
+   refuses until the migration is rerun. This step is the control, and it is required: the guard's
+   high-water check (§6.5) catches v4 writes after a forgotten reset, but not v4 deletes.
 2. Install the v4 `nb` and run `nb deploy apps` with it.
 3. Re-enable the Resolver trigger.
 
@@ -724,8 +821,8 @@ When the rollback happens matters:
     processed twice.
   - **Completed under v5.** Rows that were Pending at cutover and completed under v5 stay Pending.
     The Spec 032 reconcile repairs part of them.
-  - **The new container.** The v4 WebApp's Storage containers page protects `unresolvedevents` only
-    on the 4.x patch (§9), which is why step 1 of the runbook requires it. Without the patch it
+  - **The new container.** The v4 WebApp's Storage page protects `unresolvedevents` only
+    from v4.7.0 (§9), which is why step 1 of the runbook requires it. Without that release it
     would list the container as deletable, and it holds the only copy of the post-cutover rows.
 - **Retrying after a rollback.** Follow the runbook again. The migration then converges (§6.1
   step 3):
@@ -769,8 +866,11 @@ The levers (§6.2 steps 5 and 8):
     6 hours, which doesn't fit an outage window;
   - the split is permanent, and after scale-down it thins each partition's share, and so each
     endpoint's (§7.2);
-  - the lowest max allowed afterwards becomes the highest max ÷ 10, so a max above 40,000 RU/s
-    rules out the 4,000 default.
+  - the lowest max allowed afterwards is the largest of 1,000 RU/s, the highest max ever set ÷ 10,
+    and the container's current storage in GB × 10, rounded up to the next 1,000
+    ([autoscale FAQ](https://learn.microsoft.com/azure/cosmos-db/autoscale-faq)). So a max above
+    40,000 RU/s rules out the 4,000 default, and so does storage above 400 GB, whatever the max
+    was.
 - **The sources' throughput.** Raise the largest legacy containers' manual throughput before the
   copy. Up to 10,000 RU/s is instant on one partition. The raised floor doesn't matter, because the
   containers are deleted after the soak, but lower them after the copy, because they are billed
@@ -801,6 +901,14 @@ loads:
   after a rollback whose marker wasn't reset (§6.3). It costs one `MAX(c._ts)` query per legacy
   container each time a process evaluates the state, until the legacy containers are deleted; §14
   item 7 measures that cost.
+
+  **What the high-water check can't see.** It detects writes: every v4 status change, remove and
+  archive updates a row and raises `MAX(c._ts)`. It doesn't detect deletes. A v4 session purge
+  deletes rows, and a v4 endpoint purge deletes the whole container, which then simply drops out of
+  the listing. After a rollback, either leaves stamped copies in `unresolvedevents` that v4 no
+  longer has. The control for that is the marker reset that the rollback runbook requires (§6.3
+  step 1); the high-water check is a backstop for writes only, not a complete one. A rerun of the
+  migration's reconcile pass removes those copies (§6.1 step 3).
 - **Fresh.** There is no marker and no legacy container: a new install. The reader creates the
   marker with empty maps, ignoring `409`, and the state becomes ready.
 - **Pending.** Anything else.
@@ -811,15 +919,24 @@ Contributor allows, so the guard works under managed identity.
 Who uses it:
 
 - **The Cosmos provider.** It evaluates the state on first use and, while the state is pending, at
-  most once a minute. Once the state is ready, it stops checking for the life of the process.
+  most once a minute. Once the state is ready, it rechecks every 15 minutes for as long as any
+  legacy container exists, so a process that started before a rollback's v4 writes doesn't stay
+  ready indefinitely. When no legacy container is left, ready holds for the life of the process.
+  A recheck that finds the layout pending again blocks tracking members from then on.
   - The guard covers the members that reach `unresolvedevents` through the accessor (§5.3). The
     members that use `messages`, `audits` and `eventreports` are unaffected.
-  - While pending, those members throw `StorageProviderTransientException`, with a one-minute
-    `RetryAfter` and a message that names the runbook. The check runs before `PurgeMessages`'s
-    catch-all, so a purge propagates the exception instead of returning `false`.
+  - While pending, those members throw `TrackingLayoutPendingException` (§5.9), a
+    `StorageProviderTransientException` with a one-minute `RetryAfter` and a message that names the
+    runbook. The check runs before `PurgeMessages`'s catch-all, so a purge propagates the exception
+    instead of returning `false`.
+  - The guard also reaches callers that use tracking members indirectly. Subscription updates read
+    the endpoint's error list through the tracking store
+    (`CosmosDbSubscriptionStore.UpdateSubscription`, `CosmosDbSubscriptionStore.cs:201-208`), so they
+    throw too while the layout is pending; no notification goes out with an empty error list. The
+    Spec 035 operator actions (§5.4) refuse the same way.
   - The Resolver treats the exception like any store outage (`ResolverService.cs:160`): it
     reschedules the message with backoff and dead-letters it once the shared delivery budget
-    (`ServiceBusMaxDeliveryCount`, 10) is spent, from where Admin → Subscriptions can replay it.
+    (`ServiceBusMaxDeliveryCount`, 10) is spent, from where Topology → Subscriptions can replay it.
     The runbook keeps the trigger disabled, so this is a backstop.
 - **The health check.** `CosmosDbHealthCheck` reports Unhealthy while pending, with the reason.
 - **The WebApp.** While pending, its tracking API returns `503` with a problem detail, documented
@@ -827,12 +944,19 @@ Who uses it:
 - **`nb deploy apps` and `nb setup`.** Against a Cosmos deployment they evaluate the state before
   they deploy v5 apps, and they refuse while it is pending unless `--allow-pending-migration` is
   given (§6.2 step 4).
-  - They read through the account's keys, fetched with `az cosmosdb keys list`. When they can't
-    read the marker, they refuse and explain the flag.
+  - They read with the caller's Entra identity first (`DefaultAzureCredential` against the account
+    endpoint, as `nb container` commands already can, `CommandRunner.cs:53-64`), which needs a
+    Cosmos data-plane read role for the deploying identity. When that is refused and the account
+    allows key authentication, they fall back to keys fetched with `az cosmosdb keys list`. Spec 034
+    plans `disableLocalAuth` on the account, where only the Entra path works. When they can't read
+    the marker, they refuse and explain the flag.
+  - In private networking mode (Spec 034), deployments already run from an in-network runner
+    (Spec 034 R5), so the preflight reaches the data plane the same way `nb deploy apps` reaches
+    Kudu. The preflight doesn't relax for private deployments.
   - `deploy.yml` and the Azure Pipelines template run these commands, so they inherit the check.
   - After the soak, when the legacy containers are deleted, the state is ready and the check is a
     cheap read.
-- **The Storage containers page** (§5.8).
+- **The Storage page** (§5.8).
 
 ## 7. Evaluation
 
@@ -946,15 +1070,15 @@ throughput and $0.012 for autoscale
 - the hand-written tracking-row SQL in the two copy tools (§5.7);
 - two operator procedures in `docs/storage-providers.md`: turning on TTL for old endpoint containers,
   and backfilling each container;
-- in a later 5.x minor, Admin → Storage containers and the WebApp's control-plane Cosmos role
-  (§5.8).
+- in v6.0.0, after deprecation in a 5.x minor, Topology → Storage and the WebApp's
+  control-plane Cosmos role (§5.8).
 
 **Added:**
 
 - one Bicep resource and its autoscale parameter;
 - `TrackingContainerAccessor`, `EndpointScope` and `EndpointSetScope`;
-- the stamped `updatedAtTicks` and `migratedFromTs` (§5.2), and the `{token, skip}` codec of the
-  failed search (§5.4);
+- the stamped `updatedAtTicks`, `migratedFromTs` and `migratedFromEtag` (§5.2), and the
+  `{token, skip}` codec of the failed search (§5.4);
 - the account's `enablePriorityBasedExecution` in Bicep and the `RequestPriority` option (§5.10);
 - the WebApp's background purge worker (§5.5);
 - the migration command, kept at least one major so late upgraders can migrate, the public copy
@@ -1006,7 +1130,12 @@ throughput and $0.012 for autoscale
   in lazy creation (§5.1).
 - **Written rows.** They carry `endpointId` equal to the argument, even when
   `UnresolvedEvent.EndpointId` differs, and `updatedAtTicks` equal to `event.UpdatedAt`. Upserts,
-  replaces and patches leave no `migratedFromTs`.
+  replaces and patches leave neither `migratedFromTs` nor `migratedFromEtag`. That includes the
+  Spec 035 `TryArchiveUnresolvedEvent` and `TryRestoreArchivedEvent`.
+- **Existing fakes.** Every unit test that builds `CosmosDbClient` on the recording adapters (for
+  example `CosmosDbClientGuardedWriteTests`, `CosmosDbClientTryCompleteTests`) moves to the shared
+  container and the full key, and its adapter implements `GetContainersAsync` and serves a ready
+  marker.
 - **Case.** Differently cased endpoint ids (`billing` and `Billing`) stay isolated. The SQL Server
   collation is case-insensitive, so the conformance suite can't pin this. It replaces the cased-id
   case in `CosmosDbClientRetentionTests`.
@@ -1018,8 +1147,9 @@ throughput and $0.012 for autoscale
   With a host-built client, the adapters set `RequestOptions.PriorityLevel` per request. The
   WebApp's registration sets `Low`.
 - **Purge.**
-  - The endpoint purge pages ids by endpoint, deletes each with the full key and counts a 404 as
-    done. This replaces `PurgeMessages_evicts_cached_handle_so_next_access_recreates_container` in
+  - The endpoint purge pages ids by endpoint with `c._ts < @purgeStart`, deletes each with the full
+    key `IfMatch` its ETag, keeps a row that answers 412, and counts a 404 as done. This replaces
+    `PurgeMessages_evicts_cached_handle_so_next_access_recreates_container` in
     `CosmosDbClientUnitTests`.
   - `CosmosDbClientPurgeTests`, which covers the session purge, gains the endpoint predicate and
     the 404 rule.
@@ -1036,13 +1166,20 @@ throughput and $0.012 for autoscale
   - A marker that lists the container, or excludes it, makes the state ready, without a restart.
   - A legacy write after marking, past the recorded `sourceMaxTs`, makes the state pending again.
   - Empty containers and inbox-shaped containers don't count as legacy.
-  - Members that use only `messages`, `audits` or `eventreports` aren't blocked.
+  - Members that use only `messages`, `audits` or `eventreports` aren't blocked; subscription
+    updates, which read the error list, are.
   - `PurgeMessages` propagates the guard's exception instead of returning `false`.
-- **Migration scope (§5.3).** It builds the full key, keeps `migratedFromTs`, and its queries carry
-  the endpoint predicate. `RemoveMessage` and `ArchiveFailedEvent` on a stamped row leave it
-  unstamped.
+  - An adapter without `GetContainersAsync` makes the state pending with a reason naming the
+    member, and tracking members throw `TrackingLayoutPendingException`.
+  - A ready process rechecks while legacy containers exist and turns pending after a legacy write
+    past `sourceMaxTs`; with no legacy container left, it stops rechecking.
+  - An excluded container's write past its recorded `sourceMaxTs` makes the state pending.
+- **Migration scope (§5.3).** It builds the full key, keeps both stamps, and its queries carry the
+  endpoint predicate. `RemoveMessage` and `ArchiveFailedEvent` on a stamped row leave it unstamped.
 - **Copy type (§5.7).** It reads through the scope; the recorded predicate is checked. It refuses a
-  source or a target with the legacy layout and creates neither.
+  source or a target with the legacy layout and creates neither. Copied rows carry no `ttl`, so
+  they never expire in the target, as with today's copy tools (`AdminService.Copy.cs:139`,
+  `Container.cs:352`).
 - **Adapter defaults.** The new `CreateContainerIfNotExistsAsync` overload's default throws when
   throughput is given (§5.9).
 - **Bicep.** `CosmosBicepContainerSyncTests` parses hierarchical keys and checks `unresolvedevents`
@@ -1079,7 +1216,7 @@ Seed these containers:
 Migrate, then assert:
 
 - the per-status counts and the Monitor-equivalent counts;
-- the stamped `endpointId`, `updatedAtTicks` and `migratedFromTs`;
+- the stamped `endpointId`, `updatedAtTicks`, `migratedFromTs` and `migratedFromEtag`;
 - the remaining TTLs in the TTL-on sources;
 - in the TTL-off source, rows copied with their lifetime restarted (Completed, Skipped and archived
   rows included), `RemoveMessage`'s rows skipped, and elapsed rows skipped with
@@ -1089,6 +1226,11 @@ Migrate, then assert:
 - with a catalog, that an orphan is skipped and recorded as excluded;
 - an idempotent rerun;
 - after a source row changes, a rerun replaces the stale target row and verify passes;
+- after a source row changes twice within one second with its status unchanged, a rerun replaces
+  the target by ETag and verify passes;
+- the newest source row expiring during the copy lowers `MAX(c._ts)` without failing the endpoint;
+- `--exclude` refuses a catalog endpoint's container that holds unresolved rows, and excluded
+  entries record `sourceMaxTs`;
 - a newer row that v5 wrote (no stamp) is kept;
 - after a source row is deleted or expires, a rerun removes its stamped copy;
 - a rollback-then-retry: v5 writes target-only rows, the marker is reset, the source changes, and
@@ -1110,6 +1252,9 @@ Migrate, then assert:
   `--allow-pending-migration` is given.
 - `nb infra apply` pins the deployed tracking max when the flag is absent and the container exists,
   and uses the default when it doesn't, alongside `InfrastructureDeployerCapacityTests`.
+- The Function App templates carry an existing `AzureWebJobs.Resolver.Disabled` forward (§5.6).
+- The deploy preflight reads with Entra first, falls back to keys only when local auth is allowed,
+  and refuses when it can read neither.
 
 **WebApp (`tests/NimBus.WebApp.Tests`):**
 
@@ -1117,8 +1262,13 @@ Migrate, then assert:
   stay protected until the marker lists them as migrated or excluded.
 - Purge:
   - both purge operations return `202`, run the purge in the background in their own DI scope,
-    and audit its start and its outcome under the caller's identity;
-  - a second purge of the same endpoint on the same instance gets `409`.
+    and audit its start and its outcome under the caller's identity through the required audit
+    path;
+  - a start that can't be audited returns `503` and purges nothing;
+  - a second purge of the same endpoint gets `409`, from the same instance or another, while the
+    lease is live, and an expired lease can be taken over;
+  - the endpoint page's purge runs `ClearEndpoint` before the row purge and skips the row purge when
+    `ClearEndpoint` fails.
 - While the layout is pending, the tracking API returns `503`.
 
 **CI.**
@@ -1141,12 +1291,12 @@ Migrate, then assert:
 
 | Phase | Content | Exit |
 |---|---|---|
-| Prerequisites | Outside this spec, before Phase 1 merges: (a) the exact endpoint filter in `GetEventsByFilter` on SQL Server and in-memory, a bug fix that ships in 4.x (§5.4); (b) a 4.x patch that adds `unresolvedevents` to `ReservedContainerIds` (§5.6, §6.3) and to `NotDeclaredByPlatformTemplate` in `CosmosBicepContainerSyncTests`, because v4's template doesn't declare it; v5 removes it from that list; (c) a maintenance-branch procedure in `docs/versioning.md`: the branch name, the publish workflow and the base of the release notes' compare link | Each merged and released |
-| 0 | Prove the platform. Nothing ships | Every item in §14 answered, with results added to this folder |
-| 1 | v5.0.0: store and scopes, Bicep and its autoscale parameter, CLI, WebApp (background purge, layout notice), migration command, layout guard and deploy preflight, priority-based execution, the single-query failed search, tests, docs | Release build green; Cosmos and SQL conformance run without skips |
+| Prerequisites | Outside this spec, before Phase 1 merges: (a) the exact endpoint filter in `GetEventsByFilter` on SQL Server and in-memory (§5.4), **done in v4.3.0 (#196)**; (b) a 4.x **minor** release (v4.7.0) that adds `unresolvedevents` to `ReservedContainerIds` (§5.6, §6.3) and to `NotDeclaredByPlatformTemplate` in `CosmosBicepContainerSyncTests`, because v4's template doesn't declare it; v5 removes it from that list. It is a minor, not a patch, because it makes `unresolvedevents` invalid as an endpoint id, which a consumer can observe ([versioning](../../versioning.md)); (c) a maintenance-branch procedure in `docs/versioning.md`: the branch name, cut from the v4.7.0 tag or a later 4.x tag, the publish workflow and the base of the release notes' compare link | Each merged and released |
+| 0 | Prove the platform. Nothing ships, and nothing of Phase 1 merges before it exits. It runs on a spike branch with a scratch harness and a draft template | Every item in §14 answered, with results added to this folder, except item 9b, which needs the v5 apps and is a release gate of Phase 1 |
+| 1 | v5.0.0: store and scopes, Bicep and its autoscale parameter, CLI, WebApp (background purge, layout notice), migration command, layout guard and deploy preflight, priority-based execution, the single-query failed search, tests, docs | Release build green; Cosmos and SQL conformance run without skips; §14 item 9b passed on both Resolver plans |
 | 2 | Rehearse, then migrate each Cosmos deployment; delete legacy containers after the soak | Migration reports reconciled; no unmigrated legacy containers left |
-| 3 | A later 5.x minor: retire Admin → Storage containers, its endpoint, the WebApp's Cosmos DB Operator role assignment and `CosmosAccountResourceId`; mark `ICosmosContainerAdmin` and `CosmosContainerAdmin` `[Obsolete]` (§5.8) | — |
-| 4 | v6.0.0: remove the obsolete `CosmosContainerDefaults` members, `ICosmosContainerAdmin`, `CosmosContainerAdmin` and `--storage-provider` on `nb topology apply` | — |
+| 3 | A later 5.x minor: deprecate Topology → Storage (a notice on the page, `deprecated: true` on its API operations) and mark `ICosmosContainerAdmin` and `CosmosContainerAdmin` `[Obsolete]`. Nothing is removed (§5.8) | — |
+| 4 | v6.0.0: remove the obsolete `CosmosContainerDefaults` members, `--storage-provider` on `nb topology apply`, and Topology → Storage with its API operations, `ICosmosContainerAdmin`, `CosmosContainerAdmin`, the WebApp's Cosmos DB Operator role assignment and `CosmosAccountResourceId` (§5.8) | — |
 
 **Sequencing.** v4.0.0 was tagged on 2026-09-28 at `0acf1778`, so Phase 1 here can merge to master
 without shipping in v4 (§13 item 1). Once it merges, master is v5.0.0-bound. Releases are tagged
@@ -1167,8 +1317,9 @@ defines one.
 - `docs/deployment.md`:
   - the upgrade flow, which gains the migration runbook (§6.2) and the deploy preflight (§6.5);
   - the Storage tab's wording, which changes in v5.0.0 (§5.8).
-- In the 5.x minor that retires Admin → Storage containers: drop the Cosmos DB Operator grant from
-  `docs/azure-requirements.md` and `docs/deployment.md`.
+- In the 5.x minor that deprecates Topology → Storage: say so in `docs/deployment.md`. In
+  v6.0.0, which removes it: drop the Cosmos DB Operator grant from `docs/azure-requirements.md` and
+  `docs/deployment.md`.
 - `docs/cli.md`: `container migrate`, the note on `container copy`, the `topology apply`
   deprecation, `--cosmos-tracking-max-throughput`, `--reset-marker` on `container migrate`, and
   `--allow-pending-migration` on `deploy apps` and `setup`.
@@ -1179,8 +1330,13 @@ defines one.
   `docs/adr/010-pluggable-message-storage.md`, and the two CrmErpDemo adapter `docs/TDD.md` files.
   Also the adapter-docs skill that generates those TDDs: `.claude/skills/adapter-docs/templates/TDD_TEMPLATE.md`
   and `references/detection_heuristics.md`.
+- User-facing wording that still describes per-endpoint containers: the endpoint-status schema in
+  `api-spec.yaml` ("per-endpoint storage container", `:3901-3904`) and Operations → Delete all events
+  ("Delete the entire endpoint container", `advanced-operations.tsx:563`).
 - v5.0.0 release notes: ⚠️ Breaking entries that link the runbook (§6.2) and name the purge API's
-  status change (§5.5).
+  status change (§5.5); Compatibility entries for the three adapter members and
+  `TrackingLayoutPendingException` (§5.9), and for Operations → Delete all events now writing audit
+  entries.
 
 ## 11. Residual risks
 
@@ -1238,9 +1394,11 @@ The repo owner decided these on 2026-09-28. The first draft listed them as open.
 4. **Outage: copy everything.** The migration copies every row during the outage, terminal rows
    included (§6.4). The shorter variant that backfills terminal rows after the start is rejected
    (§12).
-5. **Storage containers page: retire it in a later 5.x minor**, together with the WebApp's Cosmos DB
-   Operator role assignment, which exists only for this page. The public container-admin types go
-   through the obsolete cycle and are deleted in v6.0.0 (§5.8).
+5. **Storage page: deprecate it in a later 5.x minor and remove it in v6.0.0**, together
+   with its API operations, the public container-admin types and the WebApp's Cosmos DB Operator role
+   assignment, which exists only for this page (§5.8). The first decision (2026-09-28) retired it in
+   a 5.x minor; the repo owner changed that on 2026-10-08, because `docs/versioning.md` reserves the
+   removal of a page and an API route for a major.
 6. **Priority-based execution: on.** The account turns it on; the WebApp, purges and the migration
    run at low priority. It is best effort, with no SLA (§5.10).
 7. **Failed search: one query.** The cross-endpoint failed search and its histogram each become one
@@ -1262,7 +1420,12 @@ The repo owner decided these on 2026-09-28. The first draft listed them as open.
      results contain exactly the endpoint's rows (#329 returned other rows for request-option
      prefix scoping);
    - the set query of §5.3 ordered by `updatedAtTicks`, paged across endpoints;
-   - requests that carry a priority level (§5.10).
+   - requests that carry a priority level (§5.10). Microsoft documents that a request's priority
+     is ignored when the account hasn't enabled the feature
+     ([SDK request option](https://learn.microsoft.com/dotnet/api/microsoft.azure.cosmos.requestoptions.prioritylevel)),
+     so the WebApp's `Low` setting is safe on the emulator and before `nb infra apply` turns the
+     feature on; check it on the pinned image and on a live account without the feature;
+   - whether the pinned image supports .NET bulk execution (§6.1 implementation notes).
 
    Issue [#346](https://github.com/Azure/azure-cosmos-db-emulator-docker/issues/346) (hierarchical
    container creation failing) was confirmed fixed in `vnext-EN20260907`. It was reported against
@@ -1300,12 +1463,18 @@ The repo owner decided these on 2026-09-28. The first draft listed them as open.
      feature on;
    - whether the feature is still in preview, as the ARM reference's wording suggests;
    - the account's metrics show the WebApp's requests at low priority and the Resolver's at high.
-9. **Runbook rehearsal** on both Resolver plans, Flex Consumption and Elastic Premium (§6.2):
-   - `AzureWebJobs.Resolver.Disabled=true` stops the Resolver from processing while its host runs;
-   - `nb deploy apps --allow-pending-migration` succeeds with the trigger disabled and leaves it
-     disabled;
-   - the v5 WebApp and Resolver go from pending to ready within a minute of the marker (§6.5);
-   - `nb container migrate` reads the trigger setting in its preflight.
+9. **Runbook rehearsal** on both Resolver plans, Flex Consumption and Elastic Premium (§6.2). It
+   splits in two, because the second half needs the v5 apps and commands:
+   - **9a, in Phase 0:** `AzureWebJobs.Resolver.Disabled=true` stops the Resolver from processing
+     while its host runs, and a draft of the Function App templates carries the setting forward
+     through `az deployment group create` (§5.6).
+   - **9b, a release gate of Phase 1 (§9):**
+     - `nb deploy apps --allow-pending-migration` succeeds with the trigger disabled and leaves it
+       disabled;
+     - a v5 `nb infra apply` during the cutover leaves it disabled;
+     - the v5 WebApp and Resolver go from pending to ready within a minute of the marker (§6.5);
+     - `nb container migrate` reads the trigger setting in its preflight;
+     - a rollback by §6.3 and a retry by §6.2 converge.
 
 ## 15. References
 
@@ -1415,3 +1584,36 @@ Repo:
   - Copy checks the source layout (§5.7).
   - The guard's scope covers purge propagation (§6.5).
   - The 4.x patch also updates the Bicep sync test (§9).
+- 2026-10-07: a second review of the spec against `7403c596`
+  ([spec review](../../plan/2026-10-07-spec-036-spec-review.md)) and a review of the implementation
+  plan ([plan review](../../plan/2026-10-07-spec-036-implementation-plan-review.md)), both by Codex.
+  Claude checked every finding against the code; none was refuted.
+- 2026-10-08: the findings are folded in. The design changes:
+  - **Purge (§5.5).** It deletes only rows written before it started (`_ts < purgeStart`,
+    `IfMatch` each row's ETag), so it never deletes work that arrives during a long purge. The
+    endpoint page's purge clears the Service Bus subscription first and skips the row purge when
+    that fails. A lease document in `settings` gives one purge per endpoint across instances. The
+    start and the outcome are written through the required audit path; a start that can't be
+    audited returns `503`.
+  - **Migration (§6.1).** Copies are stamped with the source ETag as well as `_ts`, so reruns and
+    verify catch two changes within one second. Only a rising `MAX(c._ts)` fails an endpoint; a
+    fall from TTL expiry doesn't. `--exclude` refuses a catalog endpoint's container that holds
+    unresolved rows, and excluded entries record `sourceMaxTs`.
+  - **Guard (§6.5).** The high-water check is described as a backstop for writes only; the marker
+    reset on rollback is the required control. A ready process rechecks every 15 minutes while
+    legacy containers exist. Subscription updates and the Spec 035 operator actions are named as
+    blocked callers. The deploy preflight reads with Entra first and doesn't relax under private
+    networking, where deployments already run in-network.
+  - **Cutover (§5.6, §6.2).** The Function App templates carry `AzureWebJobs.Resolver.Disabled`
+    forward, so a pipeline started during the cutover can't resume the Resolver.
+  - **Public API (§5.9).** A third adapter member, `GetContainersAsync`, and a public
+    `TrackingLayoutPendingException`, which the WebApp maps to `503`. The obsolete members become
+    obsolete only once no code in `src/` calls them.
+  - **Corrections.** Prerequisite (a) is marked done (v4.3.0). Prerequisite (b) is a minor release,
+    v4.7.0. §5.4 lists the Spec 035 compare-and-swap members. §6.4 gives the full autoscale
+    minimum, including storage. §6.1 no longer claims the emulator lacks bulk support. §14 item 9
+    splits into a Phase 0 half and a release-gate half. §10 adds the stale per-endpoint wording in
+    the API schema and the Admin UI. Line references are refreshed.
+  - **Decided by the repo owner:** §13 item 5 retired Topology → Storage and its API route
+    in a 5.x minor, but `docs/versioning.md` reserves removing observable behavior for a major. The
+    page and its API are now deprecated in a 5.x minor and removed in v6.0.0 (§5.8, §9, §10, §13).
