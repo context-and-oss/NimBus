@@ -223,7 +223,7 @@ public partial class OperatorPromptsTests
         }));
     }
 
-    private static HashSet<string> RegisteredToolNames()
+    internal static HashSet<string> RegisteredToolNames()
         => typeof(OperatorMessageTools).Assembly.GetTypes()
             .Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null)
             .SelectMany(t => t.GetMethods())
@@ -268,5 +268,5 @@ public partial class OperatorPromptsTests
     }
 
     [GeneratedRegex(@"\bnimbus_[a-z_]+\b")]
-    private static partial Regex ToolName();
+    internal static partial Regex ToolName();
 }
