@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting" Version="13.5.4" />
+    <!-- Pins a patched transitive version (GHSA-qhrr-8q5h-9q3h; Aspire.Hosting brings 2.5.302 through StreamJsonRpc); remove once Aspire depends on >= 2.5.303. -->
+    <PackageReference Include="MessagePack" Version="2.5.303" />
   </ItemGroup>
 
   <ItemGroup>
