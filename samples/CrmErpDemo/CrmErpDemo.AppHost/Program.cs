@@ -334,6 +334,26 @@ if (isPublish)
     erpApi.PublishWithContainerFiles(erpWeb, "./wwwroot")
           .PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
     crmAdapter.PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
+
+    // The CRM and ERP apps are public, so they require sign-in with the nimbus-ops accounts:
+    // both APIs read the same NimBus Identity user store (nimbus-ops creates the schema and the
+    // admin). The adapters call the APIs over the same URLs and present a shared service key,
+    // generated on the first deploy and kept in the deployment state.
+    var demoServiceKey = builder.AddParameter(
+        "demo-service-key",
+        new GenerateParameterDefault { MinLength = 32, Special = false },
+        secret: true,
+        persist: true);
+    foreach (var api in new[] { crmApi, erpApi })
+    {
+        api.WithReference(nimbusDb!)
+           .WithEnvironment("NimBusIdentity__ConnectionString", nimbusDb!.Resource.ConnectionStringExpression)
+           .WithEnvironment("NimBusIdentity__RequireEmailConfirmation", "false")
+           .WithEnvironment("Demo__ServiceKey", demoServiceKey)
+           .WaitFor(nimbusDb);
+    }
+    crmAdapter.WithEnvironment("Demo__ServiceKey", demoServiceKey);
+    erpAdapter.WithEnvironment("Demo__ServiceKey", demoServiceKey);
 }
 else
 {

@@ -373,13 +373,16 @@ In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver
 | SQL Server container + DbGate | Azure SQL (`crm`, `erp`, `nimbus`), Entra-only; each app's identity gets `db_owner` |
 | Vite dev servers for crm-web / erp-web | `crm-api` and `erp-api` serve the built UIs from `wwwroot` |
 | Local-dev auth bypass on nimbus-ops | NimBus Identity sign-in with a bootstrap admin |
+| crm-web and erp-web are anonymous | crm-web and erp-web require sign-in with the nimbus-ops accounts; the adapters present a generated service key |
 | Provisioner runs before the subscribers | Provisioner is a manually started Container Apps job |
 | enrichment-agent signs in through the local-dev bypass | enrichment-agent signs in with an agent API key issued in nimbus-ops (Spec 039) |
 
 Only `crm-api`, `erp-api` and `nimbus-ops` are public. Everything else is internal to the Container Apps environment. The Aspire dashboard URL is printed at the end of the deploy.
 
+CRM and ERP use the nimbus-ops user store, so the same email and password work on all three apps. Users are managed in nimbus-ops, and any signed-in user gets in; there are no roles inside CRM and ERP. Each app is on its own `*.azurecontainerapps.io` host and that domain is a public suffix, so the apps can't share a cookie: you sign in to each once. The health probes (`/health`, `/alive`, `/ready`) and the static UI bundles stay public.
+
 > [!WARNING]
-> `crm-api` and `erp-api` keep the demo's anonymous API, including `DELETE /api/admin/data`. Use fictional data only, and tear the environment down when you are done.
+> Every signed-in user can use the whole demo, including `DELETE /api/admin/data`. Use fictional data only, and tear the environment down when you are done.
 
 ### Prerequisites
 
@@ -395,7 +398,7 @@ Deploy settings and parameters are environment variables on the `aspire deploy` 
 Azure__SubscriptionId=<subscription-id> Azure__Location=swedencentral Azure__ResourceGroup=rg-crmerp-demo Parameters__ops_admin_email=admin@example.com Parameters__ops_admin_password='<a strong password>' aspire deploy --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj
 ```
 
-If your account can see more than one tenant, also set `Azure__TenantId`. The first deploy takes about 20 minutes. `flow-webhook-key` (the shared key for the Resolver's realtime Flow updates) is generated and kept in the deployment state. Redeploying the same command updates the apps in place.
+If your account can see more than one tenant, also set `Azure__TenantId`. The first deploy takes about 20 minutes. `flow-webhook-key` (the shared key for the Resolver's realtime Flow updates) and `demo-service-key` (the adapters' key for the CRM and ERP APIs) are generated and kept in the deployment state. Redeploying the same command updates the apps in place.
 
 Then create the Service Bus topology by starting the provisioner job once. Run it again after a deploy that changes the event catalog:
 
@@ -425,8 +428,8 @@ nimbus-ops requires sign-in in Azure, so the enrichment agent needs an agent API
 
 ### Smoke test
 
-1. Open the `crm-api` URL from the deploy output. It serves crm-web. Create an account.
-2. Open the `erp-api` URL (erp-web). The customer appears, and crm-web shows its ERP customer number.
+1. Open the `crm-api` URL from the deploy output. It redirects to the sign-in page. Sign in with the bootstrap admin; crm-web opens and shows "Signed in as" in its header. Create an account.
+2. Open the `erp-api` URL (erp-web) and sign in the same way. The customer appears, and crm-web shows its ERP customer number. The adapters reached both APIs with the service key.
 3. Open the `nimbus-ops` URL and sign in with the bootstrap admin. The account's events are Completed under **Endpoints**, and **Flow** animates new traffic.
 4. A PartnerPortal lead arrives in crm-web's contacts about every 45 seconds.
 5. A new contact is enriched by the agent. Its hand-off on **AgentZoneEndpoint** is Completed, and the audit names `enrichment-agent`.

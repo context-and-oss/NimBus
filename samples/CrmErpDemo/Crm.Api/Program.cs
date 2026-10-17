@@ -1,9 +1,11 @@
 using Crm.Api;
 using CrmErpDemo.Contracts.E2E;
+using CrmErpDemo.Contracts.Security;
 using Crm.Api.Endpoints;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using NimBus.Extensions.Identity;
 using NimBus.SDK;
 using NimBus.SDK.Extensions;
 
@@ -47,6 +49,19 @@ builder.Services.AddSingleton<CircuitStateStore>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
+// The Azure deployment signs people in with their nimbus-ops accounts (same NimBus Identity user
+// store) and admits the crm-adapter by the demo service key. Local runs stay anonymous.
+var signIn = DemoSignIn.IsEnabled(builder.Configuration);
+if (signIn)
+{
+    builder.Services.AddNimBusIdentity(options =>
+    {
+        options.ConnectionString = builder.Configuration["NimBusIdentity:ConnectionString"]!;
+        options.RequireEmailConfirmation = builder.Configuration.GetValue("NimBusIdentity:RequireEmailConfirmation", true);
+    });
+    builder.Services.AddDemoSignIn(builder.Configuration);
+}
+
 if (E2eSettings.IsEnabled(builder.Configuration, builder.Environment))
 {
     builder.Services.AddSingleton<E2eRegistry>();
@@ -57,10 +72,11 @@ app.MapE2eControls()?.MapE2eWireControls("CrmEndpoint");
 app.UseCors();
 // The Azure deployment copies the built web UI into wwwroot (aspire publish/deploy), so the
 // UI's relative /api calls stay same-origin. Locally the Vite dev server serves the UI and
-// there is no wwwroot, so these are no-ops.
-app.UseDefaultFiles();
+// there is no wwwroot, so this is a no-op. "/" is served by the fallback below, which
+// requires sign-in; the static bundles carry no data.
 app.UseStaticFiles();
 app.MapDefaultEndpoints();
+if (signIn) app.UseDemoSignIn();
 
 // Ensure DB tables exist for the demo.
 // Retry so the API survives SQL-container startup timing; if init ultimately fails,
@@ -126,12 +142,15 @@ for (var attempt = 1; attempt <= 10 && !initSucceeded; attempt++)
 if (!initSucceeded)
     startupLogger.LogError("Startup init did not complete after 10 attempts; continuing so Kestrel binds.");
 
-app.MapAccountEndpoints();
-app.MapContactEndpoints();
-app.MapAuditEndpoints();
-app.MapErpIntegrationEndpoints();
-app.MapAdminEndpoints();
+// The API and the web UI. The health probes, mapped above, stay outside the group.
+var api = app.MapGroup("");
+if (signIn) api.RequireDemoSignIn();
+api.MapAccountEndpoints();
+api.MapContactEndpoints();
+api.MapAuditEndpoints();
+api.MapErpIntegrationEndpoints();
+api.MapAdminEndpoints();
 
-app.MapFallbackToFile("index.html");
+api.MapFallbackToFile("index.html");
 
 app.Run();

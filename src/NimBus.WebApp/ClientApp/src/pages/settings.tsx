@@ -175,16 +175,6 @@ export default function Settings() {
             {quick.label}
           </Link>
         );
-      case "open":
-        return (
-          <Link
-            to={`/Settings/${f.id}?tab=${quick.tab}`}
-            state={{ fromList: true } satisfies OpenedFromList}
-            className="inline-flex h-8 items-center rounded-nb-md border border-border-strong px-3 text-sm font-semibold text-foreground no-underline hover:bg-muted hover:no-underline"
-          >
-            {quick.label}
-          </Link>
-        );
     }
   };
 
@@ -238,10 +228,11 @@ export default function Settings() {
               <ul className="m-0 list-none divide-y divide-border overflow-hidden rounded-nb-md border border-border bg-card p-0">
                 {features.map((f) => {
                   const status = featureStatus(f.id, snapshot);
+                  const cta = status?.cta;
                   return (
                     <li key={f.id} className="flex items-center gap-3 pr-4 transition-colors hover:bg-muted/50">
                       <Link
-                        to={`/Settings/${f.id}`}
+                        to={cta ? `/Settings/${f.id}?tab=${cta.tab}` : `/Settings/${f.id}`}
                         state={{ fromList: true } satisfies OpenedFromList}
                         className="flex min-w-0 flex-1 items-center gap-4 py-3.5 pl-4 text-foreground no-underline hover:no-underline"
                       >
@@ -257,7 +248,7 @@ export default function Settings() {
                             {status.summary}
                           </span>
                         )}
-                        <span className="shrink-0 text-sm font-semibold text-primary">Configure ›</span>
+                        <span className="shrink-0 text-sm font-semibold text-primary">{cta?.label ?? "Configure"} ›</span>
                       </Link>
                       {quickAction(f, status)}
                     </li>
