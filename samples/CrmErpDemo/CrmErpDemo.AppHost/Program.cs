@@ -1,4 +1,5 @@
 using Aspire.Hosting.Azure;
+using Azure.Provisioning.Sql;
 using Microsoft.Extensions.Configuration;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -93,10 +94,22 @@ IResourceBuilder<IResourceWithConnectionString> erpDb;
 IResourceBuilder<IResourceWithConnectionString>? nimbusDb = null;
 if (isPublish)
 {
-    var azureSql = builder.AddAzureSqlServer("sql");
-    crmDb = azureSql.AddDatabase("crm");
-    erpDb = azureSql.AddDatabase("erp");
-    nimbusDb = azureSql.AddDatabase("nimbus");
+    // Fixed-price Basic (5 DTU) databases instead of Aspire's default serverless free
+    // offer. The Resolver, the WebApp heartbeat sweep and erp-api's outbox dispatcher
+    // query SQL continuously, so serverless never auto-pauses and the free allowance
+    // runs out within days, pausing every database until the next month.
+    // WithDefaultAzureSku drops the free-offer settings; the callback sets the SKU.
+    var azureSql = builder.AddAzureSqlServer("sql")
+        .ConfigureInfrastructure(infra =>
+        {
+            foreach (var database in infra.GetProvisionableResources().OfType<SqlDatabase>())
+            {
+                database.Sku = new SqlSku { Name = "Basic", Tier = "Basic" };
+            }
+        });
+    crmDb = azureSql.AddDatabase("crm").WithDefaultAzureSku();
+    erpDb = azureSql.AddDatabase("erp").WithDefaultAzureSku();
+    nimbusDb = azureSql.AddDatabase("nimbus").WithDefaultAzureSku();
 }
 else
 {

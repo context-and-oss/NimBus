@@ -370,7 +370,7 @@ In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver
 | Local (`aspire run`) | Azure (`aspire deploy`) |
 |---|---|
 | NimBus Service Bus emulator | Azure Service Bus (Standard), local auth disabled; every app connects with its managed identity |
-| SQL Server container + DbGate | Azure SQL (`crm`, `erp`, `nimbus`), Entra-only; each app's identity gets `db_owner` |
+| SQL Server container + DbGate | Azure SQL (`crm`, `erp`, `nimbus`) on the Basic tier, Entra-only; each app's identity gets `db_owner` |
 | Vite dev servers for crm-web / erp-web | `crm-api` and `erp-api` serve the built UIs from `wwwroot` |
 | Local-dev auth bypass on nimbus-ops | NimBus Identity sign-in with a bootstrap admin |
 | crm-web and erp-web are anonymous | crm-web and erp-web require sign-in with the nimbus-ops accounts; the adapters present a generated service key |
@@ -440,7 +440,9 @@ nimbus-ops requires sign-in in Azure, so the enrichment agent needs an agent API
 aspire destroy --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj
 ```
 
-`aspire destroy` deletes the whole resource group. While it runs, the environment costs roughly the Service Bus Standard base charge, a Basic container registry and Container Apps consumption for the always-on apps. Azure SQL uses the serverless free offer.
+`aspire destroy` deletes the whole resource group. While it runs, the environment costs roughly the Service Bus Standard base charge (about $10 a month), a Basic container registry (about $5 a month) and Container Apps consumption for the always-on apps. The three Azure SQL databases are on the fixed-price Basic tier (5 DTU, 2 GB each). That is about $5 a month per database, or $15 for the three, whether or not anyone uses the demo. Prices vary by region; see [Azure SQL Database pricing](https://azure.microsoft.com/pricing/details/azure-sql-database/single/).
+
+The databases don't use the serverless free offer, which is Aspire's default for Azure SQL. The Resolver, the nimbus-ops heartbeat sweep and erp-api's outbox dispatcher, which polls every second, query SQL all the time, so a serverless database never auto-pauses. A deployment on the free offer used up the monthly allowance (100,000 vCore-seconds per database) in about three days. Then Azure paused all three databases until the next month: nimbus-ops sign-in failed, and the CRM and ERP APIs stopped working. If the `nimbus` database gets close to the 2 GB limit, scale it to Standard S0 (250 GB, about $15 a month).
 
 ## End-to-end happy path
 
