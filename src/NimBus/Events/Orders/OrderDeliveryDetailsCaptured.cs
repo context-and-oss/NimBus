@@ -44,27 +44,27 @@ public class OrderDeliveryDetailsCaptured : Event
     [Sensitive(Mode = MaskMode.Hash)]
     [Required]
     [Description("The email address used for delivery notifications.")]
-    public string CustomerEmail { get; set; }
+    public string CustomerEmail { get; set; } = null!;
 
     // PartialReveal keeps the last four digits so an operator can match the number
     // against what a customer reads out, without exposing the full line.
     [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 4)]
     [Description("The phone number the carrier uses for delivery contact.")]
-    public string CustomerPhone { get; set; }
+    public string CustomerPhone { get; set; } = null!;
 
     // Full redaction: there is no operational reason to read this back.
     [Sensitive]
     [Description("National identification number, where the destination country requires it for customs.")]
-    public string NationalIdentificationNumber { get; set; }
+    public string NationalIdentificationNumber { get; set; } = null!;
 
     [Description("The address the order ships to.")]
-    public DeliveryAddress DeliveryAddress { get; set; }
+    public DeliveryAddress DeliveryAddress { get; set; } = null!;
 
     [Description("The carrier service level requested for the shipment.")]
-    public string CarrierPreference { get; set; }
+    public string CarrierPreference { get; set; } = null!;
 
     [Description("The ISO 8601 interval the customer selected for delivery.")]
-    public string DeliveryWindow { get; set; }
+    public string DeliveryWindow { get; set; } = null!;
 }
 
 /// <summary>
@@ -76,14 +76,14 @@ public class OrderDeliveryDetailsCaptured : Event
 public class DeliveryAddress
 {
     [Description("Street name, number and any apartment designation.")]
-    public string Street { get; set; }
+    public string Street { get; set; } = null!;
 
     [Description("Postal code.")]
-    public string PostalCode { get; set; }
+    public string PostalCode { get; set; } = null!;
 
     [Description("City or town.")]
-    public string City { get; set; }
+    public string City { get; set; } = null!;
 
     [Description("ISO 3166-1 alpha-2 country code.")]
-    public string CountryCode { get; set; }
+    public string CountryCode { get; set; } = null!;
 }
