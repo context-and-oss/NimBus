@@ -41,7 +41,7 @@ public static class TemplateRenderer
             .Replace("{ErrorDetails}", Encode(notification.ErrorDetails, jsonEncodeValues));
     }
 
-    private static string Encode(string value, bool jsonEncodeValues)
+    private static string Encode(string? value, bool jsonEncodeValues)
     {
         value ??= string.Empty;
         if (!jsonEncodeValues)

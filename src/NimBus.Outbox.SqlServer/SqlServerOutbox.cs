@@ -331,15 +331,15 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery
     {
         command.Parameters.AddWithValue($"@Id{suffix}", message.Id);
         command.Parameters.AddWithValue($"@MessageId{suffix}", message.MessageId);
-        command.Parameters.AddWithValue($"@To{suffix}", (object)message.To ?? DBNull.Value);
-        command.Parameters.AddWithValue($"@EventTypeId{suffix}", (object)message.EventTypeId ?? DBNull.Value);
-        command.Parameters.AddWithValue($"@SessionId{suffix}", (object)message.SessionId ?? DBNull.Value);
-        command.Parameters.AddWithValue($"@CorrelationId{suffix}", (object)message.CorrelationId ?? DBNull.Value);
+        command.Parameters.AddWithValue($"@To{suffix}", (object?)message.To ?? DBNull.Value);
+        command.Parameters.AddWithValue($"@EventTypeId{suffix}", (object?)message.EventTypeId ?? DBNull.Value);
+        command.Parameters.AddWithValue($"@SessionId{suffix}", (object?)message.SessionId ?? DBNull.Value);
+        command.Parameters.AddWithValue($"@CorrelationId{suffix}", (object?)message.CorrelationId ?? DBNull.Value);
         command.Parameters.AddWithValue($"@Payload{suffix}", message.Payload);
         command.Parameters.AddWithValue($"@EnqueueDelayMinutes{suffix}", message.EnqueueDelayMinutes);
         command.Parameters.AddWithValue($"@ScheduledEnqueueTimeUtc{suffix}", (object?)message.ScheduledEnqueueTimeUtc ?? DBNull.Value);
         command.Parameters.AddWithValue($"@CreatedAtUtc{suffix}", message.CreatedAtUtc);
-        command.Parameters.AddWithValue($"@TraceParent{suffix}", (object)message.TraceParent ?? DBNull.Value);
-        command.Parameters.AddWithValue($"@TraceState{suffix}", (object)message.TraceState ?? DBNull.Value);
+        command.Parameters.AddWithValue($"@TraceParent{suffix}", (object?)message.TraceParent ?? DBNull.Value);
+        command.Parameters.AddWithValue($"@TraceState{suffix}", (object?)message.TraceState ?? DBNull.Value);
     }
 }

@@ -13,28 +13,28 @@ public sealed class EmailChannelOptions : NotificationChannelOptions
     public EmailProvider Provider { get; set; } = EmailProvider.SendGrid;
 
     /// <summary>SendGrid API key (required when <see cref="Provider"/> is <see cref="EmailProvider.SendGrid"/>).</summary>
-    public string ApiKey { get; set; }
+    public string? ApiKey { get; set; }
 
     /// <summary>SMTP host (required when <see cref="Provider"/> is <see cref="EmailProvider.Smtp"/>).</summary>
-    public string SmtpHost { get; set; }
+    public string? SmtpHost { get; set; }
 
     /// <summary>SMTP port. Default: 587.</summary>
     public int SmtpPort { get; set; } = 587;
 
     /// <summary>SMTP username (optional; omit for anonymous relays).</summary>
-    public string SmtpUser { get; set; }
+    public string? SmtpUser { get; set; }
 
     /// <summary>SMTP password (optional; omit for anonymous relays).</summary>
-    public string SmtpPassword { get; set; }
+    public string? SmtpPassword { get; set; }
 
     /// <summary>Whether to enable SSL/TLS on the SMTP connection. Default: true.</summary>
     public bool SmtpUseSsl { get; set; } = true;
 
     /// <summary>The From address.</summary>
-    public string From { get; set; }
+    public string From { get; set; } = null!;
 
     /// <summary>One or more recipient addresses.</summary>
-    public string[] To { get; set; }
+    public string[] To { get; set; } = null!;
 
     internal override void Validate()
     {
