@@ -551,7 +551,7 @@ public static class AsyncApiExporter
     private static void EnsureObjectSchema(Type type, Map schemas, HashSet<Type> building) =>
         JsonSchemaBuilder.EnsureObjectSchema(type, schemas, building);
 
-    private static Map TryBuildExample(IEventType evt)
+    private static Map? TryBuildExample(IEventType evt)
     {
         try
         {
