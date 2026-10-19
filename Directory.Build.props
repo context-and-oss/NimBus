@@ -52,8 +52,18 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Keep compiler warnings strict while allowing analyzer cleanup to be handled incrementally. -->
     <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
-    <!-- Allow nullable warnings in legacy code without blocking the build -->
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS1574;CS8600;CS8601;CS8602;CS8603;CS8604;CS8613;CS8618;CS8619;CS8620;CS8629;CS8632;CS8765;CA1848;CA1873;CA1305</WarningsNotAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS1574;CA1848;CA1873;CA1305</WarningsNotAsErrors>
+  </PropertyGroup>
+  <!--
+    Nullable warnings fail Release in every project except those still listed here. Remove a
+    project from the list once it builds without nullable warnings; delete this block when the
+    list is empty (docs/plan/2026-10-20-nullable-warnings.md).
+  -->
+  <PropertyGroup>
+    <NimBusNullableLegacyProjects>;NimBus.Abstractions;NimBus;NimBus.Core;NimBus.MessageStore.Abstractions;NimBus.ServiceBus;NimBus.Extensions.Notifications;NimBus.Outbox.SqlServer;NimBus.Management.ServiceBus;NimBus.Manager;NimBus.MessageStore.CosmosDb;NimBus.MessageStore.SqlServer;NimBus.SDK;NimBus.Testing;NimBus.Resolver;NimBus.CommandLine;NimBus.WebApp;NimBus.Core.Tests;NimBus.WebApp.Tests;NimBus.Extensions.Notifications.Tests;NimBus.ServiceBus.Tests;NimBus.Resolver.Tests;NimBus.SDK.Tests;NimBus.EndToEnd.Tests;NimBus.CommandLine.Tests;NimBus.MessageStore.CosmosDb.Tests;NimBus.OpenTelemetry.Tests;NimBus.Outbox.SqlServer.Tests;NimBus.MessageStore.SqlServer.Tests;NimBus.MessageStore.InMemory.Tests;DataPlatform.Adapter.Functions;</NimBusNullableLegacyProjects>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' AND $(NimBusNullableLegacyProjects.Contains(';$(MSBuildProjectName);'))">
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS8600;CS8601;CS8602;CS8603;CS8604;CS8613;CS8618;CS8619;CS8620;CS8629;CS8632;CS8765</WarningsNotAsErrors>
   </PropertyGroup>
   <!-- NuGet package defaults (opt-in per project via IsPackable=true) -->
   <PropertyGroup Label="NuGet defaults">
