@@ -28,7 +28,7 @@ public class Property : IProperty
     /// </summary>
     public string TypeFullName => FormatTypeName(_propertyInfo.PropertyType, fullName: true);
 
-    public string Description => _propertyInfo.GetCustomAttribute<DescriptionAttribute>()?.Description;
+    public string? Description => _propertyInfo.GetCustomAttribute<DescriptionAttribute>()?.Description;
 
     public bool IsRequired => _propertyInfo.GetCustomAttribute<RequiredAttribute>() != null;
 

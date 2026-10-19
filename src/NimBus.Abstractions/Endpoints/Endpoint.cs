@@ -19,10 +19,10 @@ public abstract class Endpoint : IEndpoint
 
     public string Id => GetType().Name;
     public string Name => GetType().Name;
-    public string Namespace => GetType().Namespace;
+    public string? Namespace => GetType().Namespace;
     public string SecurityGroupName => $"azu-endpoint-{Id}";
-    public virtual string Description => null;
-    public virtual ISystem System => null;
+    public virtual string? Description => null;
+    public virtual ISystem? System => null;
 
     public IEnumerable<IEventType> EventTypesProduced => _eventTypesProduced.Values;
     public IEnumerable<IEventType> EventTypesConsumed => _eventTypesConsumed.Values;
@@ -51,7 +51,7 @@ public abstract class Endpoint : IEndpoint
 
     protected void AssignRole(string principalId, Environment environment)
     {
-        string env = Enum.GetName(environment.GetType(), environment);
+        string env = Enum.GetName(environment)!;
         var roleAssignment = new RoleAssignment() { PrincipalId = principalId, Environment = env };
         roleAssignments.Add(roleAssignment);
     }

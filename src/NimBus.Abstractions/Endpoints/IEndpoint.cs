@@ -7,10 +7,10 @@ public interface IEndpoint
 {
     string Id { get; }
     string Name { get; }
-    string Description { get; }
-    string Namespace { get; }
+    string? Description { get; }
+    string? Namespace { get; }
     string SecurityGroupName { get; }
-    ISystem System { get; }
+    ISystem? System { get; }
 
     /// <summary>
     /// Event types produced by the endpoint.
