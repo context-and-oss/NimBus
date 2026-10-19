@@ -69,7 +69,7 @@ public class MessageHandler : IMessageHandler
         }
         catch (TransientException transientException)
         {
-            _logger.LogError(transientException?.InnerException, "Transient Error. Failed to handle message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+            _logger.LogError(transientException.InnerException, "Transient Error. Failed to handle message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                 messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
 
             if (_lifecycleNotifier?.HasObservers == true)
@@ -118,7 +118,7 @@ public class MessageHandler : IMessageHandler
 
             if (_lifecycleNotifier?.HasObservers == true)
             {
-                await _lifecycleNotifier.NotifyFailed(messageContext, permanentFailure.InnerException ?? permanentFailure, cancellationToken);
+                await _lifecycleNotifier.NotifyFailed(messageContext!, permanentFailure.InnerException ?? permanentFailure, cancellationToken);
             }
 
             try
@@ -131,7 +131,7 @@ public class MessageHandler : IMessageHandler
                     ? "Permanent failure"
                     : $"Permanent failure: {inner.GetType().Name}: {inner.Message}";
                 await NotifyResolverOfDeadLetter(messageContext, reason, permanentFailure.InnerException, cancellationToken);
-                await messageContext.DeadLetter(reason, permanentFailure.InnerException, cancellationToken);
+                await messageContext!.DeadLetter(reason, permanentFailure.InnerException, cancellationToken);
 
                 if (_lifecycleNotifier?.HasObservers == true)
                 {
@@ -158,8 +158,8 @@ public class MessageHandler : IMessageHandler
 
             if (_lifecycleNotifier?.HasObservers == true)
             {
-                await _lifecycleNotifier.NotifyFailed(messageContext, alreadyDeadLettered, cancellationToken);
-                await _lifecycleNotifier.NotifyDeadLettered(messageContext, alreadyDeadLettered.Message, alreadyDeadLettered, cancellationToken);
+                await _lifecycleNotifier.NotifyFailed(messageContext!, alreadyDeadLettered, cancellationToken);
+                await _lifecycleNotifier.NotifyDeadLettered(messageContext!, alreadyDeadLettered.Message, alreadyDeadLettered, cancellationToken);
             }
         }
         catch (Exception unexpectedException)
@@ -193,7 +193,7 @@ public class MessageHandler : IMessageHandler
         }
     }
 
-    private async Task NotifyResolverOfDeadLetter(IMessageContext messageContext, string reason, Exception exception, CancellationToken cancellationToken)
+    private async Task NotifyResolverOfDeadLetter(IMessageContext? messageContext, string reason, Exception? exception, CancellationToken cancellationToken)
     {
         if (_responseService == null || messageContext == null) return;
         try

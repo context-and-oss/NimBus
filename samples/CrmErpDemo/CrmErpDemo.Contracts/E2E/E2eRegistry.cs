@@ -6,7 +6,7 @@ namespace CrmErpDemo.Contracts.E2E;
 public sealed record E2eScript(string EventType, string Stage, string[] Actions);
 
 /// <summary>Evidence captured at the real handler or middleware boundary.</summary>
-public sealed record E2eAttempt(string Action, string MessageId, string EventId, string OriginatingMessageId, DateTimeOffset At);
+public sealed record E2eAttempt(string Action, string MessageId, string EventId, string? OriginatingMessageId, DateTimeOffset At);
 
 /// <summary>Serializes scripted fault consumption without affecting unregistered sessions.</summary>
 public sealed class E2eRegistry
@@ -41,7 +41,7 @@ public sealed class E2eRegistry
     }
 
     /// <summary>Consumes one action only when both event type and execution stage match.</summary>
-    public E2eAttempt Attempt(Guid id, string eventType, string stage, string messageId, string eventId, string origin)
+    public E2eAttempt Attempt(Guid id, string eventType, string stage, string messageId, string eventId, string? origin)
     {
         var result = new E2eAttempt("continue", messageId, eventId, origin, DateTimeOffset.UtcNow);
         if (!_sessions.TryGetValue(id, out var session)) return result;

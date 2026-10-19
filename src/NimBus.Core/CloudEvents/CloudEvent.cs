@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace NimBus.Core.CloudEvents;
 
@@ -27,32 +28,32 @@ public sealed class CloudEvent
     public string? SpecVersion { get; set; } = CloudEventsSpecVersion;
 
     /// <summary>CloudEvents <c>id</c> attribute (required).</summary>
-    public string Id { get; set; }
+    public string Id { get; set; } = null!;
 
     /// <summary>CloudEvents <c>source</c> attribute (required).</summary>
-    public string Source { get; set; }
+    public string Source { get; set; } = null!;
 
     /// <summary>CloudEvents <c>type</c> attribute (required).</summary>
-    public string Type { get; set; }
+    public string Type { get; set; } = null!;
 
     /// <summary>CloudEvents <c>subject</c> attribute (optional).</summary>
-    public string Subject { get; set; }
+    public string? Subject { get; set; }
 
     /// <summary>CloudEvents <c>time</c> attribute (optional).</summary>
     public DateTimeOffset? Time { get; set; }
 
     /// <summary>CloudEvents <c>datacontenttype</c> attribute (optional).</summary>
-    public string DataContentType { get; set; }
+    public string? DataContentType { get; set; }
 
     /// <summary>CloudEvents <c>dataschema</c> attribute (optional).</summary>
-    public string DataSchema { get; set; }
+    public string? DataSchema { get; set; }
 
     /// <summary>
     /// The event payload as a JSON string. For NimBus this is the serialized
     /// domain event (<c>EventContent.EventJson</c>), NOT the NimBus
     /// <c>MessageContent</c> envelope.
     /// </summary>
-    public string Data { get; set; }
+    public string? Data { get; set; }
 
     /// <summary>
     /// CloudEvents extension attributes (e.g. <c>correlationid</c>,
@@ -62,6 +63,6 @@ public sealed class CloudEvent
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>Attempts to read an extension attribute value.</summary>
-    public bool TryGetExtension(string name, out string value) =>
+    public bool TryGetExtension(string name, [MaybeNullWhen(false)] out string value) =>
         Extensions.TryGetValue(name, out value);
 }

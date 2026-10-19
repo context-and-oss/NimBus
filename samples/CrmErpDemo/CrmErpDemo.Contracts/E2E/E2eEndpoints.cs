@@ -42,5 +42,5 @@ public static class E2eEndpoints
     }
 
     /// <summary>Coordinates supplied by a real subscriber invocation.</summary>
-    public sealed record AttemptRequest(string EventType, string Stage, string MessageId, string EventId, string OriginatingMessageId);
+    public sealed record AttemptRequest(string EventType, string Stage, string MessageId, string EventId, string? OriginatingMessageId);
 }

@@ -10,12 +10,12 @@ public class OutboxMessage
     /// <summary>
     /// Unique identifier for this outbox entry.
     /// </summary>
-    public string Id { get; set; }
+    public string Id { get; set; } = null!;
 
     /// <summary>
     /// The NimBus message ID.
     /// </summary>
-    public string MessageId { get; set; }
+    public string? MessageId { get; set; }
 
     /// <summary>
     /// The destination endpoint (topic name). Surfaced as the
@@ -24,27 +24,27 @@ public class OutboxMessage
     /// Captured at enqueue time so the dispatcher does not have to
     /// deserialize the payload to read it.
     /// </summary>
-    public string To { get; set; }
+    public string? To { get; set; }
 
     /// <summary>
     /// The event type identifier.
     /// </summary>
-    public string EventTypeId { get; set; }
+    public string? EventTypeId { get; set; }
 
     /// <summary>
     /// The session ID for ordered delivery.
     /// </summary>
-    public string SessionId { get; set; }
+    public string? SessionId { get; set; }
 
     /// <summary>
     /// The correlation ID for tracing.
     /// </summary>
-    public string CorrelationId { get; set; }
+    public string? CorrelationId { get; set; }
 
     /// <summary>
     /// The serialized IMessage payload (JSON).
     /// </summary>
-    public string Payload { get; set; }
+    public string Payload { get; set; } = null!;
 
     /// <summary>
     /// Scheduled enqueue delay in minutes (0 for immediate).
@@ -73,11 +73,11 @@ public class OutboxMessage
     /// publish context as an <see cref="System.Diagnostics.ActivityLink"/> on the dispatch
     /// span. Null on rows persisted before W3C capture was wired in.
     /// </summary>
-    public string TraceParent { get; set; }
+    public string? TraceParent { get; set; }
 
     /// <summary>
     /// W3C <c>tracestate</c> captured alongside <see cref="TraceParent"/>. Null if the
     /// originating activity carried no tracestate.
     /// </summary>
-    public string TraceState { get; set; }
+    public string? TraceState { get; set; }
 }

@@ -299,7 +299,7 @@ public class StrictMessageHandlerHeartbeatTests
         public Task SendSkipResponse(IMessageContext mc, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendDuplicateResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Add("response-duplicate"); DuplicateCalls++; return Task.CompletedTask; }
         public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) => Task.CompletedTask;
-        public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception ex, CancellationToken ct = default) => Task.CompletedTask;
+        public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception? ex, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendDeferralResponse(IMessageContext mc, SessionBlockedException ex, CancellationToken ct = default) { _trace?.Add("response-deferral"); DeferralCalls++; return Task.CompletedTask; }
         public Task SendRetryResponse(IMessageContext mc, int delay, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendUnsupportedResponse(IMessageContext mc, CancellationToken ct = default) { UnsupportedCalls++; return Task.CompletedTask; }

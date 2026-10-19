@@ -11,7 +11,7 @@ public class DefaultRetryPolicyProvider : IRetryPolicyProvider
 {
     private readonly Dictionary<string, RetryPolicy> _eventTypePolicies = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ExceptionRetryRule> _exceptionRules = new();
-    private RetryPolicy _defaultPolicy;
+    private RetryPolicy? _defaultPolicy;
 
     /// <summary>
     /// Sets a retry policy for a specific event type.
@@ -74,14 +74,14 @@ public class DefaultRetryPolicyProvider : IRetryPolicyProvider
     }
 
     /// <inheritdoc />
-    public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null) =>
+    public RetryPolicy? GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null) =>
         Resolve(eventTypeId, exceptionMessage, exception: null);
 
     /// <inheritdoc />
-    public RetryPolicy GetRetryPolicy(string eventTypeId, Exception exception, string? endpoint = null) =>
+    public RetryPolicy? GetRetryPolicy(string eventTypeId, Exception exception, string? endpoint = null) =>
         Resolve(eventTypeId, $"{exception?.InnerException} {exception}", exception);
 
-    private RetryPolicy Resolve(string eventTypeId, string exceptionText, Exception? exception)
+    private RetryPolicy? Resolve(string eventTypeId, string exceptionText, Exception? exception)
     {
         // 1. Check exception-based rules first (most specific), in registration order
         foreach (var rule in _exceptionRules)
@@ -101,15 +101,15 @@ public class DefaultRetryPolicyProvider : IRetryPolicyProvider
         return _defaultPolicy;
     }
 
-    private static HashSet<string> ToEventTypeSet(string[] eventTypeIds) =>
+    private static HashSet<string>? ToEventTypeSet(string[]? eventTypeIds) =>
         eventTypeIds?.Length > 0 ? new HashSet<string>(eventTypeIds, StringComparer.OrdinalIgnoreCase) : null;
 
     private class ExceptionRetryRule
     {
-        public string ExceptionContains { get; set; }
-        public Type ExceptionType { get; set; }
-        public RetryPolicy Policy { get; set; }
-        public HashSet<string> EventTypeIds { get; set; }
+        public string? ExceptionContains { get; set; }
+        public Type? ExceptionType { get; set; }
+        public RetryPolicy Policy { get; set; } = null!;
+        public HashSet<string>? EventTypeIds { get; set; }
 
         public bool Matches(string exceptionText, Exception? exception)
         {
@@ -125,7 +125,7 @@ public class DefaultRetryPolicyProvider : IRetryPolicyProvider
             }
 
             return !string.IsNullOrEmpty(exceptionText)
-                && exceptionText.Contains(ExceptionContains, StringComparison.OrdinalIgnoreCase);
+                && exceptionText.Contains(ExceptionContains!, StringComparison.OrdinalIgnoreCase);
         }
     }
 }

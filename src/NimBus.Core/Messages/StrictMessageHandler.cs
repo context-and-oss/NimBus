@@ -537,7 +537,7 @@ public class StrictMessageHandler : MessageHandler
 
     private void AuthorizeManagerRequest(IMessageContext messageContext)
     {
-        if (!messageContext.From.Equals(Constants.ManagerId, StringComparison.OrdinalIgnoreCase))
+        if (!messageContext.From!.Equals(Constants.ManagerId, StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException($"Only {Constants.ManagerId} is authorized to send {messageContext.MessageType} messages.");
     }
 

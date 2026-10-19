@@ -2036,7 +2036,7 @@ public class StrictMessageHandlerTests
             return Task.CompletedTask;
         }
         public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-error", ct); ErrorCalls++; LastErrorException = ex; return Task.CompletedTask; }
-        public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception ex, CancellationToken ct = default)
+        public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception? ex, CancellationToken ct = default)
         {
             _trace?.Record($"{GetTraceName(mc)}.response-dead-letter", ct);
             DeadLetterCalls++;

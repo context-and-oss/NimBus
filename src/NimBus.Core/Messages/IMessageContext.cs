@@ -13,10 +13,10 @@ public interface IReceivedMessage : IMessage
     new string MessageId { get; }
 
     new string EventTypeId { get; }
-    new string DeadLetterReason { get; }
-    new string DeadLetterErrorDescription { get; }
-    new string HandoffReason { get; }
-    new string ExternalJobId { get; }
+    new string? DeadLetterReason { get; }
+    new string? DeadLetterErrorDescription { get; }
+    new string? HandoffReason { get; }
+    new string? ExternalJobId { get; }
     new DateTime? ExpectedBy { get; }
 }
 
@@ -188,5 +188,5 @@ public interface IMessageContext : IReceivedMessage
     /// returns <c>null</c> so existing transport/test implementers are
     /// forward-compatible.
     /// </summary>
-    CloudEvent GetCloudEvent() => null;
+    CloudEvent? GetCloudEvent() => null;
 }

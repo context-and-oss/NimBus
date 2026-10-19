@@ -8,8 +8,8 @@ public interface IMessage
     string EventId { get; }
     string To { get; }
     string SessionId { get; }
-    string CorrelationId { get; }
-    string MessageId { get; }
+    string? CorrelationId { get; }
+    string? MessageId { get; }
     MessageType MessageType { get; }
     MessageContent MessageContent { get; }
 
@@ -19,7 +19,7 @@ public interface IMessage
     /// If this message was the first for the Event (EventRequest message type), ParentMessageId will be Constants.Self. 
     /// </summary>
     /// <value></value>
-    string ParentMessageId { get; }
+    string? ParentMessageId { get; }
 
     /// <summary>
     /// The message that initially spawned the Event -- the chronologically first message.
@@ -27,17 +27,17 @@ public interface IMessage
     /// If this message was the first for the Event (EventRequest message type), OriginatingMessageId will be Constants.Self. 
     /// </summary>
     /// <value></value>
-    string OriginatingMessageId { get; }
+    string? OriginatingMessageId { get; }
     int? RetryCount { get; }
-    string From { get; }
-    string OriginatingFrom { get; }
+    string? From { get; }
+    string? OriginatingFrom { get; }
 
     public string EventTypeId { get; }
 
     /// <summary>
     /// The original session ID for deferred messages sent to the non-session subscription.
     /// </summary>
-    string OriginalSessionId { get; }
+    string? OriginalSessionId { get; }
 
     /// <summary>
     /// The sequence number for ordering deferred messages within a session.
@@ -47,19 +47,19 @@ public interface IMessage
     /// <summary>
     /// W3C trace context diagnostic ID for distributed tracing.
     /// </summary>
-    string DiagnosticId => null;
+    string? DiagnosticId => null;
 
     /// <summary>
     /// Reply-to destination for request/response patterns.
     /// Set by the requester; the responder sends the response to this address.
     /// </summary>
-    string ReplyTo => null;
+    string? ReplyTo => null;
 
     /// <summary>
     /// Session ID for reply correlation in request/response patterns.
     /// The requester listens on this session for the response.
     /// </summary>
-    string ReplyToSessionId => null;
+    string? ReplyToSessionId => null;
 
     /// <summary>
     /// Time the message spent in Service Bus before the handler was invoked
@@ -81,7 +81,7 @@ public interface IMessage
     /// dead-letter properties. Set on dead-letter notification messages
     /// sent to the Resolver so it can record the dead-letter outcome.
     /// </summary>
-    string DeadLetterReason => null;
+    string? DeadLetterReason => null;
 
     /// <summary>
     /// Detailed error description for a dead-lettered message (typically
@@ -89,7 +89,7 @@ public interface IMessage
     /// sent to the Resolver — its presence drives the Resolver to classify
     /// the audit record as DeadLettered.
     /// </summary>
-    string DeadLetterErrorDescription => null;
+    string? DeadLetterErrorDescription => null;
 
     /// <summary>
     /// Free-text reason supplied by an event handler when it signals
@@ -97,14 +97,14 @@ public interface IMessage
     /// Carried on <see cref="MessageType.PendingHandoffResponse"/> to the
     /// Resolver for audit-row enrichment.
     /// </summary>
-    string HandoffReason => null;
+    string? HandoffReason => null;
 
     /// <summary>
     /// Optional external-system identifier (e.g. a D365 F&amp;O DMF job id)
     /// for messages awaiting completion of long-running external work.
     /// Carried alongside <see cref="HandoffReason"/>.
     /// </summary>
-    string ExternalJobId => null;
+    string? ExternalJobId => null;
 
     /// <summary>
     /// Optional UTC deadline by which the external work is expected to
@@ -121,7 +121,7 @@ public interface IMessage
     /// Treat as a cache only: it must always equal
     /// <c>JsonConvert.SerializeObject(MessageContent)</c> at send time.
     /// </summary>
-    string SerializedMessageContent => null;
+    string? SerializedMessageContent => null;
 
     /// <summary>
     /// Opt-in CloudEvents publish context. Non-null only when the publisher has
@@ -130,23 +130,23 @@ public interface IMessage
     /// native NimBus wire format exactly. Persisted through the outbox so a
     /// CloudEvents message keeps its envelope when dispatched later.
     /// </summary>
-    CloudEventPublishContext CloudEvent => null;
+    CloudEventPublishContext? CloudEvent => null;
 
     /// <summary>
     /// CloudEvents <c>id</c> of the inbound CloudEvent this message relates to,
     /// carried on the response sent to the Resolver so the tracking/audit record
     /// preserves the CloudEvent identity. Null (the default) on native messages.
     /// </summary>
-    string CloudEventId => null;
+    string? CloudEventId => null;
 
     /// <summary>CloudEvents <c>source</c>, carried to the Resolver. Null for a native message.</summary>
-    string CloudEventSource => null;
+    string? CloudEventSource => null;
 
     /// <summary>CloudEvents <c>type</c>, carried to the Resolver. Null for a native message.</summary>
-    string CloudEventType => null;
+    string? CloudEventType => null;
 
     /// <summary>CloudEvents <c>subject</c>, carried to the Resolver. Null for a native message.</summary>
-    string CloudEventSubject => null;
+    string? CloudEventSubject => null;
 
     /// <summary>
     /// The <see cref="MessageId"/> of the delivery this message stands in for. A RetryRequest
@@ -157,43 +157,43 @@ public interface IMessage
     /// the first message of the whole causal chain (possibly another event's), this is
     /// always a delivery of the same event to the same endpoint.
     /// </summary>
-    string InboxMessageId => null;
+    string? InboxMessageId => null;
 }
 
 public class Message : IMessage
 {
-    public string To { get; set; }
+    public string To { get; set; } = null!;
 
-    public string SessionId { get; set; }
+    public string SessionId { get; set; } = null!;
 
     public MessageType MessageType { get; set; }
 
-    public MessageContent MessageContent { get; set; }
+    public MessageContent MessageContent { get; set; } = null!;
 
-    public string EventId { get; set; }
+    public string EventId { get; set; } = null!;
 
-    public string CorrelationId { get; set; }
+    public string? CorrelationId { get; set; }
 
-    public string MessageId { get; set; }
+    public string? MessageId { get; set; }
 
-    public string ParentMessageId { get; set; }
+    public string? ParentMessageId { get; set; }
 
-    public string OriginatingMessageId { get; set; }
-    public string From { get; set; }
-    public string OriginatingFrom { get; set; }
+    public string? OriginatingMessageId { get; set; }
+    public string? From { get; set; }
+    public string? OriginatingFrom { get; set; }
     public int? RetryCount { get; set; }
-    public string EventTypeId { get; set; }
-    public string OriginalSessionId { get; set; }
+    public string EventTypeId { get; set; } = null!;
+    public string? OriginalSessionId { get; set; }
     public int? DeferralSequence { get; set; }
-    public string DiagnosticId { get; set; }
-    public string ReplyTo { get; set; }
-    public string ReplyToSessionId { get; set; }
+    public string? DiagnosticId { get; set; }
+    public string? ReplyTo { get; set; }
+    public string? ReplyToSessionId { get; set; }
     public long? QueueTimeMs { get; set; }
     public long? ProcessingTimeMs { get; set; }
-    public string DeadLetterReason { get; set; }
-    public string DeadLetterErrorDescription { get; set; }
-    public string HandoffReason { get; set; }
-    public string ExternalJobId { get; set; }
+    public string? DeadLetterReason { get; set; }
+    public string? DeadLetterErrorDescription { get; set; }
+    public string? HandoffReason { get; set; }
+    public string? ExternalJobId { get; set; }
     public DateTime? ExpectedBy { get; set; }
 
     /// <summary>
@@ -203,7 +203,7 @@ public class Message : IMessage
     /// the payload and round-trip a potentially stale body.
     /// </summary>
     [Newtonsoft.Json.JsonIgnore]
-    public string SerializedMessageContent { get; set; }
+    public string? SerializedMessageContent { get; set; }
 
     /// <summary>
     /// See <see cref="IMessage.CloudEvent"/>. Intentionally NOT
@@ -211,20 +211,20 @@ public class Message : IMessage
     /// into its Payload column and this envelope must survive that round-trip so
     /// an outbox-dispatched CloudEvents message is still emitted as a CloudEvent.
     /// </summary>
-    public CloudEventPublishContext CloudEvent { get; set; }
+    public CloudEventPublishContext? CloudEvent { get; set; }
 
     /// <summary>See <see cref="IMessage.CloudEventId"/>.</summary>
-    public string CloudEventId { get; set; }
+    public string? CloudEventId { get; set; }
 
     /// <summary>See <see cref="IMessage.CloudEventSource"/>.</summary>
-    public string CloudEventSource { get; set; }
+    public string? CloudEventSource { get; set; }
 
     /// <summary>See <see cref="IMessage.CloudEventType"/>.</summary>
-    public string CloudEventType { get; set; }
+    public string? CloudEventType { get; set; }
 
     /// <summary>See <see cref="IMessage.CloudEventSubject"/>.</summary>
-    public string CloudEventSubject { get; set; }
+    public string? CloudEventSubject { get; set; }
 
     /// <summary>See <see cref="IMessage.InboxMessageId"/>.</summary>
-    public string InboxMessageId { get; set; }
+    public string? InboxMessageId { get; set; }
 }

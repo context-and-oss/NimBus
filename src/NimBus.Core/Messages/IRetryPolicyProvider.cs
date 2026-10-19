@@ -16,7 +16,7 @@ public interface IRetryPolicyProvider
     /// <param name="exceptionMessage">The exception message from the failure.</param>
     /// <param name="endpoint">The endpoint that failed (optional).</param>
     /// <returns>A retry policy, or null if no retry is configured.</returns>
-    RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null);
+    RetryPolicy? GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null);
 
     /// <summary>
     /// Gets the retry policy for a given event type and the exception the handler failed with.
@@ -32,6 +32,6 @@ public interface IRetryPolicyProvider
     /// <param name="exception">The exception the handler failed with, including its inner exceptions.</param>
     /// <param name="endpoint">The endpoint that failed (optional).</param>
     /// <returns>A retry policy, or null if no retry is configured.</returns>
-    RetryPolicy GetRetryPolicy(string eventTypeId, Exception exception, string? endpoint = null) =>
+    RetryPolicy? GetRetryPolicy(string eventTypeId, Exception exception, string? endpoint = null) =>
         GetRetryPolicy(eventTypeId, $"{exception?.InnerException} {exception}", endpoint);
 }

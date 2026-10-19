@@ -74,9 +74,9 @@ internal sealed class MutableTimeProvider : TimeProvider
 /// <summary>Lifecycle observer that records session-block callbacks.</summary>
 internal sealed class RecordingSessionObserver : NimBus.Core.Extensions.IMessageLifecycleObserver
 {
-    public List<(string SessionId, string BlockedByEventId)> SessionBlocks { get; } = [];
+    public List<(string? SessionId, string? BlockedByEventId)> SessionBlocks { get; } = [];
 
-    public Task OnSessionBlocked(NimBus.Core.Extensions.MessageLifecycleContext context, string blockedByEventId, CancellationToken cancellationToken = default)
+    public Task OnSessionBlocked(NimBus.Core.Extensions.MessageLifecycleContext context, string? blockedByEventId, CancellationToken cancellationToken = default)
     {
         SessionBlocks.Add((context.SessionId, blockedByEventId));
         return Task.CompletedTask;
