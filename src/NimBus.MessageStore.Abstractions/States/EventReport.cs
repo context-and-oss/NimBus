@@ -12,12 +12,12 @@ public class EventReport
 {
     /// <summary>Cosmos document id ("{endpointId}_{eventId}"); ignored by the SQL Server store.</summary>
     [JsonProperty(PropertyName = "id")]
-    public string Id { get; set; }
+    public string Id { get; set; } = null!;
 
     /// <summary>Endpoint that owns the event. Cosmos partition key.</summary>
-    public string EndpointId { get; set; }
+    public string EndpointId { get; set; } = null!;
 
-    public string EventId { get; set; }
+    public string EventId { get; set; } = null!;
 
     public bool IsReported { get; set; }
 
