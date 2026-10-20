@@ -6,7 +6,7 @@ namespace NimBus.MessageStore.States;
 
 public class EndpointMetadata
 {
-    [JsonProperty(PropertyName = "id")] public string EndpointId { get; set; }
+    [JsonProperty(PropertyName = "id")] public string EndpointId { get; set; } = null!;
     public string? EndpointOwner { get; set; }
     public string? EndpointOwnerTeam { get; set; }
     public string? EndpointOwnerEmail { get; set; }
@@ -21,10 +21,10 @@ public class EndpointMetadata
     [JsonConverter(typeof(StringEnumConverter))]
     public HeartbeatStatus? EndpointHeartbeatStatus { get; set; }
 
-    public List<TechnicalContact> TechnicalContacts { get; set; }
+    public List<TechnicalContact>? TechnicalContacts { get; set; }
 
     /// <summary>Recent heartbeat probes for this endpoint, newest last, pruned by the store.</summary>
-    public List<Heartbeat> Heartbeats { get; set; }
+    public List<Heartbeat>? Heartbeats { get; set; }
 
     public bool? SubscriptionStatus { get; set; } = null;
 }

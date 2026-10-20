@@ -14,12 +14,12 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
 {
     private readonly Func<Task<ICosmosContainerAdapter>> _getMetadataContainer;
     private readonly Func<Task<ICosmosContainerAdapter>> _getSettingsContainer;
-    private readonly ILogger _logger;
+    private readonly ILogger? _logger;
 
     public CosmosDbEndpointMetadataStore(
         Func<Task<ICosmosContainerAdapter>> getMetadataContainer,
         Func<Task<ICosmosContainerAdapter>> getSettingsContainer,
-        ILogger logger)
+        ILogger? logger)
     {
         _getMetadataContainer = getMetadataContainer;
         _getSettingsContainer = getSettingsContainer;
@@ -43,7 +43,7 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         }
     }
 
-    public async Task<List<EndpointMetadata>>? GetMetadatas(IEnumerable<string> endpointIds)
+    public async Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds)
     {
         var container = await _getMetadataContainer();
         try

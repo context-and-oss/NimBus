@@ -60,7 +60,7 @@ public interface IServiceBusManagement
     /// Fetches one subscription's settings (status, session flag, ForwardTo), or null when
     /// it doesn't exist. Unlike the toggles above, nothing other than not-found is swallowed.
     /// </summary>
-    Task<SubscriptionProperties> GetSubscription(string topicName, string subscriptionName);
+    Task<SubscriptionProperties?> GetSubscription(string topicName, string subscriptionName);
 
     /// <summary>Enumerates every topic in the namespace.</summary>
     IAsyncEnumerable<TopicProperties> ListTopicsAsync();
@@ -87,7 +87,7 @@ public interface IServiceBusManagement
 public class ServiceBusManagement : IServiceBusManagement
 {
     private readonly ServiceBusAdministrationClient client;
-    private readonly ILogger _logger;
+    private readonly ILogger? _logger;
 
     public ServiceBusManagement(ServiceBusAdministrationClient client, ILogger<ServiceBusManagement>? logger = null)
     {
@@ -383,7 +383,7 @@ public class ServiceBusManagement : IServiceBusManagement
         }
     }
 
-    public async Task<SubscriptionProperties> GetSubscription(string topicName, string subscriptionName)
+    public async Task<SubscriptionProperties?> GetSubscription(string topicName, string subscriptionName)
     {
         ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));

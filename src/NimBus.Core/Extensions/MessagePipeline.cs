@@ -25,8 +25,9 @@ public class MessagePipeline
         if (serviceProvider == null) throw new ArgumentNullException(nameof(serviceProvider));
 
         var configuredBehaviors = registry.BehaviorTypes
-            .Select(t => (IMessagePipelineBehavior)serviceProvider.GetService(t))
-            .Where(b => b != null);
+            .Select(t => (IMessagePipelineBehavior?)serviceProvider.GetService(t))
+            .Where(b => b != null)
+            .Select(b => b!);
 
         // Distinct (reference equality — behaviors are DI singletons):
         // a user following the AddPipelineBehavior<T> docs may register the

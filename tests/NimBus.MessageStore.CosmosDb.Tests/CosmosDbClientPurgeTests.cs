@@ -69,7 +69,7 @@ public sealed class CosmosDbClientPurgeTests
 
         public RecordingContainerAdapter(IReadOnlyList<string> documentJson) => _documentJson = documentJson;
 
-        public string LastQueryText { get; private set; }
+        public string? LastQueryText { get; private set; }
 
         public ConcurrentBag<string> DeletedIds { get; } = new();
 
@@ -79,7 +79,7 @@ public sealed class CosmosDbClientPurgeTests
         {
             LastQueryText = queryDefinition.QueryText;
             return new SingleBatchFeedIterator<T>(
-                _documentJson.Select(JsonConvert.DeserializeObject<T>).ToList());
+                _documentJson.Select(json => JsonConvert.DeserializeObject<T>(json)!).ToList());
         }
 
         public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
@@ -114,7 +114,7 @@ public sealed class CosmosDbClientPurgeTests
                 // Hold the call open long enough for overlapping deletes to be observable.
                 await Task.Delay(50);
                 DeletedIds.Add(id);
-                return null;
+                return null!;
             }
             finally
             {
@@ -160,13 +160,13 @@ public sealed class CosmosDbClientPurgeTests
 
         public ListFeedResponse(IReadOnlyList<T> items) => _items = items;
 
-        public override string ContinuationToken => null;
+        public override string ContinuationToken => null!;
         public override int Count => _items.Count;
-        public override string IndexMetrics => null;
+        public override string IndexMetrics => null!;
         public override Headers Headers { get; } = new();
         public override IEnumerable<T> Resource => _items;
         public override HttpStatusCode StatusCode => HttpStatusCode.OK;
-        public override CosmosDiagnostics Diagnostics => null;
+        public override CosmosDiagnostics Diagnostics => null!;
         public override IEnumerator<T> GetEnumerator() => _items.GetEnumerator();
     }
 }

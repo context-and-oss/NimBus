@@ -131,7 +131,7 @@ public sealed class EndpointSendStatusTests
         IServiceBusManagement sb, IAuditLogService audit, bool canManage, params string[] endpointIds)
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string> { ["Environment"] = "dev" })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Environment"] = "dev" })
             .Build();
 
         return new EndpointImplementation(
@@ -189,7 +189,7 @@ public sealed class EndpointSendStatusTests
         public Task<SubscriptionState> GetSubscriptionState(string t, string s) => throw new NotSupportedException();
         public Task UpdateForwardTo(string t, string s, string f) => throw new NotSupportedException();
         public Task UpdateSubscription(string t, string s, Azure.Messaging.ServiceBus.Administration.EntityStatus status, string? f, bool c) => throw new NotSupportedException();
-        public Task<Azure.Messaging.ServiceBus.Administration.SubscriptionProperties> GetSubscription(string t, string s) => throw new NotSupportedException();
+        public Task<Azure.Messaging.ServiceBus.Administration.SubscriptionProperties?> GetSubscription(string t, string s) => throw new NotSupportedException();
         public IAsyncEnumerable<Azure.Messaging.ServiceBus.Administration.TopicProperties> ListTopicsAsync() => throw new NotSupportedException();
         public IAsyncEnumerable<Azure.Messaging.ServiceBus.Administration.SubscriptionProperties> ListSubscriptionsAsync(string t) => throw new NotSupportedException();
         public IAsyncEnumerable<Azure.Messaging.ServiceBus.Administration.RuleProperties> ListRulesAsync(string t, string s) => throw new NotSupportedException();

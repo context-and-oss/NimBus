@@ -22,7 +22,7 @@ public sealed class CosmosDbSubscriptionStoreUnitTests
             store.SubscribeToEndpointNotification(
                 "endpoint", "ops@example.com", "MAIL", "author", "https://example.com", new List<string>(), "payload", 0));
 
-        Assert.AreEqual("mail", subscription.Type);
+        Assert.AreEqual("mail", subscription!.Type);
     }
 
     [TestMethod]

@@ -12,7 +12,7 @@ namespace NimBus.ServiceBus;
 public interface IServiceBusSession
 {
     Task CompleteAsync(IServiceBusMessage message, CancellationToken cancellationToken = default);
-    Task DeadLetterAsync(IServiceBusMessage message, string reason, string v, CancellationToken cancellationToken = default);
+    Task DeadLetterAsync(IServiceBusMessage message, string reason, string? v, CancellationToken cancellationToken = default);
     Task SetStateAsync(SessionState sessionState, CancellationToken cancellationToken = default);
     Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default);
     Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default);
@@ -20,12 +20,12 @@ public interface IServiceBusSession
 
 public class ServiceBusSession : IServiceBusSession
 {
-    private readonly ServiceBusMessageActions _messageActions;
-    private readonly ServiceBusSessionMessageActions _sessionActions;
-    private readonly ServiceBusSessionReceiver _sessionReceiver;
-    private readonly ProcessSessionMessageEventArgs _processSessionArgs;
-    private readonly ServiceBusClient _serviceBusClient;
-    private readonly string _entityPath;
+    private readonly ServiceBusMessageActions? _messageActions;
+    private readonly ServiceBusSessionMessageActions? _sessionActions;
+    private readonly ServiceBusSessionReceiver? _sessionReceiver;
+    private readonly ProcessSessionMessageEventArgs? _processSessionArgs;
+    private readonly ServiceBusClient? _serviceBusClient;
+    private readonly string? _entityPath;
 
     public ServiceBusSession(ServiceBusSessionMessageActions sessionActions, ServiceBusClient? serviceBusClient = null, string? entityPath = null, string? sessionId = null)
     {
@@ -34,7 +34,7 @@ public class ServiceBusSession : IServiceBusSession
         _entityPath = entityPath;
     }
 
-    public ServiceBusSession(ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, ServiceBusClient serviceBusClient, string entityPath, string sessionId)
+    public ServiceBusSession(ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, ServiceBusClient? serviceBusClient, string? entityPath, string? sessionId)
     {
         _messageActions = messageActions ?? throw new ArgumentNullException(nameof(messageActions));
         _sessionActions = sessionActions ?? throw new ArgumentNullException(nameof(sessionActions));
@@ -73,7 +73,7 @@ public class ServiceBusSession : IServiceBusSession
             "Cannot complete message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
     }
 
-    public Task DeadLetterAsync(IServiceBusMessage message, string deadLetterReason, string deadLetterErrorDescription, CancellationToken cancellationToken = default)
+    public Task DeadLetterAsync(IServiceBusMessage message, string deadLetterReason, string? deadLetterErrorDescription, CancellationToken cancellationToken = default)
     {
         if (_messageActions != null)
         {
@@ -105,13 +105,13 @@ public class ServiceBusSession : IServiceBusSession
         }
         else
         {
-            sessionData = await _sessionReceiver.GetSessionStateAsync(cancellationToken);
+            sessionData = await _sessionReceiver!.GetSessionStateAsync(cancellationToken);
         }
 
         if (sessionData == null || sessionData.ToMemory().Length == 0)
             return new SessionState();
 
-        return sessionData.ToObjectFromJson<SessionState>();
+        return sessionData.ToObjectFromJson<SessionState>()!;
     }
 
     public async Task SetStateAsync(SessionState sessionState, CancellationToken cancellationToken = default)
@@ -141,7 +141,7 @@ public class ServiceBusSession : IServiceBusSession
         }
         else
         {
-            await _sessionReceiver.SetSessionStateAsync(sessionData, cancellationToken);
+            await _sessionReceiver!.SetSessionStateAsync(sessionData, cancellationToken);
         }
     }
 
@@ -159,9 +159,9 @@ public class ServiceBusSession : IServiceBusSession
         await sender.ScheduleMessageAsync(message, scheduledEnqueueTime, cancellationToken);
     }
 
-    private (string topicName, string subscriptionName) ParseEntityPath()
+    private (string topicName, string? subscriptionName) ParseEntityPath()
     {
-        var separatorIndex = _entityPath.IndexOf('/');
+        var separatorIndex = _entityPath!.IndexOf('/');
         if (separatorIndex >= 0)
         {
             return (_entityPath.Substring(0, separatorIndex), _entityPath.Substring(separatorIndex + 1));

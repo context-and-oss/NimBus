@@ -131,9 +131,9 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId) => _messageTracking.DownloadEndpointStateCount(endpointId);
     public Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId) => _messageTracking.DownloadEndpointSessionStateCount(endpointId, sessionId);
     public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) => _messageTracking.DownloadEndpointSessionStateCountBatch(endpointId, sessionIds);
-    public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => _messageTracking.DownloadEndpointStatePaging(endpointId, pageSize, continuationToken);
+    public Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => _messageTracking.DownloadEndpointStatePaging(endpointId, pageSize, continuationToken);
     public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take) => _messageTracking.GetBlockedEventsOnSession(endpointId, sessionId, skip, take);
-    public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId) => _messageTracking.GetPendingEventsOnSession(endpointId);
+    public Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId) => _messageTracking.GetPendingEventsOnSession(endpointId);
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId) => _messageTracking.GetInvalidEventsOnSession(endpointId);
     public Task<bool> RemoveMessage(string eventId, string sessionId, string endpointId) => _messageTracking.RemoveMessage(eventId, sessionId, endpointId);
     public Task<bool> PurgeMessages(string endpointId, string sessionId) => _messageTracking.PurgeMessages(endpointId, sessionId);
@@ -141,7 +141,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => _messageTracking.ArchiveFailedEvent(eventId, sessionId, endpointId);
     public Task<string> GetEndpointErrorList(string endpointId) => _messageTracking.GetEndpointErrorList(endpointId);
     // ───────── Subscription store — implementation in SqlServerSubscriptionStore ─────────
-    public Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
+    public Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
         => _subscriptions.SubscribeToEndpointNotification(endpointId, mail, type, author, url, eventTypes, payload, frequency);
 
     public Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId)

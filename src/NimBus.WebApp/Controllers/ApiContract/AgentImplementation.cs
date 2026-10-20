@@ -41,7 +41,7 @@ public class AgentImplementation : IAgentApiController
     private readonly IHandoffSettlementService _settlement;
     private readonly IAgentSubscriptionRegistry _subscriptions;
     private readonly IConfiguration _config;
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
     private readonly ILogger<AgentImplementation> _logger;
 
     public AgentImplementation(
@@ -53,7 +53,7 @@ public class AgentImplementation : IAgentApiController
         IHandoffSettlementService settlement,
         IAgentSubscriptionRegistry subscriptions,
         IConfiguration config,
-        IHttpContextAccessor httpContextAccessor,
+        IHttpContextAccessor? httpContextAccessor,
         ILogger<AgentImplementation> logger)
     {
         _schemas = schemas;
@@ -318,7 +318,7 @@ public class AgentImplementation : IAgentApiController
             return new BadRequestObjectResult("coordinates.eventId is required.");
         if (string.IsNullOrWhiteSpace(coords.MessageId))
             return new BadRequestObjectResult("coordinates.messageId is required.");
-        if (body.Outcome is not AgentSettleRequestOutcome.Complete
+        if (body!.Outcome is not AgentSettleRequestOutcome.Complete
             and not AgentSettleRequestOutcome.Fail)
         {
             return new BadRequestObjectResult("outcome must be 'complete' or 'fail'.");

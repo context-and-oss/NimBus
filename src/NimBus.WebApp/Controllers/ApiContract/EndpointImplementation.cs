@@ -67,7 +67,7 @@ public class EndpointImplementation : IEndpointApiController
         _metadataStore = metadataStore;
         this.serviceBusManagement = serviceBusManagement;
         this._authorizationService = authorizationService;
-        _context = contextAccessor.HttpContext;
+        _context = contextAccessor.HttpContext!;
         _logger = logger;
         _auditLogService = auditLogService;
         _storeResultCache = storeResultCache;
@@ -181,7 +181,7 @@ public class EndpointImplementation : IEndpointApiController
                 return new ForbidResult();
 
             var endpoint = await messageStore.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
-            var status = Mapper.EndpointStatusFromEndpointState(endpoint);
+            var status = Mapper.EndpointStatusFromEndpointState(endpoint!);
             if (!await _authorizationService.CanReadPiiAsync())
                 _payloadRedaction.Redact(status);
             return new OkObjectResult(status);
@@ -225,7 +225,7 @@ public class EndpointImplementation : IEndpointApiController
                 return new ForbidResult();
 
             var endpoint = await messageStore.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
-            var status = Mapper.EndpointStatusFromEndpointState(endpoint);
+            var status = Mapper.EndpointStatusFromEndpointState(endpoint!);
             if (!await _authorizationService.CanReadPiiAsync())
                 _payloadRedaction.Redact(status);
             return new OkObjectResult(status);
@@ -414,7 +414,7 @@ public class EndpointImplementation : IEndpointApiController
                 return new ForbidResult();
 
             var endpoint = await messageStore.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
-            var status = Mapper.EndpointStatusFromEndpointState(endpoint);
+            var status = Mapper.EndpointStatusFromEndpointState(endpoint!);
             if (!await _authorizationService.CanReadPiiAsync())
                 _payloadRedaction.Redact(status);
             return new OkObjectResult(status);
@@ -488,7 +488,7 @@ public class EndpointImplementation : IEndpointApiController
         // Validate environment
         var env = configuration.GetValue<string>("Environment");
         var isSiteOwner = await _authorizationService.HasRoleAsync(AccessRole.Owner);
-        if (!isSiteOwner && (env.Equals("prod", StringComparison.OrdinalIgnoreCase) ||
+        if (!isSiteOwner && (env!.Equals("prod", StringComparison.OrdinalIgnoreCase) ||
                              env.Equals("stag", StringComparison.OrdinalIgnoreCase)))
         {
             await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
@@ -630,7 +630,7 @@ public class EndpointImplementation : IEndpointApiController
         return new OkObjectResult(mapped);
     }
 
-    private string GetCurrentUsersMail()
+    private string? GetCurrentUsersMail()
     {
         var name = _context.User.Identities.FirstOrDefault()?.Name;
 
@@ -671,7 +671,7 @@ public class EndpointImplementation : IEndpointApiController
             .Select(x => x.PrincipalId).ToList();
         if (principals.Count > 0)
         {
-            await using Stream stream = Assembly.GetExecutingAssembly()
+            await using Stream? stream = Assembly.GetExecutingAssembly()
                 .GetManifestResourceStream("EET.EIP.WebApp.Resources.EndpointRoleAssignment.ps1");
             if (stream != null)
             {

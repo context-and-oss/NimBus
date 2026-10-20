@@ -8,10 +8,10 @@ public class HeartbeatUptimeDay
 {
     /// <summary>Composite provider document id.</summary>
     [JsonProperty(PropertyName = "id")]
-    public string Id { get; set; }
+    public string Id { get; set; } = null!;
 
     /// <summary>Endpoint whose probes are counted.</summary>
-    public string EndpointId { get; set; }
+    public string EndpointId { get; set; } = null!;
 
     /// <summary>UTC midnight identifying the calendar day.</summary>
     public DateTime DayUtc { get; set; }

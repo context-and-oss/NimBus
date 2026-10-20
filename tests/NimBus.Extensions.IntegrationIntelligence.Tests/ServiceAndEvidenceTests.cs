@@ -62,7 +62,7 @@ public sealed class ServiceAndEvidenceTests
     {
         var fixture = new ServiceFixture();
         fixture.Options.MaximumErrorTextLength = 8;
-        fixture.Source.Message.MessageContent.ErrorContent.ErrorText = "sensitive-long-value";
+        fixture.Source.Message.MessageContent.ErrorContent!.ErrorText = "sensitive-long-value";
         var input = await fixture.Evidence.BuildAsync("event", "failure");
         Assert.IsFalse(input!.Exception.Message!.Contains("sensitiv", StringComparison.Ordinal));
         fixture.Source.Message.MessageContent.EventContent = null!;

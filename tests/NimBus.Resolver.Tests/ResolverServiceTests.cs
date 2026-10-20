@@ -227,7 +227,7 @@ public class ResolverServiceTests
         var tracked = cosmos.SkippedUploads[0].Content;
         Assert.AreEqual(ResolutionStatus.Skipped, tracked.ResolutionStatus);
         Assert.AreEqual(message.MessageContent.ErrorContent.ErrorText, tracked.Reason);
-        Assert.AreEqual(nameof(InvalidOperationException), tracked.MessageContent.ErrorContent.ErrorType);
+        Assert.AreEqual(nameof(InvalidOperationException), tracked.MessageContent.ErrorContent!.ErrorType);
         Assert.AreEqual(1, message.CompletedCalls);
     }
 
@@ -861,11 +861,11 @@ public class ResolverServiceTests
         public Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId) => throw new NotSupportedException();
         public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) => throw new NotSupportedException();
         public Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId) => throw new NotSupportedException();
-        public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => throw new NotSupportedException();
+        public Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => throw new NotSupportedException();
         public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take) => throw new NotSupportedException();
-        public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId) => throw new NotSupportedException();
+        public Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId) => throw new NotSupportedException();
         public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId) => throw new NotSupportedException();
-        public Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency) => throw new NotSupportedException();
+        public Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency) => throw new NotSupportedException();
         public Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId) => throw new NotSupportedException();
         public Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpointWithEventtype(string endpoint, string eventtypes, string payload, string errorText) => throw new NotSupportedException();
         public Task<string> GetEndpointErrorList(string endpointId) => throw new NotSupportedException();

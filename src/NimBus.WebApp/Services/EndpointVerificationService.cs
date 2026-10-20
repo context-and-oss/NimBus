@@ -12,7 +12,7 @@ public class EndpointVerificationService
         if (platform == null || platform.Endpoints == null || string.IsNullOrEmpty(endpointId)) {
             return false;
         }
-        IEndpoint endpoint = platform.Endpoints.FirstOrDefault(e => e.Id.Equals(endpointId, System.StringComparison.OrdinalIgnoreCase));
+        IEndpoint? endpoint = platform.Endpoints.FirstOrDefault(e => e.Id.Equals(endpointId, System.StringComparison.OrdinalIgnoreCase));
         return endpoint != null;
     }
 }

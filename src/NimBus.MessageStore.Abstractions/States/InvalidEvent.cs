@@ -6,7 +6,7 @@ namespace NimBus.MessageStore.States;
 
 public class InvalidEvent
 {
-    public string EventTypeId { get; set; }
-    public string EventId { get; set; }
-    public string EnqueueTime { get; set; }
+    public string EventTypeId { get; set; } = null!;
+    public string EventId { get; set; } = null!;
+    public string EnqueueTime { get; set; } = null!;
 }

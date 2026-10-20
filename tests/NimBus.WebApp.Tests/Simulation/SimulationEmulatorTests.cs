@@ -136,7 +136,7 @@ public sealed class SimulationEmulatorTests
             var errorResponse = await fixture.Store.GetFailedMessage(failedEvent.EventId, SimulationTestPlatform.Warehouse);
             Assert.IsNotNull(errorResponse, $"No failed message stored for {failedEvent.EventId}.");
             await manager.Resubmit(errorResponse, SimulationTestPlatform.Warehouse, errorResponse.EventTypeId,
-                errorResponse.MessageContent.EventContent.EventJson);
+                errorResponse.MessageContent.EventContent!.EventJson!);
         }
 
         await WaitUntilAsync(

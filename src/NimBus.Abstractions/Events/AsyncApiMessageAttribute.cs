@@ -18,35 +18,35 @@ namespace NimBus.Core.Events;
 public sealed class AsyncApiMessageAttribute : Attribute
 {
     /// <summary>Human-friendly message title (AsyncAPI <c>message.title</c>). Defaults to the type name.</summary>
-    public string Title { get; set; }
+    public string? Title { get; set; }
 
     /// <summary>Short one-line summary (AsyncAPI <c>message.summary</c>). Defaults to the <c>[Description]</c>.</summary>
-    public string Summary { get; set; }
+    public string? Summary { get; set; }
 
     /// <summary>Longer description (AsyncAPI <c>message.description</c>).</summary>
-    public string Description { get; set; }
+    public string? Description { get; set; }
 
     /// <summary>Governance tags (AsyncAPI <c>message.tags</c>), e.g. owning team or business capability.</summary>
-    public string[] Tags { get; set; }
+    public string[]? Tags { get; set; }
 
     /// <summary>
     /// Custom message/schema name. Surfaces as AsyncAPI <c>message.name</c> and as the payload
     /// schema's JSON-Schema <c>title</c>. Distinct from <see cref="Title"/> (a display label →
     /// <c>message.title</c>). The component key stays the event id so <c>$ref</c>s never dangle.
     /// </summary>
-    public string Name { get; set; }
+    public string? Name { get; set; }
 
     /// <summary>Owning individual/role (governance). Surfaces via <c>x-nimbus-governance.owner</c>.</summary>
-    public string Owner { get; set; }
+    public string? Owner { get; set; }
 
     /// <summary>Owning team (governance). Surfaces via <c>x-nimbus-governance.team</c>.</summary>
-    public string Team { get; set; }
+    public string? Team { get; set; }
 
     /// <summary>Business capability this event belongs to (governance). Surfaces via <c>x-nimbus-governance.businessCapability</c>.</summary>
-    public string BusinessCapability { get; set; }
+    public string? BusinessCapability { get; set; }
 
     /// <summary>Contract version (governance). Surfaces via <c>x-nimbus-governance.version</c>.</summary>
-    public string Version { get; set; }
+    public string? Version { get; set; }
 
     /// <summary>
     /// Marks the contract deprecated. Sets the JSON-Schema/AsyncAPI <c>deprecated</c> marker on the
@@ -55,8 +55,8 @@ public sealed class AsyncApiMessageAttribute : Attribute
     public bool Deprecated { get; set; }
 
     /// <summary>External documentation URL (AsyncAPI <c>message.externalDocs.url</c>).</summary>
-    public string ExternalDocsUrl { get; set; }
+    public string? ExternalDocsUrl { get; set; }
 
     /// <summary>External documentation description (AsyncAPI <c>message.externalDocs.description</c>).</summary>
-    public string ExternalDocsDescription { get; set; }
+    public string? ExternalDocsDescription { get; set; }
 }

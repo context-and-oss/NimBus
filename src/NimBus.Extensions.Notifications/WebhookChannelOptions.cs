@@ -10,7 +10,7 @@ public sealed class WebhookChannelOptions : NotificationChannelOptions
     /// <summary>
     /// The absolute URL the notification is POSTed to.
     /// </summary>
-    public string Url { get; set; }
+    public string Url { get; set; } = null!;
 
     internal override void Validate()
     {

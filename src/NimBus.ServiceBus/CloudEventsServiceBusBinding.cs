@@ -127,10 +127,10 @@ public static class CloudEventsServiceBusBinding
             contentType.StartsWith(StructuredContentType, StringComparison.OrdinalIgnoreCase);
 
         // Binary detection: any core context attribute present under any accepted prefix.
-        string specVersion = Probe(message, prefixes, AttrSpecVersion);
-        string id = Probe(message, prefixes, AttrId);
-        string source = Probe(message, prefixes, AttrSource);
-        string type = Probe(message, prefixes, AttrType);
+        string? specVersion = Probe(message, prefixes, AttrSpecVersion);
+        string? id = Probe(message, prefixes, AttrId);
+        string? source = Probe(message, prefixes, AttrSource);
+        string? type = Probe(message, prefixes, AttrType);
         var binaryDetected = specVersion != null || id != null || source != null || type != null;
 
         if (!structured && !binaryDetected) return false;
@@ -144,18 +144,20 @@ public static class CloudEventsServiceBusBinding
     private static CloudEvent ParseBinary(
         IServiceBusMessage message,
         IReadOnlyList<string> prefixes,
-        string specVersion,
-        string id,
-        string source,
-        string type,
-        string contentType)
+        string? specVersion,
+        string? id,
+        string? source,
+        string? type,
+        string? contentType)
     {
+        // Id/Source/Type stay null when the producer omitted them: the event is
+        // detected-but-invalid and is dead-lettered downstream.
         var cloudEvent = new CloudEvent
         {
             SpecVersion = specVersion,
-            Id = id,
-            Source = source,
-            Type = type,
+            Id = id!,
+            Source = source!,
+            Type = type!,
             Subject = Probe(message, prefixes, AttrSubject),
             DataSchema = Probe(message, prefixes, AttrDataSchema),
             DataContentType = contentType,
@@ -207,15 +209,16 @@ public static class CloudEventsServiceBusBinding
             return cloudEvent; // detected-but-invalid → dead-letter downstream
         }
 
-        cloudEvent.SpecVersion = (string)envelope[AttrSpecVersion];
-        cloudEvent.Id = (string)envelope[AttrId];
-        cloudEvent.Source = (string)envelope[AttrSource];
-        cloudEvent.Type = (string)envelope[AttrType];
-        cloudEvent.Subject = (string)envelope[AttrSubject];
-        cloudEvent.DataContentType = (string)envelope[AttrDataContentType];
-        cloudEvent.DataSchema = (string)envelope[AttrDataSchema];
+        // Id/Source/Type stay null when absent (detected-but-invalid, see ParseBinary).
+        cloudEvent.SpecVersion = (string?)envelope[AttrSpecVersion];
+        cloudEvent.Id = ((string?)envelope[AttrId])!;
+        cloudEvent.Source = (string?)envelope[AttrSource];
+        cloudEvent.Type = ((string?)envelope[AttrType])!;
+        cloudEvent.Subject = (string?)envelope[AttrSubject];
+        cloudEvent.DataContentType = (string?)envelope[AttrDataContentType];
+        cloudEvent.DataSchema = (string?)envelope[AttrDataSchema];
 
-        var time = (string)envelope[AttrTime];
+        var time = (string?)envelope[AttrTime];
         if (!string.IsNullOrEmpty(time) &&
             DateTimeOffset.TryParse(time, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedTime))
         {
@@ -226,7 +229,7 @@ public static class CloudEventsServiceBusBinding
         if (data != null && data.Type != JTokenType.Null)
         {
             cloudEvent.Data = data.Type == JTokenType.String
-                ? (string)data
+                ? (string?)data
                 : data.ToString(Formatting.None);
         }
 
@@ -235,7 +238,7 @@ public static class CloudEventsServiceBusBinding
         {
             if (Array.IndexOf(CoreAttributeNames, property.Name) >= 0) continue;
             if (property.Value.Type == JTokenType.String)
-                cloudEvent.Extensions[property.Name] = (string)property.Value;
+                cloudEvent.Extensions[property.Name] = ((string?)property.Value)!;
             else if (property.Value.Type is not (JTokenType.Object or JTokenType.Array or JTokenType.Null))
                 cloudEvent.Extensions[property.Name] = property.Value.ToString(Formatting.None);
         }
@@ -244,7 +247,7 @@ public static class CloudEventsServiceBusBinding
         return cloudEvent;
     }
 
-    private static string Probe(IServiceBusMessage message, IReadOnlyList<string> prefixes, string attribute)
+    private static string? Probe(IServiceBusMessage message, IReadOnlyList<string> prefixes, string attribute)
     {
         foreach (var prefix in prefixes)
         {
@@ -254,7 +257,7 @@ public static class CloudEventsServiceBusBinding
         return null;
     }
 
-    private static void SetProp(Azure.Messaging.ServiceBus.ServiceBusMessage message, string attribute, string value)
+    private static void SetProp(Azure.Messaging.ServiceBus.ServiceBusMessage message, string attribute, string? value)
     {
         if (!string.IsNullOrEmpty(value))
             message.ApplicationProperties[CanonicalPrefix + attribute] = value;

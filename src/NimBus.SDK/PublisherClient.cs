@@ -20,9 +20,9 @@ namespace NimBus.SDK;
 public class PublisherClient : IPublisherClient
 {
     private readonly ISender _sender;
-    private readonly string _publisherEndpoint;
-    private readonly CloudEventPublisherOptions _cloudEvents;
-    private ServiceBusClient _serviceBusClient;
+    private readonly string? _publisherEndpoint;
+    private readonly CloudEventPublisherOptions? _cloudEvents;
+    private ServiceBusClient? _serviceBusClient;
 
     /// <summary>
     /// The raw client used by <see cref="Request{TRequest,TResponse}"/> to accept the
@@ -30,7 +30,7 @@ public class PublisherClient : IPublisherClient
     /// the obsolete client ctor) — internal so the DI factory can enable request/reply
     /// without widening the public constructor surface.
     /// </summary>
-    internal ServiceBusClient ReplyServiceBusClient
+    internal ServiceBusClient? ReplyServiceBusClient
     {
         get => _serviceBusClient;
         set => _serviceBusClient = value;
@@ -276,7 +276,7 @@ public class PublisherClient : IPublisherClient
         cts.CancelAfter(timeout);
 
         var replySubscription = ReplyConstants.ReplySubscriptionName(_publisherEndpoint);
-        ServiceBusSessionReceiver receiver = null;
+        ServiceBusSessionReceiver? receiver = null;
         try
         {
             try
@@ -306,7 +306,7 @@ public class PublisherClient : IPublisherClient
             }
 
             var body = reply.Body.ToString();
-            return Newtonsoft.Json.JsonConvert.DeserializeObject<TResponse>(body, Constants.CreateSafeJsonSettings());
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<TResponse>(body, Constants.CreateSafeJsonSettings())!;
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -399,14 +399,15 @@ public class PublisherClient : IPublisherClient
     private CloudEventPublishContext BuildCloudEvent(IEvent @event, Message message)
     {
         var eventType = @event.GetType();
-        var type = _cloudEvents.TypeOverride?.Invoke(@event)
+        // Only called when _cloudEvents is configured (see GetMessage).
+        var type = _cloudEvents!.TypeOverride?.Invoke(@event)
             ?? (_cloudEvents.TypeNameStrategy == CloudEventTypeNameStrategy.FullName
-                ? eventType.FullName
+                ? eventType.FullName!
                 : eventType.Name);
 
         var cloudEvent = new CloudEvent
         {
-            Id = message.MessageId,
+            Id = message.MessageId!,
             Source = _cloudEvents.Source?.ToString(),
             Type = type,
             Subject = _cloudEvents.Subject?.Invoke(@event),

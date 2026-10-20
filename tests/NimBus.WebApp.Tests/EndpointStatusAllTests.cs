@@ -57,7 +57,7 @@ public sealed class EndpointStatusAllTests
 
         var ok = result.Result as OkObjectResult;
         Assert.IsNotNull(ok);
-        var counts = ((IEnumerable<EndpointStatusCount>)ok.Value).Select(c => c.EndpointId).ToList();
+        var counts = ((IEnumerable<EndpointStatusCount>)ok.Value!).Select(c => c.EndpointId).ToList();
         CollectionAssert.AreEqual(new List<string> { "ep-1", "ep-2", "ep-3", "ep-4" }, counts);
     }
 
@@ -75,7 +75,7 @@ public sealed class EndpointStatusAllTests
     private static EndpointImplementation CreateSut(INimBusMessageStore store, params string[] endpointIds)
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string> { ["Environment"] = "dev" })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Environment"] = "dev" })
             .Build();
 
         return new EndpointImplementation(

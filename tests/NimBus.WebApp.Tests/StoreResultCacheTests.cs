@@ -208,7 +208,7 @@ public sealed class StoreResultCacheTests
     private static EndpointImplementation CreateEndpointSut(INimBusMessageStore store, params string[] endpointIds)
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string> { ["Environment"] = "dev" })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Environment"] = "dev" })
             .Build();
 
         return new EndpointImplementation(
@@ -290,7 +290,7 @@ public sealed class StoreResultCacheTests
         public string Description => string.Empty;
         public string Namespace => string.Empty;
         public string SecurityGroupName => string.Empty;
-        public NimBus.Core.Endpoints.ISystem System => null;
+        public NimBus.Core.Endpoints.ISystem System => null!;
         public IEnumerable<NimBus.Core.Events.IEventType> EventTypesProduced => Enumerable.Empty<NimBus.Core.Events.IEventType>();
         public IEnumerable<NimBus.Core.Events.IEventType> EventTypesConsumed => Enumerable.Empty<NimBus.Core.Events.IEventType>();
         public IEnumerable<NimBus.Core.Endpoints.IRoleAssignment> RoleAssignments => Enumerable.Empty<NimBus.Core.Endpoints.IRoleAssignment>();

@@ -46,7 +46,7 @@ public class LogTraceCollection : List<LogTrace>
             logTrace.Timestamp = DateTime.Parse(row[columnIndexes["timestamp"]]);
             logTrace.Text = row[columnIndexes["message"]];
             logTrace.SeverityLevel = int.Parse(row[columnIndexes["severityLevel"]]);
-            logTrace.CustomDimensions = JsonConvert.DeserializeObject<CustomDimensions>(row[columnIndexes["customDimensions"]]);
+            logTrace.CustomDimensions = JsonConvert.DeserializeObject<CustomDimensions>(row[columnIndexes["customDimensions"]])!;
             this.Add(logTrace);
         }
     }
@@ -99,54 +99,54 @@ public enum Source
 public class LogTrace
 {
     public DateTime Timestamp { get; set; }
-    public string Text { get; set; }
+    public string Text { get; set; } = null!;
     public int SeverityLevel { get; set; }
-    public CustomDimensions CustomDimensions { get; set; }
+    public CustomDimensions CustomDimensions { get; set; } = null!;
 }
 
 public class CustomDimensions
 {
     [JsonProperty("NimBus.EventId")]
-    public string EventId { get; set; }
+    public string? EventId { get; set; }
     [JsonProperty("NimBus.CorrelationId")]
-    public string CorrelationId { get; set; }
-    public string PublisherName { get; set; }
-    public string PublishedBy { get; set; }
-    public string LogSource { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? PublisherName { get; set; }
+    public string? PublishedBy { get; set; }
+    public string? LogSource { get; set; }
     [JsonProperty("NimBus.EventTypeId")]
-    public string EventType { get; set; }
-    public string Payload { get; set; }
+    public string? EventType { get; set; }
+    public string? Payload { get; set; }
     [JsonProperty("NimBus.From")]
-    public string From { get; set; }
+    public string? From { get; set; }
     [JsonProperty("NimBus.To")]
-    public string To { get; set; }
+    public string? To { get; set; }
     [JsonProperty("NimBus.SessionId")]
-    public string SessionId { get; set; }
+    public string? SessionId { get; set; }
     [JsonProperty("NimBus.MessageType")]
-    public string MessageType { get; set; }
+    public string? MessageType { get; set; }
     [JsonProperty("NimBus.IsDeferred")]
     public bool IsDeferred { get; set; }
     [JsonProperty("NimBus.EventJson")]
-    public string EventJson { get; set; }
+    public string? EventJson { get; set; }
     [JsonProperty("NimBus.MessageId")]
-    public string MessageId { get; set; }
+    public string? MessageId { get; set; }
 }
 
 public class AppInsightsResultRaw
 {
-    public IEnumerable<Table> Tables { get; set; }
+    public IEnumerable<Table>? Tables { get; set; }
 
 
 }
 
 public class Table
 {
-    public Column[] Columns { get; set; }
-    public IEnumerable<string[]> Rows { get; set; }
+    public Column[] Columns { get; set; } = null!;
+    public IEnumerable<string[]> Rows { get; set; } = null!;
 }
 
 public class Column
 {
-    public string Name { get; set; }
-    public string Type { get; set; }
+    public string Name { get; set; } = null!;
+    public string Type { get; set; } = null!;
 }

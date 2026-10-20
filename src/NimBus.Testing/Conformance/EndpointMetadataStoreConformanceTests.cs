@@ -34,11 +34,11 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsTrue(saved);
 
         var fetched = await store.GetEndpointMetadata(endpointId);
-        Assert.AreEqual(endpointId, fetched.EndpointId);
+        Assert.AreEqual(endpointId, fetched!.EndpointId);
         Assert.AreEqual("Team Blue", fetched.EndpointOwnerTeam);
         Assert.AreEqual("owner@example.com", fetched.EndpointOwnerEmail);
         Assert.AreEqual(true, fetched.SubscriptionStatus);
-        Assert.AreEqual(1, fetched.TechnicalContacts.Count);
+        Assert.AreEqual(1, fetched.TechnicalContacts!.Count);
         Assert.AreEqual("Ops", fetched.TechnicalContacts[0].Name);
     }
 
@@ -73,10 +73,10 @@ public abstract class EndpointMetadataStoreConformanceTests
         var fromAll = (await store.GetMetadatas()).Single(metadata => metadata.EndpointId == endpointId);
 
         Assert.IsNotNull(filtered);
-        Assert.AreEqual(1, filtered!.Single().Heartbeats.Count,
+        Assert.AreEqual(1, filtered!.Single().Heartbeats!.Count,
             "The scheduled history fold uses the filtered batch overload and requires its probe rows.");
-        Assert.AreEqual("probe-1", filtered.Single().Heartbeats.Single().MessageId);
-        Assert.AreEqual(1, fromAll.Heartbeats.Count,
+        Assert.AreEqual("probe-1", filtered.Single().Heartbeats!.Single().MessageId);
+        Assert.AreEqual(1, fromAll.Heartbeats!.Count,
             "Both batch overloads must return complete EndpointMetadata records.");
     }
 
@@ -91,7 +91,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         await store.SetHeartbeat(Probe("probe-1", HeartbeatStatus.Pending, T0), endpointId);
 
         var afterSend = await store.GetEndpointMetadata(endpointId);
-        Assert.AreEqual(1, afterSend.Heartbeats.Count);
+        Assert.AreEqual(1, afterSend!.Heartbeats!.Count);
         Assert.AreEqual(HeartbeatStatus.Pending, afterSend.EndpointHeartbeatStatus);
 
         // Same MessageId: the answer settles the row the send created.
@@ -100,7 +100,7 @@ public abstract class EndpointMetadataStoreConformanceTests
             endpointId);
 
         var afterAnswer = await store.GetEndpointMetadata(endpointId);
-        Assert.AreEqual(1, afterAnswer.Heartbeats.Count);
+        Assert.AreEqual(1, afterAnswer!.Heartbeats!.Count);
         var row = afterAnswer.Heartbeats[0];
         Assert.AreEqual(HeartbeatStatus.On, row.EndpointHeartbeatStatus);
         Assert.AreEqual(T0.Ticks, row.StartTime.Ticks);
@@ -125,7 +125,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         }
 
         var metadata = await store.GetEndpointMetadata(endpointId);
-        Assert.AreEqual(HeartbeatRollup.MaxHeartbeatsPerEndpoint, metadata.Heartbeats.Count);
+        Assert.AreEqual(HeartbeatRollup.MaxHeartbeatsPerEndpoint, metadata!.Heartbeats!.Count);
         // The oldest five were dropped, not the newest.
         Assert.AreEqual(T0.AddMinutes(5).Ticks, metadata.Heartbeats.Min(h => h.StartTime).Ticks);
         Assert.AreEqual(T0.AddMinutes(written - 1).Ticks, metadata.Heartbeats.Max(h => h.StartTime).Ticks);
@@ -141,8 +141,8 @@ public abstract class EndpointMetadataStoreConformanceTests
         await store.EnableHeartbeatOnEndpoint(optedIn, true);
         await store.EnableHeartbeatOnEndpoint(optedOut, false);
 
-        Assert.AreEqual(true, (await store.GetEndpointMetadata(optedIn)).IsHeartbeatEnabled);
-        Assert.AreEqual(false, (await store.GetEndpointMetadata(optedOut)).IsHeartbeatEnabled);
+        Assert.AreEqual(true, (await store.GetEndpointMetadata(optedIn))!.IsHeartbeatEnabled);
+        Assert.AreEqual(false, (await store.GetEndpointMetadata(optedOut))!.IsHeartbeatEnabled);
 
         var enabled = (await store.GetMetadatasWithEnabledHeartbeat()).Select(m => m.EndpointId).ToList();
         CollectionAssert.Contains(enabled, optedIn);
@@ -439,9 +439,9 @@ public abstract class EndpointMetadataStoreConformanceTests
         CollectionAssert.Contains(swept, stale);
         CollectionAssert.DoesNotContain(swept, fresh);
         CollectionAssert.DoesNotContain(swept, answered);
-        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(stale)).EndpointHeartbeatStatus);
-        Assert.AreEqual(HeartbeatStatus.Pending, (await store.GetEndpointMetadata(fresh)).EndpointHeartbeatStatus);
-        Assert.AreEqual(HeartbeatStatus.On, (await store.GetEndpointMetadata(answered)).EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(stale))!.EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.Pending, (await store.GetEndpointMetadata(fresh))!.EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.On, (await store.GetEndpointMetadata(answered))!.EndpointHeartbeatStatus);
     }
 
     [TestMethod]
@@ -457,7 +457,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         var swept = await store.SweepTimedOutHeartbeats(start.AddMilliseconds(100));
 
         CollectionAssert.Contains(swept, endpointId);
-        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(endpointId)).EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(endpointId))!.EndpointHeartbeatStatus);
     }
 
     [TestMethod]
@@ -542,7 +542,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         await store.SetHeartbeat(Probe("p1", HeartbeatStatus.On, T0, T0.AddMilliseconds(120), "1.0.0"), endpointId);
         await store.SetHeartbeat(Probe("p2", HeartbeatStatus.Pending, T0.AddMinutes(5)), endpointId);
 
-        Assert.AreEqual(HeartbeatStatus.On, (await store.GetEndpointMetadata(endpointId)).EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.On, (await store.GetEndpointMetadata(endpointId))!.EndpointHeartbeatStatus);
     }
 
     [TestMethod]
@@ -553,7 +553,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         await store.SetHeartbeat(Probe("p1", HeartbeatStatus.On, T0, T0.AddMilliseconds(120), "1.0.0"), endpointId);
         await store.SetHeartbeat(Probe("p2", HeartbeatStatus.Off, T0.AddMinutes(5)), endpointId);
 
-        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(endpointId)).EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(endpointId))!.EndpointHeartbeatStatus);
     }
 
     private static async Task<HeartbeatOverviewItem> Overview(IEndpointMetadataStore store, string endpointId)
@@ -623,7 +623,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsNull(fetched.EndpointOwner);
         Assert.IsNull(fetched.EndpointOwnerTeam);
         Assert.IsNull(fetched.EndpointOwnerEmail);
-        Assert.AreEqual(1, fetched.Heartbeats.Count);
+        Assert.AreEqual(1, fetched.Heartbeats!.Count);
         Assert.IsNull(fetched.Heartbeats[0].SdkVersion, "a probe that has not been answered carries no SDK version");
     }
 

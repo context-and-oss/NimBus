@@ -17,7 +17,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public bool PrunesHeartbeatHistoryAutomatically => _heartbeatHistory.PrunesHeartbeatHistoryAutomatically;
 
     private readonly ICosmosClientAdapter _cosmosClient;
-    private readonly ILogger _logger;
+    private readonly ILogger? _logger;
 
     // Cosmos container handles are lightweight client-side proxies the SDK
     // recommends caching for the client's lifetime. Every data operation used to
@@ -111,7 +111,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     /// Creates the store with explicit options. The third parameter is non-optional so
     /// existing one- and two-argument calls keep binding the overload above.
     /// </summary>
-    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger, CosmosDbMessageStoreOptions options)
+    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient>? logger, CosmosDbMessageStoreOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
@@ -130,7 +130,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     }
 
     // ───────── Subscription store — implementation in CosmosDbSubscriptionStore ─────────
-    public Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
+    public Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
         => _subscriptions.SubscribeToEndpointNotification(endpointId, mail, type, author, url, eventTypes, payload, frequency);
 
     public Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId)
@@ -280,7 +280,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId) => _messageTracking.DownloadEndpointStateCount(endpointId);
     public Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId) => _messageTracking.DownloadEndpointSessionStateCount(endpointId, sessionId);
     public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) => _messageTracking.DownloadEndpointSessionStateCountBatch(endpointId, sessionIds);
-    public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => _messageTracking.DownloadEndpointStatePaging(endpointId, pageSize, continuationToken);
+    public Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => _messageTracking.DownloadEndpointStatePaging(endpointId, pageSize, continuationToken);
     public Task<bool> UploadDeferredMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadDeferredMessage(eventId, sessionId, endpointId, content);
     public Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadFailedMessage(eventId, sessionId, endpointId, content);
     public Task<bool> UploadPendingMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadPendingMessage(eventId, sessionId, endpointId, content);
@@ -310,7 +310,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<SearchResponse> GetFailedEventsAcrossEndpoints(EventFilter filter, IReadOnlyCollection<string> endpointIds, string? continuationToken, int maxItemCount) => _messageTracking.GetFailedEventsAcrossEndpoints(filter, endpointIds, continuationToken, maxItemCount);
     public Task<FailedEventHistogram> GetFailedEventHistogram(EventFilter filter, IReadOnlyCollection<string> endpointIds, DateTime fromUtc, DateTime toUtc, TimeSpan bucketSize) => _messageTracking.GetFailedEventHistogram(filter, endpointIds, fromUtc, toUtc, bucketSize);
     public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take) => _messageTracking.GetBlockedEventsOnSession(endpointId, sessionId, skip, take);
-    public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId) => _messageTracking.GetPendingEventsOnSession(endpointId);
+    public Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId) => _messageTracking.GetPendingEventsOnSession(endpointId);
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId) => _messageTracking.GetInvalidEventsOnSession(endpointId);
     public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => _messageTracking.SearchMessages(filter, continuationToken, maxItemCount);
     public Task StoreMessage(MessageEntity message) => _messageTracking.StoreMessage(message);
@@ -333,7 +333,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     internal const string MessageSearchProjection = CosmosDbMessageTrackingStore.MessageSearchProjection;
     // ── IEndpointMetadataStore — implementation in CosmosDbEndpointMetadataStore ──
     public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId) => _endpointMetadata.GetEndpointMetadata(endpointId);
-    public Task<List<EndpointMetadata>>? GetMetadatas(IEnumerable<string> endpointIds) => _endpointMetadata.GetMetadatas(endpointIds);
+    public Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds) => _endpointMetadata.GetMetadatas(endpointIds);
     public Task<List<EndpointMetadata>> GetMetadatas() => _endpointMetadata.GetMetadatas();
     public Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata) => _endpointMetadata.SetEndpointMetadata(endpointMetadata);
     public Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat() => _endpointMetadata.GetMetadatasWithEnabledHeartbeat();

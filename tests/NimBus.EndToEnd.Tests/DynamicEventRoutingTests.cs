@@ -23,11 +23,11 @@ public class DynamicEventRoutingTests
         // Arrange — a coded participant subscribes to a dynamic event type by string id alone;
         // there is no compiled class to deserialize into (it reads the raw JSON).
         var fixture = new EndToEndFixture();
-        string receivedJson = null;
-        string receivedEventTypeId = null;
+        string? receivedJson = null;
+        string? receivedEventTypeId = null;
         fixture.RegisterDynamicHandler(DynamicEventTypeId, () => new DelegateEventJsonHandler((context, ct) =>
         {
-            receivedJson = context.MessageContent.EventContent.EventJson;
+            receivedJson = context.MessageContent.EventContent!.EventJson;
             receivedEventTypeId = context.MessageContent.EventContent.EventTypeId;
             return Task.CompletedTask;
         }));
@@ -50,7 +50,7 @@ public class DynamicEventRoutingTests
         var responses = fixture.ResponseBus.SentMessages;
         Assert.AreEqual(1, responses.Count);
         Assert.AreEqual(MessageType.ResolutionResponse, responses[0].MessageType);
-        Assert.AreEqual(DynamicEventTypeId, responses[0].MessageContent.EventContent.EventTypeId);
+        Assert.AreEqual(DynamicEventTypeId, responses[0].MessageContent.EventContent!.EventTypeId);
     }
 
     [TestMethod]

@@ -17,8 +17,8 @@ public class EndpointState
         UnsupportedEvents = new List<string>();
     }
 
-    public string EndpointId { get; set; }
-    public string ContinuationToken { get; set; }
+    public string EndpointId { get; set; } = null!;
+    public string? ContinuationToken { get; set; }
     public IEnumerable<UnresolvedEvent> EnrichedUnresolvedEvents { get; set; }
     public IEnumerable<string> PendingEvents { get; set; }
     public IEnumerable<string> FailedEvents { get; set; }

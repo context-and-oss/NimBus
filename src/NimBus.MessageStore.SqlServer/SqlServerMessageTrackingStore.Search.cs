@@ -184,7 +184,7 @@ GROUP BY DATEDIFF_BIG(millisecond, @WindowFrom, UpdatedAtUtc) / @BucketMs, Endpo
         return (where, p);
     }
 
-    public async Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
+    public async Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId)
     {
         await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(

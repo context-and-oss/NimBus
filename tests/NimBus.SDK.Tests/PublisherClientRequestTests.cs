@@ -23,12 +23,12 @@ public class PublisherClientRequestTests
 {
     private sealed class PingRequest : Event
     {
-        public string Text { get; set; }
+        public string Text { get; set; } = null!;
     }
 
     private sealed class PongResponse
     {
-        public string Echo { get; set; }
+        public string Echo { get; set; } = null!;
     }
 
     private sealed class PingHandler : IRequestHandler<PingRequest, PongResponse>
@@ -68,9 +68,9 @@ public class PublisherClientRequestTests
 
     private sealed class MarkerServiceBusClient : ServiceBusClient
     {
-        public string AcceptedTopic { get; private set; }
-        public string AcceptedSubscription { get; private set; }
-        public string AcceptedSessionId { get; private set; }
+        public string? AcceptedTopic { get; private set; }
+        public string? AcceptedSubscription { get; private set; }
+        public string? AcceptedSessionId { get; private set; }
 
         public override Task<ServiceBusSessionReceiver> AcceptSessionAsync(
             string topicName, string subscriptionName, string sessionId,

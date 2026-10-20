@@ -232,11 +232,11 @@ public interface IMessageTrackingStore
     Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId);
     Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId);
     Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds);
-    Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken);
+    Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken);
 
     // Session views
     Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take);
-    Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId);
+    Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId);
     Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId);
 
     // Lifecycle / cleanup

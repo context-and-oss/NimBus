@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
@@ -114,7 +115,7 @@ public class TeamsChannel : INotificationChannel
         return JsonConvert.SerializeObject(envelope).Replace("\"schema\":", "\"$schema\":");
     }
 
-    private static void AddFact(List<object> facts, string title, string value)
+    private static void AddFact(List<object> facts, string title, string? value)
     {
         if (!string.IsNullOrEmpty(value))
         {
@@ -122,7 +123,8 @@ public class TeamsChannel : INotificationChannel
         }
     }
 
-    private static string Truncate(string value)
+    [return: NotNullIfNotNull(nameof(value))]
+    private static string? Truncate(string? value)
     {
         if (string.IsNullOrEmpty(value) || value.Length <= MaxFieldLength)
         {

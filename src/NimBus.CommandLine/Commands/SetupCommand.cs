@@ -96,9 +96,9 @@ internal static class SetupCommand
                     throw new InvalidOperationException("--identity-admin-email requires --storage-provider sqlserver.");
 
                 var infraOptions = new InfrastructureOptions(
-                    solutionId.Value(),
-                    environment.Value(),
-                    resourceGroup.Value(),
+                    solutionId.Value()!,
+                    environment.Value()!,
+                    resourceGroup.Value()!,
                     resourceNamePostfix.Value(),
                     location.Value(),
                     webAppVersion.HasValue() ? webAppVersion.Value()! : $"local-{DateTime.UtcNow:yyyyMMddHHmmss}",
@@ -119,11 +119,11 @@ internal static class SetupCommand
                     ServiceBusNamespaceName: setupNetworkOptions.ServiceBusNamespaceName,
                     DnsWait: setupDnsWait);
 
-                var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value(), setupNetworkOptions.ServiceBusNamespaceName, setupDnsWait);
+                var topologyOptions = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, setupNetworkOptions.ServiceBusNamespaceName, setupDnsWait);
                 var appOptions = new AppDeploymentOptions(
-                    solutionId.Value(),
-                    environment.Value(),
-                    resourceGroup.Value(),
+                    solutionId.Value()!,
+                    environment.Value()!,
+                    resourceGroup.Value()!,
                     configuration.HasValue() ? configuration.Value()! : "Release",
                     DnsWait: setupDnsWait);
 

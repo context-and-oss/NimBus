@@ -226,7 +226,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
 
     private sealed class AuditCountRow
     {
-        public string EventId { get; set; }
+        public string? EventId { get; set; }
 
         public int Count { get; set; }
     }

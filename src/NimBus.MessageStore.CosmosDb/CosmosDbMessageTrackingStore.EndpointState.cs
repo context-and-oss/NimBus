@@ -163,7 +163,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
             });
     }
 
-    public async Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize,
+    public async Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize,
         string continuationToken)
     {
         var container = await _getEndpointContainer(endpointId);
@@ -227,7 +227,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
                             // this projection.
                             EventContent = new EventContent
                             {
-                                EventTypeId = x.Event.MessageContent.EventContent.EventTypeId,
+                                EventTypeId = x.Event.MessageContent.EventContent!.EventTypeId,
                             },
                             ErrorContent = x.Event.MessageContent.ErrorContent,
                         },

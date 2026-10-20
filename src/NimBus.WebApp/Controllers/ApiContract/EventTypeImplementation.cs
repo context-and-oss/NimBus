@@ -59,7 +59,7 @@ public class EventTypeImplementation : IEventTypeApiController
         if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
             return new ForbidResult();
 
-        IEndpoint endpoint = platform.Endpoints.FirstOrDefault(e => e.Name.Equals(endpointId, StringComparison.OrdinalIgnoreCase));
+        IEndpoint? endpoint = platform.Endpoints.FirstOrDefault(e => e.Name.Equals(endpointId, StringComparison.OrdinalIgnoreCase));
         if (endpoint == null)
         {
             return new NotFoundObjectResult($"Endpoint '{endpointId}' not found");

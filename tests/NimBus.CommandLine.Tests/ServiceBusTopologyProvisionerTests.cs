@@ -463,13 +463,13 @@ public sealed class ServiceBusTopologyProvisionerTests
             yield break;
         }
 
-        protected override bool TryGetHeader(string name, out string? value)
+        protected override bool TryGetHeader(string name, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? value)
         {
             value = null;
             return false;
         }
 
-        protected override bool TryGetHeaderValues(string name, out IEnumerable<string>? values)
+        protected override bool TryGetHeaderValues(string name, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IEnumerable<string>? values)
         {
             values = null;
             return false;

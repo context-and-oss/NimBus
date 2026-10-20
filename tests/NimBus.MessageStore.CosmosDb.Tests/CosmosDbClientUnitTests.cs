@@ -271,7 +271,7 @@ public sealed class CosmosDbClientUnitTests
 
     private sealed class FakeContainerAdapter : ICosmosContainerAdapter
     {
-        public Exception UpsertException { get; set; }
+        public Exception? UpsertException { get; set; }
 
         public Exception? OperationException { get; set; }
 

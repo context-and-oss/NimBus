@@ -19,7 +19,7 @@ public class CosmosDbHealthCheck : IHealthCheck
     private readonly CosmosClient _client;
     private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
-    private CachedResult _cached;
+    private CachedResult? _cached;
 
     public CosmosDbHealthCheck(CosmosClient client)
         : this(client, TimeProvider.System)

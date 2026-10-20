@@ -994,7 +994,7 @@ public class StrictMessageHandlerTests
         // authoritative value, NOT off the deserialized body's
         // MessageContent.EventContent.EventTypeId. Here the two intentionally differ.
         var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "UserPropEventType");
-        ctx.MessageContent.EventContent.EventTypeId = "BodyEventType"; // must NOT be used
+        ctx.MessageContent.EventContent!.EventTypeId = "BodyEventType"; // must NOT be used
         var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
         var response = new FakeResponseService();
         var retryProvider = new FakeRetryPolicyProvider();
@@ -1848,8 +1848,8 @@ public class StrictMessageHandlerTests
         }
 
         public bool HasProcessed { get; set; }
-        public Exception CheckException { get; set; }
-        public Exception RecordException { get; set; }
+        public Exception? CheckException { get; set; }
+        public Exception? RecordException { get; set; }
 
         public Task<bool> HasProcessedAsync(
             string endpointId,
@@ -1980,8 +1980,8 @@ public class StrictMessageHandlerTests
         }
 
         public int HandleCalls { get; private set; }
-        public Exception ThrowOnHandle { get; set; }
-        public Action<IMessageContext> OnHandle { get; set; }
+        public Exception? ThrowOnHandle { get; set; }
+        public Action<IMessageContext>? OnHandle { get; set; }
 
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
@@ -2016,12 +2016,12 @@ public class StrictMessageHandlerTests
         public int DiscardCalls { get; private set; }
         public int PendingHandoffCalls { get; private set; }
         public int DuplicateCalls { get; private set; }
-        public HandoffMetadata LastPendingHandoffMetadata { get; private set; }
-        public string LastDeadLetterReason { get; private set; }
-        public Exception LastDeadLetterException { get; private set; }
-        public Exception LastErrorException { get; private set; }
-        public Exception LastDiscardException { get; private set; }
-        public string LastDiscardClassifierName { get; private set; }
+        public HandoffMetadata? LastPendingHandoffMetadata { get; private set; }
+        public string? LastDeadLetterReason { get; private set; }
+        public Exception? LastDeadLetterException { get; private set; }
+        public Exception? LastErrorException { get; private set; }
+        public Exception? LastDiscardException { get; private set; }
+        public string? LastDiscardClassifierName { get; private set; }
         public int? LastRetryDelayMinutes { get; private set; }
 
         public Task SendResolutionResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-resolution", ct); ResolutionCalls++; return Task.CompletedTask; }
@@ -2036,7 +2036,7 @@ public class StrictMessageHandlerTests
             return Task.CompletedTask;
         }
         public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-error", ct); ErrorCalls++; LastErrorException = ex; return Task.CompletedTask; }
-        public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception ex, CancellationToken ct = default)
+        public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception? ex, CancellationToken ct = default)
         {
             _trace?.Record($"{GetTraceName(mc)}.response-dead-letter", ct);
             DeadLetterCalls++;
@@ -2062,14 +2062,14 @@ public class StrictMessageHandlerTests
     private sealed class FakeRetryPolicyProvider : IRetryPolicyProvider
     {
         public int GetRetryPolicyCalls { get; private set; }
-        public string LastEventTypeId { get; private set; }
-        public RetryPolicy PolicyToReturn { get; set; }
+        public string? LastEventTypeId { get; private set; }
+        public RetryPolicy? PolicyToReturn { get; set; }
 
         public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null)
         {
             GetRetryPolicyCalls++;
             LastEventTypeId = eventTypeId;
-            return PolicyToReturn;
+            return PolicyToReturn!;
         }
     }
 
@@ -2100,8 +2100,8 @@ public class StrictMessageHandlerTests
             _disposition = disposition;
         }
 
-        public Exception LastException { get; private set; }
-        public string LastEventTypeId { get; private set; }
+        public Exception? LastException { get; private set; }
+        public string? LastEventTypeId { get; private set; }
         public string? LastEndpointName { get; private set; }
 
         public FailureDisposition Classify(Exception exception, string eventTypeId, string? endpointName)
@@ -2143,8 +2143,8 @@ public class StrictMessageHandlerTests
     private sealed class FakeDeferredMessageProcessor : IDeferredMessageProcessor
     {
         public int ProcessCalls { get; private set; }
-        public string LastSessionId { get; private set; }
-        public string LastTopicName { get; private set; }
+        public string? LastSessionId { get; private set; }
+        public string? LastTopicName { get; private set; }
 
         public Task ProcessDeferredMessagesAsync(string sessionId, string topicName, CancellationToken ct = default)
         {
@@ -2175,10 +2175,10 @@ public class StrictMessageHandlerTests
         public int? DeferralSequence { get; set; }
         public DateTime EnqueuedTimeUtc { get; set; }
         public string From { get; set; } = string.Empty;
-        public string DeadLetterReason { get; set; }
-        public string DeadLetterErrorDescription { get; set; }
-        public string HandoffReason { get; set; }
-        public string ExternalJobId { get; set; }
+        public string? DeadLetterReason { get; set; }
+        public string? DeadLetterErrorDescription { get; set; }
+        public string? HandoffReason { get; set; }
+        public string? ExternalJobId { get; set; }
         public DateTime? ExpectedBy { get; set; }
         public bool IsDeferred { get; set; }
         public int ThrottleRetryCount { get; set; }
@@ -2186,10 +2186,10 @@ public class StrictMessageHandlerTests
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
-        public HandoffMetadata HandoffMetadata { get; set; }
+        public HandoffMetadata? HandoffMetadata { get; set; }
 
         // Configurable behavior
-        public string BlockedByEventId { get; set; }
+        public string? BlockedByEventId { get; set; }
         public bool IsSessionBlockedByThisResult { get; set; }
         public int DeferredCountResult { get; set; }
 
@@ -2210,7 +2210,7 @@ public class StrictMessageHandlerTests
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
         public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) { Trace?.Record($"{TraceName}.verify-owner", ct); return Task.FromResult(IsSessionBlockedByThisResult); }
         public Task<bool> IsSessionBlockedByEventId(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
-        public Task<string> GetBlockedByEventId(CancellationToken ct = default) { Trace?.Record($"{TraceName}.session-guard", ct); return Task.FromResult(BlockedByEventId); }
+        public Task<string?> GetBlockedByEventId(CancellationToken ct = default) { Trace?.Record($"{TraceName}.session-guard", ct); return Task.FromResult(BlockedByEventId); }
         public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferral-sequence", ct); return Task.FromResult(0); }
         public Task IncrementDeferredCount(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferred-count-increment", ct); IncrementDeferredCountCalls++; return Task.CompletedTask; }
         public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;

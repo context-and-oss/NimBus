@@ -40,7 +40,7 @@ public interface IMessageLifecycleObserver
     /// Called when a message arrives for a session that is blocked by an earlier failed event.
     /// The blocking event id is supplied so observers can reference the incident that caused the block.
     /// </summary>
-    Task OnSessionBlocked(MessageLifecycleContext context, string blockedByEventId, CancellationToken cancellationToken = default) =>
+    Task OnSessionBlocked(MessageLifecycleContext context, string? blockedByEventId, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
 
     /// <summary>
@@ -75,16 +75,16 @@ public sealed record CircuitStateChangeContext(
 /// </summary>
 public class MessageLifecycleContext
 {
-    public string MessageId { get; init; }
-    public string EventId { get; init; }
-    public string EventTypeId { get; init; }
-    public string CorrelationId { get; init; }
-    public string SessionId { get; init; }
+    public string? MessageId { get; init; }
+    public string? EventId { get; init; }
+    public string EventTypeId { get; init; } = null!;
+    public string? CorrelationId { get; init; }
+    public string? SessionId { get; init; }
 
     /// <summary>
     /// Gets the endpoint that received the message.
     /// </summary>
-    public string EndpointId { get; init; }
+    public string? EndpointId { get; init; }
     public MessageType MessageType { get; init; }
     public DateTimeOffset EnqueuedTimeUtc { get; init; }
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;

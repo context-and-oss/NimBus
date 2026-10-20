@@ -36,7 +36,7 @@ public partial class EventImplementation
         endpointId = CanonicalEndpointId(endpointId);
         if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
         {
-            await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext!,
                 accessDenied: true, eventId: eventId, endpointId: endpointId,
                 data: "{\"action\":\"skip-deferred-tracking\"}");
             return new ForbidResult();
@@ -55,7 +55,7 @@ public partial class EventImplementation
         httpContextAccessor.HttpContext?.RequestAborted.ThrowIfCancellationRequested();
         try
         {
-            if (!await messageStore.TrySkipDeferredMessage(eventId, row.SessionId, endpointId, expectedMessageId, expectedUpdatedAt))
+            if (!await messageStore.TrySkipDeferredMessage(eventId, row.SessionId!, endpointId, expectedMessageId, expectedUpdatedAt))
                 return new ConflictObjectResult("The tracking record changed. Check it again.");
         }
         catch (NotSupportedException)

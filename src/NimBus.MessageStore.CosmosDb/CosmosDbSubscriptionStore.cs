@@ -17,7 +17,7 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
 {
     private readonly Func<Task<ICosmosContainerAdapter>> _getSubscriptionsContainer;
     private readonly Func<string, Task<string>> _getEndpointErrorList;
-    private readonly ILogger _logger;
+    private readonly ILogger? _logger;
 
     private static bool ValidateEmail(string mail)
     {
@@ -29,13 +29,13 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
     public CosmosDbSubscriptionStore(
         Func<Task<ICosmosContainerAdapter>> getSubscriptionsContainer,
         Func<string, Task<string>> getEndpointErrorList,
-        ILogger logger)
+        ILogger? logger)
     {
         _getSubscriptionsContainer = getSubscriptionsContainer;
         _getEndpointErrorList = getEndpointErrorList;
         _logger = logger;
     }
-    public async Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail,
+    public async Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail,
         string type, string author, string url, List<string> eventTypes, string payload, int frequency)
     {
         var formattedType = string.Equals(type, "mail", StringComparison.OrdinalIgnoreCase) ||
@@ -219,11 +219,11 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
 
     private sealed class SubscriptionDbo
     {
-        [JsonProperty(PropertyName = "id")] public string Id { get; set; }
-        [JsonProperty(PropertyName = "type")] public string Type { get; set; }
-        [JsonProperty(PropertyName = "severity")] public string Severity { get; set; }
-        [JsonProperty(PropertyName = "mail")] public string Mail { get; set; }
-        [JsonProperty(PropertyName = "endpointId")] public string EndpointId { get; set; }
+        [JsonProperty(PropertyName = "id")] public string Id { get; set; } = null!;
+        [JsonProperty(PropertyName = "type")] public string Type { get; set; } = null!;
+        [JsonProperty(PropertyName = "severity")] public string Severity { get; set; } = null!;
+        [JsonProperty(PropertyName = "mail")] public string Mail { get; set; } = null!;
+        [JsonProperty(PropertyName = "endpointId")] public string EndpointId { get; set; } = null!;
     }
 
 }

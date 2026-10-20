@@ -63,7 +63,7 @@ public class InMemoryMessageBus : ISender
             var sessionKey = message.SessionId ?? "__no_session__";
             var sessionState = _sessions.GetOrAdd(sessionKey, _ => new InMemorySessionState());
             var context = new InMemoryMessageContext(message, sessionState);
-            Exception caughtException = null;
+            Exception? caughtException = null;
 
             try
             {

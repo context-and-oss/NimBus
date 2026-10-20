@@ -46,19 +46,19 @@
 
             <dl class="row">
                 <dt class="col-sm-2">
-                    @Html.DisplayNameFor(model => model.OriginatingMessage.MessageContent.EventContent.EventJson)
+                    @Html.DisplayNameFor(model => model.OriginatingMessage.MessageContent.EventContent!.EventJson)
                 </dt>
             </dl>
             <dl class="row">
                 <dd class="col-sm-2">
-                    @Html.DisplayFor(model => model.OriginatingMessage.MessageContent.EventContent.EventJson)
+                    @Html.DisplayFor(model => model.OriginatingMessage.MessageContent.EventContent!.EventJson)
                 </dd>
             </dl>
                 }
             <hr />
 
             @{
-                var lastException = Model.FailedMessage.MessageContent.ErrorContent.ExceptionStackTrace;
+                var lastException = Model.FailedMessage.MessageContent.ErrorContent!.ExceptionStackTrace;
 
                 if (lastException != null)
                 {

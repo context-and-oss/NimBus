@@ -23,13 +23,13 @@ public class CustomerRegistered : Event
 
     [Required]
     [Description("The primary email address for the customer.")]
-    public string Email { get; set; }
+    public string Email { get; set; } = null!;
 
     [Required]
     [Description("The display name used by connected systems.")]
-    public string FullName { get; set; }
+    public string FullName { get; set; } = null!;
 
     [Description("The customer segment assigned at registration time.")]
-    public string Segment { get; set; }
+    public string Segment { get; set; } = null!;
 
 }

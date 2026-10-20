@@ -6,7 +6,7 @@ namespace NimBus.MessageStore.States;
 
 public class EndpointStateCount
 {
-    public string EndpointId { get; set; }
+    public string EndpointId { get; set; } = null!;
     public int FailedCount { get; set; }
     public int DeferredCount { get; set; }
     public int PendingCount { get; set; }

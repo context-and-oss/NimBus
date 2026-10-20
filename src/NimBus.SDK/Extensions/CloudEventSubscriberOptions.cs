@@ -29,7 +29,7 @@ public sealed class CloudEventSubscriberOptions
     /// Maps a CloudEvents <c>type</c> to a NimBus dispatch key (EventTypeId).
     /// Defaults to the unqualified last dot-segment of the type.
     /// </summary>
-    public Func<string, string> TypeToEventTypeId { get; set; }
+    public Func<string, string>? TypeToEventTypeId { get; set; }
 
     /// <summary>Configurable NimBus ↔ CloudEvents attribute mapping.</summary>
     public CloudEventMapping Mapping { get; set; } = new CloudEventMapping();

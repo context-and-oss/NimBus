@@ -79,7 +79,7 @@ public class OutboxDispatcher
                 var sessionId = outboxMessage.SessionId;
                 var hasSession = !string.IsNullOrEmpty(sessionId);
 
-                if (hasSession && failedSessions.Contains(sessionId))
+                if (hasSession && failedSessions.Contains(sessionId!))
                 {
                     // A prior row on this session failed this poll; keep it strictly
                     // ordered behind its stuck row instead of dispatching out of order.
@@ -91,7 +91,7 @@ public class OutboxDispatcher
                     // Block only this session; session-less rows fail independently.
                     // The failed message will be retried on the next poll.
                     if (hasSession)
-                        failedSessions.Add(sessionId);
+                        failedSessions.Add(sessionId!);
                     continue;
                 }
 
@@ -163,11 +163,11 @@ public class OutboxDispatcher
         Activity.Current = null;
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        Message message = null;
+        Message? message = null;
         // Endpoint comes from the persisted column so dispatch metrics are
         // tagged even when payload deserialization fails on a malformed row.
         var endpoint = outboxMessage.To;
-        Activity activity = null;
+        Activity? activity = null;
 
         try
         {
@@ -205,7 +205,7 @@ public class OutboxDispatcher
 
             message = JsonConvert.DeserializeObject<Message>(
                 outboxMessage.Payload,
-                Constants.CreateSafeJsonSettings());
+                Constants.CreateSafeJsonSettings())!;
 
             if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
             {
@@ -266,7 +266,7 @@ public class OutboxDispatcher
         }
     }
 
-    private static ActivityLink? TryBuildLink(string traceParent, string traceState)
+    private static ActivityLink? TryBuildLink(string? traceParent, string? traceState)
     {
         var context = W3CMessagePropagator.TryParse(traceParent, traceState);
         return context == default ? (ActivityLink?)null : new ActivityLink(context);

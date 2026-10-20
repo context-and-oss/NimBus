@@ -30,15 +30,15 @@ public class EmailChannelTests
         await channel.SendAsync(TestNotifications.Build(
             severity: NotificationSeverity.Critical, title: "Down"));
 
-        Assert.AreEqual(HttpMethod.Post, handler.LastRequest.Method);
-        Assert.AreEqual("https://api.sendgrid.com/v3/mail/send", handler.LastRequest.RequestUri.ToString());
-        Assert.AreEqual("Bearer", handler.LastRequest.Headers.Authorization.Scheme);
+        Assert.AreEqual(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.AreEqual("https://api.sendgrid.com/v3/mail/send", handler.LastRequest.RequestUri!.ToString());
+        Assert.AreEqual("Bearer", handler.LastRequest.Headers.Authorization!.Scheme);
         Assert.AreEqual("SG.secret", handler.LastRequest.Headers.Authorization.Parameter);
 
-        var json = JObject.Parse(handler.LastBody);
-        Assert.AreEqual("alerts@example.com", (string)json["from"]["email"]);
-        Assert.AreEqual("[Critical] Down", (string)json["subject"]);
-        var to = json["personalizations"][0]["to"].Select(t => (string)t["email"]).ToList();
+        var json = JObject.Parse(handler.LastBody!);
+        Assert.AreEqual("alerts@example.com", (string?)json["from"]!["email"]);
+        Assert.AreEqual("[Critical] Down", (string?)json["subject"]);
+        var to = json["personalizations"]![0]!["to"]!.Select(t => (string?)t["email"]).ToList();
         CollectionAssert.AreEquivalent(new[] { "oncall@example.com", "backup@example.com" }, to);
     }
 
@@ -90,14 +90,14 @@ public class EmailChannelTests
         {
         }
 
-        public string CapturedFrom { get; private set; }
-        public string CapturedSubject { get; private set; }
-        public string CapturedBody { get; private set; }
+        public string? CapturedFrom { get; private set; }
+        public string? CapturedSubject { get; private set; }
+        public string? CapturedBody { get; private set; }
         public List<string> CapturedTo { get; } = [];
 
         protected override Task SendViaSmtpAsync(MailMessage message, CancellationToken cancellationToken)
         {
-            CapturedFrom = message.From.Address;
+            CapturedFrom = message.From!.Address;
             CapturedSubject = message.Subject;
             CapturedBody = message.Body;
             CapturedTo.AddRange(message.To.Select(a => a.Address));

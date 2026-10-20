@@ -22,9 +22,9 @@ public readonly record struct HandoffSettlementCoordinates(
     string To,
     string EventId,
     string SessionId,
-    string CorrelationId,
+    string? CorrelationId,
     string ParentMessageId,
-    string OriginatingMessageId,
+    string? OriginatingMessageId,
     string EventTypeId);
 
 /// <summary>
@@ -42,7 +42,7 @@ public static class HandoffControlMessageFactory
     /// is carried verbatim on <see cref="MessageContent.EventContent.EventJson"/>
     /// so the audit trail / completion-event consumers can read it later.
     /// </summary>
-    public static Message CreateCompleted(HandoffSettlementCoordinates coords, string detailsJson)
+    public static Message CreateCompleted(HandoffSettlementCoordinates coords, string? detailsJson)
     {
         var content = new MessageContent();
         if (!string.IsNullOrEmpty(detailsJson))
@@ -63,7 +63,7 @@ public static class HandoffControlMessageFactory
     /// error-type classifier are carried on <see cref="ErrorContent"/> and
     /// rendered verbatim on the resulting Failed audit row.
     /// </summary>
-    public static Message CreateFailed(HandoffSettlementCoordinates coords, string errorText, string errorType)
+    public static Message CreateFailed(HandoffSettlementCoordinates coords, string errorText, string? errorType)
     {
         var content = new MessageContent
         {

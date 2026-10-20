@@ -9,15 +9,15 @@ public abstract class CustomValidationAttribute : ValidationAttribute
 {
     public CustomValidationAttribute(string errorMessage) : base(errorMessage) { }
 
-    public abstract override bool IsValid(object value);
+    public abstract override bool IsValid(object? value);
 
-    protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
     {
         if (value == null || IsValid(value))
         {
             return null;
         }
-        return new ValidationResult(FormatErrorMessage(validationContext.MemberName));
+        return new ValidationResult(FormatErrorMessage(validationContext.MemberName!));
     }
 }
 
@@ -25,7 +25,7 @@ public class PhoneNumberAttribute : CustomValidationAttribute
 {
     public PhoneNumberAttribute() : base("The field {0} must be a string that starts with '+'.") { }
 
-    public override bool IsValid(object value)
+    public override bool IsValid(object? value)
     {
         if (!(value is string s))
         {
@@ -44,7 +44,7 @@ public class NonEmptyGuidAttribute : CustomValidationAttribute
 {
     public NonEmptyGuidAttribute() : base("The field {0} must not be an empty Guid.") { }
 
-    public override bool IsValid(object value)
+    public override bool IsValid(object? value)
     {
         if (!(value is Guid guid))
             return true;
@@ -57,7 +57,7 @@ public class NonEmptyAttribute : CustomValidationAttribute
 {
     public NonEmptyAttribute() : base("The field {0} must be a non-empty Guid.") { }
 
-    public override bool IsValid(object value)
+    public override bool IsValid(object? value)
     {
         if (!(value is String s))
             return false;
@@ -70,7 +70,7 @@ public class EnsureOneElementAttribute : CustomValidationAttribute
 {
     public EnsureOneElementAttribute() : base("The field {0} must be a non-empty List.") { }
 
-    public override bool IsValid(object value)
+    public override bool IsValid(object? value)
     {
         if (value is ICollection list)
         {
@@ -84,7 +84,7 @@ public class RequiredAllowEmptyString : ValidationAttribute
 {
     public RequiredAllowEmptyString() : base("The field {0} must be a non-null String.") { }
 
-    public override bool IsValid(object value)
+    public override bool IsValid(object? value)
     {
         if (value == null)
         {
@@ -111,7 +111,7 @@ public class RequiredIfAttribute : ValidationAttribute
         }
     }
 
-    protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
     {
         object instance = validationContext.ObjectInstance;
         Type type = instance.GetType();
@@ -122,7 +122,7 @@ public class RequiredIfAttribute : ValidationAttribute
         {
             var k = kv.Key;
             var v = kv.Value;
-            object propertyValue = type.GetProperty(k)?.GetValue(instance, null);
+            object? propertyValue = type.GetProperty(k)?.GetValue(instance, null);
 
             if (propertyValue?.ToString() == v?.ToString())
             {

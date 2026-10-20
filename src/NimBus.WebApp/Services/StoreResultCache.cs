@@ -57,7 +57,7 @@ public sealed class StoreResultCache : IStoreResultCache
             {
                 entry.AbsoluteExpirationRelativeToNow = ttl;
                 return new Lazy<Task<T>>(factory);
-            });
+            })!;
         }
 
         try

@@ -6,4 +6,4 @@ namespace NimBus.Testing;
 public sealed record InMemoryDeliveryResult(
     IMessage OriginalMessage,
     InMemoryMessageContext Context,
-    Exception Exception);
+    Exception? Exception);

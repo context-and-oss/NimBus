@@ -227,7 +227,7 @@ public class CloudEventsValidationTests
     private sealed class RecordingContextHandler : IEventContextHandler
     {
         public bool WasCalled { get; private set; }
-        public System.Exception ToThrow { get; set; }
+        public System.Exception? ToThrow { get; set; }
 
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {

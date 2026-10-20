@@ -51,7 +51,7 @@ public interface IResponseService
     /// message routed to the Resolver carrying the dead-letter reason and
     /// formatted exception so the audit record is classified as DeadLettered.
     /// </summary>
-    Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception exception, CancellationToken cancellationToken = default);
+    Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception? exception, CancellationToken cancellationToken = default);
     Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default);
     /// <summary>
     /// Sends a ContinuationRequest for a message parked with the legacy Service Bus defer API.

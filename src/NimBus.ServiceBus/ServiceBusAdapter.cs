@@ -21,9 +21,9 @@ public interface IServiceBusAdapter
 public class ServiceBusAdapter : IServiceBusAdapter
 {
     private readonly IMessageHandler _messageHandler;
-    private readonly ServiceBusClient _serviceBusClient;
-    private readonly string _entityPath;
-    private readonly CloudEventReadOptions _cloudEventReadOptions;
+    private readonly ServiceBusClient? _serviceBusClient;
+    private readonly string? _entityPath;
+    private readonly CloudEventReadOptions? _cloudEventReadOptions;
 
     /// <summary>
     /// Creates a new ServiceBusAdapter.

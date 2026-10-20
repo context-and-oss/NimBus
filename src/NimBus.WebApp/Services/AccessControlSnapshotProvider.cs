@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -139,7 +140,7 @@ public sealed class AccessControlSnapshotProvider : IAccessControlSnapshotProvid
 
     public void Dispose() => _refreshLock.Dispose();
 
-    private static bool IsFresh(CacheEntry? entry, long generation)
+    private static bool IsFresh([NotNullWhen(true)] CacheEntry? entry, long generation)
         => entry != null && entry.Generation == generation && DateTime.UtcNow < entry.ExpiresAtUtc;
 
     private sealed record CacheEntry(AccessControlSnapshot Snapshot, DateTime ExpiresAtUtc, long Generation);

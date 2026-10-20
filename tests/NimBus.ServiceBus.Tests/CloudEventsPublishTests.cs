@@ -126,16 +126,16 @@ public class CloudEventsPublishTests
         Assert.AreEqual("application/cloudevents+json", sent.ContentType);
 
         var envelope = JObject.Parse(Encoding.UTF8.GetString(sent.Body.ToArray()));
-        Assert.AreEqual("1.0", (string)envelope["specversion"]);
-        Assert.AreEqual("msg-1", (string)envelope["id"]);
-        Assert.AreEqual("urn:test:billing", (string)envelope["source"]);
-        Assert.AreEqual("TestEvent", (string)envelope["type"]);
-        Assert.AreEqual("application/json", (string)envelope["datacontenttype"]);
+        Assert.AreEqual("1.0", (string?)envelope["specversion"]);
+        Assert.AreEqual("msg-1", (string?)envelope["id"]);
+        Assert.AreEqual("urn:test:billing", (string?)envelope["source"]);
+        Assert.AreEqual("TestEvent", (string?)envelope["type"]);
+        Assert.AreEqual("application/json", (string?)envelope["datacontenttype"]);
         // AC5: data equals the domain event (embedded JSON, not a string).
-        Assert.AreEqual("hello", (string)envelope["data"]["Payload"]);
+        Assert.AreEqual("hello", (string?)envelope["data"]!["Payload"]);
         // AC6: NimBus identity present as extension attributes.
-        Assert.AreEqual("corr-1", (string)envelope["correlationid"]);
-        Assert.AreEqual("sess-1", (string)envelope["sessionid"]);
+        Assert.AreEqual("corr-1", (string?)envelope["correlationid"]);
+        Assert.AreEqual("sess-1", (string?)envelope["sessionid"]);
     }
 
     [TestMethod]

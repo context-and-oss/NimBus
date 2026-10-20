@@ -20,7 +20,7 @@ public class NimBusSubscriberBuilder
 {
     internal readonly IServiceCollection Services;
     internal readonly List<HandlerRegistration> HandlerRegistrations = new();
-    internal Action<DefaultRetryPolicyProvider> RetryPolicyConfigurator;
+    internal Action<DefaultRetryPolicyProvider>? RetryPolicyConfigurator;
     internal InboxOptions? InboxConfiguration { get; private set; }
     internal CircuitBreakerOptions? CircuitBreakerConfiguration { get; private set; }
 
@@ -514,6 +514,6 @@ public class NimBusSubscriberBuilder
         /// </summary>
         public Type? HandlerType { get; set; }
         public bool IsExplicit { get; set; }
-        public Action<IServiceProvider, EventHandlerProvider> Register { get; set; }
+        public Action<IServiceProvider, EventHandlerProvider> Register { get; set; } = null!;
     }
 }

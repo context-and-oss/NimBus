@@ -12,20 +12,20 @@ public class EndpointMetricsResult
 
 public class EndpointEventTypeCount
 {
-    public string EndpointId { get; set; }
-    public string EventTypeId { get; set; }
+    public string EndpointId { get; set; } = null!;
+    public string EventTypeId { get; set; } = null!;
     public int Count { get; set; }
 }
 
 public class TimeSeriesResult
 {
-    public string BucketSize { get; set; }
+    public string BucketSize { get; set; } = null!;
     public List<TimeSeriesBucket> DataPoints { get; set; } = new();
 }
 
 public class TimeSeriesBucket
 {
-    public string Timestamp { get; set; }
+    public string Timestamp { get; set; } = null!;
     public int Published { get; set; }
     public int Handled { get; set; }
     public int Failed { get; set; }
@@ -33,31 +33,31 @@ public class TimeSeriesBucket
 
 public class EventTypeTimeSeriesResult
 {
-    public string BucketSize { get; set; }
+    public string BucketSize { get; set; } = null!;
     public List<EventTypeSeriesEntry> Series { get; set; } = new();
 }
 
 // Published-message counts only; dataPoints are sparse (no zero-fill) and sorted ascending.
 public class EventTypeSeriesEntry
 {
-    public string EventTypeId { get; set; }
+    public string EventTypeId { get; set; } = null!;
     public int Total { get; set; }
     public List<EventTypeSeriesBucket> DataPoints { get; set; } = new();
 }
 
 public class EventTypeSeriesBucket
 {
-    public string Timestamp { get; set; }
+    public string Timestamp { get; set; } = null!;
     public int Published { get; set; }
 }
 
 public class FailedMessageInfo
 {
-    public string EndpointId { get; set; }
-    public string EventTypeId { get; set; }
-    public string ErrorText { get; set; }
+    public string EndpointId { get; set; } = null!;
+    public string EventTypeId { get; set; } = null!;
+    public string? ErrorText { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; }
-    public string EventId { get; set; }
+    public string EventId { get; set; } = null!;
 }
 
 public class EndpointLatencyMetricsResult
@@ -71,8 +71,8 @@ public class EndpointLatencyMetricsResult
 // at scale). Tail latency is monitored via App Insights histograms instead.
 public class EndpointLatencyAggregate
 {
-    public string EndpointId { get; set; }
-    public string EventTypeId { get; set; }
+    public string EndpointId { get; set; } = null!;
+    public string EventTypeId { get; set; } = null!;
     public LatencyAggregate Queue { get; set; } = new();
     public LatencyAggregate Processing { get; set; } = new();
 }

@@ -266,7 +266,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                     forwardTo: expected?.ForwardTo, changeForwardTo: restoreForwarding);
 
                 result.Message = restoreForwarding
-                    ? $"Delivery resumed and forwarding to '{expected.ForwardTo}' restored."
+                    ? $"Delivery resumed and forwarding to '{expected!.ForwardTo}' restored."
                     : "Delivery resumed.";
             }
             else
@@ -661,7 +661,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
     // ───────────────────────── Helpers ─────────────────────────
 
-    private ExpectedSubscription FindExpected(string topicName, string subscriptionName) =>
+    private ExpectedSubscription? FindExpected(string topicName, string subscriptionName) =>
         TopologyDescriptor.FindSubscription(topicName, subscriptionName, _platform, _isEmulator);
 
     private static SubscriptionActionResult NewResult(string topicName, string subscriptionName, string action) =>

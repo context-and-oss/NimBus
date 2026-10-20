@@ -147,7 +147,7 @@ public sealed class EventTypesByEndpointTests
         public string Namespace { get; }
         public IEnumerable<IProperty> Properties => Enumerable.Empty<IProperty>();
         public Type GetEventClassType() => typeof(object);
-        public IEvent GetEventExample() => null;
+        public IEvent GetEventExample() => null!;
     }
 
     private sealed class FakeEndpoint : IEndpoint
@@ -164,7 +164,7 @@ public sealed class EventTypesByEndpointTests
         public string Description => string.Empty;
         public string Namespace => string.Empty;
         public string SecurityGroupName => string.Empty;
-        public ISystem System => null;
+        public ISystem System => null!;
         public IEnumerable<IEventType> EventTypesProduced { get; }
         public IEnumerable<IEventType> EventTypesConsumed { get; }
         public IEnumerable<IRoleAssignment> RoleAssignments => Enumerable.Empty<IRoleAssignment>();
@@ -198,6 +198,6 @@ public sealed class EventTypesByEndpointTests
     private sealed class StubCodeRepoService : ICodeRepoService
     {
         public string CodeRepoUrl => string.Empty;
-        public string GetSearchUrl(string className, string namespaceName) => $"repo://{className}/{namespaceName}";
+        public string GetSearchUrl(string className, string? namespaceName) => $"repo://{className}/{namespaceName}";
     }
 }

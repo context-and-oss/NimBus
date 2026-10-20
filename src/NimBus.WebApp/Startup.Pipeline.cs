@@ -142,7 +142,7 @@ public partial class Startup
                     ctx.Context.Response.GetTypedHeaders().CacheControl =
                         new CacheControlHeaderValue { NoCache = true, NoStore = true, MustRevalidate = true };
 
-                    if (!ctx.Context.User.Identity.IsAuthenticated)
+                    if (!ctx.Context.User.Identity!.IsAuthenticated)
                     {
                         ctx.Context.Response.Redirect(loginPath);
                     }

@@ -63,7 +63,7 @@ public class MessageLifecycleNotifier
         }
     }
 
-    public async Task NotifySessionBlocked(IMessageContext context, string blockedByEventId, CancellationToken cancellationToken = default)
+    public async Task NotifySessionBlocked(IMessageContext context, string? blockedByEventId, CancellationToken cancellationToken = default)
     {
         if (!HasObservers) return;
         var lifecycleContext = MessageLifecycleContext.FromMessageContext(context);

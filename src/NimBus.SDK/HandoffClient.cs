@@ -15,7 +15,7 @@ namespace NimBus.SDK;
 public sealed class HandoffClientOptions
 {
     /// <summary>The subscriber endpoint whose pending-handoff rows this client settles. Required.</summary>
-    public string Endpoint { get; set; }
+    public string Endpoint { get; set; } = null!;
 }
 
 /// <summary>
@@ -36,7 +36,7 @@ public sealed class HandoffClient : IHandoffClient
 {
     private readonly ISender _sender;
     private readonly string _endpoint;
-    private readonly ILogger<HandoffClient> _logger;
+    private readonly ILogger<HandoffClient>? _logger;
 
     public HandoffClient(
         ISender sender,
@@ -102,7 +102,7 @@ public sealed class HandoffClient : IHandoffClient
     // Strings pass through verbatim so adapters that already hand-roll JSON
     // aren't double-serialised. Everything else goes through Newtonsoft to
     // stay consistent with NimBus's wire format. Null result → no payload.
-    private static string SerializeResult(object result) => result switch
+    private static string? SerializeResult(object? result) => result switch
     {
         null => null,
         string s => s,

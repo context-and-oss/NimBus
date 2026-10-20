@@ -76,7 +76,7 @@ public class OutboxSenderTests
         var stored = outbox.StoredMessages[0];
         Assert.IsFalse(string.IsNullOrEmpty(stored.Payload));
         var deserialized = JsonConvert.DeserializeObject<Message>(stored.Payload);
-        Assert.AreEqual("msg-1", deserialized.MessageId);
+        Assert.AreEqual("msg-1", deserialized!.MessageId);
     }
 
     [TestMethod]
@@ -91,7 +91,7 @@ public class OutboxSenderTests
 
         Assert.AreEqual(0L, seq, "Outbox always returns 0 for sequence number");
         Assert.IsNotNull(outbox.StoredMessages[0].ScheduledEnqueueTimeUtc);
-        var diff = Math.Abs((scheduledTime.UtcDateTime - outbox.StoredMessages[0].ScheduledEnqueueTimeUtc.Value).TotalSeconds);
+        var diff = Math.Abs((scheduledTime.UtcDateTime - outbox.StoredMessages[0].ScheduledEnqueueTimeUtc!.Value).TotalSeconds);
         Assert.IsTrue(diff < 1, "ScheduledEnqueueTimeUtc should match within 1 second");
     }
 

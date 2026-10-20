@@ -54,7 +54,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
                 return false;
             }
 
-            current.Resource.Event.ResolutionStatus = ResolutionStatus.Skipped;
+            current.Resource.Event!.ResolutionStatus = ResolutionStatus.Skipped;
             current.Resource.Event.UpdatedAt = DateTime.UtcNow;
             var replacement = CreateCompletedDbo(eventId, sessionId, current.Resource.Event, SkippedStatus);
             await container.ReplaceItemAsync(replacement, id, new PartitionKey(id),

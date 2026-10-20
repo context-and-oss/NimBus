@@ -2,8 +2,8 @@ namespace NimBus.CommandLine.Models;
 
 public class RuleDto
 {
-    public string Name { get; set; }
-    public string SubscriptionName { get; set; }
+    public string Name { get; set; } = null!;
+    public string SubscriptionName { get; set; } = null!;
     public bool IsDeprecated { get; set; }
 
     public class RuleDtoComparer : IEqualityComparer<RuleDto>

@@ -138,7 +138,7 @@ public class ResponseService : IResponseService
         await _sender.Send(response, cancellationToken: cancellationToken);
     }
 
-    public async Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception exception, CancellationToken cancellationToken = default)
+    public async Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception? exception, CancellationToken cancellationToken = default)
     {
         // Routed to the Resolver as an ErrorResponse with the dead-letter properties
         // populated. The Resolver short-circuits on DeadLetterErrorDescription and
@@ -152,7 +152,7 @@ public class ResponseService : IResponseService
         await _sender.Send(response, cancellationToken: cancellationToken);
     }
 
-    private static string FormatDeadLetterDescription(Exception exception, string reason) =>
+    private static string FormatDeadLetterDescription(Exception? exception, string reason) =>
         exception?.ToString() ?? reason;
 
     public async Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default)
@@ -195,7 +195,7 @@ public class ResponseService : IResponseService
             CorrelationId = deferredMessageContext.MessageId,
             SessionId = deferredMessageContext.SessionId,
             EventId = deferredMessageContext.EventId,
-            OriginatingMessageId = !deferredMessageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? deferredMessageContext.OriginatingMessageId : deferredMessageContext.MessageId,
+            OriginatingMessageId = !deferredMessageContext.OriginatingMessageId!.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? deferredMessageContext.OriginatingMessageId : deferredMessageContext.MessageId,
             ParentMessageId = deferredMessageContext.MessageId,
             EventTypeId = deferredMessageContext.EventTypeId,
             MessageType = MessageType.ContinuationRequest,
@@ -225,7 +225,7 @@ public class ResponseService : IResponseService
             CorrelationId = messageId,
             SessionId = messageContext.SessionId,
             EventId = messageContext.EventId,
-            OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageId,
+            OriginatingMessageId = !messageContext.OriginatingMessageId!.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageId,
             ParentMessageId = messageId,
             RetryCount = messageContext.RetryCount ?? null,
             OriginatingFrom = GetOriginator(messageContext),
@@ -264,7 +264,7 @@ public class ResponseService : IResponseService
     // throws on access. It is only recorded, so fall back to the originator the request
     // still carries: throwing here would dead-letter a message whose handler side effect
     // already landed.
-    private static string GetOriginator(IMessageContext messageContext) =>
+    private static string? GetOriginator(IMessageContext messageContext) =>
         messageContext.GetFromOrDefault() ?? messageContext.OriginatingFrom;
 
     private IMessage CreateRetryResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent) =>
@@ -274,7 +274,7 @@ public class ResponseService : IResponseService
             CorrelationId = messageContext.MessageId,
             SessionId = messageContext.SessionId,
             EventId = messageContext.EventId,
-            OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
+            OriginatingMessageId = !messageContext.OriginatingMessageId!.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
             ParentMessageId = messageContext.MessageId,
             RetryCount = messageContext.RetryCount.HasValue ? messageContext.RetryCount + 1 : 1,
             OriginatingFrom = GetOriginator(messageContext),
@@ -323,7 +323,7 @@ public class ResponseService : IResponseService
             CorrelationId = messageContext.CorrelationId,
             SessionId = messageContext.SessionId,           // Session-enabled deferred subscription
             EventId = messageContext.EventId,
-            OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
+            OriginatingMessageId = !messageContext.OriginatingMessageId!.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
             ParentMessageId = messageContext.MessageId,
             RetryCount = messageContext.RetryCount ?? null,
             OriginatingFrom = from ?? messageContext.OriginatingFrom,
@@ -382,7 +382,7 @@ public class ResponseService : IResponseService
             CorrelationId = messageContext.MessageId,
             SessionId = messageContext.SessionId,
             EventId = messageContext.EventId,
-            OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
+            OriginatingMessageId = !messageContext.OriginatingMessageId!.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
             ParentMessageId = messageContext.MessageId,
             EventTypeId = messageContext.EventTypeId,
             MessageType = MessageType.ProcessDeferredRequest,

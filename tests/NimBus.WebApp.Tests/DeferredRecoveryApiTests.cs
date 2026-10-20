@@ -27,7 +27,7 @@ public sealed class DeferredRecoveryApiTests
         var result = await sut.PostSkipDeferredTrackingAsync("crm", "event",
             new DeferredSkipRequest { RowVersion = inspection.RowVersion, Reason = "Checked with CRM operator" });
         Assert.IsTrue(result.Value!.AuditRecorded);
-        Assert.AreEqual(ResolutionStatus.Skipped, (await store.GetEvent("Crm", "event")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Skipped, (await store.GetEvent("Crm", "event"))!.ResolutionStatus);
         var audit = (await store.GetMessageAudits("event")).Single();
         Assert.AreEqual("Checked with CRM operator", audit.Comment);
         Assert.AreEqual("operator", audit.AuditorName);
@@ -42,10 +42,10 @@ public sealed class DeferredRecoveryApiTests
         var inspection = (await sut.GetDeferredInspectionAsync("Crm", "event")).Value!;
         var empty = await sut.PostSkipDeferredTrackingAsync("Crm", "event", new DeferredSkipRequest { RowVersion = inspection.RowVersion, Reason = " " });
         Assert.IsInstanceOfType<BadRequestObjectResult>(empty.Result);
-        (await store.GetEvent("Crm", "event")).LastMessageId = "new-deferral";
+        (await store.GetEvent("Crm", "event"))!.LastMessageId = "new-deferral";
         var changed = await sut.PostSkipDeferredTrackingAsync("Crm", "event", new DeferredSkipRequest { RowVersion = inspection.RowVersion, Reason = "checked" });
         Assert.IsInstanceOfType<ConflictObjectResult>(changed.Result);
-        Assert.AreEqual(ResolutionStatus.Deferred, (await store.GetEvent("Crm", "event")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Deferred, (await store.GetEvent("Crm", "event"))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -58,7 +58,7 @@ public sealed class DeferredRecoveryApiTests
             sessionId: "session", sequenceNumber: 1, properties: new Dictionary<string, object> { ["EventId"] = "event" })];
         var result = await sut.PostSkipDeferredTrackingAsync("Crm", "event", new DeferredSkipRequest { RowVersion = inspection.RowVersion, Reason = "checked" });
         Assert.IsInstanceOfType<ConflictObjectResult>(result.Result);
-        Assert.AreEqual(ResolutionStatus.Deferred, (await store.GetEvent("Crm", "event")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Deferred, (await store.GetEvent("Crm", "event"))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -87,8 +87,8 @@ public sealed class DeferredRecoveryApiTests
     {
         store ??= new InMemoryMessageStore();
         var row = DeferredMessageInspectorTests.Row();
-        await store.UploadDeferredMessage(row.EventId, row.SessionId, "Crm", row);
-        (await store.GetEvent("Crm", "event")).UpdatedAt = DateTime.UtcNow.AddHours(-1);
+        await store.UploadDeferredMessage(row.EventId, row.SessionId!, "Crm", row);
+        (await store.GetEvent("Crm", "event"))!.UpdatedAt = DateTime.UtcNow.AddHours(-1);
         var sut = new EventImplementation(null!, new Catalog(), null!, null!, NullLogger<EventImplementation>.Instance,
             store, new Authorization(role), null!, broker ?? new DeferredMessageInspectorTests.FakeClient(), audit ?? new Audit(), null!,
             new HttpContextAccessor { HttpContext = new DefaultHttpContext() }, PayloadRedactionTests.NewRedaction(),
@@ -106,7 +106,7 @@ public sealed class DeferredRecoveryApiTests
             DeferredMessageInspectorTests.Row()).GetAwaiter().GetResult();
         var result = await sut.PostSkipDeferredTrackingAsync("Crm", "event", new DeferredSkipRequest { RowVersion = inspection.RowVersion, Reason = "checked" });
         Assert.IsInstanceOfType<ConflictObjectResult>(result.Result);
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent("Crm", "event")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent("Crm", "event"))!.ResolutionStatus);
         Assert.AreEqual(0, (await store.GetMessageAudits("event")).Count());
     }
 
@@ -117,7 +117,7 @@ public sealed class DeferredRecoveryApiTests
         var inspection = (await sut.GetDeferredInspectionAsync("Crm", "event")).Value!;
         var result = await sut.PostSkipDeferredTrackingAsync("Crm", "event", new DeferredSkipRequest { RowVersion = inspection.RowVersion, Reason = "checked" });
         Assert.IsFalse(result.Value!.AuditRecorded);
-        Assert.AreEqual(ResolutionStatus.Skipped, (await store.GetEvent("Crm", "event")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Skipped, (await store.GetEvent("Crm", "event"))!.ResolutionStatus);
     }
 
     private sealed class AuditFailureStore : InMemoryMessageStore

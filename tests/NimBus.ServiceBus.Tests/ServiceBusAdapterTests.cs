@@ -68,7 +68,7 @@ public class ServiceBusAdapterTests
     private sealed class RecordingMessageHandler : IMessageHandler
     {
         public int CallCount { get; private set; }
-        public IMessageContext LastContext { get; private set; }
+        public IMessageContext? LastContext { get; private set; }
 
         public Task Handle(IMessageContext messageContext, System.Threading.CancellationToken cancellationToken = default)
         {

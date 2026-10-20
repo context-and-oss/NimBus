@@ -136,12 +136,12 @@ public partial class EventImplementation
 
         if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpoint))
         {
-            await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext!,
                 accessDenied: true, eventId: id, endpointId: endpoint);
             return new ForbidResult();
         }
 
-        await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext,
+        await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext!,
             eventId: id, endpointId: endpoint);
 
         var eventDetails = new EventDetails();
@@ -172,7 +172,7 @@ public partial class EventImplementation
                 logger.LogInformation("Message found in deadletter. EventId: {EventId}, MessageId: {MessageId}, Endpoint: {Endpoint}, MessageType: {MessageType}", deadletteredMessage.EventId, deadletteredMessage.MessageId, endpoint, deadletteredMessage.MessageType);
                 if (deadletteredMessage.MessageType == Core.Messages.MessageType.ResolutionResponse)
                 {
-                    var completedMsg = await messageStore.GetMessage(deadletteredMessage.EventId, deadletteredMessage.OriginatingMessageId);
+                    var completedMsg = await messageStore.GetMessage(deadletteredMessage.EventId, deadletteredMessage.OriginatingMessageId!);
                     if (completedMsg != null)
                     {
                         eventDetails.FailedMessage = Mapper.MessageFromMessageEntity(completedMsg);
@@ -217,7 +217,7 @@ public partial class EventImplementation
         try
         {
             logs = (await applicationInsightsService.GetLogs(id))
-                .Where(l => l.To.Equals(endpointId, StringComparison.OrdinalIgnoreCase) || l.From.Equals(endpointId, StringComparison.OrdinalIgnoreCase))
+                .Where(l => l.To!.Equals(endpointId, StringComparison.OrdinalIgnoreCase) || l.From!.Equals(endpointId, StringComparison.OrdinalIgnoreCase))
                 .Select(Mapper.EventLogEntryFromLogEntry)
                 .ToList();
         }
@@ -313,7 +313,7 @@ public partial class EventImplementation
 
         try
         {
-            var events = (await messageStore.GetPendingEventsOnSession(endpointId))
+            var events = (await messageStore.GetPendingEventsOnSession(endpointId))!
                 .Select(Mapper.EventFromMessageStoreEvent)
                 .ToList();
 
@@ -400,7 +400,7 @@ public partial class EventImplementation
     // (a ResolutionResponse, handoff control message, etc.). Returns the
     // EventJson of the most recent EventRequest / ResubmissionRequest in the
     // event's history, or null when none carries event content.
-    private async Task<string> GetLatestEventRequestPayload(string eventId)
+    private async Task<string?> GetLatestEventRequestPayload(string eventId)
     {
         try
         {

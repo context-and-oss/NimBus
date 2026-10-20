@@ -23,7 +23,7 @@ public partial class AdminService
 
         // Count Cosmos events for the session
         int cosmosEventCount = 0;
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -71,7 +71,7 @@ public partial class AdminService
             Errors = new List<string>()
         };
 
-        ServiceBusSessionReceiver receiver = null;
+        ServiceBusSessionReceiver? receiver = null;
         try
         {
             receiver = await _sbClient.AcceptSessionAsync(endpointId, endpointId, sessionId);
@@ -217,7 +217,7 @@ public partial class AdminService
         try
         {
             int cosmosRemoved = 0;
-            string continuationToken = string.Empty;
+            string? continuationToken = string.Empty;
 
             do
             {
@@ -260,7 +260,7 @@ public partial class AdminService
         if (ev == null)
             return false;
 
-        return await _messageStore.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
+        return await _messageStore.RemoveMessage(ev.EventId, ev.SessionId!, endpointId);
     }
 
     public async Task<PurgePreview> PurgeSubscriptionPreviewAsync(string endpointId, string subscription, List<string> states, DateTime? before)
@@ -459,7 +459,7 @@ public partial class AdminService
     {
         statuses = AdminStatusValidation.NormalizeDeleteStatuses(statuses);
         int count = 0;
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -481,7 +481,7 @@ public partial class AdminService
         int succeeded = 0;
         int failed = 0;
         var errors = new List<string>();
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -493,7 +493,7 @@ public partial class AdminService
             {
                 try
                 {
-                    bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
+                    bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId!, endpointId);
                     if (removed) succeeded++;
                     else { failed++; errors.Add($"{ev.EventId}: remove returned false"); }
                 }
@@ -515,7 +515,7 @@ public partial class AdminService
     {
         statuses = AdminStatusValidation.NormalizeSkipStatuses(statuses);
         int count = 0;
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -542,7 +542,7 @@ public partial class AdminService
         int succeeded = 0;
         int failed = 0;
         var errors = new List<string>();
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -557,7 +557,7 @@ public partial class AdminService
 
                 try
                 {
-                    bool updated = await _messageStore.UploadSkippedMessage(ev.EventId, ev.SessionId, endpointId, ev);
+                    bool updated = await _messageStore.UploadSkippedMessage(ev.EventId, ev.SessionId!, endpointId, ev);
                     if (updated) succeeded++;
                     else { failed++; errors.Add($"{ev.EventId}: update returned false"); }
                 }

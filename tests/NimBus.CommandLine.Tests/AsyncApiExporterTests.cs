@@ -302,7 +302,7 @@ public sealed class AsyncApiExporterTests
     private sealed class OrphanEvent : Event
     {
         [Required]
-        public string Value { get; set; }
+        public string Value { get; set; } = null!;
     }
 
     private enum RichStatus
@@ -313,21 +313,21 @@ public sealed class AsyncApiExporterTests
 
     private sealed class RichAddress
     {
-        public string Street { get; set; }
-        public string City { get; set; }
+        public string Street { get; set; } = null!;
+        public string City { get; set; } = null!;
     }
 
     private sealed class RichEvent : Event
     {
         public RichStatus Status { get; set; }
-        public List<string> Tags { get; set; }
-        public RichAddress Address { get; set; }
+        public List<string> Tags { get; set; } = null!;
+        public RichAddress Address { get; set; } = null!;
         public string? Note { get; set; }
     }
 
     private sealed class WeirdEvent : Event
     {
         [Description("Weird: value # hash, with: colons - and dashes")]
-        public string Field { get; set; }
+        public string Field { get; set; } = null!;
     }
 }

@@ -128,8 +128,8 @@ public class AgentImplementationTests
     // returns an empty sequence and so cannot exercise the null-guard.
     private sealed class NullPendingStore : InMemoryMessageStore
     {
-        public override Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
-            => Task.FromResult<IEnumerable<UnresolvedEvent>>(null!);
+        public override Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId)
+            => Task.FromResult<IEnumerable<UnresolvedEvent>?>(null);
     }
 
     // The Agent Zone endpoint id receive/settle resolve to when no IConfiguration is

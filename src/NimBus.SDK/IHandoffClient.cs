@@ -24,8 +24,8 @@ public sealed record HandoffSettlement(
     string SessionId,
     string MessageId,
     string EventTypeId,
-    string CorrelationId,
-    string OriginatingMessageId);
+    string? CorrelationId,
+    string? OriginatingMessageId);
 
 /// <summary>
 /// Adapter-facing API for settling a pending handoff initiated by

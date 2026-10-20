@@ -17,7 +17,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     private readonly IServiceBusMessage _sbMessage;
     private readonly IServiceBusSession _sbSession;
     private readonly bool _isDeferred;
-    private readonly CloudEventReadOptions _cloudEventReadOptions;
+    private readonly CloudEventReadOptions? _cloudEventReadOptions;
 
     private const int MaxDeadLetterErrorDescriptionLength = 4096;
     private const string TruncationIndicator = "\n...[TRUNCATED]...";
@@ -47,7 +47,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
 
     public int DeliveryCount => _sbMessage.DeliveryCount;
 
-    public string OriginatingFrom
+    public string? OriginatingFrom
     {
         get { try { return GetUserProperty(UserPropertyName.OriginatingFrom); } catch (InvalidMessageException) { return null; } }
     }
@@ -71,25 +71,25 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
                 // application property still carry it in MessageContent.
             }
 
-            return GetContent()?.EventContent?.EventTypeId;
+            return GetContent()?.EventContent?.EventTypeId!;
         }
     }
 
-    public string DeadLetterReason
+    public string? DeadLetterReason
     {
         get { try { return GetUserProperty(UserPropertyName.DeadLetterReason); } catch (InvalidMessageException) { return null; } }
     }
-    public string DeadLetterErrorDescription
+    public string? DeadLetterErrorDescription
     {
         get { try { return GetUserProperty(UserPropertyName.DeadLetterErrorDescription); } catch (InvalidMessageException) { return null; } }
     }
 
-    public string HandoffReason
+    public string? HandoffReason
     {
         get { try { return GetUserProperty(UserPropertyName.HandoffReason); } catch (InvalidMessageException) { return null; } }
     }
 
-    public string ExternalJobId
+    public string? ExternalJobId
     {
         get { try { return GetUserProperty(UserPropertyName.ExternalJobId); } catch (InvalidMessageException) { return null; } }
     }
@@ -115,7 +115,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
 
     public string ParentMessageId => _sbMessage.GetUserProperty(UserPropertyName.ParentMessageId) ?? Constants.Self;
 
-    public string InboxMessageId
+    public string? InboxMessageId
     {
         get { try { return GetUserProperty(UserPropertyName.InboxMessageId); } catch (InvalidMessageException) { return null; } }
     }
@@ -143,24 +143,24 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
             if (_sbMessage.SessionId != null) return _sbMessage.SessionId;
             EnsureCloudEventEvaluated();
             if (_isCloudEvent)
-                return _cloudEventReadOptions.MapSessionId(_cloudEvent) ?? _cloudEvent?.Id ?? Constants.Self;
+                return _cloudEventReadOptions!.MapSessionId(_cloudEvent!) ?? _cloudEvent?.Id ?? Constants.Self;
             throw new InvalidMessageException($"SessionId is not defined.");
         }
     }
 
-    public string CorrelationId
+    public string? CorrelationId
     {
         get
         {
             if (_sbMessage.CorrelationId != null) return _sbMessage.CorrelationId;
             EnsureCloudEventEvaluated();
-            return _isCloudEvent ? _cloudEventReadOptions.MapCorrelationId(_cloudEvent) : null;
+            return _isCloudEvent ? _cloudEventReadOptions!.MapCorrelationId(_cloudEvent!) : null;
         }
     }
 
-    public string ReplyTo => _sbMessage.ReplyTo;
+    public string? ReplyTo => _sbMessage.ReplyTo;
 
-    public string ReplyToSessionId => _sbMessage.ReplyToSessionId;
+    public string? ReplyToSessionId => _sbMessage.ReplyToSessionId;
 
     public MessageContent MessageContent => GetContent() ?? throw new InvalidMessageException($"MessageContent is null.");
 
@@ -173,7 +173,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
         get { try { return Int32.Parse(GetUserProperty(UserPropertyName.RetryCount), CultureInfo.InvariantCulture); } catch (InvalidMessageException) { return null; } catch (FormatException) { return null; } }
     }
 
-    public string OriginalSessionId
+    public string? OriginalSessionId
     {
         get { try { return GetUserProperty(UserPropertyName.OriginalSessionId); } catch (InvalidMessageException) { return null; } }
     }
@@ -229,7 +229,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
 
     public HandlerOutcome HandlerOutcome { get; set; }
 
-    public HandoffMetadata HandoffMetadata { get; set; }
+    public HandoffMetadata? HandoffMetadata { get; set; }
 
     public Exception? HandledFailure { get; set; }
 
@@ -288,7 +288,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
         }
     }
 
-    private static string FormatExceptionForDeadLetter(Exception exception)
+    private static string? FormatExceptionForDeadLetter(Exception? exception)
     {
         if (exception == null)
             return null;
@@ -318,6 +318,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     {
         try
         {
+            // Null when no exception is given; IServiceBusSession.DeadLetterAsync still declares it non-null.
             await _sbSession.DeadLetterAsync(_sbMessage, reason, FormatExceptionForDeadLetter(exception), cancellationToken);
         }
         catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
@@ -348,7 +349,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
         return !string.IsNullOrEmpty(state.BlockedByEventId) && state.BlockedByEventId.Equals(EventId, StringComparison.OrdinalIgnoreCase);
     }
 
-    public async Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default)
+    public async Task<string?> GetBlockedByEventId(CancellationToken cancellationToken = default)
     {
         SessionState state = await GetSessionState(cancellationToken);
         return state.BlockedByEventId;
@@ -375,7 +376,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     // external CloudEvents producer (which does not stamp NimBus user.* routing
     // properties) can still flow through the native dispatch/response pipeline.
     // Returns null for native messages, so native property access is unchanged.
-    private string CloudEventFallback(UserPropertyName userPropertyName)
+    private string? CloudEventFallback(UserPropertyName userPropertyName)
     {
         EnsureCloudEventEvaluated();
         if (!_isCloudEvent) return null;
@@ -383,7 +384,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
         return userPropertyName switch
         {
             UserPropertyName.From => _cloudEvent?.Source ?? "external",
-            UserPropertyName.To => _cloudEventReadOptions.MapType(_cloudEvent?.Type),
+            UserPropertyName.To => _cloudEventReadOptions!.MapType(_cloudEvent?.Type),
             // Never null for a detected CloudEvent: a producer may omit both the
             // CloudEvents `id` and the native Service Bus MessageId. Such a message
             // is invalid and will be dead-lettered by the validating handler, but
@@ -393,7 +394,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
             // inspectable placeholder so the dead-letter completes cleanly.
             UserPropertyName.EventId => _cloudEvent?.Id ?? _sbMessage.MessageId ?? CloudEventMissingIdPlaceholder,
             UserPropertyName.MessageType => MessageType.EventRequest.ToString(),
-            UserPropertyName.EventTypeId => _cloudEventReadOptions.MapType(_cloudEvent?.Type),
+            UserPropertyName.EventTypeId => _cloudEventReadOptions!.MapType(_cloudEvent?.Type),
             UserPropertyName.OriginatingFrom => _cloudEvent?.Source,
             _ => null,
         };
@@ -412,7 +413,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     private MessageContent? _content;
     private bool _contentLoaded;
 
-    private CloudEvent _cloudEvent;
+    private CloudEvent? _cloudEvent;
     private bool _isCloudEvent;
     private bool _cloudEventEvaluated;
 
@@ -442,7 +443,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     }
 
     /// <inheritdoc/>
-    public CloudEvent GetCloudEvent()
+    public CloudEvent? GetCloudEvent()
     {
         EnsureCloudEventEvaluated();
         return _cloudEvent;
@@ -452,12 +453,12 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     // message received by the Resolver reads the stamped user.CloudEvent* property;
     // the original inbound CloudEvent (subscriber side) reads the parsed CloudEvent.
     // Returns null for a native message, so tracking of native events is unchanged.
-    public string CloudEventId => CloudEventAttribute(UserPropertyName.CloudEventId, ce => ce.Id);
-    public string CloudEventSource => CloudEventAttribute(UserPropertyName.CloudEventSource, ce => ce.Source);
-    public string CloudEventType => CloudEventAttribute(UserPropertyName.CloudEventType, ce => ce.Type);
-    public string CloudEventSubject => CloudEventAttribute(UserPropertyName.CloudEventSubject, ce => ce.Subject);
+    public string? CloudEventId => CloudEventAttribute(UserPropertyName.CloudEventId, ce => ce.Id);
+    public string? CloudEventSource => CloudEventAttribute(UserPropertyName.CloudEventSource, ce => ce.Source);
+    public string? CloudEventType => CloudEventAttribute(UserPropertyName.CloudEventType, ce => ce.Type);
+    public string? CloudEventSubject => CloudEventAttribute(UserPropertyName.CloudEventSubject, ce => ce.Subject);
 
-    private string CloudEventAttribute(UserPropertyName property, Func<CloudEvent, string> fromCloudEvent)
+    private string? CloudEventAttribute(UserPropertyName property, Func<CloudEvent, string?> fromCloudEvent)
     {
         var stamped = _sbMessage.GetUserProperty(property);
         if (stamped != null) return stamped;
@@ -469,7 +470,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     // so the deserialized body is memoized to avoid re-decoding + re-deserializing
     // the entire body on every access (it is read 3-4x on the hot path). A separate
     // "loaded" flag guards null and invalid payloads from re-running each call.
-    private MessageContent GetContent()
+    private MessageContent? GetContent()
     {
         if (!_contentLoaded)
         {
@@ -486,7 +487,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
                 {
                     EventContent = new EventContent
                     {
-                        EventTypeId = _cloudEventReadOptions.MapType(_cloudEvent?.Type),
+                        EventTypeId = _cloudEventReadOptions!.MapType(_cloudEvent?.Type)!,
                         EventJson = _cloudEvent?.Data,
                     },
                 };

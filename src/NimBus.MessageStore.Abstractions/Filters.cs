@@ -54,10 +54,10 @@ public class AuditSearchResult
 
 public class AuditSearchItem
 {
-    public string EventId { get; set; }
+    public string EventId { get; set; } = null!;
     public string? EndpointId { get; set; }
     public string? EventTypeId { get; set; }
-    public MessageAuditEntity Audit { get; set; }
+    public MessageAuditEntity Audit { get; set; } = null!;
     public DateTime CreatedAt { get; set; }
 }
 

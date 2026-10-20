@@ -7,7 +7,7 @@ namespace NimBus.Management.ServiceBus;
 public class EndpointManagement
 {
     private readonly IServiceBusManagement _serviceBusManagement;
-    private readonly ILogger _logger;
+    private readonly ILogger? _logger;
 
     public EndpointManagement(IServiceBusManagement serviceBusManagement, ILogger<EndpointManagement>? logger = null)
     {

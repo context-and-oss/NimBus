@@ -31,7 +31,7 @@ public interface IManagerClient
 public class ManagerClient : IManagerClient
 {
     private readonly ServiceBusClient _serviceBusClient;
-    private readonly ILogger _logger;
+    private readonly ILogger? _logger;
 
     public ManagerClient(ServiceBusClient serviceBusClient, ILogger<ManagerClient>? logger = null)
     {

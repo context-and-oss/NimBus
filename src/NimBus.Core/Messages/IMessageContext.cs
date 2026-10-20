@@ -13,10 +13,10 @@ public interface IReceivedMessage : IMessage
     new string MessageId { get; }
 
     new string EventTypeId { get; }
-    new string DeadLetterReason { get; }
-    new string DeadLetterErrorDescription { get; }
-    new string HandoffReason { get; }
-    new string ExternalJobId { get; }
+    new string? DeadLetterReason { get; }
+    new string? DeadLetterErrorDescription { get; }
+    new string? HandoffReason { get; }
+    new string? ExternalJobId { get; }
     new DateTime? ExpectedBy { get; }
 }
 
@@ -34,7 +34,7 @@ public interface IMessageContext : IReceivedMessage
     Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default);
     Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default);
     Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default);
-    Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default);
+    Task<string?> GetBlockedByEventId(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the source MessageId of the delivery whose failure (or pending handoff) blocked
@@ -146,7 +146,7 @@ public interface IMessageContext : IReceivedMessage
     /// <see cref="HandlerOutcome.PendingHandoff"/>. Null when
     /// <see cref="HandlerOutcome"/> is <see cref="HandlerOutcome.Default"/>.
     /// </summary>
-    HandoffMetadata HandoffMetadata { get; set; }
+    HandoffMetadata? HandoffMetadata { get; set; }
 
     /// <summary>
     /// A handler failure the message handler settled itself instead of letting it
@@ -188,5 +188,5 @@ public interface IMessageContext : IReceivedMessage
     /// returns <c>null</c> so existing transport/test implementers are
     /// forward-compatible.
     /// </summary>
-    CloudEvent GetCloudEvent() => null;
+    CloudEvent? GetCloudEvent() => null;
 }

@@ -27,7 +27,7 @@ public class StalePendingReconcilerTests
 
     private static MessageEntity Request(
         string id, DateTime at, MessageType type = MessageType.EventRequest,
-        string? session = "s1", string from = Producer) => new()
+        string session = "s1", string from = Producer) => new()
     {
         EventId = EventId,
         MessageId = id,
@@ -46,7 +46,7 @@ public class StalePendingReconcilerTests
 
     private static MessageEntity Response(
         string id, DateTime at, MessageType type = MessageType.ResolutionResponse,
-        string? session = "s1", string from = Endpoint, string parent = "A") => new()
+        string session = "s1", string from = Endpoint, string parent = "A") => new()
     {
         EventId = EventId,
         MessageId = id,

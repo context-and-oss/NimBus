@@ -56,9 +56,9 @@ internal static class DeployCommands
                         solutionId.Value()!,
                         environment.Value()!), platformPackage);
                     var options = new AppDeploymentOptions(
-                        solutionId.Value(),
-                        environment.Value(),
-                        resourceGroup.Value(),
+                        solutionId.Value()!,
+                        environment.Value()!,
+                        resourceGroup.Value()!,
                         configuration.HasValue() ? configuration.Value()! : "Release",
                         DeployTargetSelection.ParseOnlyOption(only.Value()),
                         NetworkSelection.ParseDnsWaitOption(appsDnsWait.Value()));

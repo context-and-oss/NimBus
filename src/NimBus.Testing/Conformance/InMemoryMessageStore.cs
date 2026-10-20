@@ -391,7 +391,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds)
         => Task.FromResult<IEnumerable<SessionStateCount>>(sessionIds.Select(s => DownloadEndpointSessionStateCount(endpointId, s).GetAwaiter().GetResult()).ToList());
 
-    public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
+    public Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
     {
         var take = PaginationLimits.Resolve(pageSize);
         var events = _events.Values
@@ -401,7 +401,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
             .Take(take)
             .ToList();
 
-        return Task.FromResult(new EndpointState
+        return Task.FromResult<EndpointState?>(new EndpointState
         {
             EndpointId = endpointId,
             EventTime = DateTime.UtcNow,
@@ -434,8 +434,8 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         });
     }
 
-    public virtual Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
-        => Task.FromResult<IEnumerable<UnresolvedEvent>>(_events.Values.Where(e => e.EndpointId == endpointId && e.ResolutionStatus == ResolutionStatus.Pending).ToList());
+    public virtual Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId)
+        => Task.FromResult<IEnumerable<UnresolvedEvent>?>(_events.Values.Where(e => e.EndpointId == endpointId && e.ResolutionStatus == ResolutionStatus.Pending).ToList());
 
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId)
         => Task.FromResult<IEnumerable<BlockedMessageEvent>>(_events.Values
@@ -640,7 +640,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         return Task.FromResult(EndpointErrorListFormat.Format(ids));
     }
 
-    public Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
+    public Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
     {
         var sub = new EndpointSubscription
         {
@@ -649,7 +649,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
             EventTypes = eventTypes, Payload = payload, Frequency = frequency,
         };
         _subscriptions[sub.Id] = sub;
-        return Task.FromResult(sub);
+        return Task.FromResult<EndpointSubscription?>(sub);
     }
 
     public Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId)
