@@ -84,7 +84,7 @@ public sealed class CloudEventsAsyncApiTests
             EventTypesProduced = (produces ?? Array.Empty<Type>()).Select(t => (IEventType)new EventType(t)).ToList();
             EventTypesConsumed = (consumes ?? Array.Empty<Type>()).Select(t => (IEventType)new EventType(t)).ToList();
             CloudEventsContentMode = contentMode;
-            CloudEventsSource = source!;
+            CloudEventsSource = source;
         }
 
         public string Id { get; }
@@ -98,7 +98,7 @@ public sealed class CloudEventsAsyncApiTests
         public IEnumerable<IRoleAssignment> RoleAssignments => Array.Empty<IRoleAssignment>();
 
         public string CloudEventsContentMode { get; }
-        public string CloudEventsSource { get; }
+        public string? CloudEventsSource { get; }
     }
 
     private sealed class InvoiceCreated : Event

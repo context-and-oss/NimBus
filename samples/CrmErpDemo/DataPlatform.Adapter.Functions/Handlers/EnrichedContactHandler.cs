@@ -26,7 +26,7 @@ public sealed class EnrichedContactHandler(ILogger<EnrichedContactHandler> logge
 {
     public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
     {
-        var json = context.MessageContent.EventContent!.EventJson;
+        var json = context.MessageContent.EventContent!.EventJson!;
 
         var enriched = JsonConvert.DeserializeObject<EnrichedContact>(json)
             ?? throw new InvalidOperationException(

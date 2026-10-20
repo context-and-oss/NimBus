@@ -1,5 +1,23 @@
 # Fix the nullable warnings and make them fail Release
 
+## Outcome
+
+Implemented on branch `fix/nullable-warnings`. All 30 projects are clean, the legacy list and its
+exemption are gone, and a nullable warning in any project now fails Release. Where a value can
+really be null, the contract now says so. A few `!`s remain at the points listed below.
+
+Remaining `!` worth revisiting:
+
+- `IReceivedMessage.EventTypeId` and `CloudEvent.Id`/`Type` stay non-null. Only an empty or invalid
+  message, which is dead-lettered, has them null, and annotating them would push `!` into nearly
+  every handler.
+- `MessageEntity.EndpointId`: the Resolver passes `From!` for a response; a response without
+  `From` would store a null endpoint, as before.
+- `CosmosDbClient.RemoveMessage`/`UploadFailedMessage`/`UploadSkippedMessage` take a non-null
+  session id that `UnresolvedEvent.SessionId` declares optional; callers pass `SessionId!`.
+- The NSwag-generated `EndpointStatusCount.SubscriptionStatus` is non-null in `api-spec.yaml`, but
+  the API returns null for unknown endpoints.
+
 ## Problem
 
 `Directory.Build.props` exempted the CS86xx/CS87xx nullable warnings from Release's

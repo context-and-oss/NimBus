@@ -179,7 +179,7 @@ public class AgentImplementationTests
             settlement,
             registry,
             config: null!,                 // -> AgentZone default zone id
-            httpContextAccessor!,         // null -> CurrentAgentId() falls back to "demo-agent"
+            httpContextAccessor,          // null -> CurrentAgentId() falls back to "demo-agent"
             NullLogger<AgentImplementation>.Instance);
         return (impl, store, publisher, handoffs, registry);
     }

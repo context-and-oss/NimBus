@@ -224,7 +224,7 @@ public static class AsyncApiExporter
     {
         ["specversion"] = "1.0",
         ["contentMode"] = string.IsNullOrEmpty(cloudEvents.CloudEventsContentMode) ? "binary" : cloudEvents.CloudEventsContentMode,
-        ["source"] = cloudEvents.CloudEventsSource,
+        ["source"] = cloudEvents.CloudEventsSource!,
         ["attributes"] = new List<object> { "id", "source", "type", "specversion", "subject", "time", "datacontenttype", "dataschema" },
         ["headers"] = new Map { ["$ref"] = "#/components/schemas/CloudEventsMessageHeaders" },
     };
