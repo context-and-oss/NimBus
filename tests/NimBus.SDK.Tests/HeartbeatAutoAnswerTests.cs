@@ -59,9 +59,9 @@ public class HeartbeatAutoAnswerTests
             "An unregistered heartbeat must auto-answer, not fall through to UnsupportedResponse");
         Assert.AreEqual(Constants.ResolverId, response.To);
         Assert.AreEqual("AnalyticsEndpoint", response.From);
-        Assert.AreEqual(Heartbeat.EventTypeId, response.MessageContent.EventContent.EventTypeId);
+        Assert.AreEqual(Heartbeat.EventTypeId, response.MessageContent.EventContent!.EventTypeId);
 
-        var heartbeat = JsonConvert.DeserializeObject<Heartbeat>(response.MessageContent.EventContent.EventJson);
+        var heartbeat = JsonConvert.DeserializeObject<Heartbeat>(response.MessageContent.EventContent.EventJson!);
         Assert.IsNotNull(heartbeat);
         Assert.IsFalse(string.IsNullOrWhiteSpace(heartbeat.SdkVersion), "The responding adapter must report its SDK version");
         Assert.AreEqual("AnalyticsEndpoint", heartbeat.Endpoint);

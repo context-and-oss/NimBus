@@ -193,7 +193,7 @@ public class PublisherClientBatchTests
 
     private sealed class SmallEvent : Event
     {
-        public string Value { get; set; }
+        public string Value { get; set; } = null!;
 
         public override string GetSessionId() => "session-1";
     }
@@ -201,7 +201,7 @@ public class PublisherClientBatchTests
     private sealed class CountingEvent : Event
     {
         private int _getterReads;
-        private string _id;
+        private string _id = null!;
 
         public string Id
         {
@@ -213,7 +213,7 @@ public class PublisherClientBatchTests
             set => _id = value;
         }
 
-        public string Padding { get; set; }
+        public string Padding { get; set; } = null!;
 
         [JsonIgnore]
         public int GetterReads => Volatile.Read(ref _getterReads);

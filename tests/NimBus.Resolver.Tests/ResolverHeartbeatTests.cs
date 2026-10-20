@@ -310,7 +310,7 @@ public class ResolverHeartbeatTests
         var store = new FakeCosmosDbClient();
         var message = CreateHeartbeatContext(MessageType.ResolutionResponse, to: Constants.ResolverId, from: "BillingEndpoint");
         message.EventTypeId = "OrderPlaced";
-        message.MessageContent.EventContent.EventTypeId = "OrderPlaced";
+        message.MessageContent.EventContent!.EventTypeId = "OrderPlaced";
         var service = CreateService(store);
 
         await service.Handle(message);

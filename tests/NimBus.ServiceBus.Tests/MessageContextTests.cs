@@ -306,7 +306,7 @@ public class MessageContextTests
         };
         var ctx = CreateMessageContext(content: content);
 
-        Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent.EventTypeId);
+        Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent!.EventTypeId);
     }
 
     [TestMethod]
@@ -1045,11 +1045,11 @@ public class MessageContextTests
 
         // IServiceBusMessage.Message is internal — only used by ScheduleRedelivery.
         // Accessible via InternalsVisibleTo; returns null since we don't unit-test ScheduleRedelivery.
-        ServiceBusReceivedMessage IServiceBusMessage.Message => null;
+        ServiceBusReceivedMessage IServiceBusMessage.Message => null!;
 
-        public string GetUserProperty(UserPropertyName name) => GetUserProperty(name.ToString());
+        public string? GetUserProperty(UserPropertyName name) => GetUserProperty(name.ToString());
 
-        public string GetUserProperty(string name) =>
+        public string? GetUserProperty(string name) =>
             UserProperties.TryGetValue(name, out var value) ? value : null;
     }
 
@@ -1064,13 +1064,13 @@ public class MessageContextTests
         public int DeadLetterCalls { get; private set; }
         public int DeferCalls { get; private set; }
         public int ScheduleAttempts { get; private set; }
-        public string LastDeadLetterReason { get; private set; }
-        public string LastDeadLetterDescription { get; private set; }
+        public string? LastDeadLetterReason { get; private set; }
+        public string? LastDeadLetterDescription { get; private set; }
         public CancellationToken LastScheduleCancellationToken { get; private set; }
 
-        public Exception CompleteException { get; set; }
-        public Exception DeadLetterException { get; set; }
-        public Exception DeferException { get; set; }
+        public Exception? CompleteException { get; set; }
+        public Exception? DeadLetterException { get; set; }
+        public Exception? DeferException { get; set; }
         public Exception? ScheduleException { get; set; }
         public Exception? GetStateException { get; set; }
 

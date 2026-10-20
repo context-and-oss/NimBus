@@ -117,7 +117,7 @@ public class ResolverStaleCopyTests
         await service.Handle(response);
         await service.Handle(lateRequest);
 
-        var row = await store.GetEvent(Endpoint, "event-1");
+        var row = (await store.GetEvent(Endpoint, "event-1"))!;
         Assert.AreEqual(ResolutionStatus.Completed, row.ResolutionStatus);
         Assert.AreEqual(0, (await store.DownloadEndpointStateCount(Endpoint)).PendingCount);
         Assert.AreEqual(2, (await store.GetEventHistory("event-1")).Count(), "both copies stay in the Flow tab");
@@ -137,7 +137,7 @@ public class ResolverStaleCopyTests
             messageId: "rsp-1", parentMessageId: "req-1"));
         await service.Handle(CreateMessageContext(MessageType.EventRequest, to: Endpoint, messageId: "req-1"));
 
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -151,7 +151,7 @@ public class ResolverStaleCopyTests
             messageId: "ho-1", parentMessageId: "req-1"));
         await service.Handle(CreateMessageContext(MessageType.EventRequest, to: Endpoint, messageId: "req-late"));
 
-        var row = await store.GetPendingEvent(Endpoint, "event-1", "session-1");
+        var row = (await store.GetPendingEvent(Endpoint, "event-1", "session-1"))!;
         Assert.AreEqual("Handoff", row.PendingSubStatus, "GetNextPendingHandoffEvent must keep finding the row");
         Assert.AreEqual(MessageType.PendingHandoffResponse, row.MessageType);
     }
@@ -167,7 +167,7 @@ public class ResolverStaleCopyTests
             messageId: "hc-1", parentMessageId: "ho-1"));
         await service.Handle(CreateMessageContext(MessageType.EventRequest, to: Endpoint, messageId: "req-late"));
 
-        var row = await store.GetPendingEvent(Endpoint, "event-1", "session-1");
+        var row = (await store.GetPendingEvent(Endpoint, "event-1", "session-1"))!;
         Assert.AreEqual(MessageType.HandoffCompletedRequest, row.MessageType);
         Assert.IsNull(row.PendingSubStatus, "the settlement clears the handoff sub-status (ADR-012)");
     }
@@ -185,7 +185,7 @@ public class ResolverStaleCopyTests
             MessageType.ResubmissionRequest, to: Endpoint, from: Constants.ManagerId,
             messageId: "rs-1", parentMessageId: "err-1"));
 
-        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetEvent(Endpoint, "event-1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -203,7 +203,7 @@ public class ResolverStaleCopyTests
             MessageType.DeferralResponse, to: Constants.ResolverId, from: Endpoint,
             messageId: "def-late", parentMessageId: "req-1"));
 
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
         Assert.AreEqual(0, (await store.DownloadEndpointStateCount(Endpoint)).DeferredCount);
     }
 
@@ -220,7 +220,7 @@ public class ResolverStaleCopyTests
             MessageType.PendingHandoffResponse, to: Constants.ResolverId, from: Endpoint,
             messageId: "ho-late", parentMessageId: "req-2"));
 
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
         Assert.IsNull(await store.GetNextPendingHandoffEvent(Endpoint, eventTypeIds: null),
             "a phantom 'awaiting external' row would be handed to an agent");
     }
@@ -244,7 +244,7 @@ public class ResolverStaleCopyTests
             MessageType.ResubmissionRequest, to: Endpoint, from: Constants.ManagerId,
             messageId: "rs-1", parentMessageId: "err-1", throttleRetryCount: 3));
 
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
         Assert.AreEqual(0, (await store.DownloadEndpointStateCount(Endpoint)).PendingCount);
     }
 

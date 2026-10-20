@@ -22,19 +22,19 @@ internal sealed class FakeCloudEventMessage : IServiceBusMessage
 
     public byte[] Body { get; set; } = Array.Empty<byte>();
     public string LockToken { get; set; } = "lock-1";
-    public string SessionId { get; set; }
-    public string MessageId { get; set; }
-    public string CorrelationId { get; set; }
+    public string SessionId { get; set; } = null!;
+    public string MessageId { get; set; } = null!;
+    public string CorrelationId { get; set; } = null!;
     public int DeliveryCount { get; set; } = 1;
     public long SequenceNumber { get; set; } = 1;
     public DateTime EnqueuedTimeUtc { get; set; } = new(2026, 7, 8, 0, 0, 0, DateTimeKind.Utc);
-    public string ContentType { get; set; }
+    public string? ContentType { get; set; }
 
-    ServiceBusReceivedMessage IServiceBusMessage.Message => null;
+    ServiceBusReceivedMessage IServiceBusMessage.Message => null!;
 
-    public string GetUserProperty(UserPropertyName name) => GetUserProperty(name.ToString());
+    public string? GetUserProperty(UserPropertyName name) => GetUserProperty(name.ToString());
 
-    public string GetUserProperty(string name) =>
+    public string? GetUserProperty(string name) =>
         Properties.TryGetValue(name, out var value) ? value : null;
 
     public IReadOnlyCollection<string> GetUserPropertyNames() => Properties.Keys;

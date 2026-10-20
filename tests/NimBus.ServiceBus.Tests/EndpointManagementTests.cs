@@ -105,7 +105,7 @@ public sealed class EndpointManagementTests
             string topicName, string subscriptionName, EntityStatus status, string? forwardTo, bool changeForwardTo)
             => throw new NotSupportedException();
 
-        public Task<SubscriptionProperties> GetSubscription(string topicName, string subscriptionName)
+        public Task<SubscriptionProperties?> GetSubscription(string topicName, string subscriptionName)
             => throw new NotSupportedException();
 
         public IAsyncEnumerable<TopicProperties> ListTopicsAsync()

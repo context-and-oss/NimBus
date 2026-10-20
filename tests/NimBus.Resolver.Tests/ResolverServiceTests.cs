@@ -227,7 +227,7 @@ public class ResolverServiceTests
         var tracked = cosmos.SkippedUploads[0].Content;
         Assert.AreEqual(ResolutionStatus.Skipped, tracked.ResolutionStatus);
         Assert.AreEqual(message.MessageContent.ErrorContent.ErrorText, tracked.Reason);
-        Assert.AreEqual(nameof(InvalidOperationException), tracked.MessageContent.ErrorContent.ErrorType);
+        Assert.AreEqual(nameof(InvalidOperationException), tracked.MessageContent.ErrorContent!.ErrorType);
         Assert.AreEqual(1, message.CompletedCalls);
     }
 

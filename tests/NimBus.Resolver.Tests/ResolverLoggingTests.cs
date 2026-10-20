@@ -147,7 +147,7 @@ public class ResolverLoggingTests
         await withoutStores.Handle(ResolverHeartbeatTests.CreateHeartbeatContext(MessageType.ResolutionResponse, to: Constants.ResolverId, from: Endpoint));
         await withoutStores.Handle(ResolverHeartbeatTests.CreateHeartbeatContext(MessageType.EventRequest, to: Constants.ResolverId, from: Constants.ManagerId));
         var anonymous = ResolverHeartbeatTests.CreateHeartbeatContext(MessageType.ResolutionResponse, to: Constants.ResolverId, from: "");
-        anonymous.MessageContent.EventContent.EventJson = "{}";
+        anonymous.MessageContent.EventContent!.EventJson = "{}";
         await withStores.Handle(anonymous);
 
         Assert.IsTrue(logger.Has(LogLevel.Information, "Updated Heartbeat"));

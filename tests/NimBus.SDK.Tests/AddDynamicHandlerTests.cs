@@ -37,7 +37,7 @@ public class AddDynamicHandlerTests
             EventTypeId,
             () => new DelegateEventJsonHandler((ctx, _) =>
             {
-                receivedJson = ctx.MessageContent.EventContent.EventJson;
+                receivedJson = ctx.MessageContent.EventContent!.EventJson;
                 return Task.CompletedTask;
             }));
 
@@ -304,7 +304,7 @@ public class AddDynamicHandlerTests
 
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
-            ReceivedJson = context.MessageContent.EventContent.EventJson;
+            ReceivedJson = context.MessageContent.EventContent!.EventJson;
             return Task.CompletedTask;
         }
     }
@@ -364,7 +364,7 @@ public class AddDynamicHandlerTests
         public Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult(string.Empty);
+        public Task<string?> GetBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult<string?>(string.Empty);
         public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task IncrementDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DecrementDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;

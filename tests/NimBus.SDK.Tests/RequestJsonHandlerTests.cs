@@ -19,12 +19,12 @@ public class RequestJsonHandlerTests
 {
     private sealed class PingRequest : Event
     {
-        public string Text { get; set; }
+        public string Text { get; set; } = null!;
     }
 
     private sealed class PongResponse
     {
-        public string Echo { get; set; }
+        public string Echo { get; set; } = null!;
     }
 
     private sealed class EchoRequestHandler : IRequestHandler<PingRequest, PongResponse>
@@ -67,8 +67,8 @@ public class RequestJsonHandlerTests
         Assert.AreEqual("reply-session-1", reply.ReplySessionId);
         Assert.AreEqual("corr-42", reply.CorrelationId);
         Assert.IsFalse(reply.IsError);
-        var payload = JsonConvert.DeserializeObject<PongResponse>(reply.PayloadJson);
-        Assert.AreEqual("hello", payload.Echo);
+        var payload = JsonConvert.DeserializeObject<PongResponse>(reply.PayloadJson!);
+        Assert.AreEqual("hello", payload!.Echo);
     }
 
     [TestMethod]
@@ -147,14 +147,14 @@ internal sealed class RequestTestMessageContext : IMessageContext
     public string EventTypeId { get; set; } = "PingRequest";
     public string OriginalSessionId { get; set; } = string.Empty;
     public int? DeferralSequence { get; set; }
-    public string ReplyTo { get; set; }
-    public string ReplyToSessionId { get; set; }
+    public string? ReplyTo { get; set; }
+    public string? ReplyToSessionId { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; } = DateTime.UtcNow;
     public string From { get; set; } = string.Empty;
-    public string DeadLetterReason { get; set; }
-    public string DeadLetterErrorDescription { get; set; }
-    public string HandoffReason { get; set; }
-    public string ExternalJobId { get; set; }
+    public string? DeadLetterReason { get; set; }
+    public string? DeadLetterErrorDescription { get; set; }
+    public string? HandoffReason { get; set; }
+    public string? ExternalJobId { get; set; }
     public DateTime? ExpectedBy { get; set; }
     public bool IsDeferred { get; set; }
     public int ThrottleRetryCount { get; set; }
@@ -172,7 +172,7 @@ internal sealed class RequestTestMessageContext : IMessageContext
     public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);
     public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) => Task.FromResult(false);
     public Task<bool> IsSessionBlockedByEventId(CancellationToken ct = default) => Task.FromResult(false);
-    public Task<string> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult(string.Empty);
+    public Task<string?> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult<string?>(string.Empty);
     public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) => Task.FromResult(0);
     public Task IncrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
     public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;

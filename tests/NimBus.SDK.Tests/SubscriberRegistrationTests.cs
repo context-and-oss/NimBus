@@ -280,7 +280,7 @@ public class SubscriberRegistrationTests
     {
         var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.IsNotNull(field, $"Expected private field '{fieldName}' on {target.GetType().Name}.");
-        return field.GetValue(target);
+        return field.GetValue(target)!;
     }
 
     private sealed class SpyFailureDispositionClassifier : IFailureDispositionClassifier

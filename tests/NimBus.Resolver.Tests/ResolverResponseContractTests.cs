@@ -38,7 +38,7 @@ public class ResolverResponseContractTests
 
         var eventId = await pipeline.PublishAndProcess(new ContractOrderPlaced("session-ok"));
 
-        var row = await pipeline.Store.GetEvent(Subscriber, eventId);
+        var row = (await pipeline.Store.GetEvent(Subscriber, eventId))!;
         Assert.AreEqual(ResolutionStatus.Completed, row.ResolutionStatus);
         Assert.AreEqual(MessageType.ResolutionResponse, row.MessageType);
         Assert.AreEqual(Subscriber, row.EndpointId);
@@ -60,7 +60,7 @@ public class ResolverResponseContractTests
 
         var eventId = await pipeline.PublishAndProcess(new ContractOrderPlaced("session-fail"));
 
-        var row = await pipeline.Store.GetEvent(Subscriber, eventId);
+        var row = (await pipeline.Store.GetEvent(Subscriber, eventId))!;
         Assert.AreEqual(ResolutionStatus.Failed, row.ResolutionStatus);
         Assert.AreEqual(MessageType.ErrorResponse, row.MessageType);
         StringAssert.Contains(row.MessageContent?.ErrorContent?.ErrorText, "ERP rejected the order");
@@ -76,7 +76,7 @@ public class ResolverResponseContractTests
 
         var eventId = await pipeline.PublishAndProcess(new ContractOrderPlaced("session-permanent"));
 
-        var row = await pipeline.Store.GetEvent(Subscriber, eventId);
+        var row = (await pipeline.Store.GetEvent(Subscriber, eventId))!;
         Assert.AreEqual(ResolutionStatus.DeadLettered, row.ResolutionStatus);
         StringAssert.StartsWith(row.DeadLetterReason, "Permanent failure");
         StringAssert.Contains(row.Reason, "OrderId is malformed");
@@ -91,7 +91,7 @@ public class ResolverResponseContractTests
 
         var eventId = await pipeline.PublishAndProcess(new ContractOrderPlaced("session-unsupported"));
 
-        var row = await pipeline.Store.GetEvent(Subscriber, eventId);
+        var row = (await pipeline.Store.GetEvent(Subscriber, eventId))!;
         Assert.AreEqual(ResolutionStatus.Unsupported, row.ResolutionStatus);
         Assert.AreEqual(MessageType.UnsupportedResponse, row.MessageType);
     }
@@ -109,8 +109,8 @@ public class ResolverResponseContractTests
         var failedId = await pipeline.PublishAndProcess(new ContractOrderPlaced("session-blocked") { OrderId = "A" });
         var siblingId = await pipeline.PublishAndProcess(new ContractOrderPlaced("session-blocked") { OrderId = "B" });
 
-        Assert.AreEqual(ResolutionStatus.Failed, (await pipeline.Store.GetEvent(Subscriber, failedId)).ResolutionStatus);
-        var sibling = await pipeline.Store.GetEvent(Subscriber, siblingId);
+        Assert.AreEqual(ResolutionStatus.Failed, (await pipeline.Store.GetEvent(Subscriber, failedId))!.ResolutionStatus);
+        var sibling = (await pipeline.Store.GetEvent(Subscriber, siblingId))!;
         Assert.AreEqual(ResolutionStatus.Deferred, sibling.ResolutionStatus);
         Assert.AreEqual(MessageType.DeferralResponse, sibling.MessageType);
         Assert.AreEqual(1, calls, "The sibling's handler must not run while the session is blocked.");
@@ -127,7 +127,7 @@ public class ResolverResponseContractTests
 
         var eventId = await pipeline.PublishAndProcess(new ContractOrderPlaced("session-handoff"));
 
-        var row = await pipeline.Store.GetEvent(Subscriber, eventId);
+        var row = (await pipeline.Store.GetEvent(Subscriber, eventId))!;
         Assert.AreEqual(ResolutionStatus.Pending, row.ResolutionStatus);
         Assert.AreEqual(MessageType.PendingHandoffResponse, row.MessageType);
         Assert.AreEqual("Handoff", row.PendingSubStatus);
@@ -145,7 +145,7 @@ public class ResolverResponseContractTests
         var request = await pipeline.Publish(new ContractOrderPlaced("session-pending"));
         await pipeline.Resolve(request);
 
-        var row = await pipeline.Store.GetEvent(Subscriber, request.GetUserProperty(UserPropertyName.EventId));
+        var row = (await pipeline.Store.GetEvent(Subscriber, request.GetUserProperty(UserPropertyName.EventId)!))!;
         Assert.AreEqual(ResolutionStatus.Pending, row.ResolutionStatus);
         Assert.AreEqual(MessageType.EventRequest, row.MessageType);
         Assert.AreEqual(Subscriber, row.To);
@@ -253,7 +253,7 @@ public class ResolverResponseContractTests
                 await Resolve(ToWire(response, new Dictionary<string, object> { ["From"] = Subscriber }));
             }
 
-            return request.GetUserProperty(UserPropertyName.EventId);
+            return request.GetUserProperty(UserPropertyName.EventId)!;
         }
 
         public Task Resolve(IServiceBusMessage wireMessage) =>

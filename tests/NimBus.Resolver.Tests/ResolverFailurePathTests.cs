@@ -204,7 +204,7 @@ public class ResolverFailurePathTests
         // to From and the timings degrade to the enqueue/receive clock instead of failing.
         var store = new FakeCosmosDbClient();
         var message = ResolverHeartbeatTests.CreateHeartbeatContext(MessageType.ResolutionResponse, to: Constants.ResolverId, from: Endpoint);
-        message.MessageContent.EventContent.EventJson = eventJson;
+        message.MessageContent.EventContent!.EventJson = eventJson;
         var service = CreateHeartbeatService(store);
 
         await service.Handle(message);
@@ -304,7 +304,7 @@ public class ResolverFailurePathTests
     {
         var message = ResolverHeartbeatTests.CreateHeartbeatContext(
             MessageType.EventRequest, to: Constants.ResolverId, from: Constants.ManagerId, payload: payload);
-        message.MessageContent.EventContent.EventJson = JsonConvert.SerializeObject(payload);
+        message.MessageContent.EventContent!.EventJson = JsonConvert.SerializeObject(payload);
         return message;
     }
 

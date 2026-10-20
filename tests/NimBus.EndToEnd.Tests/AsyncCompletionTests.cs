@@ -163,10 +163,10 @@ public class AsyncCompletionTests
         var coords = new HandoffSettlement(
             EventId: pendingHandoff.EventId,
             SessionId: sessionId,
-            MessageId: pendingHandoff.CorrelationId,
+            MessageId: pendingHandoff.CorrelationId!,
             EventTypeId: "OrderPlaced",
-            CorrelationId: pendingHandoff.CorrelationId,
-            OriginatingMessageId: pendingHandoff.OriginatingMessageId);
+            CorrelationId: pendingHandoff.CorrelationId!,
+            OriginatingMessageId: pendingHandoff.OriginatingMessageId!);
 
         // Invoke IHandoffClient against the PublishBus directly — same on-wire
         // path as production, just routed through the in-memory fixture.
@@ -209,10 +209,10 @@ public class AsyncCompletionTests
         var coords = new HandoffSettlement(
             EventId: pendingHandoff.EventId,
             SessionId: sessionId,
-            MessageId: pendingHandoff.CorrelationId,
+            MessageId: pendingHandoff.CorrelationId!,
             EventTypeId: "OrderPlaced",
-            CorrelationId: pendingHandoff.CorrelationId,
-            OriginatingMessageId: pendingHandoff.OriginatingMessageId);
+            CorrelationId: pendingHandoff.CorrelationId!,
+            OriginatingMessageId: pendingHandoff.OriginatingMessageId!);
 
         var handoffClient = new HandoffClient(
             fixture.PublishBus,
@@ -356,8 +356,8 @@ public class AsyncCompletionTests
     private static Message CreateHandoffCompletedRequest(
         string sessionId,
         string eventId,
-        string parentMessageId,
-        string originatingMessageId,
+        string? parentMessageId,
+        string? originatingMessageId,
         string endpoint)
     {
         return new Message
@@ -386,8 +386,8 @@ public class AsyncCompletionTests
     private static Message CreateHandoffFailedRequest(
         string sessionId,
         string eventId,
-        string parentMessageId,
-        string originatingMessageId,
+        string? parentMessageId,
+        string? originatingMessageId,
         string endpoint,
         string errorText,
         string errorType)
@@ -439,8 +439,8 @@ public class AsyncCompletionTests
     private static Message CreateSkipRequest(
         string sessionId,
         string eventId,
-        string parentMessageId,
-        string originatingMessageId,
+        string? parentMessageId,
+        string? originatingMessageId,
         string endpoint)
     {
         return new Message
@@ -473,10 +473,10 @@ public class AsyncCompletionTests
     private sealed class HandoffOnFirstHandler : IEventHandler<OrderPlaced>
     {
         public string HandoffReason { get; set; } = "test reason";
-        public string ExternalJobId { get; set; }
+        public string? ExternalJobId { get; set; }
         public TimeSpan? ExpectedBy { get; set; }
 
-        public List<string> ReceivedOrderIds { get; } = new();
+        public List<string?> ReceivedOrderIds { get; } = new();
         public int HandleCalls { get; private set; }
         public int HandoffCallCount { get; private set; }
 

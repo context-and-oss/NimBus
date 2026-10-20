@@ -91,7 +91,7 @@ public sealed class CosmosDbHealthCheckTests
     {
         private int _readAccountCalls;
 
-        public Exception Failure { get; set; }
+        public Exception? Failure { get; set; }
 
         public int ReadAccountCalls => Volatile.Read(ref _readAccountCalls);
 
@@ -106,7 +106,7 @@ public sealed class CosmosDbHealthCheckTests
             var account = JsonConvert.DeserializeObject<AccountProperties>(
                 "{\"id\":\"test-account\"}",
                 new JsonSerializerSettings { ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor });
-            return Task.FromResult(account);
+            return Task.FromResult(account!);
         }
     }
 
