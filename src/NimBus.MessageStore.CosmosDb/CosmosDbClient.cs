@@ -17,7 +17,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public bool PrunesHeartbeatHistoryAutomatically => _heartbeatHistory.PrunesHeartbeatHistoryAutomatically;
 
     private readonly ICosmosClientAdapter _cosmosClient;
-    private readonly ILogger _logger;
+    private readonly ILogger? _logger;
 
     // Cosmos container handles are lightweight client-side proxies the SDK
     // recommends caching for the client's lifetime. Every data operation used to
@@ -111,7 +111,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     /// Creates the store with explicit options. The third parameter is non-optional so
     /// existing one- and two-argument calls keep binding the overload above.
     /// </summary>
-    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger, CosmosDbMessageStoreOptions options)
+    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient>? logger, CosmosDbMessageStoreOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
@@ -333,7 +333,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     internal const string MessageSearchProjection = CosmosDbMessageTrackingStore.MessageSearchProjection;
     // ── IEndpointMetadataStore — implementation in CosmosDbEndpointMetadataStore ──
     public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId) => _endpointMetadata.GetEndpointMetadata(endpointId);
-    public Task<List<EndpointMetadata>>? GetMetadatas(IEnumerable<string> endpointIds) => _endpointMetadata.GetMetadatas(endpointIds);
+    public Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds) => _endpointMetadata.GetMetadatas(endpointIds);
     public Task<List<EndpointMetadata>> GetMetadatas() => _endpointMetadata.GetMetadatas();
     public Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata) => _endpointMetadata.SetEndpointMetadata(endpointMetadata);
     public Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat() => _endpointMetadata.GetMetadatasWithEnabledHeartbeat();

@@ -227,7 +227,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
                             // this projection.
                             EventContent = new EventContent
                             {
-                                EventTypeId = x.Event.MessageContent.EventContent.EventTypeId,
+                                EventTypeId = x.Event.MessageContent.EventContent!.EventTypeId,
                             },
                             ErrorContent = x.Event.MessageContent.ErrorContent,
                         },
@@ -302,7 +302,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
             _logger?.LogInformation("COSMOS PAGING: Endpoint container not found for '{EndpointId}'", endpointId);
-            return null;
+            return null!;
         }
         catch (Exception e)
         {

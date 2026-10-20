@@ -388,14 +388,14 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
     private sealed class EventTypeBucketCountRow
     {
         [JsonProperty("count")] public int Count { get; set; }
-        [JsonProperty("eventTypeId")] public string EventTypeId { get; set; }
-        [JsonProperty("bucket")] public string Bucket { get; set; }
+        [JsonProperty("eventTypeId")] public string? EventTypeId { get; set; }
+        [JsonProperty("bucket")] public string? Bucket { get; set; }
     }
 
     private sealed class LatencyAggregateRow
     {
-        [JsonProperty("endpointId")] public string EndpointId { get; set; }
-        [JsonProperty("EventTypeId")] public string EventTypeId { get; set; }
+        [JsonProperty("endpointId")] public string? EndpointId { get; set; }
+        [JsonProperty("EventTypeId")] public string? EventTypeId { get; set; }
         [JsonProperty("count")] public int Count { get; set; }
         [JsonProperty("avg")] public double Avg { get; set; }
         [JsonProperty("min")] public double Min { get; set; }
@@ -405,19 +405,19 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
     private sealed class FailedMessageQueryResult
     {
         [JsonProperty("endpointId")]
-        public string EndpointId { get; set; }
+        public string EndpointId { get; set; } = null!;
 
         [JsonProperty("EventTypeId")]
-        public string EventTypeId { get; set; }
+        public string EventTypeId { get; set; } = null!;
 
         [JsonProperty("ErrorText")]
-        public string ErrorText { get; set; }
+        public string? ErrorText { get; set; }
 
         [JsonProperty("EnqueuedTimeUtc")]
         public DateTime EnqueuedTimeUtc { get; set; }
 
         [JsonProperty("EventId")]
-        public string EventId { get; set; }
+        public string EventId { get; set; } = null!;
     }
 
     private sealed class BucketCountResult
@@ -426,7 +426,7 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         public int Count { get; set; }
 
         [JsonProperty("bucket")]
-        public string Bucket { get; set; }
+        public string? Bucket { get; set; }
     }
 
     private sealed class MetricsEventTypeCountResult
@@ -435,9 +435,9 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         public int Count { get; set; }
 
         [JsonProperty("endpointId")]
-        public string EndpointId { get; set; }
+        public string EndpointId { get; set; } = null!;
 
         [JsonProperty("EventTypeId")]
-        public string EventTypeId { get; set; }
+        public string EventTypeId { get; set; } = null!;
     }
 }

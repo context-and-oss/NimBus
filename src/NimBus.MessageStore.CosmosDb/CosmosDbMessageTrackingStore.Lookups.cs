@@ -19,7 +19,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
             dbo.Event.ResolutionStatus = status;
         }
 
-        return dbo?.Event;
+        return dbo?.Event!;
     }
 
     // Completed and Skipped rows carry deleted=true by design (see CreateCompletedDbo); a

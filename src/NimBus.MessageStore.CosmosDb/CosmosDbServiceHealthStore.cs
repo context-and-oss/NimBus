@@ -12,9 +12,9 @@ namespace NimBus.MessageStore;
 internal sealed class CosmosDbServiceHealthStore : IServiceHealthStore
 {
     private readonly Func<Task<ICosmosContainerAdapter>> _getServiceHealthContainer;
-    private readonly ILogger _logger;
+    private readonly ILogger? _logger;
 
-    public CosmosDbServiceHealthStore(Func<Task<ICosmosContainerAdapter>> getServiceHealthContainer, ILogger logger)
+    public CosmosDbServiceHealthStore(Func<Task<ICosmosContainerAdapter>> getServiceHealthContainer, ILogger? logger)
     {
         _getServiceHealthContainer = getServiceHealthContainer;
         _logger = logger;
