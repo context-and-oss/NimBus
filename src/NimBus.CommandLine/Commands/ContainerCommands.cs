@@ -220,7 +220,7 @@ internal static class ContainerCommands
                     var terminalStatuses = new[] { ResolutionStatus.Completed, ResolutionStatus.Skipped };
                     var parsed = new List<string>();
 
-                    foreach (var raw in statusOption.Value().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    foreach (var raw in statusOption.Value()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     {
                         if (!Enum.TryParse<ResolutionStatus>(raw, ignoreCase: true, out var status))
                         {

@@ -17,22 +17,22 @@ static class Container
 
     public static async Task DeleteDocuments(CosmosDbClient dbClient, CommandArgument nameArg, List<string> statuses)
     {
-        await RemoveMessagesFromCosmosDB(dbClient, nameArg.Value, statuses);
+        await RemoveMessagesFromCosmosDB(dbClient, nameArg.Value!, statuses);
     }
 
     public static async Task DeleteDocument(CosmosDbClient dbClient, CommandArgument nameArg, CommandArgument eventIdArg)
     {
-        await RemoveMessageFromCosmosDB(dbClient, nameArg.Value, eventIdArg.Value);
+        await RemoveMessageFromCosmosDB(dbClient, nameArg.Value!, eventIdArg.Value!);
     }
 
     public static async Task ResubmitMessages(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, CommandArgument nameArg)
     {
-        await UpdateMessagesAndResubmit(serviceBusClient, dbClient, nameArg.Value, ResolutionStatus.Failed);
+        await UpdateMessagesAndResubmit(serviceBusClient, dbClient, nameArg.Value!, ResolutionStatus.Failed);
     }
 
     public static async Task SkipMessages(CosmosDbClient dbClient, CommandArgument nameArg, List<string> statuses, DateTime? before)
     {
-        await UpdateMessagesAsSkipped(dbClient, nameArg.Value, statuses, before);
+        await UpdateMessagesAsSkipped(dbClient, nameArg.Value!, statuses, before);
     }
 
     public static async Task DeleteMessages(CosmosClient cosmosClient, string to)
@@ -123,7 +123,7 @@ static class Container
     {
         AnsiConsole.MarkupLine("[blue]Removing messages in CosmosDB...[/]");
 
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
         SearchResponse searchResponse;
 
@@ -137,7 +137,7 @@ static class Container
             foreach (var @event in searchResponse.Events)
             {
                 AnsiConsole.MarkupLine($"[dim]Removing message with EventId {@event.EventId.EscapeMarkup()} from DB[/]");
-                bool messageRemovedFromDb = await dbClient.RemoveMessage(@event.EventId, @event.SessionId, endpoint);
+                bool messageRemovedFromDb = await dbClient.RemoveMessage(@event.EventId, @event.SessionId!, endpoint);
                 if (messageRemovedFromDb)
                 {
                     AnsiConsole.MarkupLine("[green]Removed message from DB[/]");
@@ -153,7 +153,7 @@ static class Container
 
         AnsiConsole.MarkupLine("[blue]Updating status for messages in CosmosDB...[/]");
 
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
         SearchResponse searchResponse;
 
@@ -171,11 +171,11 @@ static class Container
                     @event.ResolutionStatus = resolutionStatus;
                     @event.MessageType = MessageType.EventRequest;
                     AnsiConsole.MarkupLine($"[dim]Updating message with EventId {@event.EventId.EscapeMarkup()} from DB[/]");
-                    bool messageUpdated = await dbClient.UploadFailedMessage(@event.EventId, @event.SessionId, endpoint, @event);
+                    bool messageUpdated = await dbClient.UploadFailedMessage(@event.EventId, @event.SessionId!, endpoint, @event);
                     if (messageUpdated)
                     {
                         AnsiConsole.MarkupLine($"[green]Updated message as Failed[/]");
-                        await Resubmit(sender, @event, @event.EndpointId, @event.EventTypeId, @event.MessageContent.EventContent.EventJson);
+                        await Resubmit(sender, @event, @event.EndpointId, @event.EventTypeId!, @event.MessageContent.EventContent!.EventJson);
                     }
                 }
                 else
@@ -187,14 +187,14 @@ static class Container
         while (continuationToken != null);
     }
 
-    static Task Resubmit(Sender sender, UnresolvedEvent errorResponse, string endpoint, string eventTypeId, string eventJson)
+    static Task Resubmit(Sender sender, UnresolvedEvent errorResponse, string endpoint, string eventTypeId, string? eventJson)
     {
         AnsiConsole.MarkupLine($"[dim]MANAGER RESUBMIT EVENT: EventId: {errorResponse.EventId.EscapeMarkup()} EventtypeId: {eventTypeId.EscapeMarkup()}[/]");
         return sender.Send(new Message
         {
             CorrelationId = errorResponse.CorrelationId,
             EventId = errorResponse.EventId,
-            SessionId = errorResponse.SessionId,
+            SessionId = errorResponse.SessionId!,
             To = endpoint,
             OriginatingMessageId = errorResponse.OriginatingMessageId,
             ParentMessageId = errorResponse.LastMessageId,
@@ -218,7 +218,7 @@ static class Container
         else
             AnsiConsole.MarkupLine("[blue]Skipping messages in CosmosDB...[/]");
 
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
         SearchResponse searchResponse;
 
@@ -238,7 +238,7 @@ static class Container
                 }
 
                 AnsiConsole.MarkupLine($"[dim]Skipping message with EventId {@event.EventId.EscapeMarkup()}[/]");
-                bool messageUpdated = await dbClient.UploadSkippedMessage(@event.EventId, @event.SessionId, endpoint, @event);
+                bool messageUpdated = await dbClient.UploadSkippedMessage(@event.EventId, @event.SessionId!, endpoint, @event);
                 if (messageUpdated)
                 {
                     AnsiConsole.MarkupLine($"[green]Skipped message {@event.EventId.EscapeMarkup()}[/]");
@@ -252,7 +252,7 @@ static class Container
     {
         AnsiConsole.MarkupLine("[blue]Removing messages in CosmosDB...[/]");
 
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
         SearchResponse searchResponse;
 
@@ -266,7 +266,7 @@ static class Container
             foreach (var @event in searchResponse.Events)
             {
                 AnsiConsole.MarkupLine($"[dim]Removing message with EventId {@event.EventId.EscapeMarkup()} from DB[/]");
-                bool messageRemovedFromDb = await dbClient.RemoveMessage(@event.EventId, @event.SessionId, endpoint);
+                bool messageRemovedFromDb = await dbClient.RemoveMessage(@event.EventId, @event.SessionId!, endpoint);
                 if (messageRemovedFromDb)
                 {
                     AnsiConsole.MarkupLine("[green]Removed message from DB[/]");

@@ -21,9 +21,9 @@ public class ResolverService : IMessageHandler
 {
     private readonly IMessageTrackingStore _store;
     private readonly IMessageStateChangeNotifier _notifier;
-    private readonly ILogger _logger;
-    private readonly IEndpointMetadataStore _metadataStore;
-    private readonly IServiceHealthStore _serviceHealthStore;
+    private readonly ILogger? _logger;
+    private readonly IEndpointMetadataStore? _metadataStore;
+    private readonly IServiceHealthStore? _serviceHealthStore;
 
     private const string CosmosThrottleDeadLetterReason = "CosmosDbThrottled";
     private const int BaseDelaySeconds = 5;
@@ -245,7 +245,7 @@ public class ResolverService : IMessageHandler
         // Providers such as SQL Server may not supply one.
         var backoff = StoreBackoff.GetDelay(logicalAttempt - 1);
         var useProviderRetryAfter = retryAfter.HasValue && retryAfter.Value > backoff;
-        var delay = useProviderRetryAfter ? retryAfter.Value : backoff;
+        var delay = useProviderRetryAfter ? retryAfter.GetValueOrDefault() : backoff;
 
         _logger?.LogInformation(
             "Resolver: Store write failed ({Reason}). Scheduling redelivery in {DelaySeconds}s ({DelaySource}). EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}",
@@ -523,7 +523,7 @@ public class ResolverService : IMessageHandler
     /// emitter can arrive with it blank while the payload always carries the endpoint
     /// the SDK answered for.
     /// </summary>
-    private static string GetHeartbeatEndpointId(IReceivedMessage message)
+    private static string? GetHeartbeatEndpointId(IReceivedMessage message)
     {
         var content = DeserializeHeartbeat(message);
         return !string.IsNullOrWhiteSpace(content.Endpoint)
@@ -606,11 +606,11 @@ public class ResolverService : IMessageHandler
             EnqueuedTimeUtc = message.EnqueuedTimeUtc,
             MessageContent = message.MessageContent,
             MessageType = message.MessageType,
-            EndpointId = endpointId,
+            EndpointId = endpointId!,
             EndpointRole = endpointRole,
             DeadLetterErrorDescription = message.DeadLetterErrorDescription,
             DeadLetterReason = message.DeadLetterReason,
-            EventTypeId = message.EventTypeId ?? message?.MessageContent?.EventContent?.EventTypeId,
+            EventTypeId = message.EventTypeId ?? message.MessageContent?.EventContent?.EventTypeId!,
             // Per-message timings carried on the response message by the
             // subscriber. Null on EventRequest / original publishes.
             QueueTimeMs = message.QueueTimeMs,
@@ -643,10 +643,10 @@ public class ResolverService : IMessageHandler
     /// 3. If message is a request type (EventRequest, ContinuationRequest, RetryRequest, ResubmissionRequest, SkipRequest) → use To as endpoint
     /// 4. Otherwise → use From as endpoint (response from subscriber)
     /// </remarks>
-    internal (string endpointId, EndpointRole role) DetermineEndpoint(IReceivedMessage message)
+    internal (string? endpointId, EndpointRole role) DetermineEndpoint(IReceivedMessage message)
     {
         var endpointRole = EndpointRole.Subscriber;
-        string endpointId;
+        string? endpointId;
 
         // Request types are directed to the subscriber (use To)
         if (IsRequest(message.MessageType))
@@ -702,7 +702,7 @@ public class ResolverService : IMessageHandler
             EventTypeId = message.EventTypeId,
             To = message.To,
             From = message.From,
-            MessageContent = message.MessageContent,
+            MessageContent = message.MessageContent!,
             QueueTimeMs = message.QueueTimeMs,
             // For terminal settlement of an event that went through async
             // handoff, override the per-hop handler duration with the

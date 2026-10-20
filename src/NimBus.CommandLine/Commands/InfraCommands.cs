@@ -65,9 +65,9 @@ internal static class InfraCommands
                     }
 
                     var options = new InfrastructureOptions(
-                        solutionId.Value(),
-                        environment.Value(),
-                        resourceGroup.Value(),
+                        solutionId.Value()!,
+                        environment.Value()!,
+                        resourceGroup.Value()!,
                         resourceNamePostfix.Value(),
                         location.Value(),
                         webAppVersion.HasValue() ? webAppVersion.Value()! : $"local-{DateTime.UtcNow:yyyyMMddHHmmss}",

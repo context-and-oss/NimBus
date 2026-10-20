@@ -15,8 +15,8 @@ static class Endpoint
 {
     public static async Task DeleteSession(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, CommandArgument nameArg, CommandArgument sessionIdArg)
     {
-        string sessionId = sessionIdArg.Value;
-        string endpoint = nameArg.Value;
+        string sessionId = sessionIdArg.Value!;
+        string endpoint = nameArg.Value!;
 
         Console.WriteLine($"Waiting to accept session {sessionId}");
 
@@ -35,7 +35,7 @@ static class Endpoint
 
     public static async Task RemoveDeprecated(ServiceBusAdministrationClient sbAdmin, CommandArgument nameArg)
     {
-        string endpointName = nameArg.Value.ToLower();
+        string endpointName = nameArg.Value!.ToLower();
 
         var topic = (await sbAdmin.GetTopicAsync(endpointName)).Value;
 
@@ -386,7 +386,7 @@ static class Endpoint
                     if (deferredMessage != null)
                     {
                         var sbMessage = new NimBus.ServiceBus.ServiceBusMessage(deferredMessage);
-                        string eventId = sbMessage.GetUserProperty(UserPropertyName.EventId);
+                        string? eventId = sbMessage.GetUserProperty(UserPropertyName.EventId);
 
                         Console.WriteLine($"Received deferred message {deferredMessage.MessageId} EventId: {eventId}");
                         await receiver.CompleteMessageAsync(deferredMessage);
@@ -411,7 +411,7 @@ static class Endpoint
             foreach (var message in messages)
             {
                 var sbMessage = new NimBus.ServiceBus.ServiceBusMessage(message);
-                string eventId = sbMessage.GetUserProperty(UserPropertyName.EventId);
+                string? eventId = sbMessage.GetUserProperty(UserPropertyName.EventId);
 
                 Console.WriteLine($"MessageId: {message.MessageId} EventId: {eventId}");
                 await receiver.CompleteMessageAsync(message);
@@ -425,7 +425,7 @@ static class Endpoint
     {
         Console.WriteLine($"Removing messages in CosmosDB...");
 
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
         SearchResponse searchResponse;
 

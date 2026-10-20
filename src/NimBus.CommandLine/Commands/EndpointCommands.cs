@@ -92,7 +92,7 @@ internal static class EndpointCommands
 
                     if (stateOption.HasValue())
                     {
-                        foreach (var raw in stateOption.Value().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        foreach (var raw in stateOption.Value()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                         {
                             if (!validStates.Contains(raw, StringComparer.OrdinalIgnoreCase))
                             {
@@ -114,10 +114,10 @@ internal static class EndpointCommands
                         before = parsedDate;
                     }
 
-                    string subscription = subscriptionOption.HasValue() ? subscriptionOption.Value() : endpointName.Value;
+                    string subscription = subscriptionOption.HasValue() ? subscriptionOption.Value()! : endpointName.Value!;
 
                     await CommandRunner.Run(sbConnectionString, (sbClient) =>
-                        Endpoint.PurgeSubscription(sbClient, endpointName.Value, subscription, stateFilters, before));
+                        Endpoint.PurgeSubscription(sbClient, endpointName.Value!, subscription, stateFilters, before));
                     return 0;
                 });
             });
