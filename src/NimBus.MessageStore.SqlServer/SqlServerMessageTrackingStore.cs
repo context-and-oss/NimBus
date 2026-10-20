@@ -91,7 +91,7 @@ internal sealed partial class SqlServerMessageTrackingStore : IMessageTrackingSt
     // Dapper exposes rows as DapperRow, which is dictionary-like. Reading a column that
     // does not exist throws — guard with the dictionary view so old rows / older callers
     // don't break when the new nullable columns aren't projected.
-    private static string TryReadString(dynamic row, string columnName)
+    private static string? TryReadString(dynamic row, string columnName)
     {
         var dict = (IDictionary<string, object>)row;
         return dict.TryGetValue(columnName, out var value) ? value as string : null;

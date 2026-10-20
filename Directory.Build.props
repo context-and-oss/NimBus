@@ -60,7 +60,7 @@
     list is empty (docs/plan/2026-10-20-nullable-warnings.md).
   -->
   <PropertyGroup>
-    <NimBusNullableLegacyProjects>;NimBus.Manager;NimBus.MessageStore.CosmosDb;NimBus.MessageStore.SqlServer;NimBus.SDK;NimBus.Testing;NimBus.Resolver;NimBus.CommandLine;NimBus.WebApp;NimBus.Core.Tests;NimBus.WebApp.Tests;NimBus.Extensions.Notifications.Tests;NimBus.ServiceBus.Tests;NimBus.Resolver.Tests;NimBus.SDK.Tests;NimBus.EndToEnd.Tests;NimBus.CommandLine.Tests;NimBus.MessageStore.CosmosDb.Tests;NimBus.OpenTelemetry.Tests;NimBus.Outbox.SqlServer.Tests;NimBus.MessageStore.SqlServer.Tests;NimBus.MessageStore.InMemory.Tests;DataPlatform.Adapter.Functions;</NimBusNullableLegacyProjects>
+    <NimBusNullableLegacyProjects>;NimBus.MessageStore.CosmosDb;NimBus.SDK;NimBus.Testing;NimBus.Resolver;NimBus.CommandLine;NimBus.WebApp;NimBus.Core.Tests;NimBus.WebApp.Tests;NimBus.Extensions.Notifications.Tests;NimBus.ServiceBus.Tests;NimBus.Resolver.Tests;NimBus.SDK.Tests;NimBus.EndToEnd.Tests;NimBus.CommandLine.Tests;NimBus.MessageStore.CosmosDb.Tests;NimBus.OpenTelemetry.Tests;NimBus.Outbox.SqlServer.Tests;NimBus.MessageStore.SqlServer.Tests;NimBus.MessageStore.InMemory.Tests;DataPlatform.Adapter.Functions;</NimBusNullableLegacyProjects>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Release' AND $(NimBusNullableLegacyProjects.Contains(';$(MSBuildProjectName);'))">
     <WarningsNotAsErrors>$(WarningsNotAsErrors);CS8600;CS8601;CS8602;CS8603;CS8604;CS8613;CS8618;CS8619;CS8620;CS8629;CS8632;CS8765</WarningsNotAsErrors>
