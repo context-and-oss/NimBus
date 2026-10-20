@@ -61,12 +61,12 @@ public class StrictMessageHandlerHeartbeatTests
         var after = DateTime.UtcNow;
         var sent = bus.SentMessages.Single();
         Assert.AreEqual(MessageType.ResolutionResponse, sent.MessageType);
-        Assert.AreEqual(Heartbeat.EventTypeId, sent.MessageContent.EventContent.EventTypeId);
+        Assert.AreEqual(Heartbeat.EventTypeId, sent.MessageContent.EventContent!.EventTypeId);
         // The Resolver attributes the row by the payload's Endpoint first and the
         // message's From second — both have to name the answering endpoint.
         Assert.AreEqual(ctx.To, sent.From);
 
-        var heartbeat = JsonConvert.DeserializeObject<Heartbeat>(sent.MessageContent.EventContent.EventJson);
+        var heartbeat = JsonConvert.DeserializeObject<Heartbeat>(sent.MessageContent.EventContent.EventJson!);
         Assert.IsNotNull(heartbeat);
         Assert.AreEqual(forwardSendTime, heartbeat.ForwardSendTime, "The sender's outbound stamp must round-trip");
         Assert.IsTrue(heartbeat.ForwardReceivedTime >= before && heartbeat.ForwardReceivedTime <= after);
@@ -85,7 +85,7 @@ public class StrictMessageHandlerHeartbeatTests
 
         await sut.Handle(ctx);
 
-        var heartbeat = JsonConvert.DeserializeObject<Heartbeat>(bus.SentMessages.Single().MessageContent.EventContent.EventJson);
+        var heartbeat = JsonConvert.DeserializeObject<Heartbeat>(bus.SentMessages.Single().MessageContent.EventContent!.EventJson!);
         Assert.IsNotNull(heartbeat);
         Assert.AreEqual(ctx.To, heartbeat.Endpoint);
         Assert.AreEqual(1, ctx.CompletedCalls);
@@ -243,7 +243,7 @@ public class StrictMessageHandlerHeartbeatTests
         }
 
         public int HandleCalls { get; private set; }
-        public Exception ThrowOnHandle { get; set; }
+        public Exception? ThrowOnHandle { get; set; }
 
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
@@ -328,10 +328,10 @@ public class StrictMessageHandlerHeartbeatTests
         public int? DeferralSequence { get; set; }
         public DateTime EnqueuedTimeUtc { get; set; }
         public string From { get; set; } = string.Empty;
-        public string DeadLetterReason { get; set; }
-        public string DeadLetterErrorDescription { get; set; }
-        public string HandoffReason { get; set; }
-        public string ExternalJobId { get; set; }
+        public string? DeadLetterReason { get; set; }
+        public string? DeadLetterErrorDescription { get; set; }
+        public string? HandoffReason { get; set; }
+        public string? ExternalJobId { get; set; }
         public DateTime? ExpectedBy { get; set; }
         public bool IsDeferred { get; set; }
         public int ThrottleRetryCount { get; set; }
@@ -341,7 +341,7 @@ public class StrictMessageHandlerHeartbeatTests
         public HandlerOutcome HandlerOutcome { get; set; }
         public HandoffMetadata? HandoffMetadata { get; set; }
 
-        public string BlockedByEventId { get; set; }
+        public string? BlockedByEventId { get; set; }
         public int CompletedCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }
         public int AbandonCalls { get; private set; }
@@ -357,7 +357,7 @@ public class StrictMessageHandlerHeartbeatTests
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
         public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) { Trace?.Add("verify-owner"); return Task.FromResult(false); }
         public Task<bool> IsSessionBlockedByEventId(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
-        public Task<string> GetBlockedByEventId(CancellationToken ct = default) { Trace?.Add("session-guard"); return Task.FromResult(BlockedByEventId); }
+        public Task<string?> GetBlockedByEventId(CancellationToken ct = default) { Trace?.Add("session-guard"); return Task.FromResult(BlockedByEventId); }
         public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) => Task.FromResult(0);
         public Task IncrementDeferredCount(CancellationToken ct = default) { Trace?.Add("deferred-count-increment"); return Task.CompletedTask; }
         public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;

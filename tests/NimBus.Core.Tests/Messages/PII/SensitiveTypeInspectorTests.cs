@@ -14,64 +14,64 @@ public class SensitiveTypeInspectorTests
 
     public class PlainEvent : Event
     {
-        public string EmployeeNumber { get; set; }
+        public string EmployeeNumber { get; set; } = null!;
     }
 
     public class DirectSensitiveEvent : Event
     {
         [Sensitive]
-        public string Cpr { get; set; }
+        public string Cpr { get; set; } = null!;
     }
 
     [Sensitive]
     public class ClassLevelSensitiveEvent : Event
     {
-        public string Anything { get; set; }
+        public string Anything { get; set; } = null!;
     }
 
     [Sensitive]
     public class PrivateAddress
     {
-        public string Street { get; set; }
+        public string Street { get; set; } = null!;
     }
 
     public class NestedSensitiveEvent : Event
     {
-        public string EmployeeNumber { get; set; }
-        public PrivateAddress Address { get; set; }
+        public string EmployeeNumber { get; set; } = null!;
+        public PrivateAddress Address { get; set; } = null!;
     }
 
     public class CollectionItem
     {
         [Sensitive]
-        public string Secret { get; set; }
+        public string Secret { get; set; } = null!;
     }
 
     public class CollectionSensitiveEvent : Event
     {
-        public List<CollectionItem> Items { get; set; }
+        public List<CollectionItem> Items { get; set; } = null!;
     }
 
     public class PlainNested
     {
-        public string Street { get; set; }
+        public string Street { get; set; } = null!;
     }
 
     public class PlainNestedEvent : Event
     {
-        public PlainNested Address { get; set; }
-        public List<PlainNested> History { get; set; }
+        public PlainNested Address { get; set; } = null!;
+        public List<PlainNested> History { get; set; } = null!;
     }
 
     public class SelfReferencing
     {
-        public SelfReferencing Parent { get; set; }
-        public string Name { get; set; }
+        public SelfReferencing Parent { get; set; } = null!;
+        public string Name { get; set; } = null!;
     }
 
     public class CyclicPlainEvent : Event
     {
-        public SelfReferencing Node { get; set; }
+        public SelfReferencing Node { get; set; } = null!;
     }
 
     // -------- Tests --------

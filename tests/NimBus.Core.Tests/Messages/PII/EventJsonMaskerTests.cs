@@ -22,55 +22,55 @@ public class EventJsonMaskerTests
     public class SimpleEvent : Event
     {
         [Sensitive]
-        public string Cpr { get; set; }
+        public string Cpr { get; set; } = null!;
 
-        public string EmployeeNumber { get; set; }
+        public string EmployeeNumber { get; set; } = null!;
     }
 
     public class PartialEvent : Event
     {
         [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 4)]
-        public string Phone { get; set; }
+        public string Phone { get; set; } = null!;
     }
 
     public class HashEvent : Event
     {
         [Sensitive(Mode = MaskMode.Hash)]
-        public string Email { get; set; }
+        public string Email { get; set; } = null!;
     }
 
     [Sensitive]
     public class PrivateAddress
     {
-        public string Street { get; set; }
-        public string City { get; set; }
-        public string Zip { get; set; }
+        public string Street { get; set; } = null!;
+        public string City { get; set; } = null!;
+        public string Zip { get; set; } = null!;
     }
 
     public class NestedEvent : Event
     {
-        public string EmployeeNumber { get; set; }
+        public string EmployeeNumber { get; set; } = null!;
 
-        public PrivateAddress Address { get; set; }
+        public PrivateAddress Address { get; set; } = null!;
     }
 
     public class CollectionItem
     {
         [Sensitive]
-        public string Secret { get; set; }
-        public string Public { get; set; }
+        public string Secret { get; set; } = null!;
+        public string Public { get; set; } = null!;
     }
 
     public class CollectionEvent : Event
     {
-        public List<CollectionItem> Items { get; set; }
+        public List<CollectionItem> Items { get; set; } = null!;
     }
 
     public class JsonRenamedEvent : Event
     {
         [Sensitive]
         [JsonProperty(PropertyName = "ssn")]
-        public string SocialSecurityNumber { get; set; }
+        public string SocialSecurityNumber { get; set; } = null!;
     }
 
     // -------- Test platform --------
@@ -107,8 +107,8 @@ public class EventJsonMaskerTests
         var masked = NewMasker().Mask(nameof(SimpleEvent), json);
         var parsed = JObject.Parse(masked);
 
-        Assert.AreEqual("***", (string)parsed["Cpr"]);
-        Assert.AreEqual("E1", (string)parsed["EmployeeNumber"]);
+        Assert.AreEqual("***", (string?)parsed["Cpr"]);
+        Assert.AreEqual("E1", (string?)parsed["EmployeeNumber"]);
     }
 
     [TestMethod]
@@ -124,9 +124,9 @@ public class EventJsonMaskerTests
         var redacted = NewMasker("salt").Redact(nameof(CombinedSensitiveEvent), json);
         var parsed = JObject.Parse(redacted);
 
-        Assert.AreEqual("***", (string)parsed["Phone"]);
-        Assert.AreEqual("***", (string)parsed["Email"]);
-        Assert.AreEqual("***", (string)parsed["Nested"]["Street"]);
+        Assert.AreEqual("***", (string?)parsed["Phone"]);
+        Assert.AreEqual("***", (string?)parsed["Email"]);
+        Assert.AreEqual("***", (string?)parsed["Nested"]!["Street"]);
     }
 
     [TestMethod]
@@ -141,12 +141,12 @@ public class EventJsonMaskerTests
     private class CombinedSensitiveEvent : Event
     {
         [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 4)]
-        public string Phone { get; set; }
+        public string Phone { get; set; } = null!;
 
         [Sensitive(Mode = MaskMode.Hash)]
-        public string Email { get; set; }
+        public string Email { get; set; } = null!;
 
-        public PrivateAddress Nested { get; set; }
+        public PrivateAddress Nested { get; set; } = null!;
     }
 
     [TestMethod]
@@ -156,7 +156,7 @@ public class EventJsonMaskerTests
 
         var masked = NewMasker().Mask(nameof(PartialEvent), json);
 
-        Assert.AreEqual("****5678", (string)JObject.Parse(masked)["Phone"]);
+        Assert.AreEqual("****5678", (string?)JObject.Parse(masked)["Phone"]);
     }
 
     [TestMethod]
@@ -166,7 +166,7 @@ public class EventJsonMaskerTests
 
         var masked = NewMasker().Mask(nameof(PartialEvent), json);
 
-        Assert.AreEqual("***", (string)JObject.Parse(masked)["Phone"]);
+        Assert.AreEqual("***", (string?)JObject.Parse(masked)["Phone"]);
     }
 
     [TestMethod]
@@ -178,7 +178,7 @@ public class EventJsonMaskerTests
         var second = NewMasker("salt-x").Mask(nameof(HashEvent), json);
 
         Assert.AreEqual(first, second);
-        Assert.AreNotEqual("a@b.dk", (string)JObject.Parse(first)["Email"]);
+        Assert.AreNotEqual("a@b.dk", (string?)JObject.Parse(first)["Email"]);
     }
 
     [TestMethod]
@@ -204,10 +204,10 @@ public class EventJsonMaskerTests
         var masked = NewMasker().Mask(nameof(NestedEvent), json);
         var parsed = JObject.Parse(masked);
 
-        Assert.AreEqual("E1", (string)parsed["EmployeeNumber"]);
-        Assert.AreEqual("***", (string)parsed["Address"]["Street"]);
-        Assert.AreEqual("***", (string)parsed["Address"]["City"]);
-        Assert.AreEqual("***", (string)parsed["Address"]["Zip"]);
+        Assert.AreEqual("E1", (string?)parsed["EmployeeNumber"]);
+        Assert.AreEqual("***", (string?)parsed["Address"]!["Street"]);
+        Assert.AreEqual("***", (string?)parsed["Address"]!["City"]);
+        Assert.AreEqual("***", (string?)parsed["Address"]!["Zip"]);
     }
 
     [TestMethod]
@@ -223,12 +223,12 @@ public class EventJsonMaskerTests
         });
 
         var masked = NewMasker().Mask(nameof(CollectionEvent), json);
-        var arr = (JArray)JObject.Parse(masked)["Items"];
+        var arr = (JArray)JObject.Parse(masked)["Items"]!;
 
-        Assert.AreEqual("***", (string)arr[0]["Secret"]);
-        Assert.AreEqual("p1", (string)arr[0]["Public"]);
-        Assert.AreEqual("***", (string)arr[1]["Secret"]);
-        Assert.AreEqual("p2", (string)arr[1]["Public"]);
+        Assert.AreEqual("***", (string?)arr[0]!["Secret"]);
+        Assert.AreEqual("p1", (string?)arr[0]!["Public"]);
+        Assert.AreEqual("***", (string?)arr[1]!["Secret"]);
+        Assert.AreEqual("p2", (string?)arr[1]!["Public"]);
     }
 
     [TestMethod]
@@ -240,7 +240,7 @@ public class EventJsonMaskerTests
 
         var masked = NewMasker().Mask(nameof(JsonRenamedEvent), json);
 
-        Assert.AreEqual("***", (string)JObject.Parse(masked)["ssn"]);
+        Assert.AreEqual("***", (string?)JObject.Parse(masked)["ssn"]);
     }
 
     [TestMethod]
@@ -276,8 +276,8 @@ public class EventJsonMaskerTests
         var masked = NewMasker().Mask(nameof(SimpleEvent), json);
         var parsed = JObject.Parse(masked);
 
-        Assert.AreEqual(JTokenType.Null, parsed["Cpr"].Type);
-        Assert.AreEqual("E1", (string)parsed["EmployeeNumber"]);
+        Assert.AreEqual(JTokenType.Null, parsed["Cpr"]!.Type);
+        Assert.AreEqual("E1", (string?)parsed["EmployeeNumber"]);
     }
 
     [TestMethod]
@@ -299,7 +299,7 @@ public class EventJsonMaskerTests
         var masked = NewMasker().Mask(nameof(SimpleEvent), json);
         var parsed = JObject.Parse(masked);
 
-        Assert.AreEqual("***", (string)parsed["Cpr"]);
+        Assert.AreEqual("***", (string?)parsed["Cpr"]);
     }
 
     [TestMethod]
@@ -351,13 +351,13 @@ public class EventJsonMaskerTests
         var masked = NewMasker().Mask(nameof(SimpleEvent), json);
         var parsed = JObject.Parse(masked);
 
-        Assert.AreEqual(JTokenType.Boolean, parsed[EventJsonMasker.PiiMaskedMarker].Type);
-        Assert.IsTrue((bool)parsed[EventJsonMasker.PiiMaskedMarker]);
+        Assert.AreEqual(JTokenType.Boolean, parsed[EventJsonMasker.PiiMaskedMarker]!.Type);
+        Assert.IsTrue((bool)parsed[EventJsonMasker.PiiMaskedMarker]!);
     }
 
     public class NoSensitiveEvent : Event
     {
-        public string PublicField { get; set; }
+        public string PublicField { get; set; } = null!;
     }
 
     private class NoSensitiveEndpoint : Endpoint
@@ -427,8 +427,8 @@ public class EventJsonMaskerTests
         Assert.IsFalse(stripped.Contains(EventJsonMasker.PiiMaskedMarker, StringComparison.Ordinal));
         // Other fields are untouched.
         var parsed = JObject.Parse(stripped);
-        Assert.AreEqual("***", (string)parsed["Cpr"]);
-        Assert.AreEqual("E1", (string)parsed["EmployeeNumber"]);
+        Assert.AreEqual("***", (string?)parsed["Cpr"]);
+        Assert.AreEqual("E1", (string?)parsed["EmployeeNumber"]);
     }
 
     [TestMethod]
@@ -458,8 +458,8 @@ public class EventJsonMaskerTests
         var masked = NewMasker().Mask(nameof(SimpleEvent), json);
         var parsed = JObject.Parse(masked);
 
-        Assert.AreEqual("***", (string)parsed["cpr"]);
-        Assert.AreEqual("E1", (string)parsed["employeeNumber"]);
+        Assert.AreEqual("***", (string?)parsed["cpr"]);
+        Assert.AreEqual("E1", (string?)parsed["employeeNumber"]);
     }
 
     // -------- PartialReveal validation --------
@@ -469,7 +469,7 @@ public class EventJsonMaskerTests
         // Reveal defaults to 0 — this would silently degrade to Redact at runtime.
         // The masker constructor should reject this at startup.
         [Sensitive(Mode = MaskMode.PartialReveal)]
-        public string Phone { get; set; }
+        public string Phone { get; set; } = null!;
     }
 
     private class BadPartialEndpoint : Endpoint

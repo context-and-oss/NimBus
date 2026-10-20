@@ -184,10 +184,10 @@ public class PlatformValidationTests
     {
         public string Id => nameof(ClrLessEndpoint);
         public string Name => Id;
-        public string Description => null;
-        public string Namespace => GetType().Namespace;
+        public string? Description => null;
+        public string? Namespace => GetType().Namespace;
         public string SecurityGroupName => $"azu-endpoint-{Id}";
-        public ISystem System => null;
+        public ISystem? System => null;
         public IEnumerable<IEventType> EventTypesProduced => new[] { new ClrLessEventType() };
         public IEnumerable<IEventType> EventTypesConsumed => Enumerable.Empty<IEventType>();
         public IEnumerable<IRoleAssignment> RoleAssignments => Enumerable.Empty<IRoleAssignment>();
@@ -197,10 +197,10 @@ public class PlatformValidationTests
     {
         public string Id => "config.loaded.event.v1";
         public string Name => Id;
-        public string Description => null;
-        public string Namespace => null;
+        public string? Description => null;
+        public string? Namespace => null;
         public IEnumerable<IProperty> Properties => Enumerable.Empty<IProperty>();
-        public Type GetEventClassType() => null;
-        public IEvent GetEventExample() => null;
+        public Type GetEventClassType() => null!;
+        public IEvent? GetEventExample() => null;
     }
 }
