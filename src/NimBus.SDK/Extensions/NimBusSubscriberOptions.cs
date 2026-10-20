@@ -10,19 +10,19 @@ public class NimBusSubscriberOptions
     /// <summary>
     /// The endpoint (topic name) for sending responses.
     /// </summary>
-    public string Endpoint { get; set; }
+    public string Endpoint { get; set; } = null!;
 
     /// <summary>
     /// Optional entity path (queue name or topic/subscription) for receiving deferred messages.
     /// </summary>
-    public string EntityPath { get; set; }
+    public string? EntityPath { get; set; }
 
     /// <summary>
     /// Opt-in CloudEvents consume configuration, or <c>null</c> when the
     /// subscriber only handles native NimBus messages (the default). Set via
     /// <see cref="UseCloudEvents"/>.
     /// </summary>
-    public CloudEventSubscriberOptions CloudEvents { get; private set; }
+    public CloudEventSubscriberOptions? CloudEvents { get; private set; }
 
     /// <summary>
     /// Enables CloudEvents 1.0 consumption on this subscriber. Inbound

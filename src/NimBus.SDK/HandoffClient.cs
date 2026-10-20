@@ -15,7 +15,7 @@ namespace NimBus.SDK;
 public sealed class HandoffClientOptions
 {
     /// <summary>The subscriber endpoint whose pending-handoff rows this client settles. Required.</summary>
-    public string Endpoint { get; set; }
+    public string Endpoint { get; set; } = null!;
 }
 
 /// <summary>
@@ -36,7 +36,7 @@ public sealed class HandoffClient : IHandoffClient
 {
     private readonly ISender _sender;
     private readonly string _endpoint;
-    private readonly ILogger<HandoffClient> _logger;
+    private readonly ILogger<HandoffClient>? _logger;
 
     public HandoffClient(
         ISender sender,
@@ -56,7 +56,7 @@ public sealed class HandoffClient : IHandoffClient
     {
         ValidateCoords(coords);
         var detailsJson = SerializeResult(result);
-        var message = HandoffControlMessageFactory.CreateCompleted(ToFactoryCoords(coords), detailsJson);
+        var message = HandoffControlMessageFactory.CreateCompleted(ToFactoryCoords(coords), detailsJson!);
         await _sender.Send(message, 0, cancellationToken).ConfigureAwait(false);
         _logger?.LogInformation(
             "HandoffClient.CompleteAsync: published HandoffCompletedRequest to {Endpoint} (EventId={EventId}, SessionId={SessionId}).",
@@ -66,7 +66,7 @@ public sealed class HandoffClient : IHandoffClient
     public async Task FailAsync(HandoffSettlement coords, string errorText, string? errorType = null, CancellationToken cancellationToken = default)
     {
         ValidateCoords(coords);
-        var message = HandoffControlMessageFactory.CreateFailed(ToFactoryCoords(coords), errorText, errorType);
+        var message = HandoffControlMessageFactory.CreateFailed(ToFactoryCoords(coords), errorText, errorType!);
         await _sender.Send(message, 0, cancellationToken).ConfigureAwait(false);
         _logger?.LogInformation(
             "HandoffClient.FailAsync: published HandoffFailedRequest to {Endpoint} (EventId={EventId}, SessionId={SessionId}, ErrorType={ErrorType}).",
@@ -102,7 +102,7 @@ public sealed class HandoffClient : IHandoffClient
     // Strings pass through verbatim so adapters that already hand-roll JSON
     // aren't double-serialised. Everything else goes through Newtonsoft to
     // stay consistent with NimBus's wire format. Null result → no payload.
-    private static string SerializeResult(object result) => result switch
+    private static string? SerializeResult(object? result) => result switch
     {
         null => null,
         string s => s,

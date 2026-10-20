@@ -39,7 +39,7 @@ public interface IHandoffClientFactory
 public sealed class HandoffClientFactory : IHandoffClientFactory
 {
     private readonly ServiceBusClient _client;
-    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILoggerFactory? _loggerFactory;
 
     // Lazy values so concurrent first use of an endpoint creates exactly one
     // long-lived ServiceBusSender: GetOrAdd's value factory can run more than

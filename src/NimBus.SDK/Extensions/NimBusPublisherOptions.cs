@@ -10,14 +10,14 @@ public class NimBusPublisherOptions
     /// <summary>
     /// The endpoint (topic name) to publish messages to.
     /// </summary>
-    public string Endpoint { get; set; }
+    public string Endpoint { get; set; } = null!;
 
     /// <summary>
     /// Opt-in CloudEvents publish configuration, or <c>null</c> when the
     /// publisher emits native NimBus messages (the default). Set via
     /// <see cref="UseCloudEvents"/>.
     /// </summary>
-    public CloudEventPublisherOptions CloudEvents { get; private set; }
+    public CloudEventPublisherOptions? CloudEvents { get; private set; }
 
     /// <summary>
     /// Enables CloudEvents 1.0 emission on this publisher. Every published

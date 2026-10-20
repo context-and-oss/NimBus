@@ -15,14 +15,14 @@ public interface IEventHandlerContext
 
     string EventType { get; }
 
-    string CorrelationId { get; }
+    string? CorrelationId { get; }
 
     /// <summary>
     /// Gets the inbound session identifier used for ordered processing.
     /// The default implementation returns <c>null</c> so existing custom
     /// context implementations remain compatible.
     /// </summary>
-    string SessionId => null;
+    string? SessionId => null;
 
     /// <summary>
     /// Gets the identifier of the message that caused the inbound message.
@@ -30,7 +30,7 @@ public interface IEventHandlerContext
     /// metadata did not identify a parent. The default implementation returns
     /// <c>null</c> so existing custom context implementations remain compatible.
     /// </summary>
-    string ParentMessageId => null;
+    string? ParentMessageId => null;
 
     /// <summary>
     /// Gets the identifier of the message that initiated the inbound message's
@@ -39,7 +39,7 @@ public interface IEventHandlerContext
     /// returns <c>null</c> so existing custom context implementations remain
     /// compatible.
     /// </summary>
-    string OriginatingMessageId => null;
+    string? OriginatingMessageId => null;
 
     /// <summary>
     /// The outcome signalled by the handler. Defaults to
@@ -75,12 +75,12 @@ public interface IEventHandlerContext
     /// native NimBus message. The default implementation returns <c>null</c> so
     /// existing context implementers are forward-compatible.
     /// </summary>
-    CloudEvent GetCloudEvent() => null;
+    CloudEvent? GetCloudEvent() => null;
 }
 
 public class EventHandlerContext : IEventHandlerContext
 {
-    private readonly IMessageContext _messageContext;
+    private readonly IMessageContext? _messageContext;
 
     public EventHandlerContext()
     {
@@ -94,22 +94,22 @@ public class EventHandlerContext : IEventHandlerContext
     /// <summary>
     /// The Id of the currently processed message.
     /// </summary>
-    public string MessageId { get; set; }
+    public string MessageId { get; set; } = null!;
 
-    public string EventId { get; set; }
+    public string EventId { get; set; } = null!;
 
-    public string EventType { get; set; }
+    public string EventType { get; set; } = null!;
 
-    public string CorrelationId { get; set; }
-
-    /// <inheritdoc/>
-    public string SessionId { get; set; }
+    public string? CorrelationId { get; set; }
 
     /// <inheritdoc/>
-    public string ParentMessageId { get; set; }
+    public string? SessionId { get; set; }
 
     /// <inheritdoc/>
-    public string OriginatingMessageId { get; set; }
+    public string? ParentMessageId { get; set; }
+
+    /// <inheritdoc/>
+    public string? OriginatingMessageId { get; set; }
 
     public HandlerOutcome Outcome { get; private set; }
 
@@ -118,7 +118,7 @@ public class EventHandlerContext : IEventHandlerContext
     public void MarkPendingHandoff(string reason, string? externalJobId = null, TimeSpan? expectedBy = null)
     {
         Outcome = HandlerOutcome.PendingHandoff;
-        HandoffMetadata = new HandoffMetadata(reason, externalJobId, expectedBy);
+        HandoffMetadata = new HandoffMetadata(reason, externalJobId!, expectedBy);
 
         if (_messageContext != null)
         {
@@ -128,5 +128,5 @@ public class EventHandlerContext : IEventHandlerContext
     }
 
     /// <inheritdoc/>
-    public CloudEvent GetCloudEvent() => _messageContext?.GetCloudEvent();
+    public CloudEvent? GetCloudEvent() => _messageContext?.GetCloudEvent();
 }
