@@ -22,9 +22,9 @@ public readonly record struct HandoffSettlementCoordinates(
     string To,
     string EventId,
     string SessionId,
-    string CorrelationId,
+    string? CorrelationId,
     string ParentMessageId,
-    string OriginatingMessageId,
+    string? OriginatingMessageId,
     string EventTypeId);
 
 /// <summary>

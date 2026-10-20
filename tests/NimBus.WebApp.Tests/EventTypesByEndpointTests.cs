@@ -198,6 +198,6 @@ public sealed class EventTypesByEndpointTests
     private sealed class StubCodeRepoService : ICodeRepoService
     {
         public string CodeRepoUrl => string.Empty;
-        public string GetSearchUrl(string className, string namespaceName) => $"repo://{className}/{namespaceName}";
+        public string GetSearchUrl(string className, string? namespaceName) => $"repo://{className}/{namespaceName}";
     }
 }

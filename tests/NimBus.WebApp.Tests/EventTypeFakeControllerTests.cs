@@ -49,7 +49,7 @@ public class EventTypeFakeControllerTests
     private sealed class NullCodeRepoService : ICodeRepoService
     {
         public string CodeRepoUrl => string.Empty;
-        public string GetSearchUrl(string className, string namespaceName) => string.Empty;
+        public string GetSearchUrl(string className, string? namespaceName) => string.Empty;
     }
 
     private static EventTypeImplementation BuildImplementation(params Type[] knownTypes)

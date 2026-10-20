@@ -17,6 +17,6 @@ internal static class HandoffSettlementMapper
         SessionId: pendingEntry.SessionId,
         MessageId: pendingEntry.MessageId,
         EventTypeId: pendingEntry.EventTypeId,
-        CorrelationId: pendingEntry.CorrelationId!,
-        OriginatingMessageId: pendingEntry.OriginatingMessageId!);
+        CorrelationId: pendingEntry.CorrelationId,
+        OriginatingMessageId: pendingEntry.OriginatingMessageId);
 }

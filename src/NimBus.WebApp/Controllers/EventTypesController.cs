@@ -39,7 +39,7 @@ public class EventTypesController : Controller
         var model = new EventTypeViewModel
         {
             EventType = eventType,
-            CodeRepoLink = _codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace!),
+            CodeRepoLink = _codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace),
             Producers = _platform.GetProducers(eventType),
             Consumers = _platform.GetConsumers(eventType),
             ExampleEventJson = !string.IsNullOrEmpty(exampleEvent) && !exampleEvent.Equals("null", StringComparison.OrdinalIgnoreCase) ? exampleEvent : "No example available"
