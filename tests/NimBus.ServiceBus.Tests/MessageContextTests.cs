@@ -1083,7 +1083,7 @@ public class MessageContextTests
             return Task.CompletedTask;
         }
 
-        public Task DeadLetterAsync(IServiceBusMessage message, string reason, string description, CancellationToken ct = default)
+        public Task DeadLetterAsync(IServiceBusMessage message, string reason, string? description, CancellationToken ct = default)
         {
             if (DeadLetterException != null) throw DeadLetterException;
             DeadLetterCalls++;

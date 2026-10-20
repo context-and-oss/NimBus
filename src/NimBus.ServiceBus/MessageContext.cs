@@ -229,7 +229,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
 
     public HandlerOutcome HandlerOutcome { get; set; }
 
-    public HandoffMetadata HandoffMetadata { get; set; } = null!;
+    public HandoffMetadata? HandoffMetadata { get; set; }
 
     public Exception? HandledFailure { get; set; }
 
@@ -319,7 +319,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
         try
         {
             // Null when no exception is given; IServiceBusSession.DeadLetterAsync still declares it non-null.
-            await _sbSession.DeadLetterAsync(_sbMessage, reason, FormatExceptionForDeadLetter(exception)!, cancellationToken);
+            await _sbSession.DeadLetterAsync(_sbMessage, reason, FormatExceptionForDeadLetter(exception), cancellationToken);
         }
         catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
         {
@@ -349,10 +349,10 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
         return !string.IsNullOrEmpty(state.BlockedByEventId) && state.BlockedByEventId.Equals(EventId, StringComparison.OrdinalIgnoreCase);
     }
 
-    public async Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default)
+    public async Task<string?> GetBlockedByEventId(CancellationToken cancellationToken = default)
     {
         SessionState state = await GetSessionState(cancellationToken);
-        return state.BlockedByEventId!;
+        return state.BlockedByEventId;
     }
 
     public async Task<string?> GetBlockedByMessageId(CancellationToken cancellationToken = default)

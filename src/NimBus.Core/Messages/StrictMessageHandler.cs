@@ -279,7 +279,7 @@ public class StrictMessageHandler : MessageHandler
                 if (!string.IsNullOrEmpty(blockedBy)
                     && !blockedBy.Equals(messageContext.EventId, StringComparison.OrdinalIgnoreCase))
                 {
-                    await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, SettlementToken);
+                    await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata!, SettlementToken);
                     await CompleteMessage(messageContext);
                     LogInfo(messageContext, $"Successfully processed (Resubmission, PendingHandoff) — session owned by event '{blockedBy}', block left intact");
                     return;
@@ -495,7 +495,7 @@ public class StrictMessageHandler : MessageHandler
     // would falsely flip the event to Completed.
     private async Task ParkPendingHandoff(IMessageContext messageContext, string? requestName)
     {
-        await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, SettlementToken);
+        await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata!, SettlementToken);
         await BlockSession(messageContext);
         await CompleteMessage(messageContext);
         LogInfo(messageContext, requestName == null

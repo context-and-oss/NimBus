@@ -53,7 +53,7 @@ public interface IEventHandlerContext
     /// Metadata supplied by the handler via <see cref="MarkPendingHandoff"/>.
     /// Null when <see cref="Outcome"/> is <see cref="HandlerOutcome.Default"/>.
     /// </summary>
-    HandoffMetadata HandoffMetadata { get; }
+    HandoffMetadata? HandoffMetadata { get; }
 
     /// <summary>
     /// Signals that the handler has handed work off to a long-running
@@ -113,7 +113,7 @@ public class EventHandlerContext : IEventHandlerContext
 
     public HandlerOutcome Outcome { get; private set; }
 
-    public HandoffMetadata HandoffMetadata { get; private set; }
+    public HandoffMetadata? HandoffMetadata { get; private set; }
 
     public void MarkPendingHandoff(string reason, string? externalJobId = null, TimeSpan? expectedBy = null)
     {

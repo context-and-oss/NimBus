@@ -92,7 +92,7 @@ internal sealed class FakeMessageContext : IMessageContext, IMessageDeliveryCont
     public long? ProcessingTimeMs { get; set; }
     public DateTime? HandlerStartedAtUtc { get; set; }
     public HandlerOutcome HandlerOutcome { get; set; }
-    public HandoffMetadata HandoffMetadata { get; set; }
+    public HandoffMetadata? HandoffMetadata { get; set; }
     public string CloudEventId { get; set; }
     public string CloudEventSource { get; set; }
     public string CloudEventType { get; set; }

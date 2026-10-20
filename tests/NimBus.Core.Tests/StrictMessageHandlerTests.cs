@@ -2186,7 +2186,7 @@ public class StrictMessageHandlerTests
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
-        public HandoffMetadata HandoffMetadata { get; set; }
+        public HandoffMetadata? HandoffMetadata { get; set; }
 
         // Configurable behavior
         public string BlockedByEventId { get; set; }

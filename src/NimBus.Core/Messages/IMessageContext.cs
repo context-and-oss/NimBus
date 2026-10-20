@@ -34,7 +34,7 @@ public interface IMessageContext : IReceivedMessage
     Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default);
     Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default);
     Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default);
-    Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default);
+    Task<string?> GetBlockedByEventId(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the source MessageId of the delivery whose failure (or pending handoff) blocked
@@ -146,7 +146,7 @@ public interface IMessageContext : IReceivedMessage
     /// <see cref="HandlerOutcome.PendingHandoff"/>. Null when
     /// <see cref="HandlerOutcome"/> is <see cref="HandlerOutcome.Default"/>.
     /// </summary>
-    HandoffMetadata HandoffMetadata { get; set; }
+    HandoffMetadata? HandoffMetadata { get; set; }
 
     /// <summary>
     /// A handler failure the message handler settled itself instead of letting it

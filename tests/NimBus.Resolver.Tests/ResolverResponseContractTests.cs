@@ -338,7 +338,7 @@ public class ResolverResponseContractTests
             return Task.CompletedTask;
         }
 
-        public Task DeadLetterAsync(IServiceBusMessage message, string reason, string v, CancellationToken cancellationToken = default)
+        public Task DeadLetterAsync(IServiceBusMessage message, string reason, string? v, CancellationToken cancellationToken = default)
         {
             if (_counts is null) _deadLettered++; else _counts._deadLettered++;
             return Task.CompletedTask;

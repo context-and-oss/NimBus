@@ -59,7 +59,7 @@ public class InMemoryMessageContext : IMessageContext
     public long? ProcessingTimeMs { get; set; }
     public DateTime? HandlerStartedAtUtc { get; set; }
     public HandlerOutcome HandlerOutcome { get; set; }
-    public HandoffMetadata HandoffMetadata { get; set; }
+    public HandoffMetadata? HandoffMetadata { get; set; }
     public Exception? HandledFailure { get; set; }
     public System.Diagnostics.ActivityContext ParentTraceContext { get; set; }
 

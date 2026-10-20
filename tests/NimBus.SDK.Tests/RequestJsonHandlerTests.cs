@@ -162,7 +162,7 @@ internal sealed class RequestTestMessageContext : IMessageContext
     public long? ProcessingTimeMs { get; set; }
     public DateTime? HandlerStartedAtUtc { get; set; }
     public HandlerOutcome HandlerOutcome { get; set; }
-    public HandoffMetadata HandoffMetadata { get; set; }
+    public HandoffMetadata? HandoffMetadata { get; set; }
 
     public Task Complete(CancellationToken ct = default) => Task.CompletedTask;
     public Task Abandon(NimBus.Core.Messages.Exceptions.TransientException ex) => Task.CompletedTask;

@@ -769,7 +769,7 @@ public class ResponseServiceTests
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
-        public HandoffMetadata HandoffMetadata { get; set; }
+        public HandoffMetadata? HandoffMetadata { get; set; }
 
         public NimBus.Core.CloudEvents.CloudEvent CloudEventToReturn { get; set; }
         public NimBus.Core.CloudEvents.CloudEvent GetCloudEvent() => CloudEventToReturn;

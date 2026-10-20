@@ -45,7 +45,7 @@ file sealed class TestMessageContext : IMessageContext
     public long? ProcessingTimeMs { get; set; }
     public DateTime? HandlerStartedAtUtc { get; set; }
     public HandlerOutcome HandlerOutcome { get; set; }
-    public HandoffMetadata HandoffMetadata { get; set; }
+    public HandoffMetadata? HandoffMetadata { get; set; }
 
     public int DeadLetterCalls { get; private set; }
     public int CompleteCalls { get; private set; }

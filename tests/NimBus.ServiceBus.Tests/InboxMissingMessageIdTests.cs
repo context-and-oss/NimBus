@@ -198,7 +198,7 @@ public class InboxMissingMessageIdTests
             return Task.CompletedTask;
         }
 
-        public Task DeadLetterAsync(IServiceBusMessage message, string reason, string description, CancellationToken ct = default)
+        public Task DeadLetterAsync(IServiceBusMessage message, string reason, string? description, CancellationToken ct = default)
         {
             DeadLetterCalls++;
             return Task.CompletedTask;

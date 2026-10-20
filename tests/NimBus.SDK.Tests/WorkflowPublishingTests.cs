@@ -260,7 +260,7 @@ public class WorkflowPublishingTests
 
         public HandlerOutcome Outcome => HandlerOutcome.Default;
 
-        public HandoffMetadata HandoffMetadata => null!;
+        public HandoffMetadata? HandoffMetadata => null;
 
         public void MarkPendingHandoff(string reason, string? externalJobId = null, TimeSpan? expectedBy = null)
         {

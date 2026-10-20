@@ -118,7 +118,7 @@ public static class MessageContextStub
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
-        public HandoffMetadata HandoffMetadata { get; set; }
+        public HandoffMetadata? HandoffMetadata { get; set; }
         public ActivityContext ParentTraceContext { get; set; }
 
         public Task Complete(CancellationToken cancellationToken = default) => Task.CompletedTask;

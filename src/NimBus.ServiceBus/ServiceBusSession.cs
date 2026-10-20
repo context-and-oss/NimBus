@@ -12,7 +12,7 @@ namespace NimBus.ServiceBus;
 public interface IServiceBusSession
 {
     Task CompleteAsync(IServiceBusMessage message, CancellationToken cancellationToken = default);
-    Task DeadLetterAsync(IServiceBusMessage message, string reason, string v, CancellationToken cancellationToken = default);
+    Task DeadLetterAsync(IServiceBusMessage message, string reason, string? v, CancellationToken cancellationToken = default);
     Task SetStateAsync(SessionState sessionState, CancellationToken cancellationToken = default);
     Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default);
     Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default);
@@ -73,7 +73,7 @@ public class ServiceBusSession : IServiceBusSession
             "Cannot complete message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
     }
 
-    public Task DeadLetterAsync(IServiceBusMessage message, string deadLetterReason, string deadLetterErrorDescription, CancellationToken cancellationToken = default)
+    public Task DeadLetterAsync(IServiceBusMessage message, string deadLetterReason, string? deadLetterErrorDescription, CancellationToken cancellationToken = default)
     {
         if (_messageActions != null)
         {

@@ -174,7 +174,7 @@ public abstract class InstrumentationConformanceTests
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
-        public HandoffMetadata HandoffMetadata { get; set; } = null!;
+        public HandoffMetadata? HandoffMetadata { get; set; }
         public ActivityContext ParentTraceContext { get; }
 
         public Task Complete(CancellationToken cancellationToken = default) => Task.CompletedTask;
