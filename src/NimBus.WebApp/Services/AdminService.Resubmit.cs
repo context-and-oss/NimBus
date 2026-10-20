@@ -20,7 +20,7 @@ public partial class AdminService
         var cutoff = DateTime.UtcNow.AddMinutes(-AgeThresholdMinutes);
         int totalFailed = 0;
         int eligible = 0;
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -58,7 +58,7 @@ public partial class AdminService
         int succeeded = 0;
         int failed = 0;
         var errors = new ConcurrentBag<string>();
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         // Per-event work (GetFailedMessage + Resubmit + ArchiveFailedEvent) is
         // independent across distinct EventIds within a page. Parallelize with
@@ -106,7 +106,7 @@ public partial class AdminService
                     }
 
                     await _managerClient.Resubmit(failedMessage, endpointId, eventTypeId, eventJson);
-                    await _messageStore.ArchiveFailedEvent(ev.EventId, ev.SessionId, endpointId);
+                    await _messageStore.ArchiveFailedEvent(ev.EventId, ev.SessionId!, endpointId);
                     Interlocked.Increment(ref succeeded);
                 }
                 catch (Exception ex)
@@ -146,7 +146,7 @@ public partial class AdminService
         int succeeded = 0;
         int failed = 0;
         var errors = new List<string>();
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -164,7 +164,7 @@ public partial class AdminService
 
                 try
                 {
-                    bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
+                    bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId!, endpointId);
                     if (removed)
                         succeeded++;
                     else

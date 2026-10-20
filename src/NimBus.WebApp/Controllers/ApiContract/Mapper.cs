@@ -111,7 +111,7 @@ public static class Mapper
             message.EventContent = messageEntity.MessageContent?.EventContent?.EventJson;
 
         if (messageEntity.MessageContent?.ErrorContent != null)
-            message.ErrorContent = MessageErrorContentFromErroryContent(messageEntity.MessageContent?.ErrorContent);
+            message.ErrorContent = MessageErrorContentFromErroryContent(messageEntity.MessageContent.ErrorContent);
 
         message.PendingSubStatus = messageEntity.PendingSubStatus;
         message.HandoffReason = messageEntity.HandoffReason;

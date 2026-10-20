@@ -53,7 +53,7 @@ public class AdminImplementation : IAdminApiController
         _subscriptionAdminService = subscriptionAdminService;
         _platform = platform;
         _configuration = configuration;
-        _context = contextAccessor.HttpContext;
+        _context = contextAccessor.HttpContext!;
         _auditLogService = auditLogService;
         _authorizationService = authorizationService;
         _heartbeatService = heartbeatService;
@@ -566,7 +566,7 @@ public class AdminImplementation : IAdminApiController
         }
     }
 
-    private async Task<ActionResult> GuardSubscriptionMutationAsync(string topicName, string subscriptionName, string action)
+    private async Task<ActionResult?> GuardSubscriptionMutationAsync(string topicName, string subscriptionName, string action)
     {
         if (!await IsSiteOwnerAsync())
         {

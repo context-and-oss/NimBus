@@ -59,7 +59,7 @@ public class EventTypeImplementation : IEventTypeApiController
         if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
             return new ForbidResult();
 
-        IEndpoint endpoint = platform.Endpoints.FirstOrDefault(e => e.Name.Equals(endpointId, StringComparison.OrdinalIgnoreCase));
+        IEndpoint? endpoint = platform.Endpoints.FirstOrDefault(e => e.Name.Equals(endpointId, StringComparison.OrdinalIgnoreCase));
         if (endpoint == null)
         {
             return new NotFoundObjectResult($"Endpoint '{endpointId}' not found");
@@ -72,7 +72,7 @@ public class EventTypeImplementation : IEventTypeApiController
         EventTypeDetails CreateDetails(IEventType eventType) => new EventTypeDetails
         {
             EventType = Mapper.EventTypeFromIEventType(eventType),
-            CodeRepoLink = codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace),
+            CodeRepoLink = codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace!),
             Producers = platform.GetProducers(eventType).Select(x => x.Name).ToList(),
             Consumers = platform.GetConsumers(eventType).Select(x => x.Name).ToList(),
         };
@@ -112,7 +112,7 @@ public class EventTypeImplementation : IEventTypeApiController
         {
             // The details page is the one consumer of the example payload.
             EventType = Mapper.EventTypeFromIEventType(eventType, includeExamplePayload: true),
-            CodeRepoLink = codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace),
+            CodeRepoLink = codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace!),
             Producers = platform.GetProducers(eventType).Select(x => x.Name).ToList(),
             Consumers = platform.GetConsumers(eventType).Select(x => x.Name).ToList(),
         };

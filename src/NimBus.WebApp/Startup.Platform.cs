@@ -102,7 +102,7 @@ public partial class Startup
         // We also accept the literal-double-underscore form (for any appsettings.json
         // that uses it as a flat key) and a bare `ServiceBusNamespace` (sb-nimbus-dev)
         // which we expand to its FQDN.
-        string serviceBusFqns = Configuration["AzureWebJobsServiceBus:fullyQualifiedNamespace"]
+        string? serviceBusFqns = Configuration["AzureWebJobsServiceBus:fullyQualifiedNamespace"]
             ?? Configuration["AzureWebJobsServiceBus__fullyQualifiedNamespace"];
         if (string.IsNullOrWhiteSpace(serviceBusFqns))
         {
@@ -114,7 +114,7 @@ public partial class Startup
                     : $"{ns}.servicebus.windows.net";
             }
         }
-        string serviceBusConnection = Configuration.GetConnectionString("servicebus")
+        string? serviceBusConnection = Configuration.GetConnectionString("servicebus")
             ?? Configuration.GetValue<string>("AzureWebJobsServiceBus");
         if (!string.IsNullOrEmpty(serviceBusFqns) && !serviceBusFqns.Contains("SharedAccessKey="))
         {

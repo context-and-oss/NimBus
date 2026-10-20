@@ -31,7 +31,7 @@ public partial class EventImplementation
 
         if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
         {
-            await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext!,
                 accessDenied: true, data: searchDataJson, endpointId: endpointId);
             return new ForbidResult();
         }
@@ -40,7 +40,7 @@ public partial class EventImplementation
 
         // A raw predicate can reveal sensitive values through hit/miss results.
         // Ordinary Readers may search only verified non-sensitive receiving contracts.
-        string[] nonSensitiveTypes = null;
+        string[]? nonSensitiveTypes = null;
         if (!canReadPii && !string.IsNullOrWhiteSpace(body.EventFilter?.Payload))
         {
             nonSensitiveTypes = PayloadSearchPolicy.GetNonSensitiveReceivedTypes(
@@ -50,7 +50,7 @@ public partial class EventImplementation
             && (nonSensitiveTypes == null || (body.EventFilter.EventTypeId?.Any(
                 id => !nonSensitiveTypes.Contains(id, StringComparer.Ordinal)) ?? false)))
         {
-            await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext!,
                 accessDenied: true, data: searchDataJson, endpointId: endpointId);
             return new ObjectResult(
                 "Payload search requires PiiReader when receiving event contracts contain sensitive fields or cannot be classified. A site Owner can grant it on the Access Control page.")
@@ -68,7 +68,7 @@ public partial class EventImplementation
             if (nonSensitiveTypes != null && (filter.EventTypeId == null || filter.EventTypeId.Count == 0))
                 filter.EventTypeId = nonSensitiveTypes.ToList();
             var reponse = await messageStore.GetEventsByFilter(filter, body.ContinuationToken, body.MaxSearchItemsCount);
-            await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext!,
                 data: searchDataJson, endpointId: endpointId);
             var events = reponse.Events
                 .Select(Mapper.EventFromMessageStoreEvent)

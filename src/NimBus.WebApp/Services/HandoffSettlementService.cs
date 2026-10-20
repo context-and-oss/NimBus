@@ -103,10 +103,10 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
         {
             EventId = pendingEvent.EventId,
             MessageId = messageId,
-            SessionId = pendingEvent.SessionId,
+            SessionId = pendingEvent.SessionId!,
             CorrelationId = pendingEvent.CorrelationId,
             OriginatingMessageId = pendingEvent.OriginatingMessageId,
-            EventTypeId = pendingEvent.EventTypeId,
+            EventTypeId = pendingEvent.EventTypeId!,
             PendingSubStatus = pendingEvent.PendingSubStatus,
         };
 
@@ -136,7 +136,7 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
             throw;
         }
 
-        await _audit.LogAuditAsync(auditType, httpContext,
+        await _audit.LogAuditAsync(auditType, httpContext!,
             data: auditComment, eventId: eventId, endpointId: endpointId,
             eventTypeId: pendingEvent.EventTypeId, auditorNameOverride: auditorName,
             cancellationToken: cancellationToken);

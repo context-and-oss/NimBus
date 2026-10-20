@@ -278,10 +278,10 @@ public class MetricsImplementation : IMetricsApiController
         _ => (13, "hour")
     };
 
-    internal static string ExtractErrorCategory(string errorText) =>
+    internal static string ExtractErrorCategory(string? errorText) =>
         ErrorPatternNormalizer.ExtractCategory(errorText);
 
-    internal static string NormalizeErrorPattern(string errorText) =>
+    internal static string NormalizeErrorPattern(string? errorText) =>
         ErrorPatternNormalizer.Normalize(errorText);
 
     private static TimeSpan PeriodToTimeSpan(Period period) => period switch

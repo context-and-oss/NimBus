@@ -5,10 +5,10 @@ namespace NimBus.WebApp.Models;
 
 public class ComposeNewMessageViewModel : EditMessageViewModel
 {
-    public string EndpointId { get; set; }
-    public IEnumerable<string> EventTypes { get; set; }
-    public string SelectedEventType { get; set; }
-    public Dictionary<string, IEvent> EventTemplates { get; set; }
+    public string EndpointId { get; set; } = null!;
+    public IEnumerable<string> EventTypes { get; set; } = null!;
+    public string SelectedEventType { get; set; } = null!;
+    public Dictionary<string, IEvent> EventTemplates { get; set; } = null!;
 
 
     public const string DropDownElementId = "SelectedEventType";

@@ -85,21 +85,21 @@ public partial class EventImplementation
     {
         logger.LogInformation("Compose new event. EventTypeId:{EventTypeId}", body?.EventTypeId);
 
-        var eventType = platform.EventTypes.FirstOrDefault(x => x.Id.Equals(body.EventTypeId, StringComparison.OrdinalIgnoreCase));
+        var eventType = platform.EventTypes.FirstOrDefault(x => x.Id.Equals(body!.EventTypeId, StringComparison.OrdinalIgnoreCase));
         if (eventType == null)
         {
-            logger.LogError("Could not find event type: {EventTypeId}", body.EventTypeId);
+            logger.LogError("Could not find event type: {EventTypeId}", body!.EventTypeId);
             return new BadRequestObjectResult("Could not find event type: " + body.EventTypeId);
         }
 
         var producingEndpoint = platform.GetProducers(eventType).FirstOrDefault();
         if (producingEndpoint == null)
         {
-            logger.LogError("Could not find any producers for the given event: {EventTypeId}", body.EventTypeId);
+            logger.LogError("Could not find any producers for the given event: {EventTypeId}", body!.EventTypeId);
             return new BadRequestObjectResult("Could not find any producers for the given event");
         }
 
-        if (string.IsNullOrWhiteSpace(body.EventContent))
+        if (string.IsNullOrWhiteSpace(body!.EventContent))
         {
             logger.LogError("Event content is empty");
             return new BadRequestObjectResult("Event content is empty");
@@ -107,7 +107,7 @@ public partial class EventImplementation
 
         if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, producingEndpoint.Id))
         {
-            await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext!,
                 accessDenied: true, data: JsonConvert.SerializeObject(body),
                 endpointId: producingEndpoint.Id, eventTypeId: body.EventTypeId);
             throw new UnauthorizedAccessException($"User is unauthorized to compose events for endpoint '{producingEndpoint.Id}'.");
@@ -116,7 +116,7 @@ public partial class EventImplementation
         var type = eventType.GetEventClassType();
         try
         {
-            var @event = (Core.Events.IEvent)JsonConvert.DeserializeObject(body.EventContent, type);
+            var @event = (Core.Events.IEvent)JsonConvert.DeserializeObject(body.EventContent, type)!;
             var validationResult = @event.TryValidate();
             if (!validationResult.IsValid)
             {
@@ -129,7 +129,7 @@ public partial class EventImplementation
             // matches what every other producer in the platform sends.
             var publisher = await PublisherClient.CreateAsync(serviceBusClient, producingEndpoint.Id);
             await publisher.Publish(@event);
-            await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext!,
                 data: JsonConvert.SerializeObject(body),
                 endpointId: producingEndpoint.Id, eventTypeId: body.EventTypeId);
             return new OkResult();
@@ -168,7 +168,7 @@ public partial class EventImplementation
         // before the payload checks below reveal anything about the event type.
         if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpoint))
         {
-            await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext!,
                 accessDenied: true, data: auditData,
                 eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
             throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
@@ -188,7 +188,7 @@ public partial class EventImplementation
             // Fail closed: with no resolvable type we cannot prove the body is clean.
             if (string.IsNullOrEmpty(serverEventTypeId))
             {
-                await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
+                await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext!,
                     accessDenied: true, data: auditData,
                     eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
                 return new BadRequestObjectResult(
@@ -197,7 +197,7 @@ public partial class EventImplementation
 
             if (masker.ContainsRedactPlaceholder(serverEventTypeId, body.EventContent))
             {
-                await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
+                await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext!,
                     accessDenied: true, data: auditData,
                     eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
                 return new BadRequestObjectResult(

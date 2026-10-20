@@ -9,8 +9,8 @@ namespace NimBus.WebApp.Models;
 
 public class MessageViewModel
 {
-    public MessageEntity FailedMessage { get; set; }
-    public MessageEntity OriginatingMessage { get; set; }
-    public IEnumerable<LogEntry> LogEntries { get; set; }
-    public IEnumerable<MessageEntity> Actions { get; set; }
+    public MessageEntity FailedMessage { get; set; } = null!;
+    public MessageEntity OriginatingMessage { get; set; } = null!;
+    public IEnumerable<LogEntry> LogEntries { get; set; } = null!;
+    public IEnumerable<MessageEntity> Actions { get; set; } = null!;
 }

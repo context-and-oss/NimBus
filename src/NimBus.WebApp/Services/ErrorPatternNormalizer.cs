@@ -58,7 +58,7 @@ public static class ErrorPatternNormalizer
     /// </summary>
     /// <param name="errorText">The raw error text; may be null or empty.</param>
     /// <returns>A normalized category string, or "Unknown" when the input is null or empty.</returns>
-    public static string ExtractCategory(string errorText)
+    public static string ExtractCategory(string? errorText)
     {
         if (string.IsNullOrEmpty(errorText)) return "Unknown";
         var normalized = Normalize(errorText);
@@ -88,7 +88,7 @@ public static class ErrorPatternNormalizer
     /// </summary>
     /// <param name="errorText">The raw error text; may be null or empty.</param>
     /// <returns>The normalized pattern, or "Unknown" when the input is null or empty.</returns>
-    public static string Normalize(string errorText)
+    public static string Normalize(string? errorText)
     {
         if (string.IsNullOrEmpty(errorText)) return "Unknown";
         var normalized = TimestampPattern.Replace(errorText, "<timestamp>");

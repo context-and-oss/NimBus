@@ -103,7 +103,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
     /// The endpoint a command for <paramref name="message"/> goes to: the receiving endpoint of a
     /// self-originating (dead-letter forwarded) message, otherwise the endpoint that failed.
     /// </summary>
-    public static string TargetEndpoint(MessageEntity message)
+    public static string? TargetEndpoint(MessageEntity message)
     {
         ArgumentNullException.ThrowIfNull(message);
         return BlockedEventRules.IsSelfOriginating(message.OriginatingMessageId) ? message.To : message.From;

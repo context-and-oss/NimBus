@@ -318,7 +318,7 @@ public class AgentImplementation : IAgentApiController
             return new BadRequestObjectResult("coordinates.eventId is required.");
         if (string.IsNullOrWhiteSpace(coords.MessageId))
             return new BadRequestObjectResult("coordinates.messageId is required.");
-        if (body.Outcome is not AgentSettleRequestOutcome.Complete
+        if (body!.Outcome is not AgentSettleRequestOutcome.Complete
             and not AgentSettleRequestOutcome.Fail)
         {
             return new BadRequestObjectResult("outcome must be 'complete' or 'fail'.");

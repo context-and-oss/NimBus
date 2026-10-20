@@ -6,5 +6,5 @@ namespace NimBus.WebApp.Models;
 
 public class ResubmitMessageViewModel : ComposeNewMessageViewModel
 {
-    public string ErrorMessageId { get; set; }
+    public string ErrorMessageId { get; set; } = null!;
 }
