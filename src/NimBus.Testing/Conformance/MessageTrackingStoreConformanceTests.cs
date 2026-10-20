@@ -58,7 +58,7 @@ public abstract class MessageTrackingStoreConformanceTests
 
         var fetched = await store.GetPendingEvent(endpointId, eventId, "s1");
 
-        Assert.AreEqual(eventId, fetched.EventId);
+        Assert.AreEqual(eventId, fetched!.EventId);
         Assert.AreEqual(ResolutionStatus.Pending, fetched.ResolutionStatus);
     }
 
@@ -195,13 +195,13 @@ public abstract class MessageTrackingStoreConformanceTests
         await store.UploadDeferredMessage(eventId, "s1", endpoint, row);
         var stored = await store.GetEvent(endpoint, eventId);
 
-        Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, "wrong", stored.UpdatedAt));
+        Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, "wrong", stored!.UpdatedAt));
         Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, stored.LastMessageId, stored.UpdatedAt.AddSeconds(-1)));
         Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "other-session", endpoint, stored.LastMessageId, stored.UpdatedAt));
         Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", Id("other-endpoint"), stored.LastMessageId, stored.UpdatedAt));
         Assert.IsTrue(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, stored.LastMessageId, stored.UpdatedAt));
         var skipped = await store.GetEvent(endpoint, eventId);
-        Assert.AreEqual(ResolutionStatus.Skipped, skipped.ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Skipped, skipped!.ResolutionStatus);
         Assert.AreEqual(stored.LastMessageId, skipped.LastMessageId);
         Assert.AreEqual(stored.MessageType, skipped.MessageType);
         Assert.AreEqual(stored.EventTypeId, skipped.EventTypeId);
@@ -218,8 +218,8 @@ public abstract class MessageTrackingStoreConformanceTests
         await store.UploadDeferredMessage(eventId, "s1", endpoint, SampleEvent(endpoint, eventId, "s1"));
         var inspected = await store.GetEvent(endpoint, eventId);
         await store.UploadCompletedMessage(eventId, "s1", endpoint, SampleEvent(endpoint, eventId, "s1"));
-        Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, inspected.LastMessageId, inspected.UpdatedAt));
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpoint, eventId)).ResolutionStatus);
+        Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, inspected!.LastMessageId, inspected.UpdatedAt));
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpoint, eventId))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -237,13 +237,13 @@ public abstract class MessageTrackingStoreConformanceTests
         completed.LastMessageId = "response-message";
         Assert.IsTrue(await store.TryCompletePendingMessage(
             eventId, "s1", endpointId, "stale-message", completed));
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId))!.ResolutionStatus);
         Assert.AreEqual(0, (await store.DownloadEndpointStateCount(endpointId)).PendingCount);
 
         Assert.IsFalse(await store.UploadPendingMessage(
             eventId, "s1", endpointId, GuardedEvent(
                 endpointId, eventId, "s1", MessageType.EventRequest, "stale-message")));
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -258,7 +258,7 @@ public abstract class MessageTrackingStoreConformanceTests
         await store.UploadPendingMessage(mismatchId, "s1", endpointId, mismatch);
         Assert.IsFalse(await store.TryCompletePendingMessage(
             mismatchId, "s1", endpointId, "expected", SampleEvent(endpointId, mismatchId, "s1")));
-        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, mismatchId, "s1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, mismatchId, "s1"))!.ResolutionStatus);
 
         var terminalId = Id("terminal");
         await store.UploadCompletedMessage(terminalId, "s1", endpointId, SampleEvent(endpointId, terminalId, "s1"));
@@ -295,14 +295,14 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(3, history.Count);
         var stored = await store.GetPendingEvent(endpointId, eventId, "s1");
 
-        var verdict = StalePendingReconciler.Classify(stored, history, endpointId);
+        var verdict = StalePendingReconciler.Classify(stored!, history, endpointId);
         Assert.AreEqual(StalePendingVerdict.Repairable, verdict.Verdict, verdict.Detail);
         Assert.AreEqual("rsp-1", verdict.Response!.MessageId);
 
         var projection = StalePendingReconciler.BuildCompletedProjection(verdict.Response, history, endpointId, DateTime.UtcNow);
         Assert.IsNull(projection.DeadLetterErrorDescription, "a clean response must project without a dead-letter description, whatever the provider reads NULL back as");
-        Assert.IsTrue(await store.TryCompletePendingMessage(eventId, "s1", endpointId, stored.LastMessageId, projection));
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+        Assert.IsTrue(await store.TryCompletePendingMessage(eventId, "s1", endpointId, stored!.LastMessageId, projection));
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId))!.ResolutionStatus);
     }
 
     private static MessageEntity HistoryMessage(
@@ -345,7 +345,7 @@ public abstract class MessageTrackingStoreConformanceTests
             withIdEventId, "s1", endpointId, null, SampleEvent(endpointId, withIdEventId, "s1")));
         Assert.AreEqual(
             ResolutionStatus.Pending,
-            (await store.GetPendingEvent(endpointId, withIdEventId, "s1")).ResolutionStatus);
+            (await store.GetPendingEvent(endpointId, withIdEventId, "s1"))!.ResolutionStatus);
     }
 
     // ---------------------------------------------------------------------------------
@@ -419,7 +419,7 @@ public abstract class MessageTrackingStoreConformanceTests
                 GuardedEvent(endpointId, requestId, "s1", MessageType.EventRequest, "req-late"));
 
             Assert.IsFalse(lateRequest, $"a late EventRequest copy must not reopen a {terminal} row");
-            Assert.AreEqual(terminal, (await store.GetEvent(endpointId, requestId)).ResolutionStatus);
+            Assert.AreEqual(terminal, (await store.GetEvent(endpointId, requestId))!.ResolutionStatus);
 
             // The stuck-Deferred variant: a throttled DeferralResponse landing after the response.
             var deferralId = Id($"sr-def-{terminal}");
@@ -432,7 +432,7 @@ public abstract class MessageTrackingStoreConformanceTests
                 GuardedEvent(endpointId, deferralId, "s1", MessageType.DeferralResponse, "def-late"));
 
             Assert.IsFalse(lateDeferral, $"a late DeferralResponse must not reopen a {terminal} row");
-            Assert.AreEqual(terminal, (await store.GetEvent(endpointId, deferralId)).ResolutionStatus);
+            Assert.AreEqual(terminal, (await store.GetEvent(endpointId, deferralId))!.ResolutionStatus);
         }
 
         var counts = await store.DownloadEndpointStateCount(endpointId);
@@ -452,7 +452,7 @@ public abstract class MessageTrackingStoreConformanceTests
             GuardedEvent(endpointId, repeated, "s1", MessageType.EventRequest, "m1")));
         Assert.IsTrue(await store.UploadPendingMessage(repeated, "s1", endpointId,
             GuardedEvent(endpointId, repeated, "s1", MessageType.EventRequest, "m2")));
-        Assert.AreEqual("m2", (await store.GetPendingEvent(endpointId, repeated, "s1")).LastMessageId);
+        Assert.AreEqual("m2", (await store.GetPendingEvent(endpointId, repeated, "s1"))!.LastMessageId);
 
         // Deferred drain: the republished request reopens its own deferral.
         var drained = Id("rf-drain");
@@ -460,7 +460,7 @@ public abstract class MessageTrackingStoreConformanceTests
             GuardedEvent(endpointId, drained, "s1", MessageType.DeferralResponse, "d1")));
         Assert.IsTrue(await store.UploadPendingMessage(drained, "s1", endpointId,
             GuardedEvent(endpointId, drained, "s1", MessageType.EventRequest, "d2")));
-        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, drained, "s1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, drained, "s1"))!.ResolutionStatus);
 
         // Re-deferral during a drain.
         var deferred = Id("rf-defer");
@@ -468,7 +468,7 @@ public abstract class MessageTrackingStoreConformanceTests
             GuardedEvent(endpointId, deferred, "s1", MessageType.EventRequest, "p1")));
         Assert.IsTrue(await store.UploadDeferredMessage(deferred, "s1", endpointId,
             GuardedEvent(endpointId, deferred, "s1", MessageType.DeferralResponse, "p2")));
-        Assert.AreEqual(ResolutionStatus.Deferred, (await store.GetDeferredEvent(endpointId, deferred, "s1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Deferred, (await store.GetDeferredEvent(endpointId, deferred, "s1"))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -484,7 +484,7 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.IsFalse(await store.UploadPendingMessage(resubmitted, "s1", endpointId,
             GuardedEvent(endpointId, resubmitted, "s1", MessageType.EventRequest, "req-late")));
         Assert.AreEqual(MessageType.ResubmissionRequest,
-            (await store.GetPendingEvent(endpointId, resubmitted, "s1")).MessageType);
+            (await store.GetPendingEvent(endpointId, resubmitted, "s1"))!.MessageType);
 
         // A handoff park must survive it too, or GetPendingHandoffByExternalJobId loses the row.
         var parked = Id("cr-park");
@@ -504,7 +504,7 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.IsFalse(await store.UploadPendingMessage(settled, "s3", endpointId,
             GuardedEvent(endpointId, settled, "s3", MessageType.EventRequest, "req-late")));
         Assert.AreEqual(MessageType.HandoffCompletedRequest,
-            (await store.GetPendingEvent(endpointId, settled, "s3")).MessageType);
+            (await store.GetPendingEvent(endpointId, settled, "s3"))!.MessageType);
     }
 
     [TestMethod]
@@ -524,7 +524,7 @@ public abstract class MessageTrackingStoreConformanceTests
 
             Assert.IsFalse(await store.UploadPendingMessage(eventId, "s1", endpointId, park),
                 $"a late handoff park must not reopen a {settled} row");
-            Assert.AreEqual(settled, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+            Assert.AreEqual(settled, (await store.GetEvent(endpointId, eventId))!.ResolutionStatus);
         }
 
         // Failed, DeadLettered and Unsupported stay open: a policy retry parks a handoff straight
@@ -540,7 +540,7 @@ public abstract class MessageTrackingStoreConformanceTests
 
             Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId, park),
                 $"a handoff park must stay allowed over a {open} row");
-            Assert.AreEqual("Handoff", (await store.GetPendingEvent(endpointId, eventId, "s1")).PendingSubStatus);
+            Assert.AreEqual("Handoff", (await store.GetPendingEvent(endpointId, eventId, "s1"))!.PendingSubStatus);
         }
 
         // As do Deferred and a control-request projection.
@@ -550,7 +550,7 @@ public abstract class MessageTrackingStoreConformanceTests
         var deferredPark = GuardedEvent(endpointId, deferredId, "s1", MessageType.PendingHandoffResponse, "ho-2");
         deferredPark.PendingSubStatus = "Handoff";
         Assert.IsTrue(await store.UploadPendingMessage(deferredId, "s1", endpointId, deferredPark));
-        Assert.AreEqual("Handoff", (await store.GetPendingEvent(endpointId, deferredId, "s1")).PendingSubStatus);
+        Assert.AreEqual("Handoff", (await store.GetPendingEvent(endpointId, deferredId, "s1"))!.PendingSubStatus);
 
         var resubmittedId = Id("hp-open-resubmission");
         Assert.IsTrue(await store.UploadPendingMessage(resubmittedId, "s1", endpointId,
@@ -558,7 +558,7 @@ public abstract class MessageTrackingStoreConformanceTests
         var resubmittedPark = GuardedEvent(endpointId, resubmittedId, "s1", MessageType.PendingHandoffResponse, "ho-3");
         resubmittedPark.PendingSubStatus = "Handoff";
         Assert.IsTrue(await store.UploadPendingMessage(resubmittedId, "s1", endpointId, resubmittedPark));
-        Assert.AreEqual("Handoff", (await store.GetPendingEvent(endpointId, resubmittedId, "s1")).PendingSubStatus);
+        Assert.AreEqual("Handoff", (await store.GetPendingEvent(endpointId, resubmittedId, "s1"))!.PendingSubStatus);
     }
 
     [TestMethod]
@@ -605,7 +605,7 @@ public abstract class MessageTrackingStoreConformanceTests
                 await store.UploadPendingMessage(eventId, "s1", endpointId,
                     GuardedEvent(endpointId, eventId, "s1", control, Guid.NewGuid().ToString(), parentMessageId: "err-1")),
                 $"{control} must reopen a {settled} row");
-            Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, eventId, "s1")).ResolutionStatus);
+            Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, eventId, "s1"))!.ResolutionStatus);
         }
 
         var counts = await store.DownloadEndpointStateCount(endpointId);
@@ -628,12 +628,12 @@ public abstract class MessageTrackingStoreConformanceTests
         // a control request may otherwise reopen a settled row.
         Assert.IsFalse(await store.UploadPendingMessage(eventId, "s1", endpointId,
             GuardedEvent(endpointId, eventId, "s1", MessageType.ResubmissionRequest, "rs-1")));
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId))!.ResolutionStatus);
 
         // A genuinely new resubmission still reopens it.
         Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId,
             GuardedEvent(endpointId, eventId, "s1", MessageType.ResubmissionRequest, "rs-2")));
-        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, eventId, "s1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, eventId, "s1"))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -653,7 +653,7 @@ public abstract class MessageTrackingStoreConformanceTests
         // refuse it). See StaleWriteGuard and Spec 030 section 5.5.
         Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId,
             GuardedEvent(endpointId, eventId, "s1", MessageType.ResubmissionRequest, "rs-1")));
-        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, eventId, "s1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, eventId, "s1"))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -666,7 +666,7 @@ public abstract class MessageTrackingStoreConformanceTests
             GuardedEvent(endpointId, eventId, "s1", MessageType.ErrorResponse, "err-1")));
         var stored = await store.GetFailedEvent(endpointId, eventId, "s1");
 
-        Assert.IsFalse(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, "err-0", stored.UpdatedAt));
+        Assert.IsFalse(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, "err-0", stored!.UpdatedAt));
         Assert.IsFalse(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt.AddSeconds(-1)));
         Assert.IsFalse(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.DeadLettered, stored.LastMessageId, stored.UpdatedAt));
         Assert.IsFalse(await store.TryArchiveUnresolvedEvent(eventId, "other-session", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
@@ -689,7 +689,7 @@ public abstract class MessageTrackingStoreConformanceTests
         var stored = await store.GetFailedEvent(endpointId, eventId, "s1");
 
         var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() =>
-            store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt))));
+            store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored!.LastMessageId, stored.UpdatedAt))));
 
         Assert.AreEqual(1, results.Count(won => won));
     }
@@ -704,7 +704,7 @@ public abstract class MessageTrackingStoreConformanceTests
             GuardedEvent(endpointId, eventId, "s1", MessageType.ErrorResponse, "err-1")));
         var stored = await store.GetFailedEvent(endpointId, eventId, "s1");
 
-        Assert.IsFalse(await store.TryRestoreArchivedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt),
+        Assert.IsFalse(await store.TryRestoreArchivedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored!.LastMessageId, stored.UpdatedAt),
             "A live row has nothing to restore.");
         Assert.IsTrue(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
         Assert.IsFalse(await store.TryRestoreArchivedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, "err-0", stored.UpdatedAt));
@@ -727,12 +727,12 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.IsTrue(await store.UploadFailedMessage(eventId, "s1", endpointId,
             GuardedEvent(endpointId, eventId, "s1", MessageType.ErrorResponse, "err-1")));
         var stored = await store.GetFailedEvent(endpointId, eventId, "s1");
-        Assert.IsTrue(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
+        Assert.IsTrue(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored!.LastMessageId, stored.UpdatedAt));
         Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId,
             GuardedEvent(endpointId, eventId, "s1", MessageType.ResubmissionRequest, "rs-1")));
 
         Assert.IsFalse(await store.TryRestoreArchivedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
-        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetEvent(endpointId, eventId))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -802,8 +802,8 @@ public abstract class MessageTrackingStoreConformanceTests
 
         Assert.AreEqual(1, completed.Count);
         Assert.AreEqual(completedId, completed[0].EventId);
-        Assert.AreEqual(ResolutionStatus.Skipped, skipped.ResolutionStatus);
-        Assert.AreEqual(nameof(InvalidOperationException), skipped.MessageContent.ErrorContent.ErrorType);
+        Assert.AreEqual(ResolutionStatus.Skipped, skipped!.ResolutionStatus);
+        Assert.AreEqual(nameof(InvalidOperationException), skipped.MessageContent.ErrorContent!.ErrorType);
         StringAssert.Contains(skipped.MessageContent.ErrorContent.ErrorText, "PartnerFailureDispositionClassifier");
     }
 
@@ -832,7 +832,7 @@ public abstract class MessageTrackingStoreConformanceTests
 
         var fetched = await store.GetMessage(eventId, messageId);
 
-        Assert.AreEqual(eventId, fetched.EventId);
+        Assert.AreEqual(eventId, fetched!.EventId);
         Assert.AreEqual(messageId, fetched.MessageId);
         Assert.AreEqual("ce-message-1", fetched.CloudEventId);
         Assert.AreEqual("urn:nimbus:conformance", fetched.CloudEventSource);
@@ -855,7 +855,7 @@ public abstract class MessageTrackingStoreConformanceTests
         await store.UploadFailedMessage(eventId, "session-ce", endpointId, stored);
 
         var fetched = await store.GetFailedEvent(endpointId, eventId, "session-ce");
-        Assert.AreEqual("ce-event-1", fetched.CloudEventId);
+        Assert.AreEqual("ce-event-1", fetched!.CloudEventId);
         Assert.AreEqual("urn:nimbus:conformance", fetched.CloudEventSource);
         Assert.AreEqual("com.nimbus.order-placed.v1", fetched.CloudEventType);
         Assert.AreEqual("orders/42", fetched.CloudEventSubject);
@@ -883,11 +883,11 @@ public abstract class MessageTrackingStoreConformanceTests
         var message = await store.GetMessage(eventId, messageId);
         var trackedEvent = await store.GetPendingEvent(endpointId, eventId, "session-native");
 
-        Assert.IsNull(message.CloudEventId);
+        Assert.IsNull(message!.CloudEventId);
         Assert.IsNull(message.CloudEventSource);
         Assert.IsNull(message.CloudEventType);
         Assert.IsNull(message.CloudEventSubject);
-        Assert.IsNull(trackedEvent.CloudEventId);
+        Assert.IsNull(trackedEvent!.CloudEventId);
         Assert.IsNull(trackedEvent.CloudEventSource);
         Assert.IsNull(trackedEvent.CloudEventType);
         Assert.IsNull(trackedEvent.CloudEventSubject);
@@ -1021,7 +1021,7 @@ public abstract class MessageTrackingStoreConformanceTests
     private static async Task<DateTime> StoredUpdatedAt(IMessageTrackingStore store, string endpointId, string eventId)
     {
         var page = await store.DownloadEndpointStatePaging(endpointId, 100, string.Empty);
-        return page.EnrichedUnresolvedEvents.Single(e => e.EventId == eventId).UpdatedAt;
+        return page!.EnrichedUnresolvedEvents.Single(e => e.EventId == eventId).UpdatedAt;
     }
 
     // The uploads are >= 50 ms apart, so a 5 ms tolerance still identifies the row while
@@ -1128,7 +1128,7 @@ public abstract class MessageTrackingStoreConformanceTests
 
         var state = await store.DownloadEndpointStatePaging(endpointId, pageSize: 20, continuationToken: string.Empty);
 
-        CollectionAssert.Contains(state.PendingEvents.ToList(), StoredId(pendingId, "s1"));
+        CollectionAssert.Contains(state!.PendingEvents.ToList(), StoredId(pendingId, "s1"));
         CollectionAssert.Contains(state.DeferredEvents.ToList(), StoredId(deferredId, "s1"));
         CollectionAssert.Contains(state.FailedEvents.ToList(), StoredId(failedId, "s1"));
         CollectionAssert.Contains(state.DeadletteredEvents.ToList(), StoredId(deadletteredId, "s1"));
@@ -1150,7 +1150,7 @@ public abstract class MessageTrackingStoreConformanceTests
         await store.UploadFailedMessage(failedId, "s2", endpointId, SampleEvent(endpointId, failedId, "s2"));
 
         var state = await store.DownloadEndpointStatePaging(endpointId, pageSize: 20, continuationToken: string.Empty);
-        var events = await store.GetEventsByIds(endpointId, state.GetAllUnresolvedEvents);
+        var events = await store.GetEventsByIds(endpointId, state!.GetAllUnresolvedEvents);
 
         var eventIds = events.Select(e => e.EventId).ToList();
         CollectionAssert.Contains(eventIds, pendingId);
@@ -1427,7 +1427,7 @@ public abstract class MessageTrackingStoreConformanceTests
 
         var fetched = await store.GetPendingEvent(endpointId, eventId, sessionId);
 
-        Assert.AreEqual("Handoff", fetched.PendingSubStatus);
+        Assert.AreEqual("Handoff", fetched!.PendingSubStatus);
         Assert.AreEqual("DMF import in progress", fetched.HandoffReason);
         Assert.AreEqual("DMF-JOB-42", fetched.ExternalJobId);
         Assert.IsNotNull(fetched.ExpectedBy);
@@ -2222,9 +2222,9 @@ public abstract class MessageTrackingStoreConformanceTests
             {
                 Assert.IsNull(fetched.MessageContent?.EventContent?.EventJson,
                     "Search results must omit the heavy EventJson payload.");
-                Assert.AreEqual(stored.MessageContent.EventContent.EventTypeId, fetched.MessageContent?.EventContent?.EventTypeId,
+                Assert.AreEqual(stored.MessageContent.EventContent!.EventTypeId, fetched.MessageContent?.EventContent?.EventTypeId,
                     "EventContent.EventTypeId must survive the search projection.");
-                Assert.AreEqual(stored.MessageContent.ErrorContent.ErrorText, fetched.MessageContent?.ErrorContent?.ErrorText,
+                Assert.AreEqual(stored.MessageContent.ErrorContent!.ErrorText, fetched.MessageContent?.ErrorContent?.ErrorText,
                     "ErrorContent must survive the search projection (the error-grouped view reads it).");
                 Assert.AreEqual(stored.MessageContent.ErrorContent.ErrorType, fetched.MessageContent?.ErrorContent?.ErrorType);
                 Assert.AreEqual(stored.MessageContent.ErrorContent.ExceptionStackTrace, fetched.MessageContent?.ErrorContent?.ExceptionStackTrace);
@@ -2254,7 +2254,7 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.IsNull(searched.Events.Single().MessageContent?.EventContent?.EventJson);
 
         var direct = await store.GetFailedEvent(endpointId, eventId, sessionId);
-        Assert.AreEqual("{\"secret\":\"payload\"}", direct.MessageContent?.EventContent?.EventJson,
+        Assert.AreEqual("{\"secret\":\"payload\"}", direct!.MessageContent?.EventContent?.EventJson,
             "Stripping EventJson from SEARCH results must not corrupt the stored event (in-memory must clone).");
     }
 
@@ -2581,13 +2581,13 @@ public abstract class MessageTrackingStoreConformanceTests
             EventId = eventId,
             MessageId = messageId,
             EndpointId = endpointId,
-            SessionId = value,
+            SessionId = value!,
             CorrelationId = value,
-            EventTypeId = value,
+            EventTypeId = value!,
             OriginatingMessageId = value,
             ParentMessageId = value,
             From = value,
-            To = value,
+            To = value!,
             OriginatingFrom = value,
             OriginalSessionId = value,
             DeadLetterReason = value,

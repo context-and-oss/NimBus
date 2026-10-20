@@ -401,7 +401,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
             .Take(take)
             .ToList();
 
-        return Task.FromResult(new EndpointState
+        return Task.FromResult<EndpointState?>(new EndpointState
         {
             EndpointId = endpointId,
             EventTime = DateTime.UtcNow,
@@ -435,7 +435,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     }
 
     public virtual Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId)
-        => Task.FromResult<IEnumerable<UnresolvedEvent>>(_events.Values.Where(e => e.EndpointId == endpointId && e.ResolutionStatus == ResolutionStatus.Pending).ToList());
+        => Task.FromResult<IEnumerable<UnresolvedEvent>?>(_events.Values.Where(e => e.EndpointId == endpointId && e.ResolutionStatus == ResolutionStatus.Pending).ToList());
 
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId)
         => Task.FromResult<IEnumerable<BlockedMessageEvent>>(_events.Values
@@ -649,7 +649,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
             EventTypes = eventTypes, Payload = payload, Frequency = frequency,
         };
         _subscriptions[sub.Id] = sub;
-        return Task.FromResult(sub);
+        return Task.FromResult<EndpointSubscription?>(sub);
     }
 
     public Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId)

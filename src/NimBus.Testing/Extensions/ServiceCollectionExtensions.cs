@@ -68,7 +68,7 @@ public static class ServiceCollectionExtensions
                 builder.InboxConfiguration,
                 endpoint);
 
-            IRetryPolicyProvider retryPolicyProvider = null;
+            IRetryPolicyProvider? retryPolicyProvider = null;
             if (builder.RetryPolicyConfigurator != null)
             {
                 var provider = new DefaultRetryPolicyProvider();

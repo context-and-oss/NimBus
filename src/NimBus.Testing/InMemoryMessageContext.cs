@@ -22,36 +22,36 @@ public class InMemoryMessageContext : IMessageContext
     public string EventId => _message.EventId;
     public string To => _message.To;
     public string SessionId => _message.SessionId;
-    public string CorrelationId => _message.CorrelationId;
-    public string MessageId => _message.MessageId;
+    public string? CorrelationId => _message.CorrelationId;
+    public string MessageId => _message.MessageId!;
     public MessageType MessageType => _message.MessageType;
     public MessageContent MessageContent => _message.MessageContent;
-    public string ParentMessageId => _message.ParentMessageId;
-    public string OriginatingMessageId => _message.OriginatingMessageId;
+    public string? ParentMessageId => _message.ParentMessageId;
+    public string? OriginatingMessageId => _message.OriginatingMessageId;
     public int? RetryCount => _message.RetryCount;
-    public string From => _message.From;
-    public string OriginatingFrom => _message.OriginatingFrom;
+    public string? From => _message.From;
+    public string? OriginatingFrom => _message.OriginatingFrom;
     public string EventTypeId => _message.EventTypeId;
-    public string OriginalSessionId => _message.OriginalSessionId;
+    public string? OriginalSessionId => _message.OriginalSessionId;
     public int? DeferralSequence => _message.DeferralSequence;
-    public string ReplyTo => _message.ReplyTo;
-    public string ReplyToSessionId => _message.ReplyToSessionId;
-    public string InboxMessageId => _message.InboxMessageId;
+    public string? ReplyTo => _message.ReplyTo;
+    public string? ReplyToSessionId => _message.ReplyToSessionId;
+    public string? InboxMessageId => _message.InboxMessageId;
 
     // IReceivedMessage
     public DateTime EnqueuedTimeUtc { get; }
-    public string DeadLetterReason => DeadLetterReasonRecorded;
-    public string DeadLetterErrorDescription => DeadLetterErrorDescriptionRecorded;
-    public string HandoffReason => _message.HandoffReason;
-    public string ExternalJobId => _message.ExternalJobId;
+    public string? DeadLetterReason => DeadLetterReasonRecorded;
+    public string? DeadLetterErrorDescription => DeadLetterErrorDescriptionRecorded;
+    public string? HandoffReason => _message.HandoffReason;
+    public string? ExternalJobId => _message.ExternalJobId;
     public DateTime? ExpectedBy => _message.ExpectedBy;
 
     // Observable state for test assertions
     public bool IsCompleted { get; private set; }
     public bool IsAbandoned { get; private set; }
     public bool IsDeadLettered { get; private set; }
-    public string DeadLetterReasonRecorded { get; private set; }
-    public string DeadLetterErrorDescriptionRecorded { get; private set; }
+    public string? DeadLetterReasonRecorded { get; private set; }
+    public string? DeadLetterErrorDescriptionRecorded { get; private set; }
 
     // IMessageContext
     public bool IsDeferred => _message.DeferralSequence.HasValue;
@@ -112,7 +112,7 @@ public class InMemoryMessageContext : IMessageContext
         return Task.FromResult(!string.IsNullOrEmpty(_sessionState.BlockedByEventId));
     }
 
-    public Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default)
+    public Task<string?> GetBlockedByEventId(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(_sessionState.BlockedByEventId);
     }
@@ -160,7 +160,7 @@ public class InMemoryMessageContext : IMessageContext
     /// <c>null</c> for a native message — so in-memory tests can assert CloudEvents
     /// handler access and round-trips.
     /// </summary>
-    public NimBus.Core.CloudEvents.CloudEvent GetCloudEvent() => _message.CloudEvent?.CloudEvent;
+    public NimBus.Core.CloudEvents.CloudEvent? GetCloudEvent() => _message.CloudEvent?.CloudEvent;
 
     public int ThrottleRetryCount => 0;
 
