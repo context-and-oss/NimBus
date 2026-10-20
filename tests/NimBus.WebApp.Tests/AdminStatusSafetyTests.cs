@@ -74,7 +74,7 @@ public sealed class AdminStatusSafetyTests
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
         var stored = await store.GetEvent(EndpointId, EventId);
-        Assert.AreEqual(StoreResolutionStatus.Failed, stored.ResolutionStatus);
+        Assert.AreEqual(StoreResolutionStatus.Failed, stored!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -99,7 +99,7 @@ public sealed class AdminStatusSafetyTests
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var stored = await store.GetEvent(EndpointId, EventId);
-        Assert.AreEqual(StoreResolutionStatus.Skipped, stored.ResolutionStatus);
+        Assert.AreEqual(StoreResolutionStatus.Skipped, stored!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -128,8 +128,8 @@ public sealed class AdminStatusSafetyTests
             before: null);
 
         Assert.AreEqual(1, result.Succeeded);
-        Assert.AreEqual(StoreResolutionStatus.Skipped, (await store.GetEvent(EndpointId, EventId)).ResolutionStatus);
-        Assert.AreEqual(StoreResolutionStatus.Failed, (await store.GetEvent(siblingEndpointId, siblingEventId)).ResolutionStatus);
+        Assert.AreEqual(StoreResolutionStatus.Skipped, (await store.GetEvent(EndpointId, EventId))!.ResolutionStatus);
+        Assert.AreEqual(StoreResolutionStatus.Failed, (await store.GetEvent(siblingEndpointId, siblingEventId))!.ResolutionStatus);
         Assert.IsNull(await store.GetEvent(EndpointId, siblingEventId), "The sibling's event must not be rewritten under the skipped endpoint.");
     }
 
@@ -189,7 +189,7 @@ public sealed class AdminStatusSafetyTests
         await Assert.ThrowsExactlyAsync<ArgumentException>(() => InvokeOperation(sut, operation, new List<string>()));
 
         var stored = await store.GetEvent(EndpointId, EventId);
-        Assert.AreEqual(StoreResolutionStatus.Failed, stored.ResolutionStatus);
+        Assert.AreEqual(StoreResolutionStatus.Failed, stored!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -205,7 +205,7 @@ public sealed class AdminStatusSafetyTests
             () => sut.DeleteByStatusAsync(EndpointId, new List<string> { status }));
 
         var stored = await store.GetEvent(EndpointId, EventId);
-        Assert.AreEqual(StoreResolutionStatus.Failed, stored.ResolutionStatus);
+        Assert.AreEqual(StoreResolutionStatus.Failed, stored!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -221,7 +221,7 @@ public sealed class AdminStatusSafetyTests
             () => sut.SkipMessagesAsync(EndpointId, null!, before: null));
 
         var stored = await store.GetEvent(EndpointId, EventId);
-        Assert.AreEqual(StoreResolutionStatus.Failed, stored.ResolutionStatus);
+        Assert.AreEqual(StoreResolutionStatus.Failed, stored!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -271,7 +271,7 @@ public sealed class AdminStatusSafetyTests
                 before: null));
 
         var stored = await store.GetEvent(EndpointId, EventId);
-        Assert.AreEqual(StoreResolutionStatus.Failed, stored.ResolutionStatus);
+        Assert.AreEqual(StoreResolutionStatus.Failed, stored!.ResolutionStatus);
     }
 
     private static Task InvokeOperation(AdminService service, string operation, List<string> statuses) =>

@@ -27,12 +27,12 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
     private readonly List<TopicRuntimeProperties> _topicRuntime = new();
 
     /// <summary>Every (status, forwardTo, changeForwardTo) update, in order.</summary>
-    public List<(string Topic, string Subscription, EntityStatus Status, string ForwardTo, bool ChangeForwardTo)> Updates { get; } = new();
+    public List<(string Topic, string Subscription, EntityStatus Status, string? ForwardTo, bool ChangeForwardTo)> Updates { get; } = new();
 
     public List<(string Topic, string Subscription)> DeletedSubscriptions { get; } = new();
     public List<string> DeletedTopics { get; } = new();
     public List<(string Topic, string Subscription, string Rule)> DeletedRules { get; } = new();
-    public List<(string Topic, string Subscription, string Rule, string Filter, string Action)> CreatedRules { get; } = new();
+    public List<(string Topic, string Subscription, string Rule, string Filter, string? Action)> CreatedRules { get; } = new();
 
     /// <summary>Set to throw from the next <see cref="UpdateSubscription"/> whose status matches.</summary>
     public EntityStatus? FailUpdateToStatus { get; set; }
@@ -44,7 +44,7 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
         string? forwardTo = null,
         // EntityStatus is a struct, not an enum, so it can't be a default parameter value.
         EntityStatus? status = null,
-        params (string Name, string Filter, string Action)[] rules)
+        params (string Name, string Filter, string? Action)[] rules)
     {
         if (!_subscriptions.TryGetValue(topicName, out var byName))
         {
@@ -99,7 +99,7 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
 
     // ───────────────────────── Reads ─────────────────────────
 
-    public Task<SubscriptionProperties> GetSubscription(string topicName, string subscriptionName) =>
+    public Task<SubscriptionProperties?> GetSubscription(string topicName, string subscriptionName) =>
         Task.FromResult(
             _subscriptions.TryGetValue(topicName, out var byName) && byName.TryGetValue(subscriptionName, out var properties)
                 ? properties

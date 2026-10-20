@@ -105,21 +105,21 @@ public sealed class AdminReconcileServiceTests
         Assert.AreEqual(0, result.Skipped);
         CollectionAssert.AreEqual(new[] { "evt-repairable" }, result.RepairedEventIds.ToArray());
 
-        var repaired = await store.GetEvent(EndpointId, "evt-repairable");
+        var repaired = (await store.GetEvent(EndpointId, "evt-repairable"))!;
         Assert.AreEqual(ResolutionStatus.Completed, repaired.ResolutionStatus);
         Assert.AreEqual(MessageType.ResolutionResponse, repaired.MessageType);
         Assert.AreEqual("rsp-1", repaired.LastMessageId, "the row now answers the response the Resolver stored");
         Assert.AreEqual("OrderPlaced", repaired.EventTypeId);
 
         // The rows the rule left to a human are untouched.
-        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(EndpointId, "evt-in-flight", SessionId)).ResolutionStatus);
-        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(EndpointId, "evt-skip-request", SessionId)).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(EndpointId, "evt-in-flight", SessionId))!.ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(EndpointId, "evt-skip-request", SessionId))!.ResolutionStatus);
 
         var audit = (await store.GetMessageAudits("evt-repairable")).Single();
         Assert.AreEqual(MessageAuditType.ReconcileStalePending, audit.AuditType);
         Assert.AreEqual("owner@example.com", audit.AuditorName);
         Assert.IsFalse(string.IsNullOrWhiteSpace(audit.Comment));
-        var data = JObject.Parse(audit.Data);
+        var data = JObject.Parse(audit.Data!);
         Assert.AreEqual("Pending", data["previousStatus"]!.ToString());
         Assert.AreEqual("Completed", data["newStatus"]!.ToString());
         Assert.AreEqual(nameof(MessageType.EventRequest), data["staleMessageType"]!.ToString());
@@ -173,7 +173,7 @@ public sealed class AdminReconcileServiceTests
         Assert.AreEqual(1, result.Processed);
         Assert.AreEqual(0, result.Succeeded);
         Assert.AreEqual(1, result.Skipped, "a row written minutes ago may still be in flight");
-        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(EndpointId, "evt-fresh", SessionId)).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(EndpointId, "evt-fresh", SessionId))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -213,7 +213,7 @@ public sealed class AdminReconcileServiceTests
         StringAssert.Contains(result.Errors[0], "audit", StringComparison.OrdinalIgnoreCase);
         Assert.AreEqual(
             ResolutionStatus.Completed,
-            (await store.GetEvent(EndpointId, "evt-repairable")).ResolutionStatus);
+            (await store.GetEvent(EndpointId, "evt-repairable"))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -234,7 +234,7 @@ public sealed class AdminReconcileServiceTests
         var result = await service.ReconcileStalePendingAsync(EndpointId, Base.AddHours(1), maxRepairs: null, "owner", null);
 
         Assert.AreEqual(1, result.Succeeded, "the repairable row sorts after 501 operator-decision rows");
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(EndpointId, "evt-repairable")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(EndpointId, "evt-repairable"))!.ResolutionStatus);
     }
 
     [TestMethod]

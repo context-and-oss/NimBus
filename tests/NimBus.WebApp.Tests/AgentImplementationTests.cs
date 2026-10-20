@@ -129,7 +129,7 @@ public class AgentImplementationTests
     private sealed class NullPendingStore : InMemoryMessageStore
     {
         public override Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId)
-            => Task.FromResult<IEnumerable<UnresolvedEvent>>(null!);
+            => Task.FromResult<IEnumerable<UnresolvedEvent>?>(null);
     }
 
     // The Agent Zone endpoint id receive/settle resolve to when no IConfiguration is
@@ -179,7 +179,7 @@ public class AgentImplementationTests
             settlement,
             registry,
             config: null!,                 // -> AgentZone default zone id
-            httpContextAccessor,          // null -> CurrentAgentId() falls back to "demo-agent"
+            httpContextAccessor!,         // null -> CurrentAgentId() falls back to "demo-agent"
             NullLogger<AgentImplementation>.Instance);
         return (impl, store, publisher, handoffs, registry);
     }

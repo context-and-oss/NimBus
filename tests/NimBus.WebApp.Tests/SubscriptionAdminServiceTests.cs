@@ -360,7 +360,7 @@ public sealed class SubscriptionAdminServiceTests
         public string Description => string.Empty;
         public string Namespace => "Tests";
         public string SecurityGroupName => string.Empty;
-        public ISystem System => null;
+        public ISystem System => null!;
         public IEnumerable<IEventType> EventTypesProduced => Array.Empty<IEventType>();
         public IEnumerable<IEventType> EventTypesConsumed => Array.Empty<IEventType>();
         public IEnumerable<IRoleAssignment> RoleAssignments => Array.Empty<IRoleAssignment>();
