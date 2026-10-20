@@ -35,7 +35,7 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
         _getEndpointErrorList = getEndpointErrorList;
         _logger = logger;
     }
-    public async Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail,
+    public async Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail,
         string type, string author, string url, List<string> eventTypes, string payload, int frequency)
     {
         var formattedType = string.Equals(type, "mail", StringComparison.OrdinalIgnoreCase) ||
@@ -72,7 +72,7 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
 
         _logger?.LogError(
             "COSMOS SUBSCRIPTION ERROR: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}", subscription.EndpointId, subscription.Id, response.StatusCode);
-        return null!; //Return error?
+        return null; //Return error?
     }
 
     public async Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId)

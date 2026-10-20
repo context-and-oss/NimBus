@@ -118,7 +118,7 @@ public class EventHandlerContext : IEventHandlerContext
     public void MarkPendingHandoff(string reason, string? externalJobId = null, TimeSpan? expectedBy = null)
     {
         Outcome = HandlerOutcome.PendingHandoff;
-        HandoffMetadata = new HandoffMetadata(reason, externalJobId!, expectedBy);
+        HandoffMetadata = new HandoffMetadata(reason, externalJobId, expectedBy);
 
         if (_messageContext != null)
         {

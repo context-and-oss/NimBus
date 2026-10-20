@@ -408,7 +408,7 @@ public class PublisherClient : IPublisherClient
         var cloudEvent = new CloudEvent
         {
             Id = message.MessageId!,
-            Source = _cloudEvents.Source?.ToString()!,
+            Source = _cloudEvents.Source?.ToString(),
             Type = type,
             Subject = _cloudEvents.Subject?.Invoke(@event),
             Time = _cloudEvents.Time?.Invoke(@event) ?? DateTimeOffset.UtcNow,

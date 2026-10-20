@@ -196,7 +196,7 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) =>
         InstrumentAsync(nameof(DownloadEndpointSessionStateCountBatch), () => _inner.DownloadEndpointSessionStateCountBatch(endpointId, sessionIds));
 
-    public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) =>
+    public Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) =>
         InstrumentAsync(nameof(DownloadEndpointStatePaging), () => _inner.DownloadEndpointStatePaging(endpointId, pageSize, continuationToken));
 
     // ── Session views ───────────────────────────────────────────────────
@@ -204,7 +204,7 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take) =>
         InstrumentAsync(nameof(GetBlockedEventsOnSession), () => _inner.GetBlockedEventsOnSession(endpointId, sessionId, skip, take));
 
-    public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId) =>
+    public Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId) =>
         InstrumentAsync(nameof(GetPendingEventsOnSession), () => _inner.GetPendingEventsOnSession(endpointId));
 
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId) =>

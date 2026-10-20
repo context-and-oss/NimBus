@@ -31,7 +31,7 @@ public sealed class CloudEvent
     public string Id { get; set; } = null!;
 
     /// <summary>CloudEvents <c>source</c> attribute (required).</summary>
-    public string Source { get; set; } = null!;
+    public string? Source { get; set; }
 
     /// <summary>CloudEvents <c>type</c> attribute (required).</summary>
     public string Type { get; set; } = null!;

@@ -163,7 +163,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
             });
     }
 
-    public async Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize,
+    public async Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize,
         string continuationToken)
     {
         var container = await _getEndpointContainer(endpointId);
@@ -302,7 +302,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
             _logger?.LogInformation("COSMOS PAGING: Endpoint container not found for '{EndpointId}'", endpointId);
-            return null!;
+            return null;
         }
         catch (Exception e)
         {

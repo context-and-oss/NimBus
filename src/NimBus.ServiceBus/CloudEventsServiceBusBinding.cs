@@ -212,7 +212,7 @@ public static class CloudEventsServiceBusBinding
         // Id/Source/Type stay null when absent (detected-but-invalid, see ParseBinary).
         cloudEvent.SpecVersion = (string?)envelope[AttrSpecVersion];
         cloudEvent.Id = ((string?)envelope[AttrId])!;
-        cloudEvent.Source = ((string?)envelope[AttrSource])!;
+        cloudEvent.Source = (string?)envelope[AttrSource];
         cloudEvent.Type = ((string?)envelope[AttrType])!;
         cloudEvent.Subject = (string?)envelope[AttrSubject];
         cloudEvent.DataContentType = (string?)envelope[AttrDataContentType];

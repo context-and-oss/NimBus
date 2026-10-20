@@ -56,7 +56,7 @@ public sealed class HandoffClient : IHandoffClient
     {
         ValidateCoords(coords);
         var detailsJson = SerializeResult(result);
-        var message = HandoffControlMessageFactory.CreateCompleted(ToFactoryCoords(coords), detailsJson!);
+        var message = HandoffControlMessageFactory.CreateCompleted(ToFactoryCoords(coords), detailsJson);
         await _sender.Send(message, 0, cancellationToken).ConfigureAwait(false);
         _logger?.LogInformation(
             "HandoffClient.CompleteAsync: published HandoffCompletedRequest to {Endpoint} (EventId={EventId}, SessionId={SessionId}).",
@@ -66,7 +66,7 @@ public sealed class HandoffClient : IHandoffClient
     public async Task FailAsync(HandoffSettlement coords, string errorText, string? errorType = null, CancellationToken cancellationToken = default)
     {
         ValidateCoords(coords);
-        var message = HandoffControlMessageFactory.CreateFailed(ToFactoryCoords(coords), errorText, errorType!);
+        var message = HandoffControlMessageFactory.CreateFailed(ToFactoryCoords(coords), errorText, errorType);
         await _sender.Send(message, 0, cancellationToken).ConfigureAwait(false);
         _logger?.LogInformation(
             "HandoffClient.FailAsync: published HandoffFailedRequest to {Endpoint} (EventId={EventId}, SessionId={SessionId}, ErrorType={ErrorType}).",

@@ -92,7 +92,7 @@ ORDER BY SessionId, UpdatedAtUtc DESC, Id DESC";
         }).ToList();
     }
 
-    public async Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
+    public async Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
     {
         var offset = DecodeOffset(continuationToken);
         var effectivePageSize = pageSize > 0 ? pageSize : 100;

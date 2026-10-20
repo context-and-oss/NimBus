@@ -51,7 +51,7 @@ public static class E2eExecution
 public sealed class E2eControlClient(HttpClient http)
 {
     /// <summary>Unregistered or non-GUID sessions pass through without a fault.</summary>
-    public async Task<string> AttemptAsync(string sessionId, string eventType, string stage, string messageId, string eventId, string? origin, CancellationToken cancellationToken)
+    public async Task<string> AttemptAsync(string? sessionId, string eventType, string stage, string messageId, string eventId, string? origin, CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(sessionId, out var session)) return "continue";
         using var response = await http.PostAsJsonAsync($"/api/e2e/sessions/{session}/attempt",

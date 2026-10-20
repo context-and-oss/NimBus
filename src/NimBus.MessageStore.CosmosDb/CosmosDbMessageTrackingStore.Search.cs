@@ -471,7 +471,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         };
     }
 
-    public async Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
+    public async Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId)
     {
         var container = await _getEndpointContainer(endpointId);
         var blockedMessageEvents = new List<UnresolvedEvent>();
@@ -499,7 +499,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
             _logger?.LogInformation("COSMOS PENDING-EVENTS: Endpoint container not found for '{EndpointId}'", endpointId);
-            return null!;
+            return null;
         }
         catch (Exception e)
         {

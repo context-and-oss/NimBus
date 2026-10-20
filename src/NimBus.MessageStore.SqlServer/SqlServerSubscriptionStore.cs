@@ -20,7 +20,7 @@ internal sealed class SqlServerSubscriptionStore : ISubscriptionStore
     private string T(string table) => _context.Table(table);
     // ───────── Subscription store ─────────
 
-    public async Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
+    public async Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
     {
         var sub = new EndpointSubscription
         {
