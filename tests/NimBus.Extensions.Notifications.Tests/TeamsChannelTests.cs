@@ -25,18 +25,18 @@ public class TeamsChannelTests
             eventId: "e-9",
             correlationId: "c-9"));
 
-        var root = JObject.Parse(handler.LastBody);
-        var card = root["attachments"][0]["content"];
-        Assert.AreEqual("AdaptiveCard", (string)card["type"]);
-        Assert.AreEqual("1.4", (string)card["version"]);
+        var root = JObject.Parse(handler.LastBody!);
+        var card = root["attachments"]![0]!["content"]!;
+        Assert.AreEqual("AdaptiveCard", (string?)card["type"]);
+        Assert.AreEqual("1.4", (string?)card["version"]);
 
-        var body = (JArray)card["body"];
+        var body = (JArray)card["body"]!;
         var titleBlock = body[0];
-        Assert.AreEqual("Session blocked", (string)titleBlock["text"]);
-        Assert.AreEqual("attention", (string)titleBlock["color"]);
+        Assert.AreEqual("Session blocked", (string?)titleBlock["text"]);
+        Assert.AreEqual("attention", (string?)titleBlock["color"]);
 
-        var facts = (JArray)body[2]["facts"];
-        var factTitles = facts.Select(f => (string)f["title"]).ToList();
+        var facts = (JArray)body[2]["facts"]!;
+        var factTitles = facts.Select(f => (string?)f["title"]).ToList();
         CollectionAssert.Contains(factTitles, "Severity");
         CollectionAssert.Contains(factTitles, "Event Id");
         CollectionAssert.Contains(factTitles, "Correlation Id");
@@ -50,8 +50,8 @@ public class TeamsChannelTests
         var warning = JObject.Parse(TeamsChannel.BuildAdaptiveCard(
             TestNotifications.Build(severity: NotificationSeverity.Warning)));
 
-        var criticalColor = (string)critical["attachments"][0]["content"]["body"][0]["color"];
-        var warningColor = (string)warning["attachments"][0]["content"]["body"][0]["color"];
+        var criticalColor = (string?)critical["attachments"]![0]!["content"]!["body"]![0]!["color"];
+        var warningColor = (string?)warning["attachments"]![0]!["content"]!["body"]![0]!["color"];
 
         Assert.AreEqual("attention", criticalColor);
         Assert.AreEqual("accent", warningColor);
@@ -65,9 +65,9 @@ public class TeamsChannelTests
         var json = TeamsChannel.BuildAdaptiveCard(
             TestNotifications.Build(severity: NotificationSeverity.Error, errorDetails: huge));
 
-        var facts = (JArray)JObject.Parse(json)["attachments"][0]["content"]["body"][2]["facts"];
-        var error = facts.First(f => (string)f["title"] == "Error");
-        var value = (string)error["value"];
+        var facts = (JArray)JObject.Parse(json)["attachments"]![0]!["content"]!["body"]![2]!["facts"]!;
+        var error = facts.First(f => (string?)f["title"] == "Error");
+        var value = (string)error["value"]!;
         Assert.IsTrue(value.Length < huge.Length, "Error detail should be truncated.");
         StringAssert.Contains(value, "truncated");
     }

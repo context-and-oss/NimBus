@@ -44,7 +44,7 @@ public sealed class SqlServerMessageTrackingStoreTests : MessageTrackingStoreCon
         command.Parameters.AddWithValue("@EventId", "precision-event");
         await command.ExecuteNonQueryAsync();
         var inspected = await store.GetEvent("endpoint", "precision-event");
-        Assert.IsTrue(await store.TrySkipDeferredMessage("precision-event", "session", "endpoint", "deferral", inspected.UpdatedAt));
+        Assert.IsTrue(await store.TrySkipDeferredMessage("precision-event", "session", "endpoint", "deferral", inspected!.UpdatedAt));
     }
 
     [TestMethod]
@@ -65,7 +65,7 @@ public sealed class SqlServerMessageTrackingStoreTests : MessageTrackingStoreCon
                 EventId = eventId, SessionId = "session", EndpointId = "endpoint", EnqueuedTimeUtc = DateTime.UtcNow,
             });
             var stored = await store.GetEvent("endpoint", eventId);
-            var subMillisecond = stored.UpdatedAt.Ticks % TimeSpan.TicksPerMillisecond;
+            var subMillisecond = stored!.UpdatedAt.Ticks % TimeSpan.TicksPerMillisecond;
             if (subMillisecond is not (0 or 3333 or 3334 or 6666 or 6667)) offGrid++;
         }
 

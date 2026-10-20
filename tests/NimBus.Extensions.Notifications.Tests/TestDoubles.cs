@@ -40,8 +40,8 @@ internal sealed class CapturingHttpMessageHandler : HttpMessageHandler
     }
 
     public int CallCount { get; private set; }
-    public HttpRequestMessage LastRequest { get; private set; }
-    public string LastBody { get; private set; }
+    public HttpRequestMessage? LastRequest { get; private set; }
+    public string? LastBody { get; private set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -117,10 +117,10 @@ internal sealed class FakeMessageContext : IMessageContext
     public int? DeferralSequence { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; } = DateTime.UtcNow;
     public string From { get; set; } = string.Empty;
-    public string DeadLetterReason { get; set; }
-    public string DeadLetterErrorDescription { get; set; }
-    public string HandoffReason { get; set; }
-    public string ExternalJobId { get; set; }
+    public string? DeadLetterReason { get; set; }
+    public string? DeadLetterErrorDescription { get; set; }
+    public string? HandoffReason { get; set; }
+    public string? ExternalJobId { get; set; }
     public DateTime? ExpectedBy { get; set; }
     public bool IsDeferred { get; set; }
     public int ThrottleRetryCount { get; set; }
@@ -138,7 +138,7 @@ internal sealed class FakeMessageContext : IMessageContext
     public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);
     public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) => Task.FromResult(false);
     public Task<bool> IsSessionBlockedByEventId(CancellationToken ct = default) => Task.FromResult(false);
-    public Task<string> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult(string.Empty);
+    public Task<string?> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult<string?>(string.Empty);
     public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) => Task.FromResult(0);
     public Task IncrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
     public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;

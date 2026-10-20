@@ -25,12 +25,12 @@ public class WebhookChannelTests
             severity: NotificationSeverity.Critical, title: "Disk full", eventId: "e-42"));
 
         Assert.AreEqual(1, handler.CallCount);
-        Assert.AreEqual(HttpMethod.Post, handler.LastRequest.Method);
-        Assert.AreEqual("https://example.com/hook", handler.LastRequest.RequestUri.ToString());
-        var json = JObject.Parse(handler.LastBody);
-        Assert.AreEqual("Disk full", (string)json["summary"]);
-        Assert.AreEqual("Critical", (string)json["severity"]);
-        Assert.AreEqual("e-42", (string)json["event"]);
+        Assert.AreEqual(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.AreEqual("https://example.com/hook", handler.LastRequest.RequestUri!.ToString());
+        var json = JObject.Parse(handler.LastBody!);
+        Assert.AreEqual("Disk full", (string?)json["summary"]);
+        Assert.AreEqual("Critical", (string?)json["severity"]);
+        Assert.AreEqual("e-42", (string?)json["event"]);
     }
 
     [TestMethod]
@@ -42,10 +42,10 @@ public class WebhookChannelTests
 
         await channel.SendAsync(TestNotifications.Build(title: "Default", eventId: "e-7"));
 
-        Assert.AreEqual("application/json", handler.LastRequest.Content.Headers.ContentType.MediaType);
-        var json = JObject.Parse(handler.LastBody);
-        Assert.AreEqual("Default", (string)json["Title"]);
-        Assert.AreEqual("e-7", (string)json["EventId"]);
+        Assert.AreEqual("application/json", handler.LastRequest!.Content!.Headers.ContentType!.MediaType);
+        var json = JObject.Parse(handler.LastBody!);
+        Assert.AreEqual("Default", (string?)json["Title"]);
+        Assert.AreEqual("e-7", (string?)json["EventId"]);
     }
 
     [TestMethod]

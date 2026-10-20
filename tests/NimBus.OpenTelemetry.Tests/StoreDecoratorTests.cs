@@ -256,11 +256,11 @@ internal sealed class ThrowingStore : IMessageTrackingStore
     public Task<bool> PurgeMessages(string endpointId) => _passthrough.PurgeMessages(endpointId);
     public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => _passthrough.ArchiveFailedEvent(eventId, sessionId, endpointId);
     public Task StoreMessage(NimBus.MessageStore.MessageEntity message) => _passthrough.StoreMessage(message);
-    public Task<NimBus.MessageStore.MessageEntity> GetMessage(string eventId, string messageId) => _passthrough.GetMessage(eventId, messageId);
+    public Task<NimBus.MessageStore.MessageEntity?> GetMessage(string eventId, string messageId) => _passthrough.GetMessage(eventId, messageId);
     public Task<IEnumerable<NimBus.MessageStore.MessageEntity>> GetEventHistory(string eventId) => _passthrough.GetEventHistory(eventId);
-    public Task<NimBus.MessageStore.MessageEntity> GetLatestEventRequestMessage(string eventId) => _passthrough.GetLatestEventRequestMessage(eventId);
-    public Task<NimBus.MessageStore.MessageEntity> GetFailedMessage(string eventId, string endpointId) => _passthrough.GetFailedMessage(eventId, endpointId);
-    public Task<NimBus.MessageStore.MessageEntity> GetDeadletteredMessage(string eventId, string endpointId) => _passthrough.GetDeadletteredMessage(eventId, endpointId);
+    public Task<NimBus.MessageStore.MessageEntity?> GetLatestEventRequestMessage(string eventId) => _passthrough.GetLatestEventRequestMessage(eventId);
+    public Task<NimBus.MessageStore.MessageEntity?> GetFailedMessage(string eventId, string endpointId) => _passthrough.GetFailedMessage(eventId, endpointId);
+    public Task<NimBus.MessageStore.MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId) => _passthrough.GetDeadletteredMessage(eventId, endpointId);
     public Task RemoveStoredMessage(string eventId, string messageId) => _passthrough.RemoveStoredMessage(eventId, messageId);
     public Task<int> PurgeStoredMessages(string endpointId) => _passthrough.PurgeStoredMessages(endpointId);
     public Task<NimBus.MessageStore.MessageSearchResult> SearchMessages(NimBus.MessageStore.MessageFilter filter, string? continuationToken, int maxItemCount) => _passthrough.SearchMessages(filter, continuationToken, maxItemCount);

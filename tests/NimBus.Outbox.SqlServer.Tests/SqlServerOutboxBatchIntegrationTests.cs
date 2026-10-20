@@ -26,8 +26,8 @@ namespace NimBus.Outbox.SqlServer.Tests;
 [TestClass]
 public sealed class SqlServerOutboxBatchIntegrationTests
 {
-    private static string _schema;
-    private static SqlServerOutboxOptions _options;
+    private static string? _schema;
+    private static SqlServerOutboxOptions _options = null!;
 
     private static string GetConnectionString()
     {
