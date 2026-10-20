@@ -83,19 +83,19 @@ public partial class EventImplementation
 
     public async Task<IActionResult> PostComposeNewEventAsync(ResubmitWithChanges body)
     {
-        logger.LogInformation("Compose new event. EventTypeId:{EventTypeId}", body?.EventTypeId);
+        logger.LogInformation("Compose new event. EventTypeId:{EventTypeId}", ForLog(body?.EventTypeId));
 
         var eventType = platform.EventTypes.FirstOrDefault(x => x.Id.Equals(body!.EventTypeId, StringComparison.OrdinalIgnoreCase));
         if (eventType == null)
         {
-            logger.LogError("Could not find event type: {EventTypeId}", body!.EventTypeId);
+            logger.LogError("Could not find event type: {EventTypeId}", ForLog(body!.EventTypeId));
             return new BadRequestObjectResult("Could not find event type: " + body.EventTypeId);
         }
 
         var producingEndpoint = platform.GetProducers(eventType).FirstOrDefault();
         if (producingEndpoint == null)
         {
-            logger.LogError("Could not find any producers for the given event: {EventTypeId}", body!.EventTypeId);
+            logger.LogError("Could not find any producers for the given event: {EventTypeId}", eventType.Id);
             return new BadRequestObjectResult("Could not find any producers for the given event");
         }
 
@@ -216,6 +216,11 @@ public partial class EventImplementation
     }
 
     private static readonly OperatorCommandContext WebAppCommand = new(OperatorChannel.WebApp);
+
+    // The composed event type id comes from the caller; strip line breaks so it cannot forge
+    // log entries.
+    private static string ForLog(string? value)
+        => (value ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ');
 
     private const string StaleMessageDetail =
         "This message changed since it was loaded: it was resubmitted, skipped or failed again. Refresh and try again.";
