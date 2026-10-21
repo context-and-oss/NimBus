@@ -92,6 +92,64 @@ public sealed class ProcessorStopSettlementTests
             "Only the first delivery's ErrorResponse: no deferral and no parked copy.");
     }
 
+    [TestMethod]
+    public async Task Skip_redelivered_after_it_unblocked_the_session_still_requests_the_drain()
+    {
+        // The first delivery of the skip clears the block, then fails before it requests the
+        // drain. Its redelivery no longer finds the session blocked by the skipped event; it must
+        // still request the drain, or the parked event stays parked.
+        var fixture = new EndToEndFixture();
+        fixture.RegisterHandler(() => new RecordingOrderPlacedHandler
+        {
+            ExceptionFactory = order => order.OrderId == "ORD-FAIL" ? new InvalidOperationException("fails") : null,
+        });
+        await fixture.Publisher.Publish(new OrderPlaced("skip-session") { OrderId = "ORD-FAIL" });
+        await fixture.Publisher.Publish(new OrderPlaced("skip-session") { OrderId = "ORD-PARKED" });
+        await fixture.DeliverAll();
+        var failedEventId = fixture.ResponseBus.SentMessages.Single(message => message.MessageType == MessageType.ErrorResponse).EventId;
+        var session = fixture.PublishBus.GetSession("skip-session");
+        session.OnStateWritten = () =>
+        {
+            if (session.State.BlockedByEventId is null)
+            {
+                session.OnStateWritten = null;
+                throw new ServiceBusException("The connection was lost.", ServiceBusFailureReason.ServiceCommunicationProblem);
+            }
+        };
+
+        var skip = CreateSkipRequest("skip-session", failedEventId);
+        await fixture.PublishBus.Send(skip);
+        await fixture.DeliverAllWithResults();
+        Assert.IsNull(session.State.BlockedByEventId, "The first delivery cleared the block.");
+        Assert.IsFalse(fixture.ResponseBus.SentMessages.Any(message => message.MessageType == MessageType.ProcessDeferredRequest),
+            "The first delivery failed before requesting the drain.");
+
+        await fixture.PublishBus.Send(Clone(skip));
+        await fixture.DeliverAllWithResults();
+
+        Assert.AreEqual(1, fixture.ResponseBus.SentMessages.Count(message => message.MessageType == MessageType.ProcessDeferredRequest),
+            "The redelivered skip must request the drain.");
+        Assert.AreEqual(1, fixture.ResponseBus.SentMessages.Count(message => message.MessageType == MessageType.SkipResponse));
+    }
+
+    private static Message CreateSkipRequest(string sessionId, string eventId) => new()
+    {
+        To = "OrderPlaced",
+        SessionId = sessionId,
+        CorrelationId = Guid.NewGuid().ToString(),
+        MessageId = Guid.NewGuid().ToString(),
+        EventId = eventId,
+        EventTypeId = "OrderPlaced",
+        MessageType = MessageType.SkipRequest,
+        From = Constants.ManagerId,
+        OriginatingMessageId = Constants.Self,
+        ParentMessageId = Constants.Self,
+        MessageContent = new MessageContent
+        {
+            EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{}" },
+        },
+    };
+
     private static Message Clone(IMessage message) =>
         JsonConvert.DeserializeObject<Message>(JsonConvert.SerializeObject(message))!;
 }
