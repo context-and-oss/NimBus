@@ -549,10 +549,37 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     public async Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default)
     {
         SessionState state = await GetSessionState(cancellationToken);
-        int sequence = state.NextDeferralSequence;
-        state.NextDeferralSequence++;
+        int sequence = state.TakeDeferralSequence();
         await UpdateSessionState(state, cancellationToken);
         return sequence;
+    }
+
+    public async Task MarkDeferredMessageReplayed(int deferralSequence, CancellationToken cancellationToken = default)
+    {
+        SessionState state = await GetSessionState(cancellationToken);
+        var replayedThrough = state.ReplayedThroughSequence;
+        state.MarkReplayed(deferralSequence);
+        if (state.ReplayedThroughSequence != replayedThrough)
+            await UpdateSessionState(state, cancellationToken);
+    }
+
+    public async Task<bool> HasUnreplayedDeferredMessages(CancellationToken cancellationToken = default)
+    {
+        SessionState state = await GetSessionState(cancellationToken);
+        return state.HasUnreplayedMessages();
+    }
+
+    public async Task<int?> GetDrainRequestedForSequence(CancellationToken cancellationToken = default)
+    {
+        SessionState state = await GetSessionState(cancellationToken);
+        return state.DrainRequestedForSequence;
+    }
+
+    public async Task SetDrainRequestedForSequence(int? deferralSequence, CancellationToken cancellationToken = default)
+    {
+        SessionState state = await GetSessionState(cancellationToken);
+        state.DrainRequestedForSequence = deferralSequence;
+        await UpdateSessionState(state, cancellationToken);
     }
 
     public async Task IncrementDeferredCount(CancellationToken cancellationToken = default)

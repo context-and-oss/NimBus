@@ -87,6 +87,10 @@ public class StrictMessageHandler : MessageHandler
                 return;
             }
 
+            var replaySequence = messageContext.DeferralSequence;
+            if (replaySequence is { } sequence)
+                await RecordReplay(messageContext, sequence);
+
             // Inbox pre-check ahead of the session guard: a recorded EventRequest that
             // redelivers while its session is blocked by another event must surface as a
             // duplicate skip, not defer behind the blocker.
@@ -107,6 +111,15 @@ public class StrictMessageHandler : MessageHandler
 
             if (!string.IsNullOrEmpty(blockedBy))
                 throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}", blockedBy);
+
+            // Replay guard: after an unblock, the parked messages are republished to the back
+            // of the topic, so a new event can arrive before their replays. It parks behind
+            // them instead of overtaking them. Replays themselves go through, in order.
+            if (replaySequence is null && await messageContext.HasUnreplayedDeferredMessages(cancellationToken))
+            {
+                await ParkBehindReplays(messageContext);
+                return;
+            }
 
             var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
             if (discardedFailure is not null)
@@ -505,10 +518,63 @@ public class StrictMessageHandler : MessageHandler
 
     private async Task DeferMessageToSubscription(IMessageContext messageContext)
     {
+        await ParkInDeferredSubscription(messageContext);
+        await CompleteMessage(messageContext);
+    }
+
+    private async Task<int> ParkInDeferredSubscription(IMessageContext messageContext)
+    {
         int deferralSequence = await messageContext.GetNextDeferralSequenceAndIncrement(SettlementToken);
         await _responseService.SendToDeferredSubscription(messageContext, deferralSequence, SettlementToken);
         await messageContext.IncrementDeferredCount(SettlementToken);
+        return deferralSequence;
+    }
+
+    // Parks a new event behind messages that still await their replay. The drain replaying
+    // them may already have finished receiving, so the first event parked behind them requests
+    // a drain of its own; later ones rely on that request, which RecordReplay renews when the
+    // requesting event's replay arrives. The request is stored only after its trigger is sent,
+    // so a redelivery repeats a trigger that was lost rather than leaving the event parked.
+    // Not a block: no handler ran and no session-blocked lifecycle signal is raised.
+    private async Task ParkBehindReplays(IMessageContext messageContext)
+    {
+        messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
+        await SendDeferralResponse(
+            messageContext,
+            new SessionBlockedException($"Session {messageContext.SessionId} has parked messages awaiting replay"));
+        int deferralSequence = await ParkInDeferredSubscription(messageContext);
+        if (await messageContext.GetDrainRequestedForSequence(SettlementToken) is null)
+        {
+            await _responseService.SendProcessDeferredRequest(messageContext, SettlementToken);
+            await messageContext.SetDrainRequestedForSequence(deferralSequence, SettlementToken);
+        }
+
         await CompleteMessage(messageContext);
+        LogInfo(messageContext, "Successfully processed (parked behind messages awaiting replay)");
+    }
+
+    // A replay reached the endpoint. Recording it opens the replay guard once the last parked
+    // message has been replayed. When this is the replay of the event a drain was requested for
+    // (see ParkBehindReplays) and messages parked after it still wait, that drain may have
+    // finished before they were parked, so another is requested; a blocked session leaves the
+    // drain to its unblock. The request is cleared only after the trigger is sent. Every step
+    // is safe to repeat, so this runs before the outcome is decided: a redelivery at worst
+    // sends one more trigger, and a drain with nothing to replay does nothing.
+    private async Task RecordReplay(IMessageContext messageContext, int deferralSequence)
+    {
+        await messageContext.MarkDeferredMessageReplayed(deferralSequence, SettlementToken);
+        if (await messageContext.GetDrainRequestedForSequence(SettlementToken) is not { } requestedFor
+            || deferralSequence < requestedFor)
+            return;
+
+        if (string.IsNullOrEmpty(await messageContext.GetBlockedByEventId(SettlementToken))
+            && await messageContext.HasUnreplayedDeferredMessages(SettlementToken))
+        {
+            await _responseService.SendProcessDeferredRequest(messageContext, SettlementToken);
+            LogInfo(messageContext, "Send ProcessDeferredRequest (messages parked behind replays)");
+        }
+
+        await messageContext.SetDrainRequestedForSequence(null, SettlementToken);
     }
 
     private Task SendResolutionResponse(IMessageContext messageContext) =>

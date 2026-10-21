@@ -387,6 +387,7 @@ public class EventRoutingTests
             OriginatingMessageId = deferredMessage.OriginatingMessageId,
             ParentMessageId = deferredMessage.ParentMessageId,
             RetryCount = deferredMessage.RetryCount,
+            DeferralSequence = deferredMessage.DeferralSequence,
             MessageContent = deferredMessage.MessageContent,
             DiagnosticId = deferredMessage.DiagnosticId
         };

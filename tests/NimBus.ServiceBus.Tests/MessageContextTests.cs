@@ -557,6 +557,88 @@ public class MessageContextTests
         Assert.AreEqual(6, state.NextDeferralSequence);
     }
 
+    // ── Session state: replay guard ─────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetNextDeferralSequenceAndIncrement_WithoutReplayPosition_StartsItBelowTheParkedMessage()
+    {
+        // State written before the replay position existed: earlier parked messages are not
+        // tracked, but the message parked now is.
+        var session = new FakeServiceBusSession();
+        session.State.NextDeferralSequence = 5;
+        var ctx = CreateMessageContext(session: session);
+
+        Assert.IsFalse(await ctx.HasUnreplayedDeferredMessages());
+        await ctx.GetNextDeferralSequenceAndIncrement();
+
+        Assert.AreEqual(4, session.State.ReplayedThroughSequence);
+        Assert.IsTrue(await ctx.HasUnreplayedDeferredMessages());
+    }
+
+    [TestMethod]
+    public async Task MarkDeferredMessageReplayed_LastParkedMessage_OpensTheGuard()
+    {
+        var session = new FakeServiceBusSession();
+        var ctx = CreateMessageContext(session: session);
+        await ctx.GetNextDeferralSequenceAndIncrement();
+        await ctx.GetNextDeferralSequenceAndIncrement();
+
+        await ctx.MarkDeferredMessageReplayed(0);
+        Assert.IsTrue(await ctx.HasUnreplayedDeferredMessages());
+
+        await ctx.MarkDeferredMessageReplayed(1);
+        Assert.IsFalse(await ctx.HasUnreplayedDeferredMessages());
+
+        await ctx.MarkDeferredMessageReplayed(0);
+        Assert.AreEqual(1, session.State.ReplayedThroughSequence, "A repeated, older replay must not move the position back.");
+    }
+
+    [TestMethod]
+    public async Task MarkDeferredMessageReplayed_SequenceFromBeforeTheStateWasCleared_IsIgnored()
+    {
+        // The WebApp's reprocess clears the session state, so replays can carry sequences
+        // the fresh state never assigned. They must not count as replays of its messages.
+        var session = new FakeServiceBusSession();
+        var ctx = CreateMessageContext(session: session);
+        await ctx.GetNextDeferralSequenceAndIncrement();
+
+        await ctx.MarkDeferredMessageReplayed(7);
+
+        Assert.AreEqual(-1, session.State.ReplayedThroughSequence);
+        Assert.IsTrue(await ctx.HasUnreplayedDeferredMessages());
+    }
+
+    [TestMethod]
+    public void SessionState_ReplayFields_SurviveTheStoredJsonRoundTrip()
+    {
+        // ServiceBusSession writes the state with Newtonsoft.Json and reads it with System.Text.Json.
+        var json = JsonConvert.SerializeObject(new SessionState
+        {
+            NextDeferralSequence = 3,
+            ReplayedThroughSequence = 1,
+            DrainRequestedForSequence = 2,
+        });
+
+        var read = System.Text.Json.JsonSerializer.Deserialize<SessionState>(json)!;
+
+        Assert.AreEqual(1, read.ReplayedThroughSequence);
+        Assert.AreEqual(2, read.DrainRequestedForSequence);
+        Assert.IsTrue(read.HasUnreplayedMessages());
+    }
+
+    [TestMethod]
+    public async Task DrainRequestedForSequence_RoundTripsThroughSessionState()
+    {
+        var session = new FakeServiceBusSession();
+        var ctx = CreateMessageContext(session: session);
+
+        await ctx.SetDrainRequestedForSequence(4);
+        Assert.AreEqual(4, await ctx.GetDrainRequestedForSequence());
+
+        await ctx.SetDrainRequestedForSequence(null);
+        Assert.IsNull(await ctx.GetDrainRequestedForSequence());
+    }
+
     [TestMethod]
     public async Task IncrementDeferredCount_IncrementsCount()
     {

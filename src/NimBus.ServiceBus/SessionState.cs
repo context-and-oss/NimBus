@@ -38,6 +38,50 @@ public class SessionState
     /// </summary>
     public int NextDeferralSequence { get; set; }
 
+    /// <summary>
+    /// The highest deferral sequence whose replay has reached the endpoint; every message
+    /// parked with a sequence up to it has been replayed. <see langword="null"/> until the
+    /// session parks or replays a message after this field was introduced.
+    /// </summary>
+    public int? ReplayedThroughSequence { get; set; }
+
+    /// <summary>
+    /// The deferral sequence of the message, parked behind replays, for which a replay was
+    /// last requested; cleared when that message's replay arrives.
+    /// </summary>
+    public int? DrainRequestedForSequence { get; set; }
+
+    /// <summary>
+    /// Takes the next deferral sequence. The first message parked without a recorded replay
+    /// position starts it just below its own sequence, so the guard covers that message.
+    /// </summary>
+    /// <returns>The deferral sequence for the message being parked.</returns>
+    public int TakeDeferralSequence()
+    {
+        int sequence = NextDeferralSequence++;
+        ReplayedThroughSequence ??= sequence - 1;
+        return sequence;
+    }
+
+    /// <summary>
+    /// Records the replay of the message parked with <paramref name="deferralSequence"/>. A
+    /// sequence at or above <see cref="NextDeferralSequence"/> was assigned before the state
+    /// was cleared and is ignored.
+    /// </summary>
+    /// <param name="deferralSequence">The replay's deferral sequence.</param>
+    public void MarkReplayed(int deferralSequence)
+    {
+        if (deferralSequence < NextDeferralSequence)
+            ReplayedThroughSequence = Math.Max(ReplayedThroughSequence ?? deferralSequence, deferralSequence);
+    }
+
+    /// <summary>
+    /// Whether a message parked in this session has not been replayed yet.
+    /// </summary>
+    /// <returns><see langword="true"/> while a parked message awaits its replay.</returns>
+    public bool HasUnreplayedMessages() =>
+        ReplayedThroughSequence is { } replayedThrough && replayedThrough < NextDeferralSequence - 1;
+
     public bool IsEmpty() =>
         BlockedByEventId == null &&
         _legacyDeferredSequenceNumbers.Count == 0 &&

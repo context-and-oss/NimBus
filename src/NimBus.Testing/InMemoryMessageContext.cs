@@ -124,7 +124,34 @@ public class InMemoryMessageContext : IMessageContext
 
     public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(_sessionState.NextDeferralSequence++);
+        int sequence = _sessionState.NextDeferralSequence++;
+        _sessionState.ReplayedThroughSequence ??= sequence - 1;
+        return Task.FromResult(sequence);
+    }
+
+    public Task MarkDeferredMessageReplayed(int deferralSequence, CancellationToken cancellationToken = default)
+    {
+        if (deferralSequence < _sessionState.NextDeferralSequence)
+            _sessionState.ReplayedThroughSequence = Math.Max(_sessionState.ReplayedThroughSequence ?? deferralSequence, deferralSequence);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> HasUnreplayedDeferredMessages(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(
+            _sessionState.ReplayedThroughSequence is { } replayedThrough
+            && replayedThrough < _sessionState.NextDeferralSequence - 1);
+    }
+
+    public Task<int?> GetDrainRequestedForSequence(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(_sessionState.DrainRequestedForSequence);
+    }
+
+    public Task SetDrainRequestedForSequence(int? deferralSequence, CancellationToken cancellationToken = default)
+    {
+        _sessionState.DrainRequestedForSequence = deferralSequence;
+        return Task.CompletedTask;
     }
 
     public Task IncrementDeferredCount(CancellationToken cancellationToken = default)
