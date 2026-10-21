@@ -1,10 +1,10 @@
 # Spec 041 — On-prem NimBus: RabbitMQ transport with SQL Server storage
 
-Status: investigation, revision 3. Not implemented; no code, broker or benchmark exists yet.
+Status: investigation, revision 4. Not implemented; no code, broker or benchmark exists yet.
 Revision 3 is parity-first. Revision 2 tried to improve on Service Bus inside the transport (a
 synthetic blocker and in-partition replay) and to fan out in the sender. Codex's second review
 showed both break Core paths or bypassed publishers. Revision 3 ports the Service Bus design as it
-is instead. Reviews: [`docs/plan/2026-10-21-spec-041-review.md`](../../plan/2026-10-21-spec-041-review.md);
+is instead. Revision 4 answers the third review (sound after fixes). Reviews: [`docs/plan/2026-10-21-spec-041-review.md`](../../plan/2026-10-21-spec-041-review.md);
 §11 maps every finding.
 Baseline: master `3f6e9cff`. Supersedes the transport design in the September study
 (`docs/spec/on-prem-nimbus-feasibility.html`, added in `b29ff5bb`, removed in `71f2220a`; plan at
@@ -138,6 +138,15 @@ Codex's reviews confirmed two existing Service Bus behaviours. The RabbitMQ tran
    record committed hits the inbox pre-check (`StrictMessageHandler.cs:90`) and sends a skip
    response, which the SQL store applies over the earlier completed state
    (`SqlServerMessageTrackingStore.Writes.cs:169`).
+3. **A redelivered skip can strand parked messages.** `HandleSkipRequest`
+   (`StrictMessageHandler.cs:326-345`) unblocks the session and then sends the drain trigger. If it
+   stops between the two, the redelivered skip fails `VerifySessionIsBlockedByThis`, sends only a
+   skip response and completes. No trigger is sent, and the session is no longer blocked, so nothing
+   sends one later: the parked messages stay parked while new ones are handled. Handoff completion
+   has a repair branch for the same window; skip does not.
+
+These are fixed in Core before an on-prem release (§10), since an on-prem installation inherits
+them.
 
 ## 3. Decision
 
@@ -155,62 +164,104 @@ what Core sees:
 | Scheduled messages | SQL `ScheduledMessage` table + dispatcher (§4.7) |
 | Abandon (no-op, wait for the lock) | Backoff, then `basic.reject` (§4.8) |
 
-Core is unchanged. Improvements beyond parity, like §2.7, are separate changes that apply to both
-transports. The September study's alternative (a SQL "session runtime" that acknowledges on intake
+Core's handler logic and contracts are unchanged. The RabbitMQ adapters must give each contract
+the same semantics the Service Bus adapters give it: settlement, session state, scheduling with the
+original `MessageId`, and `ProcessDeferredMessagesAsync(sessionId, topicName)` addressed by
+endpoint. Hosting changes (§4.6, §4.10). Improvements beyond parity, like §2.7, are separate changes
+that apply to both transports. The September study's alternative (a SQL "session runtime" that acknowledges on intake
 and owns every pending message) stays the fallback if the phase 2 tests fail.
 
 ## 4. Design
 
-### 4.1 Topology and the forwarder
+### 4.1 Topics, subscriptions and the forwarder
 
-Per endpoint `E`:
+On Service Bus a NimBus sender publishes to a **topic**, and the topic's **subscriptions** decide
+where copies go (`TopologyDescriptor.ForEndpointTopic`). On RabbitMQ the topic becomes an exchange
+plus a **forwarder**, a hosted service that evaluates the same subscription matrix and publishes
+the copies. Everything published to a topic goes through its forwarder, as everything on Service
+Bus goes through a topic's rules. That includes Resolver responses, retries, continuations,
+replays, scheduled dispatches and raw publishes.
 
-- **Exchange `nimbus.E`** (direct): where anything publishes E's events, NimBus or raw. The
-  counterpart of E's topic before rules run.
-  - **Intake queues `nimbus.E.in.p<i>`**, bound with key `p<i>`: the forwarder's input for NimBus
-    publishes, which carry a partition key (§4.2).
-  - **Raw lane `nimbus.E.in.raw`**, bound with key `raw` and also the target of the exchange's
-    alternate exchange, so a raw publish with any other key lands here instead of being dropped.
-  - **Raw consumers** bind their own queue with every key (`p0` … `p<N-1>`, `raw`). A queue bound
-    with several keys gets each message once, so they see every original publication, as
-    `RawCloudEventsCapture` does today.
-- **Partition queues `nimbus.E.p<i>`**: what E's handlers consume. Bound to the direct exchange
-  `nimbus.route` with routing key `E.<i>`.
-- **Trigger queue `nimbus.E.deferred-processor`**: §4.6.
-- **Dead-letter queue `nimbus.E.dlq`** via a dead-letter exchange.
+Per endpoint topic `T`:
 
-Every quorum queue is declared with `x-single-active-consumer: true` (except the trigger queue),
-`dead-letter-strategy: at-least-once` and `overflow: reject-publish`; the defaults dead-letter at
-most once.
+- **Exchange `nimbus.T`** (direct). NimBus senders publish with routing key `p<i>` (§4.2); raw
+  publishers use `raw`.
+  - **Intake queues `nimbus.T.in.p<i>`**, bound with key `p<i>`.
+  - **Raw lane `nimbus.T.in.raw`**, bound with key `raw`.
+  - **Alternate exchange `nimbus.T.unrouted`** (fanout), bound to the raw lane, so a raw publish
+    with any other key lands there too. RabbitMQ counts a message routed through the alternate
+    exchange as routable, so `mandatory` doesn't return it.
+- **Partition queues `nimbus.T.p<i>`**: what T's handlers consume.
+- **Trigger queue `nimbus.T.deferred-processor`**: §4.6.
+- **Dead-letter queue `nimbus.T.dlq`**.
 
-**The forwarder** does what the Service Bus rule actions and auto-forward do. It is a hosted
-service in the endpoint host, so it runs where the endpoint runs. It consumes E's intake
-partitions in order (single active consumer, prefetch 1) and, for each message, evaluates the same
-rules `TopologyDescriptor` describes today, now kept in a SQL routing table that
-`nb topology apply --transport rabbitmq` writes:
+The Resolver topic has an exchange, intake and partition queues of its own, and a forwarder with
+one rule: everything goes to its partitions (the retained `$Default` rule).
 
-- **Events**: for each consumer `C` of the event type with `From` empty (the original publish),
-  publish a copy with `From = E`, `To = C` and a per-copy `EventId`, to `nimbus.route` with key
-  `C.<partition>`.
-- **Messages addressed to an endpoint** (`To = E`, Resolver, retry, continuation, reply): apply that
-  rule's `From`/`To` stamps and route them on.
-- Ack the intake message only after every copy is confirmed.
+All quorum queues except the trigger queue use `x-single-active-consumer: true`. All quorum queues
+use `dead-letter-strategy: at-least-once` and `overflow: reject-publish`; the defaults dead-letter at
+most once. **Raw consumers** (§2.5) bind their own queue to `nimbus.T` with every key (`p0` …
+`p<N-1>`, `raw`) and to `nimbus.T.unrouted`. A queue bound with several keys gets each message once.
 
-**Per-copy `EventId`.** Service Bus uses `newid()`, but auto-forwarding is atomic there; the
-forwarder isn't. To make a redelivered intake message produce the same copies, the `EventId` is a
-name-based UUID (v5) of a **publish id** and `C`. The RabbitMQ sender stamps a random publish id
-header on every NimBus publish. A raw publisher's `MessageId` serves as its publish id (CloudEvents
-`id` is unique per event). A raw message with neither is dead-lettered with a reason, and the
-on-prem guide says raw publishers must set `message-id`. Two identical NimBus publishes still get
-different `EventId`s, as on Service Bus.
+**The forwarder** runs in the endpoint host. It consumes T's intake queues and raw lane in order
+(single active consumer, prefetch 1). For each message it evaluates every subscription below; each
+subscription's rules are mutually exclusive (they test different `To` values or event types), so a
+subscription yields at most one copy, as on Service Bus.
 
-The forwarder adds a hop and a broker round trip per copy. It is the cost of matching Service Bus
-fan-out for every publisher, NimBus or not.
+| Service Bus subscription on topic T | Filter | Copy | Destination |
+|---|---|---|---|
+| Endpoint subscription `T` | `To = T` | unchanged | `nimbus.route`, key `T.<partition>` → T's partitions |
+| | `To = Continuation` | `To = T`, `From = Continuation` | same |
+| | `To = Retry` | `To = T`, `From = Retry` | same |
+| Reply subscription `T-reply` | `To = T-reply` | not used on RabbitMQ: replies go straight to a reply queue (§4.9) | — |
+| Resolver fan-out | `To = Resolver` | `From = T` | `nimbus.Resolver` exchange |
+| | `To = T` | unchanged | `nimbus.Resolver` exchange |
+| `Deferred` | `To = Deferred AND OriginalSessionId IS NOT NULL` | not used: the sender writes the `ParkedMessage` row directly (§4.6). A parked copy without `OriginalSessionId` matches no subscription and is dropped, as on Service Bus | — |
+| `DeferredProcessor` | `To = DeferredProcessor` | unchanged | `nimbus.T.deferred-processor` |
+| Consumer forwarder `C` (compiled), one per consumer | `EventTypeId ∈ C's types AND From IS NULL` | `From = T`, `To = C`, per-copy `EventId` | `nimbus.C` exchange, key `p<partition>` |
+| Dynamic forwarder `dynamic-C` | same, for dynamic types | same | same |
+
+A message no subscription matches is acknowledged and counted, as Service Bus discards it.
+
+**Publishing a copy.** Every forwarder publish uses publisher confirms and `mandatory`. The forwarder
+acknowledges the intake message only when every copy is confirmed and none was returned. A return
+(an unroutable copy) or a failed confirm leaves the intake message unacknowledged; it is retried
+with `basic.reject` and dead-lettered at the delivery limit (§4.8). A retry republishes copies that
+were already confirmed, so a destination can receive the same copy twice. Every copy keeps the
+original `MessageId` (Service Bus auto-forwarding keeps it too), and its `EventId` is stable
+(below), so a duplicate is recognisable by both: the inbox deduplicates on `MessageId`, and phase 2
+verifies that the Resolver treats a repeated `EventId` as the same event.
+
+**Per-copy `EventId`.** Service Bus uses `newid()`; there, auto-forwarding is transactional. Here,
+a redelivered intake message must produce the same copies. So the `EventId` is a name-based UUID
+(v5) of:
+
+- the **publish identity**: a random publish-id header the RabbitMQ sender stamps on every NimBus
+  publish, or, for a raw publish, the CloudEvents `source` plus `id` (unique as a pair by the
+  CloudEvents spec), falling back to `MessageId`;
+- the topic `T`;
+- the subscription name (`C` or `dynamic-C`), so a compiled and a dynamic forwarder to the same
+  consumer still give two copies different ids, as two Service Bus rule actions do.
+
+Two identical NimBus publishes have different publish ids, so they stay two events, as on Service
+Bus. A raw message with no `MessageId` and no CloudEvents `id` is dead-lettered with a reason; the
+on-prem guide tells raw publishers to set one.
+
+The forwarder costs a hop: an event crosses the broker twice from producer to consumer (P's
+forwarder → C's topic → C's forwarder → C's partitions), as it crosses two topics on Service Bus.
 
 ### 4.2 Partitioning
 
-`partition = stableHash(SessionId) % N(endpoint)`. The NimBus sender computes it when publishing to
-an intake exchange; the forwarder computes it per destination when routing.
+`partition = stableHash(SessionId) % N(topic)`. The NimBus sender computes it for the topic it
+publishes to (routing key `p<i>`); the forwarder computes it for each destination it routes to
+(key `T.<i>` for partitions, `p<i>` for another topic's exchange).
+
+**Order is per session per lane.** A session's messages stay in order when they enter a topic
+through the same intake lane, which every NimBus publish for that session does (one hash, one
+`p<i>`). Raw publishes enter through the raw lane, which another forwarder thread drains, so a raw
+publish and a NimBus publish for the same session have no defined order between them. On Service
+Bus they meet in one topic in arrival order. Raw publishers that need that ordering set the routing
+key to `p<i>` with the documented hash instead of `raw`.
 
 - The hash is fixed and versioned, for example xxHash64 of the UTF-8 session id. Never
   `string.GetHashCode`.
@@ -252,8 +303,17 @@ The counterpart of the session lock. `PartitionLease(Queue, Owner, Epoch, Expire
 - A consumer must hold the lease before it handles a delivery. On its first delivery after
   subscribing, it takes the lease if it is free or expired (`Epoch + 1`); if another owner's lease is
   still valid, it holds the delivery unacknowledged and retries until the lease expires.
-- The holder renews it on a timer (for example a 60-second lease renewed every 20 seconds). If
-  renewal fails, the consumer stops taking new work and its later writes fail.
+- The holder renews it on a timer (for example a 60-second lease renewed every 20 seconds).
+- **If renewal fails or the lease is found expired,** the consumer cancels the running handler's
+  cancellation token, stops publishing for it, and closes its channel without acknowledging. The
+  broker requeues the unacknowledged delivery for the successor. Its SQL writes already fail on the
+  predicate below. Like Service Bus after `SessionLockLost`, anything the handler already published
+  stays published.
+- **Timeouts.** A successor waiting for a lease holds one delivery unacknowledged. The lease period
+  (plus the SQL timeout) must stay well below the RabbitMQ consumer timeout (default 30 minutes).
+  If the timeout fires anyway, for example during a long SQL outage, the broker cancels the consumer
+  and requeues the delivery; that increments only the acquired count, not the delivery count, so it
+  doesn't push the message toward the dead-letter queue.
 - **Every transport SQL write** (session state, parking, drain, scheduling) carries
   `WHERE Owner = @me AND Epoch = @epoch AND ExpiresUtc > SYSUTCDATETIME()` against the lease row,
   in the same transaction. A stale write fails with `TransientException`, as `SessionLockLost`
@@ -281,15 +341,27 @@ Same flow as Service Bus, with SQL instead of the `Deferred` subscription:
   has no `MessageId` (§2.2), so the row is unique on `(Endpoint, SessionId, ParentMessageId)`: a
   redelivered original that parks again doesn't create a second row. Order is `DeferralSequence`,
   as on Service Bus. Core's other two calls (sequence, count) update `SessionState` as before.
-- **Trigger.** `ProcessDeferredRequest` (`To = "DeferredProcessor"`) is routed to
-  `nimbus.E.deferred-processor`, a plain queue consumed by the existing
-  `DeferredMessageProcessorHostedService`, as the `DeferredProcessor` subscription is today.
-- **Drain.** The RabbitMQ `IDeferredMessageProcessor` takes a SQL application lock on
-  `(Endpoint, SessionId)`, the counterpart of `AcceptSessionAsync` locking the session on
-  `Deferred`, so two triggers can't drain one session at once. It reads the rows in
-  `DeferralSequence` order, republishes each to the session's partition with a new `MessageId`
-  (confirm + `mandatory`), deletes the row after the confirm, and stops when a replay is parked
-  again (`IsReplayParkedAgain`, by `ParentMessageId`), as today.
+- **Trigger.** `ProcessDeferredRequest` (`To = "DeferredProcessor"`) goes through E's forwarder to
+  `nimbus.E.deferred-processor`, a plain queue. `DeferredMessageProcessorHostedService` builds a
+  `ServiceBusProcessor` today (line 72), so it needs a RabbitMQ variant that consumes this queue and
+  calls `IDeferredMessageProcessor.ProcessDeferredMessagesAsync(sessionId, topicName)` with the
+  endpoint as `topicName`, as now.
+- **Drain.** The RabbitMQ `IDeferredMessageProcessor`, standing in for `AcceptSessionAsync`:
+  1. Opens a dedicated SQL connection and takes a session-owned application lock
+     (`sp_getapplock`) on `(Endpoint, SessionId)`, held for the whole drain, so two triggers can't
+     drain one session at once. If the lock is taken, the trigger is a no-op, as
+     `SessionCannotBeLocked` is today.
+  2. Repeats: read the next batch of rows with `DeferralSequence` above the last one handled, in
+     order. For each row, if its `ParentMessageId` is the `MessageId` of a replay from this drain,
+     the replay was parked again: stop, leaving it and everything after it
+     (`IsReplayParkedAgain`). Otherwise publish it to topic E (`nimbus.E`, key `p<i>`) with a new
+     `MessageId`, as `CreateRepublishedMessage` does, wait for the confirm, check it wasn't returned,
+     and delete the row.
+  3. Finishes when a read returns no rows, then releases the lock.
+
+  The endpoint can park new rows while a drain runs; reading in batches by sequence finds them, as
+  receiving from `Deferred` does today. The replay goes through E's forwarder, so it reaches E's
+  partitions and the Resolver fan-out exactly as a Service Bus replay published to E's topic does.
 
 A crash between confirm and delete republishes that row on the next drain: the same window Service
 Bus has between send and complete. §2.7 applies unchanged.
@@ -305,7 +377,9 @@ Body, Headers, DueUtc, State)` holds the message. A dispatcher claims due rows w
 retried after a timeout, which can publish it twice: at-least-once, like every other send. A
 returned (unroutable) message keeps its row and is flagged for an operator.
 
-`ScheduleRedelivery` and retry-policy delays use the same table.
+`ScheduleRedelivery` and retry-policy delays use the same table. `ScheduleRedelivery` keeps the
+original `MessageId`, as the Service Bus implementation does (`MessageContext.cs:594`, Spec 030
+§5.7), and the original is completed only after the row has committed.
 
 **Not** the delayed-message-exchange plugin: its delayed messages have a single replica per node,
 and it isn't meant for large numbers of delayed messages.
@@ -358,18 +432,18 @@ exchange with `mandatory`.
 
 | Behaviour | Service Bus | RabbitMQ + SQL |
 |---|---|---|
-| Per-session order | Session lock | Partition, single active consumer, partition lease |
+| Per-session order | Session lock, in topic arrival order | Partition, single active consumer, partition lease; per intake lane, so a raw and a NimBus publish for one session are not ordered against each other (§4.2) |
 | Failed session isolated from others | Yes (park) | Yes (park) |
 | Concurrency unit | Session | Partition |
 | Slow handler or transient retry delays others | No | Same partition only, bounded |
 | Transient retry bounded | Delivery limit | Delivery limit, using `basic.reject` |
 | Two consumers on one session | Prevented by the lock; takeover after expiry | Prevented by the lease; takeover after expiry |
-| Transport writes after lock loss rejected | Yes | Yes (§4.4) |
+| Writes after lock loss rejected | Session state and settlement (`SessionLockLost`) | Transport SQL writes after lease expiry or epoch change; broker acks fail once the channel is closed (§4.4). Neither fences publishes already made |
 | Handler side effects after lock loss | Not fenced | Not fenced |
 | Fan-out for raw publishers, raw consumers | Yes | Yes, through the forwarder |
-| Fan-out atomic | Yes (auto-forward) | No; redelivery reproduces the same copies (§4.1) |
+| Forwarding | Transactional auto-forward of each subscription copy | Not transactional; a redelivered intake message republishes identical copies (same `MessageId`, same `EventId`) (§4.1) |
 | Parking, replay, trigger | 3 writes; republish with new `MessageId` | Same; duplicate park suppressed |
-| Overtaking after unblock, outcome rewrite on duplicate replay (§2.7) | Possible | Possible (fixed separately) |
+| The three issues in §2.7 | Present | Present; fixed in Core for both before an on-prem release |
 | Scheduled send token | Sequence number | SQL identity |
 | Delivery guarantee | At least once | At least once |
 | Dead-letter browsing in WebApp | Yes | Later release |
@@ -389,7 +463,7 @@ exchange with `mandatory`.
 
 1. **Head-of-line latency** inside a partition from slow handlers and transient retries (§4.3,
    §4.8). Needs throughput and latency targets from the customers.
-2. **Forwarder hop.** Every event crosses the broker twice. Phase 2 measures the cost.
+2. **Forwarder hop.** Every message crosses the broker at least twice (topic exchange, forwarder, partition), and an event four times from producer to consumer. Phase 2 measures the cost.
 3. **Raw publishers share one serial lane** per endpoint (§4.2). Fine for PartnerPortal-style
    inbound traffic; a high-volume raw publisher would need the partition header.
 4. **Takeover delay** of up to one lease period after a consumer crash (§4.4).
@@ -411,67 +485,86 @@ exchange with `mandatory`.
 
 ## 9. Acceptance tests for phase 2
 
-Run each against the in-memory transport, the Service Bus emulator and RabbitMQ through one
-conformance suite, so a difference shows up as a failing parity test:
+**Shared behaviour suite** in `NimBus.Testing`, run against the in-memory transport, the Service
+Bus emulator and RabbitMQ, so a behavioural difference shows up as a failing test:
 
-- **Interleaved order.** Sessions A and B share a partition. A fails and parks; B completes; retry
-  or skip of A replays A's parked messages in deferral order.
-- **Lease.** Pause the active consumer mid-handler and cut its connection; the successor doesn't
-  handle anything until the lease expires; the old consumer's later SQL writes fail. Repeat with
-  the pause starting before the successor's first delivery.
-- **Crash points.** Kill the consumer before and after each SQL write and before and after the ack,
-  in handling, parking, draining, forwarding and scheduled dispatch. Nothing is lost; a
-  redelivered park doesn't add a row; a redelivered intake message reproduces the same `EventId`s.
-- **Concurrent drains.** Two triggers for one session drain it once.
-- **Broker failover.** Kill a quorum queue leader and the active consumer; order holds.
+- **Interleaved order.** Sessions A and B share a partition (or, on Service Bus, run concurrently).
+  A fails and parks; B completes; retry or skip of A replays A's parked messages in deferral order.
+- **Park during drain.** A replay fails again mid-drain; the drain stops and leaves the rest parked.
+- **Every subscription route.** For each row of the §4.1 table: endpoint, continuation, retry,
+  Resolver fan-out (both rules), DeferredProcessor, compiled and dynamic forwarders (including both
+  to one consumer), and a message no route matches. Assert `To`, `From`, `EventId` distinctness
+  and the destination.
 - **Transient retry.** A handler that always throws `TransientException` is dead-lettered at the
-  delivery limit; other sessions in the partition resume.
-- **Routing.** NimBus and raw publishers fan out to several consumers with distinct `EventId`s; a raw
-  consumer sees the original; retry and continuation stamping; the outbox dispatcher; an
-  unroutable publish fails; a raw message without `message-id` is dead-lettered.
-- **Scheduling.** Schedule, cancel, and race a cancel against a due dispatch.
+  delivery limit.
+- **Scheduling.** Schedule, cancel, race a cancel against a due dispatch, and `ScheduleRedelivery`
+  keeping the original `MessageId`.
 - **Request/reply** across two instances, including a reply that arrives immediately.
-- **Capacity.** Throughput and p95 latency against agreed targets for a chosen N, with and without
-  the forwarder hop.
+- **The three §2.7 issues**, as regression tests for their Core fixes: overtaking after unblock,
+  outcome rewrite on a duplicate replay, and a skip redelivered after its unblock.
+
+**RabbitMQ-only tests**, because the mechanisms have no counterpart elsewhere:
+
+- **Lease.** Pause the active consumer mid-handler and cut its connection: the successor handles
+  nothing until the lease expires, and the old consumer's later SQL writes fail. Repeat with the
+  pause before the successor's first delivery. Make renewal fail mid-handler: the handler is
+  cancelled and its delivery requeued. Hold a waiting successor past a short consumer timeout: the
+  delivery is requeued without counting toward the delivery limit.
+- **Crash points.** Kill the process before and after each SQL write and before and after each ack,
+  in handling, parking, draining, forwarding and scheduled dispatch. Nothing is lost; a redelivered
+  park doesn't add a row; a redelivered intake message republishes identical copies.
+- **Partial forwarder confirm.** One copy confirmed, the next returned: the intake message is not
+  acknowledged, and the retry produces the same `MessageId` and `EventId` for the first copy.
+- **Concurrent drains.** Two triggers for one session drain it once.
+- **Raw ingress.** A raw publish with key `raw`, with an arbitrary key (alternate exchange), and
+  without `message-id` or CloudEvents `id` (dead-lettered). A raw consumer sees all three originals.
+  A raw and a NimBus publish for one session: document the observed order, matching §5.
+- **Broker failover.** Kill a quorum queue leader and the active consumer; order holds.
+- **Capacity.** Throughput and p95 latency against agreed targets for a chosen N.
 
 ## 10. Delivery
 
 | Phase | Work | Exit |
 |---|---|---|
 | 0 | ADR amending ADR-001, `CONTRIBUTING.md` and `AGENTS.md` for one on-prem transport; GitHub issue per the contribution process; customer throughput and latency targets | ADR accepted, targets agreed |
-| 1 | Inventory every Service Bus- or Cosmos-typed service the SDK, Resolver host and WebApp resolve at startup, with an on-prem answer each (§2.6). Transport-neutral SDK surface with `[Obsolete]` bridges. `ManagerClient` over `ISender`. WebApp transport selection. The transport conformance suite of §9, green on in-memory and the Service Bus emulator | Release build and existing tests green; WebApp and Resolver start with no Service Bus configuration (features hidden) |
-| 2 | `NimBus.Transport.RabbitMq`: sender, forwarder, partitioned receiver, lease, session state, parking and drain, scheduler, reply queues, topology provisioning | §9 passes on RabbitMQ |
+| 1 | Inventory every Service Bus- or Cosmos-typed service the SDK, Resolver host and WebApp resolve at startup, with an on-prem answer each (§2.6). Transport-neutral SDK surface with `[Obsolete]` bridges. `ManagerClient` over `ISender`. WebApp transport selection. The shared suite of §9, green on in-memory and the Service Bus emulator. Core fixes for §2.7 with their regression tests | Release build and existing tests green; WebApp and Resolver start with no Service Bus configuration (features hidden) |
+| 2 | `NimBus.Transport.RabbitMq`: sender, forwarder, partitioned receiver, lease, session state, parking and drain, scheduler, reply queues, topology provisioning, the RabbitMQ variant of the deferred-processor host | §9 passes on RabbitMQ |
 | 3 | CrmErpDemo on RabbitMQ and SQL; Aspire resource; OTLP; local Identity | CrmErpDemo end-to-end tests green on RabbitMQ |
 | 4 | WebApp admin on the RabbitMQ management API; install and upgrade runbook; HA and backup tests | Supportable release |
-
-Separately, for both transports: fix §2.7 in Core with regression tests.
 
 No effort estimate yet. Estimate after phase 0, from the phase 1 inventory and a phase 2 work
 breakdown.
 
 ## 11. Review record
 
-Codex reviewed revision 1 (verdict: rethink) and revision 2 (verdict: rethink) on 2026-10-21. Both
-reviews are in [`docs/plan/2026-10-21-spec-041-review.md`](../../plan/2026-10-21-spec-041-review.md).
-Every finding was checked against the code and accepted.
+Codex reviewed every revision on 2026-10-21: revision 1 (rethink), revision 2 (rethink), revision 3
+(sound after fixes). The reviews are in
+[`docs/plan/2026-10-21-spec-041-review.md`](../../plan/2026-10-21-spec-041-review.md). Every finding
+was checked against the code and accepted.
 
-| Finding | Revision 3 |
+| Finding | Where it is answered |
 |---|---|
-| R1 Code 1: separate replay trigger and hosted service | Kept as on Service Bus (§4.6) |
-| R1 Code 2, R2 ordering: overtaking gap, `DeferredCount` never decremented | Recorded as existing (§2.7), fixed separately; the transport no longer works around it |
+| R1 Code 1: separate replay trigger and hosted service | Kept as on Service Bus, with a RabbitMQ hosting variant (§4.6) |
+| R1 Code 2, R2 ordering: overtaking gap, `DeferredCount` never decremented | Existing issue (§2.7), fixed in Core before release |
 | R1 Code 3: `Abandon` is a no-op | §2.3, §4.8 |
 | R1 Code 4: conditional completion and retry | §2.2 |
-| R1 Design 1, R2 routing: rule actions; publishers that bypass the sender | Forwarder consuming each producer exchange (§4.1); publishers listed (§2.5) |
-| R1 Design 2, R2 synthetic blocker, skip strands rows, replay settlement | Synthetic blocker and in-partition replay removed; Core paths unchanged (§3, §4.6) |
+| R1 Design 1, R2 routing, R3 1-2: rule actions, bypassing publishers, the full subscription matrix | Topic forwarder with the complete route table (§4.1); publishers listed (§2.5) |
+| R1 Design 2, R2 synthetic blocker and replay settlement | Removed; Core paths unchanged (§3, §4.6) |
+| R2 skip strands parked rows | Existing issue (§2.7, item 3), fixed in Core before release |
 | R1 Design 3: `basic.nack` unbounded from 4.3 | `basic.reject` (§4.8) |
-| R1 Design 4, R2 parked identity and inbox outcome rewrite | Parked rows keyed on `ParentMessageId` (§4.6); outcome rewrite recorded as existing (§2.7) |
-| R1 Design 5, R2 first-delivery epoch window | Expiring, renewed lease checked in each write's transaction (§4.4) |
-| R1 Design 6: routing, per-destination N, pending sources | Direct routing per destination; partitions never stored; drain-and-restart for N (§4.2) |
+| R1 Design 4, R2 parked identity, R2 inbox outcome rewrite | Rows keyed on `ParentMessageId` (§4.6); outcome rewrite is §2.7 item 2 |
+| R1 Design 5, R2 epoch window, R3 7: lease loss and timeouts | Expiring lease checked in each write; renewal-failure path; timeout margin (§4.4) |
+| R1 Design 6: routing, per-destination N, pending sources | Per-destination partitions computed at publish time; drain-and-restart for N (§4.2) |
 | R1 Design 7: missing session id | Match Service Bus, recorded in phase 1 (§4.2) |
-| R2 deterministic `EventId` seed absent | Publish id header, or a raw `MessageId` (§4.1) |
+| R2 `EventId` seed, R3 4: CloudEvents `source`, two forwarders to one consumer | Seed = publish identity + topic + subscription (§4.1) |
+| R3 3: two intake lanes can reorder a session | Order defined per lane; raw publishers can use `p<i>` (§4.2, §5) |
+| R3 5: unroutable copies, partial confirms | `mandatory` + returns; ack only after all copies; identical copies on retry (§4.1) |
+| R3 6: alternate exchange invisible to raw consumers | Fanout alternate exchange; raw consumers bind to it (§4.1) |
+| R3 8: drain lock lifetime, observing re-parks | Session-owned app lock for the whole drain; batch reads by sequence (§4.6) |
+| R3 9: "Core is unchanged" too broad | Contract semantics stated; hosting changes named (§3, §4.6, §4.7) |
 | R2 reply queue declared after send | Declare and consume before sending (§4.9) |
 | R1/R2 Completeness: SDK surface, startup inventory, estimate | §2.1, §2.6, §4.10, §10 |
-| R2 §5 and §9 overstate | §5 rewritten for parity; §9 runs one conformance suite on all three transports |
+| R2, R3: §5 and §9 overstate | §5 rows scoped; §9 split into shared and RabbitMQ-only tests |
 
 ## 12. Sources
 
