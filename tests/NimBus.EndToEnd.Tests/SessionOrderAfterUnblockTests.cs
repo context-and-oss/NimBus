@@ -237,6 +237,64 @@ public class SessionOrderAfterUnblockTests
     }
 
     [TestMethod]
+    public async Task SessionUnblockedByAPreviousVersionWorker_GuardsItsReplays()
+    {
+        // During a rolling deploy, a previous-version worker handles the skip: it clears the block
+        // and writes the state back without a replay position.
+        const string sessionId = "session-overtake-old-worker-unblock";
+        var fixture = new EndToEndFixture();
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionFactory = order => order.OrderId == "ORD-FAIL" ? new InvalidOperationException("fails") : null,
+        };
+        fixture.RegisterHandler(() => handler);
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-FAIL" });
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-PARKED" });
+        await fixture.DeliverAll();
+        var session = fixture.PublishBus.GetSession(sessionId);
+        session.State.BlockedByEventId = null;
+        session.State.BlockedByMessageId = null;
+        session.State.ReplayedThroughSequence = null;
+
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-NEW" });
+        await fixture.DeliverAll();
+        Assert.AreEqual(0, handler.ReceivedEvents.Count, "ORD-NEW must not run ahead of ORD-PARKED.");
+
+        await ReplayParked(fixture, ParkedCopies(fixture));
+        CollectionAssert.AreEqual(
+            new[] { "ORD-PARKED", "ORD-NEW" },
+            handler.ReceivedEvents.Select(order => order.OrderId).ToArray());
+    }
+
+    [TestMethod]
+    public async Task SessionDrainedBeforeTheReplayPositionExisted_ParksItsFirstEventOnce()
+    {
+        // A session that parked and drained three messages under the previous version: nothing
+        // is left to replay, but nothing recorded that either. Its first event pays one drain.
+        const string sessionId = "session-overtake-drained-pre-upgrade";
+        var fixture = new EndToEndFixture();
+        var handler = new RecordingOrderPlacedHandler();
+        fixture.RegisterHandler(() => handler);
+        var session = fixture.PublishBus.GetSession(sessionId);
+        session.State.NextDeferralSequence = 3;
+        session.State.DeferredCount = 3;
+
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-FIRST" });
+        await fixture.DeliverAll();
+        Assert.AreEqual(0, handler.ReceivedEvents.Count);
+        Assert.AreEqual(1, CountDrainRequests(fixture), "The first event requests the drain that heals the position.");
+
+        await ReplayParked(fixture, ParkedCopies(fixture));
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-SECOND" });
+        await fixture.DeliverAll();
+
+        CollectionAssert.AreEqual(
+            new[] { "ORD-FIRST", "ORD-SECOND" },
+            handler.ReceivedEvents.Select(order => order.OrderId).ToArray());
+        Assert.AreEqual(1, ParkedCopies(fixture).Count, "Only the first event pays the drain.");
+    }
+
+    [TestMethod]
     public async Task NewEvent_ArrivingBeforeReprocessReplays_ParksBehindThem()
     {
         // The WebApp's "reprocess deferred" clears the block and requests a drain. It must keep

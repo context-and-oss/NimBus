@@ -42,8 +42,10 @@ public class SessionState
 
     /// <summary>
     /// The highest deferral sequence whose replay has reached the endpoint; every message
-    /// parked with a sequence up to it has been replayed. <see langword="null"/> until the
-    /// session parks or replays a message after this field was introduced.
+    /// parked with a sequence up to it has been replayed. <see langword="null"/> when no replay
+    /// has been recorded: in a new session, or in state written before this field existed (or
+    /// rewritten by such a version). Then every assigned sequence counts as waiting, because
+    /// nothing says which parked messages were replayed.
     /// </summary>
     public int? ReplayedThroughSequence { get; set; }
 
@@ -59,16 +61,10 @@ public class SessionState
     public DateTime? DrainRequestedAtUtc { get; set; }
 
     /// <summary>
-    /// Takes the next deferral sequence. The first message parked without a recorded replay
-    /// position starts it just below its own sequence, so the guard covers that message.
+    /// Takes the next deferral sequence.
     /// </summary>
     /// <returns>The deferral sequence for the message being parked.</returns>
-    public int TakeDeferralSequence()
-    {
-        int sequence = NextDeferralSequence++;
-        ReplayedThroughSequence ??= sequence - 1;
-        return sequence;
-    }
+    public int TakeDeferralSequence() => NextDeferralSequence++;
 
     /// <summary>
     /// Records the replay of the message parked with <paramref name="deferralSequence"/>. A
@@ -83,26 +79,22 @@ public class SessionState
     }
 
     /// <summary>
-    /// Whether a message parked in this session has not been replayed yet.
+    /// Whether a message parked in this session has not been replayed yet. Without a recorded
+    /// position every assigned sequence counts as waiting. If the parked messages were in fact
+    /// replayed before the position existed, the first event parked behind them requests a
+    /// drain, and its replay advances the position past them.
     /// </summary>
     /// <returns><see langword="true"/> while a parked message awaits its replay.</returns>
     public bool HasUnreplayedMessages() =>
-        ReplayedThroughSequence is { } replayedThrough && replayedThrough < NextDeferralSequence - 1;
+        (ReplayedThroughSequence ?? -1) < NextDeferralSequence - 1;
 
     /// <summary>
-    /// Clears the block. When the session has parked messages but no replay position (state
-    /// written before the position existed, or rewritten by such a version), nothing says which
-    /// of them were replayed, so every assigned sequence is assumed to still wait: events
-    /// arriving before the replays this unblock starts then park behind them. The replays
-    /// advance the position, and if nothing was left to replay, the first event parked behind
-    /// requests a drain whose replay opens the guard.
+    /// Clears the block.
     /// </summary>
     public void ClearBlock()
     {
         BlockedByEventId = null;
         BlockedByMessageId = null;
-        if (ReplayedThroughSequence is null && NextDeferralSequence > 0)
-            ReplayedThroughSequence = -1;
     }
 
     /// <summary>

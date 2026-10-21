@@ -37,17 +37,15 @@ Recording it is `max()`, so a redelivered replay changes nothing. A counter woul
 redelivery between its decrement and the settlement. A sequence the session never assigned (a
 replay of a message parked before the WebApp cleared the state) is ignored.
 
-- State written before this change has no position. The first message parked afterwards starts it
-  just below its own sequence, so that message is covered; replays of older messages then advance
-  it.
-- A session that parked messages before the upgrade, and parks nothing new before its block
-  clears, would still have no position when its replays start. The same happens when a
-  previous-version worker rewrites the state during a rolling deploy. So when a block clears
-  (`SessionState.ClearBlock`, used by unblock and by reprocess) with parked messages but no
-  position, the position starts at -1: every assigned sequence is assumed to still wait. The
-  replays advance it. If nothing was left to replay, the first event parked behind requests a drain
-  whose replay opens the guard. Sessions that never parked, or whose block never clears, pay
-  nothing.
+- **No position means everything waits.** A missing position counts as -1, so every assigned
+  sequence is assumed to still wait. That covers a new session's first park and state written
+  before this change. It also covers state that a previous-version worker rewrote during a rolling
+  deploy, including one that cleared the block itself. The replays advance the position. If the
+  parked messages were in fact replayed before the upgrade, the first event parked behind them
+  requests a drain, and its replay advances the position past them.
+- **One-time upgrade cost.** On every session that ever parked a message, the first event after
+  the upgrade is parked and drained once: a few seconds' delay, shown as Deferred in the WebApp.
+  Sessions that never parked pay nothing.
 - A gap (a sequence taken whose park send failed) looks like a waiting message. The next new event
   parks and requests a drain, its replay moves the position past the gap, and the guard opens.
 

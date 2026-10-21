@@ -94,10 +94,6 @@ public class InMemoryMessageContext : IMessageContext
     {
         _sessionState.BlockedByEventId = null;
         _sessionState.BlockedByMessageId = null;
-        // As the Service Bus SessionState.ClearBlock: parked messages without a replay position
-        // are assumed to still wait.
-        if (_sessionState.ReplayedThroughSequence is null && _sessionState.NextDeferralSequence > 0)
-            _sessionState.ReplayedThroughSequence = -1;
         return Task.CompletedTask;
     }
 
@@ -128,9 +124,7 @@ public class InMemoryMessageContext : IMessageContext
 
     public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default)
     {
-        int sequence = _sessionState.NextDeferralSequence++;
-        _sessionState.ReplayedThroughSequence ??= sequence - 1;
-        return Task.FromResult(sequence);
+        return Task.FromResult(_sessionState.NextDeferralSequence++);
     }
 
     public Task MarkDeferredMessageReplayed(int deferralSequence, CancellationToken cancellationToken = default)
@@ -142,9 +136,8 @@ public class InMemoryMessageContext : IMessageContext
 
     public Task<bool> HasUnreplayedDeferredMessages(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(
-            _sessionState.ReplayedThroughSequence is { } replayedThrough
-            && replayedThrough < _sessionState.NextDeferralSequence - 1);
+        // As the Service Bus SessionState: without a recorded position, every assigned sequence waits.
+        return Task.FromResult((_sessionState.ReplayedThroughSequence ?? -1) < _sessionState.NextDeferralSequence - 1);
     }
 
     public Task<DeferredDrainRequest?> GetDeferredDrainRequest(CancellationToken cancellationToken = default)

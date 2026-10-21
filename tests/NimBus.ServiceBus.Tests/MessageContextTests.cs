@@ -560,19 +560,20 @@ public class MessageContextTests
     // ── Session state: replay guard ─────────────────────────────────────
 
     [TestMethod]
-    public async Task GetNextDeferralSequenceAndIncrement_WithoutReplayPosition_StartsItBelowTheParkedMessage()
+    public async Task HasUnreplayedDeferredMessages_WithoutReplayPosition_CountsEveryAssignedSequenceAsWaiting()
     {
-        // State written before the replay position existed: earlier parked messages are not
-        // tracked, but the message parked now is.
+        // State written before the replay position existed: nothing says which parked messages
+        // were replayed, so the guard assumes none were.
         var session = new FakeServiceBusSession();
         session.State.NextDeferralSequence = 5;
         var ctx = CreateMessageContext(session: session);
 
-        Assert.IsFalse(await ctx.HasUnreplayedDeferredMessages());
-        await ctx.GetNextDeferralSequenceAndIncrement();
-
-        Assert.AreEqual(4, session.State.ReplayedThroughSequence);
         Assert.IsTrue(await ctx.HasUnreplayedDeferredMessages());
+        Assert.IsFalse(await CreateMessageContext(session: new FakeServiceBusSession()).HasUnreplayedDeferredMessages(),
+            "A session that never parked has nothing to wait for.");
+
+        await ctx.MarkDeferredMessageReplayed(4);
+        Assert.IsFalse(await ctx.HasUnreplayedDeferredMessages());
     }
 
     [TestMethod]
@@ -604,7 +605,7 @@ public class MessageContextTests
 
         await ctx.MarkDeferredMessageReplayed(7);
 
-        Assert.AreEqual(-1, session.State.ReplayedThroughSequence);
+        Assert.IsNull(session.State.ReplayedThroughSequence);
         Assert.IsTrue(await ctx.HasUnreplayedDeferredMessages());
     }
 
@@ -655,7 +656,7 @@ public class MessageContextTests
     }
 
     [TestMethod]
-    public void SessionState_ClearBlock_WithoutReplayPosition_AssumesEveryParkedMessageWaits()
+    public void SessionState_ClearBlock_WithoutReplayPosition_LeavesEveryParkedMessageWaiting()
     {
         var withParked = new SessionState { BlockedByEventId = "evt-1", DeferredCount = 2, NextDeferralSequence = 2 };
         var neverParked = new SessionState { BlockedByEventId = "evt-1" };
@@ -664,9 +665,8 @@ public class MessageContextTests
         neverParked.ClearBlock();
 
         Assert.IsNull(withParked.BlockedByEventId);
-        Assert.AreEqual(-1, withParked.ReplayedThroughSequence);
         Assert.IsTrue(withParked.HasUnreplayedMessages());
-        Assert.IsNull(neverParked.ReplayedThroughSequence, "A session that never parked has nothing to guard.");
+        Assert.IsFalse(neverParked.HasUnreplayedMessages(), "A session that never parked has nothing to guard.");
     }
 
     [TestMethod]
