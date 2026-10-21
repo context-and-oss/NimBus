@@ -630,6 +630,59 @@ public class MessageContextTests
     }
 
     [TestMethod]
+    public void SessionState_ClearForReprocess_ClearsTheBlockAndKeepsTheReplayPosition()
+    {
+        var state = new SessionState
+        {
+            BlockedByEventId = "evt-1",
+            BlockedByMessageId = "msg-1",
+            DeferredCount = 2,
+            NextDeferralSequence = 2,
+            ReplayedThroughSequence = -1,
+            DrainRequestedForSequence = 1,
+            DrainRequestedAtUtc = DateTime.UtcNow,
+        };
+
+        state.ClearForReprocess();
+
+        Assert.IsNull(state.BlockedByEventId);
+        Assert.IsNull(state.BlockedByMessageId);
+        Assert.IsNull(state.DrainRequestedForSequence);
+        Assert.IsNull(state.DrainRequestedAtUtc);
+        Assert.AreEqual(2, state.NextDeferralSequence);
+        Assert.AreEqual(2, state.DeferredCount);
+        Assert.IsTrue(state.HasUnreplayedMessages(), "Events arriving before the reprocess replays must still park.");
+    }
+
+    [TestMethod]
+    public void SessionState_ClearAfterPurge_CountsEverySequenceAsReplayedAndKeepsTheSequence()
+    {
+        var state = new SessionState { BlockedByEventId = "evt-1", DeferredCount = 3, NextDeferralSequence = 3, ReplayedThroughSequence = 0 };
+
+        state.ClearAfterPurge();
+
+        Assert.IsFalse(state.HasUnreplayedMessages());
+        Assert.AreEqual(2, state.ReplayedThroughSequence);
+        Assert.AreEqual(0, state.DeferredCount);
+        Assert.IsFalse(state.IsEmpty(), "The deferral sequence must survive, or it is reused.");
+
+        state.MarkReplayed(1);
+        Assert.AreEqual(2, state.ReplayedThroughSequence, "A replay still in flight from before the purge changes nothing.");
+    }
+
+    [TestMethod]
+    public void SessionState_ToBinaryData_EmptyStateIsEmptyAndOtherStateRoundTrips()
+    {
+        Assert.AreEqual(0, new SessionState().ToBinaryData().ToMemory().Length);
+
+        var read = SessionState.FromBinaryData(new SessionState { NextDeferralSequence = 4, ReplayedThroughSequence = 3 }.ToBinaryData());
+
+        Assert.AreEqual(4, read.NextDeferralSequence);
+        Assert.AreEqual(3, read.ReplayedThroughSequence);
+        Assert.IsTrue(SessionState.FromBinaryData(null).IsEmpty());
+    }
+
+    [TestMethod]
     public async Task DeferredDrainRequest_RoundTripsThroughSessionState()
     {
         var session = new FakeServiceBusSession();

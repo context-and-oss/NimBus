@@ -1,5 +1,7 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace NimBus.Core.Messages;
 
@@ -87,10 +89,64 @@ public class SessionState
     public bool HasUnreplayedMessages() =>
         ReplayedThroughSequence is { } replayedThrough && replayedThrough < NextDeferralSequence - 1;
 
+    /// <summary>
+    /// Clears what an operator's "reprocess deferred" resets: the block, the legacy deferred
+    /// sequence numbers and any pending drain request. The deferral sequence and the replay
+    /// position stay, so events arriving before the reprocess drain's replays still park behind
+    /// them, and new parks don't reuse the sequences of replays already in flight.
+    /// </summary>
+    public void ClearForReprocess()
+    {
+        BlockedByEventId = null;
+        BlockedByMessageId = null;
+        _legacyDeferredSequenceNumbers = new List<long>();
+        DrainRequestedForSequence = null;
+        DrainRequestedAtUtc = null;
+    }
+
+    /// <summary>
+    /// Clears the state after an operator purged the session's messages. As
+    /// <see cref="ClearForReprocess"/>, and every sequence assigned so far counts as replayed,
+    /// because the parked messages are gone. The deferral sequence stays, so a replay still in
+    /// flight can't be mistaken for a message parked after the purge.
+    /// </summary>
+    public void ClearAfterPurge()
+    {
+        ClearForReprocess();
+        DeferredCount = 0;
+        if (NextDeferralSequence > 0)
+            ReplayedThroughSequence = NextDeferralSequence - 1;
+    }
+
+    /// <summary>
+    /// Reads session state as Service Bus stores it; empty or missing data is a new state.
+    /// </summary>
+    /// <param name="data">The stored session state, or <see langword="null"/>.</param>
+    /// <returns>The session state.</returns>
+    public static SessionState FromBinaryData(BinaryData? data) =>
+        data == null || data.ToMemory().Length == 0
+            ? new SessionState()
+            : data.ToObjectFromJson<SessionState>()!;
+
+    /// <summary>
+    /// Serializes the session state for Service Bus; an empty state becomes empty data, which
+    /// clears the stored state.
+    /// </summary>
+    /// <returns>The data to store.</returns>
+    public BinaryData ToBinaryData() =>
+        IsEmpty()
+            // Empty BinaryData instead of null: the Azure Functions Worker SDK throws a
+            // NullReferenceException when SetSessionStateAsync is passed null.
+            ? new BinaryData(Array.Empty<byte>())
+            : new BinaryData(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(this)));
+
     public bool IsEmpty() =>
         BlockedByEventId == null &&
         _legacyDeferredSequenceNumbers.Count == 0 &&
-        DeferredCount == 0;
+        DeferredCount == 0 &&
+        NextDeferralSequence == 0 &&
+        ReplayedThroughSequence == null &&
+        DrainRequestedForSequence == null;
 
     /// <summary>
     /// Returns true if there are any deferred messages (legacy or deferred-subscription).

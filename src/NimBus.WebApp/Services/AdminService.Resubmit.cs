@@ -208,12 +208,9 @@ public partial class AdminService
             var receiver = await _sbClient.AcceptSessionAsync(endpointId, endpointId, sessionId);
             await using (receiver)
             {
-                var stateBytes = await receiver.GetSessionStateAsync();
-                if (stateBytes != null)
-                {
-                    // Reset blocking state
-                    await receiver.SetSessionStateAsync(null);
-                }
+                // Reset the block, keeping the replay position: events that arrive before
+                // the replays this reprocess requests must still park behind them.
+                await ClearSessionState(receiver, state => state.ClearForReprocess());
                 result.SessionStateCleared = true;
             }
         }

@@ -17,6 +17,12 @@ Nothing else reads that property on a main-subscription delivery: the Resolver d
 and no subscription filter matches on it. `OriginalSessionId`, which the `Deferred` filter
 matches on, is still stripped.
 
+A drain from the previous version strips `DeferralSequence`, and during a rolling deploy its
+replays reach new handlers. Since v4.2.0 every parked copy carries `InboxMessageId`, and that drain
+copies it onto the replay; no new `EventRequest` carries it. A delivery with `InboxMessageId` but no
+`DeferralSequence` is therefore a legacy replay. It goes through the guard, so it isn't parked again
+in a loop, but it can't advance the replay position. The drain still replays in order.
+
 **Replay position, not a count.** The session state gains `ReplayedThroughSequence`, the highest
 deferral sequence whose replay has reached the endpoint. Replays arrive in deferral order, so a
 parked message still waits exactly when `ReplayedThroughSequence < NextDeferralSequence - 1`.
@@ -66,6 +72,22 @@ parked behind replays requests a drain again and records a new request. Two minu
 a normal drain and replay. A request that expires early, during a long drain, costs one more drain
 that finds the session locked or empty. A stored request without a timestamp reads as expired.
 
+**Operator actions.** The WebApp's "reprocess deferred" and session purge used to overwrite the
+session state with `null`. That dropped the replay position, so after a reprocess a new event could
+overtake the parked messages again. It also reset `NextDeferralSequence`, so a replay already in
+flight could be mistaken for a message parked afterwards. Both actions now rewrite the state
+through `AdminService.ClearSessionState`:
+
+- `ClearForReprocess` clears the block, the legacy deferred sequence numbers and the drain
+  request. It keeps the sequence and the replay position, so new events park until the reprocess
+  replays arrive.
+- `ClearAfterPurge` does the same, zeroes `DeferredCount`, and counts every assigned sequence as
+  replayed, because the parked copies are gone. Replays still in flight carry sequences below the
+  kept `NextDeferralSequence`, so they change nothing.
+
+State that can't be read is cleared outright, as before. `SessionState.IsEmpty` now also requires
+no sequence, position or request, so a state that only keeps the sequence is still stored.
+
 ## Interface
 
 `IMessageContext` gains four members with default implementations that turn the guard off, so
@@ -79,11 +101,15 @@ the session state.
 
 - One extra session-state read per `EventRequest` (the guard), and up to three state operations
   per replay.
-- **Pre-existing race, slightly wider.** When two instances run the drain trigger at once, the
-  second can't lock the `Deferred` session and treats that as "nothing to drain"
-  (`SessionCannotBeLocked`). A message parked between the first drain's final empty receive and
-  its lock release then waits for the next drain. This already applies to unblock triggers; the
-  new trigger is exposed to it the same way.
+- **Pre-existing race, slightly wider (not fixed here).** When two instances run the drain trigger
+  at once, the second can't lock the `Deferred` session and treats that as "nothing to drain"
+  (`SessionCannotBeLocked`). A message parked between the first drain's final empty receive and its
+  lock release then waits for the next drain. If that message requested the drain, the expiry above
+  recovers it only when another event arrives. Unblock triggers already have this race. The fix is
+  for the drain to retry on lock contention instead of doing nothing, but it depends on what Service
+  Bus returns when accepting a session that has no messages. If that also raises
+  `SessionCannotBeLocked`, a retry would loop on every empty drain, so it needs checking against a
+  real namespace first. It is left as a separate change.
 - After a lost request, recovery needs a new event: the next one parked after the expiry requests
   the drain. If no event arrives, the messages already parked stay parked, just as messages
   stranded by a lost unblock trigger do today. "Reprocess deferred" in the WebApp clears the
@@ -97,10 +123,21 @@ the session state.
     event;
   - an event parked after the requested drain is drained when the requesting replay arrives;
   - a request whose replay never arrives is requested again by the first event parked after it
-    expires.
-  - The first two fail on `master`. The third fails when the expiry is removed.
+    expires;
+  - a replay from a previous-version drain (no `DeferralSequence`) goes through instead of parking
+    again;
+  - a new event arriving after a reprocess, before its replays, parks behind them; after a purge it
+    runs straight away;
+  - a replay that blocks the session again keeps the later parked messages and a new event in
+    order.
+  - The first two fail on `master`. The expiry and legacy-replay tests fail when their check is
+    removed.
 - `MessageContextTests`: legacy-state start, guard opening, no movement backwards, cleared-state
   sequences ignored, the drain request round trip, a request stored without a timestamp reading
   as expired, and the Newtonsoft-write/System.Text.Json-read round trip of the new fields.
+- `MessageContextTests` also cover `ClearForReprocess`, `ClearAfterPurge` and the `SessionState`
+  serialization helpers.
+- `AdminSessionStateClearTests` (WebApp): reprocess keeps the replay position, and unreadable state
+  is cleared outright.
 - `DeferredMessageProcessorTests`: the replay keeps `DeferralSequence`.
 - The three end-to-end drain simulations now keep `DeferralSequence`, as the real drain does.

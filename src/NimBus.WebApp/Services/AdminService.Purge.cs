@@ -165,7 +165,9 @@ public partial class AdminService
             // Clear session state
             try
             {
-                await receiver.SetSessionStateAsync(null);
+                // Keep the deferral sequence, so a replay still in flight isn't mistaken for
+                // a message parked after the purge.
+                await ClearSessionState(receiver, state => state.ClearAfterPurge());
                 result.SessionStateCleared = true;
             }
             catch (Exception ex)

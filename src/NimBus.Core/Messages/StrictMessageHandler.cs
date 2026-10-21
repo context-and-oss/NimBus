@@ -92,7 +92,12 @@ public class StrictMessageHandler : MessageHandler
                 return;
             }
 
+            // A replay carries its DeferralSequence. A drain from an earlier version strips it,
+            // but keeps the InboxMessageId that every parked copy carries (and no new event
+            // does), so such a replay still goes through the replay guard below. Only a replay
+            // with its sequence advances the replay position.
             var replaySequence = messageContext.DeferralSequence;
+            var isReplay = replaySequence is not null || messageContext.GetInboxMessageIdOrDefault() is not null;
             if (replaySequence is { } sequence)
                 await RecordReplay(messageContext, sequence);
 
@@ -120,7 +125,7 @@ public class StrictMessageHandler : MessageHandler
             // Replay guard: after an unblock, the parked messages are republished to the back
             // of the topic, so a new event can arrive before their replays. It parks behind
             // them instead of overtaking them. Replays themselves go through, in order.
-            if (replaySequence is null && await messageContext.HasUnreplayedDeferredMessages(cancellationToken))
+            if (!isReplay && await messageContext.HasUnreplayedDeferredMessages(cancellationToken))
             {
                 await ParkBehindReplays(messageContext);
                 return;

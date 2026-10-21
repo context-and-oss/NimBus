@@ -107,6 +107,28 @@ public partial class AdminService : IAdminService
         return Task.FromResult(config);
     }
 
+    /// <summary>
+    /// Rewrites a session's stored state with <paramref name="clear"/> applied, so an operator
+    /// action resets what it must and keeps the replay position the endpoint's ordering guard
+    /// relies on. State that can't be read is cleared outright, as these actions always did.
+    /// </summary>
+    internal static async Task ClearSessionState(ServiceBusSessionReceiver receiver, Action<NimBus.Core.Messages.SessionState> clear)
+    {
+        var stored = await receiver.GetSessionStateAsync();
+        BinaryData? cleared = null;
+        try
+        {
+            var state = NimBus.Core.Messages.SessionState.FromBinaryData(stored);
+            clear(state);
+            cleared = state.ToBinaryData();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+        }
+
+        await receiver.SetSessionStateAsync(cleared);
+    }
+
     // ─────────── Internal DTOs for topology comparison ───────────
 
     private sealed class TopologySnapshot
