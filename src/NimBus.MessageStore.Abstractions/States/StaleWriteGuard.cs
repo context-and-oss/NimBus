@@ -56,10 +56,12 @@ public static class StaleWriteGuard
     /// <summary>
     /// True for the SkipResponse an endpoint's inbox sends for a delivery it already processed
     /// (reason <see cref="NimBus.Core.Inbox.InboxMiddleware.DuplicateReason"/>). Unlike an
-    /// operator's skip it records no decision of its own, so it must not rewrite a Completed row:
+    /// operator's skip it records no decision of its own, so it must not rewrite a settled row:
     /// a deferred replay redelivered after its handler and inbox record committed would otherwise
-    /// turn the replay's Completed outcome into Skipped (Spec 041 §2.7). It is the one terminal
-    /// write the rule guards; providers read the current row for it.
+    /// turn the replay's Completed outcome into Skipped (Spec 041 §2.7), and a late duplicate
+    /// would replace an operator's skip, or a Failed row whose successful retry is still being
+    /// recorded. It still lands on a row that isn't settled. It is the one terminal write the
+    /// rule guards; providers read the current row for it.
     /// </summary>
     public static bool IsDuplicateSkip(UnresolvedEvent incoming)
     {
@@ -80,7 +82,7 @@ public static class StaleWriteGuard
 
         if (current is not null && IsDuplicateSkip(incoming))
         {
-            return current.ResolutionStatus != ResolutionStatus.Completed;
+            return !IsTerminal(current.ResolutionStatus);
         }
 
         if (current is null || !IsGuarded(incomingStatus, incoming.MessageType))

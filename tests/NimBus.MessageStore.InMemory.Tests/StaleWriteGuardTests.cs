@@ -226,14 +226,17 @@ public class StaleWriteGuardTests
 
     [TestMethod]
     [DataRow(ResolutionStatus.Completed, false)]
-    [DataRow(ResolutionStatus.Skipped, true)]
-    [DataRow(ResolutionStatus.Failed, true)]
+    [DataRow(ResolutionStatus.Skipped, false)]
+    [DataRow(ResolutionStatus.Failed, false)]
+    [DataRow(ResolutionStatus.DeadLettered, false)]
+    [DataRow(ResolutionStatus.Unsupported, false)]
     [DataRow(ResolutionStatus.Pending, true)]
     [DataRow(ResolutionStatus.Deferred, true)]
-    public void A_duplicate_skip_is_refused_only_over_Completed(ResolutionStatus rowStatus, bool expected)
+    public void A_duplicate_skip_is_refused_over_every_settled_row(ResolutionStatus rowStatus, bool expected)
     {
-        // The inbox answers a delivery it already processed with a SkipResponse. A Completed row
-        // already records that processing; the duplicate must not rewrite it as Skipped.
+        // The inbox answers a delivery it already processed with a SkipResponse. It records no
+        // decision of its own, so it must not rewrite a settled row (a Completed replay, an
+        // operator's skip); it still lands on a row that isn't settled yet.
         var duplicateSkip = Row(ResolutionStatus.Skipped, MessageType.SkipResponse, "dup-1");
         duplicateSkip.Reason = NimBus.Core.Inbox.InboxMiddleware.DuplicateReason;
 
@@ -241,6 +244,18 @@ public class StaleWriteGuardTests
             ResolutionStatus.Skipped,
             duplicateSkip,
             Row(rowStatus, MessageType.ResolutionResponse, parentMessageId: "req-1")));
+    }
+
+    [TestMethod]
+    [DataRow("DuplicateDetected ")]
+    [DataRow("duplicatedetected")]
+    [DataRow(null)]
+    public void A_skip_whose_reason_is_not_exactly_the_duplicate_reason_is_not_a_duplicate(string? reason)
+    {
+        var skip = Row(ResolutionStatus.Skipped, MessageType.SkipResponse, "skip-1");
+        skip.Reason = reason;
+
+        Assert.IsFalse(StaleWriteGuard.IsDuplicateSkip(skip));
     }
 
     [TestMethod]

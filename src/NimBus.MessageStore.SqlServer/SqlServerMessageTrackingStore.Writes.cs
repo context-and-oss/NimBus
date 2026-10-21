@@ -169,7 +169,8 @@ ON target.EndpointId = source.EndpointId AND target.EventId = source.EventId
 WHEN MATCHED AND NOT (
         @MessageType = 'SkipResponse'
     AND COALESCE(@Reason, N'') COLLATE Latin1_General_BIN2 = N'{InboxMiddleware.DuplicateReason}'
-    AND target.Status = 'Completed'                                                                  -- a duplicate skip never rewrites Completed (StaleWriteGuard.IsDuplicateSkip)
+    AND DATALENGTH(COALESCE(@Reason, N'')) = DATALENGTH(N'{InboxMiddleware.DuplicateReason}')        -- = ignores trailing spaces; IsDuplicateSkip is ordinal
+    AND target.Status IN ('Completed','Skipped','Failed','DeadLettered','Unsupported')               -- a duplicate skip never rewrites a settled row (StaleWriteGuard.IsDuplicateSkip)
 ) AND (
         @Status IN ('Completed','Skipped','Failed','DeadLettered','Unsupported')                     -- other terminal writes are unguarded
      OR @MessageType NOT IN ('EventRequest','DeferralResponse','PendingHandoffResponse',
