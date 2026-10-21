@@ -127,6 +127,30 @@ public class InMemoryMessageContext : IMessageContext
         return Task.FromResult(_sessionState.NextDeferralSequence++);
     }
 
+    public Task MarkDeferredMessageReplayed(int deferralSequence, CancellationToken cancellationToken = default)
+    {
+        if (deferralSequence < _sessionState.NextDeferralSequence)
+            _sessionState.ReplayedThroughSequence = Math.Max(_sessionState.ReplayedThroughSequence ?? deferralSequence, deferralSequence);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> HasUnreplayedDeferredMessages(CancellationToken cancellationToken = default)
+    {
+        // As the Service Bus SessionState: without a recorded position, every assigned sequence waits.
+        return Task.FromResult((_sessionState.ReplayedThroughSequence ?? -1) < _sessionState.NextDeferralSequence - 1);
+    }
+
+    public Task<DeferredDrainRequest?> GetDeferredDrainRequest(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(_sessionState.DrainRequest);
+    }
+
+    public Task SetDeferredDrainRequest(DeferredDrainRequest? request, CancellationToken cancellationToken = default)
+    {
+        _sessionState.DrainRequest = request;
+        return Task.CompletedTask;
+    }
+
     public Task IncrementDeferredCount(CancellationToken cancellationToken = default)
     {
         _sessionState.DeferredCount++;

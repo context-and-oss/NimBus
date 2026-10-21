@@ -82,6 +82,48 @@ public interface IMessageContext : IReceivedMessage
     Task ResetDeferredCount(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Records that the replay of the parked message with <paramref name="deferralSequence"/>
+    /// reached the endpoint. Replays arrive in deferral order, so every message parked with a
+    /// lower sequence has been replayed too. Repeating the call is harmless, and a sequence
+    /// this session never assigned (from state cleared since) is ignored. The default
+    /// implementation records nothing, which leaves <see cref="HasUnreplayedDeferredMessages"/>
+    /// false.
+    /// </summary>
+    /// <param name="deferralSequence">The replay's deferral sequence.</param>
+    /// <param name="cancellationToken">A token that can cancel the operation.</param>
+    Task MarkDeferredMessageReplayed(int deferralSequence, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    /// <summary>
+    /// Whether a message parked in this session has not been replayed yet. A new event that
+    /// arrives while this is true must park behind the parked messages, or it overtakes them.
+    /// The default implementation returns <see langword="false"/>.
+    /// </summary>
+    /// <param name="cancellationToken">A token that can cancel the operation.</param>
+    /// <returns><see langword="true"/> while a parked message awaits its replay.</returns>
+    Task<bool> HasUnreplayedDeferredMessages(CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
+
+    /// <summary>
+    /// Gets the drain an event parked behind replays requested, or <see langword="null"/> when
+    /// no such request awaits its event's replay. The default implementation returns
+    /// <see langword="null"/>.
+    /// </summary>
+    /// <param name="cancellationToken">A token that can cancel the operation.</param>
+    /// <returns>The pending drain request, or <see langword="null"/>.</returns>
+    Task<DeferredDrainRequest?> GetDeferredDrainRequest(CancellationToken cancellationToken = default) =>
+        Task.FromResult<DeferredDrainRequest?>(null);
+
+    /// <summary>
+    /// Stores the value <see cref="GetDeferredDrainRequest"/> returns. The default
+    /// implementation stores nothing.
+    /// </summary>
+    /// <param name="request">The drain request, or <see langword="null"/> to clear it.</param>
+    /// <param name="cancellationToken">A token that can cancel the operation.</param>
+    Task SetDeferredDrainRequest(DeferredDrainRequest? request, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    /// <summary>
     /// Gets the throttle retry count from message properties.
     /// Used for tracking exponential backoff retries due to rate limiting.
     /// </summary>

@@ -211,8 +211,8 @@ public class DeferredMessageProcessorTests
         var republished = client.Sender.SentMessages.Single();
         Assert.IsFalse(republished.ApplicationProperties.ContainsKey(UserPropertyName.OriginalSessionId.ToString()),
             "OriginalSessionId should be excluded");
-        Assert.IsFalse(republished.ApplicationProperties.ContainsKey(UserPropertyName.DeferralSequence.ToString()),
-            "DeferralSequence should be excluded");
+        Assert.AreEqual(5, republished.ApplicationProperties[UserPropertyName.DeferralSequence.ToString()],
+            "DeferralSequence must be kept: it marks the delivery as a replay for the endpoint's replay guard");
         Assert.AreEqual("my-topic", republished.ApplicationProperties[UserPropertyName.To.ToString()],
             "To must be reset to the destination topic so the main `user.To = '<endpointId>'` filter matches");
         Assert.AreEqual("event-1", republished.ApplicationProperties[UserPropertyName.EventId.ToString()]);

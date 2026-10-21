@@ -33,7 +33,8 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
     /// <summary>
     /// Processes all deferred messages for the specified session.
     /// Messages are retrieved from the session-enabled deferred subscription using AcceptSessionAsync,
-    /// sorted by DeferralSequence, and re-published to the main topic for normal processing.
+    /// sorted by DeferralSequence, and re-published to the main topic for normal processing,
+    /// keeping DeferralSequence so the endpoint recognises each replay.
     /// The drain stops early when the endpoint parks one of its replays again, because the
     /// session is blocked again; that copy and everything after it stay parked for the next
     /// unblock.
@@ -196,7 +197,9 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
             MessageId = Guid.NewGuid().ToString(),
         };
 
-        // Copy all application properties except the deferred-specific ones.
+        // Copy all application properties except OriginalSessionId, which the Deferred
+        // subscription's filter matches on. DeferralSequence stays: it marks the delivery as
+        // a replay, so the endpoint lets it through while newer events wait behind it.
         // We also drop "To" because the inbound deferred message's To is "Deferred"
         // (set by SendToDeferredSubscription so the message routes to the Deferred
         // subscription on the topic). Re-using that value would route the republish
@@ -204,7 +207,6 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
         foreach (var prop in deferredMessage.ApplicationProperties)
         {
             if (prop.Key != UserPropertyName.OriginalSessionId.ToString() &&
-                prop.Key != UserPropertyName.DeferralSequence.ToString() &&
                 prop.Key != UserPropertyName.To.ToString())
             {
                 result.ApplicationProperties[prop.Key] = prop.Value;

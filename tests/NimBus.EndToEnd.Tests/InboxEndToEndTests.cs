@@ -337,7 +337,6 @@ public sealed class InboxEndToEndTests
             replay.MessageId = Guid.NewGuid().ToString();
             replay.To = endpointId;
             replay.OriginalSessionId = null!;
-            replay.DeferralSequence = null;
             await fixture.PublishBus.Send(replay);
             await fixture.DeliverAllWithResults();
         }

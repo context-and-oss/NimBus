@@ -267,8 +267,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     public async Task UnblockSession(CancellationToken cancellationToken = default)
     {
         SessionState state = await GetSessionState(cancellationToken);
-        state.BlockedByEventId = null;
-        state.BlockedByMessageId = null;
+        state.ClearBlock();
         await UpdateSessionState(state, cancellationToken);
     }
 
@@ -549,10 +548,40 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     public async Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default)
     {
         SessionState state = await GetSessionState(cancellationToken);
-        int sequence = state.NextDeferralSequence;
-        state.NextDeferralSequence++;
+        int sequence = state.TakeDeferralSequence();
         await UpdateSessionState(state, cancellationToken);
         return sequence;
+    }
+
+    public async Task MarkDeferredMessageReplayed(int deferralSequence, CancellationToken cancellationToken = default)
+    {
+        SessionState state = await GetSessionState(cancellationToken);
+        var replayedThrough = state.ReplayedThroughSequence;
+        state.MarkReplayed(deferralSequence);
+        if (state.ReplayedThroughSequence != replayedThrough)
+            await UpdateSessionState(state, cancellationToken);
+    }
+
+    public async Task<bool> HasUnreplayedDeferredMessages(CancellationToken cancellationToken = default)
+    {
+        SessionState state = await GetSessionState(cancellationToken);
+        return state.HasUnreplayedMessages();
+    }
+
+    public async Task<DeferredDrainRequest?> GetDeferredDrainRequest(CancellationToken cancellationToken = default)
+    {
+        SessionState state = await GetSessionState(cancellationToken);
+        return state.DrainRequestedForSequence is { } sequence
+            ? new DeferredDrainRequest(sequence, state.DrainRequestedAtUtc ?? DateTime.MinValue)
+            : null;
+    }
+
+    public async Task SetDeferredDrainRequest(DeferredDrainRequest? request, CancellationToken cancellationToken = default)
+    {
+        SessionState state = await GetSessionState(cancellationToken);
+        state.DrainRequestedForSequence = request?.DeferralSequence;
+        state.DrainRequestedAtUtc = request?.RequestedAtUtc;
+        await UpdateSessionState(state, cancellationToken);
     }
 
     public async Task IncrementDeferredCount(CancellationToken cancellationToken = default)

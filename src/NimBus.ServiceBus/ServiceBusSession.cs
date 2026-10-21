@@ -1,9 +1,7 @@
 using Azure.Messaging.ServiceBus;
 using NimBus.Core.Messages;
 using Microsoft.Azure.Functions.Worker;
-using Newtonsoft.Json;
 using System;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -108,28 +106,12 @@ public class ServiceBusSession : IServiceBusSession
             sessionData = await _sessionReceiver!.GetSessionStateAsync(cancellationToken);
         }
 
-        if (sessionData == null || sessionData.ToMemory().Length == 0)
-            return new SessionState();
-
-        return sessionData.ToObjectFromJson<SessionState>()!;
+        return SessionState.FromBinaryData(sessionData);
     }
 
     public async Task SetStateAsync(SessionState sessionState, CancellationToken cancellationToken = default)
     {
-        BinaryData sessionData;
-
-        if (!sessionState.IsEmpty())
-        {
-            string json = JsonConvert.SerializeObject(sessionState);
-            sessionData = new BinaryData(Encoding.UTF8.GetBytes(json));
-        }
-        else
-        {
-            // Use empty BinaryData instead of null to clear session state.
-            // The Azure Functions Worker SDK has a bug where passing null to
-            // SetSessionStateAsync causes a NullReferenceException.
-            sessionData = new BinaryData(Array.Empty<byte>());
-        }
+        BinaryData sessionData = sessionState.ToBinaryData();
 
         if (_sessionActions != null)
         {
