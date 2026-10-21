@@ -441,6 +441,75 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task Duplicate_skip_does_not_rewrite_a_settled_row()
+    {
+        // The inbox answers a delivery it already processed (a redelivered deferred replay, say)
+        // with a SkipResponse carrying the duplicate reason. Spec 041 §2.7, bug 2.
+        var store = CreateStore();
+        var endpointId = Id("ep-duplicate-skip");
+
+        UnresolvedEvent DuplicateSkip(string eventId, string messageId)
+        {
+            var content = GuardedEvent(endpointId, eventId, "s1", MessageType.SkipResponse, messageId, parentMessageId: "replay-2");
+            content.Reason = NimBus.Core.Inbox.InboxMiddleware.DuplicateReason;
+            return content;
+        }
+
+        var completed = Id("dup-completed");
+        Assert.IsTrue(await store.UploadCompletedMessage(completed, "s1", endpointId,
+            GuardedEvent(endpointId, completed, "s1", MessageType.ResolutionResponse, "rsp-1", parentMessageId: "replay-1")));
+        Assert.IsFalse(await store.UploadSkippedMessage(completed, "s1", endpointId, DuplicateSkip(completed, "dup-1")),
+            "a duplicate skip must not rewrite a Completed row");
+        var completedRow = (await store.GetEvent(endpointId, completed))!;
+        Assert.AreEqual(ResolutionStatus.Completed, completedRow.ResolutionStatus);
+        Assert.AreEqual("rsp-1", completedRow.LastMessageId);
+
+        // Before the outcome is recorded, the duplicate skip still lands; a later Completed wins.
+        var pending = Id("dup-pending");
+        Assert.IsTrue(await store.UploadPendingMessage(pending, "s1", endpointId,
+            GuardedEvent(endpointId, pending, "s1", MessageType.EventRequest, "req-1")));
+        Assert.IsTrue(await store.UploadSkippedMessage(pending, "s1", endpointId, DuplicateSkip(pending, "dup-2")));
+        Assert.AreEqual(ResolutionStatus.Skipped, (await store.GetEvent(endpointId, pending))!.ResolutionStatus);
+        Assert.IsTrue(await store.UploadCompletedMessage(pending, "s1", endpointId,
+            GuardedEvent(endpointId, pending, "s1", MessageType.ResolutionResponse, "rsp-2", parentMessageId: "req-1")));
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, pending))!.ResolutionStatus);
+
+        // An operator's skip is not a duplicate: it still settles a Completed row as Skipped.
+        var skipped = Id("dup-operator");
+        Assert.IsTrue(await store.UploadCompletedMessage(skipped, "s1", endpointId,
+            GuardedEvent(endpointId, skipped, "s1", MessageType.ResolutionResponse, "rsp-3", parentMessageId: "req-3")));
+        var operatorSkip = GuardedEvent(endpointId, skipped, "s1", MessageType.SkipResponse, "skip-3", parentMessageId: "skip-req-3");
+        operatorSkip.Reason = "Skipped by operator";
+        Assert.IsTrue(await store.UploadSkippedMessage(skipped, "s1", endpointId, operatorSkip));
+        Assert.AreEqual(ResolutionStatus.Skipped, (await store.GetEvent(endpointId, skipped))!.ResolutionStatus);
+
+        // ...and a late duplicate then leaves the operator's skip, reason and message id intact.
+        Assert.IsFalse(await store.UploadSkippedMessage(skipped, "s1", endpointId, DuplicateSkip(skipped, "dup-3")),
+            "a duplicate skip must not replace an operator's skip");
+        var operatorRow = (await store.GetEvent(endpointId, skipped))!;
+        Assert.AreEqual("skip-3", operatorRow.LastMessageId);
+        Assert.AreEqual("Skipped by operator", operatorRow.Reason);
+
+        // A Failed row stays Failed: the success the duplicate reflects records its own outcome.
+        var failed = Id("dup-failed");
+        Assert.IsTrue(await store.UploadFailedMessage(failed, "s1", endpointId,
+            GuardedEvent(endpointId, failed, "s1", MessageType.ErrorResponse, "err-4", parentMessageId: "req-4")));
+        Assert.IsFalse(await store.UploadSkippedMessage(failed, "s1", endpointId, DuplicateSkip(failed, "dup-4")),
+            "a duplicate skip must not replace a Failed row");
+        Assert.AreEqual(ResolutionStatus.Failed, (await store.GetEvent(endpointId, failed))!.ResolutionStatus);
+
+        // The reason must match exactly (SQL Server's = ignores trailing spaces): a padded
+        // reason is an ordinary skip, applied by every provider alike.
+        var padded = Id("dup-padded");
+        Assert.IsTrue(await store.UploadCompletedMessage(padded, "s1", endpointId,
+            GuardedEvent(endpointId, padded, "s1", MessageType.ResolutionResponse, "rsp-5", parentMessageId: "req-5")));
+        var paddedSkip = DuplicateSkip(padded, "skip-5");
+        paddedSkip.Reason += " ";
+        Assert.IsTrue(await store.UploadSkippedMessage(padded, "s1", endpointId, paddedSkip));
+        Assert.AreEqual(ResolutionStatus.Skipped, (await store.GetEvent(endpointId, padded))!.ResolutionStatus);
+    }
+
+    [TestMethod]
     public async Task Request_copy_refreshes_request_stage_rows()
     {
         var store = CreateStore();

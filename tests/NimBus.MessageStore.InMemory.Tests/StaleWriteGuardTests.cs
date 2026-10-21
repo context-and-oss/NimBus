@@ -223,4 +223,47 @@ public class StaleWriteGuardTests
                 $"{control} over {rowStatus}");
         }
     }
+
+    [TestMethod]
+    [DataRow(ResolutionStatus.Completed, false)]
+    [DataRow(ResolutionStatus.Skipped, false)]
+    [DataRow(ResolutionStatus.Failed, false)]
+    [DataRow(ResolutionStatus.DeadLettered, false)]
+    [DataRow(ResolutionStatus.Unsupported, false)]
+    [DataRow(ResolutionStatus.Pending, true)]
+    [DataRow(ResolutionStatus.Deferred, true)]
+    public void A_duplicate_skip_is_refused_over_every_settled_row(ResolutionStatus rowStatus, bool expected)
+    {
+        // The inbox answers a delivery it already processed with a SkipResponse. It records no
+        // decision of its own, so it must not rewrite a settled row (a Completed replay, an
+        // operator's skip); it still lands on a row that isn't settled yet.
+        var duplicateSkip = Row(ResolutionStatus.Skipped, MessageType.SkipResponse, "dup-1");
+        duplicateSkip.Reason = NimBus.Core.Inbox.InboxMiddleware.DuplicateReason;
+
+        Assert.AreEqual(expected, StaleWriteGuard.Allows(
+            ResolutionStatus.Skipped,
+            duplicateSkip,
+            Row(rowStatus, MessageType.ResolutionResponse, parentMessageId: "req-1")));
+    }
+
+    [TestMethod]
+    [DataRow("DuplicateDetected ")]
+    [DataRow("duplicatedetected")]
+    [DataRow(null)]
+    public void A_skip_whose_reason_is_not_exactly_the_duplicate_reason_is_not_a_duplicate(string? reason)
+    {
+        var skip = Row(ResolutionStatus.Skipped, MessageType.SkipResponse, "skip-1");
+        skip.Reason = reason;
+
+        Assert.IsFalse(StaleWriteGuard.IsDuplicateSkip(skip));
+    }
+
+    [TestMethod]
+    public void An_operator_skip_still_replaces_a_Completed_row()
+    {
+        Assert.IsTrue(StaleWriteGuard.Allows(
+            ResolutionStatus.Skipped,
+            Row(ResolutionStatus.Skipped, MessageType.SkipResponse, "skip-1"),
+            Row(ResolutionStatus.Completed, MessageType.ResolutionResponse, parentMessageId: "req-1")));
+    }
 }

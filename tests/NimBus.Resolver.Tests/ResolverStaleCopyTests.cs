@@ -189,6 +189,40 @@ public class ResolverStaleCopyTests
     }
 
     [TestMethod]
+    [DataRow(true, DisplayName = "duplicate after the response")]
+    [DataRow(false, DisplayName = "duplicate before the response")]
+    public async Task A_duplicate_skip_leaves_the_row_Completed(bool responseFirst)
+    {
+        // Spec 041 §2.7, bug 2: a deferred replay is redelivered after its handler and inbox
+        // record committed. The endpoint's inbox answers the redelivery with a SkipResponse,
+        // which must not rewrite the replay's Completed outcome.
+        var store = new InMemoryMessageStore();
+        var service = new ResolverService(store, new RecordingNotifier());
+        var response = CreateMessageContext(
+            MessageType.ResolutionResponse, to: Constants.ResolverId, from: Endpoint,
+            messageId: "rsp-1", parentMessageId: "replay-1");
+        var duplicate = CreateMessageContext(
+            MessageType.SkipResponse, to: Constants.ResolverId, from: Endpoint,
+            messageId: "dup-1", parentMessageId: "replay-2");
+        duplicate.MessageContent.ErrorContent = new ErrorContent { ErrorText = NimBus.Core.Inbox.InboxMiddleware.DuplicateReason };
+
+        if (responseFirst)
+        {
+            await service.Handle(response);
+            await service.Handle(duplicate);
+        }
+        else
+        {
+            await service.Handle(duplicate);
+            await service.Handle(response);
+        }
+
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
+        Assert.AreEqual(2, (await store.GetEventHistory("event-1")).Count(), "the duplicate stays in the Flow tab");
+        Assert.AreEqual(1, duplicate.CompletedCalls);
+    }
+
+    [TestMethod]
     public async Task A_late_deferral_after_the_response_does_not_strand_the_row()
     {
         // Without the guard this left the row Deferred forever, with nothing behind it to
