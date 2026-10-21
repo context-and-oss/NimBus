@@ -92,9 +92,10 @@ Several of these belong to other teams and take time. Start them first.
       `-test`, `-prod`).
 - [ ] Resource providers registered on the subscription by someone with subscription-level rights:
       `Microsoft.ServiceBus`, `Microsoft.Web`, `Microsoft.Storage`, `Microsoft.Insights`,
-      `Microsoft.DocumentDB` (Cosmos only), `Microsoft.EventGrid`. Add `Microsoft.App`,
-      `Microsoft.ContainerRegistry` and `Microsoft.KeyVault` for the adapters' resources. The full list is in
-      [azure-requirements.md](azure-requirements.md#resource-provider-registrations).
+      `Microsoft.DocumentDB` (Cosmos DB only), `Microsoft.Sql` (provisioned SQL Server only),
+      `Microsoft.EventGrid`. Add `Microsoft.App`, `Microsoft.ContainerRegistry`,
+      `Microsoft.KeyVault` and `Microsoft.ManagedIdentity` for the adapters' resources. The full list
+      is in [azure-requirements.md](azure-requirements.md#resource-provider-registrations).
 - [ ] A deployment identity per environment (an Azure DevOps service connection with workload
       identity federation) with **Owner**, or **Contributor + Role Based Access Control
       Administrator**, on its resource group. Plain Contributor fails, because the templates create
@@ -238,6 +239,8 @@ using Contoso.Integration.Contracts.D365Sales;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 
+namespace Contoso.Integration.Contracts;
+
 public class D365SalesEndpoint : Endpoint
 {
     public D365SalesEndpoint()
@@ -290,7 +293,8 @@ The contracts project is a plain class library:
 </Project>
 ```
 
-Its pipeline runs `dotnet pack` and pushes to the Azure Artifacts feed. Keep the package's
+Its pipeline runs `dotnet pack` and pushes to the Azure Artifacts feed (with a `NuGetAuthenticate@1`
+step before the push). Keep the package's
 dependencies to `Akaule.NimBus.Abstractions` and the BCL: `nb` loads the package to provision the
 topology and adds its assemblies to the WebApp, without resolving further dependencies.
 
@@ -418,7 +422,7 @@ on the adapter's own writes. Test against the sandboxes before test.
 git clone https://github.com/akakaule/nimbus-adapter-kit
 dotnet new install ./nimbus-adapter-kit/skills/nimbus-adapter/template
 
-dotnet new nimbus-adapter -n Contoso.D365Sales.Adapter --SystemName D365Sales --Ingress true `
+dotnet new nimbus-adapter -n Contoso.D365Sales.Adapter --SystemName D365Sales `
   --Contracts package --ContractsPackageId Contoso.Integration.Contracts `
   --ContractsPackageVersion <a.b.c> --PlatformType Contoso.Integration.Contracts.ContosoPlatform `
   --ContractsFeed https://pkgs.dev.azure.com/<org>/<project>/_packaging/<feed>/nuget/v3/index.json `
@@ -429,11 +433,21 @@ dotnet new nimbus-adapter -n Contoso.D365Sales.Adapter --SystemName D365Sales --
 pipeline's `NIMBUS_PLATFORM_FEED` is the same URL without `/v3/index.json`.
 
 Do the same for `--SystemName BusinessCentral`. The endpoint name defaults to `<SystemName>Endpoint`
-and must equal the endpoint class in the catalog. `--Ingress true` adds the system → bus path.
+and must equal the endpoint class in the catalog. `--PlatformType` is the platform class's full
+name, including its namespace.
 
 The generated solution already has the NimBus wiring, typed client failures, retry rules, a circuit
-breaker, an inbox, the simulator, 70 to 84 tests, Bicep and an Azure DevOps pipeline. Start from it
-rather than from an empty project: it encodes the failures earlier adapters hit in production.
+breaker, an inbox, the simulator, tests, Bicep and an Azure DevOps pipeline. Start from it rather
+than from an empty project: it encodes the failures earlier adapters hit in production.
+
+**What package mode leaves out.** With `--Contracts package` the template doesn't generate:
+
+- **The ingress path (system → bus).** `--Ingress true` takes effect only with local contracts, so
+  you build the change-notification queue, the re-read and the publish yourself
+  ([below](#change-detection-system--bus)). To use the template's ingress code as a reference,
+  generate a throwaway copy with `--Contracts local --Ingress true`.
+- **Handlers and their tests.** The adapter starts with no handlers. You add one per consumed
+  event, with handler and pipeline tests ([Tests](#tests)).
 
 The kit's agent skill can do the same interactively. In Claude Code, Codex or GitHub Copilot, ask it
 to "create a NimBus adapter for Business Central", then "add a flow: …" for each flow, and "review
@@ -457,7 +471,8 @@ walks through them.
 The pattern for both systems is the same: **the system sends a thin notification to a queue, and
 the adapter re-reads the record and publishes it**
 ([pattern 04](https://github.com/akakaule/nimbus-adapter-kit/blob/main/skills/nimbus-adapter/references/patterns/04-thin-notification-reread.md)).
-Don't build event payloads inside the source system.
+Don't build event payloads inside the source system. In package mode the template doesn't generate
+this path, so each adapter adds it, following the pattern.
 
 | System | Recommended | Alternatives | Detail |
 |---|---|---|---|
@@ -489,9 +504,13 @@ explain why.
 
 ### Tests
 
-The template's tests cover client classification, retry rules, the circuit breaker, handlers, the
-pipeline, the catalog and the wiring. Its architecture tests fail when a handler has no matching
-`Consumes<T>()` or a `Consumes<T>()` has no handler. Add tests next to them for each flow. See
+The template's tests cover client classification, retry rules, the circuit breaker, the catalog and
+the wiring. In package mode it has no handler or pipeline tests: write them for each flow you add.
+
+The architecture test compares the handlers with the endpoint's `Consumes<T>()` declarations. In
+package mode it reports **inconclusive** while the adapter has no handlers at all, and lists the
+events still to build. From the first handler on, it fails on any mismatch. Don't deploy an adapter
+while that test is inconclusive. See
 [building-adapters.md § Adapter testing](building-adapters.md#adapter-testing).
 
 Before an adapter goes to test, work through the kit's
@@ -501,23 +520,34 @@ and the [production checklist](building-adapters.md#production-checklist).
 ## 8. Deploy the adapters
 
 Each generated adapter has an `azure-pipelines.yml`. Pull requests build and test only. `main` also
-builds a container image, applies the topology, and deploys `deploy/main.bicep` to dev, test and
-prod, waiting for the approvals on each pipeline environment. The template's README lists the
-one-time setup. In short:
+builds a container image and deploys `deploy/main.bicep` to dev, test and prod, waiting for the
+approvals on each pipeline environment.
+
+**Topology has one owner.** In package mode the adapter pipeline doesn't apply the topology: the
+platform pipeline does, from the same contracts package ([section 5](#5-stand-up-the-platform)). So
+the release order is always: contracts package → platform pipeline → adapters. (In local-contracts
+mode the adapter pipeline applies its own catalog before deploying.)
+
+The template's README lists the one-time setup. In short:
 
 1. Fill in the placeholders in `azure-pipelines.yml` and `deploy/main.<env>.bicepparam`.
-2. Create a service connection per environment with **Contributor + Role Based Access Control
+2. **Authenticate to the contracts feed.** The generated `NuGet.config` restores the contracts
+   package from your Azure Artifacts feed, but the generated pipeline has no credential step. Add a
+   `NuGetAuthenticate@1` task before the build, and in the job that publishes the container image.
+   Give the pipeline's build service read access to the feed.
+3. Create a service connection per environment with **Contributor + Role Based Access Control
    Administrator** on the resource group, because the Bicep creates the adapter's managed identity and
    its role assignments.
-3. After the first deployment, give the adapter's managed identity (the `identityPrincipalId`
+4. After the first deployment, give the adapter's managed identity (the `identityPrincipalId`
    output) access to its system: an application user in Dataverse, or the BC setup described in the
    Business Central pack.
-4. Store the inbox database's connection string in the Key Vault under the secret name the Bicep
-   expects.
-
-**One owner for the topology.** With a shared contracts package, let the platform pipeline apply the
-topology ([section 5](#5-stand-up-the-platform)) and remove the topology step from the adapter
-pipelines. Then the release order is always: contracts package → platform pipeline → adapters.
+5. **Prepare the inbox database.**
+   - Store its connection string in the Key Vault under the secret name the Bicep expects
+     (`integration-db-connection-string` by default).
+   - The inbox creates its table on first use, so the database user needs permission to create it
+     once. Otherwise create the table up front and set `AutoCreateTable` to false.
+   - Managed-identity SQL authentication with SqlClient 7 also needs the
+     `Microsoft.Data.SqlClient.Extensions.Azure` package.
 
 Details: the kit's [pattern 28](https://github.com/akakaule/nimbus-adapter-kit/blob/main/skills/nimbus-adapter/references/patterns/28-deploy-and-pipeline.md).
 Adapters on Azure Functions instead: [azure-functions-hosting.md](azure-functions-hosting.md).
@@ -545,8 +575,9 @@ CRM or BC, then:
 - **Skip** when it no longer matters; the parked messages are then processed.
 
 See [webapp-failed-messages.md](webapp-failed-messages.md), [deferred-messages.md](deferred-messages.md)
-and [error-handling.md](error-handling.md). Bulk clean-up uses `nb container` commands
-([cli.md](cli.md#nb-container-resubmit)).
+and [error-handling.md](error-handling.md). On Cosmos DB, the `nb container` commands handle bulk
+resubmit, skip and clean-up ([cli.md](cli.md#nb-container-resubmit)). They work on Cosmos DB only.
+On SQL Server, recover failures from the WebApp.
 
 ### Upgrading NimBus
 
