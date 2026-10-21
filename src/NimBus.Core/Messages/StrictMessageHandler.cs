@@ -336,8 +336,17 @@ public class StrictMessageHandler : MessageHandler
             await SendSkipResponse(messageContext);
             await CompleteMessage(messageContext);
         }
-        catch (SessionBlockedException)
+        catch (SessionBlockedException exception)
         {
+            // As in HandleHandoffCompletedRequest: a previous delivery may have cleared the
+            // block and then stopped before requesting the drain, and nothing else would request
+            // it. Repair that gap on redelivery, but never resume work behind a newer event's
+            // block. A skip of an event that never blocked the session at most requests a drain
+            // that finds nothing to replay.
+            if (string.IsNullOrEmpty(exception.BlockedByEventId))
+            {
+                await ContinueWithAnyDeferredMessages(messageContext);
+            }
             await SendSkipResponse(messageContext);
             await CompleteMessage(messageContext);
         }

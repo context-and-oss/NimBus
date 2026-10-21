@@ -1251,6 +1251,30 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
+    [DataRow(null, 1)]
+    [DataRow("newer-blocking-event", 0)]
+    public async Task HandleSkipRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock(
+        string? blockedBy, int expectedDrainCalls)
+    {
+        // The first delivery unblocked the session but stopped before sending
+        // ProcessDeferredRequest. Redelivery must repair that gap, as handoff completion does.
+        var ctx = CreateContext(messageType: MessageType.SkipRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = blockedBy;
+        ctx.DeferredCountResult = 2;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+
+        await CreateHandler(handler, response).Handle(ctx);
+
+        Assert.AreEqual(expectedDrainCalls, response.ProcessDeferredCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, response.SkipCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
     public async Task HandleSkipRequest_FromNonManager_DeadLetters()
     {
         var ctx = CreateContext(messageType: MessageType.SkipRequest, from: "SomeEndpoint");
