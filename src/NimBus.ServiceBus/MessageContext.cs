@@ -267,8 +267,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     public async Task UnblockSession(CancellationToken cancellationToken = default)
     {
         SessionState state = await GetSessionState(cancellationToken);
-        state.BlockedByEventId = null;
-        state.BlockedByMessageId = null;
+        state.ClearBlock();
         await UpdateSessionState(state, cancellationToken);
     }
 

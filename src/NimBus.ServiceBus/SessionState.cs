@@ -90,6 +90,22 @@ public class SessionState
         ReplayedThroughSequence is { } replayedThrough && replayedThrough < NextDeferralSequence - 1;
 
     /// <summary>
+    /// Clears the block. When the session has parked messages but no replay position (state
+    /// written before the position existed, or rewritten by such a version), nothing says which
+    /// of them were replayed, so every assigned sequence is assumed to still wait: events
+    /// arriving before the replays this unblock starts then park behind them. The replays
+    /// advance the position, and if nothing was left to replay, the first event parked behind
+    /// requests a drain whose replay opens the guard.
+    /// </summary>
+    public void ClearBlock()
+    {
+        BlockedByEventId = null;
+        BlockedByMessageId = null;
+        if (ReplayedThroughSequence is null && NextDeferralSequence > 0)
+            ReplayedThroughSequence = -1;
+    }
+
+    /// <summary>
     /// Clears what an operator's "reprocess deferred" resets: the block, the legacy deferred
     /// sequence numbers and any pending drain request. The deferral sequence and the replay
     /// position stay, so events arriving before the reprocess drain's replays still park behind
@@ -97,8 +113,7 @@ public class SessionState
     /// </summary>
     public void ClearForReprocess()
     {
-        BlockedByEventId = null;
-        BlockedByMessageId = null;
+        ClearBlock();
         _legacyDeferredSequenceNumbers = new List<long>();
         DrainRequestedForSequence = null;
         DrainRequestedAtUtc = null;

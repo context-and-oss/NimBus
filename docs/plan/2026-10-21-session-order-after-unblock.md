@@ -21,7 +21,14 @@ A drain from the previous version strips `DeferralSequence`, and during a rollin
 replays reach new handlers. Since v4.2.0 every parked copy carries `InboxMessageId`, and that drain
 copies it onto the replay; no new `EventRequest` carries it. A delivery with `InboxMessageId` but no
 `DeferralSequence` is therefore a legacy replay. It goes through the guard, so it isn't parked again
-in a loop, but it can't advance the replay position. The drain still replays in order.
+in a loop, but it can't advance the replay position. The drain still replays in order. A legacy
+replay also clears a pending drain request: the old drain that sent it may have consumed that
+request, so the next event parked behind replays requests a drain at once instead of after the
+expiry.
+
+While versions are mixed, previous-version workers don't apply the guard at all, so they can still
+let a new event overtake. That ends when the deploy completes; the rules above make sure the state
+they leave behind doesn't switch the guard off afterwards.
 
 **Replay position, not a count.** The session state gains `ReplayedThroughSequence`, the highest
 deferral sequence whose replay has reached the endpoint. Replays arrive in deferral order, so a
@@ -32,7 +39,15 @@ replay of a message parked before the WebApp cleared the state) is ignored.
 
 - State written before this change has no position. The first message parked afterwards starts it
   just below its own sequence, so that message is covered; replays of older messages then advance
-  it. Sessions that never park again pay nothing.
+  it.
+- A session that parked messages before the upgrade, and parks nothing new before its block
+  clears, would still have no position when its replays start. The same happens when a
+  previous-version worker rewrites the state during a rolling deploy. So when a block clears
+  (`SessionState.ClearBlock`, used by unblock and by reprocess) with parked messages but no
+  position, the position starts at -1: every assigned sequence is assumed to still wait. The
+  replays advance it. If nothing was left to replay, the first event parked behind requests a drain
+  whose replay opens the guard. Sessions that never parked, or whose block never clears, pay
+  nothing.
 - A gap (a sequence taken whose park send failed) looks like a waiting message. The next new event
   parks and requests a drain, its replay moves the position past the gap, and the guard opens.
 
@@ -125,18 +140,21 @@ the session state.
   - a request whose replay never arrives is requested again by the first event parked after it
     expires;
   - a replay from a previous-version drain (no `DeferralSequence`) goes through instead of parking
-    again;
+    again; the next event still parks, requests a drain at once, and the guard opens after that
+    replay;
+  - a session parked before the replay position existed guards its replays after a skip and after
+    a reprocess;
   - a new event arriving after a reprocess, before its replays, parks behind them; after a purge it
     runs straight away;
   - a replay that blocks the session again keeps the later parked messages and a new event in
     order.
-  - The first two fail on `master`. The expiry and legacy-replay tests fail when their check is
-    removed.
+  - The first two fail on `master`. The expiry, legacy-replay and pre-upgrade tests each fail when
+    their rule is removed.
 - `MessageContextTests`: legacy-state start, guard opening, no movement backwards, cleared-state
   sequences ignored, the drain request round trip, a request stored without a timestamp reading
   as expired, and the Newtonsoft-write/System.Text.Json-read round trip of the new fields.
-- `MessageContextTests` also cover `ClearForReprocess`, `ClearAfterPurge` and the `SessionState`
-  serialization helpers.
+- `MessageContextTests` also cover `ClearBlock`, `ClearForReprocess`, `ClearAfterPurge`, unblock
+  keeping a recorded position, and the `SessionState` serialization helpers.
 - `AdminSessionStateClearTests` (WebApp): reprocess keeps the replay position, and unreadable state
   is cleared outright.
 - `DeferredMessageProcessorTests`: the replay keeps `DeferralSequence`.

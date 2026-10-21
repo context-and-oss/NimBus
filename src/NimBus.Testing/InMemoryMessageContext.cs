@@ -94,6 +94,10 @@ public class InMemoryMessageContext : IMessageContext
     {
         _sessionState.BlockedByEventId = null;
         _sessionState.BlockedByMessageId = null;
+        // As the Service Bus SessionState.ClearBlock: parked messages without a replay position
+        // are assumed to still wait.
+        if (_sessionState.ReplayedThroughSequence is null && _sessionState.NextDeferralSequence > 0)
+            _sessionState.ReplayedThroughSequence = -1;
         return Task.CompletedTask;
     }
 

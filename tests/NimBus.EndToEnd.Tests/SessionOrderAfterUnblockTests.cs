@@ -174,6 +174,64 @@ public class SessionOrderAfterUnblockTests
             new[] { "ORD-PARKED", "ORD-NEW" },
             handler.ReceivedEvents.Select(order => order.OrderId).ToArray());
         Assert.AreEqual(parked.Count, ParkedCopies(fixture).Count, "A legacy replay must not be parked again.");
+
+        // A legacy replay can't advance the position, so the next event still parks. The legacy
+        // replays cleared the pending request, so it requests a drain straight away.
+        var drainRequests = CountDrainRequests(fixture);
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-NEXT" });
+        await fixture.DeliverAll();
+        Assert.AreEqual(parked.Count + 1, ParkedCopies(fixture).Count, "ORD-NEXT parks behind the unrecorded replays.");
+        Assert.AreEqual(drainRequests + 1, CountDrainRequests(fixture), "ORD-NEXT must request a drain, not wait for the request to expire.");
+
+        // The current drain's replay carries its sequence and opens the guard.
+        await ReplayParked(fixture, ParkedCopies(fixture).Skip(parked.Count).ToList());
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-LAST" });
+        await fixture.DeliverAll();
+
+        CollectionAssert.AreEqual(
+            new[] { "ORD-PARKED", "ORD-NEW", "ORD-NEXT", "ORD-LAST" },
+            handler.ReceivedEvents.Select(order => order.OrderId).ToArray());
+        Assert.AreEqual(parked.Count + 1, ParkedCopies(fixture).Count, "ORD-LAST must not be parked.");
+    }
+
+    [TestMethod]
+    [DataRow(false, DisplayName = "skip")]
+    [DataRow(true, DisplayName = "reprocess")]
+    public async Task SessionParkedBeforeTheReplayPositionExisted_GuardsTheReplaysAfterTheBlockClears(bool reprocess)
+    {
+        // State stored by the previous version (or rewritten by one during a rolling deploy)
+        // has parked messages but no replay position.
+        const string sessionId = "session-overtake-pre-upgrade";
+        var fixture = new EndToEndFixture();
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionFactory = order => order.OrderId == "ORD-FAIL" ? new InvalidOperationException("fails") : null,
+        };
+        fixture.RegisterHandler(() => handler);
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-FAIL" });
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-PARKED" });
+        await fixture.DeliverAll();
+        var session = fixture.PublishBus.GetSession(sessionId);
+        session.State.ReplayedThroughSequence = null;
+
+        if (reprocess)
+        {
+            session.State.ClearForReprocess();
+        }
+        else
+        {
+            await fixture.PublishBus.Send(CreateSkipRequest(sessionId, ErrorEventId(fixture, "ORD-FAIL")));
+            await fixture.DeliverAll();
+        }
+
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-NEW" });
+        await fixture.DeliverAll();
+        Assert.AreEqual(0, handler.ReceivedEvents.Count, "ORD-NEW must not run ahead of ORD-PARKED.");
+
+        await ReplayParked(fixture, ParkedCopies(fixture));
+        CollectionAssert.AreEqual(
+            new[] { "ORD-PARKED", "ORD-NEW" },
+            handler.ReceivedEvents.Select(order => order.OrderId).ToArray());
     }
 
     [TestMethod]

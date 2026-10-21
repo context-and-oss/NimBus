@@ -655,6 +655,36 @@ public class MessageContextTests
     }
 
     [TestMethod]
+    public void SessionState_ClearBlock_WithoutReplayPosition_AssumesEveryParkedMessageWaits()
+    {
+        var withParked = new SessionState { BlockedByEventId = "evt-1", DeferredCount = 2, NextDeferralSequence = 2 };
+        var neverParked = new SessionState { BlockedByEventId = "evt-1" };
+
+        withParked.ClearBlock();
+        neverParked.ClearBlock();
+
+        Assert.IsNull(withParked.BlockedByEventId);
+        Assert.AreEqual(-1, withParked.ReplayedThroughSequence);
+        Assert.IsTrue(withParked.HasUnreplayedMessages());
+        Assert.IsNull(neverParked.ReplayedThroughSequence, "A session that never parked has nothing to guard.");
+    }
+
+    [TestMethod]
+    public async Task UnblockSession_KeepsARecordedReplayPosition()
+    {
+        var session = new FakeServiceBusSession();
+        session.State.BlockedByEventId = "evt-1";
+        session.State.NextDeferralSequence = 3;
+        session.State.ReplayedThroughSequence = 2;
+        var ctx = CreateMessageContext(session: session);
+
+        await ctx.UnblockSession();
+
+        Assert.AreEqual(2, session.State.ReplayedThroughSequence);
+        Assert.IsFalse(await ctx.HasUnreplayedDeferredMessages());
+    }
+
+    [TestMethod]
     public void SessionState_ClearAfterPurge_CountsEverySequenceAsReplayedAndKeepsTheSequence()
     {
         var state = new SessionState { BlockedByEventId = "evt-1", DeferredCount = 3, NextDeferralSequence = 3, ReplayedThroughSequence = 0 };
