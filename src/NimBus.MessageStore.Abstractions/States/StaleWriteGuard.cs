@@ -44,13 +44,29 @@ public static class StaleWriteGuard
     /// <summary>
     /// True when the incoming write is subject to the rule, and so needs the current row to be
     /// read before it can be applied. Terminal writes and unguarded message types are exempt,
-    /// which keeps the hot terminal path free of an extra read.
+    /// which keeps the hot terminal path free of an extra read. The one terminal exception, a
+    /// duplicate skip, is recognised by its reason: see <see cref="IsDuplicateSkip"/>.
     /// </summary>
     public static bool IsGuarded(ResolutionStatus incomingStatus, MessageType incomingType) =>
         !IsTerminal(incomingStatus)
         && (incomingType is MessageType.EventRequest or MessageType.DeferralResponse
                 or MessageType.PendingHandoffResponse
             || IsControlRequest(incomingType));
+
+    /// <summary>
+    /// True for the SkipResponse an endpoint's inbox sends for a delivery it already processed
+    /// (reason <see cref="NimBus.Core.Inbox.InboxMiddleware.DuplicateReason"/>). Unlike an
+    /// operator's skip it records no decision of its own, so it must not rewrite a Completed row:
+    /// a deferred replay redelivered after its handler and inbox record committed would otherwise
+    /// turn the replay's Completed outcome into Skipped (Spec 041 §2.7). It is the one terminal
+    /// write the rule guards; providers read the current row for it.
+    /// </summary>
+    public static bool IsDuplicateSkip(UnresolvedEvent incoming)
+    {
+        ArgumentNullException.ThrowIfNull(incoming);
+        return incoming.MessageType == MessageType.SkipResponse
+            && string.Equals(incoming.Reason, NimBus.Core.Inbox.InboxMiddleware.DuplicateReason, StringComparison.Ordinal);
+    }
 
     /// <summary>
     /// True when the incoming write may replace <paramref name="current"/>.
@@ -61,6 +77,11 @@ public static class StaleWriteGuard
     public static bool Allows(ResolutionStatus incomingStatus, UnresolvedEvent incoming, UnresolvedEvent? current)
     {
         ArgumentNullException.ThrowIfNull(incoming);
+
+        if (current is not null && IsDuplicateSkip(incoming))
+        {
+            return current.ResolutionStatus != ResolutionStatus.Completed;
+        }
 
         if (current is null || !IsGuarded(incomingStatus, incoming.MessageType))
         {

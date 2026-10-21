@@ -1,5 +1,6 @@
 using Dapper;
 using Newtonsoft.Json;
+using NimBus.Core.Inbox;
 
 namespace NimBus.MessageStore.SqlServer;
 
@@ -165,8 +166,12 @@ MERGE {T("UnresolvedEvents")} WITH (HOLDLOCK) AS target
 USING (SELECT @EventId AS EventId, @SessionId AS SessionId, @EndpointId AS EndpointId) AS source
 ON target.EndpointId = source.EndpointId AND target.EventId = source.EventId
    AND ((target.SessionId IS NULL AND source.SessionId IS NULL) OR target.SessionId = source.SessionId)
-WHEN MATCHED AND (
-        @Status IN ('Completed','Skipped','Failed','DeadLettered','Unsupported')                     -- terminal writes are unguarded
+WHEN MATCHED AND NOT (
+        @MessageType = 'SkipResponse'
+    AND COALESCE(@Reason, N'') COLLATE Latin1_General_BIN2 = N'{InboxMiddleware.DuplicateReason}'
+    AND target.Status = 'Completed'                                                                  -- a duplicate skip never rewrites Completed (StaleWriteGuard.IsDuplicateSkip)
+) AND (
+        @Status IN ('Completed','Skipped','Failed','DeadLettered','Unsupported')                     -- other terminal writes are unguarded
      OR @MessageType NOT IN ('EventRequest','DeferralResponse','PendingHandoffResponse',
                              'ResubmissionRequest','SkipRequest','RetryRequest','ContinuationRequest',
                              'HandoffCompletedRequest','HandoffFailedRequest')                       -- so are unguarded message types

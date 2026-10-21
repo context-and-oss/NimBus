@@ -223,4 +223,32 @@ public class StaleWriteGuardTests
                 $"{control} over {rowStatus}");
         }
     }
+
+    [TestMethod]
+    [DataRow(ResolutionStatus.Completed, false)]
+    [DataRow(ResolutionStatus.Skipped, true)]
+    [DataRow(ResolutionStatus.Failed, true)]
+    [DataRow(ResolutionStatus.Pending, true)]
+    [DataRow(ResolutionStatus.Deferred, true)]
+    public void A_duplicate_skip_is_refused_only_over_Completed(ResolutionStatus rowStatus, bool expected)
+    {
+        // The inbox answers a delivery it already processed with a SkipResponse. A Completed row
+        // already records that processing; the duplicate must not rewrite it as Skipped.
+        var duplicateSkip = Row(ResolutionStatus.Skipped, MessageType.SkipResponse, "dup-1");
+        duplicateSkip.Reason = NimBus.Core.Inbox.InboxMiddleware.DuplicateReason;
+
+        Assert.AreEqual(expected, StaleWriteGuard.Allows(
+            ResolutionStatus.Skipped,
+            duplicateSkip,
+            Row(rowStatus, MessageType.ResolutionResponse, parentMessageId: "req-1")));
+    }
+
+    [TestMethod]
+    public void An_operator_skip_still_replaces_a_Completed_row()
+    {
+        Assert.IsTrue(StaleWriteGuard.Allows(
+            ResolutionStatus.Skipped,
+            Row(ResolutionStatus.Skipped, MessageType.SkipResponse, "skip-1"),
+            Row(ResolutionStatus.Completed, MessageType.ResolutionResponse, parentMessageId: "req-1")));
+    }
 }

@@ -33,7 +33,9 @@ internal sealed partial class CosmosDbMessageTrackingStore
 
     public Task<bool> UploadSkippedMessage(string eventId, string sessionId, string endpointId,
         UnresolvedEvent content) =>
-        UploadCompletedMessage(eventId, sessionId, endpointId, content, SkippedStatus);
+        StaleWriteGuard.IsDuplicateSkip(content)
+            ? UploadGuarded(eventId, sessionId, endpointId, content, SkippedStatus, settled: true)
+            : UploadCompletedMessage(eventId, sessionId, endpointId, content, SkippedStatus);
 
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId,
         UnresolvedEvent content) =>
@@ -331,19 +333,23 @@ internal sealed partial class CosmosDbMessageTrackingStore
     /// new adapter overloads (Spec 030 §11).</para>
     /// </summary>
     private async Task<bool> UploadGuarded(string eventId, string sessionId, string endpointId,
-        UnresolvedEvent content, string status)
+        UnresolvedEvent content, string status, bool settled = false)
     {
         var container = await _getEndpointContainer(endpointId);
-        var eventDbo = new EventDbo
-        {
-            Id = $"{eventId}_{sessionId}",
-            Event = content,
-            SessionId = sessionId,
-            Status = status,
-            EventType = content.EventTypeId,
-            Deleted = false,
-            TimeToLive = _unresolvedTtlSeconds
-        };
+        // A settled write (the guarded duplicate skip) keeps the shape of every other terminal
+        // write: soft-deleted, on the completed TTL.
+        var eventDbo = settled
+            ? CreateCompletedDbo(eventId, sessionId, content, status)
+            : new EventDbo
+            {
+                Id = $"{eventId}_{sessionId}",
+                Event = content,
+                SessionId = sessionId,
+                Status = status,
+                EventType = content.EventTypeId,
+                Deleted = false,
+                TimeToLive = _unresolvedTtlSeconds
+            };
         var partitionKey = new PartitionKey(eventDbo.Id);
         var incomingStatus = Enum.Parse<ResolutionStatus>(status);
 
