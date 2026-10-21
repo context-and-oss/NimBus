@@ -266,6 +266,7 @@ You can then **Resubmit** or **Skip** the failed message from the Event Details 
 
 ## Next Steps
 
+- [Onboarding a Customer Project](onboarding.md) — From prerequisites to production for a delivery team
 - [Azure Functions Hosting](azure-functions-hosting.md) — Production hosting with Service Bus session triggers
 - [Message Flows](message-flows.md) — All 10 message flow patterns
 - [Application-Level Orchestration](orchestration.md) — Durable multi-step workflows, timeouts, and compensation
