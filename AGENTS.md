@@ -95,7 +95,8 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
 
 ## What not to do
 
-- Don't abstract transports prematurely; Azure Service Bus is NimBus's strength.
+- Don't add transport abstractions. Azure Service Bus is the reference transport; ADR-018 allows
+  only one more, RabbitMQ for on-premises installations, matching Service Bus behaviour.
 - Don't chase NServiceBus feature parity; focus on the Resolver, WebApp and sessions.
 - Don't rewrite the WebApp; enhance it incrementally.
 - Don't build event sourcing without a concrete use case.

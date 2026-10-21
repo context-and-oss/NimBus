@@ -6,7 +6,7 @@ This directory contains Architecture Decision Records (ADRs) for the NimBus plat
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [001](001-session-based-ordering.md) | Use Service Bus sessions for ordered delivery | Accepted | 2026-01 |
+| [001](001-session-based-ordering.md) | Use Service Bus sessions for ordered delivery | Accepted; amended by 018 | 2026-01 |
 | [002](002-centralized-resolver.md) | Centralized Resolver for message state tracking | Accepted | 2026-01 |
 | [003](003-separated-deferred-processor.md) | Separated DeferredProcessor in subscriber apps | Accepted | 2026-03 |
 | [004](004-pipeline-behavior-pattern.md) | Delegate-based pipeline behaviors over ASP.NET middleware | Accepted | 2026-03 |
@@ -22,3 +22,4 @@ This directory contains Architecture Decision Records (ADRs) for the NimBus plat
 | [015](015-customer-deployment-distribution.md) | Customer deployments: starter repo now, packaged deployables next | Accepted | 2026-08 |
 | [016](016-private-networking-mode.md) | Private networking is an opt-in, bring-your-own-network deployment mode | Accepted | 2026-09 |
 | [017](017-single-cosmos-tracking-container.md) | One Cosmos DB tracking container, partitioned by endpoint | Proposed | 2026-09 |
+| [018](018-on-prem-rabbitmq-transport.md) | One additional transport, RabbitMQ, for on-premises installations | Proposed | 2026-10 |

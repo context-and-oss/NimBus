@@ -83,7 +83,7 @@ Every contribution should come with tests. New behaviors, storage providers, and
 
 NimBus records significant decisions as [Architecture Decision Records](docs/adr). **Open an issue and expect an ADR discussion before you send a PR** if your change touches:
 
-- the transport (`NimBus.ServiceBus`) or transport abstractions,
+- a transport (`NimBus.ServiceBus`, or the on-prem RabbitMQ transport that [ADR-018](docs/adr/018-on-prem-rabbitmq-transport.md) allows) or the contracts between Core and a transport,
 - the Resolver or its message-state model,
 - the storage abstractions (`NimBus.MessageStore.Abstractions`) or the wire/envelope format,
 - anything that changes a public contract in `NimBus.Abstractions`.
@@ -94,7 +94,7 @@ Smaller, self-contained work — a new pipeline behavior, an extension, a WebApp
 
 NimBus has a deliberately narrow focus. Contributions that fit the direction are very welcome; these ones generally aren't, and are worth a conversation before any code:
 
-- **Don't abstract the transport.** Azure Service Bus is NimBus's strength — a generic transport layer is explicitly out of scope.
+- **No generic transport layer.** Azure Service Bus is NimBus's reference transport and its strength. [ADR-018](docs/adr/018-on-prem-rabbitmq-transport.md) allows exactly one more, RabbitMQ with SQL Server for on-premises installations, behind the existing Core contracts. A third transport or a general-purpose abstraction is out of scope.
 - **Don't chase NServiceBus feature parity.** The focus is the Resolver, the WebApp, and session-based ordering.
 - **Don't rewrite the WebApp.** Enhance it incrementally.
 - **No event sourcing** without a concrete, agreed use case.

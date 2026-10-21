@@ -36,4 +36,4 @@ The broader roadmap lives in the [backlog issues](../.github/ISSUE_TEMPLATE/back
 
 ## Out of scope
 
-Please don't start these without a prior conversation — see [What we will and won't take](../CONTRIBUTING.md#what-we-will-and-wont-take). In short: no transport abstraction, no NServiceBus parity chase, no WebApp rewrite, no event sourcing without a concrete use case.
+Please don't start these without a prior conversation — see [What we will and won't take](../CONTRIBUTING.md#what-we-will-and-wont-take). In short: no generic transport abstraction (ADR-018 allows only the on-prem RabbitMQ transport), no NServiceBus parity chase, no WebApp rewrite, no event sourcing without a concrete use case.
