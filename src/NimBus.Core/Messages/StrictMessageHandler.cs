@@ -100,8 +100,6 @@ public class StrictMessageHandler : MessageHandler
             var isReplay = replaySequence is not null || messageContext.GetInboxMessageIdOrDefault() is not null;
             if (replaySequence is { } sequence)
                 await RecordReplay(messageContext, sequence);
-            else if (isReplay)
-                await ClearDrainRequestForLegacyReplay(messageContext);
 
             // Inbox pre-check ahead of the session guard: a recorded EventRequest that
             // redelivers while its session is blocked by another event must surface as a
@@ -569,16 +567,6 @@ public class StrictMessageHandler : MessageHandler
 
         await CompleteMessage(messageContext);
         LogInfo(messageContext, "Successfully processed (parked behind messages awaiting replay)");
-    }
-
-    // A replay from an earlier version's drain can't say which request it answers, but that
-    // drain ran, so a pending request may be the one it consumed. Clearing it lets the next event
-    // parked behind replays request a drain at once instead of after DrainRequestTimeout; at worst
-    // that drain finds nothing to replay.
-    private static async Task ClearDrainRequestForLegacyReplay(IMessageContext messageContext)
-    {
-        if (await messageContext.GetDeferredDrainRequest(SettlementToken) is not null)
-            await messageContext.SetDeferredDrainRequest(null, SettlementToken);
     }
 
     // A replay reached the endpoint. Recording it opens the replay guard once the last parked

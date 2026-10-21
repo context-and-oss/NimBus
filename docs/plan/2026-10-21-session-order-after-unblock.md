@@ -21,10 +21,10 @@ A drain from the previous version strips `DeferralSequence`, and during a rollin
 replays reach new handlers. Since v4.2.0 every parked copy carries `InboxMessageId`, and that drain
 copies it onto the replay; no new `EventRequest` carries it. A delivery with `InboxMessageId` but no
 `DeferralSequence` is therefore a legacy replay. It goes through the guard, so it isn't parked again
-in a loop, but it can't advance the replay position. The drain still replays in order. A legacy
-replay also clears a pending drain request: the old drain that sent it may have consumed that
-request, so the next event parked behind replays requests a drain at once instead of after the
-expiry.
+in a loop, but it can't advance the replay position. The drain still replays in order. It also
+can't say which drain request it answers, so it leaves a pending request alone. Clearing one could
+drop another event's request and strand that event. The expiry recovers a request whose replay
+came through an old drain.
 
 While versions are mixed, previous-version workers don't apply the guard at all, so they can still
 let a new event overtake. That ends when the deploy completes; the rules above make sure the state
@@ -140,8 +140,8 @@ the session state.
   - a request whose replay never arrives is requested again by the first event parked after it
     expires;
   - a replay from a previous-version drain (no `DeferralSequence`) goes through instead of parking
-    again; the next event still parks, requests a drain at once, and the guard opens after that
-    replay;
+    again; the next event still parks, requests a drain once the old request expires, and the
+    guard opens after that replay;
   - a session parked before the replay position existed guards its replays after a skip and after
     a reprocess;
   - a new event arriving after a reprocess, before its replays, parks behind them; after a purge it

@@ -175,13 +175,15 @@ public class SessionOrderAfterUnblockTests
             handler.ReceivedEvents.Select(order => order.OrderId).ToArray());
         Assert.AreEqual(parked.Count, ParkedCopies(fixture).Count, "A legacy replay must not be parked again.");
 
-        // A legacy replay can't advance the position, so the next event still parks. The legacy
-        // replays cleared the pending request, so it requests a drain straight away.
+        // A legacy replay can't advance the position or answer a drain request, so the next event
+        // still parks. A legacy replay can't tell which request it answers, so the request stays
+        // until it expires; then the next parked event requests a drain.
         var drainRequests = CountDrainRequests(fixture);
+        fixture.PublishBus.GetSession(sessionId).State.DrainRequestedAtUtc = DateTime.UtcNow - TimeSpan.FromMinutes(5);
         await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-NEXT" });
         await fixture.DeliverAll();
         Assert.AreEqual(parked.Count + 1, ParkedCopies(fixture).Count, "ORD-NEXT parks behind the unrecorded replays.");
-        Assert.AreEqual(drainRequests + 1, CountDrainRequests(fixture), "ORD-NEXT must request a drain, not wait for the request to expire.");
+        Assert.AreEqual(drainRequests + 1, CountDrainRequests(fixture), "ORD-NEXT requests a drain once the old request expired.");
 
         // The current drain's replay carries its sequence and opens the guard.
         await ReplayParked(fixture, ParkedCopies(fixture).Skip(parked.Count).ToList());
