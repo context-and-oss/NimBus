@@ -612,31 +612,48 @@ public class MessageContextTests
     public void SessionState_ReplayFields_SurviveTheStoredJsonRoundTrip()
     {
         // ServiceBusSession writes the state with Newtonsoft.Json and reads it with System.Text.Json.
+        var requestedAt = new DateTime(2026, 10, 21, 9, 30, 15, DateTimeKind.Utc);
         var json = JsonConvert.SerializeObject(new SessionState
         {
             NextDeferralSequence = 3,
             ReplayedThroughSequence = 1,
             DrainRequestedForSequence = 2,
+            DrainRequestedAtUtc = requestedAt,
         });
 
         var read = System.Text.Json.JsonSerializer.Deserialize<SessionState>(json)!;
 
         Assert.AreEqual(1, read.ReplayedThroughSequence);
         Assert.AreEqual(2, read.DrainRequestedForSequence);
+        Assert.AreEqual(requestedAt.Ticks, read.DrainRequestedAtUtc!.Value.ToUniversalTime().Ticks);
         Assert.IsTrue(read.HasUnreplayedMessages());
     }
 
     [TestMethod]
-    public async Task DrainRequestedForSequence_RoundTripsThroughSessionState()
+    public async Task DeferredDrainRequest_RoundTripsThroughSessionState()
     {
         var session = new FakeServiceBusSession();
         var ctx = CreateMessageContext(session: session);
+        var request = new DeferredDrainRequest(4, new DateTime(2026, 10, 21, 9, 30, 0, DateTimeKind.Utc));
 
-        await ctx.SetDrainRequestedForSequence(4);
-        Assert.AreEqual(4, await ctx.GetDrainRequestedForSequence());
+        await ctx.SetDeferredDrainRequest(request);
+        Assert.AreEqual(request, await ctx.GetDeferredDrainRequest());
 
-        await ctx.SetDrainRequestedForSequence(null);
-        Assert.IsNull(await ctx.GetDrainRequestedForSequence());
+        await ctx.SetDeferredDrainRequest(null);
+        Assert.IsNull(await ctx.GetDeferredDrainRequest());
+        Assert.IsNull(session.State.DrainRequestedAtUtc);
+    }
+
+    [TestMethod]
+    public async Task GetDeferredDrainRequest_WithoutTimestamp_ReadsAsLongExpired()
+    {
+        var session = new FakeServiceBusSession();
+        session.State.DrainRequestedForSequence = 4;
+        var ctx = CreateMessageContext(session: session);
+
+        var request = await ctx.GetDeferredDrainRequest();
+
+        Assert.AreEqual(DateTime.MinValue, request!.RequestedAtUtc);
     }
 
     [TestMethod]

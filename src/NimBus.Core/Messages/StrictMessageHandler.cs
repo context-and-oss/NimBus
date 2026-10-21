@@ -24,6 +24,11 @@ public class StrictMessageHandler : MessageHandler
     // for redelivery. Each settlement call stays bounded by the transport's own timeout.
     private static CancellationToken SettlementToken => CancellationToken.None;
 
+    // How long a drain requested for events parked behind replays may take before the next such
+    // event requests another (see ParkBehindReplays). Well beyond a drain's normal round trip; a
+    // request that expires early only costs one drain that finds nothing to replay.
+    private static readonly TimeSpan DrainRequestTimeout = TimeSpan.FromMinutes(2);
+
     private readonly IEventContextHandler _eventContextHandler;
     private readonly IResponseService _responseService;
     private readonly IRetryPolicyProvider? _retryPolicyProvider;
@@ -535,6 +540,10 @@ public class StrictMessageHandler : MessageHandler
     // a drain of its own; later ones rely on that request, which RecordReplay renews when the
     // requesting event's replay arrives. The request is stored only after its trigger is sent,
     // so a redelivery repeats a trigger that was lost rather than leaving the event parked.
+    // A request whose replay never arrives (its trigger dead-lettered, a drain that could not
+    // lock the session, the parked copy purged, or the replay handled by a version that does
+    // not record replays) would otherwise park the session's traffic for good, so after
+    // DrainRequestTimeout the next event parked here requests a drain again.
     // Not a block: no handler ran and no session-blocked lifecycle signal is raised.
     private async Task ParkBehindReplays(IMessageContext messageContext)
     {
@@ -543,10 +552,12 @@ public class StrictMessageHandler : MessageHandler
             messageContext,
             new SessionBlockedException($"Session {messageContext.SessionId} has parked messages awaiting replay"));
         int deferralSequence = await ParkInDeferredSubscription(messageContext);
-        if (await messageContext.GetDrainRequestedForSequence(SettlementToken) is null)
+        var pending = await messageContext.GetDeferredDrainRequest(SettlementToken);
+        var now = DateTime.UtcNow;
+        if (pending is null || now - pending.RequestedAtUtc > DrainRequestTimeout)
         {
             await _responseService.SendProcessDeferredRequest(messageContext, SettlementToken);
-            await messageContext.SetDrainRequestedForSequence(deferralSequence, SettlementToken);
+            await messageContext.SetDeferredDrainRequest(new DeferredDrainRequest(deferralSequence, now), SettlementToken);
         }
 
         await CompleteMessage(messageContext);
@@ -563,8 +574,8 @@ public class StrictMessageHandler : MessageHandler
     private async Task RecordReplay(IMessageContext messageContext, int deferralSequence)
     {
         await messageContext.MarkDeferredMessageReplayed(deferralSequence, SettlementToken);
-        if (await messageContext.GetDrainRequestedForSequence(SettlementToken) is not { } requestedFor
-            || deferralSequence < requestedFor)
+        if (await messageContext.GetDeferredDrainRequest(SettlementToken) is not { } pending
+            || deferralSequence < pending.DeferralSequence)
             return;
 
         if (string.IsNullOrEmpty(await messageContext.GetBlockedByEventId(SettlementToken))
@@ -574,7 +585,7 @@ public class StrictMessageHandler : MessageHandler
             LogInfo(messageContext, "Send ProcessDeferredRequest (messages parked behind replays)");
         }
 
-        await messageContext.SetDrainRequestedForSequence(null, SettlementToken);
+        await messageContext.SetDeferredDrainRequest(null, SettlementToken);
     }
 
     private Task SendResolutionResponse(IMessageContext messageContext) =>

@@ -52,6 +52,11 @@ public class SessionState
     public int? DrainRequestedForSequence { get; set; }
 
     /// <summary>
+    /// When the drain recorded in <see cref="DrainRequestedForSequence"/> was requested.
+    /// </summary>
+    public DateTime? DrainRequestedAtUtc { get; set; }
+
+    /// <summary>
     /// Takes the next deferral sequence. The first message parked without a recorded replay
     /// position starts it just below its own sequence, so the guard covers that message.
     /// </summary>

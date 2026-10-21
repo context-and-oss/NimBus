@@ -39,8 +39,10 @@ lifecycle signal is raised. Replays go through the guard in order.
 parks behind its replays. Requesting a drain for every such event would queue one empty drain
 (a 5-second receive) per event on the serial trigger subscription. So:
 
-1. The first event that parks behind replays sends a `ProcessDeferredRequest` and records its own
-   sequence in `DrainRequestedForSequence`. Later events see the request and don't send another.
+1. The first event that parks behind replays sends a `ProcessDeferredRequest` and records the
+   request: its own sequence (`DrainRequestedForSequence`) and the time (`DrainRequestedAtUtc`).
+   Later events see the pending request and don't send another, unless it is older than two
+   minutes (see "Requests whose replay never arrives").
 2. When the replay of that event arrives, the request is cleared. If messages parked after it are
    still waiting and the session isn't blocked, another drain is requested first. A blocked
    session leaves the drain to its unblock, as before.
@@ -48,13 +50,30 @@ parks behind its replays. Requesting a drain for every such event would queue on
 Each trigger is sent before the state that suppresses the next one is written. A crash therefore
 repeats a trigger and never loses one, and an extra drain with nothing to replay does nothing.
 
+**Requests whose replay never arrives.** The request is cleared only when its event's replay
+reaches the endpoint. Several failures prevent that:
+
+- the replay is handled by an instance still running the previous version during a rolling deploy;
+- the trigger is dead-lettered after repeated drain failures;
+- a concurrent drain can't lock the `Deferred` session and does nothing (`SessionCannotBeLocked`);
+- the parked copy is purged or removed by hand;
+- the replay itself is dead-lettered.
+
+Without a fallback, the guard would then stay on with a request that never clears: every new
+event would park and none would request a drain, so the session would stop silently. An expiry
+prevents that. Once a request is older than `DrainRequestTimeout` (two minutes), the next event
+parked behind replays requests a drain again and records a new request. Two minutes is well beyond
+a normal drain and replay. A request that expires early, during a long drain, costs one more drain
+that finds the session locked or empty. A stored request without a timestamp reads as expired.
+
 ## Interface
 
 `IMessageContext` gains four members with default implementations that turn the guard off, so
 existing third-party contexts still compile and behave as before:
-`MarkDeferredMessageReplayed`, `HasUnreplayedDeferredMessages`, `GetDrainRequestedForSequence` and
-`SetDrainRequestedForSequence`. The Service Bus context and `InMemoryMessageContext` implement
-them over the session state.
+`MarkDeferredMessageReplayed`, `HasUnreplayedDeferredMessages`, `GetDeferredDrainRequest` and
+`SetDeferredDrainRequest`. The last two use the new `DeferredDrainRequest(DeferralSequence,
+RequestedAtUtc)` record. The Service Bus context and `InMemoryMessageContext` implement them over
+the session state.
 
 ## Costs and limits
 
@@ -65,10 +84,10 @@ them over the session state.
   (`SessionCannotBeLocked`). A message parked between the first drain's final empty receive and
   its lock release then waits for the next drain. This already applies to unblock triggers; the
   new trigger is exposed to it the same way.
-- If the message a drain was requested for disappears without being replayed (purged, or its
-  trigger dead-lettered), new events keep parking behind it. Operators recover the same way as
-  from any stranded parked message: "reprocess deferred" in the WebApp clears the session state
-  and requests a drain.
+- After a lost request, recovery needs a new event: the next one parked after the expiry requests
+  the drain. If no event arrives, the messages already parked stay parked, just as messages
+  stranded by a lost unblock trigger do today. "Reprocess deferred" in the WebApp clears the
+  session state and requests a drain.
 
 ## Tests
 
@@ -76,9 +95,12 @@ them over the session state.
   `MessageContext` over a fake session):
   - a new event arriving between a skip and the replay parks and then runs after the parked
     event;
-  - an event parked after the requested drain is drained when the requesting replay arrives.
-  - Both fail on `master`.
+  - an event parked after the requested drain is drained when the requesting replay arrives;
+  - a request whose replay never arrives is requested again by the first event parked after it
+    expires.
+  - The first two fail on `master`. The third fails when the expiry is removed.
 - `MessageContextTests`: legacy-state start, guard opening, no movement backwards, cleared-state
-  sequences ignored, and the Newtonsoft-write/System.Text.Json-read round trip of the new fields.
+  sequences ignored, the drain request round trip, a request stored without a timestamp reading
+  as expired, and the Newtonsoft-write/System.Text.Json-read round trip of the new fields.
 - `DeferredMessageProcessorTests`: the replay keeps `DeferralSequence`.
 - The three end-to-end drain simulations now keep `DeferralSequence`, as the real drain does.

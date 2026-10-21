@@ -569,16 +569,19 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
         return state.HasUnreplayedMessages();
     }
 
-    public async Task<int?> GetDrainRequestedForSequence(CancellationToken cancellationToken = default)
+    public async Task<DeferredDrainRequest?> GetDeferredDrainRequest(CancellationToken cancellationToken = default)
     {
         SessionState state = await GetSessionState(cancellationToken);
-        return state.DrainRequestedForSequence;
+        return state.DrainRequestedForSequence is { } sequence
+            ? new DeferredDrainRequest(sequence, state.DrainRequestedAtUtc ?? DateTime.MinValue)
+            : null;
     }
 
-    public async Task SetDrainRequestedForSequence(int? deferralSequence, CancellationToken cancellationToken = default)
+    public async Task SetDeferredDrainRequest(DeferredDrainRequest? request, CancellationToken cancellationToken = default)
     {
         SessionState state = await GetSessionState(cancellationToken);
-        state.DrainRequestedForSequence = deferralSequence;
+        state.DrainRequestedForSequence = request?.DeferralSequence;
+        state.DrainRequestedAtUtc = request?.RequestedAtUtc;
         await UpdateSessionState(state, cancellationToken);
     }
 

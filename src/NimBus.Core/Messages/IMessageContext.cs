@@ -105,22 +105,22 @@ public interface IMessageContext : IReceivedMessage
         Task.FromResult(false);
 
     /// <summary>
-    /// Gets the deferral sequence of the message, parked behind replays, for which a replay of
-    /// the session was last requested, or <see langword="null"/> when no such request awaits
-    /// that message's replay. The default implementation returns <see langword="null"/>.
+    /// Gets the drain an event parked behind replays requested, or <see langword="null"/> when
+    /// no such request awaits its event's replay. The default implementation returns
+    /// <see langword="null"/>.
     /// </summary>
     /// <param name="cancellationToken">A token that can cancel the operation.</param>
-    /// <returns>The deferral sequence, or <see langword="null"/>.</returns>
-    Task<int?> GetDrainRequestedForSequence(CancellationToken cancellationToken = default) =>
-        Task.FromResult<int?>(null);
+    /// <returns>The pending drain request, or <see langword="null"/>.</returns>
+    Task<DeferredDrainRequest?> GetDeferredDrainRequest(CancellationToken cancellationToken = default) =>
+        Task.FromResult<DeferredDrainRequest?>(null);
 
     /// <summary>
-    /// Stores the value <see cref="GetDrainRequestedForSequence"/> returns. The default
+    /// Stores the value <see cref="GetDeferredDrainRequest"/> returns. The default
     /// implementation stores nothing.
     /// </summary>
-    /// <param name="deferralSequence">The deferral sequence, or <see langword="null"/> to clear it.</param>
+    /// <param name="request">The drain request, or <see langword="null"/> to clear it.</param>
     /// <param name="cancellationToken">A token that can cancel the operation.</param>
-    Task SetDrainRequestedForSequence(int? deferralSequence, CancellationToken cancellationToken = default) =>
+    Task SetDeferredDrainRequest(DeferredDrainRequest? request, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
 
     /// <summary>

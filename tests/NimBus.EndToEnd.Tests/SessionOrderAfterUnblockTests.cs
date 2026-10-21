@@ -111,6 +111,51 @@ public class SessionOrderAfterUnblockTests
         Assert.AreEqual(3, CountDrainRequests(fixture), "Nothing is left to drain.");
     }
 
+    [TestMethod]
+    public async Task DrainRequestWhoseReplayNeverArrives_IsRequestedAgainAfterItExpires()
+    {
+        const string sessionId = "session-overtake-lost-drain";
+        var fixture = new EndToEndFixture();
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionFactory = order => order.OrderId == "ORD-FAIL" ? new InvalidOperationException("fails") : null,
+        };
+        fixture.RegisterHandler(() => handler);
+
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-FAIL" });
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-PARKED" });
+        await fixture.DeliverAll();
+        var failedEventId = fixture.ResponseBus.SentMessages
+            .Single(message => message.MessageType == MessageType.ErrorResponse).EventId;
+        await fixture.PublishBus.Send(CreateSkipRequest(sessionId, failedEventId));
+        await fixture.DeliverAll();
+
+        // ORD-NEW-1 requests a drain, but that drain never runs (its trigger is dead-lettered,
+        // say), so the replay that would clear the request never arrives.
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-NEW-1" });
+        await fixture.DeliverAll();
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-NEW-2" });
+        await fixture.DeliverAll();
+        Assert.AreEqual(2, CountDrainRequests(fixture), "A fresh request covers ORD-NEW-2.");
+
+        // Once the request is older than the timeout, the next parked event requests a drain again.
+        var session = fixture.PublishBus.GetSession(sessionId);
+        session.State.DrainRequestedAtUtc = DateTime.UtcNow - TimeSpan.FromMinutes(5);
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-NEW-3" });
+        await fixture.DeliverAll();
+
+        Assert.AreEqual(3, CountDrainRequests(fixture), "An expired request must not keep the session parked.");
+        Assert.AreEqual(ParkedCopies(fixture).Last().DeferralSequence, session.State.DrainRequestedForSequence,
+            "The new request belongs to ORD-NEW-3.");
+
+        await ReplayParked(fixture, ParkedCopies(fixture));
+
+        CollectionAssert.AreEqual(
+            new[] { "ORD-PARKED", "ORD-NEW-1", "ORD-NEW-2", "ORD-NEW-3" },
+            handler.ReceivedEvents.Select(order => order.OrderId).ToArray());
+        Assert.IsNull(session.State.DrainRequestedForSequence);
+    }
+
     private static List<IMessage> ParkedCopies(EndToEndFixture fixture) =>
         fixture.ResponseBus.SentMessages
             .Where(message => message.To == Constants.DeferredSubscriptionName)

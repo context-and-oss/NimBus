@@ -16,7 +16,7 @@ public class InMemorySessionState
     /// <summary>The highest deferral sequence whose replay has reached the endpoint.</summary>
     public int? ReplayedThroughSequence { get; set; }
 
-    /// <summary>The parked message for which a replay was last requested, until its replay arrives.</summary>
-    public int? DrainRequestedForSequence { get; set; }
+    /// <summary>The drain last requested for a message parked behind replays, until its replay arrives.</summary>
+    public DeferredDrainRequest? DrainRequest { get; set; }
     public List<IMessage> DeferredMessages { get; } = new();
 }

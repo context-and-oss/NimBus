@@ -143,14 +143,14 @@ public class InMemoryMessageContext : IMessageContext
             && replayedThrough < _sessionState.NextDeferralSequence - 1);
     }
 
-    public Task<int?> GetDrainRequestedForSequence(CancellationToken cancellationToken = default)
+    public Task<DeferredDrainRequest?> GetDeferredDrainRequest(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(_sessionState.DrainRequestedForSequence);
+        return Task.FromResult(_sessionState.DrainRequest);
     }
 
-    public Task SetDrainRequestedForSequence(int? deferralSequence, CancellationToken cancellationToken = default)
+    public Task SetDeferredDrainRequest(DeferredDrainRequest? request, CancellationToken cancellationToken = default)
     {
-        _sessionState.DrainRequestedForSequence = deferralSequence;
+        _sessionState.DrainRequest = request;
         return Task.CompletedTask;
     }
 
