@@ -1,10 +1,10 @@
 # Spec 041 — On-prem NimBus: RabbitMQ transport with SQL Server storage
 
-Status: investigation, revision 4. Not implemented; no code, broker or benchmark exists yet.
+Status: investigation, revision 5. Not implemented; no code, broker or benchmark exists yet.
 Revision 3 is parity-first. Revision 2 tried to improve on Service Bus inside the transport (a
 synthetic blocker and in-partition replay) and to fan out in the sender. Codex's second review
 showed both break Core paths or bypassed publishers. Revision 3 ports the Service Bus design as it
-is instead. Revision 4 answers the third review (sound after fixes). Reviews: [`docs/plan/2026-10-21-spec-041-review.md`](../../plan/2026-10-21-spec-041-review.md);
+is instead. Revisions 4 and 5 answer the third and fourth reviews (both sound after fixes). Reviews: [`docs/plan/2026-10-21-spec-041-review.md`](../../plan/2026-10-21-spec-041-review.md);
 §11 maps every finding.
 Baseline: master `3f6e9cff`. Supersedes the transport design in the September study
 (`docs/spec/on-prem-nimbus-feasibility.html`, added in `b29ff5bb`, removed in `71f2220a`; plan at
@@ -216,10 +216,10 @@ subscription yields at most one copy, as on Service Bus.
 | Reply subscription `T-reply` | `To = T-reply` | not used on RabbitMQ: replies go straight to a reply queue (§4.9) | — |
 | Resolver fan-out | `To = Resolver` | `From = T` | `nimbus.Resolver` exchange |
 | | `To = T` | unchanged | `nimbus.Resolver` exchange |
-| `Deferred` | `To = Deferred AND OriginalSessionId IS NOT NULL` | not used: the sender writes the `ParkedMessage` row directly (§4.6). A parked copy without `OriginalSessionId` matches no subscription and is dropped, as on Service Bus | — |
+| `Deferred` | `To = Deferred AND OriginalSessionId IS NOT NULL` | no broker copy: a `ParkedMessage` row (§4.6). The NimBus sender writes it directly; a message that arrives at the forwarder with this filter (a raw publish) is parked by the forwarder. Without `OriginalSessionId` nothing matches and it is dropped, as on Service Bus | SQL |
 | `DeferredProcessor` | `To = DeferredProcessor` | unchanged | `nimbus.T.deferred-processor` |
 | Consumer forwarder `C` (compiled), one per consumer | `EventTypeId ∈ C's types AND From IS NULL` | `From = T`, `To = C`, per-copy `EventId` | `nimbus.C` exchange, key `p<partition>` |
-| Dynamic forwarder `dynamic-C` | same, for dynamic types | same | same |
+| Dynamic forwarder `dynamic-C` | same, for dynamic types | `From` = the configured dynamic source string (which can differ from `T` in case), `To = C`, per-copy `EventId` | same |
 
 A message no subscription matches is acknowledged and counted, as Service Bus discards it.
 
@@ -228,7 +228,9 @@ acknowledges the intake message only when every copy is confirmed and none was r
 (an unroutable copy) or a failed confirm leaves the intake message unacknowledged; it is retried
 with `basic.reject` and dead-lettered at the delivery limit (§4.8). A retry republishes copies that
 were already confirmed, so a destination can receive the same copy twice. Every copy keeps the
-original `MessageId` (Service Bus auto-forwarding keeps it too), and its `EventId` is stable
+original `MessageId` (Service Bus auto-forwarding keeps it too). A raw CloudEvent without one gets a
+`MessageId` derived from its `source` and `id` (UUID v5), because the inbox skips deduplication for
+a blank `MessageId` (`InboxDuplicateDetector.cs:160`). Its `EventId` is stable
 (below), so a duplicate is recognisable by both: the inbox deduplicates on `MessageId`, and phase 2
 verifies that the Resolver treats a repeated `EventId` as the same event.
 
@@ -314,10 +316,15 @@ The counterpart of the session lock. `PartitionLease(Queue, Owner, Epoch, Expire
   If the timeout fires anyway, for example during a long SQL outage, the broker cancels the consumer
   and requeues the delivery; that increments only the acquired count, not the delivery count, so it
   doesn't push the message toward the dead-letter queue.
-- **Every transport SQL write** (session state, parking, drain, scheduling) carries
-  `WHERE Owner = @me AND Epoch = @epoch AND ExpiresUtc > SYSUTCDATETIME()` against the lease row,
-  in the same transaction. A stale write fails with `TransientException`, as `SessionLockLost`
-  does on Service Bus.
+- **Every SQL write made while handling a partition's delivery** (session state, parking,
+  scheduling) carries `WHERE Owner = @me AND Epoch = @epoch AND ExpiresUtc > SYSUTCDATETIME()`
+  against the lease row, in the same transaction. A stale write fails with `TransientException`, as
+  `SessionLockLost` does on Service Bus.
+- **Writes outside a partition delivery have their own authority**, as on Service Bus, where the
+  drain's lock on the `Deferred` session is separate from the main session lock. The drain (§4.6)
+  deletes rows on the connection that holds its session application lock. If that connection
+  drops, the lock is released with it, so a stale drainer cannot write. The forwarder (§4.1) and
+  the scheduled dispatcher (§4.7) only insert idempotent rows or claim them with a state check.
 
 A consumer that lost its broker connection keeps a valid lease until it expires, but its successor
 doesn't start until then, so the two never overlap: the same guarantee a Service Bus session lock
@@ -357,7 +364,10 @@ Same flow as Service Bus, with SQL instead of the `Deferred` subscription:
      (`IsReplayParkedAgain`). Otherwise publish it to topic E (`nimbus.E`, key `p<i>`) with a new
      `MessageId`, as `CreateRepublishedMessage` does, wait for the confirm, check it wasn't returned,
      and delete the row.
-  3. Finishes when a read returns no rows, then releases the lock.
+  3. On an empty read, waits a settle period (5 seconds, the Service Bus drain's receive timeout)
+     and reads again, so a replay that is re-parked just after its confirm is still seen. Finishes
+     when that read is empty too, then releases the lock. A replay re-parked later than that is
+     left for the next unblock, as on Service Bus.
 
   The endpoint can park new rows while a drain runs; reading in batches by sequence finds them, as
   receiving from `Deferred` does today. The replay goes through E's forwarder, so it reaches E's
@@ -491,10 +501,11 @@ Bus emulator and RabbitMQ, so a behavioural difference shows up as a failing tes
 - **Interleaved order.** Sessions A and B share a partition (or, on Service Bus, run concurrently).
   A fails and parks; B completes; retry or skip of A replays A's parked messages in deferral order.
 - **Park during drain.** A replay fails again mid-drain; the drain stops and leaves the rest parked.
-- **Every subscription route.** For each row of the §4.1 table: endpoint, continuation, retry,
-  Resolver fan-out (both rules), DeferredProcessor, compiled and dynamic forwarders (including both
-  to one consumer), and a message no route matches. Assert `To`, `From`, `EventId` distinctness
-  and the destination.
+- **Every routed subscription.** For each §4.1 row that produces a broker copy: endpoint,
+  continuation, retry, Resolver fan-out (both rules), DeferredProcessor, compiled and dynamic
+  forwarders (including both to one consumer), and a message no route matches. Assert `To`, `From`,
+  `EventId` distinctness and the destination. Reply and `Deferred` are covered by request/reply and
+  the parking tests, since RabbitMQ replaces those subscriptions.
 - **Transient retry.** A handler that always throws `TransientException` is dead-lettered at the
   delivery limit.
 - **Scheduling.** Schedule, cancel, race a cancel against a due dispatch, and `ScheduleRedelivery`
@@ -538,7 +549,7 @@ breakdown.
 ## 11. Review record
 
 Codex reviewed every revision on 2026-10-21: revision 1 (rethink), revision 2 (rethink), revision 3
-(sound after fixes). The reviews are in
+(sound after fixes), revision 4 (sound after fixes, five narrow findings, all fixed in revision 5). The reviews are in
 [`docs/plan/2026-10-21-spec-041-review.md`](../../plan/2026-10-21-spec-041-review.md). Every finding
 was checked against the code and accepted.
 
@@ -565,6 +576,11 @@ was checked against the code and accepted.
 | R2 reply queue declared after send | Declare and consume before sending (§4.9) |
 | R1/R2 Completeness: SDK surface, startup inventory, estimate | §2.1, §2.6, §4.10, §10 |
 | R2, R3: §5 and §9 overstate | §5 rows scoped; §9 split into shared and RabbitMQ-only tests |
+| R4 1: drain writes can't carry the partition lease | Writes outside a partition delivery use their own authority; the drain's app-lock connection (§4.4) |
+| R4 2: no `Deferred` route for raw ingress | The forwarder parks a matching raw publish (§4.1) |
+| R4 3: empty read ends the drain early | Settle period and a second read (§4.6) |
+| R4 4: raw CloudEvent without `MessageId` escapes the inbox | `MessageId` derived from `source` + `id` (§4.1) |
+| R4 5: dynamic forwarder `From` | The configured source string (§4.1) |
 
 ## 12. Sources
 
