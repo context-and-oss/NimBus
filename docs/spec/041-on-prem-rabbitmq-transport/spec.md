@@ -1,17 +1,18 @@
 # Spec 041 — On-prem NimBus: RabbitMQ transport with SQL Server storage
 
-Status: **draft** (2026-10-21). Nothing is implemented. Decision record:
+Status: **draft, revision 7** (2026-10-21). Nothing is implemented. Decision record:
 [ADR-018](../../adr/018-on-prem-rabbitmq-transport.md) (proposed), which amends ADR-001 when
 accepted. This draft turns an investigation into a specification. Codex reviewed the investigation
-four times ([2026-10-21-spec-041-review.md](../../plan/2026-10-21-spec-041-review.md)); §17 lists
-what changed since. The draft itself has not been reviewed yet.
+four times and this draft once ([2026-10-21-spec-041-review.md](../../plan/2026-10-21-spec-041-review.md));
+§17 lists what changed.
 Baseline: master `2aaf3ce6`.
 Scope: a new `NimBus.Transport.RabbitMq` project and package; a transport seam in `NimBus.Core` and
 `NimBus.SDK`; transport selection in `NimBus.Resolver.Host` and `NimBus.WebApp`; a router service;
 `nb topology apply --transport rabbitmq`; three Core bug fixes; the CI split; Aspire and docs.
 Unchanged: Core's handler logic (`StrictMessageHandler`, `ResponseService`, the pipeline), the four
-Core transport contracts, the storage contracts and providers, `api-spec.yaml` (phase 4 aside), and
-everything Service Bus installations do today.
+Core transport contracts, the storage contracts and providers, and everything Service Bus
+installations do today. `api-spec.yaml` gains two additive fields in phase 3 and admin endpoints in
+phase 4 (§6.16).
 Why: some customers can't or won't run on Azure. Storage is already pluggable (ADR-010), so the
 transport is the only gap.
 
@@ -53,9 +54,11 @@ contracts:
 | `IDeferredMessageProcessor` | `ServiceBus/DeferredMessageProcessor.cs` | replay a session's parked messages |
 | `IReplyDispatcher` | `ServiceBus/ReplyDispatcher.cs` | request/reply |
 
-`NimBus.Testing` implements the same contracts in memory (`InMemoryMessageBus`,
-`InMemoryMessageContext`). The Core outbox dispatcher publishes through `ISender`
-(`Core/Outbox/OutboxDispatcher.cs`), so it follows whichever transport is registered.
+`NimBus.Testing` implements three of them in memory (`InMemoryMessageBus` for `ISender`,
+`InMemoryMessageContext`, `InMemoryReplyDispatcher`); it has no in-memory
+`IDeferredMessageProcessor`, which phase 1h adds for the shared suite (§9). The Core outbox
+dispatcher publishes through `ISender` (`Core/Outbox/OutboxDispatcher.cs`), so it follows whichever
+transport is registered.
 
 The **SDK and hosts are not transport-neutral.** They build Service Bus objects directly:
 
@@ -136,10 +139,11 @@ running receiver:
 | Area | Coupling |
 |---|---|
 | `NimBus.Manager` | `ManagerClient` takes a `ServiceBusClient` and publishes directly (`ManagerClient.cs:66`); resubmit and skip are ordinary messages |
-| WebApp startup | `AddServiceBusClients` runs unconditionally (`Startup.cs:31`); the heartbeat sender is `ServiceBusHeartbeatMessageSender` (`Startup.Web.cs:139`); `EndpointImplementation` requires `IServiceBusManagement` (line 38) |
+| WebApp startup | `AddServiceBusClients` runs unconditionally (`Startup.cs:31`); the heartbeat sender is `ServiceBusHeartbeatMessageSender` (`Startup.Web.cs:139`); `SubscriptionAdminService` is built from `IServiceBusManagement` and `ServiceBusClient` (`Startup.Web.cs:101-113`) |
+| WebApp controllers and services | `EventImplementation` takes a `ServiceBusClient` (`EventImplementation.cs:34-50`) and composes events with `PublisherClient.CreateAsync` (`EventImplementation.OperatorActions.cs:130`); `EndpointImplementation` requires `IServiceBusManagement` (line 56); `AdminService` takes `ServiceBusAdministrationClient` and `ServiceBusClient` (`AdminService.cs:49-58`); the simulation services |
 | WebApp admin | Purge, subscription admin, topology audit, dead-letter client, deferred inspector: about 2,800 lines in `Services/AdminService*.cs`, `SubscriptionAdminService.cs`, `ResolverDeadLetterClient.cs`, `DeferredMessageInspector.cs`; `IServiceBusManagement` for endpoint enable/disable |
-| WebApp storage | Ten files reference `Microsoft.Azure.Cosmos`, mostly `catch (CosmosException) when NotFound` around store calls (`EndpointImplementation.cs:117`, `EventImplementation.OperatorActions.cs:270`, `HandoffSettlementService.cs:84`). A SQL-only question: does each path behave correctly when the store is SQL Server? (§15) |
-| `NimBus.Management.ServiceBus`, `NimBus.CommandLine` | Endpoint management and `nb topology apply` over the administration client |
+| WebApp storage | Ten files reference `Microsoft.Azure.Cosmos`, mostly `catch (CosmosException) when NotFound` around store calls (`EndpointImplementation.cs:117`, `EventImplementation.OperatorActions.cs:270`, `HandoffSettlementService.cs:84`). A SQL-only question: does each path behave correctly when the store is SQL Server? (the 1e inventory, §10) |
+| `NimBus.Management.ServiceBus`, `NimBus.CommandLine` | Endpoint management and `nb topology apply` over the administration client; every `CommandRunner.Run` overload that touches messaging builds a `ServiceBusClient` or administration client (`CommandRunner.cs:111-156`) |
 | Other Azure dependencies | `ServiceDefaults`: Azure Monitor exporter. WebApp: `Microsoft.Identity.Web` (Entra). Resolver: Functions worker. Replaceable with OTLP, local Identity (`NimBus.Extensions.Identity`) and `Resolver.Host` |
 
 ### 2.7 Existing Core bugs, both transports
@@ -273,14 +277,19 @@ Registration:
 - `services.AddNimBusServiceBusTransport()` in `NimBus.ServiceBus`: today's behaviour, using the
   `ServiceBusClient` from dependency injection.
 - `services.AddNimBusRabbitMqTransport(options => …)` in `NimBus.Transport.RabbitMq`, marked
-  `[Experimental("NIMBUS0041")]` until phase 4.
+  `[Experimental("NIMBUS0041")]` until phase 4. A call to an experimental API is a build error
+  unless the caller suppresses its diagnostic, so every caller in this repository (`Resolver.Host`,
+  `NimBus.Router.Host`, the WebApp, the samples and tests that select RabbitMQ) adds
+  `<NoWarn>$(NoWarn);NIMBUS0041</NoWarn>` to its project. Customers opt in the same way.
 - **Fallback:** if no transport is registered, the SDK registers the Service Bus transport. An
   existing application that registers a `ServiceBusClient` and calls `AddNimBusPublisher` or
   `AddNimBusSubscriber` keeps working with no code change and no new warning.
 
-SDK changes:
+SDK, host and CLI changes:
 
-- Every construction site in §2.1 resolves `INimBusTransport` instead of `ServiceBusClient`.
+- Every construction site in the phase 1e inventory resolves `INimBusTransport` instead of
+  `ServiceBusClient`: the SDK sites in §2.1, the WebApp and CLI sites in §2.6, and the Resolver's.
+  The inventory comes first (§10), so the list is complete before the migration starts.
 - **`INimBusSubscriber`** (new, transport-neutral) takes `RegisterHandler`. `ISubscriberClient`
   becomes `INimBusSubscriber, IServiceBusAdapter`, so Azure Functions subscribers keep calling
   `Handle(ServiceBusReceivedMessage…)` unchanged. On RabbitMQ, applications resolve
@@ -294,6 +303,10 @@ SDK changes:
 
 `ManagerClient` sends through `ISender`, keeping its `ServiceBusClient` constructor as a bridge.
 
+Phase 1 changes how the hosts get their transport, not what they need: `Resolver.Host` and the
+WebApp still require Service Bus configuration until a RabbitMQ registration exists to select
+(phase 3, §6.16, §6.17).
+
 ### 6.4 Configuration
 
 | Setting | Values | Read by |
@@ -306,6 +319,7 @@ SDK changes:
 | `NimBus:Transport:RabbitMq:AbandonBackoff` | default 5 s | receivers |
 | `NimBus:Transport:RabbitMq:DrainSettle` | default 5 s | deferred-processor hosts |
 | `NimBus:Transport:RabbitMq:Router:Enabled` | default `true` in `Resolver.Host` | `Resolver.Host` |
+| `NimBus:Transport:RabbitMq:Router:MaxIntakeAge` | default 1 min; the readiness threshold (§6.19) | router hosts |
 | `NimBus:Transport:RabbitMq:ManagementApiUrl` | RabbitMQ management API (phase 4) | WebApp |
 
 Endpoint applications choose the transport in code (`AddNimBusRabbitMqTransport`). The partition
@@ -343,6 +357,13 @@ All quorum queues except trigger queues use `x-single-active-consumer: true`. Al
 `dead-letter-strategy: at-least-once` and `overflow: reject-publish`; the defaults dead-letter at
 most once. **Raw consumers** (§2.5) bind their own queue to `nimbus.T` with every key (`p0` …
 `p<N-1>`, `raw`) and to `nimbus.T.unrouted`. A queue bound with several keys gets each message once.
+
+**Sending.** Every publish the RabbitMQ transport makes uses publisher confirms and `mandatory`: the
+`ISender` (publishers, subscriber responses, the outbox dispatcher, `ManagerClient`, the WebApp), the
+router, the drain, the scheduled dispatcher and the reply dispatcher. `Send` returns only after the
+broker confirms that the destination queues accepted the message. A nack (for example from
+`overflow: reject-publish`), a return or a confirm timeout throws, so callers see what a failed
+Service Bus send gives them: Core leaves the delivery unsettled, and the outbox keeps the row.
 
 **The router** consumes every topic's intake queues and raw lane in order (single active consumer,
 prefetch 1). Router replicas share the lanes: each lane has one active consumer, so a crashed
@@ -397,6 +418,20 @@ periodically and on a version change.
 an event four times from producer to consumer (P's topic → router → C's topic → router → C's
 partitions), as it crosses two topics on Service Bus.
 
+**When no router runs.** Service Bus applies topic rules as long as the namespace is up; here they
+need a running router replica. With every replica down:
+
+- Publishes still succeed once the intake queue confirms them, and wait there.
+- Nothing reaches handlers or the Resolver: no new events, responses, retries, replays or due
+  scheduled messages. Due rows stay in `ScheduledMessage` and dispatch when a router returns.
+- Requests time out. A reply to a request already being handled still arrives, because replies
+  don't go through the router (§6.13).
+
+That is a degraded state, not a healthy one with no traffic. The router health check (§6.19) reports
+it: the installation is unhealthy when an intake lane has no active router consumer or its oldest
+message is older than a threshold. Installations run two or more router replicas (§6.1), so this
+takes losing all of them.
+
 ### 6.6 Partitioning
 
 `partition = stableHash(SessionId) % N(topic)`. The NimBus sender computes it for the topic it
@@ -434,12 +469,21 @@ partitions, instead of `MaxConcurrentSessions`.
 
 **Spreading partitions across replicas.** With single active consumer, the first replica to
 subscribe can end up active on every partition, so a second replica adds failover but no
-throughput. Service Bus spreads sessions automatically. A replica that holds more than its fair
-share of partition leases (§6.8; fair share = N divided by the live replicas recorded in the lease
-table) cancels and re-subscribes with a lower consumer priority (`x-priority`) on the surplus
-partitions. On quorum queues a higher-priority consumer becomes the active one once the current
-deliveries are acknowledged, so the partitions move to the other replicas. Phase 2 verifies the
-handover against the pinned RabbitMQ version.
+throughput. Service Bus spreads sessions automatically. Here a replica that holds more than its fair
+share of partition leases (§6.8; fair share = N divided by the live replicas in `ReplicaHeartbeat`)
+hands each surplus partition over:
+
+1. It cancels its consumer on the partition, finishes and acknowledges the delivery in flight, and
+   releases the lease (§6.8).
+2. The broker activates another waiting consumer as soon as the cancel lands. That consumer waits
+   for the lease before handling anything, so the two never overlap.
+3. It re-subscribes with a lower consumer priority (`x-priority`), so it isn't chosen again while
+   another replica is available.
+
+Since RabbitMQ 4.0, consumer priority also decides which consumer of a quorum queue with single
+active consumer is active: a higher-priority consumer takes over once the current deliveries are
+acknowledged. RabbitMQ 3.13 didn't do this; D7's 4.3 floor covers it. Phase 2 tests the timing:
+handover order, lease release and no overlap.
 
 **Behavioural difference:** a slow handler delays the other sessions in its partition. It never
 blocks them, because failures park (§2.2). Choosing N trades parallelism against queue count.
@@ -451,7 +495,9 @@ The counterpart of the session lock. `PartitionLease(Queue, Owner, Epoch, Expire
 - A consumer must hold the lease before it handles a delivery. On its first delivery after
   subscribing, it takes the lease if it is free or expired (`Epoch + 1`); if another owner's lease is
   still valid, it holds the delivery unacknowledged and retries until the lease expires.
-- The holder renews it on a timer (`LeaseDuration` 60 s, `LeaseRenewal` 20 s).
+- The holder renews it on a timer (`LeaseDuration` 60 s, `LeaseRenewal` 20 s). A holder that hands
+  a partition over (§6.7) or shuts down cleanly releases the lease after acknowledging its last
+  delivery, so the successor doesn't wait for expiry.
 - **If renewal fails or the lease is found expired,** the consumer cancels the running handler's
   cancellation token, stops publishing for it, and closes its channel without acknowledging. The
   broker requeues the unacknowledged delivery for the successor. Like Service Bus after
@@ -464,10 +510,24 @@ The counterpart of the session lock. `PartitionLease(Queue, Owner, Epoch, Expire
   scheduling) carries `WHERE Owner = @me AND Epoch = @epoch AND ExpiresUtc > SYSUTCDATETIME()`
   against the lease row, in the same transaction. A stale write fails with `TransientException`, as
   `SessionLockLost` does on Service Bus.
+- **How the lease reaches those writes.** Session-state writes and `ScheduleRedelivery` go through
+  the delivery's `IMessageContext`, which holds the lease. Parking and retry scheduling go through
+  `ISender` (`Send` with `To = "Deferred"`; `ScheduleMessage` or `Send` with a delay,
+  `ResponseService.cs:175-186`), which has no delivery parameter, and
+  the SDK's senders are singletons. So the RabbitMQ receiver runs each handler call inside a delivery
+  scope (an `AsyncLocal`, internal to the RabbitMQ package) holding the partition queue, owner and
+  epoch, and the RabbitMQ `ISender` adds the lease check to any SQL write it makes inside a scope.
+  Core's sends for a delivery run on the handler's async flow, so they see the scope. The scope is
+  closed when the delivery settles; a write through a closed scope fails, so a task the handler left
+  running can't write under a lease it no longer holds. Neither Core nor the `ISender` contract
+  changes.
 - **Writes outside a partition delivery have their own authority**, as on Service Bus, where the
   drain's lock on the `Deferred` session is separate from the main session lock. The drain deletes
   rows on the connection that holds its application lock (§6.10). The router and the scheduled
-  dispatcher only insert idempotent rows or claim them with a state check.
+  dispatcher only insert idempotent rows or claim them with a state check. A `Send` or
+  `ScheduleMessage` with no delivery scope (publishers, the WebApp, the outbox dispatcher) writes
+  without a lease check, as a Service Bus send outside a session is unfenced. The WebApp's
+  session-state change uses optimistic concurrency (§6.9).
 
 A consumer that lost its broker connection keeps a valid lease until it expires, but its successor
 doesn't start until then, so the two never overlap: the guarantee a Service Bus session lock gives.
@@ -480,6 +540,15 @@ delay of up to one lease period after a crash.
 `SessionState(Endpoint, SessionId, BlockedByEventId, BlockedByMessageId, DeferredCount,
 NextDeferralSequence)`: the same four fields, read and written through the same `IMessageContext`
 calls as on Service Bus, under the lease (§6.8).
+
+**Writers outside the partition.** The WebApp's "reprocess deferred" clears a session's state, then
+sends the trigger. On Service Bus it clears the state while holding the session lock
+(`AcceptSessionAsync`, `AdminService.Resubmit.cs:207`), so it can't interleave with a handler. The
+partition lease covers a whole partition and the WebApp doesn't hold it, so `SessionState` uses
+optimistic concurrency as well: the RabbitMQ `IMessageContext` reads the row's `RowVersion` with the
+state, and each of its writes checks that `RowVersion` as well as the lease. The WebApp's clear checks
+it too. The write that loses the race fails with `TransientException`: a handler's delivery is
+redelivered and reads the new state; the WebApp reports the conflict and the operator retries.
 
 ### 6.10 Parking and replay
 
@@ -551,11 +620,16 @@ schedule a retry instead.
 ### 6.13 Request/reply
 
 `PublisherClient.Request` waits for one reply on a Service Bus reply session today. On RabbitMQ the
-`IReplyReceiver` declares an exclusive, auto-delete reply queue per client instance and **starts
-consuming it before the request is sent**, with `ReplyTo = <queue>` and a correlation id. Today the
-client sends first and then opens the reply session; on RabbitMQ a fast reply to an undeclared queue
-would be unroutable. Replies are matched by correlation id; they don't need session order.
-`IReplyDispatcher` publishes to the `ReplyTo` queue through the default exchange with `mandatory`.
+`IReplyReceiver` declares an exclusive, auto-delete reply queue per client instance, named
+`nimbus.reply.<application>.<guid>` (not a server-generated `amq.gen-…` name, so permissions can
+match it, §6.18). It binds the queue to the shared direct exchange `nimbus.reply` with the queue name
+as key and **starts consuming before the request is sent**, with `ReplyTo = <queue>` and a
+correlation id. Today the client sends first and then opens the reply session; on RabbitMQ a fast
+reply to an undeclared queue would be unroutable. Replies are matched by correlation id; they don't
+need session order, and a reply with an unknown correlation id is dropped. `IReplyDispatcher`
+publishes to `nimbus.reply` with the `ReplyTo` value as routing key, with confirms and `mandatory`.
+Replies don't go through the router. Responders need write access to `nimbus.reply` only, not to the
+default exchange, which would let them publish to any queue by name.
 
 ### 6.14 SQL schema
 
@@ -570,7 +644,7 @@ optionally, at startup under a session-owned `sp_getapplock` on a `Pooling=False
 | `Topic` | `Topic` | `Partitions`, `HashVersion` | Written by `nb topology apply` |
 | `RoutingRule` | `(Topic, Subscription, Rule)` | `Kind`, `FilterTo`, `FilterEventTypeId`, `StampFrom`, `StampTo`, `Destination` | The §6.5 matrix, as data |
 | `PartitionLease` | `Queue` | `Owner`, `Epoch`, `ExpiresUtc` | §6.8; one row per partition queue and intake lane |
-| `ReplicaHeartbeat` | `Replica` | `Role`, `LastSeenUtc` | Fair-share count for §6.7 |
+| `ReplicaHeartbeat` | `Replica` | `Role`, `LastSeenUtc`, `RoutingVersion` | Fair-share count for §6.7; the routing version each router runs, for §6.15 |
 | `SessionState` | `(Endpoint, SessionId)` | the four fields, `RowVersion` | §6.9 |
 | `ParkedMessage` | `Id` identity | `Endpoint`, `SessionId`, `DeferralSequence`, `ParentMessageId`, `Body varbinary(max)`, `Headers nvarchar(max)`, `ParkedAtUtc` | Unique `(Endpoint, SessionId, ParentMessageId)`; index `(Endpoint, SessionId, DeferralSequence)` |
 | `ScheduledMessage` | `Id bigint` identity | `Destination`, `SessionId`, `MessageId`, `Body`, `Headers`, `DueUtc`, `State`, `ClaimedUtc` | Index `(State, DueUtc)` |
@@ -584,12 +658,21 @@ unblocked keeps its rows, as a `Deferred` session does on Service Bus.
 
 1. Applies the SQL schema (§6.14).
 2. Builds the expected topology from the `IPlatform` catalog, through the same descriptor logic as
-   `TopologyDescriptor`, and writes `Topic` and `RoutingRule` with a new `RoutingVersion`.
-3. Declares exchanges, queues and bindings idempotently. RabbitMQ rejects re-declaring a queue with
-   different arguments; the command reports such queues and refuses to continue unless
-   `--migrate-queue <name>` is given, which drains and re-creates it.
-4. Reports NimBus-named queues and bindings the catalog no longer describes, as the WebApp's
-   topology audit does for Service Bus, and deletes them only when asked.
+   `TopologyDescriptor`. Rejects an endpoint name containing `.`, which the permission patterns in
+   §6.18 rely on.
+3. Declares exchanges, queues and bindings idempotently, then checks each queue with a passive
+   declare. RabbitMQ rejects re-declaring a queue with different arguments; the command reports such
+   queues and refuses to continue unless `--migrate-queue <name>` is given, which drains and
+   re-creates it.
+4. Only then, in one SQL transaction, writes `Topic` and `RoutingRule` and a new `RoutingVersion`.
+   Routers and senders pick up the new routes at that point, when every destination already exists.
+5. Reports NimBus-named queues and bindings the catalog no longer describes, as the WebApp's
+   topology audit does for Service Bus. It deletes them only when asked, and only after every live
+   router reports the new version in `ReplicaHeartbeat`, so no router still routes to them.
+
+A partial apply is safe to re-run. If it stops before step 4, the old routing version stays active
+and routes only to resources that still exist; the extra resources are idle until the next run. If
+it stops after step 4, only the report and cleanup remain.
 
 `nb infra apply`, `nb deploy apps` and the other Azure commands don't apply on-prem; the
 distribution repository (§6.2) covers installation.
@@ -598,9 +681,26 @@ distribution repository (§6.2) covers installation.
 
 Startup chooses the transport from `NimBus:Transport`, as it chooses the store from
 `NimBus:StorageProvider`. `AddServiceBusClients` runs only for Service Bus. The heartbeat sender,
-`ManagerClient`, `AgentEventPublisher` and the simulation publisher send through `ISender`.
-`TransportCapabilities` decides which features the API offers; the frontend hides what the API
-reports unavailable.
+`ManagerClient`, `AgentEventPublisher`, event composition (`EventImplementation`, through the
+transport's sender instead of `PublisherClient.CreateAsync(serviceBusClient, …)`) and the simulation
+publisher send through `ISender`.
+
+**The container must build every controller on RabbitMQ.** Today `EventImplementation`,
+`EndpointImplementation`, `AdminService` and `SubscriptionAdminService` take Service Bus types
+(§2.6), so a RabbitMQ WebApp without them would fail at the first request to those controllers.
+Phase 1g replaces the concrete Service Bus dependencies with interfaces covering what each service
+does with them (endpoint status, subscription admin, dead-letter browsing, deferred inspection).
+Service Bus registers today's implementations behind them. RabbitMQ registers implementations that
+throw `NotSupportedException` until phase 4 supplies real ones; the API returns 501 for them, as it
+already does when a storage provider doesn't support an operation
+(`EventImplementation.Deferred.cs:61`).
+
+**The API reports what is available.** Phase 3 adds two nullable fields to `ApplicationStatus` in
+`api-spec.yaml`: `transport` (`servicebus` or `rabbitmq`, next to the existing `storageProvider`,
+`ApplicationImplementation.cs:71`) and `transportCapabilities`, a list of names from
+`TransportCapabilities`. The change is additive, and NSwag regenerates the controller and client. The
+frontend hides a feature whose capability is missing; an older frontend that ignores the fields gets
+501s instead.
 
 | Feature | Service Bus | RabbitMQ, phase 3 | RabbitMQ, phase 4 |
 |---|---|---|---|
@@ -608,8 +708,9 @@ reports unavailable.
 | Resubmit, skip, bulk resubmit failed, skip by status | yes | yes (messages through `ISender`) | yes |
 | Handoff settlement | yes | yes | yes |
 | Heartbeat | yes | yes | yes |
-| Delete events, purge session, copy endpoint data, reconcile stale pending | yes | yes where the phase 1 inventory confirms store-only; otherwise hidden | yes |
-| Reprocess a deferred session | yes | yes: sends a trigger; the drain reads SQL | yes |
+| Delete events, purge session, reconcile stale pending | yes | yes where the phase 1 inventory confirms store-only; otherwise hidden | yes |
+| Copy endpoint data | Cosmos DB store only (`AdminService.Copy.cs:19`); SQL Server installations use backup and restore | no: on-prem uses SQL Server | no |
+| Reprocess a deferred session | yes | yes: clears the session's state in SQL with the `RowVersion` check (§6.9), then sends the trigger; the drain reads SQL | yes |
 | Deferred-message inspector | yes | hidden | from `ParkedMessage` |
 | Topic and subscription overview, purge, delete, recreate, rules | yes | hidden | queues and bindings through the RabbitMQ management API; rules from the routing table |
 | Topology audit and cleanup | yes | hidden | against the routing table and broker |
@@ -625,23 +726,39 @@ The phase 1 inventory (§10) confirms each row, including the `CosmosException` 
 `Resolver.Host` chooses the transport from `NimBus:Transport` and builds the Resolver's receiver
 through `INimBusTransport`. On RabbitMQ it also hosts the router and the scheduled dispatcher unless
 `Router:Enabled` is false. The Functions entry point (`NimBus.Resolver/Functions.cs`) stays Service
-Bus-only.
+Bus-only. `AddResolver` builds a `ServiceBusClient` and requires its configuration today
+(`NimBus.Resolver/ServiceExtensions.cs:37-53`); phase 3a moves that registration behind the transport
+choice, which is when `Resolver.Host` can start with no Service Bus configuration.
 
 ### 6.18 Security
 
-- **RabbitMQ.** TLS (`amqps`), one virtual host per installation, a user per role with
-  configure/write/read permissions scoped by name pattern:
+- **RabbitMQ.** TLS (`amqps`), one virtual host per installation, and a user per role. RabbitMQ
+  grants configure, write and read permissions by one regular expression each, matched against
+  exchange and queue names. Publishing needs write on the exchange; consuming needs read on the
+  queue; binding a queue needs write on the queue and read on the exchange; declaring or deleting
+  needs configure. The patterns below assume endpoint names contain no `.` (§6.15 enforces it):
 
-  | Role | Configure | Write | Read |
-  |---|---|---|---|
-  | Provisioner (`nb topology apply`) | `^nimbus\.` | `^nimbus\.` | `^nimbus\.` |
-  | Router (`Resolver.Host`) | reply queues | `^nimbus\.` | `^nimbus\.[^.]+\.in\.` |
-  | Endpoint `E` | its reply queues | `^nimbus\.E$` and the default exchange (replies) | `^nimbus\.E\.(p\d+\|deferred-processor)$`, its reply queues |
-  | WebApp | — | `^nimbus\.[^.]+$` (resubmit, skip, heartbeat) | — ; management API read access with the `monitoring` tag in phase 4 |
-  | Raw publisher | — | `^nimbus\.T$` for its topic | — |
+  - **Provisioner** (`nb topology apply`): configure, write and read `^nimbus\.`.
+  - **Router and scheduled dispatcher** (`Resolver.Host` or `NimBus.Router.Host`): configure nothing;
+    write `^nimbus\.(?!reply$)` (topic exchanges and `nimbus.route`); read `^nimbus\.[^.]+\.in\.`
+    (intake lanes and raw lanes).
+  - **Endpoint `E`** (its receiver, deferred-processor host and replies): configure
+    `^nimbus\.reply\.E\.` (its reply queues); write `^(nimbus\.E|nimbus\.reply|nimbus\.reply\.E\..+)$`
+    (its own topic, replies, binding its reply queues); read
+    `^(nimbus\.E\.(p\d+|deferred-processor)|nimbus\.reply|nimbus\.reply\.E\..+)$`.
+  - **Publish-only application `P`**: configure `^nimbus\.reply\.P\.`; write
+    `^(nimbus\.P|nimbus\.reply\.P\..+)$`; read `^(nimbus\.reply|nimbus\.reply\.P\..+)$`.
+  - **WebApp**: write `^nimbus\.(?!route$|reply$)[^.]+$` (topic exchanges, for resubmit, skip,
+    heartbeat and composed events); nothing else. Phase 4 adds a management API user with the
+    `monitoring` tag.
+  - **Raw publisher** to topic `T`: write `^nimbus\.T$`.
 
-  The patterns are a starting point; phase 2 checks them against every publish path (commands,
-  request/reply, handoff).
+  RabbitMQ evaluates the patterns as Erlang regular expressions, which support the negative
+  lookaheads. Write access to `nimbus.reply` lets a principal send a reply to any reply queue, as
+  send access to a Service Bus topic lets a sender address any reply subscription on it; replies are
+  matched by correlation id (§6.13). Nothing gets write access to the default exchange. The patterns
+  are a starting point; phase 2 checks them against every publish path (commands, request/reply,
+  handoff) with a live test per role.
 
 - **SQL Server.** The transport schema gets its own database role. Endpoint principals need read and
   write on `SessionState`, `ParkedMessage`, `ScheduledMessage` and `PartitionLease`. SQL Server
@@ -657,14 +774,31 @@ Bus-only.
 - Metrics: intake and partition queue depth (management API), router lag (intake age), lease
   takeovers, parked rows per endpoint, due scheduled rows, dead-lettered messages.
 - Health checks: RabbitMQ connection and a passive declare of the process's queues; SQL transport
-  schema version; router lane ownership.
+  schema version. The router's readiness check fails when an intake lane has no active router
+  consumer or its oldest message is older than a threshold (default 1 minute), so "routing stopped"
+  is distinguishable from "no traffic" (§6.5).
 
 ### 6.20 Local development
 
 The Aspire AppHost gets `NIMBUS_TRANSPORT=rabbitmq`, next to `NIMBUS_STORAGE_PROVIDER` and
-`NIMBUS_SB_EMULATOR`. It adds a RabbitMQ resource (`Aspire.Hosting.RabbitMQ`, with the management
-plugin) and points `nimbus-transport` at the SQL Server resource the store uses. CrmErpDemo gets
-the same switch in phase 3, and the nightly end-to-end workflow runs it on both transports.
+`NIMBUS_SB_EMULATOR`. Today it wires a Service Bus graph throughout (`NimBus.AppHost/Program.cs`):
+the `AspirePubSub.Provisioner`, the Resolver as an Azure Functions project, and Service Bus
+references on the WebApp and the samples. With `rabbitmq` the AppHost builds a different graph:
+
+- A RabbitMQ resource (`Aspire.Hosting.RabbitMQ` 13.5.4, matching the AppHost's Aspire version, with
+  the management plugin) instead of the `servicebus` connection or emulator.
+- The SQL Server resource, whatever `NIMBUS_STORAGE_PROVIDER` says, because transport state needs it;
+  `nimbus-transport` points at it.
+- The provisioner applies the RabbitMQ topology, with the same code as
+  `nb topology apply --transport rabbitmq`, instead of the Service Bus topology. Everything else waits
+  for it to complete, as today.
+- `NimBus.Resolver.Host` (resolver, router and scheduled dispatcher) instead of the Functions
+  project.
+- The WebApp, publisher and subscribers get the `rabbitmq` and `nimbus-transport` references and
+  `NimBus__Transport=rabbitmq`; the samples select the transport from that setting.
+
+CrmErpDemo gets the same switch in phase 3, and the nightly end-to-end workflow runs it on both
+transports.
 
 ## 7. Parity with Service Bus
 
@@ -680,6 +814,8 @@ the same switch in phase 3, and the nightly end-to-end workflow runs it on both 
 | Writes after lock loss rejected | Session state and settlement | Transport SQL writes after lease expiry or epoch change; acks fail once the channel closes. Neither fences publishes already made |
 | Handler side effects after lock loss | Not fenced | Not fenced |
 | Topic rules run without a receiving host | Yes (broker) | Yes (router) |
+| Routing while the platform's own service is down | The namespace routes | With every router replica down, messages wait in intake queues and health reports it (§6.5) |
+| Session-state change from the WebApp | Under the session lock | Optimistic `RowVersion` check (§6.9) |
 | Fan-out for raw publishers and consumers | Yes | Yes |
 | Forwarding | Transactional auto-forward per subscription copy | Not transactional; a redelivered intake message republishes identical copies (same `MessageId` and `EventId`) |
 | Parking, replay, trigger | 3 writes; republish with a new `MessageId` | Same; duplicate park suppressed |
@@ -723,22 +859,48 @@ Constraint: the org ruleset requires a status check named exactly `ci`, and the 
 
 | Lane (job) | Services | Builds | Runs | Gate |
 |---|---|---|---|---|
-| `build` | none | Whole solution, Release, SPA + NSwag: the compile and warnings gate | All tests except categories `LiveSqlServer`, `LiveCosmos` and `LiveRabbitMq` | Nothing skipped; Resolver/SDK coverage report |
+| `build` | none | Whole solution, Release, SPA + NSwag: the compile and warnings gate | All tests except categories `LiveSqlServer`, `LiveCosmos` and `LiveRabbitMq` | Nothing skipped |
 | `sqlserver` | SQL Server 2022 | Whole solution, `-p:SkipSpaBuild=true` | `TestCategory=LiveSqlServer` | At least one test ran; nothing skipped |
 | `cosmos` | Cosmos DB emulator (vNext) | same | `TestCategory=LiveCosmos` | same; emulator readiness wait as today |
 | `webapp-client` | none (Node 22) | `npm ci` in `ClientApp` | `npm run test:ci` (Vitest) | JUnit results uploaded |
 | `rabbitmq` (phase 2) | RabbitMQ 4.3 + SQL Server | same as `sqlserver` | `TestCategory=LiveRabbitMq` | At least one test ran; nothing skipped |
-| `ci` | — | — | `needs` every lane, `if: always()` | Fails unless every lane succeeded (or was skipped by the change filter below) |
+| `coverage` | — | — | Downloads every .NET lane's Cobertura files and runs ReportGenerator with today's Resolver/SDK filters | Informational, as today (issue #136); not a need of `ci` |
+| `ci` | — | — | `needs` every lane, `if: always()` | Fails unless every need's `result` is `success`; `failure`, `cancelled` and `skipped` all fail it |
 
 Details:
 
-- **Categories instead of assembly lists.** Every test that needs a live service gets
-  `[TestCategory("LiveSqlServer")]`, `("LiveCosmos")` or `("LiveRabbitMq")`. Lanes filter by
-  category, so a new live test lands in the right lane without workflow changes. The `build` lane's
-  **nothing-skipped gate** catches a live test someone forgot to tag: without its environment
-  variable it would skip, and the gate fails. `CommonFidelity` tests stay in `build`: they start a
-  local emulator unless `NIMBUS_SBEMULATOR_TEST_CS` points them at real Azure, which only
-  `servicebus-emulator-compat.yml` does.
+- **Categories instead of assembly lists.** The repository runs MSTest on VSTest (test projects
+  reference `Microsoft.NET.Test.Sdk` and `MSTest.TestAdapter`; no `global.json` selects
+  Microsoft.Testing.Platform), so `dotnet test --filter "TestCategory=…"` and `TestCategory!=…`
+  work as documented. Every test that needs a live service gets `[TestCategory("LiveSqlServer")]`,
+  `("LiveCosmos")` or `("LiveRabbitMq")`. Lanes filter by category, so a new live test lands in the
+  right lane without workflow changes. By the review's count that is more than 30 test classes
+  across eight test projects today, with no live category yet (the only categories in use are
+  `CommonFidelity`, `Emulator` and `EmulatorOnly`).
+- **Mixed-provider methods are split.** A category applies to a method, not to one `DataRow`.
+  `DurableStoreConformanceTests` has memory, SQL Server and Cosmos DB rows on one method, and
+  `IntelligenceSettingsStoreTests` has SQL Server and Cosmos DB rows. 1a splits each into one method
+  per provider, so each lands in its own lane and the in-memory case stays in `build`.
+- **The nothing-skipped gates.** Each lane counts `NotExecuted`, `Inconclusive` and `Skipped`
+  outcomes across all of its own TRX files, as today's Cosmos and SQL Server gates do for one
+  assembly each. The `build` lane's gate catches a live test someone forgot to tag: without its
+  environment variable it would skip, and the gate fails. Before the gate can hold, 1a deals with
+  the skips that have other causes:
+  - `ServiceBusInstrumentationConformanceTests` always ends `Inconclusive`: even with
+    `NIMBUS_SERVICEBUS_TEST_CONNECTION` set, its live publish is a TODO
+    (`ServiceBusInstrumentationConformanceTests.cs:45`). 1a removes the placeholder subclass and
+    opens an issue to run the instrumentation conformance against the emulator instead. The shared
+    base class and `InMemoryInstrumentationConformanceTests` stay.
+  - `DeterministicContactClassifierTests` is inconclusive only when `ANTHROPIC_API_KEY` is set, and
+    `ArchitectureReferenceTests` only when the host assemblies aren't built. Neither applies in the
+    `build` lane.
+- **`CommonFidelity` tests stay in `build`:** they start a local emulator unless
+  `NIMBUS_SBEMULATOR_TEST_CS` points them at real Azure, which only `servicebus-emulator-compat.yml`
+  does.
+- **Coverage keeps its scope.** Today one run collects Cobertura files from every test project and
+  merges them into the Resolver/SDK report. After the split each .NET lane collects coverage and
+  uploads its Cobertura files as an artifact, and the `coverage` job merges them with the same
+  ReportGenerator filters, so the report doesn't silently lose the live suites.
 - **Service lanes rebuild without the SPA.** Sharing build output between jobs means uploading
   several hundred MB of `bin` folders; rebuilding with `SkipSpaBuild=true` is simpler and skips the
   npm install. `ApiContract.g.cs` is committed, so the build doesn't need NSwag.
@@ -747,10 +909,11 @@ Details:
 - **Vitest becomes a required gate.** The known flake causes were fixed in #217 (in-test dynamic
   imports, a ref read by an effect). A new flake is fixed with the parallel-stress recipe, not
   retried away.
-- **Optional change filter.** A `changes` job computes whether anything outside `docs/` and root
-  `*.md` files changed (plain `git diff`, no third-party action). On a docs-only pull request the
-  .NET and frontend lanes are skipped and `ci` passes. Pushes to master and merge groups always run
-  every lane.
+- **No docs-only filter.** Every lane runs on every pull request, push to master and merge group.
+  Skipping .NET lanes on docs-only changes would skip tests that guard documentation:
+  `BuildingAdaptersGuideTests` reads `docs/building-adapters.md` and `RateLimitWiringTests` checks
+  `docs/webapp-rest-api.md`. It also keeps the aggregator simple: no lane may be skipped. The
+  workflow keeps no path filter, so the required `ci` check is never left pending.
 
 ### 8.3 Effect
 
@@ -797,7 +960,11 @@ the in-memory transport, the Service Bus emulator and RabbitMQ:
   nothing until the lease expires, and the old consumer's later SQL writes fail. Repeat with the
   pause before the successor's first delivery. Make renewal fail mid-handler: the handler is
   cancelled and its delivery requeued. Hold a waiting successor past a short consumer timeout: the
-  delivery is requeued without counting toward the delivery limit.
+  delivery is requeued without counting toward the delivery limit. A handler whose lease expired
+  parks and schedules through `ISender`: both writes fail. A task the handler left running writes
+  after the delivery settled: the write fails.
+- **Session-state race.** The WebApp clears a session's state while a handler for that session
+  writes it: one write fails on `RowVersion`, and the outcome matches one of the two orders.
 - **Scale-out.** Start a second replica: partitions move until each holds its fair share, with no
   overlap and no reordering.
 - **Crash points.** Kill the process before and after each SQL write and before and after each ack,
@@ -809,9 +976,16 @@ the in-memory transport, the Service Bus emulator and RabbitMQ:
 - **Raw ingress.** A raw publish with key `raw`, with an arbitrary key (alternate exchange), and
   without `message-id` or CloudEvents `id` (dead-lettered). A raw consumer sees all originals.
 - **Router failover.** Kill the router replica that owns a lane; another takes over the lane and
-  order holds.
+  order holds. Stop every replica: publishes still succeed, the readiness check fails, and
+  everything is delivered in order once a replica returns.
 - **Broker failover.** Kill a quorum queue leader and the active consumer; order holds.
+- **Publisher confirms.** Publish into a full intake queue (`reject-publish`) and to a missing
+  exchange: `Send` throws, and an outbox row stays pending.
 - **Topology.** `nb topology apply` is idempotent; a changed queue argument is reported, not applied.
+  Add a consumer while routers run, and stop the apply before the routing version changes: nothing
+  is routed to the new queues, and nothing is returned. Re-run it: routing starts.
+- **Permissions.** For each role in §6.18, a live test publishes and consumes what the role needs
+  and is refused what it doesn't, including publishing to the default exchange.
 - **Capacity.** Throughput and p95 latency against the customer targets (§14) for a chosen N.
 
 Service Bus behaviour is unchanged by phase 1. The existing test projects, the CRM/ERP end-to-end
@@ -821,14 +995,18 @@ suite and the shared suite on the emulator prove it.
 
 | Phase | Pull requests | Exit |
 |---|---|---|
-| 0 | ADR-018 accepted; a GitHub issue per the contribution process; customer throughput, latency and session-count targets; facts in §15 verified | ADR accepted, targets agreed, facts recorded in this spec |
-| 1 | **1a** CI lanes and test categories (§8). **1b-d** the three Core fixes (§2.7), one PR each with its regression test. **1e** the startup inventory: every Service Bus- or Cosmos-typed service the SDK, `Resolver.Host` and WebApp resolve, with an on-prem answer each. **1f** the transport seam in Core and the SDK, Service Bus registration and fallback (§6.3). **1g** `ManagerClient` over `ISender`; WebApp and `Resolver.Host` transport selection and capabilities. **1h** the shared behaviour suite, green on in-memory and the Service Bus emulator | Release build and all tests green; Service Bus behaviour unchanged; WebApp and `Resolver.Host` start with no Service Bus configuration (features hidden) |
-| 2 | **2a** `NimBus.Transport.RabbitMq` skeleton: sender, SQL schema, topology provisioner and `nb topology apply --transport rabbitmq`. **2b** receiver, lease, session state, fair-share handover. **2c** router. **2d** parking, drain and the deferred-processor host. **2e** scheduled dispatcher. **2f** request/reply. **2g** the `rabbitmq` CI lane, shared suite on RabbitMQ, RabbitMQ-only tests | §9 passes on RabbitMQ |
-| 3 | **3a** `Resolver.Host` with router and scheduler; `NimBus.Router.Host`. **3b** WebApp on RabbitMQ with capability gating (§6.16). **3c** Aspire switch and CrmErpDemo on RabbitMQ; nightly end-to-end on both transports. **3d** OTLP, health checks, on-prem guide | CrmErpDemo end-to-end tests green on RabbitMQ and SQL Server |
+| 0 | ADR-018 accepted, and the guidance files that cite it drop "proposed"; a GitHub issue per the contribution process; customer throughput, latency and session-count targets; the live experiments in §15 | ADR accepted, targets agreed, results recorded in this spec |
+| 1 | **1a** CI lanes, test categories, the split of mixed-provider methods, the placeholder suite and the `coverage` job (§8). **1b-d** the three Core fixes (§2.7), one PR each with its regression test. **1e** the inventory: every Service Bus- or Cosmos-typed construction site and dependency in the SDK, `Resolver.Host`, the WebApp and the CLI (§2.1, §2.6), with an on-prem answer each; it gates 1f and 1g. **1f** the transport seam in Core and the SDK, Service Bus registration and fallback (§6.3). **1g** `ManagerClient` over `ISender`; WebApp and `Resolver.Host` get their transport through `INimBusTransport`, and the WebApp's Service Bus dependencies move behind interfaces (§6.16). **1h** an in-memory `IDeferredMessageProcessor` and the shared behaviour suite, green on in-memory and the Service Bus emulator | Release build and all tests green; Service Bus behaviour unchanged; every site in the 1e inventory goes through the seam. The hosts still need Service Bus configuration |
+| 2 | **2a** `NimBus.Transport.RabbitMq` skeleton, with `IsPackable=false`: sender with confirms, SQL schema, topology provisioner and `nb topology apply --transport rabbitmq`. **2b** receiver, lease and delivery scope, session state, fair-share handover. **2c** router. **2d** parking, drain and the deferred-processor host. **2e** scheduled dispatcher. **2f** request/reply. **2g** the `rabbitmq` CI lane, shared suite on RabbitMQ, RabbitMQ-only tests; the project becomes packable | §9 passes on RabbitMQ |
+| 3 | **3a** `Resolver.Host` with router and scheduler, its Service Bus registration behind the transport choice; `NimBus.Router.Host`. **3b** WebApp on RabbitMQ: the `ApplicationStatus` fields and capability gating (§6.16). **3c** Aspire switch (§6.20) and CrmErpDemo on RabbitMQ; nightly end-to-end on both transports. **3d** OTLP, health checks, on-prem guide | CrmErpDemo end-to-end tests green on RabbitMQ and SQL Server; WebApp and `Resolver.Host` start with no Service Bus configuration |
 | 4 | **4a** WebApp admin on the RabbitMQ management API, parked-message inspector, dead-letter recorder. **4b** distribution repository: compose files, installer, runbooks. **4c** HA, backup/restore and capacity tests. **4d** remove `[Experimental]` | Supportable release |
 
 Release placement: phase 1 is additive and can ship in 5.x minors. The RabbitMQ package first ships
 in a 5.x minor marked experimental. The Service Bus-typed bridges are removed in the next major.
+Pull requests 2a-2f merge into master, but the project stays non-packable until 2g: the release
+workflow packs every packable project (`nuget-publish.yml:56`), and projects are non-packable unless
+they opt in (`Directory.Build.props:59`). A release cut during phase 2 therefore ships no partial
+transport.
 
 No effort estimate yet. Estimate after phase 0, from the inventory (1e) and a phase 2 work
 breakdown.
@@ -859,7 +1037,9 @@ breakdown.
 7. **Requeue order after a dropped connection** isn't explicitly documented by RabbitMQ (§15).
 8. **SQL Server becomes critical for routing.** A SQL outage stops parking, leases and scheduling;
    receivers stop taking work rather than continue without state.
-9. **WebApp parity** decides when the transport is supportable, more than the message flow.
+9. **The router is a platform service Service Bus doesn't need.** With every replica down, nothing
+   is routed (§6.5). Mitigated by replicas and the readiness check, not removed.
+10. **WebApp parity** decides when the transport is supportable, more than the message flow.
 
 ## 13. Alternatives considered
 
@@ -880,36 +1060,51 @@ breakdown.
 
 ## 14. Open questions for the owner
 
-1. **Repository and packaging (D1):** confirm one repository plus a separate distribution
-   repository for deployment artifacts.
-2. **Release placement:** phase 1 in 5.x minors and the RabbitMQ package as experimental in a later
+D1-D10 (§5) are this spec's decisions. They stand when ADR-018 is accepted unless the owner objects
+to one; this section doesn't ask them again. What the spec can't decide:
+
+1. **Release placement:** phase 1 in 5.x minors and the RabbitMQ package as experimental in a later
    5.x, or hold everything for a major?
-3. **Customer targets:** message rate, session count, acceptable latency and takeover delay. They
+2. **Customer targets:** message rate, session count, acceptable latency and takeover delay. They
    set N, the lease period and whether the router's extra hop is acceptable.
-4. **Service Bus assembly on-prem:** is carrying `Azure.Messaging.ServiceBus` in on-prem
+3. **Service Bus assembly on-prem:** is carrying `Azure.Messaging.ServiceBus` in on-prem
    applications (unused) acceptable until the next major (§6.2)?
-5. **Router hosting:** in `Resolver.Host` by default, or always standalone?
-6. **Row-level security** for transport tables, or per-table grants (§6.18)?
-7. **CI:** Vitest as a required gate, and the docs-only change filter (§8.2)?
-8. **Broker support:** customer-managed RabbitMQ only, or does NimBus document and support a
+4. **Row-level security** for transport tables, or per-table grants (§6.18)?
+5. **Broker support:** customer-managed RabbitMQ only, or does NimBus document and support a
    reference cluster configuration?
 
-## 15. Facts to verify before implementing (phase 0)
+## 15. Facts
+
+**Recorded from code and documentation:**
+
+1. **Duplicate copies at the Resolver, on SQL Server.** `StoreMessage` inserts a history row only if
+   no row with the same `EventId` and `MessageId` exists
+   (`SqlServerMessageTrackingStore.Messages.cs:13`), and the status upsert never lets an
+   `EventRequest` or `DeferralResponse` overwrite a terminal status
+   (`SqlServerMessageTrackingStore.Writes.cs:178-182`). A duplicate router copy is therefore a no-op
+   for history and can't reopen a finished event.
+2. **Consumer timeout.** RabbitMQ's default is 30 minutes, and it can be set per queue with the
+   `consumer-timeout` policy key or the `x-consumer-timeout` queue argument
+   ([Consumers](https://www.rabbitmq.com/docs/consumers)).
+3. **Consumer priority on quorum queues with single active consumer** decides the active consumer
+   from RabbitMQ 4.0 (§6.7).
+4. **`Aspire.Hosting.RabbitMQ` 13.5.4** exists, matching the AppHost's Aspire version.
+5. **Tests and the `build` lane's gate:** the live-test categories, the mixed-provider methods and
+   the other skip sources are listed in §8.2.
+
+**Live experiments for phase 0:**
 
 1. Quorum queue requeue order after a dropped consumer connection, with single active consumer and
    prefetch 1, on the pinned RabbitMQ version.
-2. Consumer-priority handover on quorum queues with single active consumer (§6.7).
+2. The handover sequence in §6.7: cancel, lease release, the next consumer's activation, and the
+   re-subscription with a lower priority.
 3. What Service Bus does with an empty session id on a session-enabled subscription (§6.6).
-4. That the Resolver treats a repeated `EventId` and `MessageId` (a duplicate router copy) as the
-   same event.
-5. That each WebApp `catch (CosmosException) when NotFound` path behaves correctly on SQL Server.
-6. The RabbitMQ consumer timeout default and its per-queue setting on 4.3.
-7. `RabbitMQ.Client` 7.x publisher-confirm tracking and `mandatory` return handling.
-8. Throughput of one quorum queue with single active consumer and prefetch 1, as the capacity
+4. `RabbitMQ.Client` 7.x publisher-confirm tracking and `mandatory` return handling, as §6.5's
+   sending rule needs them.
+5. Throughput of one quorum queue with single active consumer and prefetch 1, as the capacity
    baseline for choosing N.
-9. `Aspire.Hosting.RabbitMQ` compatible with the repository's Aspire version.
-10. That every live-infra test can carry a category and the `build` lane can hold "nothing skipped"
-    (some tests may skip for other reasons, such as missing Docker).
+
+The WebApp's `catch (CosmosException) when NotFound` paths (§2.6) are part of the 1e inventory.
 
 ## 16. References
 
@@ -963,3 +1158,30 @@ This draft (revision 6) turns the investigation into a specification and adds:
   (§6.19), local development (§6.20), the CI split (§8), pull-request phasing (§10), open questions
   and facts to verify (§14, §15).
 - ADR-018, which amends ADR-001.
+
+Codex reviewed revision 6 (sound after fixes: 20 findings, 7 blocking). Revision 7 answers each:
+
+| Finding | Change |
+|---|---|
+| Parking and scheduling through `ISender` can't carry the lease epoch (blocking) | Delivery scope read by the RabbitMQ `ISender`; closed on settlement (§6.8) |
+| Ordinary sends had no confirm requirement (blocking) | Every RabbitMQ publish uses confirms and `mandatory`; `Send` throws on nack, return or timeout (§6.5) |
+| `nb topology apply` activated routes before declaring queues (blocking) | Declare and check first, then switch the routing version in one transaction; cleanup after routers report the new version; partial-apply rules (§6.15) |
+| WebApp gating had no API field, and controllers couldn't be built without Service Bus (blocking) | Two additive `ApplicationStatus` fields; Service Bus dependencies behind interfaces with 501-throwing RabbitMQ implementations (§6.16) |
+| Reply permissions needed the default exchange and server-named queues (blocking) | Client-named reply queues on a `nimbus.reply` exchange; per-role patterns rewritten (§6.13, §6.18) |
+| Mixed-provider `DataRow` methods can't be split by category (blocking) | 1a splits them (§8.2) |
+| The nothing-skipped gate fails today (blocking) | 1a removes the always-inconclusive Service Bus instrumentation placeholder; other skip sources checked (§8.2) |
+| Deferred reprocess also clears session state | `RowVersion` optimistic concurrency against the partition consumer (§6.9, §6.16) |
+| Copy endpoint data is Cosmos DB-only | Its own row: unavailable on SQL Server in every phase (§6.16) |
+| Aspire switch must replace the whole graph | The rabbitmq graph spelled out (§6.20) |
+| Router outage behaviour | Degraded-state contract, readiness check, parity row, risk (§6.5, §6.19, §7, §12) |
+| Phase 1 exit contradicted the fallback | Hosts need Service Bus until phase 3; exit criteria moved (§6.3, §6.17, §10) |
+| Construction-site list missed WebApp and CLI | §2.6 lists them; the 1e inventory gates the migration (§6.3, §10) |
+| `[Experimental]` calls fail the build | In-repo callers suppress `NIMBUS0041` per project (§6.3) |
+| Coverage scope narrowed silently | Lanes upload Cobertura files; a `coverage` job merges them (§8.2) |
+| Phase 2a could ship a partial package | Non-packable until 2g (§10) |
+| §14 re-asked D1, D4 and D9; §15 had facts already checkable | §14 trimmed; §15 split into recorded facts and live experiments |
+| ADR-018 overstated the in-memory transport; guidance said "allows" for a proposed ADR; ADR-002 contradicted | Fixed in ADR-018, §2.1 and the guidance files; ADR-002 and ADR-013 get notes |
+
+Found while revising: tests read files under `docs/` (`BuildingAdaptersGuideTests`,
+`RateLimitWiringTests`), so the optional docs-only CI filter would have skipped tests that guard
+documentation. It is dropped (§8.2).

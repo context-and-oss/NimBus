@@ -1,10 +1,15 @@
 # ADR-018: One Additional Transport, RabbitMQ, for On-Premises Installations
 
 ## Status
-Proposed (2026-10-21). Amends [ADR-001](001-session-based-ordering.md): Service Bus sessions stay
-the ordering model on Azure, and ADR-001's "transport abstraction is explicitly out of scope" is
-narrowed to the rule below. The design is in
-[Spec 041](../spec/041-on-prem-rabbitmq-transport/spec.md).
+Proposed (2026-10-21). When accepted, it amends two ADRs:
+
+- [ADR-001](001-session-based-ordering.md): Service Bus sessions stay the ordering model on Azure,
+  and ADR-001's "transport abstraction is explicitly out of scope" is narrowed to the rule below.
+- [ADR-002](002-centralized-resolver.md): its principle that subscribers depend only on Service Bus,
+  with no database connection, holds on Azure. On RabbitMQ every endpoint also needs SQL Server for
+  transport state.
+
+The design is in [Spec 041](../spec/041-on-prem-rabbitmq-transport/spec.md).
 
 ## Context
 
@@ -19,12 +24,13 @@ with no cloud connectivity. Storage is already covered: [ADR-010](010-pluggable-
 made storage pluggable, and the SQL Server provider, inbox and outbox exist. The transport is the
 gap.
 
-An investigation (Spec 041 §2, reviewed four times) found that a second transport costs less than
+An investigation (Spec 041 §2; Codex reviewed it four times, and the draft spec once) found that a second transport costs less than
 ADR-001 assumed:
 
 - `NimBus.Core` does not reference the Service Bus SDK. A transport implements four Core contracts
-  (`IMessageContext`, `ISender`, `IDeferredMessageProcessor`, `IReplyDispatcher`), and the
-  in-memory transport in `NimBus.Testing` already implements them.
+  (`IMessageContext`, `ISender`, `IDeferredMessageProcessor`, `IReplyDispatcher`). The in-memory
+  transport in `NimBus.Testing` already implements three of them; it lacks only an
+  `IDeferredMessageProcessor`.
 - Failure isolation lives in Core, not the broker. A failed message is completed and its session
   marked blocked; later messages for the session are parked and completed. The broker only has to
   deliver each session in order to one consumer at a time.
@@ -94,10 +100,15 @@ Options considered:
   sessions in its partition. Service Bus delays only the session.
 - **More moving parts on-prem:** a router service (hosted in the Resolver host by default), a
   three-node RabbitMQ cluster, and every NimBus process, publish-only applications included, needs
-  SQL Server access for transport state and the routing table.
+  SQL Server access for transport state and the routing table. On Azure, ADR-002's "subscribers
+  depend only on Service Bus" still holds.
+- **The router is a platform service Service Bus doesn't need.** With every replica down, messages
+  wait in intake queues and nothing is routed; replicas and a readiness check mitigate it.
 - **More surface to maintain.** Transport-touching changes need both transports and the shared suite;
   CI gains a RabbitMQ lane.
 - **The SDK package keeps its Service Bus dependency until the next major.** On-prem applications
   carry the Service Bus assembly without using it (Spec 041 §6.2).
 - **Guidance changes.** `CONTRIBUTING.md`, `AGENTS.md`, `docs/contribution-areas.md` and
-  `docs/architecture.md` now point here instead of ruling out a second transport.
+  `docs/architecture.md` point here instead of ruling out a second transport. While this ADR is
+  proposed they say so; accepting it removes "proposed" from them and from the notes in ADR-001,
+  ADR-002 and ADR-013.

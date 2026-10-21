@@ -760,7 +760,7 @@ This is a useful signal that the architecture is intentionally centered on a reu
 - the web app is broad in scope: UI host, API host, SignalR hub, control plane, and telemetry aggregator
 - build/publish complexity is higher because the web app couples SPA, NSwag generation, and server publish steps
 - provider facades retain the public aggregate API while delegating persistence concerns to focused internal stores
-- Azure Service Bus is the single supported transport today; the architecture is intentionally Azure-centric. [ADR-018](adr/018-on-prem-rabbitmq-transport.md) (proposed) allows one additional transport, RabbitMQ with SQL Server for on-premises installations, designed in [Spec 041](spec/041-on-prem-rabbitmq-transport/spec.md) and not yet implemented
+- Azure Service Bus is the single supported transport today; the architecture is intentionally Azure-centric. [ADR-018](adr/018-on-prem-rabbitmq-transport.md) (proposed) would allow one additional transport, RabbitMQ with SQL Server for on-premises installations, designed in [Spec 041](spec/041-on-prem-rabbitmq-transport/spec.md) and not yet implemented
 
 ## Recommended reading order
 

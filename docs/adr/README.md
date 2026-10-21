@@ -6,8 +6,8 @@ This directory contains Architecture Decision Records (ADRs) for the NimBus plat
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [001](001-session-based-ordering.md) | Use Service Bus sessions for ordered delivery | Accepted; amended by 018 | 2026-01 |
-| [002](002-centralized-resolver.md) | Centralized Resolver for message state tracking | Accepted | 2026-01 |
+| [001](001-session-based-ordering.md) | Use Service Bus sessions for ordered delivery | Accepted; amendment proposed in 018 | 2026-01 |
+| [002](002-centralized-resolver.md) | Centralized Resolver for message state tracking | Accepted; amendment proposed in 018 | 2026-01 |
 | [003](003-separated-deferred-processor.md) | Separated DeferredProcessor in subscriber apps | Accepted | 2026-03 |
 | [004](004-pipeline-behavior-pattern.md) | Delegate-based pipeline behaviors over ASP.NET middleware | Accepted | 2026-03 |
 | [005](005-transactional-outbox-sql-server.md) | Transactional outbox with SQL Server | Accepted | 2026-02 |
