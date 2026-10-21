@@ -24,7 +24,7 @@ with no cloud connectivity. Storage is already covered: [ADR-010](010-pluggable-
 made storage pluggable, and the SQL Server provider, inbox and outbox exist. The transport is the
 gap.
 
-An investigation (Spec 041 §2; Codex reviewed it four times, and the draft spec once) found that a second transport costs less than
+An investigation (Spec 041 §2; Codex reviewed it four times, and the draft spec twice) found that a second transport costs less than
 ADR-001 assumed:
 
 - `NimBus.Core` does not reference the Service Bus SDK. A transport implements four Core contracts

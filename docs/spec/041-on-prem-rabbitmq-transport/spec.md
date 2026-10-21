@@ -1,9 +1,9 @@
 # Spec 041 — On-prem NimBus: RabbitMQ transport with SQL Server storage
 
-Status: **draft, revision 7** (2026-10-21). Nothing is implemented. Decision record:
+Status: **draft, revision 8** (2026-10-21). Nothing is implemented. Decision record:
 [ADR-018](../../adr/018-on-prem-rabbitmq-transport.md) (proposed), which amends ADR-001 when
 accepted. This draft turns an investigation into a specification. Codex reviewed the investigation
-four times and this draft once ([2026-10-21-spec-041-review.md](../../plan/2026-10-21-spec-041-review.md));
+four times and this draft twice ([2026-10-21-spec-041-review.md](../../plan/2026-10-21-spec-041-review.md));
 §17 lists what changed.
 Baseline: master `2aaf3ce6`.
 Scope: a new `NimBus.Transport.RabbitMq` project and package; a transport seam in `NimBus.Core` and
@@ -517,10 +517,15 @@ The counterpart of the session lock. `PartitionLease(Queue, Owner, Epoch, Expire
   the SDK's senders are singletons. So the RabbitMQ receiver runs each handler call inside a delivery
   scope (an `AsyncLocal`, internal to the RabbitMQ package) holding the partition queue, owner and
   epoch, and the RabbitMQ `ISender` adds the lease check to any SQL write it makes inside a scope.
-  Core's sends for a delivery run on the handler's async flow, so they see the scope. The scope is
-  closed when the delivery settles; a write through a closed scope fails, so a task the handler left
-  running can't write under a lease it no longer holds. Neither Core nor the `ISender` contract
-  changes.
+  Core's sends for a delivery run on the handler's async flow, so they see the scope;
+  `ConfigureAwait(false)` doesn't stop an `AsyncLocal` from flowing. The scope lasts for the
+  receiver's whole call into Core's `IMessageHandler`, not until settlement: Core completes a failed
+  message and *then* schedules its retry (`CompleteMessage` before `CheckForRetry`,
+  `StrictMessageHandler.cs:158-159`), and that write still needs the lease. The receiver closes the
+  scope when the call returns. A write through a closed scope fails, so a task the handler left
+  running can't write under a lease it may no longer hold. The receiver handles one delivery per
+  partition at a time, so the next delivery's scope never overlaps. Neither Core nor the `ISender`
+  contract changes.
 - **Writes outside a partition delivery have their own authority**, as on Service Bus, where the
   drain's lock on the `Deferred` session is separate from the main session lock. The drain deletes
   rows on the connection that holds its application lock (§6.10). The router and the scheduled
@@ -545,10 +550,21 @@ calls as on Service Bus, under the lease (§6.8).
 sends the trigger. On Service Bus it clears the state while holding the session lock
 (`AcceptSessionAsync`, `AdminService.Resubmit.cs:207`), so it can't interleave with a handler. The
 partition lease covers a whole partition and the WebApp doesn't hold it, so `SessionState` uses
-optimistic concurrency as well: the RabbitMQ `IMessageContext` reads the row's `RowVersion` with the
-state, and each of its writes checks that `RowVersion` as well as the lease. The WebApp's clear checks
-it too. The write that loses the race fails with `TransientException`: a handler's delivery is
-redelivered and reads the new state; the WebApp reports the conflict and the operator retries.
+optimistic concurrency as well:
+
+- The RabbitMQ `IMessageContext` reads the row's `RowVersion` with the state, and each of its writes
+  checks that `RowVersion` as well as the lease.
+- Core writes session state several times in one delivery, for example
+  `GetNextDeferralSequenceAndIncrement` and then `IncrementDeferredCount` when parking. Each is a
+  read-modify-write on Service Bus (`MessageContext.cs:549-556`). So each successful write returns
+  the new `RowVersion` (`OUTPUT inserted.RowVersion`), and the context expects that value on its next
+  write. Only a write by someone else causes a conflict.
+- The WebApp's clear checks the `RowVersion` it read.
+
+The write that loses the race fails with `TransientException`, and a handler's delivery is
+redelivered and reads the new state. The WebApp's RabbitMQ reprocess stops on a conflict: it reports
+it and doesn't send the trigger, and the operator retries. Today's Service Bus reprocess sends the
+trigger even when clearing fails (`AdminService.Resubmit.cs:224-228`); that stays as it is.
 
 ### 6.10 Parking and replay
 
@@ -661,9 +677,8 @@ unblocked keeps its rows, as a `Deferred` session does on Service Bus.
    `TopologyDescriptor`. Rejects an endpoint name containing `.`, which the permission patterns in
    §6.18 rely on.
 3. Declares exchanges, queues and bindings idempotently, then checks each queue with a passive
-   declare. RabbitMQ rejects re-declaring a queue with different arguments; the command reports such
-   queues and refuses to continue unless `--migrate-queue <name>` is given, which drains and
-   re-creates it.
+   declare. It never deletes or re-creates a queue. RabbitMQ rejects re-declaring a queue with
+   different arguments; the command reports such queues and stops before step 4.
 4. Only then, in one SQL transaction, writes `Topic` and `RoutingRule` and a new `RoutingVersion`.
    Routers and senders pick up the new routes at that point, when every destination already exists.
 5. Reports NimBus-named queues and bindings the catalog no longer describes, as the WebApp's
@@ -673,6 +688,14 @@ unblocked keeps its rows, as a `Deferred` session does on Service Bus.
 A partial apply is safe to re-run. If it stops before step 4, the old routing version stays active
 and routes only to resources that still exist; the extra resources are idle until the next run. If
 it stops after step 4, only the report and cleanup remain.
+
+**Changing a queue's arguments** is a maintenance procedure, like changing N (§6.6), because a
+partition queue receives copies from every router. Stop what publishes to the queue (the routers,
+and for an intake queue its producers), let it drain, run
+`nb topology migrate-queue <name> --transport rabbitmq`, which deletes and re-declares it, then
+restart. The command refuses to run while the queue has consumers or messages. If it stops between
+delete and declare, the queue is missing, but nothing publishes to it while its publishers are
+stopped; re-running the command or `nb topology apply` declares it again.
 
 `nb infra apply`, `nb deploy apps` and the other Azure commands don't apply on-prem; the
 distribution repository (§6.2) covers installation.
@@ -691,9 +714,12 @@ publisher send through `ISender`.
 Phase 1g replaces the concrete Service Bus dependencies with interfaces covering what each service
 does with them (endpoint status, subscription admin, dead-letter browsing, deferred inspection).
 Service Bus registers today's implementations behind them. RabbitMQ registers implementations that
-throw `NotSupportedException` until phase 4 supplies real ones; the API returns 501 for them, as it
-already does when a storage provider doesn't support an operation
-(`EventImplementation.Deferred.cs:61`).
+throw a new `TransportFeatureNotSupportedException` (a `NotSupportedException` naming the missing
+capability) until phase 4 supplies real ones. Phase 3b adds an MVC exception filter that maps
+exactly that type to a 501 response with the capability name. Today only one action maps a
+`NotSupportedException` to 501, locally (`EventImplementation.Deferred.cs:61`); other paths, such as
+the Cosmos DB-only copy on SQL Server, surface it as a server error. Mapping only the new type leaves
+those paths as they are. A test in 3b calls every gated action on a RabbitMQ WebApp and expects 501.
 
 **The API reports what is available.** Phase 3 adds two nullable fields to `ApplicationStatus` in
 `api-spec.yaml`: `transport` (`servicebus` or `rabbitmq`, next to the existing `storageProvider`,
@@ -865,7 +891,7 @@ Constraint: the org ruleset requires a status check named exactly `ci`, and the 
 | `webapp-client` | none (Node 22) | `npm ci` in `ClientApp` | `npm run test:ci` (Vitest) | JUnit results uploaded |
 | `rabbitmq` (phase 2) | RabbitMQ 4.3 + SQL Server | same as `sqlserver` | `TestCategory=LiveRabbitMq` | At least one test ran; nothing skipped |
 | `coverage` | — | — | Downloads every .NET lane's Cobertura files and runs ReportGenerator with today's Resolver/SDK filters | Informational, as today (issue #136); not a need of `ci` |
-| `ci` | — | — | `needs` every lane, `if: always()` | Fails unless every need's `result` is `success`; `failure`, `cancelled` and `skipped` all fail it |
+| `ci` | — | — | `needs` every required lane (all of the above except `coverage`), `if: always()` | Fails unless every need's `result` is `success`; `failure`, `cancelled` and `skipped` all fail it |
 
 Details:
 
@@ -964,7 +990,11 @@ the in-memory transport, the Service Bus emulator and RabbitMQ:
   parks and schedules through `ISender`: both writes fail. A task the handler left running writes
   after the delivery settled: the write fails.
 - **Session-state race.** The WebApp clears a session's state while a handler for that session
-  writes it: one write fails on `RowVersion`, and the outcome matches one of the two orders.
+  writes it: one write fails on `RowVersion`, and the outcome matches one of the two orders. When the
+  WebApp's write loses, no trigger is sent. A handler that parks (two session-state writes in one
+  delivery) doesn't conflict with itself.
+- **Retry after completion.** A handler fails with a retry policy: the retry is scheduled under the
+  lease after `Complete`, inside the same delivery scope.
 - **Scale-out.** Start a second replica: partitions move until each holds its fair share, with no
   overlap and no reordering.
 - **Crash points.** Kill the process before and after each SQL write and before and after each ack,
@@ -981,7 +1011,9 @@ the in-memory transport, the Service Bus emulator and RabbitMQ:
 - **Broker failover.** Kill a quorum queue leader and the active consumer; order holds.
 - **Publisher confirms.** Publish into a full intake queue (`reject-publish`) and to a missing
   exchange: `Send` throws, and an outbox row stays pending.
-- **Topology.** `nb topology apply` is idempotent; a changed queue argument is reported, not applied.
+- **Topology.** `nb topology apply` is idempotent; a changed queue argument is reported, not
+  applied, and the routing version doesn't change. `nb topology migrate-queue` refuses a queue with
+  consumers or messages.
   Add a consumer while routers run, and stop the apply before the routing version changes: nothing
   is routed to the new queues, and nothing is returned. Re-run it: routing starts.
 - **Permissions.** For each role in §6.18, a live test publishes and consumes what the role needs
@@ -1163,7 +1195,7 @@ Codex reviewed revision 6 (sound after fixes: 20 findings, 7 blocking). Revision
 
 | Finding | Change |
 |---|---|
-| Parking and scheduling through `ISender` can't carry the lease epoch (blocking) | Delivery scope read by the RabbitMQ `ISender`; closed on settlement (§6.8) |
+| Parking and scheduling through `ISender` can't carry the lease epoch (blocking) | Delivery scope read by the RabbitMQ `ISender` (§6.8) |
 | Ordinary sends had no confirm requirement (blocking) | Every RabbitMQ publish uses confirms and `mandatory`; `Send` throws on nack, return or timeout (§6.5) |
 | `nb topology apply` activated routes before declaring queues (blocking) | Declare and check first, then switch the routing version in one transaction; cleanup after routers report the new version; partial-apply rules (§6.15) |
 | WebApp gating had no API field, and controllers couldn't be built without Service Bus (blocking) | Two additive `ApplicationStatus` fields; Service Bus dependencies behind interfaces with 501-throwing RabbitMQ implementations (§6.16) |
@@ -1185,3 +1217,14 @@ Codex reviewed revision 6 (sound after fixes: 20 findings, 7 blocking). Revision
 Found while revising: tests read files under `docs/` (`BuildingAdaptersGuideTests`,
 `RateLimitWiringTests`), so the optional docs-only CI filter would have skipped tests that guard
 documentation. It is dropped (§8.2).
+
+Codex verified revision 7 (sound after fixes): 16 of the 20 findings resolved, four partly, and
+five new findings, three of them blocking, that cover the four. Revision 8 answers them:
+
+| Finding | Change |
+|---|---|
+| Closing the delivery scope at settlement breaks the retry Core schedules after `Complete` (blocking) | The scope lasts for the receiver's whole call into Core (§6.8) |
+| `--migrate-queue` could remove a live queue before the routing switch (blocking) | Apply never deletes a queue; changing queue arguments is a maintenance procedure with its own command and interruption rule (§6.15) |
+| The WebApp has no general `NotSupportedException` → 501 mapping (blocking) | A dedicated exception type, an exception filter for exactly that type, and a test over every gated action (§6.16) |
+| `RowVersion` advancement within a delivery, and reprocess on conflict | Each write returns the new `RowVersion`; the RabbitMQ reprocess stops without sending the trigger (§6.9) |
+| `ci` "needs every lane" contradicted the informational `coverage` job | "Every required lane" (§8.2) |
