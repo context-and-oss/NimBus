@@ -37,6 +37,8 @@ dotnet add package Akaule.NimBus.SDK
 
 Follow [Building Adapters](docs/building-adapters.md) to register publishers, handlers, and receiver hosting for a .NET Worker or Azure Function.
 
+Starting a customer project? [Onboarding a Customer Project](docs/onboarding.md) takes a delivery team from prerequisites through catalog design, environments, adapters and pipelines to go-live, using Dynamics 365 Sales and Business Central as the example.
+
 ## Learn more
 
 - [Architecture](docs/architecture.md) — components, routing, and recovery.
