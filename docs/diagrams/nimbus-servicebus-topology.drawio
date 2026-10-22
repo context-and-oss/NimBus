@@ -1,0 +1,216 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="NimBus-Service-Bus-topology" name="NimBus Service Bus topology">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2420" pageHeight="1320" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="NimBus internals: Service Bus topology, forwarding, rules and the Resolver (example catalog)" style="text;html=1;align=left;verticalAlign=middle;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="15" width="1900" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sales_pub" value="&lt;b&gt;Sales adapter&lt;/b&gt; publishes OrderPlaced to its own topic&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;To = '&amp;lt;EventTypeId&amp;gt;', From not set&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="300" y="60" width="330" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sales_topic" value="&lt;b&gt;Topic: SalesEndpoint&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="260" y="150" width="560" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="sales_trunk" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="260" y="200" width="24" height="690" as="geometry" />
+        </mxCell>
+        <mxCell id="SalesEndpoint_own" value="&lt;b&gt;SalesEndpoint&lt;/b&gt; · session · terminal: the endpoint's adapter receives here&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;to-SalesEndpoint: user.To = 'SalesEndpoint'&lt;br&gt;continuation: user.To = 'Continuation' ⇒ SET user.To = 'SalesEndpoint'; SET user.From = 'Continuation'&lt;br&gt;retry: user.To = 'Retry' ⇒ SET user.To = 'SalesEndpoint'; SET user.From = 'Retry'&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="220" width="520" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="SalesEndpoint_reply" value="&lt;b&gt;SalesEndpoint-reply&lt;/b&gt; · session · request/reply answers&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;ReplyFilter: user.To = 'SalesEndpoint-reply'&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="350" width="520" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="SalesEndpoint_res" value="&lt;b&gt;Resolver&lt;/b&gt; · no session · auto-forward ⇒ topic Resolver&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;from-SalesEndpoint: user.To = 'Resolver' ⇒ SET user.From = 'SalesEndpoint'&lt;br&gt;to-SalesEndpoint: user.To = 'SalesEndpoint'&lt;/font&gt;&lt;br&gt;&lt;i&gt;(audit copy of every delivery + every response)&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="420" width="520" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="SalesEndpoint_def" value="&lt;b&gt;Deferred&lt;/b&gt; · session (original session id) · TTL 14 days&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;DeferredFilter: user.To = 'Deferred' AND user.OriginalSessionId IS NOT NULL&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="520" width="520" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="SalesEndpoint_dproc" value="&lt;b&gt;DeferredProcessor&lt;/b&gt; · no session · replay triggers&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;DeferredProcessorFilter: user.To = 'DeferredProcessor'&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="605" width="520" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="sales_fwd_fin" value="&lt;b&gt;FinanceEndpoint&lt;/b&gt; · no session · auto-forward ⇒ topic FinanceEndpoint&lt;br&gt;one rule per event type FinanceEndpoint consumes from SalesEndpoint: &lt;b&gt;OrderPlaced, OrderCancelled&lt;/b&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;filter: user.EventTypeId = '&amp;lt;rule&amp;gt;' AND user.From IS NULL&lt;br&gt;action: SET user.From = 'SalesEndpoint'; SET user.EventId = newid(); SET user.To = 'FinanceEndpoint';&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="675" width="520" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="sales_fwd_wh" value="&lt;b&gt;WarehouseEndpoint&lt;/b&gt; · no session · auto-forward ⇒ topic WarehouseEndpoint&lt;br&gt;rule &lt;b&gt;OrderPlaced&lt;/b&gt; (same filter and action, To = 'WarehouseEndpoint')" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="830" width="520" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sales_ad" value="&lt;b&gt;Sales adapter&lt;/b&gt;&lt;br&gt;NimBus receiver&lt;br&gt;handlers, inbox,&lt;br&gt;retry policies" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="220" width="200" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="sales_req" value="&lt;b&gt;Sales adapter&lt;/b&gt;&lt;br&gt;Request() waits here" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="350" width="200" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="sales_dp" value="&lt;b&gt;Sales adapter&lt;/b&gt;&lt;br&gt;deferred processor&lt;br&gt;drains a Deferred session&lt;br&gt;on each trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="520" width="200" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="fin_pub" value="&lt;b&gt;Finance adapter&lt;/b&gt; publishes InvoiceIssued to its own topic&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;To = '&amp;lt;EventTypeId&amp;gt;', From not set&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="60" width="330" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="fin_topic" value="&lt;b&gt;Topic: FinanceEndpoint&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="150" width="560" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fin_trunk" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="2116" y="200" width="24" height="615" as="geometry" />
+        </mxCell>
+        <mxCell id="FinanceEndpoint_own" value="&lt;b&gt;FinanceEndpoint&lt;/b&gt; · session · terminal: the endpoint's adapter receives here&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;to-FinanceEndpoint: user.To = 'FinanceEndpoint'&lt;br&gt;continuation: user.To = 'Continuation' ⇒ SET user.To = 'FinanceEndpoint'; SET user.From = 'Continuation'&lt;br&gt;retry: user.To = 'Retry' ⇒ SET user.To = 'FinanceEndpoint'; SET user.From = 'Retry'&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="220" width="520" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="FinanceEndpoint_reply" value="&lt;b&gt;FinanceEndpoint-reply&lt;/b&gt; · session · request/reply answers&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;ReplyFilter: user.To = 'FinanceEndpoint-reply'&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="350" width="520" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="FinanceEndpoint_res" value="&lt;b&gt;Resolver&lt;/b&gt; · no session · auto-forward ⇒ topic Resolver&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;from-FinanceEndpoint: user.To = 'Resolver' ⇒ SET user.From = 'FinanceEndpoint'&lt;br&gt;to-FinanceEndpoint: user.To = 'FinanceEndpoint'&lt;/font&gt;&lt;br&gt;&lt;i&gt;(audit copy of every delivery + every response)&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="420" width="520" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="FinanceEndpoint_def" value="&lt;b&gt;Deferred&lt;/b&gt; · session (original session id) · TTL 14 days&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;DeferredFilter: user.To = 'Deferred' AND user.OriginalSessionId IS NOT NULL&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="520" width="520" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="FinanceEndpoint_dproc" value="&lt;b&gt;DeferredProcessor&lt;/b&gt; · no session · replay triggers&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;DeferredProcessorFilter: user.To = 'DeferredProcessor'&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="605" width="520" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="fin_fwd_sales" value="&lt;b&gt;SalesEndpoint&lt;/b&gt; · no session · auto-forward ⇒ topic SalesEndpoint&lt;br&gt;one rule per event type SalesEndpoint consumes from FinanceEndpoint: &lt;b&gt;InvoiceIssued&lt;/b&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;filter: user.EventTypeId = '&amp;lt;rule&amp;gt;' AND user.From IS NULL&lt;br&gt;action: SET user.From = 'FinanceEndpoint'; SET user.EventId = newid(); SET user.To = 'SalesEndpoint';&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="675" width="520" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="fin_ad" value="&lt;b&gt;Finance adapter&lt;/b&gt;&lt;br&gt;Worker receiver, or&lt;br&gt;[ServiceBusTrigger]&lt;br&gt;with sessions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="2180" y="220" width="200" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="fin_dp" value="&lt;b&gt;Finance adapter&lt;/b&gt;&lt;br&gt;deferred processor&lt;br&gt;(hosted service or&lt;br&gt;Functions trigger)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="2180" y="520" width="200" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="res_topic" value="&lt;b&gt;Topic: Resolver&lt;/b&gt; (system topic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontSize=14;fillColor=#ffe599;" vertex="1" parent="1">
+          <mxGeometry x="960" y="420" width="480" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="res_sub" value="&lt;b&gt;Resolver&lt;/b&gt; · session · keeps the &lt;b&gt;$Default&lt;/b&gt; true filter:&lt;br&gt;takes everything forwarded to the topic" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="960" y="470" width="480" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="resolver" value="&lt;b&gt;Resolver&lt;/b&gt; (Azure Function)&lt;br&gt;records each outcome" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="580" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="store" value="&lt;b&gt;message store&lt;/b&gt;&lt;br&gt;SQL Server or Cosmos DB" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fontSize=12;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="680" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ops" value="&lt;b&gt;WebApp&lt;/b&gt;&lt;br&gt;Manager sends Resubmission/SkipRequest&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;To = '&amp;lt;endpoint&amp;gt;', From = 'Manager'&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="800" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t_wh" value="&lt;b&gt;Topic: WarehouseEndpoint&lt;/b&gt;&lt;br&gt;the same five subscriptions&lt;br&gt;(own · -reply · Resolver · Deferred · DeferredProcessor)&lt;br&gt;no forwarders: it publishes nothing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="880" y="930" width="340" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="flow" value="&lt;b&gt;Example: OrderPlaced, from Sales to Finance and on to the Resolver&lt;/b&gt;&lt;br&gt;1. The Sales adapter publishes to topic SalesEndpoint with To = 'OrderPlaced' and no From. No terminal subscription matches that To.&lt;br&gt;2. The forwarder subscriptions &lt;b&gt;FinanceEndpoint&lt;/b&gt; and &lt;b&gt;WarehouseEndpoint&lt;/b&gt; match rule OrderPlaced (EventTypeId AND From IS NULL). Each action stamps From = 'SalesEndpoint', To = the consumer and a new EventId, and Service Bus auto-forwards a copy to the consumer's topic.&lt;br&gt;3. On topic FinanceEndpoint the copy matches &lt;b&gt;FinanceEndpoint&lt;/b&gt; (to-FinanceEndpoint), so the Finance adapter receives it in its session, and &lt;b&gt;Resolver&lt;/b&gt; (to-FinanceEndpoint), so an audit copy reaches the Resolver. Forwarders ignore it because From is now set; that prevents loops.&lt;br&gt;4. The Finance adapter replies on its own topic with To = 'Resolver' (Resolution, Error, Deferral or PendingHandoff response). Rule from-FinanceEndpoint stamps From and forwards it to the Resolver, which writes the outcome.&lt;br&gt;5. On failure the session is blocked. Later messages for that session are parked with To = 'Deferred'. A retry policy schedules To = 'Retry'.&lt;br&gt;6. An operator resubmits or skips in the WebApp: the Manager sends To = 'FinanceEndpoint', From = 'Manager'. When it succeeds, the adapter sends To = 'DeferredProcessor' and the deferred processor replays the parked messages in order." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fffde7;strokeColor=#bdbdbd;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1080" width="1480" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="defaults" value="&lt;b&gt;What the provisioner sets&lt;/b&gt; (nb topology apply · ServiceBusTopologyProvisioner)&lt;br&gt;• One topic per endpoint, plus the system topic &lt;b&gt;Resolver&lt;/b&gt;. Topics: SupportOrdering, duplicate detection 10 min, 5 GB.&lt;br&gt;• Every subscription: MaxDeliveryCount 10, lock 30 s, batched operations, dead-lettering on filter errors.&lt;br&gt;• Service Bus's &lt;b&gt;$Default&lt;/b&gt; (1=1) rule is deleted everywhere except the Resolver topic's own subscription.&lt;br&gt;• Forwarders come from the catalog: one subscription per consuming endpoint on the producer's topic, one rule per event type.&lt;br&gt;• A Command must have exactly one consumer, or provisioning fails.&lt;br&gt;• Re-running is idempotent: a subscription whose session flag or forward target changed is recreated." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fffde7;strokeColor=#bdbdbd;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1560" y="1080" width="820" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.3661;entryY=0.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="sales_pub" target="sales_topic">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.6518;entryY=0.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="fin_pub" target="fin_topic">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="c1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.4957;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.4957;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="SalesEndpoint_own" target="sales_ad">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.4909;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.4909;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="SalesEndpoint_reply" target="sales_req">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.25;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="SalesEndpoint_def" target="sales_dp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="c4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.4909;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.8;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="SalesEndpoint_dproc" target="sales_dp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" value="responses + control&lt;br&gt;messages to own topic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;dashed=1;strokeColor=#7f7f7f;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="sales_ad" target="sales_topic">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="140" y="175" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.4957;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.4957;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="FinanceEndpoint_own" target="fin_ad">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.25;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="FinanceEndpoint_def" target="fin_dp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.4909;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.8;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="FinanceEndpoint_dproc" target="fin_dp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d6" value="responses + control&lt;br&gt;messages to own topic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;dashed=1;strokeColor=#7f7f7f;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="fin_ad" target="fin_topic">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2280" y="175" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f1" value="auto-forward ⇒ FinanceEndpoint" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0357;entryY=0.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="sales_fwd_fin" target="fin_topic">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="860" y="745" />
+              <mxPoint x="860" y="120" />
+              <mxPoint x="1600" y="120" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f2" value="auto-forward ⇒ SalesEndpoint" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.9643;entryY=0.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="fin_fwd_sales" target="sales_topic">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1540" y="745" />
+              <mxPoint x="1540" y="135" />
+              <mxPoint x="800" y="135" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f3" value="auto-forward" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;dashed=1;strokeColor=#7f7f7f;exitX=1.0;exitY=0.4941;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="SalesEndpoint_res" target="res_topic">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="890" y="462" />
+              <mxPoint x="890" y="445" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f4" value="auto-forward" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;dashed=1;strokeColor=#7f7f7f;exitX=0.0;exitY=0.4941;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="FinanceEndpoint_res" target="res_topic">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1500" y="462" />
+              <mxPoint x="1500" y="445" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f5" value="auto-forward" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.8333;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.3529;entryY=0.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="sales_fwd_wh" target="t_wh">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1000" y="880" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="r1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="res_sub" target="resolver">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="write" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="resolver" target="store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="read" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="ops" target="store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="m1" value="resubmit / skip" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.625;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.6957;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="ops" target="FinanceEndpoint_own">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1560" y="850" />
+              <mxPoint x="1560" y="300" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m2" value="resubmit / skip" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.625;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.6957;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="ops" target="SalesEndpoint_own">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="840" y="850" />
+              <mxPoint x="840" y="300" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
