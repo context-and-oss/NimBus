@@ -1,0 +1,210 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="NimBus-platform" name="NimBus platform">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1170" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="NimBus platform: endpoints, adapters and the control plane" style="text;html=1;align=left;verticalAlign=middle;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1500" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="g_sb" value="Azure Service Bus · one topic per endpoint" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=none;verticalAlign=top;align=left;spacingLeft=12;spacingTop=4;fontStyle=1;fontSize=14;arcSize=3;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="700" y="100" width="620" height="720" as="geometry" />
+        </mxCell>
+        <mxCell id="g_nb" value="NimBus control plane" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=none;verticalAlign=top;align=left;spacingLeft=12;spacingTop=4;fontStyle=1;fontSize=14;arcSize=3;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="100" width="580" height="720" as="geometry" />
+        </mxCell>
+        <mxCell id="g_dep" value="Contracts and deployment" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=none;verticalAlign=top;align=left;spacingLeft=12;spacingTop=4;fontStyle=1;fontSize=14;arcSize=3;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="860" width="1920" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="s_crm" value="&lt;b&gt;Sales system (CRM)&lt;/b&gt;&lt;br&gt;external API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="160" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="a_crm" value="&lt;b&gt;Sales adapter&lt;/b&gt; (your code)&lt;br&gt;.NET Worker or Azure Function&lt;br&gt;NimBus SDK: publisher + subscriber&lt;br&gt;retries · inbox · circuit breaker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="340" y="140" width="280" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="t_crm" value="&lt;b&gt;SalesEndpoint&lt;/b&gt; topic&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;session subscription SalesEndpoint&lt;br&gt;+ -reply, Resolver, Deferred, DeferredProcessor&lt;br&gt;+ one forwarder per consuming endpoint&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="740" y="150" width="260" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sa_crm" value="change&lt;br&gt;notifications" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.3;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.3571;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="s_crm" target="a_crm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_as_crm" value="API calls&lt;br&gt;(idempotent upsert)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.7143;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.8;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="a_crm" target="s_crm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pub_crm" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.2857;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.25;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="a_crm" target="t_crm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sub_crm" value="receive (session)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.7143;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="t_crm" target="a_crm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_erp" value="&lt;b&gt;Finance system (ERP)&lt;/b&gt;&lt;br&gt;external API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="a_erp" value="&lt;b&gt;Finance adapter&lt;/b&gt; (your code)&lt;br&gt;.NET Worker or Azure Function&lt;br&gt;NimBus SDK: publisher + subscriber&lt;br&gt;retries · inbox · circuit breaker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="340" y="380" width="280" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="t_erp" value="&lt;b&gt;FinanceEndpoint&lt;/b&gt; topic&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;session subscription FinanceEndpoint&lt;br&gt;+ -reply, Resolver, Deferred, DeferredProcessor&lt;br&gt;+ one forwarder per consuming endpoint&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="740" y="390" width="260" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sa_erp" value="change&lt;br&gt;notifications" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.3;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.3571;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="s_erp" target="a_erp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_as_erp" value="API calls&lt;br&gt;(idempotent upsert)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.7143;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.8;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="a_erp" target="s_erp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pub_erp" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.2857;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.25;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="a_erp" target="t_erp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sub_erp" value="receive (session)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.7143;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="t_erp" target="a_erp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_bill" value="&lt;b&gt;Warehouse system (WMS)&lt;/b&gt;&lt;br&gt;external API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="a_bill" value="&lt;b&gt;Warehouse adapter&lt;/b&gt; (your code)&lt;br&gt;.NET Worker or Azure Function&lt;br&gt;NimBus SDK: publisher + subscriber&lt;br&gt;retries · inbox · circuit breaker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="340" y="620" width="280" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="t_bill" value="&lt;b&gt;WarehouseEndpoint&lt;/b&gt; topic&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;session subscription WarehouseEndpoint&lt;br&gt;+ -reply, Resolver, Deferred, DeferredProcessor&lt;br&gt;+ one forwarder per consuming endpoint&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="740" y="630" width="260" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sa_bill" value="change&lt;br&gt;notifications" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.3;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.3571;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="s_bill" target="a_bill">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_as_bill" value="API calls&lt;br&gt;(idempotent upsert)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.7143;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.8;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="a_bill" target="s_bill">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pub_bill" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.2857;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.25;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="a_bill" target="t_bill">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sub_bill" value="receive (session)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.7143;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="t_bill" target="a_bill">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t_res" value="&lt;b&gt;Resolver&lt;/b&gt; topic&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;system topic: an audit copy of every&lt;br&gt;delivery and every response&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fillColor=#ffe599;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="390" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="note_sb" value="Forwarding is generated from the catalog: when an endpoint declares Consumes&amp;lt;T&amp;gt;(), the producer's topic gets a forwarding subscription with a rule for T that auto-forwards to the consumer's topic." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fffde7;strokeColor=#bdbdbd;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="600" width="250" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" value="forward&lt;br&gt;e.g. OrderPlaced" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.2308;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.2308;entryY=0.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="t_crm" target="t_erp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f2" value="forward&lt;br&gt;e.g. InvoiceIssued" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.6923;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.6923;entryY=1.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="t_erp" target="t_crm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f2b_label" value="forward&lt;br&gt;e.g. OrderPlaced" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="728" y="545" width="110" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="f2b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.9333;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="t_crm" target="t_bill">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="720" y="262" />
+              <mxPoint x="720" y="690" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;dashed=1;strokeColor=#7f7f7f;exitX=1.0;exitY=0.6667;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="t_crm" target="t_res">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1160" y="230" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f4" value="audit copy&lt;br&gt;+ responses" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;dashed=1;strokeColor=#7f7f7f;exitX=1.0;exitY=0.4167;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="t_erp" target="t_res">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;dashed=1;strokeColor=#7f7f7f;exitX=1.0;exitY=0.1667;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.25;entryY=1.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="t_bill" target="t_res">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1020" y="650" />
+              <mxPoint x="1020" y="560" />
+              <mxPoint x="1100" y="560" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="resolver" value="&lt;b&gt;Resolver&lt;/b&gt;&lt;br&gt;Azure Function&lt;br&gt;records every outcome" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="390" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="store" value="&lt;b&gt;Message store&lt;/b&gt;&lt;br&gt;SQL Server or Cosmos DB" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fontSize=12;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1700" y="390" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="webapp" value="&lt;b&gt;WebApp&lt;/b&gt;&lt;br&gt;history · failures · resubmit · skip&lt;br&gt;roles · REST API · operator MCP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1690" y="600" width="240" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="ops" value="&lt;b&gt;Operators&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1690" y="740" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" value="Resolver&lt;br&gt;subscription" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="t_res" target="resolver">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="write" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="resolver" target="store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="read" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="webapp" target="store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="ops" target="webapp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r5" value="resubmit / skip&lt;br&gt;(to the endpoint's topic)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1.0;entryY=0.7708;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="webapp" target="g_sb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="contracts" value="&lt;b&gt;Contracts package&lt;/b&gt; (NuGet)&lt;br&gt;Platform class: endpoints, events,&lt;br&gt;Produces&amp;lt;T&amp;gt; / Consumes&amp;lt;T&amp;gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="920" width="320" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="nb" value="&lt;b&gt;nb CLI&lt;/b&gt; (nb setup)&lt;br&gt;nb infra apply · nb topology apply&lt;br&gt;nb deploy apps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="520" y="920" width="320" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="azure" value="&lt;b&gt;Azure resources&lt;/b&gt;&lt;br&gt;Service Bus · message store · App Insights&lt;br&gt;Resolver Function App · WebApp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1560" y="920" width="360" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="k1" value="--platform-package" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="contracts" target="nb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="k2" value="referenced by every adapter" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;dashed=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="contracts" target="a_bill">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="240" y="840" />
+              <mxPoint x="480" y="840" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="k3" value="topology apply" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="nb" target="g_sb">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="680" y="845" />
+              <mxPoint x="1010" y="845" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="k4" value="deploy apps" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.3333;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.2069;entryY=1.0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="nb" target="g_nb">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1500" y="960" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="k5" value="infra apply" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=8;exitX=1.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.75;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="nb" target="azure">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_title" value="Legend" style="text;html=1;align=left;verticalAlign=middle;fontSize=22;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1090" width="120" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_ad" value="Adapter (your code)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="160" y="1090" width="170" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_sys" value="Business system" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="345" y="1090" width="170" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_topic" value="Service Bus topic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="530" y="1090" width="170" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_nb" value="NimBus component" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="715" y="1090" width="170" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_dash" value="Endpoint and event names are examples. Dashed grey: auto-forwarded audit copy." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fffde7;strokeColor=#bdbdbd;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;fontSize=11;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="900" y="1090" width="520" height="36" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
