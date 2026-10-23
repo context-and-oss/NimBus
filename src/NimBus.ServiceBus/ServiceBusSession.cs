@@ -1,7 +1,9 @@
 using Azure.Messaging.ServiceBus;
+using Grpc.Core;
 using NimBus.Core.Messages;
 using Microsoft.Azure.Functions.Worker;
 using System;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -56,7 +58,7 @@ public class ServiceBusSession : IServiceBusSession
     {
         if (_messageActions != null)
         {
-            return _messageActions.CompleteMessageAsync(message.Message, cancellationToken);
+            return FromHost(() => _messageActions.CompleteMessageAsync(message.Message, cancellationToken));
         }
         if (_sessionReceiver != null)
         {
@@ -75,7 +77,7 @@ public class ServiceBusSession : IServiceBusSession
     {
         if (_messageActions != null)
         {
-            return _messageActions.DeadLetterMessageAsync(message.Message, null, deadLetterReason, deadLetterErrorDescription, cancellationToken);
+            return FromHost(() => _messageActions.DeadLetterMessageAsync(message.Message, null, deadLetterReason, deadLetterErrorDescription, cancellationToken));
         }
         if (_sessionReceiver != null)
         {
@@ -95,7 +97,7 @@ public class ServiceBusSession : IServiceBusSession
         System.BinaryData sessionData;
         if (_sessionActions != null)
         {
-            sessionData = await _sessionActions.GetSessionStateAsync(cancellationToken);
+            sessionData = await FromHost(() => _sessionActions.GetSessionStateAsync(cancellationToken));
         }
         else if (_processSessionArgs != null)
         {
@@ -115,7 +117,7 @@ public class ServiceBusSession : IServiceBusSession
 
         if (_sessionActions != null)
         {
-            await _sessionActions.SetSessionStateAsync(sessionData, cancellationToken);
+            await FromHost(() => _sessionActions.SetSessionStateAsync(sessionData, cancellationToken));
         }
         else if (_processSessionArgs != null)
         {
@@ -139,6 +141,61 @@ public class ServiceBusSession : IServiceBusSession
         var (topicName, _) = ParseEntityPath();
         await using var sender = _serviceBusClient.CreateSender(topicName);
         await sender.ScheduleMessageAsync(message, scheduledEnqueueTime, cancellationToken);
+    }
+
+    // The Functions isolated worker settles messages and reads session state through the host
+    // over gRPC, so a Service Bus failure there reaches the worker as an RpcException that
+    // carries the host's ServiceBusException only as text. Rebuild the ServiceBusException
+    // from that text so a lost session lock or a transient fault is classified the same way
+    // as on the other transports (see MessageContext), instead of dead-lettering the message.
+    private static async Task FromHost(Func<Task> call)
+    {
+        try
+        {
+            await call();
+        }
+        catch (RpcException e) when (TryRebuildHostException(e, out var serviceBusException))
+        {
+            throw serviceBusException;
+        }
+    }
+
+    private static async Task<T> FromHost<T>(Func<Task<T>> call)
+    {
+        try
+        {
+            return await call();
+        }
+        catch (RpcException e) when (TryRebuildHostException(e, out var serviceBusException))
+        {
+            throw serviceBusException;
+        }
+    }
+
+    // The host formats the outermost exception first, as "<type>: <message> (<reason>). For
+    // troubleshooting information, see ...", followed by any inner exceptions after " ---> ".
+    private static readonly Regex HostServiceBusException = new(
+        @"^Azure\.Messaging\.ServiceBus\.ServiceBusException: (?<message>.*?) \((?<reason>[A-Za-z]+)\)(?:\.|$)",
+        RegexOptions.CultureInvariant);
+
+    private static bool TryRebuildHostException(RpcException exception, out ServiceBusException serviceBusException)
+    {
+        var outermost = exception.Status.Detail ?? string.Empty;
+        var innerStart = outermost.IndexOf(" ---> ", StringComparison.Ordinal);
+        if (innerStart >= 0)
+            outermost = outermost.Substring(0, innerStart);
+
+        var match = HostServiceBusException.Match(outermost);
+        if (match.Success
+            && Enum.TryParse(match.Groups["reason"].Value, out ServiceBusFailureReason reason)
+            && Enum.IsDefined(reason))
+        {
+            serviceBusException = new ServiceBusException(match.Groups["message"].Value, reason, innerException: exception);
+            return true;
+        }
+
+        serviceBusException = null!;
+        return false;
     }
 
     private (string topicName, string? subscriptionName) ParseEntityPath()
