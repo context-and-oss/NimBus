@@ -125,6 +125,22 @@ public class ServiceBusSessionTests
         await Assert.ThrowsExactlyAsync<TransientException>(() => ctx.GetBlockedByEventId());
     }
 
+    [TestMethod]
+    public async Task MessageContext_DeadLetter_HostReportsSessionLockLost_ThrowsTransient()
+    {
+        var session = new ServiceBusSession(
+            new ThrowingMessageActions(HostFailure(HostSessionLockLostDetail)),
+            ServiceBusTestDoubles.CreateSessionActions(),
+            serviceBusClient: null,
+            entityPath: null,
+            sessionId: "session-1");
+        var ctx = new MessageContext(new ServiceBusMessage(ServiceBusModelFactory.ServiceBusReceivedMessage(sessionId: "session-1")), session);
+
+        var exception = await Assert.ThrowsExactlyAsync<TransientException>(() => ctx.DeadLetter("reason"));
+
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, ((ServiceBusException)exception.InnerException!).Reason);
+    }
+
     private sealed class ThrowingSessionActions : ServiceBusSessionMessageActions
     {
         private readonly Exception _exception;
@@ -143,5 +159,7 @@ public class ServiceBusSessionTests
         public ThrowingMessageActions(Exception exception) => _exception = exception;
 
         public override Task CompleteMessageAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken = default) => throw _exception;
+
+        public override Task DeadLetterMessageAsync(ServiceBusReceivedMessage message, System.Collections.Generic.Dictionary<string, object>? propertiesToModify = null, string? deadLetterReason = null, string? deadLetterErrorDescription = null, CancellationToken cancellationToken = default) => throw _exception;
     }
 }
