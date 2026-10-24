@@ -219,7 +219,6 @@ public sealed class StoreResultCacheTests
             store,
             store,
             serviceBusManagement: null!,
-            topologyRebuilder: null!,
             new AllowAllAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,
             auditLogService: null!,

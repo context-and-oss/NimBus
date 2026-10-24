@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core;
@@ -34,14 +35,17 @@ public sealed class EndpointPurgeTests
     public async Task Purge_recreates_the_endpoint_subscription_from_the_topology_descriptor()
     {
         var serviceBus = new FakeServiceBusManagement();
-        var rebuilder = new FakeTopologyRebuilder();
+        var rebuilder = new OrderRecordingRebuilder(serviceBus);
         var sut = CreateSut(serviceBus, rebuilder, "ep-1");
 
         await sut.PostEndpointPurgeAsync("ep-1");
 
         CollectionAssert.AreEqual(new[] { ("ep-1", "ep-1") }, serviceBus.DeletedSubscriptions);
         Assert.HasCount(1, rebuilder.Rebuilt);
-        var (topic, rebuilt) = rebuilder.Rebuilt[0];
+        var (topic, rebuilt, deletedFirst) = rebuilder.Rebuilt[0];
+        // Rebuilding first would leave the old subscription and its backlog in place, and the
+        // delete would then remove the endpoint's subscription altogether.
+        Assert.IsTrue(deletedFirst, "The subscription must be deleted before it is rebuilt.");
         var expected = TopologyDescriptor.EndpointSubscription("ep-1");
         Assert.AreEqual("ep-1", topic);
         Assert.AreEqual(expected.Name, rebuilt.Name);
@@ -65,7 +69,7 @@ public sealed class EndpointPurgeTests
 
     private static EndpointImplementation CreateSut(
         FakeServiceBusManagement serviceBus,
-        FakeTopologyRebuilder rebuilder,
+        ITopologyRebuilder rebuilder,
         string endpointId,
         RecordingAuditLogService? audit = null)
     {
@@ -73,21 +77,37 @@ public sealed class EndpointPurgeTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Environment"] = "dev" })
             .Build();
         var store = new InMemoryMessageStore();
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().AddSingleton(rebuilder).BuildServiceProvider(),
+        };
 
         return new EndpointImplementation(
-            new HttpContextAccessor { HttpContext = new DefaultHttpContext() },
+            new HttpContextAccessor { HttpContext = httpContext },
             new FakePlatform(endpointId),
             configuration,
             store,
             store,
             store,
             serviceBus,
-            rebuilder,
             new OwnerAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,
             audit ?? new RecordingAuditLogService(),
             new StoreResultCache(new MemoryCache(new MemoryCacheOptions())),
             PayloadRedactionTests.NewRedaction());
+    }
+
+    /// <summary>Records each rebuild and whether the subscription had already been deleted.</summary>
+    private sealed class OrderRecordingRebuilder(FakeServiceBusManagement serviceBus) : ITopologyRebuilder
+    {
+        public List<(string Topic, ExpectedSubscription Expected, bool DeletedFirst)> Rebuilt { get; } = new();
+
+        public Task EnsureSubscriptionAsync(
+            string topicName, ExpectedSubscription expected, CancellationToken cancellationToken = default)
+        {
+            Rebuilt.Add((topicName, expected, serviceBus.DeletedSubscriptions.Contains((topicName, expected.Name))));
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingAuditLogService : IAuditLogService

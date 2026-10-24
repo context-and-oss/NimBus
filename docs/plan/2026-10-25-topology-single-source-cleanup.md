@@ -29,10 +29,14 @@ The drift risk is real: the copies that each re-derived the topology once left o
    with `ITopologyRebuilder.EnsureSubscriptionAsync(endpoint,
    TopologyDescriptor.EndpointSubscription(endpoint))`. The end state is the same; failures
    still throw. Add a regression test. `ClearEndpoint` stays as public API, unchanged; whether
-   to deprecate it is a separate decision.
+   to deprecate it is a separate decision. `Akaule.NimBus.WebApp` publishes
+   `EndpointImplementation`, so its constructor keeps its signature: the rebuilder is resolved
+   from the request's services, where the WebApp always registers it. A second constructor as a
+   bridge would make DI constructor selection ambiguous (see `docs/versioning.md`).
 3. `ResolverService.DetermineEndpoint`: replace the remarks, which describe Broker and
-   Publisher-role rules the code doesn't have, and drop the constant `EndpointRole` from its
-   return value.
+   Publisher-role rules the code doesn't have. Keep the `(endpointId, role)` return value: its
+   tests are the only coverage of the stored `EndpointRole`, and moving that coverage isn't
+   worth the churn for an internal method.
 
 ## Left unchanged
 
