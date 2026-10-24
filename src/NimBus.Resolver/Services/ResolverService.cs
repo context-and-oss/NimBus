@@ -637,30 +637,12 @@ public class ResolverService : IMessageHandler
     /// Determines the endpoint ID and role based on message properties.
     /// </summary>
     /// <remarks>
-    /// Endpoint determination rules:
-    /// 1. If message is from Broker with ErrorResponse type → Publisher role, use OriginatingFrom as endpoint
-    /// 2. If message is from Broker → use To as endpoint (Subscriber role)
-    /// 3. If message is a request type (EventRequest, ContinuationRequest, RetryRequest, ResubmissionRequest, SkipRequest) → use To as endpoint
-    /// 4. Otherwise → use From as endpoint (response from subscriber)
+    /// A request (see <see cref="IsRequest"/>) is addressed to the subscriber, so its endpoint
+    /// is <c>To</c>; anything else is a response from the subscriber, so its endpoint is
+    /// <c>From</c>. The role is always <see cref="EndpointRole.Subscriber"/>.
     /// </remarks>
-    internal (string? endpointId, EndpointRole role) DetermineEndpoint(IReceivedMessage message)
-    {
-        var endpointRole = EndpointRole.Subscriber;
-        string? endpointId;
-
-        // Request types are directed to the subscriber (use To)
-        if (IsRequest(message.MessageType))
-        {
-            endpointId = message.To;
-        }
-        // Response types come from the subscriber (use From)
-        else
-        {
-            endpointId = message.From;
-        }
-
-        return (endpointId, endpointRole);
-    }
+    internal (string? endpointId, EndpointRole role) DetermineEndpoint(IReceivedMessage message) =>
+        (IsRequest(message.MessageType) ? message.To : message.From, EndpointRole.Subscriber);
 
     private static bool IsRequest(MessageType messageType) =>
         messageType == MessageType.EventRequest ||
