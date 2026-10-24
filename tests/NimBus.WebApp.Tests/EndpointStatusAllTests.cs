@@ -86,6 +86,7 @@ public sealed class EndpointStatusAllTests
             store,
             store,
             serviceBusManagement: null!,
+            topologyRebuilder: null!,
             new AllowAllAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,
             auditLogService: null!,

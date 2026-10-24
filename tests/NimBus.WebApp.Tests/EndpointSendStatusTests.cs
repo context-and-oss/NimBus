@@ -142,6 +142,7 @@ public sealed class EndpointSendStatusTests
             subscriptionStore: null!,
             metadataStore: null!,
             sb,
+            topologyRebuilder: null!, // send status never rebuilds topology
             new FakeAuthorizationService(canManage),
             NullLogger<EndpointImplementation>.Instance,
             audit,

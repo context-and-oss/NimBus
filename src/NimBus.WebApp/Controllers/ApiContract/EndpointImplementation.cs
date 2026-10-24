@@ -12,6 +12,7 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using Microsoft.Extensions.Configuration;
 using NimBus.Management.ServiceBus;
+using NimBus.ServiceBus.Provisioning;
 using System.Security.Claims;
 using System.Text;
 using System.Reflection;
@@ -36,6 +37,7 @@ public class EndpointImplementation : IEndpointApiController
     private readonly ISubscriptionStore _subscriptionStore;
     private readonly IEndpointMetadataStore _metadataStore;
     private readonly IServiceBusManagement serviceBusManagement;
+    private readonly ITopologyRebuilder _topologyRebuilder;
     private readonly IEndpointAuthorizationService _authorizationService;
     private readonly HttpContext _context;
     private readonly ILogger<EndpointImplementation> _logger;
@@ -54,6 +56,7 @@ public class EndpointImplementation : IEndpointApiController
         ISubscriptionStore subscriptionStore,
         IEndpointMetadataStore metadataStore,
         IServiceBusManagement serviceBusManagement,
+        ITopologyRebuilder topologyRebuilder,
         IEndpointAuthorizationService authorizationService,
         ILogger<EndpointImplementation> logger,
         IAuditLogService auditLogService,
@@ -66,6 +69,7 @@ public class EndpointImplementation : IEndpointApiController
         _subscriptionStore = subscriptionStore;
         _metadataStore = metadataStore;
         this.serviceBusManagement = serviceBusManagement;
+        _topologyRebuilder = topologyRebuilder;
         this._authorizationService = authorizationService;
         _context = contextAccessor.HttpContext!;
         _logger = logger;
@@ -507,8 +511,11 @@ public class EndpointImplementation : IEndpointApiController
         // Purge endpoint
         var isPurged = await messageStore.PurgeMessages(endpointName);
 
-        var endpointManagement = new EndpointManagement(serviceBusManagement);
-        await endpointManagement.ClearEndpoint(endpointName);
+        // Discard the subscription's backlog by recreating it from the same declaration
+        // `nb topology apply` provisions, so the purge cannot drift from provisioning.
+        await serviceBusManagement.DeleteSubscription(endpointName, endpointName);
+        await _topologyRebuilder.EnsureSubscriptionAsync(
+            endpointName, TopologyDescriptor.EndpointSubscription(endpointName));
 
         await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
             endpointId: endpointName);
