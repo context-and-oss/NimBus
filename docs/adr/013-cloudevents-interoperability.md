@@ -1,7 +1,9 @@
 # ADR-013: CloudEvents 1.0 Interoperability Layer
 
 ## Status
-Accepted
+Accepted. The transport rule quoted under Context still holds for CloudEvents. Separately,
+[ADR-018](018-on-prem-rabbitmq-transport.md) (proposed, 2026-10-21) would allow one additional
+transport, RabbitMQ, for on-premises installations.
 
 ## Context
 
