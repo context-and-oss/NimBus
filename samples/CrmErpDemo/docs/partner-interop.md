@@ -144,11 +144,10 @@ ContentType             = "application/json"   // datacontenttype
 ## Topology
 
 `PartnerInbound` (+ session-required sub `CrmEndpoint`) and `ErpEndpoint/PartnerPortalCapture`
-(+ `cloudevents-capture` rule) are declared in **both provisioning paths**:
-[`EmulatorTopologyConfigBuilder`](../CrmErpDemo.Contracts/EmulatorTopologyConfigBuilder.cs) for
-the local emulator and [`CrmErpDemo.Provisioner`](../CrmErpDemo.Provisioner/Program.cs) for real
-Azure. `ErpEndpoint` also implements `ICloudEventsAware`, so the AsyncAPI export carries
-`x-cloudevents`.
+(+ `cloudevents-capture` rule) are declared in
+[`CrmErpDemo.Provisioner`](../CrmErpDemo.Provisioner/Program.cs), which the AppHost runs against
+both the NimBus emulator and real Azure. `ErpEndpoint` also implements `ICloudEventsAware`, so the
+AsyncAPI export carries `x-cloudevents`.
 
 ## Key files
 
