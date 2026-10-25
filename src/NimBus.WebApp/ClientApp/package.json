@@ -55,7 +55,7 @@
     "typescript": "^5.3.3",
     "vite": "^8.3.2",
     "vite-plugin-compression2": "2.5.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "overrides": {
     "js-yaml": "^4.3.2"
