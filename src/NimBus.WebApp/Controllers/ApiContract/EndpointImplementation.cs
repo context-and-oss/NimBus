@@ -11,7 +11,9 @@ using Microsoft.AspNetCore.Http;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using NimBus.Management.ServiceBus;
+using NimBus.ServiceBus.Provisioning;
 using System.Security.Claims;
 using System.Text;
 using System.Reflection;
@@ -507,8 +509,14 @@ public class EndpointImplementation : IEndpointApiController
         // Purge endpoint
         var isPurged = await messageStore.PurgeMessages(endpointName);
 
-        var endpointManagement = new EndpointManagement(serviceBusManagement);
-        await endpointManagement.ClearEndpoint(endpointName);
+        // Discard the subscription's backlog by recreating it from the same declaration
+        // `nb topology apply` provisions, so the purge cannot drift from provisioning.
+        // The rebuilder is resolved here rather than injected so the constructor, which
+        // Akaule.NimBus.WebApp publishes, keeps its signature.
+        var topologyRebuilder = _context.RequestServices.GetRequiredService<ITopologyRebuilder>();
+        await serviceBusManagement.DeleteSubscription(endpointName, endpointName);
+        await topologyRebuilder.EnsureSubscriptionAsync(
+            endpointName, TopologyDescriptor.EndpointSubscription(endpointName));
 
         await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
             endpointId: endpointName);
