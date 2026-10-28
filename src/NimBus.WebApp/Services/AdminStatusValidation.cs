@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NimBus.MessageStore;
-using NimBus.WebApp.Services.Operations;
+using NimBus.MessageStore.Abstractions;
 
 namespace NimBus.WebApp.Services;
 
@@ -11,14 +11,10 @@ internal static class AdminStatusValidation
     private static readonly IReadOnlyDictionary<string, string> ResolutionStatusNames =
         CreateResolutionStatusNames();
 
-    // Bulk skip sends each skip as a Web UI operator command, so it accepts exactly the source
-    // statuses that command acts on. A Pending, TooManyRequests or Published message is still on
-    // its way: there is no blocked session to release, and the endpoint would process it anyway.
+    // Bulk skip sends each skip to the endpoint, so it accepts only the statuses a skip settles;
+    // see SkipRules.BulkSkipSourceStatuses for why the others are refused.
     private static readonly HashSet<string> SkipSourceStatusNames = new(
-        Enum.GetValues<ResolutionStatus>()
-            .Where(status => OperatorCommandCoordinator.IsActionable(
-                new UnresolvedEvent { ResolutionStatus = status }, OperatorChannel.WebApp))
-            .Select(status => status.ToString()),
+        SkipRules.BulkSkipSourceStatuses.Select(status => status.ToString()),
         StringComparer.Ordinal);
 
     public static bool TryNormalizeDeleteStatuses(

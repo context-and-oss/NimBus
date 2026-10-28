@@ -258,10 +258,11 @@ export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: 
 
 // ──────────────────── Skip Messages ────────────────────────
 
-// The statuses a per-message Skip acts on: each bulk skip is sent to the endpoint the same way.
+// The statuses the server accepts (SkipRules.BulkSkipSourceStatuses): each skip is sent to the
+// endpoint, which settles these. Deferred is left out: its parked copy replays and runs once the
+// session's block clears, whatever a skip recorded.
 const SKIPPABLE_STATUSES: api.AdminSkipSourceStatus[] = [
   api.AdminSkipSourceStatus.Failed,
-  api.AdminSkipSourceStatus.Deferred,
   api.AdminSkipSourceStatus.DeadLettered,
   api.AdminSkipSourceStatus.Unsupported,
 ];

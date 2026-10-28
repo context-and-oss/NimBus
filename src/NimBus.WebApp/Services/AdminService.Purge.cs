@@ -578,31 +578,32 @@ public partial class AdminService
 
         foreach (var eventId in eventIds)
         {
-            var lookup = await operatorCommands.FindCurrentAsync(endpointId, eventId);
-            var target = lookup.Target;
-
-            // Resolved or skipped by someone else since it was read: nothing left to do.
-            if (lookup.Status == OperatorCommandStatus.NotFound)
-                continue;
-
-            if (target == null)
-            {
-                failed++;
-                errors.Add($"{eventId}: {lookup.Status}");
-                continue;
-            }
-
-            // A row that moved on since it was read (a newer attempt, another status) is no longer
-            // one the operator asked to skip.
-            if (!statuses.Contains(target.Row.ResolutionStatus.ToString())
-                || (before.HasValue && target.Row.UpdatedAt >= before.Value))
-            {
-                continue;
-            }
-
+            // One row's store or Service Bus failure is that row's, not the batch's.
             OperatorCommandResult result;
             try
             {
+                var lookup = await operatorCommands.FindCurrentAsync(endpointId, eventId);
+                var target = lookup.Target;
+
+                // Resolved or skipped by someone else since it was read: nothing left to do.
+                if (lookup.Status == OperatorCommandStatus.NotFound)
+                    continue;
+
+                if (target == null)
+                {
+                    failed++;
+                    errors.Add($"{eventId}: {lookup.Status}");
+                    continue;
+                }
+
+                // A row that moved on since it was read (a newer attempt, another status) is no
+                // longer one the operator asked to skip.
+                if (!statuses.Contains(target.Row.ResolutionStatus.ToString())
+                    || (before.HasValue && target.Row.UpdatedAt >= before.Value))
+                {
+                    continue;
+                }
+
                 result = await operatorCommands.SkipAsync(target, BulkSkipCommand);
             }
             catch (Exception ex)

@@ -3,7 +3,9 @@ using McMaster.Extensions.CommandLineUtils;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json.Linq;
 using NimBus.Core.Messages;
+using NimBus.Manager;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using NimBus.ServiceBus;
 using Spectre.Console;
@@ -30,9 +32,9 @@ static class Container
         await UpdateMessagesAndResubmit(serviceBusClient, dbClient, nameArg.Value!, ResolutionStatus.Failed);
     }
 
-    public static async Task SkipMessages(CosmosDbClient dbClient, CommandArgument nameArg, List<string> statuses, DateTime? before)
+    public static async Task SkipMessages(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, CommandArgument nameArg, List<string> statuses, DateTime? before)
     {
-        await UpdateMessagesAsSkipped(dbClient, nameArg.Value!, statuses, before);
+        await SendSkipRequests(new ManagerClient(serviceBusClient), dbClient, nameArg.Value!, statuses, before);
     }
 
     public static async Task DeleteMessages(CosmosClient cosmosClient, string to)
@@ -211,41 +213,71 @@ static class Container
         });
     }
 
-    static async Task UpdateMessagesAsSkipped(CosmosDbClient dbClient, string endpoint, List<string> resolutionStatus, DateTime? before)
+    // Sends the endpoint a SkipRequest per matching event, as the WebApp's Skip does: only the
+    // endpoint can clear a session's block, so writing Skipped to the store would leave the
+    // session blocked (#287). The Resolver records Skipped from the endpoint's SkipResponse.
+    internal static async Task<int> SendSkipRequests(IManagerClient manager, IMessageTrackingStore dbClient, string endpoint, List<string> resolutionStatus, DateTime? before)
     {
         if (before.HasValue)
-            AnsiConsole.MarkupLine($"[blue]Skipping messages updated before {before.Value:u} in CosmosDB...[/]");
+            AnsiConsole.MarkupLine($"[blue]Finding messages updated before {before.Value:u} to skip...[/]");
         else
-            AnsiConsole.MarkupLine("[blue]Skipping messages in CosmosDB...[/]");
+            AnsiConsole.MarkupLine("[blue]Finding messages to skip...[/]");
 
+        // Read every match before sending any skip: the Resolver moves skipped rows out of the
+        // filter while it is still being paged.
+        var events = new List<UnresolvedEvent>();
         string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
-        SearchResponse searchResponse;
 
         do
         {
-            AnsiConsole.MarkupLine("[blue]Retrieving messages[/]");
-            searchResponse = await dbClient.GetEventsByFilter(new EventFilter() { EndPointId = endpoint, ResolutionStatus = resolutionStatus }, continuationToken, maxSearchItemsCount);
+            var searchResponse = await dbClient.GetEventsByFilter(new EventFilter() { EndPointId = endpoint, ResolutionStatus = resolutionStatus }, continuationToken, maxSearchItemsCount);
             continuationToken = searchResponse.ContinuationToken;
-            AnsiConsole.MarkupLine($"[blue]Retrieved {searchResponse.Events.Count()} messages[/]");
 
             foreach (var @event in searchResponse.Events)
             {
                 if (before.HasValue && @event.UpdatedAt >= before.Value)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Skipping message {@event.EventId.EscapeMarkup()} - updated at {@event.UpdatedAt:u}, not before cutoff[/]");
+                    AnsiConsole.MarkupLine($"[yellow]Leaving message {@event.EventId.EscapeMarkup()} - updated at {@event.UpdatedAt:u}, not before cutoff[/]");
                     continue;
                 }
 
-                AnsiConsole.MarkupLine($"[dim]Skipping message with EventId {@event.EventId.EscapeMarkup()}[/]");
-                bool messageUpdated = await dbClient.UploadSkippedMessage(@event.EventId, @event.SessionId!, endpoint, @event);
-                if (messageUpdated)
-                {
-                    AnsiConsole.MarkupLine($"[green]Skipped message {@event.EventId.EscapeMarkup()}[/]");
-                }
+                events.Add(@event);
             }
         }
         while (continuationToken != null);
+
+        AnsiConsole.MarkupLine($"[blue]Sending skips for {events.Count} messages[/]");
+
+        int sent = 0;
+        foreach (var @event in events)
+        {
+            try
+            {
+                // Parent the skip to the row's latest message, as the WebApp does.
+                var message = (string.IsNullOrEmpty(@event.LastMessageId) ? null : await dbClient.GetMessage(@event.EventId, @event.LastMessageId))
+                    ?? new MessageEntity
+                    {
+                        EventId = @event.EventId,
+                        MessageId = @event.LastMessageId!,
+                        SessionId = @event.SessionId!,
+                        OriginatingMessageId = @event.OriginatingMessageId!,
+                        EventTypeId = @event.EventTypeId!,
+                    };
+                var eventTypeId = string.IsNullOrEmpty(message.EventTypeId) ? @event.EventTypeId! : message.EventTypeId;
+
+                await manager.Skip(message, endpoint, eventTypeId);
+                sent++;
+                AnsiConsole.MarkupLine($"[green]Sent skip for message {@event.EventId.EscapeMarkup()}[/]");
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Could not skip message {@event.EventId.EscapeMarkup()}: {ex.Message.EscapeMarkup()}[/]");
+            }
+        }
+
+        AnsiConsole.MarkupLine($"[blue]Sent {sent} of {events.Count} skips. Each shows as Skipped once the endpoint has handled it.[/]");
+        return sent;
     }
 
     static async Task RemoveMessageFromCosmosDB(CosmosDbClient dbClient, string endpoint, string eventId)

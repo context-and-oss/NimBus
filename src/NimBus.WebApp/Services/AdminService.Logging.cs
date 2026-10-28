@@ -89,6 +89,6 @@ public partial class AdminService
     private partial void LogStalePendingAuditFailed(System.Exception ex, string eventId, string endpointId);
 
     [LoggerMessage(EventId = 21, Level = LogLevel.Warning,
-        Message = "Failed to send the bulk skip for event {EventId} on {EndpointId}")]
+        Message = "Bulk skip of event {EventId} on {EndpointId} failed")]
     private partial void LogBulkSkipFailed(System.Exception ex, string eventId, string endpointId);
 }

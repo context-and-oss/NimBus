@@ -15515,10 +15515,13 @@ export enum AdminDeleteStatus {
 }
 
 export enum AdminSkipSourceStatus {
+    Pending = "Pending",
     Deferred = "Deferred",
     Failed = "Failed",
+    TooManyRequests = "TooManyRequests",
     DeadLettered = "DeadLettered",
     Unsupported = "Unsupported",
+    Published = "Published",
 }
 
 export class DeleteByStatusRequest implements IDeleteByStatusRequest {
@@ -15590,7 +15593,7 @@ export interface IDeleteByStatusRequest {
 }
 
 export class SkipRequest implements ISkipRequest {
-    /** Source statuses. Only the statuses a per-message Skip acts on are accepted: Pending, TooManyRequests and Published messages are still on their way, and Completed and Skipped are terminal. */
+    /** Source statuses. Only Failed, DeadLettered and Unsupported are accepted; the other values stay in the enum for compatibility and are rejected with 400. A Deferred event's parked copy replays once its session's block clears, and Pending, TooManyRequests and Published messages are still on their way, so a skip would not stop them. Completed and Skipped are terminal. */
     statuses!: AdminSkipSourceStatus[];
     before?: moment.Moment | undefined;
 
@@ -15654,7 +15657,7 @@ export class SkipRequest implements ISkipRequest {
 }
 
 export interface ISkipRequest {
-    /** Source statuses. Only the statuses a per-message Skip acts on are accepted: Pending, TooManyRequests and Published messages are still on their way, and Completed and Skipped are terminal. */
+    /** Source statuses. Only Failed, DeadLettered and Unsupported are accepted; the other values stay in the enum for compatibility and are rejected with 400. A Deferred event's parked copy replays once its session's block clears, and Pending, TooManyRequests and Published messages are still on their way, so a skip would not stop them. Completed and Skipped are terminal. */
     statuses: AdminSkipSourceStatus[];
     before?: moment.Moment | undefined;
 

@@ -23,6 +23,7 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
@@ -38,6 +39,11 @@ public sealed class AdminStatusSafetyTests
     private const string EndpointId = "endpoint-a";
     private const string EventId = "event-a";
     private const string SessionId = "session-a";
+    private static readonly string[] TerminalStatusNames =
+    {
+        nameof(StoreResolutionStatus.Completed),
+        nameof(StoreResolutionStatus.Skipped),
+    };
 
     [TestMethod]
     [DataRow("delete-by-status", "{}")]
@@ -53,6 +59,7 @@ public sealed class AdminStatusSafetyTests
     [DataRow("skip", "{\"statuses\":[\"Pending\"]}")]
     [DataRow("skip", "{\"statuses\":[\"TooManyRequests\"]}")]
     [DataRow("skip", "{\"statuses\":[\"Published\"]}")]
+    [DataRow("skip", "{\"statuses\":[\"Deferred\"]}")]
     public async Task Authenticated_http_request_with_invalid_statuses_returns_bad_request_without_mutation(
         string operation,
         string json)
@@ -225,7 +232,6 @@ public sealed class AdminStatusSafetyTests
 
     [TestMethod]
     [DataRow(nameof(StoreResolutionStatus.Failed))]
-    [DataRow(nameof(StoreResolutionStatus.Deferred))]
     [DataRow(nameof(StoreResolutionStatus.DeadLettered))]
     [DataRow(nameof(StoreResolutionStatus.Unsupported))]
     public void Skip_validation_accepts_each_supported_source_status(string status)
@@ -239,13 +245,14 @@ public sealed class AdminStatusSafetyTests
         CollectionAssert.AreEqual(new[] { status }, normalized);
     }
 
-    // A Pending, TooManyRequests or Published message is still on its way, so there is no
-    // blocked session for a skip to release, and the endpoint processes it anyway.
+    // A skip settles neither of these. A Deferred event's parked copy replays and runs once its
+    // session's block clears; a Pending, TooManyRequests or Published message is still on its way.
     [TestMethod]
+    [DataRow(nameof(StoreResolutionStatus.Deferred))]
     [DataRow(nameof(StoreResolutionStatus.Pending))]
     [DataRow(nameof(StoreResolutionStatus.TooManyRequests))]
     [DataRow(nameof(StoreResolutionStatus.Published))]
-    public void Skip_validation_rejects_statuses_the_skip_command_cannot_act_on(string status)
+    public void Skip_validation_rejects_statuses_a_skip_cannot_settle(string status)
     {
         var valid = AdminStatusValidation.TryNormalizeSkipStatuses(
             new[] { status },
@@ -257,19 +264,29 @@ public sealed class AdminStatusSafetyTests
     }
 
     [TestMethod]
+    public void Bulk_skip_source_statuses_are_ones_the_skip_command_accepts()
+    {
+        // Bulk skip sends each skip as a Web UI operator command, which refuses any other status.
+        foreach (var status in SkipRules.BulkSkipSourceStatuses)
+        {
+            Assert.IsTrue(
+                OperatorCommandCoordinator.IsActionable(new UnresolvedEvent { ResolutionStatus = status }, OperatorChannel.WebApp),
+                $"{status} cannot be skipped by the operator command.");
+        }
+    }
+
+    [TestMethod]
     public void Generated_admin_status_contract_matches_message_store_status_rules()
     {
+        // The skip enum keeps every non-terminal status for compatibility; the service rejects
+        // the ones a skip cannot settle.
         var allStoreStatuses = Enum.GetNames<StoreResolutionStatus>();
-        // Bulk skip sends each skip as an operator command, so it offers exactly the statuses
-        // the Web UI's command accepts (Pending+Handoff is a per-message override only).
-        var commandSkippableStatuses = Enum.GetValues<StoreResolutionStatus>()
-            .Where(status => OperatorCommandCoordinator.IsActionable(
-                new UnresolvedEvent { ResolutionStatus = status }, OperatorChannel.WebApp))
-            .Select(status => status.ToString())
+        var nonTerminalStoreStatuses = allStoreStatuses
+            .Except(TerminalStatusNames, StringComparer.Ordinal)
             .ToArray();
 
         CollectionAssert.AreEquivalent(allStoreStatuses, Enum.GetNames<AdminDeleteStatus>());
-        CollectionAssert.AreEquivalent(commandSkippableStatuses, Enum.GetNames<AdminSkipSourceStatus>());
+        CollectionAssert.AreEquivalent(nonTerminalStoreStatuses, Enum.GetNames<AdminSkipSourceStatus>());
     }
 
     [TestMethod]

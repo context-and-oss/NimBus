@@ -107,7 +107,7 @@ public class CliApplicationFactoryTests
         "nb container message:",
         "nb container message delete: <to!> --db-connection-string",
         "nb container resubmit: <endpoint-name!> --db-connection-string --sb-connection-string --unresolved-retention-days",
-        "nb container skip: <endpoint-name!> --before --db-connection-string --status!",
+        "nb container skip: <endpoint-name!> --before --db-connection-string --sb-connection-string --status!",
         "nb deploy:",
         "nb deploy apps: --configuration --dns-wait --environment! --from-source --only --platform --platform-feed --platform-package --repo-root --resource-group! --solution-id!",
         "nb endpoint:",

@@ -14810,17 +14810,26 @@ namespace NimBus.WebApp.ManagementApi
     public enum AdminSkipSourceStatus
     {
 
+        [System.Runtime.Serialization.EnumMember(Value = @"Pending")]
+        Pending = 0,
+
         [System.Runtime.Serialization.EnumMember(Value = @"Deferred")]
-        Deferred = 0,
+        Deferred = 1,
 
         [System.Runtime.Serialization.EnumMember(Value = @"Failed")]
-        Failed = 1,
+        Failed = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"TooManyRequests")]
+        TooManyRequests = 3,
 
         [System.Runtime.Serialization.EnumMember(Value = @"DeadLettered")]
-        DeadLettered = 2,
+        DeadLettered = 4,
 
         [System.Runtime.Serialization.EnumMember(Value = @"Unsupported")]
-        Unsupported = 3,
+        Unsupported = 5,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Published")]
+        Published = 6,
 
     }
 
@@ -14885,7 +14894,7 @@ namespace NimBus.WebApp.ManagementApi
         private System.DateTime? _before;
 
         /// <summary>
-        /// Source statuses. Only the statuses a per-message Skip acts on are accepted: Pending, TooManyRequests and Published messages are still on their way, and Completed and Skipped are terminal.
+        /// Source statuses. Only Failed, DeadLettered and Unsupported are accepted; the other values stay in the enum for compatibility and are rejected with 400. A Deferred event's parked copy replays once its session's block clears, and Pending, TooManyRequests and Published messages are still on their way, so a skip would not stop them. Completed and Skipped are terminal.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.Always, ItemConverterType = typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
         [System.ComponentModel.DataAnnotations.Required]
