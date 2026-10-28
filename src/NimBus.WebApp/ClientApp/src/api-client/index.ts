@@ -19825,7 +19825,10 @@ export interface IAnonymous {
 }
 
 export class Anonymous2 implements IAnonymous2 {
+    /** Stored events with status DeadLettered. */
     count?: number;
+    /** Messages in the dead-letter queue of the endpoint's own subscription; null when Service Bus could not be read. */
+    queueCount?: number | undefined;
 
     [key: string]: any;
 
@@ -19845,6 +19848,7 @@ export class Anonymous2 implements IAnonymous2 {
                     this[property] = _data[property];
             }
             this.count = _data["count"];
+            this.queueCount = _data["queueCount"];
         }
     }
 
@@ -19862,6 +19866,7 @@ export class Anonymous2 implements IAnonymous2 {
                 data[property] = this[property];
         }
         data["count"] = this.count;
+        data["queueCount"] = this.queueCount;
         return data;
     }
 
@@ -19874,7 +19879,10 @@ export class Anonymous2 implements IAnonymous2 {
 }
 
 export interface IAnonymous2 {
+    /** Stored events with status DeadLettered. */
     count?: number;
+    /** Messages in the dead-letter queue of the endpoint's own subscription; null when Service Bus could not be read. */
+    queueCount?: number | undefined;
 
     [key: string]: any;
 }

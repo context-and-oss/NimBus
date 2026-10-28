@@ -140,12 +140,54 @@ public partial class AdminService
         return stateCount.DeadletterCount;
     }
 
+    // Messages in the dead-letter queue of the endpoint's own subscription, or null when Service Bus
+    // can't be read: the preview then still shows the stored count.
+    public async Task<long?> GetDeadLetterQueueCountAsync(string endpointId)
+    {
+        try
+        {
+            var runtime = await _sbAdmin.GetSubscriptionRuntimePropertiesAsync(endpointId, endpointId);
+            return runtime.Value.DeadLetterMessageCount;
+        }
+        catch (Exception ex)
+        {
+            LogDeadLetterQueueCountFailed(ex, endpointId);
+            return null;
+        }
+    }
+
+    // A DeadLettered row stands for a message the endpoint dead-lettered on its own subscription.
+    // Deleting the row alone left the message in that subscription's dead-letter queue, which
+    // Service Bus never empties on its own (#286). Drain the queue first, then delete the rows: if
+    // the drain fails the rows stay, so a rerun still finds both. The drain takes the whole queue,
+    // including messages with no row (dead-lettered by Service Bus itself, or left behind by the
+    // old store-only delete).
     public async Task<BulkOperationResult> DeleteDeadLetteredAsync(string endpointId)
     {
         int processed = 0;
         int succeeded = 0;
         int failed = 0;
         var errors = new List<string>();
+
+        try
+        {
+            var receiver = _sbClient.CreateReceiver(endpointId, endpointId,
+                new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter });
+            await using (receiver)
+            {
+                var removed = await SubscriptionAdminService.DrainAsync(receiver);
+                processed += removed;
+                succeeded += removed;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogDrainDeadLetterQueueFailed(ex, endpointId);
+            errors.Add($"The dead-letter queue of {endpointId}/{endpointId} could not be drained: {ex.Message} " +
+                "The stored dead-lettered events were kept, so this can be run again.");
+            return new BulkOperationResult { Processed = processed + 1, Succeeded = succeeded, Failed = 1, Errors = errors };
+        }
+
         string? continuationToken = string.Empty;
 
         do

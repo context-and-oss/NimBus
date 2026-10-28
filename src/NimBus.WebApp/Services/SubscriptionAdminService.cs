@@ -460,7 +460,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
     /// Completes every active message a receiver hands back, plus any deferred messages
     /// parked behind them, until the entity runs dry. The caller owns the receiver's lifetime.
     /// </summary>
-    private static async Task<int> DrainAsync(ServiceBusReceiver receiver)
+    internal static async Task<int> DrainAsync(ServiceBusReceiver receiver)
     {
         int removed = 0;
 

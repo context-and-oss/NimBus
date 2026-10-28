@@ -163,18 +163,32 @@ public class AdminImplementation : IAdminApiController
             return new NotFoundObjectResult("Endpoint not found");
 
         var count = await _adminService.GetDeadLetteredCountAsync(endpointId);
-        return new OkObjectResult(new Response2 { Count = count });
+        var queueCount = await _adminService.GetDeadLetterQueueCountAsync(endpointId);
+        return new OkObjectResult(new Response2 { Count = count, QueueCount = queueCount });
     }
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteDeadletteredAsync(string endpointId)
     {
         if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointId);
             return new ForbidResult();
+        }
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
             return new NotFoundObjectResult("Endpoint not found");
 
         var result = await _adminService.DeleteDeadLetteredAsync(endpointId);
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                operation = "delete-deadlettered",
+                result.Processed,
+                result.Succeeded,
+                result.Failed,
+            }));
         return new OkObjectResult(result);
     }
 

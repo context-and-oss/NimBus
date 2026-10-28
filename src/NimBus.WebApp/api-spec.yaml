@@ -2237,6 +2237,14 @@ paths:
                 properties:
                   count:
                     type: integer
+                    description: Stored events with status DeadLettered.
+                  queueCount:
+                    type: integer
+                    format: int64
+                    nullable: true
+                    description: >-
+                      Messages in the dead-letter queue of the endpoint's own
+                      subscription; null when Service Bus could not be read.
         '403':
           description: Forbidden
         '404':
@@ -2250,6 +2258,11 @@ paths:
         required: true
     post:
       summary: Delete all dead-lettered messages for endpoint
+      description: >-
+        Drains the dead-letter queue of the endpoint's own subscription, then
+        deletes the stored events with status DeadLettered. If the queue cannot
+        be drained the stored events are kept, so the call can be repeated.
+        Succeeded counts queue messages removed plus stored events deleted.
       operationId: post-admin-delete-deadlettered
       tags:
         - Admin

@@ -13,6 +13,7 @@ public interface IAdminService
     Task<BulkResubmitPreview> PreviewFailedMessagesAsync(string endpointId);
     Task<BulkOperationResult> BulkResubmitFailedAsync(string endpointId);
     Task<int> GetDeadLetteredCountAsync(string endpointId);
+    Task<long?> GetDeadLetterQueueCountAsync(string endpointId);
     Task<BulkOperationResult> DeleteDeadLetteredAsync(string endpointId);
     Task<SessionPurgePreview> PreviewSessionPurgeAsync(string endpointId, string sessionId);
     Task<SessionPurgeResult> PurgeSessionAsync(string endpointId, string sessionId);

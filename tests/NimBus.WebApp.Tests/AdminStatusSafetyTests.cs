@@ -444,6 +444,7 @@ public sealed class AdminStatusSafetyTests
         public Task<BulkResubmitPreview> PreviewFailedMessagesAsync(string endpointId) => Unexpected<BulkResubmitPreview>();
         public Task<BulkOperationResult> BulkResubmitFailedAsync(string endpointId) => Unexpected<BulkOperationResult>();
         public Task<int> GetDeadLetteredCountAsync(string endpointId) => Unexpected<int>();
+        public Task<long?> GetDeadLetterQueueCountAsync(string endpointId) => Unexpected<long?>();
         public Task<BulkOperationResult> DeleteDeadLetteredAsync(string endpointId) => Unexpected<BulkOperationResult>();
         public Task<SessionPurgePreview> PreviewSessionPurgeAsync(string endpointId, string sessionId) => Unexpected<SessionPurgePreview>();
         public Task<SessionPurgeResult> PurgeSessionAsync(string endpointId, string sessionId) => Unexpected<SessionPurgeResult>();

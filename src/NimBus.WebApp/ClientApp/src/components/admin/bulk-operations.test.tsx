@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { BulkResubmitCard, DeleteEventCard } from "./bulk-operations";
+import { BulkResubmitCard, DeleteDeadLetteredCard, DeleteEventCard } from "./bulk-operations";
 
 const mocks = vi.hoisted(() => ({
   getAdminFailedPreview: vi.fn(),
   postAdminBulkResubmit: vi.fn(),
   deleteAdminEvent: vi.fn(),
+  getAdminDeadletteredPreview: vi.fn(),
+  postAdminDeleteDeadlettered: vi.fn(),
 }));
 
 vi.mock("api-client", async () => {
@@ -14,6 +16,8 @@ vi.mock("api-client", async () => {
     getAdminFailedPreview = mocks.getAdminFailedPreview;
     postAdminBulkResubmit = mocks.postAdminBulkResubmit;
     deleteAdminEvent = mocks.deleteAdminEvent;
+    getAdminDeadletteredPreview = mocks.getAdminDeadletteredPreview;
+    postAdminDeleteDeadlettered = mocks.postAdminDeleteDeadlettered;
   }
   return { ...actual, Client: FakeClient, CookieAuth: () => ({}) };
 });
@@ -27,6 +31,8 @@ beforeEach(() => {
   mocks.getAdminFailedPreview.mockReset().mockResolvedValue({ totalFailed: 3, eligibleCount: 3, sampleEventIds: [] });
   mocks.postAdminBulkResubmit.mockReset().mockResolvedValue({ processed: 3, succeeded: 3, failed: 0 });
   mocks.deleteAdminEvent.mockReset().mockResolvedValue(undefined);
+  mocks.getAdminDeadletteredPreview.mockReset().mockResolvedValue({ count: 2, queueCount: 5 });
+  mocks.postAdminDeleteDeadlettered.mockReset().mockResolvedValue({ processed: 7, succeeded: 7, failed: 0 });
 });
 
 afterEach(() => cleanup());
@@ -79,5 +85,52 @@ describe("DeleteEventCard", () => {
     fireEvent.click(confirm);
 
     await waitFor(() => expect(mocks.deleteAdminEvent).toHaveBeenCalledWith("crm", "evt-42"));
+  });
+});
+
+// Issue #286: the delete drains the subscription's dead-letter queue as well as the stored
+// events, so the preview shows both and the delete is offered whenever either holds anything.
+describe("DeleteDeadLetteredCard", () => {
+  async function preview() {
+    render(<DeleteDeadLetteredCard endpoints={endpoints} initialEndpoint="crm" />);
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(mocks.getAdminDeadletteredPreview).toHaveBeenCalledWith("crm"));
+  }
+
+  it("previews the stored events and the dead-letter queue", async () => {
+    await preview();
+
+    expect((await screen.findByText(/Stored dead-lettered events/)).textContent).toContain("2");
+    expect(screen.getByText(/Messages in the dead-letter queue/).textContent).toContain("5");
+  });
+
+  it("offers the delete when only the dead-letter queue holds messages", async () => {
+    mocks.getAdminDeadletteredPreview.mockResolvedValue({ count: 0, queueCount: 3 });
+    await preview();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete dead-lettered messages" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Delete Dead-Lettered Messages" });
+    expect(dialog.textContent).toContain("3 messages from the dead-letter queue");
+    fireEvent.change(within(dialog).getByPlaceholderText("crm"), { target: { value: "crm" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete dead-lettered" }));
+
+    await waitFor(() => expect(mocks.postAdminDeleteDeadlettered).toHaveBeenCalledWith("crm"));
+  });
+
+  it("says so when the dead-letter queue could not be read", async () => {
+    mocks.getAdminDeadletteredPreview.mockResolvedValue({ count: 1, queueCount: null });
+    await preview();
+
+    expect((await screen.findByText(/Messages in the dead-letter queue/)).textContent).toContain("unknown");
+    expect(screen.getByRole("button", { name: "Delete dead-lettered messages" })).toBeTruthy();
+  });
+
+  it("has nothing to delete when both are empty", async () => {
+    mocks.getAdminDeadletteredPreview.mockResolvedValue({ count: 0, queueCount: 0 });
+    await preview();
+
+    await screen.findByText(/Stored dead-lettered events/);
+    expect(screen.queryByRole("button", { name: "Delete dead-lettered messages" })).toBeNull();
   });
 });

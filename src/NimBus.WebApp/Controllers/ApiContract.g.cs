@@ -1509,6 +1509,9 @@ namespace NimBus.WebApp.ManagementApi
         /// Delete all dead-lettered messages for endpoint
         /// </summary>
 
+        /// <remarks>
+        /// Drains the dead-letter queue of the endpoint's own subscription, then deletes the stored events with status DeadLettered. If the queue cannot be drained the stored events are kept, so the call can be repeated. Succeeded counts queue messages removed plus stored events deleted.
+        /// </remarks>
 
         /// <returns>OK</returns>
 
@@ -1985,6 +1988,9 @@ namespace NimBus.WebApp.ManagementApi
         /// <summary>
         /// Delete all dead-lettered messages for endpoint
         /// </summary>
+        /// <remarks>
+        /// Drains the dead-letter queue of the endpoint's own subscription, then deletes the stored events with status DeadLettered. If the queue cannot be drained the stored events are kept, so the call can be repeated. Succeeded counts queue messages removed plus stored events deleted.
+        /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/delete-deadlettered")]
         public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminDeleteDeadlettered(string endpointId)
@@ -20488,7 +20494,11 @@ namespace NimBus.WebApp.ManagementApi
     public partial class Response2 : System.ComponentModel.INotifyPropertyChanged
     {
         private int _count;
+        private long? _queueCount;
 
+        /// <summary>
+        /// Stored events with status DeadLettered.
+        /// </summary>
         [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public int Count    {
             get { return _count; }
@@ -20497,6 +20507,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_count != value)
                 {
                     _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Messages in the dead-letter queue of the endpoint's own subscription; null when Service Bus could not be read.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("queueCount", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long? QueueCount    {
+            get { return _queueCount; }
+            set
+            {
+                if (_queueCount != value)
+                {
+                    _queueCount = value;
                     RaisePropertyChanged();
                 }
             }
