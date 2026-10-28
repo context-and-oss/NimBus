@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NimBus.MessageStore;
+using NimBus.WebApp.Services.Operations;
 
 namespace NimBus.WebApp.Services;
 
@@ -9,12 +11,14 @@ internal static class AdminStatusValidation
     private static readonly IReadOnlyDictionary<string, string> ResolutionStatusNames =
         CreateResolutionStatusNames();
 
-    private static readonly HashSet<string> TerminalStatusNames = new(
-        new[]
-        {
-            nameof(ResolutionStatus.Completed),
-            nameof(ResolutionStatus.Skipped),
-        },
+    // Bulk skip sends each skip as a Web UI operator command, so it accepts exactly the source
+    // statuses that command acts on. A Pending, TooManyRequests or Published message is still on
+    // its way: there is no blocked session to release, and the endpoint would process it anyway.
+    private static readonly HashSet<string> SkipSourceStatusNames = new(
+        Enum.GetValues<ResolutionStatus>()
+            .Where(status => OperatorCommandCoordinator.IsActionable(
+                new UnresolvedEvent { ResolutionStatus = status }, OperatorChannel.WebApp))
+            .Select(status => status.ToString()),
         StringComparer.Ordinal);
 
     public static bool TryNormalizeDeleteStatuses(
@@ -74,9 +78,10 @@ internal static class AdminStatusValidation
                 return false;
             }
 
-            if (skippableOnly && TerminalStatusNames.Contains(canonicalStatus))
+            if (skippableOnly && !SkipSourceStatusNames.Contains(canonicalStatus))
             {
-                error = $"Resolution status '{canonicalStatus}' cannot be used as a source for skip.";
+                error = $"Resolution status '{canonicalStatus}' cannot be used as a source for skip. " +
+                    $"Skippable statuses: {string.Join(", ", SkipSourceStatusNames.Order(StringComparer.Ordinal))}.";
                 return false;
             }
 

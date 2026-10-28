@@ -1635,6 +1635,11 @@ namespace NimBus.WebApp.ManagementApi
         /// Skip messages by status
         /// </summary>
 
+        /// <remarks>
+        /// Sends a skip for each matching event, as the per-message Skip does: the endpoint releases the session the event blocks and the Resolver records Skipped from its response. Each skip is audited.
+        /// </remarks>
+
+
 
         /// <returns>OK</returns>
 
@@ -2139,6 +2144,9 @@ namespace NimBus.WebApp.ManagementApi
         /// <summary>
         /// Skip messages by status
         /// </summary>
+        /// <remarks>
+        /// Sends a skip for each matching event, as the per-message Skip does: the endpoint releases the session the event blocks and the Resolver records Skipped from its response. Each skip is audited.
+        /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/skip")]
         public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminSkip(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] SkipRequest body)
@@ -14802,26 +14810,17 @@ namespace NimBus.WebApp.ManagementApi
     public enum AdminSkipSourceStatus
     {
 
-        [System.Runtime.Serialization.EnumMember(Value = @"Pending")]
-        Pending = 0,
-
         [System.Runtime.Serialization.EnumMember(Value = @"Deferred")]
-        Deferred = 1,
+        Deferred = 0,
 
         [System.Runtime.Serialization.EnumMember(Value = @"Failed")]
-        Failed = 2,
-
-        [System.Runtime.Serialization.EnumMember(Value = @"TooManyRequests")]
-        TooManyRequests = 3,
+        Failed = 1,
 
         [System.Runtime.Serialization.EnumMember(Value = @"DeadLettered")]
-        DeadLettered = 4,
+        DeadLettered = 2,
 
         [System.Runtime.Serialization.EnumMember(Value = @"Unsupported")]
-        Unsupported = 5,
-
-        [System.Runtime.Serialization.EnumMember(Value = @"Published")]
-        Published = 6,
+        Unsupported = 3,
 
     }
 
@@ -14886,7 +14885,7 @@ namespace NimBus.WebApp.ManagementApi
         private System.DateTime? _before;
 
         /// <summary>
-        /// Source statuses; Completed and Skipped are terminal and cannot be skipped again.
+        /// Source statuses. Only the statuses a per-message Skip acts on are accepted: Pending, TooManyRequests and Published messages are still on their way, and Completed and Skipped are terminal.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.Always, ItemConverterType = typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
         [System.ComponentModel.DataAnnotations.Required]

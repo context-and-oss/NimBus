@@ -43,7 +43,7 @@ public sealed class EnumMemberJsonConverterTests
         // is why the fix honours each declared value rather than imposing a convention.
         Assert.AreEqual("\"Pending\"", JsonSerializer.Serialize(AdminDeleteStatus.Pending, Options()));
         Assert.AreEqual("\"DeadLettered\"", JsonSerializer.Serialize(AdminDeleteStatus.DeadLettered, Options()));
-        Assert.AreEqual("\"TooManyRequests\"", JsonSerializer.Serialize(AdminSkipSourceStatus.TooManyRequests, Options()));
+        Assert.AreEqual("\"DeadLettered\"", JsonSerializer.Serialize(AdminSkipSourceStatus.DeadLettered, Options()));
     }
 
     [TestMethod]

@@ -87,4 +87,8 @@ public partial class AdminService
     [LoggerMessage(EventId = 20, Level = LogLevel.Error,
         Message = "Repaired stale Pending event {EventId} on {EndpointId} but failed to write its audit row")]
     private partial void LogStalePendingAuditFailed(System.Exception ex, string eventId, string endpointId);
+
+    [LoggerMessage(EventId = 21, Level = LogLevel.Warning,
+        Message = "Failed to send the bulk skip for event {EventId} on {EndpointId}")]
+    private partial void LogBulkSkipFailed(System.Exception ex, string eventId, string endpointId);
 }

@@ -15515,13 +15515,10 @@ export enum AdminDeleteStatus {
 }
 
 export enum AdminSkipSourceStatus {
-    Pending = "Pending",
     Deferred = "Deferred",
     Failed = "Failed",
-    TooManyRequests = "TooManyRequests",
     DeadLettered = "DeadLettered",
     Unsupported = "Unsupported",
-    Published = "Published",
 }
 
 export class DeleteByStatusRequest implements IDeleteByStatusRequest {
@@ -15593,7 +15590,7 @@ export interface IDeleteByStatusRequest {
 }
 
 export class SkipRequest implements ISkipRequest {
-    /** Source statuses; Completed and Skipped are terminal and cannot be skipped again. */
+    /** Source statuses. Only the statuses a per-message Skip acts on are accepted: Pending, TooManyRequests and Published messages are still on their way, and Completed and Skipped are terminal. */
     statuses!: AdminSkipSourceStatus[];
     before?: moment.Moment | undefined;
 
@@ -15657,7 +15654,7 @@ export class SkipRequest implements ISkipRequest {
 }
 
 export interface ISkipRequest {
-    /** Source statuses; Completed and Skipped are terminal and cannot be skipped again. */
+    /** Source statuses. Only the statuses a per-message Skip acts on are accepted: Pending, TooManyRequests and Published messages are still on their way, and Completed and Skipped are terminal. */
     statuses: AdminSkipSourceStatus[];
     before?: moment.Moment | undefined;
 

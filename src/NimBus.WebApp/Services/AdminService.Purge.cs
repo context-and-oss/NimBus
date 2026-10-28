@@ -7,6 +7,7 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Services.Operations;
 using CoreConstants = NimBus.Core.Messages.Constants;
 
 namespace NimBus.WebApp.Services;
@@ -538,44 +539,107 @@ public partial class AdminService
         return count;
     }
 
+    // Recorded as the reason on each skip's audit row, so a bulk skip can be told apart from a
+    // per-message one.
+    private static readonly OperatorCommandContext BulkSkipCommand =
+        new(OperatorChannel.WebApp, Reason: "Bulk skip from Operations");
+
+    // Only the endpoint can clear a session's block, so each skip goes out as the same operator
+    // command a per-message Skip sends: role check, claim of the row at the version read, audit
+    // row, SkipRequest. The Resolver records Skipped from the endpoint's SkipResponse. Writing
+    // Skipped to the store directly would leave the session blocked (#287).
     public async Task<BulkOperationResult> SkipMessagesAsync(string endpointId, List<string> statuses, DateTime? before)
     {
         statuses = AdminStatusValidation.NormalizeSkipStatuses(statuses);
-        int succeeded = 0;
-        int failed = 0;
-        var errors = new List<string>();
-        string? continuationToken = string.Empty;
+        var operatorCommands = _operatorCommands
+            ?? throw new InvalidOperationException($"Bulk skip needs an {nameof(IOperatorCommands)}.");
 
+        // Read every match before skipping any: each skip archives its row, which would shift the
+        // pages of a filter that is still being read.
+        var eventIds = new List<string>();
+        string? continuationToken = string.Empty;
         do
         {
             var response = await _messageStore.GetEventsByFilter(
                 new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
                 continuationToken, PageSize);
 
-            foreach (var ev in response.Events)
-            {
-                if (before.HasValue && ev.UpdatedAt >= before.Value)
-                    continue;
-
-                try
-                {
-                    bool updated = await _messageStore.UploadSkippedMessage(ev.EventId, ev.SessionId!, endpointId, ev);
-                    if (updated) succeeded++;
-                    else { failed++; errors.Add($"{ev.EventId}: update returned false"); }
-                }
-                catch (Exception ex)
-                {
-                    failed++;
-                    errors.Add($"{ev.EventId}: {ex.Message}");
-                }
-            }
+            eventIds.AddRange(response.Events
+                .Where(ev => !before.HasValue || ev.UpdatedAt < before.Value)
+                .Select(ev => ev.EventId));
 
             continuationToken = response.ContinuationToken;
         }
         while (continuationToken != null);
 
+        int succeeded = 0;
+        int failed = 0;
+        var errors = new List<string>();
+
+        foreach (var eventId in eventIds)
+        {
+            var lookup = await operatorCommands.FindCurrentAsync(endpointId, eventId);
+            var target = lookup.Target;
+
+            // Resolved or skipped by someone else since it was read: nothing left to do.
+            if (lookup.Status == OperatorCommandStatus.NotFound)
+                continue;
+
+            if (target == null)
+            {
+                failed++;
+                errors.Add($"{eventId}: {lookup.Status}");
+                continue;
+            }
+
+            // A row that moved on since it was read (a newer attempt, another status) is no longer
+            // one the operator asked to skip.
+            if (!statuses.Contains(target.Row.ResolutionStatus.ToString())
+                || (before.HasValue && target.Row.UpdatedAt >= before.Value))
+            {
+                continue;
+            }
+
+            OperatorCommandResult result;
+            try
+            {
+                result = await operatorCommands.SkipAsync(target, BulkSkipCommand);
+            }
+            catch (Exception ex)
+            {
+                LogBulkSkipFailed(ex, eventId, endpointId);
+                failed++;
+                errors.Add($"{eventId}: {ex.Message}");
+                continue;
+            }
+
+            if (result.Status == OperatorCommandStatus.Accepted)
+            {
+                succeeded++;
+                continue;
+            }
+
+            failed++;
+
+            // These refuse every row alike, so stop instead of repeating the refusal per row.
+            if (result.Status is OperatorCommandStatus.AuditUnavailable or OperatorCommandStatus.Forbidden)
+            {
+                errors.Add($"Stopped after {succeeded} of {eventIds.Count} events: {DescribeSkipRefusal(result)}");
+                break;
+            }
+
+            errors.Add($"{eventId}: {DescribeSkipRefusal(result)}");
+        }
+
         return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
     }
+
+    private static string DescribeSkipRefusal(OperatorCommandResult result) => result.Detail ?? result.Status switch
+    {
+        OperatorCommandStatus.Stale => "changed while the skip ran, so it was not skipped",
+        OperatorCommandStatus.Forbidden => "skipping needs the Contributor role on this endpoint",
+        _ => result.Status.ToString(),
+    };
 
     public async Task<BulkOperationResult> DeleteAllEventsAsync(string endpointId)
     {
