@@ -140,14 +140,24 @@ public partial class AdminService
         return stateCount.DeadletterCount;
     }
 
-    // Messages in the dead-letter queue of the endpoint's own subscription, or null when Service Bus
-    // can't be read: the preview then still shows the stored count.
-    public async Task<long?> GetDeadLetterQueueCountAsync(string endpointId)
+    public async Task<DeadLetterQueueCounts?> GetDeadLetterQueueCountsAsync(string endpointId)
     {
+        var eventIds = (await GetDeadLetteredEventsAsync(endpointId)).Select(ev => ev.EventId).ToHashSet(StringComparer.Ordinal);
         try
         {
             var runtime = await _sbAdmin.GetSubscriptionRuntimePropertiesAsync(endpointId, endpointId);
-            return runtime.Value.DeadLetterMessageCount;
+            int matching = 0;
+            if (eventIds.Count > 0)
+            {
+                var receiver = CreateDeadLetterReceiver(endpointId);
+                await using (receiver)
+                {
+                    matching = await SubscriptionAdminService.CountMatchingAsync(
+                        receiver, message => IsDeadLetterOf(message, eventIds));
+                }
+            }
+
+            return new DeadLetterQueueCounts(runtime.Value.DeadLetterMessageCount, matching);
         }
         catch (Exception ex)
         {
@@ -158,10 +168,10 @@ public partial class AdminService
 
     // A DeadLettered row stands for a message the endpoint dead-lettered on its own subscription.
     // Deleting the row alone left the message in that subscription's dead-letter queue, which
-    // Service Bus never empties on its own (#286). Drain the queue first, then delete the rows: if
-    // the drain fails the rows stay, so a rerun still finds both. The drain takes the whole queue,
-    // including messages with no row (dead-lettered by Service Bus itself, or left behind by the
-    // old store-only delete).
+    // Service Bus never empties on its own (#286). Complete the rows' messages first, matched on
+    // EventId, then delete the rows: if that fails the rows stay, so a rerun still finds both.
+    // A queue message that matches no row is left alone: it may be one NimBus never showed as
+    // dead-lettered, and Admin → Subscriptions → Purge dead letters is the action that removes it.
     public async Task<BulkOperationResult> DeleteDeadLetteredAsync(string endpointId)
     {
         int processed = 0;
@@ -169,63 +179,55 @@ public partial class AdminService
         int failed = 0;
         var errors = new List<string>();
 
+        // Read every row before deleting any: each delete moves a row out of the filter.
+        var events = await GetDeadLetteredEventsAsync(endpointId);
+        if (events.Count == 0)
+            return new BulkOperationResult { Processed = 0, Succeeded = 0, Failed = 0, Errors = errors };
+
+        var eventIds = events.Select(ev => ev.EventId).ToHashSet(StringComparer.Ordinal);
+        int removedFromQueue = 0;
         try
         {
-            var receiver = _sbClient.CreateReceiver(endpointId, endpointId,
-                new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter });
+            var receiver = CreateDeadLetterReceiver(endpointId);
             await using (receiver)
             {
-                var removed = await SubscriptionAdminService.DrainAsync(receiver);
-                processed += removed;
-                succeeded += removed;
+                await SubscriptionAdminService.CompleteMatchingAsync(
+                    receiver, message => IsDeadLetterOf(message, eventIds), () => removedFromQueue++);
             }
         }
         catch (Exception ex)
         {
-            LogDrainDeadLetterQueueFailed(ex, endpointId);
-            errors.Add($"The dead-letter queue of {endpointId}/{endpointId} could not be drained: {ex.Message} " +
-                "The stored dead-lettered events were kept, so this can be run again.");
-            return new BulkOperationResult { Processed = processed + 1, Succeeded = succeeded, Failed = 1, Errors = errors };
+            LogRemoveDeadLettersFailed(ex, endpointId);
+            errors.Add($"Removing the dead-lettered messages from the dead-letter queue of {endpointId}/{endpointId} " +
+                $"failed after {removedFromQueue}: {ex.Message} The stored dead-lettered events were kept, so this can be run again.");
+            return new BulkOperationResult { Processed = removedFromQueue + 1, Succeeded = removedFromQueue, Failed = 1, Errors = errors };
         }
 
-        string? continuationToken = string.Empty;
+        processed = removedFromQueue;
+        succeeded = removedFromQueue;
 
-        do
+        foreach (var ev in events)
         {
-            var response = await _messageStore.GetEventsByFilter(
-                new MessageStore.EventFilter
-                {
-                    EndPointId = endpointId,
-                    ResolutionStatus = new List<string> { MessageStore.ResolutionStatus.DeadLettered.ToString() }
-                },
-                continuationToken, PageSize);
+            processed++;
 
-            foreach (var ev in response.Events)
+            try
             {
-                processed++;
-
-                try
+                bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId!, endpointId);
+                if (removed)
+                    succeeded++;
+                else
                 {
-                    bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId!, endpointId);
-                    if (removed)
-                        succeeded++;
-                    else
-                    {
-                        failed++;
-                        errors.Add($"{ev.EventId}: remove returned false");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LogDeleteDeadLetteredFailed(ex, ev.EventId);
                     failed++;
-                    errors.Add($"{ev.EventId}: {ex.Message}");
+                    errors.Add($"{ev.EventId}: remove returned false");
                 }
             }
-
-            continuationToken = response.ContinuationToken;
+            catch (Exception ex)
+            {
+                LogDeleteDeadLetteredFailed(ex, ev.EventId);
+                failed++;
+                errors.Add($"{ev.EventId}: {ex.Message}");
+            }
         }
-        while (continuationToken != null);
 
         return new BulkOperationResult
         {
@@ -235,6 +237,37 @@ public partial class AdminService
             Errors = errors
         };
     }
+
+    private async Task<List<MessageStore.UnresolvedEvent>> GetDeadLetteredEventsAsync(string endpointId)
+    {
+        var events = new List<MessageStore.UnresolvedEvent>();
+        string? continuationToken = string.Empty;
+        do
+        {
+            var response = await _messageStore.GetEventsByFilter(
+                new MessageStore.EventFilter
+                {
+                    EndPointId = endpointId,
+                    ResolutionStatus = new List<string> { MessageStore.ResolutionStatus.DeadLettered.ToString() }
+                },
+                continuationToken, PageSize);
+            events.AddRange(response.Events);
+            continuationToken = response.ContinuationToken;
+        }
+        while (continuationToken != null);
+
+        return events;
+    }
+
+    private ServiceBusReceiver CreateDeadLetterReceiver(string endpointId) =>
+        _sbClient.CreateReceiver(endpointId, endpointId, new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter });
+
+    // Every NimBus message carries its event's id as the EventId application property, and
+    // dead-lettering keeps the application properties.
+    private static bool IsDeadLetterOf(ServiceBusReceivedMessage message, HashSet<string> eventIds) =>
+        message.ApplicationProperties.TryGetValue(NimBus.Core.Messages.UserPropertyName.EventId.ToString(), out var value)
+        && value is string eventId
+        && eventIds.Contains(eventId);
 
     public async Task<DeferredReprocessResult> ReprocessDeferredAsync(string endpointId, string sessionId)
     {

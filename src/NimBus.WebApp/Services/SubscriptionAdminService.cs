@@ -456,11 +456,54 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         return removed;
     }
 
+    public async Task<BulkOperationResult> PurgeDeadLetterQueueAsync(string topicName, string subscriptionName)
+    {
+        _ = await _sbManagement.GetSubscription(topicName, subscriptionName)
+            ?? throw new SubscriptionNotFoundException(topicName, subscriptionName);
+
+        // No status flip here, unlike Purge: a paused subscription made receivable would hand its
+        // paused backlog to consumers. If Service Bus refuses the receive, the result says so.
+        var errors = new List<string>();
+        int removed = 0;
+        foreach (var (subQueue, queueName) in new[]
+                 {
+                     (SubQueue.DeadLetter, "dead-letter queue"),
+                     (SubQueue.TransferDeadLetter, "transfer dead-letter queue"),
+                 })
+        {
+            var receiver = _sbClient.CreateReceiver(topicName, subscriptionName,
+                new ServiceBusReceiverOptions { SubQueue = subQueue });
+            await using (receiver)
+            {
+                try
+                {
+                    await DrainAsync(receiver, () => removed++);
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogWarning(exception, "Error draining the {Queue} of {Topic}/{Subscription}",
+                        queueName, topicName, subscriptionName);
+                    errors.Add($"The {queueName} of {subscriptionName}: {exception.Message}");
+                }
+            }
+        }
+
+        return new BulkOperationResult
+        {
+            Processed = removed + errors.Count,
+            Succeeded = removed,
+            Failed = errors.Count,
+            Errors = errors,
+        };
+    }
+
     /// <summary>
     /// Completes every active message a receiver hands back, plus any deferred messages
     /// parked behind them, until the entity runs dry. The caller owns the receiver's lifetime.
+    /// <paramref name="onRemoved"/> runs after each completion, so a caller still knows what
+    /// was removed when a later completion throws.
     /// </summary>
-    internal static async Task<int> DrainAsync(ServiceBusReceiver receiver)
+    internal static async Task<int> DrainAsync(ServiceBusReceiver receiver, Action? onRemoved = null)
     {
         int removed = 0;
 
@@ -488,6 +531,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 if (message == null) continue;
                 await receiver.CompleteMessageAsync(message);
                 removed++;
+                onRemoved?.Invoke();
             }
             catch (ServiceBusException exception) when (exception.Reason == ServiceBusFailureReason.MessageNotFound)
             {
@@ -504,10 +548,78 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             {
                 await receiver.CompleteMessageAsync(message);
                 removed++;
+                onRemoved?.Invoke();
             }
         }
 
         return removed;
+    }
+
+    /// <summary>
+    /// Completes the messages a receiver hands back that <paramref name="matches"/> accepts and
+    /// releases the rest. A message that doesn't match stays locked until the pass ends, so each
+    /// receive moves on to messages not seen yet; one whose lock expired and came back again is
+    /// not looked at twice. <paramref name="onCompleted"/> runs after each completion.
+    /// </summary>
+    internal static async Task CompleteMatchingAsync(
+        ServiceBusReceiver receiver, Func<ServiceBusReceivedMessage, bool> matches, Action onCompleted)
+    {
+        var seen = new HashSet<long>();
+        var held = new List<ServiceBusReceivedMessage>();
+        try
+        {
+            while (true)
+            {
+                var batch = await receiver.ReceiveMessagesAsync(DrainBatchSize, DrainIdleTimeout);
+                var fresh = batch.Where(message => seen.Add(message.SequenceNumber)).ToList();
+                held.AddRange(batch.Except(fresh));
+                if (fresh.Count == 0) break;
+
+                foreach (var message in fresh)
+                {
+                    if (!matches(message))
+                    {
+                        held.Add(message);
+                        continue;
+                    }
+
+                    await receiver.CompleteMessageAsync(message);
+                    onCompleted();
+                }
+            }
+        }
+        finally
+        {
+            foreach (var message in held)
+            {
+                try
+                {
+                    await receiver.AbandonMessageAsync(message);
+                }
+                catch (ServiceBusException)
+                {
+                    // Its lock already expired, so it is back in the queue anyway.
+                }
+            }
+        }
+    }
+
+    /// <summary>Counts, by peeking only, the messages <paramref name="matches"/> accepts.</summary>
+    internal static async Task<int> CountMatchingAsync(
+        ServiceBusReceiver receiver, Func<ServiceBusReceivedMessage, bool> matches)
+    {
+        int count = 0;
+        long fromSequenceNumber = 0;
+        while (true)
+        {
+            var peeked = await receiver.PeekMessagesAsync(DrainBatchSize, fromSequenceNumber);
+            if (peeked.Count == 0) break;
+
+            count += peeked.Count(matches);
+            fromSequenceNumber = peeked[peeked.Count - 1].SequenceNumber + 1;
+        }
+
+        return count;
     }
 
     // ───────────────────────── Delete / recreate / rules ─────────────────────────

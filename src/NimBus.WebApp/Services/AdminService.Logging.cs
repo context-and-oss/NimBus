@@ -94,6 +94,6 @@ public partial class AdminService
     private partial void LogDeadLetterQueueCountFailed(System.Exception ex, string endpointId);
 
     [LoggerMessage(EventId = 23, Level = LogLevel.Warning,
-        Message = "Could not drain the dead-letter queue of {EndpointId}; its dead-lettered events were kept")]
-    private partial void LogDrainDeadLetterQueueFailed(System.Exception ex, string endpointId);
+        Message = "Could not remove the dead-lettered messages of {EndpointId} from its dead-letter queue; the stored events were kept")]
+    private partial void LogRemoveDeadLettersFailed(System.Exception ex, string endpointId);
 }

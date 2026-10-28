@@ -186,16 +186,18 @@ export function DeleteDeadLetteredCard({
 }) {
   const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [count, setCount] = useState<number | null>(null);
-  // Messages in the subscription's dead-letter queue; null when Service Bus couldn't be read.
+  // The subscription's dead-letter queue: every message, and those of the stored events (the ones
+  // the delete removes). Null when Service Bus couldn't be read.
   const [queueCount, setQueueCount] = useState<number | null>(null);
+  const [matchingCount, setMatchingCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // An unknown queue count may still hold messages, so it doesn't hide the delete.
-  const hasAnything = count !== null && (count > 0 || queueCount !== 0);
-  const queueText = queueCount === null ? "every message" : `${queueCount} messages`;
+  // Queue messages with no stored event: the delete leaves them for Purge dead letters.
+  const unmatched = queueCount !== null && matchingCount !== null ? queueCount - matchingCount : 0;
+  const matchingText = matchingCount === null ? "messages" : `${matchingCount} messages`;
 
   async function handlePreview() {
     if (selected.length === 0) return;
@@ -206,6 +208,7 @@ export function DeleteDeadLetteredCard({
       const client = new api.Client(api.CookieAuth());
       const p = await client.getAdminDeadletteredPreview(selected[0]);
       setQueueCount(p.queueCount ?? null);
+      setMatchingCount(p.matchingQueueCount ?? null);
       setCount(p.count ?? 0);
     } catch {
       // error
@@ -235,7 +238,7 @@ export function DeleteDeadLetteredCard({
       <CardHeader>
         <CardTitle>Delete Dead-Lettered Messages</CardTitle>
         <CardDescription>
-          Empty the dead-letter queue of an endpoint's subscription and delete its dead-lettered events
+          Delete an endpoint's dead-lettered events and remove their messages from its subscription's dead-letter queue
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -272,10 +275,16 @@ export function DeleteDeadLetteredCard({
                 <span className="font-bold">{count}</span>
               </p>
               <p className="text-sm">
-                Messages in the dead-letter queue:{" "}
-                <span className="font-bold">{queueCount ?? "unknown"}</span>
+                Their messages in the dead-letter queue:{" "}
+                <span className="font-bold">{matchingCount ?? "unknown"}</span>
               </p>
-              {hasAnything && (
+              {unmatched > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {unmatched} more messages in the dead-letter queue have no stored event, so this
+                  leaves them. Purge them in Admin → Subscriptions with Purge dead letters.
+                </p>
+              )}
+              {count > 0 && (
                 <Button
                   colorScheme="red"
                   onClick={() => setShowConfirm(true)}
@@ -305,7 +314,7 @@ export function DeleteDeadLetteredCard({
             onConfirm={handleDelete}
             title="Delete Dead-Lettered Messages"
             confirmLabel="Delete dead-lettered"
-            description={`This will permanently delete ${queueText} from the dead-letter queue of endpoint "${selected[0] ?? ""}" and its ${count ?? 0} stored dead-lettered events.`}
+            description={`This will permanently delete ${count ?? 0} stored dead-lettered events and their ${matchingText} in the dead-letter queue of endpoint "${selected[0] ?? ""}".`}
             confirmText={selected[0] ?? ""}
             isLoading={executing}
           />

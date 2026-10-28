@@ -551,6 +551,7 @@ public class RateLimitEnforcementTests
         public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionStatusAsync(SubscriptionStatusRequest body, string topicName, string subscriptionName) => Ok<SubscriptionActionResult>();
 
         public Task<ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionPurgeAsync(string topicName, string subscriptionName) => Ok<BulkOperationResult>();
+        public Task<ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionDeadlettersPurgeAsync(string topicName, string subscriptionName) => Ok<BulkOperationResult>();
 
         public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionRecreateAsync(string topicName, string subscriptionName) => Ok<SubscriptionActionResult>();
 

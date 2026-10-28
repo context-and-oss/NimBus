@@ -422,6 +422,7 @@ public sealed class AdminStatusSafetyTests
         public Task<BulkOperationResult> ResubmitResolverDeadLettersAsync(string subscriptionName, bool all, string? reason, System.Threading.CancellationToken cancellationToken = default) => Unexpected<BulkOperationResult>();
         public Task<SubscriptionActionResult> SetSubscriptionStatusAsync(string topicName, string subscriptionName, bool enable) => Unexpected<SubscriptionActionResult>();
         public Task<BulkOperationResult> PurgeSubscriptionAsync(string topicName, string subscriptionName) => Unexpected<BulkOperationResult>();
+        public Task<BulkOperationResult> PurgeDeadLetterQueueAsync(string topicName, string subscriptionName) => Unexpected<BulkOperationResult>();
         public Task<SubscriptionActionResult> RecreateSubscriptionAsync(string topicName, string subscriptionName) => Unexpected<SubscriptionActionResult>();
         public Task<SubscriptionActionResult> DeleteSubscriptionAsync(string topicName, string subscriptionName) => Unexpected<SubscriptionActionResult>();
         public Task<SubscriptionActionResult> DeleteRuleAsync(string topicName, string subscriptionName, string ruleName) => Unexpected<SubscriptionActionResult>();
@@ -444,7 +445,7 @@ public sealed class AdminStatusSafetyTests
         public Task<BulkResubmitPreview> PreviewFailedMessagesAsync(string endpointId) => Unexpected<BulkResubmitPreview>();
         public Task<BulkOperationResult> BulkResubmitFailedAsync(string endpointId) => Unexpected<BulkOperationResult>();
         public Task<int> GetDeadLetteredCountAsync(string endpointId) => Unexpected<int>();
-        public Task<long?> GetDeadLetterQueueCountAsync(string endpointId) => Unexpected<long?>();
+        public Task<DeadLetterQueueCounts?> GetDeadLetterQueueCountsAsync(string endpointId) => Unexpected<DeadLetterQueueCounts?>();
         public Task<BulkOperationResult> DeleteDeadLetteredAsync(string endpointId) => Unexpected<BulkOperationResult>();
         public Task<SessionPurgePreview> PreviewSessionPurgeAsync(string endpointId, string sessionId) => Unexpected<SessionPurgePreview>();
         public Task<SessionPurgeResult> PurgeSessionAsync(string endpointId, string sessionId) => Unexpected<SessionPurgeResult>();

@@ -1442,6 +1442,20 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionPurgeAsync(string topicName, string subscriptionName);
 
         /// <summary>
+        /// Drain both dead-letter queues of a subscription
+        /// </summary>
+
+        /// <remarks>
+        /// Completes every message in the subscription's dead-letter queue and in its transfer dead-letter queue. Service Bus never empties these on its own. A paused subscription stays paused; if Service Bus refuses the receive, the result says so.
+        /// </remarks>
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionDeadlettersPurgeAsync(string topicName, string subscriptionName);
+
+        /// <summary>
         /// Delete and re-provision a subscription, discarding its backlog
         /// </summary>
 
@@ -1510,7 +1524,7 @@ namespace NimBus.WebApp.ManagementApi
         /// </summary>
 
         /// <remarks>
-        /// Drains the dead-letter queue of the endpoint's own subscription, then deletes the stored events with status DeadLettered. If the queue cannot be drained the stored events are kept, so the call can be repeated. Succeeded counts queue messages removed plus stored events deleted.
+        /// Deletes the stored events with status DeadLettered and completes their messages in the dead-letter queue of the endpoint's own subscription, matched on the EventId property. Queue messages that match no stored event are left for Admin → Subscriptions → Purge dead letters. If the queue cannot be read the stored events are kept, so the call can be repeated. Succeeded counts queue messages removed plus stored events deleted.
         /// </remarks>
 
         /// <returns>OK</returns>
@@ -1909,6 +1923,20 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
+        /// Drain both dead-letter queues of a subscription
+        /// </summary>
+        /// <remarks>
+        /// Completes every message in the subscription's dead-letter queue and in its transfer dead-letter queue. Service Bus never empties these on its own. A paused subscription stays paused; if Service Bus refuses the receive, the result says so.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/deadletters/purge")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionDeadlettersPurge(string topicName, string subscriptionName)
+        {
+
+            return _implementation.PostAdminServicebusSubscriptionDeadlettersPurgeAsync(topicName, subscriptionName);
+        }
+
+        /// <summary>
         /// Delete and re-provision a subscription, discarding its backlog
         /// </summary>
         /// <returns>OK</returns>
@@ -1989,7 +2017,7 @@ namespace NimBus.WebApp.ManagementApi
         /// Delete all dead-lettered messages for endpoint
         /// </summary>
         /// <remarks>
-        /// Drains the dead-letter queue of the endpoint's own subscription, then deletes the stored events with status DeadLettered. If the queue cannot be drained the stored events are kept, so the call can be repeated. Succeeded counts queue messages removed plus stored events deleted.
+        /// Deletes the stored events with status DeadLettered and completes their messages in the dead-letter queue of the endpoint's own subscription, matched on the EventId property. Queue messages that match no stored event are left for Admin → Subscriptions → Purge dead letters. If the queue cannot be read the stored events are kept, so the call can be repeated. Succeeded counts queue messages removed plus stored events deleted.
         /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/delete-deadlettered")]
@@ -20495,6 +20523,7 @@ namespace NimBus.WebApp.ManagementApi
     {
         private int _count;
         private long? _queueCount;
+        private int? _matchingQueueCount;
 
         /// <summary>
         /// Stored events with status DeadLettered.
@@ -20523,6 +20552,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_queueCount != value)
                 {
                     _queueCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Of queueCount, the messages whose EventId matches a stored dead-lettered event: the ones the delete removes. The rest are left for Admin → Subscriptions → Purge dead letters. Null when Service Bus could not be read.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("matchingQueueCount", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? MatchingQueueCount    {
+            get { return _matchingQueueCount; }
+            set
+            {
+                if (_matchingQueueCount != value)
+                {
+                    _matchingQueueCount = value;
                     RaisePropertyChanged();
                 }
             }

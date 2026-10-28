@@ -2048,6 +2048,39 @@ paths:
           description: Forbidden
         '404':
           description: Topic or subscription not found
+  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/deadletters/purge':
+    parameters:
+      - schema:
+          type: string
+        name: topicName
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: subscriptionName
+        in: path
+        required: true
+    post:
+      summary: Drain both dead-letter queues of a subscription
+      description: >-
+        Completes every message in the subscription's dead-letter queue and in
+        its transfer dead-letter queue. Service Bus never empties these on its
+        own. A paused subscription stays paused; if Service Bus refuses the
+        receive, the result says so.
+      operationId: post-admin-servicebus-subscription-deadletters-purge
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+        '403':
+          description: Forbidden
+        '404':
+          description: Topic or subscription not found
   '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate':
     parameters:
       - schema:
@@ -2245,6 +2278,14 @@ paths:
                     description: >-
                       Messages in the dead-letter queue of the endpoint's own
                       subscription; null when Service Bus could not be read.
+                  matchingQueueCount:
+                    type: integer
+                    nullable: true
+                    description: >-
+                      Of queueCount, the messages whose EventId matches a stored
+                      dead-lettered event: the ones the delete removes. The rest
+                      are left for Admin → Subscriptions → Purge dead letters.
+                      Null when Service Bus could not be read.
         '403':
           description: Forbidden
         '404':
@@ -2259,10 +2300,13 @@ paths:
     post:
       summary: Delete all dead-lettered messages for endpoint
       description: >-
-        Drains the dead-letter queue of the endpoint's own subscription, then
-        deletes the stored events with status DeadLettered. If the queue cannot
-        be drained the stored events are kept, so the call can be repeated.
-        Succeeded counts queue messages removed plus stored events deleted.
+        Deletes the stored events with status DeadLettered and completes their
+        messages in the dead-letter queue of the endpoint's own subscription,
+        matched on the EventId property. Queue messages that match no stored
+        event are left for Admin → Subscriptions → Purge dead letters. If the
+        queue cannot be read the stored events are kept, so the call can be
+        repeated. Succeeded counts queue messages removed plus stored events
+        deleted.
       operationId: post-admin-delete-deadlettered
       tags:
         - Admin

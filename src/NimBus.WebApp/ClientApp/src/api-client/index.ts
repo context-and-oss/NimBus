@@ -4320,6 +4320,60 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Drain both dead-letter queues of a subscription
+     * @return OK
+     */
+    postAdminServicebusSubscriptionDeadlettersPurge(topicName: string, subscriptionName: string): Promise<BulkOperationResult> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/deadletters/purge";
+        if (topicName === undefined || topicName === null)
+            throw new globalThis.Error("The parameter 'topicName' must be defined.");
+        url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
+        if (subscriptionName === undefined || subscriptionName === null)
+            throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
+        url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminServicebusSubscriptionDeadlettersPurge(_response);
+        });
+    }
+
+    protected processPostAdminServicebusSubscriptionDeadlettersPurge(response: Response): Promise<BulkOperationResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = BulkOperationResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<BulkOperationResult>(null as any);
+    }
+
+    /**
      * Delete and re-provision a subscription, discarding its backlog
      * @return OK
      */
@@ -19829,6 +19883,8 @@ export class Anonymous2 implements IAnonymous2 {
     count?: number;
     /** Messages in the dead-letter queue of the endpoint's own subscription; null when Service Bus could not be read. */
     queueCount?: number | undefined;
+    /** Of queueCount, the messages whose EventId matches a stored dead-lettered event: the ones the delete removes. The rest are left for Admin → Subscriptions → Purge dead letters. Null when Service Bus could not be read. */
+    matchingQueueCount?: number | undefined;
 
     [key: string]: any;
 
@@ -19849,6 +19905,7 @@ export class Anonymous2 implements IAnonymous2 {
             }
             this.count = _data["count"];
             this.queueCount = _data["queueCount"];
+            this.matchingQueueCount = _data["matchingQueueCount"];
         }
     }
 
@@ -19867,6 +19924,7 @@ export class Anonymous2 implements IAnonymous2 {
         }
         data["count"] = this.count;
         data["queueCount"] = this.queueCount;
+        data["matchingQueueCount"] = this.matchingQueueCount;
         return data;
     }
 
@@ -19883,6 +19941,8 @@ export interface IAnonymous2 {
     count?: number;
     /** Messages in the dead-letter queue of the endpoint's own subscription; null when Service Bus could not be read. */
     queueCount?: number | undefined;
+    /** Of queueCount, the messages whose EventId matches a stored dead-lettered event: the ones the delete removes. The rest are left for Admin → Subscriptions → Purge dead letters. Null when Service Bus could not be read. */
+    matchingQueueCount?: number | undefined;
 
     [key: string]: any;
 }

@@ -143,7 +143,7 @@ export const OPERATIONS: readonly OperationInfo[] = [
   { id: "stale", group: "recovery", label: "Reconcile stale pending", takesEndpoint: true,
     description: "Repair rows a redelivered copy left Pending after the original completed." },
   { id: "dlq", group: "cleanup", label: "Delete dead-lettered", takesEndpoint: true,
-    description: "Empty an endpoint's dead-letter queue and delete its dead-lettered events, without reprocessing them." },
+    description: "Delete an endpoint's dead-lettered events and their messages in its dead-letter queue, without reprocessing them." },
   { id: "status", group: "cleanup", label: "Delete by status", takesEndpoint: true,
     description: "Delete an endpoint's stored events in the chosen states." },
   { id: "to", group: "cleanup", label: "Delete by To field", takesEndpoint: false,

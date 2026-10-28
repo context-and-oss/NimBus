@@ -179,6 +179,7 @@ public sealed class AdminResolverDeadLetterTests
         public Task<SubscriptionActionResult> SetSubscriptionStatusAsync(string topicName, string subscriptionName, bool enable) => throw Unexpected();
 
         public Task<BulkOperationResult> PurgeSubscriptionAsync(string topicName, string subscriptionName) => throw Unexpected();
+        public Task<BulkOperationResult> PurgeDeadLetterQueueAsync(string topicName, string subscriptionName) => throw Unexpected();
 
         public Task<SubscriptionActionResult> RecreateSubscriptionAsync(string topicName, string subscriptionName) => throw Unexpected();
 
