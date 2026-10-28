@@ -482,7 +482,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 catch (Exception exception)
                 {
                     _logger.LogWarning(exception, "Error draining the {Queue} of {Topic}/{Subscription}",
-                        queueName, topicName, subscriptionName);
+                        queueName, ForLog(topicName), ForLog(subscriptionName));
                     errors.Add($"The {queueName} of {subscriptionName}: {exception.Message}");
                 }
             }
@@ -626,6 +626,11 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
         return matching;
     }
+
+    // Topic and subscription names come from the route; strip line breaks so they cannot forge
+    // log entries.
+    private static string ForLog(string? value)
+        => (value ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ');
 
     // ───────────────────────── Delete / recreate / rules ─────────────────────────
 
