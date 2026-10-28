@@ -40,6 +40,7 @@ public sealed class AdminDeleteDeadLetteredTests
 {
     private const string Endpoint = "Crm";
     private static readonly string[] Orphan = { "orphan-1" };
+    private static readonly string[] Orphans = { "orphan-1", "orphan-2" };
 
     [TestMethod]
     public async Task Delete_dead_lettered_completes_the_queue_messages_of_the_rows_it_deletes()
@@ -72,6 +73,43 @@ public sealed class AdminDeleteDeadLetteredTests
 
         CollectionAssert.AreEqual(Orphan, harness.Bus.DeadLetters.RemainingEventIds.ToArray());
         Assert.AreEqual(1, harness.Bus.DeadLetters.Abandoned, "The unmatched message is released, not left locked.");
+    }
+
+    // Endpoint subscriptions lock a message for 30 seconds, and an unmatched message is held for
+    // the whole scan. On a big queue those locks expire, and Service Bus hands the same messages
+    // back first. The scan must carry on past them to the matching messages behind.
+    [TestMethod]
+    public async Task Delete_dead_lettered_reaches_matching_messages_behind_ones_whose_locks_expired()
+    {
+        var harness = new Harness();
+        await harness.SeedDeadLetteredAsync("evt-1");
+        harness.Bus.DeadLetters.Add("orphan-1", "orphan-2", "evt-1");
+        harness.Bus.DeadLetters.MaxBatch = 2;
+        harness.Bus.DeadLetters.ExpireLocksBeforeReceive = 2;
+
+        var result = await harness.Sut.DeleteDeadLetteredAsync(Endpoint);
+
+        Assert.AreEqual(2, result.Succeeded, string.Join("; ", result.Errors ?? new List<string>()));
+        CollectionAssert.AreEqual(Orphans, harness.Bus.DeadLetters.RemainingEventIds.ToArray());
+        Assert.IsNull(await harness.Store.GetEvent(Endpoint, "evt-1"));
+    }
+
+    // A receive can come back empty while messages are still waiting, so the end of a scan proves
+    // nothing. A row whose message is still in the queue stays, for a rerun to finish.
+    [TestMethod]
+    public async Task Delete_dead_lettered_keeps_rows_whose_messages_are_still_in_the_queue_after_the_scan()
+    {
+        var harness = new Harness();
+        await harness.SeedDeadLetteredAsync("evt-1");
+        harness.Bus.DeadLetters.Add("evt-1");
+        harness.Bus.DeadLetters.EmptyReceive = 1;
+
+        var result = await harness.Sut.DeleteDeadLetteredAsync(Endpoint);
+
+        Assert.AreEqual(0, result.Succeeded);
+        Assert.AreEqual(1, result.Failed);
+        StringAssert.Contains(result.Errors!.Single(), "still in the dead-letter queue", StringComparison.Ordinal);
+        Assert.AreEqual(ResolutionStatus.DeadLettered, (await harness.Store.GetEvent(Endpoint, "evt-1"))!.ResolutionStatus);
     }
 
     [TestMethod]

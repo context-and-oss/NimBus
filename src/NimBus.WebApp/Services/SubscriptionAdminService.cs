@@ -557,25 +557,26 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
     /// <summary>
     /// Completes the messages a receiver hands back that <paramref name="matches"/> accepts and
-    /// releases the rest. A message that doesn't match stays locked until the pass ends, so each
-    /// receive moves on to messages not seen yet; one whose lock expired and came back again is
-    /// not looked at twice. <paramref name="onCompleted"/> runs after each completion.
+    /// releases the rest, until a receive comes back empty. A message that doesn't match stays
+    /// locked until the pass ends, so each receive moves on. One whose lock expires before then
+    /// is handed back first, ahead of messages not seen yet, so it is simply held again: stopping
+    /// there would miss everything behind it. A held message is locked for the entity's full lock
+    /// duration each time, so the pass still ends. An empty receive doesn't prove that no matching
+    /// message is left, so a caller that must know checks with <see cref="PeekMatchingAsync"/>.
+    /// <paramref name="onCompleted"/> runs after each completion.
     /// </summary>
     internal static async Task CompleteMatchingAsync(
         ServiceBusReceiver receiver, Func<ServiceBusReceivedMessage, bool> matches, Action onCompleted)
     {
-        var seen = new HashSet<long>();
         var held = new List<ServiceBusReceivedMessage>();
         try
         {
             while (true)
             {
                 var batch = await receiver.ReceiveMessagesAsync(DrainBatchSize, DrainIdleTimeout);
-                var fresh = batch.Where(message => seen.Add(message.SequenceNumber)).ToList();
-                held.AddRange(batch.Except(fresh));
-                if (fresh.Count == 0) break;
+                if (batch.Count == 0) break;
 
-                foreach (var message in fresh)
+                foreach (var message in batch)
                 {
                     if (!matches(message))
                     {
@@ -598,28 +599,32 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 }
                 catch (ServiceBusException)
                 {
-                    // Its lock already expired, so it is back in the queue anyway.
+                    // Its lock already expired (or it was held twice), so it is back in the
+                    // queue anyway.
                 }
             }
         }
     }
 
-    /// <summary>Counts, by peeking only, the messages <paramref name="matches"/> accepts.</summary>
-    internal static async Task<int> CountMatchingAsync(
+    /// <summary>
+    /// The messages in the entity that <paramref name="matches"/> accepts, found by peeking only:
+    /// a peek sees every message, whatever is locked, and settles nothing.
+    /// </summary>
+    internal static async Task<List<ServiceBusReceivedMessage>> PeekMatchingAsync(
         ServiceBusReceiver receiver, Func<ServiceBusReceivedMessage, bool> matches)
     {
-        int count = 0;
+        var matching = new List<ServiceBusReceivedMessage>();
         long fromSequenceNumber = 0;
         while (true)
         {
             var peeked = await receiver.PeekMessagesAsync(DrainBatchSize, fromSequenceNumber);
             if (peeked.Count == 0) break;
 
-            count += peeked.Count(matches);
+            matching.AddRange(peeked.Where(matches));
             fromSequenceNumber = peeked[peeked.Count - 1].SequenceNumber + 1;
         }
 
-        return count;
+        return matching;
     }
 
     // ───────────────────────── Delete / recreate / rules ─────────────────────────

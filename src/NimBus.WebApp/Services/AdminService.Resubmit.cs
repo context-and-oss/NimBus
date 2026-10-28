@@ -152,8 +152,8 @@ public partial class AdminService
                 var receiver = CreateDeadLetterReceiver(endpointId);
                 await using (receiver)
                 {
-                    matching = await SubscriptionAdminService.CountMatchingAsync(
-                        receiver, message => IsDeadLetterOf(message, eventIds));
+                    matching = (await SubscriptionAdminService.PeekMatchingAsync(
+                        receiver, message => IsDeadLetterOf(message, eventIds))).Count;
                 }
             }
 
@@ -169,9 +169,10 @@ public partial class AdminService
     // A DeadLettered row stands for a message the endpoint dead-lettered on its own subscription.
     // Deleting the row alone left the message in that subscription's dead-letter queue, which
     // Service Bus never empties on its own (#286). Complete the rows' messages first, matched on
-    // EventId, then delete the rows: if that fails the rows stay, so a rerun still finds both.
-    // A queue message that matches no row is left alone: it may be one NimBus never showed as
-    // dead-lettered, and Admin → Subscriptions → Purge dead letters is the action that removes it.
+    // EventId, then delete only the rows whose messages are verifiably gone: a row whose message
+    // is still queued stays, so a rerun finds both. A queue message that matches no row is left
+    // alone: it may be one NimBus never showed as dead-lettered, and Admin → Subscriptions →
+    // Purge dead letters is the action that removes it.
     public async Task<BulkOperationResult> DeleteDeadLetteredAsync(string endpointId)
     {
         int processed = 0;
@@ -186,6 +187,7 @@ public partial class AdminService
 
         var eventIds = events.Select(ev => ev.EventId).ToHashSet(StringComparer.Ordinal);
         int removedFromQueue = 0;
+        HashSet<string> stillQueued;
         try
         {
             var receiver = CreateDeadLetterReceiver(endpointId);
@@ -193,6 +195,13 @@ public partial class AdminService
             {
                 await SubscriptionAdminService.CompleteMatchingAsync(
                     receiver, message => IsDeadLetterOf(message, eventIds), () => removedFromQueue++);
+
+                // The scan ends at an empty receive, which Service Bus can return while messages
+                // are still waiting. Peek for what is left before deleting any row.
+                stillQueued = (await SubscriptionAdminService.PeekMatchingAsync(
+                        receiver, message => IsDeadLetterOf(message, eventIds)))
+                    .Select(message => EventIdOf(message)!)
+                    .ToHashSet(StringComparer.Ordinal);
             }
         }
         catch (Exception ex)
@@ -209,6 +218,12 @@ public partial class AdminService
         foreach (var ev in events)
         {
             processed++;
+
+            if (stillQueued.Contains(ev.EventId))
+            {
+                failed++;
+                continue;
+            }
 
             try
             {
@@ -227,6 +242,12 @@ public partial class AdminService
                 failed++;
                 errors.Add($"{ev.EventId}: {ex.Message}");
             }
+        }
+
+        if (stillQueued.Count > 0)
+        {
+            errors.Add($"{stillQueued.Count} dead-lettered events were kept because their messages are still in the " +
+                "dead-letter queue. Run this again to finish them.");
         }
 
         return new BulkOperationResult
@@ -264,10 +285,13 @@ public partial class AdminService
 
     // Every NimBus message carries its event's id as the EventId application property, and
     // dead-lettering keeps the application properties.
-    private static bool IsDeadLetterOf(ServiceBusReceivedMessage message, HashSet<string> eventIds) =>
+    private static string? EventIdOf(ServiceBusReceivedMessage message) =>
         message.ApplicationProperties.TryGetValue(NimBus.Core.Messages.UserPropertyName.EventId.ToString(), out var value)
-        && value is string eventId
-        && eventIds.Contains(eventId);
+            ? value as string
+            : null;
+
+    private static bool IsDeadLetterOf(ServiceBusReceivedMessage message, HashSet<string> eventIds) =>
+        EventIdOf(message) is { } eventId && eventIds.Contains(eventId);
 
     public async Task<DeferredReprocessResult> ReprocessDeferredAsync(string endpointId, string sessionId)
     {
