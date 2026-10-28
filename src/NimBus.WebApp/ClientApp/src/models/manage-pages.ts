@@ -137,7 +137,7 @@ export const OPERATIONS: readonly OperationInfo[] = [
   { id: "resubmit", group: "recovery", label: "Bulk resubmit failed", takesEndpoint: true,
     description: "Resubmit an endpoint's failed messages. Idempotent handlers absorb repeats." },
   { id: "skip", group: "recovery", label: "Skip messages", takesEndpoint: true,
-    description: "Mark matching events as Skipped so their sessions continue." },
+    description: "Skip matching events, so the sessions they block continue." },
   { id: "session", group: "recovery", label: "Session purge", takesEndpoint: true,
     description: "Unblock one stuck session by clearing its deferred and blocked messages." },
   { id: "stale", group: "recovery", label: "Reconcile stale pending", takesEndpoint: true,

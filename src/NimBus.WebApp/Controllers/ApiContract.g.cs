@@ -1635,6 +1635,11 @@ namespace NimBus.WebApp.ManagementApi
         /// Skip messages by status
         /// </summary>
 
+        /// <remarks>
+        /// Sends a skip for each matching event, as the per-message Skip does: the endpoint releases the session the event blocks and the Resolver records Skipped from its response. Each skip is audited.
+        /// </remarks>
+
+
 
         /// <returns>OK</returns>
 
@@ -2139,6 +2144,9 @@ namespace NimBus.WebApp.ManagementApi
         /// <summary>
         /// Skip messages by status
         /// </summary>
+        /// <remarks>
+        /// Sends a skip for each matching event, as the per-message Skip does: the endpoint releases the session the event blocks and the Resolver records Skipped from its response. Each skip is audited.
+        /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/skip")]
         public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminSkip(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] SkipRequest body)
@@ -14886,7 +14894,7 @@ namespace NimBus.WebApp.ManagementApi
         private System.DateTime? _before;
 
         /// <summary>
-        /// Source statuses; Completed and Skipped are terminal and cannot be skipped again.
+        /// Source statuses. Only Failed, DeadLettered and Unsupported are accepted; the other values stay in the enum for compatibility and are rejected with 400. A Deferred event's parked copy replays once its session's block clears, and Pending, TooManyRequests and Published messages are still on their way, so a skip would not stop them. Completed and Skipped are terminal.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.Always, ItemConverterType = typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
         [System.ComponentModel.DataAnnotations.Required]

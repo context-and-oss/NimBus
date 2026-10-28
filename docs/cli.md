@@ -437,18 +437,25 @@ endpoint name that collides with one of the store's own container ids is rejecte
 
 ### `nb container skip`
 
-Mark events as Skipped in Cosmos DB.
+Send the endpoint a skip for each matching event, as **Skip** in the WebApp does. The endpoint
+releases the session the event blocks and replays the messages deferred behind it, and the
+Resolver records the event as `Skipped` once the endpoint has handled the skip. The command reads
+the events from Cosmos DB and sends the skips through Service Bus, so it needs both connection
+strings.
 
 ```bash
-nb container skip <endpoint-name> -s failed,deadlettered --before 2026-03-01T00:00:00 -dbc "..."
+nb container skip <endpoint-name> -s failed,deadlettered --before 2026-03-01T00:00:00 -sbc "..." -dbc "..."
 ```
 
 | Option | Required | Description |
 |---|---|---|
-| `-s`, `--status` | Yes | Source statuses to skip (e.g., `failed,deadlettered`) |
+| `-s`, `--status` | Yes | Source statuses to skip: `failed`, `deadlettered`, `unsupported` |
 | `--before` | No | Only skip events last updated before this UTC datetime |
 
-Cannot skip events that are already `Completed` or `Skipped`.
+Only `Failed`, `DeadLettered` and `Unsupported` events can be skipped. A `Deferred` event is parked
+behind the event that blocks its session and runs once that block clears, so skip the blocking
+event instead. `Pending`, `TooManyRequests` and `Published` messages are still on their way, and
+`Completed` and `Skipped` are terminal.
 
 ---
 
@@ -625,8 +632,8 @@ The same options and environment variables work on `nb infra apply` if you prefe
 # Purge old failed messages
 nb container delete my-endpoint -s failed,deadlettered -dbc "..."
 
-# Skip stuck deferred messages older than a week
-nb container skip my-endpoint -s deferred --before 2026-03-20T00:00:00 -dbc "..."
+# Skip failed messages older than a week, so the sessions they block continue
+nb container skip my-endpoint -s failed --before 2026-03-20T00:00:00 -sbc "..." -dbc "..."
 
 # Clean up a blocked session
 nb endpoint session delete my-endpoint session-123 -sbc "..." -dbc "..."

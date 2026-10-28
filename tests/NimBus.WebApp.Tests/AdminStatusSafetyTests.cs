@@ -23,10 +23,12 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Operations;
 using StoreResolutionStatus = NimBus.MessageStore.ResolutionStatus;
 
 namespace NimBus.WebApp.Tests;
@@ -54,6 +56,10 @@ public sealed class AdminStatusSafetyTests
     [DataRow("skip", "{\"statuses\":[]}")]
     [DataRow("skip", "{\"statuses\":[\"Completed\"]}")]
     [DataRow("skip", "{\"statuses\":[\"Skipped\"]}")]
+    [DataRow("skip", "{\"statuses\":[\"Pending\"]}")]
+    [DataRow("skip", "{\"statuses\":[\"TooManyRequests\"]}")]
+    [DataRow("skip", "{\"statuses\":[\"Published\"]}")]
+    [DataRow("skip", "{\"statuses\":[\"Deferred\"]}")]
     public async Task Authenticated_http_request_with_invalid_statuses_returns_bad_request_without_mutation(
         string operation,
         string json)
@@ -78,12 +84,13 @@ public sealed class AdminStatusSafetyTests
     }
 
     [TestMethod]
-    public async Task Authenticated_http_request_with_valid_skip_status_updates_matching_event()
+    public async Task Authenticated_http_request_with_valid_skip_status_sends_a_skip_for_the_matching_event()
     {
         var store = new InMemoryMessageStore();
-        await SeedFailedEvent(store);
+        var skip = BulkSkipHarness.Create(EndpointId, store, new FakePlatform(EndpointId));
+        await skip.SeedFailedAsync(EventId);
 
-        using var host = await CreateHost(store);
+        using var host = await CreateHost(store, skip.Sut);
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             $"/api/admin/endpoint/{EndpointId}/skip")
@@ -98,8 +105,7 @@ public sealed class AdminStatusSafetyTests
         using var response = await client.SendAsync(request);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-        var stored = await store.GetEvent(EndpointId, EventId);
-        Assert.AreEqual(StoreResolutionStatus.Skipped, stored!.ResolutionStatus);
+        CollectionAssert.AreEqual(new[] { EventId }, skip.Manager.Skipped.ToArray());
     }
 
     [TestMethod]
@@ -108,7 +114,8 @@ public sealed class AdminStatusSafetyTests
         const string siblingEndpointId = EndpointId + "b";
         const string siblingEventId = "event-b";
         var store = new InMemoryMessageStore();
-        await SeedFailedEvent(store);
+        var skip = BulkSkipHarness.Create(EndpointId, store, new FakePlatform(EndpointId));
+        await skip.SeedFailedAsync(EventId);
         await store.UploadFailedMessage(
             siblingEventId,
             SessionId,
@@ -120,15 +127,14 @@ public sealed class AdminStatusSafetyTests
                 EndpointId = siblingEndpointId,
                 UpdatedAt = DateTime.UtcNow.AddMinutes(-1),
             });
-        var sut = CreateAdminService(store);
 
-        var result = await sut.SkipMessagesAsync(
+        var result = await skip.Sut.SkipMessagesAsync(
             EndpointId,
             new List<string> { nameof(StoreResolutionStatus.Failed) },
             before: null);
 
         Assert.AreEqual(1, result.Succeeded);
-        Assert.AreEqual(StoreResolutionStatus.Skipped, (await store.GetEvent(EndpointId, EventId))!.ResolutionStatus);
+        CollectionAssert.AreEqual(new[] { EventId }, skip.Manager.Skipped.ToArray());
         Assert.AreEqual(StoreResolutionStatus.Failed, (await store.GetEvent(siblingEndpointId, siblingEventId))!.ResolutionStatus);
         Assert.IsNull(await store.GetEvent(EndpointId, siblingEventId), "The sibling's event must not be rewritten under the skipped endpoint.");
     }
@@ -226,12 +232,8 @@ public sealed class AdminStatusSafetyTests
 
     [TestMethod]
     [DataRow(nameof(StoreResolutionStatus.Failed))]
-    [DataRow(nameof(StoreResolutionStatus.Deferred))]
     [DataRow(nameof(StoreResolutionStatus.DeadLettered))]
     [DataRow(nameof(StoreResolutionStatus.Unsupported))]
-    [DataRow(nameof(StoreResolutionStatus.Pending))]
-    [DataRow(nameof(StoreResolutionStatus.TooManyRequests))]
-    [DataRow(nameof(StoreResolutionStatus.Published))]
     public void Skip_validation_accepts_each_supported_source_status(string status)
     {
         var valid = AdminStatusValidation.TryNormalizeSkipStatuses(
@@ -243,16 +245,48 @@ public sealed class AdminStatusSafetyTests
         CollectionAssert.AreEqual(new[] { status }, normalized);
     }
 
+    // A skip settles neither of these. A Deferred event's parked copy replays and runs once its
+    // session's block clears; a Pending, TooManyRequests or Published message is still on its way.
+    [TestMethod]
+    [DataRow(nameof(StoreResolutionStatus.Deferred))]
+    [DataRow(nameof(StoreResolutionStatus.Pending))]
+    [DataRow(nameof(StoreResolutionStatus.TooManyRequests))]
+    [DataRow(nameof(StoreResolutionStatus.Published))]
+    public void Skip_validation_rejects_statuses_a_skip_cannot_settle(string status)
+    {
+        var valid = AdminStatusValidation.TryNormalizeSkipStatuses(
+            new[] { status },
+            out _,
+            out var error);
+
+        Assert.IsFalse(valid);
+        StringAssert.Contains(error, status, StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void Bulk_skip_source_statuses_are_ones_the_skip_command_accepts()
+    {
+        // Bulk skip sends each skip as a Web UI operator command, which refuses any other status.
+        foreach (var status in SkipRules.BulkSkipSourceStatuses)
+        {
+            Assert.IsTrue(
+                OperatorCommandCoordinator.IsActionable(new UnresolvedEvent { ResolutionStatus = status }, OperatorChannel.WebApp),
+                $"{status} cannot be skipped by the operator command.");
+        }
+    }
+
     [TestMethod]
     public void Generated_admin_status_contract_matches_message_store_status_rules()
     {
+        // The skip enum keeps every non-terminal status for compatibility; the service rejects
+        // the ones a skip cannot settle.
         var allStoreStatuses = Enum.GetNames<StoreResolutionStatus>();
-        var skippableStoreStatuses = allStoreStatuses
+        var nonTerminalStoreStatuses = allStoreStatuses
             .Except(TerminalStatusNames, StringComparer.Ordinal)
             .ToArray();
 
         CollectionAssert.AreEquivalent(allStoreStatuses, Enum.GetNames<AdminDeleteStatus>());
-        CollectionAssert.AreEquivalent(skippableStoreStatuses, Enum.GetNames<AdminSkipSourceStatus>());
+        CollectionAssert.AreEquivalent(nonTerminalStoreStatuses, Enum.GetNames<AdminSkipSourceStatus>());
     }
 
     [TestMethod]
@@ -301,10 +335,11 @@ public sealed class AdminStatusSafetyTests
             });
     }
 
-    private static async Task<IHost> CreateHost(InMemoryMessageStore store)
+    private static Task<IHost> CreateHost(InMemoryMessageStore store) => CreateHost(store, CreateAdminService(store));
+
+    private static async Task<IHost> CreateHost(InMemoryMessageStore store, AdminService adminService)
     {
         var platform = new FakePlatform(EndpointId);
-        var adminService = CreateAdminService(store);
 
         var builder = new HostBuilder()
             .ConfigureWebHost(web =>

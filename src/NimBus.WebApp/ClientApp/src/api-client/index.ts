@@ -15593,7 +15593,7 @@ export interface IDeleteByStatusRequest {
 }
 
 export class SkipRequest implements ISkipRequest {
-    /** Source statuses; Completed and Skipped are terminal and cannot be skipped again. */
+    /** Source statuses. Only Failed, DeadLettered and Unsupported are accepted; the other values stay in the enum for compatibility and are rejected with 400. A Deferred event's parked copy replays once its session's block clears, and Pending, TooManyRequests and Published messages are still on their way, so a skip would not stop them. Completed and Skipped are terminal. */
     statuses!: AdminSkipSourceStatus[];
     before?: moment.Moment | undefined;
 
@@ -15657,7 +15657,7 @@ export class SkipRequest implements ISkipRequest {
 }
 
 export interface ISkipRequest {
-    /** Source statuses; Completed and Skipped are terminal and cannot be skipped again. */
+    /** Source statuses. Only Failed, DeadLettered and Unsupported are accepted; the other values stay in the enum for compatibility and are rejected with 400. A Deferred event's parked copy replays once its session's block clears, and Pending, TooManyRequests and Published messages are still on their way, so a skip would not stop them. Completed and Skipped are terminal. */
     statuses: AdminSkipSourceStatus[];
     before?: moment.Moment | undefined;
 
