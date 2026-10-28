@@ -46,6 +46,7 @@
   <ItemGroup>
     <ProjectReference Include="..\NimBus\NimBus.csproj" />
     <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\NimBus.Manager\NimBus.Manager.csproj" />
     <ProjectReference Include="..\NimBus.MessageStore.CosmosDb\NimBus.MessageStore.CosmosDb.csproj" />
     <ProjectReference Include="..\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
   </ItemGroup>

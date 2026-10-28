@@ -258,14 +258,13 @@ export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: 
 
 // ──────────────────── Skip Messages ────────────────────────
 
+// The statuses the server accepts (SkipRules.BulkSkipSourceStatuses): each skip is sent to the
+// endpoint, which settles these. Deferred is left out: its parked copy replays and runs once the
+// session's block clears, whatever a skip recorded.
 const SKIPPABLE_STATUSES: api.AdminSkipSourceStatus[] = [
   api.AdminSkipSourceStatus.Failed,
-  api.AdminSkipSourceStatus.Deferred,
   api.AdminSkipSourceStatus.DeadLettered,
   api.AdminSkipSourceStatus.Unsupported,
-  api.AdminSkipSourceStatus.Pending,
-  api.AdminSkipSourceStatus.TooManyRequests,
-  api.AdminSkipSourceStatus.Published,
 ];
 
 export function SkipMessagesCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
@@ -319,7 +318,7 @@ export function SkipMessagesCard({ endpoints, initialEndpoint }: { endpoints: En
     <Card>
       <CardHeader>
         <CardTitle>Skip Messages</CardTitle>
-        <CardDescription>Mark non-terminal events as Skipped</CardDescription>
+        <CardDescription>Send a skip to the endpoint for each matching event, so the sessions they block continue</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -358,7 +357,7 @@ export function SkipMessagesCard({ endpoints, initialEndpoint }: { endpoints: En
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Skip Messages" confirmLabel="Skip messages" tone="primary" description={`This will mark ${previewCount ?? 0} events as Skipped on endpoint "${selected[0] ?? ""}".`}
+            title="Skip Messages" confirmLabel="Skip messages" tone="primary" description={`This will send a skip for ${previewCount ?? 0} events to endpoint "${selected[0] ?? ""}". Each one shows as Skipped once the endpoint has handled it.`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>

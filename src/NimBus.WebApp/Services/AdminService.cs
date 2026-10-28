@@ -10,6 +10,7 @@ using NimBus.Core;
 using NimBus.Manager;
 using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Services.Operations;
 using CoreConstants = NimBus.Core.Messages.Constants;
 
 namespace NimBus.WebApp.Services;
@@ -39,6 +40,9 @@ public partial class AdminService : IAdminService
     private readonly ServiceBusClient _sbClient;
     private readonly IManagerClient _managerClient;
     private readonly ISubscriptionAdminService _subscriptionAdmin;
+    // Bulk skip sends each skip through the operator-command path, the only one that tells the
+    // endpoint (and so unblocks the session). Null only for callers that never bulk-skip.
+    private readonly IOperatorCommands? _operatorCommands;
     private readonly ILogger<AdminService> _logger;
 
     private const int PageSize = 20;
@@ -55,7 +59,8 @@ public partial class AdminService : IAdminService
         IManagerClient managerClient,
         ISubscriptionAdminService subscriptionAdmin,
         ILogger<AdminService> logger,
-        CosmosClient? rawCosmosClient = null)
+        CosmosClient? rawCosmosClient = null,
+        IOperatorCommands? operatorCommands = null)
     {
         _platform = platform;
         _messageStore = messageStore;
@@ -65,6 +70,7 @@ public partial class AdminService : IAdminService
         _sbClient = sbClient;
         _managerClient = managerClient;
         _subscriptionAdmin = subscriptionAdmin;
+        _operatorCommands = operatorCommands;
         _logger = logger;
     }
 

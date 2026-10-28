@@ -2,6 +2,7 @@ using McMaster.Extensions.CommandLineUtils;
 using NimBus.Core.Events;
 using NimBus.Core;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using Spectre.Console;
 using CoreAsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 using static NimBus.CommandLine.CliHelpers;
@@ -207,17 +208,17 @@ internal static class ContainerCommands
 
             containerCommand.Command("skip", skipCommand =>
             {
-                skipCommand.Description = "Marks messages as Skipped in Cosmos DB";
+                skipCommand.Description = "Sends a skip to the endpoint for each matching event, so the sessions they block continue";
 
                 var endpointName = skipCommand.Argument("endpoint-name", "Name of endpoint (required)").IsRequired();
-                var statusOption = skipCommand.Option("-s|--status <STATUS>", "Comma-separated list of source statuses to skip (e.g. failed,deadlettered)", CommandOptionType.SingleValue);
+                var statusOption = skipCommand.Option("-s|--status <STATUS>", "Comma-separated list of source statuses to skip: failed, deadlettered, unsupported", CommandOptionType.SingleValue);
                 statusOption.IsRequired();
                 var beforeOption = skipCommand.Option("--before <UTC_DATETIME>", "Only skip messages last updated before this UTC datetime (e.g. 2026-03-01T00:00:00)", CommandOptionType.SingleValue);
+                skipCommand.AddOption(sbConnectionString);
                 skipCommand.AddOption(dbConnectionString);
 
                 skipCommand.OnExecuteAsync(async ct =>
                 {
-                    var terminalStatuses = new[] { ResolutionStatus.Completed, ResolutionStatus.Skipped };
                     var parsed = new List<string>();
 
                     foreach (var raw in statusOption.Value()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -227,9 +228,9 @@ internal static class ContainerCommands
                             Console.Error.WriteLine($"Invalid status '{raw}'. Valid values: {string.Join(", ", Enum.GetNames<ResolutionStatus>())}");
                             return 1;
                         }
-                        if (terminalStatuses.Contains(status))
+                        if (!SkipRules.BulkSkipSourceStatuses.Contains(status))
                         {
-                            Console.Error.WriteLine($"Cannot skip events that are already '{status}'.");
+                            Console.Error.WriteLine($"Cannot skip '{status}' events; a skip only settles {string.Join(", ", SkipRules.BulkSkipSourceStatuses)} events.");
                             return 1;
                         }
                         parsed.Add(status.ToString());
@@ -246,7 +247,8 @@ internal static class ContainerCommands
                         before = parsedDate;
                     }
 
-                    await CommandRunner.Run(dbConnectionString, (dbClient) => Container.SkipMessages(dbClient, endpointName, parsed, before));
+                    await CommandRunner.Run(sbConnectionString, dbConnectionString, (sbClient, dbClient) =>
+                        Container.SkipMessages(sbClient, dbClient, endpointName, parsed, before));
                     return 0;
                 });
             });

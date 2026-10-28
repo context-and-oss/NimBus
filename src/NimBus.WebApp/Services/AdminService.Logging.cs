@@ -88,7 +88,10 @@ public partial class AdminService
         Message = "Repaired stale Pending event {EventId} on {EndpointId} but failed to write its audit row")]
     private partial void LogStalePendingAuditFailed(System.Exception ex, string eventId, string endpointId);
 
-    // 21 is taken by the bulk-skip log (#287).
+    [LoggerMessage(EventId = 21, Level = LogLevel.Warning,
+        Message = "Bulk skip of event {EventId} on {EndpointId} failed")]
+    private partial void LogBulkSkipFailed(System.Exception ex, string eventId, string endpointId);
+
     [LoggerMessage(EventId = 22, Level = LogLevel.Warning,
         Message = "Could not read the dead-letter queue count of {EndpointId}")]
     private partial void LogDeadLetterQueueCountFailed(System.Exception ex, string endpointId);
