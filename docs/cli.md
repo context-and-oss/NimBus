@@ -361,6 +361,10 @@ Delete a specific event from Cosmos DB.
 nb container event delete <endpoint-name> <event-id> -dbc "..."
 ```
 
+An event that blocks its session (a `Failed` event, or `Pending` with a hand-off) is kept, and the
+command says so. Deleting it would leave the session blocked by an event no one can see. Skip it
+first (`nb container skip`), then delete it.
+
 ---
 
 ### `nb container message delete`
@@ -388,6 +392,10 @@ nb container delete <endpoint-name> -s failed,deadlettered -dbc "..."
 | `-s`, `--status` | No | Comma-separated statuses (default: `DeadLettered`) |
 
 Valid statuses: `Pending`, `Deferred`, `Failed`, `DeadLettered`, `Unsupported`, `Completed`, `Skipped`
+
+Events that block their session (`Failed`, and `Pending` with a hand-off) are kept and listed, for
+the reason given under `nb container event delete`. Skip them first (`nb container skip`), then
+delete them with `-s skipped`.
 
 ---
 

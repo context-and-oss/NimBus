@@ -23,6 +23,8 @@ public interface IAdminService
     Task<BulkOperationResult> PurgeSubscriptionAsync(string endpointId, string subscription, List<string> states, System.DateTime? before);
     Task<int> DeleteMessagesByToPreviewAsync(string toField);
     Task<BulkOperationResult> DeleteMessagesByToAsync(string toField);
+    /// <summary>Counts the events a delete by status keeps because each blocks its session.</summary>
+    Task<int> CountSessionBlockingEventsAsync(string endpointId, List<string> statuses);
     Task<int> DeleteByStatusPreviewAsync(string endpointId, List<string> statuses);
     Task<BulkOperationResult> DeleteByStatusAsync(string endpointId, List<string> statuses);
     Task<int> SkipMessagesPreviewAsync(string endpointId, List<string> statuses, System.DateTime? before);

@@ -6,6 +6,7 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
+using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services.Operations;
 using CoreConstants = NimBus.Core.Messages.Constants;
@@ -263,6 +264,10 @@ public partial class AdminService
         if (ev == null)
             return false;
 
+        // Deleting the event its session is blocked on would strand the session (#288).
+        if (BlockedEventRules.BlocksItsSession(ev))
+            throw new EventBlocksSessionException(ev.EventId);
+
         return await _messageStore.RemoveMessage(ev.EventId, ev.SessionId!, endpointId);
     }
 
@@ -458,7 +463,14 @@ public partial class AdminService
         return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
     }
 
-    public async Task<int> DeleteByStatusPreviewAsync(string endpointId, List<string> statuses)
+    public Task<int> CountSessionBlockingEventsAsync(string endpointId, List<string> statuses) =>
+        CountByStatusAsync(endpointId, statuses, BlockedEventRules.BlocksItsSession);
+
+    // The events a delete by status will remove: every match except those it keeps.
+    public Task<int> DeleteByStatusPreviewAsync(string endpointId, List<string> statuses) =>
+        CountByStatusAsync(endpointId, statuses, ev => !BlockedEventRules.BlocksItsSession(ev));
+
+    private async Task<int> CountByStatusAsync(string endpointId, List<string> statuses, Func<MessageStore.UnresolvedEvent, bool> counts)
     {
         statuses = AdminStatusValidation.NormalizeDeleteStatuses(statuses);
         int count = 0;
@@ -470,7 +482,7 @@ public partial class AdminService
                 new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
                 continuationToken, PageSize);
 
-            count += response.Events.Count();
+            count += response.Events.Count(counts);
             continuationToken = response.ContinuationToken;
         }
         while (continuationToken != null);
@@ -478,11 +490,15 @@ public partial class AdminService
         return count;
     }
 
+    // An event that blocks its session (a failure, or a pending hand-off) is kept: deleting it
+    // would leave the session blocked by an event no one can see, with nothing left to skip
+    // (#288). It has to be skipped first, which releases the session; then it can go as Skipped.
     public async Task<BulkOperationResult> DeleteByStatusAsync(string endpointId, List<string> statuses)
     {
         statuses = AdminStatusValidation.NormalizeDeleteStatuses(statuses);
         int succeeded = 0;
         int failed = 0;
+        int kept = 0;
         var errors = new List<string>();
         string? continuationToken = string.Empty;
 
@@ -494,6 +510,12 @@ public partial class AdminService
 
             foreach (var ev in response.Events)
             {
+                if (BlockedEventRules.BlocksItsSession(ev))
+                {
+                    kept++;
+                    continue;
+                }
+
                 try
                 {
                     bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId!, endpointId);
@@ -510,6 +532,13 @@ public partial class AdminService
             continuationToken = response.ContinuationToken;
         }
         while (continuationToken != null);
+
+        if (kept > 0)
+        {
+            failed += kept;
+            errors.Add($"{kept} events were kept because each blocks its session. Skip them first " +
+                "(Operations → Skip messages), then delete them as Skipped.");
+        }
 
         return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
     }

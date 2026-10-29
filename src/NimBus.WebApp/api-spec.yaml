@@ -2344,6 +2344,11 @@ paths:
           description: Forbidden
         '404':
           description: Event not found
+        '409':
+          description: >-
+            The event blocks its session (a Failed event, or Pending with a
+            hand-off), so deleting it would leave the session blocked. Skip it
+            first.
   '/api/admin/endpoint/{endpointId}/delete-all':
     post:
       summary: Wipe an endpoint (recreates its own and Deferred subscriptions, purges stored events and message history)
@@ -5846,6 +5851,13 @@ components:
       properties:
         count:
           type: integer
+        blockingCount:
+          type: integer
+          nullable: true
+          description: >-
+            Delete by status preview only: matching events the delete keeps because
+            each blocks its session (a Failed event, or Pending with a hand-off).
+            Skip them first; then they can be deleted as Skipped.
     HeartbeatSettings:
       title: HeartbeatSettings
       type: object

@@ -4906,6 +4906,10 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             return throwException("Event not found", status, _responseText, _headers);
             });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            return throwException("The event blocks its session (a Failed event, or Pending with a hand-off), so deleting it would leave the session blocked. Skip it first.", status, _responseText, _headers);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
@@ -16524,6 +16528,8 @@ export interface ICurrentUserAccessInfo {
 
 export class CountResponse implements ICountResponse {
     count?: number;
+    /** Delete by status preview only: matching events the delete keeps because each blocks its session (a Failed event, or Pending with a hand-off). Skip them first; then they can be deleted as Skipped. */
+    blockingCount?: number | undefined;
 
     [key: string]: any;
 
@@ -16543,6 +16549,7 @@ export class CountResponse implements ICountResponse {
                     this[property] = _data[property];
             }
             this.count = _data["count"];
+            this.blockingCount = _data["blockingCount"];
         }
     }
 
@@ -16560,6 +16567,7 @@ export class CountResponse implements ICountResponse {
                 data[property] = this[property];
         }
         data["count"] = this.count;
+        data["blockingCount"] = this.blockingCount;
         return data;
     }
 
@@ -16573,6 +16581,8 @@ export class CountResponse implements ICountResponse {
 
 export interface ICountResponse {
     count?: number;
+    /** Delete by status preview only: matching events the delete keeps because each blocks its session (a Failed event, or Pending with a hand-off). Skip them first; then they can be deleted as Skipped. */
+    blockingCount?: number | undefined;
 
     [key: string]: any;
 }

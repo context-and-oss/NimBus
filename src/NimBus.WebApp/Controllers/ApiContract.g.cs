@@ -15994,6 +15994,7 @@ namespace NimBus.WebApp.ManagementApi
     public partial class CountResponse : System.ComponentModel.INotifyPropertyChanged
     {
         private int _count;
+        private int? _blockingCount;
 
         [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public int Count    {
@@ -16003,6 +16004,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_count != value)
                 {
                     _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Delete by status preview only: matching events the delete keeps because each blocks its session (a Failed event, or Pending with a hand-off). Skip them first; then they can be deleted as Skipped.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("blockingCount", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? BlockingCount    {
+            get { return _blockingCount; }
+            set
+            {
+                if (_blockingCount != value)
+                {
+                    _blockingCount = value;
                     RaisePropertyChanged();
                 }
             }

@@ -166,10 +166,15 @@ const ALL_STATUSES: api.AdminDeleteStatus[] = [
   api.AdminDeleteStatus.Pending,
 ];
 
+// Skipped is offered so that an event the delete keeps (#288) can go once it has been skipped.
+const DELETE_STATUSES: api.AdminDeleteStatus[] = [...ALL_STATUSES, api.AdminDeleteStatus.Skipped];
+
 export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
   const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [statuses, setStatuses] = useState<Set<api.AdminDeleteStatus>>(new Set());
   const [previewCount, setPreviewCount] = useState<number | null>(null);
+  // Matching events the delete keeps because each blocks its session.
+  const [blockingCount, setBlockingCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
@@ -191,6 +196,7 @@ export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: 
       const req = new api.DeleteByStatusRequest();
       req.statuses = Array.from(statuses);
       const r = await client.postAdminDeleteByStatusPreview(selected[0], req);
+      setBlockingCount(r.blockingCount ?? 0);
       setPreviewCount(r.count ?? 0);
     } catch { /* */ } finally { setLoading(false); }
   }
@@ -225,7 +231,7 @@ export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: 
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Statuses</label>
             <div className="flex flex-wrap gap-3">
-              {ALL_STATUSES.map((s) => (
+              {DELETE_STATUSES.map((s) => (
                 <label key={s} className="flex items-center gap-1 text-sm">
                   <input type="checkbox" checked={statuses.has(s)} onChange={() => toggleStatus(s)} /> {s}
                 </label>
@@ -237,6 +243,13 @@ export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: 
           {previewCount !== null && (
             <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
               <p className="text-sm">Events matching: <span className="font-bold">{previewCount}</span></p>
+              {blockingCount > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {blockingCount} more events block their session, so the delete keeps them: deleting
+                  one would leave its session blocked. Skip them first (Operations → Skip messages), then
+                  delete them as Skipped.
+                </p>
+              )}
               {previewCount > 0 && (
                 <Button colorScheme="red" onClick={() => setShowConfirm(true)} disabled={executing} isLoading={executing} size="sm">
                   Delete {previewCount} events
