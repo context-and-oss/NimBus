@@ -2,6 +2,7 @@ using NimBus.WebApp.Hubs;
 using Microsoft.Net.Http.Headers;
 using NimBus.WebApp.Middleware;
 using NimBus.Extensions.IntegrationIntelligence;
+using NimBus.WebApp.Csrf;
 using NimBus.WebApp.Mcp;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
@@ -104,6 +105,9 @@ public partial class Startup
 
         app.UseAuthentication();
         app.UseAuthorization();
+
+        // After authorization: the token it hands the SPA is bound to the signed-in user (#296).
+        app.UseNimBusAntiforgeryTokenCookie();
 
         // After UseAuthorization, not right after UseRouting: the admin and
         // search partitions key on HttpContext.User, which UseAuthentication
