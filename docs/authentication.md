@@ -176,6 +176,29 @@ Password policies aren't configurable via `NimBusIdentityOptions`
 today. If you need to relax or tighten them, fork the registration
 call.
 
+## Cross-site request forgery
+
+A write from a browser session must carry an antiforgery token in the `X-NimBus-CSRF` header. A
+browser session here means a POST, PUT, PATCH or DELETE that carries a sign-in cookie: the Entra
+cookie or `NimBus.Identity`. Those are the only requests a forged cross-site request can use,
+because the browser attaches the cookie by itself. A missing or wrong token gets 400. This adds to
+the cookie's `SameSite=Lax`, which already keeps it off cross-site POSTs in current browsers.
+
+- **The SPA does it for you.** Every `GET /api/…` from a browser session returns the token in the
+  readable `NimBus.CSRF` cookie (with the HttpOnly antiforgery cookie it pairs with), and the
+  generated API client sends it on every write.
+- **Header-authenticated callers need no token**: Entra bearer tokens, agent API keys
+  (`X-NimBus-Agent-Key`) and the MCP endpoint. A browser can't attach their headers to a
+  cross-site request.
+- **Agent keys and MCP access are stricter.** Their writes need the token even without a cookie,
+  and their `GET` returns it as `csrfToken`.
+- **The local development bypass is not covered.** `EnableLocalDevAuthentication` signs every
+  request in without a cookie. It works only in the Development environment.
+
+The rule is applied by `CookieAntiforgeryConvention` to every generated API controller except the
+anonymous storage hook (`src/NimBus.WebApp/Csrf/`). The design is
+[`docs/plan/2026-10-29-antiforgery-cookie-api-writes.md`](plan/2026-10-29-antiforgery-cookie-api-writes.md).
+
 ## Configuration reference
 
 All `NimBusIdentity:*` keys (read from any standard ASP.NET Core
