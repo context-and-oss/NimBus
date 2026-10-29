@@ -56,6 +56,7 @@ type PendingAction =
   | { kind: "delete"; subscription: api.ServiceBusSubscriptionInfo }
   | { kind: "recreate"; subscription: api.ServiceBusSubscriptionInfo }
   | { kind: "purge"; subscription: api.ServiceBusSubscriptionInfo }
+  | { kind: "purge-dead-letters"; subscription: api.ServiceBusSubscriptionInfo }
   | {
       kind: "detach-rule";
       subscription: api.ServiceBusSubscriptionInfo;
@@ -352,6 +353,19 @@ export default function SubscriptionManager() {
           };
         });
         break;
+      case "purge-dead-letters":
+        await runAction(name, "Purge dead letters", async () => {
+          const result = await client.postAdminServicebusSubscriptionDeadlettersPurge(
+            selectedTopic,
+            name,
+          );
+          return {
+            succeeded: (result.failed ?? 0) === 0,
+            message: `Purged ${nf.format(result.succeeded ?? 0)} dead-lettered message(s).`,
+            errors: result.errors,
+          };
+        });
+        break;
       case "detach-rule":
         await runAction(name, "Detach rule", () =>
           client.deleteAdminServicebusSubscriptionRule(
@@ -591,6 +605,8 @@ function pendingTitle(action: PendingAction | null): string {
       return "Delete & recreate subscription";
     case "purge":
       return "Purge subscription";
+    case "purge-dead-letters":
+      return "Purge dead letters";
     case "detach-rule":
       return "Detach rule";
     default:
@@ -608,6 +624,8 @@ function pendingConfirmLabel(action: PendingAction | null): string {
       return "Delete & recreate now";
     case "purge":
       return "Purge messages";
+    case "purge-dead-letters":
+      return "Purge dead letters now";
     case "detach-rule":
       return "Detach rule now";
     default:
@@ -620,17 +638,18 @@ function drainableCount(sub: api.ServiceBusSubscriptionInfo): number {
   return (sub.activeMessageCount ?? 0) + (sub.transferMessageCount ?? 0);
 }
 
+/** Messages in both dead-letter queues: what Purge dead letters removes. */
+function deadLetteredCount(sub: api.ServiceBusSubscriptionInfo): number {
+  return (sub.deadLetterMessageCount ?? 0) + (sub.transferDeadLetterMessageCount ?? 0);
+}
+
 /**
  * Everything a delete takes with it, dead-letter queues included — a drain
  * leaves those behind, a delete does not. Understating this on the confirmation
  * would be the worst place to be imprecise.
  */
 function discardedCount(sub: api.ServiceBusSubscriptionInfo): number {
-  return (
-    drainableCount(sub) +
-    (sub.deadLetterMessageCount ?? 0) +
-    (sub.transferDeadLetterMessageCount ?? 0)
-  );
+  return drainableCount(sub) + deadLetteredCount(sub);
 }
 
 function pendingDescription(action: PendingAction | null): string {
@@ -647,6 +666,8 @@ function pendingDescription(action: PendingAction | null): string {
       return `Deletes "${name}" with all ${discarded} message(s) it holds, dead-lettered ones included, and immediately re-provisions it from the platform topology (same rules, same forwarding, same session settings). Messages published during the few seconds it is missing are not captured.`;
     case "purge":
       return `Drains ${drainable} active and deferred message(s) out of "${name}" one batch at a time, leaving the subscription and its dead-letter queues in place.`;
+    case "purge-dead-letters":
+      return `Removes all ${nf.format(deadLetteredCount(sub))} dead-lettered message(s) from "${name}": its dead-letter queue and its transfer dead-letter queue. Service Bus never empties these on its own. The subscription and its active messages stay as they are, paused or not.`;
     case "detach-rule":
       return `Removes the rule "${action.ruleName}" from "${name}". No new messages enter through it; the ${drainable} already queued still drain. Restore it later with "Restore rules".`;
   }
@@ -1089,6 +1110,20 @@ function SubscriptionTable({
                           }
                         >
                           Purge
+                        </Button>
+                      )}
+
+                      {deadLetteredCount(sub) > 0 && (
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          disabled={busy}
+                          onClick={() =>
+                            onRequest({ kind: "purge-dead-letters", subscription: sub })
+                          }
+                          title="Remove every message from both dead-letter queues, leaving the subscription and its active messages alone"
+                        >
+                          Purge dead letters
                         </Button>
                       )}
 

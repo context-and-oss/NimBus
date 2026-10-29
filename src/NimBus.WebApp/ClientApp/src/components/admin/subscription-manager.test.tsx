@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getAdminServicebusSubscriptions: vi.fn(),
   postAdminServicebusSubscriptionStatus: vi.fn(),
   postAdminServicebusSubscriptionPurge: vi.fn(),
+  postAdminServicebusSubscriptionDeadlettersPurge: vi.fn(),
   postAdminServicebusSubscriptionRecreate: vi.fn(),
   postAdminServicebusSubscriptionRestoreRules: vi.fn(),
   deleteAdminServicebusSubscription: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("api-client", async () => {
     getAdminServicebusSubscriptions = mocks.getAdminServicebusSubscriptions;
     postAdminServicebusSubscriptionStatus = mocks.postAdminServicebusSubscriptionStatus;
     postAdminServicebusSubscriptionPurge = mocks.postAdminServicebusSubscriptionPurge;
+    postAdminServicebusSubscriptionDeadlettersPurge = mocks.postAdminServicebusSubscriptionDeadlettersPurge;
     postAdminServicebusSubscriptionRecreate = mocks.postAdminServicebusSubscriptionRecreate;
     postAdminServicebusSubscriptionRestoreRules = mocks.postAdminServicebusSubscriptionRestoreRules;
     deleteAdminServicebusSubscription = mocks.deleteAdminServicebusSubscription;
@@ -84,6 +86,7 @@ beforeEach(() => {
   mocks.getAdminServicebusSubscriptions.mockReset().mockResolvedValue([]);
   mocks.postAdminServicebusSubscriptionStatus.mockReset().mockResolvedValue({});
   mocks.postAdminServicebusSubscriptionPurge.mockReset().mockResolvedValue({});
+  mocks.postAdminServicebusSubscriptionDeadlettersPurge.mockReset().mockResolvedValue({});
   mocks.postAdminServicebusSubscriptionRecreate.mockReset().mockResolvedValue({});
   mocks.postAdminServicebusSubscriptionRestoreRules.mockReset().mockResolvedValue({});
   mocks.deleteAdminServicebusSubscription.mockReset().mockResolvedValue({});
@@ -390,5 +393,43 @@ describe("SubscriptionManager", () => {
     await screen.findByText("Resolver", { selector: "td *" });
 
     expect(screen.queryByRole("button", { name: "Inspect dead letters" })).toBeNull();
+  });
+
+  // Issue #286: Service Bus never empties a dead-letter queue on its own, and Purge leaves both
+  // queues in place.
+  it("purges a subscription's dead letters after the typed confirmation", async () => {
+    mocks.getAdminServicebusSubscriptions.mockResolvedValue([
+      subscription("billing", { deadLetterMessageCount: 2, transferDeadLetterMessageCount: 1 }),
+    ]);
+    mocks.postAdminServicebusSubscriptionDeadlettersPurge.mockResolvedValue({
+      processed: 3,
+      succeeded: 3,
+      failed: 0,
+      errors: [],
+    });
+
+    render(<SubscriptionManager />);
+    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Purge dead letters" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Purge dead letters" });
+    expect(dialog.textContent).toContain("3 dead-lettered message(s)");
+    fireEvent.change(within(dialog).getByPlaceholderText("billing"), { target: { value: "billing" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Purge dead letters now" }));
+
+    await waitFor(() =>
+      expect(mocks.postAdminServicebusSubscriptionDeadlettersPurge).toHaveBeenCalledWith("orders", "billing"),
+    );
+    expect((await screen.findByText(/Purged 3 dead-lettered message/)).textContent).toContain("3");
+  });
+
+  it("offers no dead-letter purge when both dead-letter queues are empty", async () => {
+    mocks.getAdminServicebusSubscriptions.mockResolvedValue([subscription("billing", { activeMessageCount: 4 })]);
+
+    render(<SubscriptionManager />);
+    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    await screen.findByText("billing", { selector: "td *" });
+
+    expect(screen.queryByRole("button", { name: "Purge dead letters" })).toBeNull();
   });
 });

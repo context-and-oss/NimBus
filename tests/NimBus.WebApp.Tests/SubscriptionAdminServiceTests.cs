@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -29,6 +30,7 @@ public sealed class SubscriptionAdminServiceTests
     // `using Constants = NimBus.Core.Messages.Constants` alias. Name the ids directly.
     private const string ResolverSubscription = "Resolver";
     private const string DeferredProcessorSubscription = "DeferredProcessor";
+    private static readonly SubQueue[] BothDeadLetterQueues = { SubQueue.DeadLetter, SubQueue.TransferDeadLetter };
 
     [TestMethod]
     public async Task Pause_DetachesForwardingInTheSameUpdate()
@@ -127,6 +129,69 @@ public sealed class SubscriptionAdminServiceTests
         // that the failed restore is reported and not swallowed by the drain's own error.
         Assert.IsTrue(result.Errors.Any(error => error.Contains("is now Active", StringComparison.Ordinal)),
             $"Expected a restore-failure error, got: {string.Join(" | ", result.Errors)}");
+    }
+
+    // Issue #286: nothing used to empty a subscription's dead-letter queues, and Service Bus never
+    // does on its own.
+    [TestMethod]
+    public async Task PurgeDeadLetters_DrainsBothDeadLetterQueues()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription);
+        var bus = new FakeDeadLetterBus();
+        bus.DeadLetters.Add("evt-1", "evt-2");
+        bus.TransferDeadLetters.Add("evt-3");
+        var service = CreateService(management, sbClient: bus);
+
+        var result = await service.PurgeDeadLetterQueueAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.AreEqual(3, result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.AreEqual(0, result.Failed);
+        Assert.AreEqual(0, bus.DeadLetters.RemainingEventIds.Count);
+        Assert.AreEqual(0, bus.TransferDeadLetters.RemainingEventIds.Count);
+        CollectionAssert.AreEqual(
+            BothDeadLetterQueues,
+            bus.Receivers.Select(receiver => receiver.SubQueue).ToArray());
+    }
+
+    [TestMethod]
+    public async Task PurgeDeadLetters_CountsWhatItRemovedBeforeAFailure()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription);
+        var bus = new FakeDeadLetterBus();
+        bus.DeadLetters.Add("evt-1", "evt-2");
+        bus.DeadLetters.FailCompletion = 2;
+        var service = CreateService(management, sbClient: bus);
+
+        var result = await service.PurgeDeadLetterQueueAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.AreEqual(1, result.Succeeded, "The message completed before the failure is gone and must be counted.");
+        Assert.AreEqual(1, result.Failed);
+        StringAssert.Contains(result.Errors.Single(), "dead-letter queue", StringComparison.Ordinal);
+    }
+
+    // Unlike Purge, this never makes a paused subscription receivable: that would hand the
+    // paused backlog to its consumers, which is not what an operator purging dead letters asked.
+    [TestMethod]
+    public async Task PurgeDeadLetters_LeavesAPausedSubscriptionPaused()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription, status: EntityStatus.ReceiveDisabled);
+        var service = CreateService(management, sbClient: new FakeDeadLetterBus());
+
+        await service.PurgeDeadLetterQueueAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.AreEqual(0, management.Updates.Count);
+    }
+
+    [TestMethod]
+    public async Task PurgeDeadLetters_RefusesAnUnknownSubscription()
+    {
+        var service = CreateService(new FakeServiceBusManagement(), sbClient: new FakeDeadLetterBus());
+
+        await Assert.ThrowsExactlyAsync<SubscriptionNotFoundException>(
+            () => service.PurgeDeadLetterQueueAsync(Topic, "missing"));
     }
 
     [TestMethod]
@@ -313,12 +378,13 @@ public sealed class SubscriptionAdminServiceTests
     private static SubscriptionAdminService CreateService(
         FakeServiceBusManagement management,
         FakeTopologyRebuilder? rebuilder = null,
-        IResolverDeadLetterClient? replayClient = null) =>
+        IResolverDeadLetterClient? replayClient = null,
+        Azure.Messaging.ServiceBus.ServiceBusClient? sbClient = null) =>
         new(
             new TestPlatform(new TestEndpoint(Topic)),
             management,
             rebuilder ?? new FakeTopologyRebuilder(),
-            sbClient: null!,
+            sbClient: sbClient!,
             NullLogger<SubscriptionAdminService>.Instance,
             resolverDeadLetterClient: replayClient);
 

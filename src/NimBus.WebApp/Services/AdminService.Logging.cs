@@ -91,4 +91,12 @@ public partial class AdminService
     [LoggerMessage(EventId = 21, Level = LogLevel.Warning,
         Message = "Bulk skip of event {EventId} on {EndpointId} failed")]
     private partial void LogBulkSkipFailed(System.Exception ex, string eventId, string endpointId);
+
+    [LoggerMessage(EventId = 22, Level = LogLevel.Warning,
+        Message = "Could not read the dead-letter queue count of {EndpointId}")]
+    private partial void LogDeadLetterQueueCountFailed(System.Exception ex, string endpointId);
+
+    [LoggerMessage(EventId = 23, Level = LogLevel.Warning,
+        Message = "Could not remove the dead-lettered messages of {EndpointId} from its dead-letter queue; the stored events were kept")]
+    private partial void LogRemoveDeadLettersFailed(System.Exception ex, string endpointId);
 }

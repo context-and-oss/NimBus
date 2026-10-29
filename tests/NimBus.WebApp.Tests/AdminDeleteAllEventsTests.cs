@@ -139,6 +139,7 @@ public sealed class AdminDeleteAllEventsTests
         public Task<BulkOperationResult> ResubmitResolverDeadLettersAsync(string subscriptionName, bool all, string? reason, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<SubscriptionActionResult> SetSubscriptionStatusAsync(string topicName, string subscriptionName, bool enable) => throw Unexpected();
         public Task<BulkOperationResult> PurgeSubscriptionAsync(string topicName, string subscriptionName) => throw Unexpected();
+        public Task<BulkOperationResult> PurgeDeadLetterQueueAsync(string topicName, string subscriptionName) => throw Unexpected();
         public Task<SubscriptionActionResult> DeleteSubscriptionAsync(string topicName, string subscriptionName) => throw Unexpected();
         public Task<SubscriptionActionResult> DeleteRuleAsync(string topicName, string subscriptionName, string ruleName) => throw Unexpected();
         public Task<SubscriptionActionResult> RestoreRulesAsync(string topicName, string subscriptionName) => throw Unexpected();

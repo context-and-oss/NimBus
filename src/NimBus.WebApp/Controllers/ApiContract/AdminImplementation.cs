@@ -163,18 +163,37 @@ public class AdminImplementation : IAdminApiController
             return new NotFoundObjectResult("Endpoint not found");
 
         var count = await _adminService.GetDeadLetteredCountAsync(endpointId);
-        return new OkObjectResult(new Response2 { Count = count });
+        var queue = await _adminService.GetDeadLetterQueueCountsAsync(endpointId);
+        return new OkObjectResult(new Response2
+        {
+            Count = count,
+            QueueCount = queue?.Total,
+            MatchingQueueCount = queue?.MatchingStoredEvents,
+        });
     }
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteDeadletteredAsync(string endpointId)
     {
         if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointId);
             return new ForbidResult();
+        }
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
             return new NotFoundObjectResult("Endpoint not found");
 
         var result = await _adminService.DeleteDeadLetteredAsync(endpointId);
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                operation = "delete-deadlettered",
+                result.Processed,
+                result.Succeeded,
+                result.Failed,
+            }));
         return new OkObjectResult(result);
     }
 
@@ -523,6 +542,24 @@ public class AdminImplementation : IAdminApiController
         catch (SubscriptionPurgeNotSupportedException exception)
         {
             return new BadRequestObjectResult(exception.Message);
+        }
+    }
+
+    public async Task<ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionDeadlettersPurgeAsync(
+        string topicName, string subscriptionName)
+    {
+        var denied = await GuardSubscriptionMutationAsync(topicName, subscriptionName, "purge-dead-letters");
+        if (denied is not null) return denied;
+
+        try
+        {
+            var result = await _subscriptionAdminService.PurgeDeadLetterQueueAsync(topicName, subscriptionName);
+            await LogSubscriptionAuditAsync(topicName, subscriptionName, "purge-dead-letters");
+            return new OkObjectResult(result);
+        }
+        catch (SubscriptionNotFoundException exception)
+        {
+            return new NotFoundObjectResult(exception.Message);
         }
     }
 
