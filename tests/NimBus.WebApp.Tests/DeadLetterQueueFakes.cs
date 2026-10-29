@@ -66,6 +66,12 @@ internal sealed class FakeDeadLetterQueue : ServiceBusReceiver
     /// </summary>
     public int? ExpireLocksBeforeReceive { get; set; }
 
+    /// <summary>Expire every lock before each receive, as during a scan longer than the lock duration.</summary>
+    public bool ExpireLocksBeforeEveryReceive { get; set; }
+
+    /// <summary>Fail a test instead of hanging if the caller never stops receiving.</summary>
+    public int? MaxReceives { get; set; }
+
     /// <summary>
     /// The receive, counted from 1, that comes back empty although messages are waiting, as a
     /// Service Bus receive can.
@@ -108,7 +114,9 @@ internal sealed class FakeDeadLetterQueue : ServiceBusReceiver
             return Task.FromException<IReadOnlyList<ServiceBusReceivedMessage>>(Failure);
 
         _receives++;
-        if (_receives == ExpireLocksBeforeReceive)
+        if (_receives > MaxReceives)
+            throw new InvalidOperationException("The dead-letter scan did not stop after a bounded pass.");
+        if (ExpireLocksBeforeEveryReceive || _receives == ExpireLocksBeforeReceive)
             _locked.Clear();
         if (_receives == EmptyReceive)
             return Task.FromResult<IReadOnlyList<ServiceBusReceivedMessage>>(Array.Empty<ServiceBusReceivedMessage>());

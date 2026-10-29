@@ -94,6 +94,26 @@ public sealed class AdminDeleteDeadLetteredTests
         Assert.IsNull(await harness.Store.GetEvent(Endpoint, "evt-1"));
     }
 
+    [TestMethod]
+    public async Task Delete_dead_lettered_stops_when_unmatched_locks_keep_expiring()
+    {
+        var harness = new Harness();
+        await harness.SeedDeadLetteredAsync("evt-1");
+        harness.Bus.DeadLetters.Add("orphan-1", "evt-1");
+        harness.Bus.DeadLetters.MaxBatch = 1;
+        harness.Bus.DeadLetters.ExpireLocksBeforeEveryReceive = true;
+        harness.Bus.DeadLetters.MaxReceives = 10;
+
+        var result = await harness.Sut.DeleteDeadLetteredAsync(Endpoint);
+
+        Assert.AreEqual(0, result.Succeeded);
+        Assert.AreEqual(1, result.Failed);
+        StringAssert.Contains(result.Errors!.Single(), "still in the dead-letter queue", StringComparison.Ordinal);
+        CollectionAssert.AreEqual(new[] { "orphan-1", "evt-1" }, harness.Bus.DeadLetters.RemainingEventIds.ToArray());
+        Assert.AreEqual(1, harness.Bus.DeadLetters.Abandoned, "Repeated deliveries of one orphan need only one release.");
+        Assert.AreEqual(ResolutionStatus.DeadLettered, (await harness.Store.GetEvent(Endpoint, "evt-1"))!.ResolutionStatus);
+    }
+
     // A receive can come back empty while messages are still waiting, so the end of a scan proves
     // nothing. A row whose message is still in the queue stays, for a rerun to finish.
     [TestMethod]

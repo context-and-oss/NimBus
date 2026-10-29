@@ -29,6 +29,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
     /// is what terminates the drain loop once the subscription runs dry, so it can't be zero.
     /// </summary>
     private const int DrainBatchSize = 100;
+    private const int MatchScanSnapshotLimit = 100_000;
     private static readonly TimeSpan DrainIdleTimeout = TimeSpan.FromSeconds(5);
 
     public SubscriptionAdminService(
@@ -557,30 +558,44 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
     /// <summary>
     /// Completes the messages a receiver hands back that <paramref name="matches"/> accepts and
-    /// releases the rest, until a receive comes back empty. A message that doesn't match stays
-    /// locked until the pass ends, so each receive moves on. One whose lock expires before then
-    /// is handed back first, ahead of messages not seen yet, so it is simply held again: stopping
-    /// there would miss everything behind it. A held message is locked for the entity's full lock
-    /// duration each time, so the pass still ends. An empty receive doesn't prove that no matching
-    /// message is left, so a caller that must know checks with <see cref="PeekMatchingAsync"/>.
+    /// releases the rest. The pass is limited to twice the number of messages in an initial peek
+    /// snapshot, capped at <see cref="MatchScanSnapshotLimit"/>. Unmatched locks can expire
+    /// repeatedly on a large queue, causing the same messages
+    /// to be received forever; the budget leaves any unreached matches for a retry. An empty
+    /// receive also doesn't prove that no matching message is left, so a caller that must know
+    /// checks with <see cref="PeekMatchingAsync"/>.
     /// <paramref name="onCompleted"/> runs after each completion.
     /// </summary>
     internal static async Task CompleteMatchingAsync(
         ServiceBusReceiver receiver, Func<ServiceBusReceivedMessage, bool> matches, Action onCompleted)
     {
-        var held = new List<ServiceBusReceivedMessage>();
+        int snapshotCount = 0;
+        long fromSequenceNumber = 0;
+        while (snapshotCount < MatchScanSnapshotLimit)
+        {
+            var peeked = await receiver.PeekMessagesAsync(
+                Math.Min(DrainBatchSize, MatchScanSnapshotLimit - snapshotCount), fromSequenceNumber);
+            if (peeked.Count == 0) break;
+
+            snapshotCount += peeked.Count;
+            fromSequenceNumber = peeked[peeked.Count - 1].SequenceNumber + 1;
+        }
+
+        long remainingDeliveries = snapshotCount * 2L;
+        var held = new Dictionary<long, ServiceBusReceivedMessage>();
         try
         {
-            while (true)
+            while (remainingDeliveries > 0)
             {
                 var batch = await receiver.ReceiveMessagesAsync(DrainBatchSize, DrainIdleTimeout);
                 if (batch.Count == 0) break;
+                remainingDeliveries -= batch.Count;
 
                 foreach (var message in batch)
                 {
                     if (!matches(message))
                     {
-                        held.Add(message);
+                        held[message.SequenceNumber] = message;
                         continue;
                     }
 
@@ -591,7 +606,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         }
         finally
         {
-            foreach (var message in held)
+            foreach (var message in held.Values)
             {
                 try
                 {
@@ -599,8 +614,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 }
                 catch (ServiceBusException)
                 {
-                    // Its lock already expired (or it was held twice), so it is back in the
-                    // queue anyway.
+                    // Its lock already expired, so it is back in the queue anyway.
                 }
             }
         }

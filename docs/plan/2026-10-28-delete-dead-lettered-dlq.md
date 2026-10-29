@@ -28,10 +28,12 @@ dead-letter view can list and replay but not delete.
    the paused backlog to the endpoint. If Service Bus refuses the receive, the result says so.
 4. **A row is deleted only when its message is verifiably gone.** The matched scan holds
    unmatched messages without renewing their locks (30 seconds on endpoint subscriptions), so on
-   a large queue they come back before the scan ends. The scan therefore runs until a receive
-   comes back empty, holding returned messages again. An empty receive is not proof either, so
-   after the scan a peek finds the matching messages still queued, and their rows are kept for a
-   rerun. If the queue can't be read at all, every row is kept.
+   a large queue they come back before the scan ends. The scan therefore allows up to twice the
+   number of deliveries in an initial peek snapshot (at most 100,000), holding returned messages
+   again. This bounds
+   the pass even when locks keep expiring. An empty receive or exhausted budget is not proof that
+   all matches were reached, so a final peek finds matching messages still queued and keeps their
+   rows for a rerun. If the queue can't be read at all, every row is kept.
 5. **Counts survive a failure.** The drain loops report each removal as it happens, so a result
    and its audit record say what was removed before a later completion failed.
 6. **The preview shows what will happen**: the stored events, their messages in the queue (by
@@ -58,6 +60,7 @@ dead-letter view can list and replay but not delete.
   - If the queue can't be read, the rows are kept.
   - Partial counts are reported.
   - A matching message behind expired locks is still reached.
+  - Repeatedly expired unmatched locks end the scan without deleting still-queued rows.
   - Rows whose messages are still queued after the scan are kept.
   - Preview counts, and both audit records.
 - `SubscriptionAdminServiceTests`: Purge dead letters drains both queues, reports partial counts,
