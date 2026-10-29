@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.DataProtection;
 using NimBus.Extensions.IntegrationIntelligence;
+using NimBus.WebApp.Csrf;
 using NimBus.WebApp.Mcp;
 using NimBus.WebApp.Services.IntegrationIntelligence;
 
@@ -41,6 +42,8 @@ public partial class Startup
         services.AddDataProtection().SetApplicationName(IntelligenceSecretProtector.ApplicationName);
         services.AddSingleton<IIntelligenceSecretProtector, DataProtectionSecretProtector>();
         services.AddAntiforgery(options => options.HeaderName = "X-NimBus-CSRF");
+        // #296: the generated API controllers require that token on writes from a browser session.
+        services.AddNimBusCookieAntiforgery();
         AddManagementServices(services);
         AddSimulation(services);
         AddObservability(services, storageProvider);

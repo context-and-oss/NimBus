@@ -48,6 +48,12 @@ export class ApiClientBase {
       options.headers = {};
     }
     options.headers = { ...options.headers, "api-version": "2" };
+    const csrfToken = SAFE_METHODS.has((options.method ?? "GET").toUpperCase())
+      ? undefined
+      : readCsrfToken();
+    if (csrfToken) {
+      options.headers = { ...options.headers, [CSRF_HEADER]: csrfToken };
+    }
     const isIE = navigator.userAgent.indexOf("Trident/") !== -1;
     if (
       isIE &&
@@ -20353,3 +20359,15 @@ export const CookieAuth = () =>
     `https://${window.location.hostname}:${window.location.port ?? ""}`,
     undefined,
   );
+
+// The WebApp hands out its antiforgery request token in this readable cookie and requires it as
+// this header on writes from a browser session (#296).
+const CSRF_COOKIE = "NimBus.CSRF";
+const CSRF_HEADER = "X-NimBus-CSRF";
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
+
+function readCsrfToken(): string | undefined {
+  const prefix = `${CSRF_COOKIE}=`;
+  const cookie = document.cookie.split("; ").find((part) => part.startsWith(prefix));
+  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : undefined;
+}

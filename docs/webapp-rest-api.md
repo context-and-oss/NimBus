@@ -108,6 +108,12 @@ curl -H "Authorization: Bearer $TOKEN" \
      https://nimbus.example.com/api/endpoint/status/count
 ```
 
+A bearer-token caller needs no antiforgery token. A script that instead reuses a browser's sign-in
+cookie is treated as a browser session: it must `GET` an `/api/…` route first, and then send the
+`NimBus.CSRF` cookie's value as the `X-NimBus-CSRF` header on writes, together with the
+antiforgery cookie that came back. Otherwise writes get 400. See
+[Cross-site request forgery](authentication.md#cross-site-request-forgery).
+
 If you need a TypeScript / Python / Go client, point an OpenAPI generator at
 [`src/NimBus.WebApp/api-spec.yaml`](../src/NimBus.WebApp/api-spec.yaml) — see
 [Code generation](#code-generation).
