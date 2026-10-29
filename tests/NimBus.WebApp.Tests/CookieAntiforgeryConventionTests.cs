@@ -55,7 +55,7 @@ public sealed class CookieAntiforgeryConventionTests
     }
 
     [TestMethod]
-    public async Task The_admin_writes_named_in_the_issue_validate_cookie_writes()
+    public async Task Selected_admin_writes_validate_cookie_writes()
     {
         using var host = await StartHostAsync();
         var actions = host.Services.GetRequiredService<IActionDescriptorCollectionProvider>()
@@ -68,6 +68,7 @@ public sealed class CookieAntiforgeryConventionTests
                      nameof(AdminApiController.PostAdminServicebusSubscriptionPurge),
                      nameof(AdminApiController.PostAdminServicebusSubscriptionRecreate),
                      nameof(AdminApiController.PostAdminDeleteDeadlettered),
+                     nameof(AdminApiController.PostAdminServicebusSubscriptionDeadlettersPurge),
                  })
         {
             var action = actions.Single(candidate =>
