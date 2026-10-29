@@ -489,6 +489,7 @@ public sealed class AdminStatusSafetyTests
         public Task<int> DeleteMessagesByToPreviewAsync(string toField) => Unexpected<int>();
         public Task<BulkOperationResult> DeleteMessagesByToAsync(string toField) => Unexpected<BulkOperationResult>();
         public Task<int> DeleteByStatusPreviewAsync(string endpointId, List<string> statuses) => Unexpected<int>();
+        public Task<int> CountSessionBlockingEventsAsync(string endpointId, List<string> statuses) => Unexpected<int>();
         public Task<BulkOperationResult> DeleteByStatusAsync(string endpointId, List<string> statuses) => Unexpected<BulkOperationResult>();
         public Task<int> SkipMessagesPreviewAsync(string endpointId, List<string> statuses, DateTime? before) => Unexpected<int>();
         public Task<BulkOperationResult> SkipMessagesAsync(string endpointId, List<string> statuses, DateTime? before) => Unexpected<BulkOperationResult>();

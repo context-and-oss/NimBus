@@ -310,7 +310,7 @@ export function DeleteEventCard({ endpoints, initialEndpoint }: { endpoints: End
   const [deleting, setDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleteResult, setDeleteResult] = useState<
-    "success" | "not-found" | null
+    "success" | "not-found" | "blocks-session" | "failed" | null
   >(null);
 
   async function handleDelete() {
@@ -325,8 +325,11 @@ export function DeleteEventCard({ endpoints, initialEndpoint }: { endpoints: End
     } catch (err: any) {
       if (err.status === 404) {
         setDeleteResult("not-found");
+      } else if (err.status === 409) {
+        // #288: it blocks its session, so the API keeps it.
+        setDeleteResult("blocks-session");
       } else {
-        setDeleteResult("not-found");
+        setDeleteResult("failed");
       }
     } finally {
       setDeleting(false);
@@ -390,6 +393,17 @@ export function DeleteEventCard({ endpoints, initialEndpoint }: { endpoints: End
           {deleteResult === "not-found" && (
             <div className="bg-red-50 border border-red-200 dark:bg-red-950/30 dark:border-red-900/60 rounded-md p-3 text-red-800 dark:text-red-200 text-sm">
               Event not found.
+            </div>
+          )}
+          {deleteResult === "blocks-session" && (
+            <div className="bg-yellow-50 border border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-900/60 rounded-md p-3 text-sm">
+              This event blocks its session, so it was not deleted: deleting it would leave the session
+              blocked. Skip it first (on the message, or with Operations → Skip messages), then delete it.
+            </div>
+          )}
+          {deleteResult === "failed" && (
+            <div className="bg-red-50 border border-red-200 dark:bg-red-950/30 dark:border-red-900/60 rounded-md p-3 text-red-800 dark:text-red-200 text-sm">
+              The event could not be deleted. Try again.
             </div>
           )}
 

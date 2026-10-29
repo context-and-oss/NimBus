@@ -30,4 +30,20 @@ public static class BlockedEventRules
         => IsSelfOriginating(originatingMessageId)
             ? lastMessageId ?? string.Empty
             : originatingMessageId ?? string.Empty;
+
+    /// <summary>
+    /// True when <paramref name="row"/> is the kind of event that blocks its session: a handler
+    /// failure (<see cref="ResolutionStatus.Failed"/>) or a pending hand-off (Pending with
+    /// <c>PendingSubStatus</c> <c>"Handoff"</c>). Those are the only two outcomes the strict
+    /// handler blocks a session on, and the session stays blocked until a skip, a resubmit or a
+    /// settlement reaches the endpoint. Deleting the row alone would leave the session blocked by
+    /// an event no one can see any more (#288).
+    /// </summary>
+    public static bool BlocksItsSession(UnresolvedEvent row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return row.ResolutionStatus == ResolutionStatus.Failed
+            || (row.ResolutionStatus == ResolutionStatus.Pending
+                && string.Equals(row.PendingSubStatus, "Handoff", StringComparison.OrdinalIgnoreCase));
+    }
 }

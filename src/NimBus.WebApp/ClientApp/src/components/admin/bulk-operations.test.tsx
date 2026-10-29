@@ -80,4 +80,32 @@ describe("DeleteEventCard", () => {
 
     await waitFor(() => expect(mocks.deleteAdminEvent).toHaveBeenCalledWith("crm", "evt-42"));
   });
+
+  async function deleteEvent(eventId: string) {
+    render(<DeleteEventCard endpoints={endpoints} initialEndpoint="crm" />);
+    fireEvent.change(screen.getByPlaceholderText("Enter event ID..."), { target: { value: eventId } });
+    fireEvent.click(screen.getByRole("button", { name: "Delete Event" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete Single Event" });
+    fireEvent.change(within(dialog).getByPlaceholderText(eventId), { target: { value: eventId } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete event" }));
+  }
+
+  // Issue #288: the API refuses to delete the event a session is blocked on.
+  it("says to skip an event that blocks its session instead of claiming it is missing", async () => {
+    mocks.deleteAdminEvent.mockRejectedValue({ status: 409 });
+
+    await deleteEvent("evt-42");
+
+    expect((await screen.findByText(/blocks its session/)).textContent).toContain("Skip");
+    expect(screen.queryByText("Event not found.")).toBeNull();
+  });
+
+  it("reports any other failure as a failure, not as a missing event", async () => {
+    mocks.deleteAdminEvent.mockRejectedValue({ status: 500 });
+
+    await deleteEvent("evt-42");
+
+    expect(await screen.findByText(/could not be deleted/)).toBeTruthy();
+    expect(screen.queryByText("Event not found.")).toBeNull();
+  });
 });

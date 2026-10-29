@@ -218,7 +218,16 @@ public class AdminImplementation : IAdminApiController
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
             return new NotFoundObjectResult("Endpoint not found");
 
-        var deleted = await _adminService.DeleteEventAsync(endpointId, eventId);
+        bool deleted;
+        try
+        {
+            deleted = await _adminService.DeleteEventAsync(endpointId, eventId);
+        }
+        catch (EventBlocksSessionException exception)
+        {
+            return new ConflictObjectResult(exception.Message);
+        }
+
         if (deleted)
             return new OkResult();
 
@@ -706,7 +715,8 @@ public class AdminImplementation : IAdminApiController
             return new BadRequestObjectResult(error);
 
         var count = await _adminService.DeleteByStatusPreviewAsync(endpointId, statuses);
-        return new OkObjectResult(new CountResponse { Count = count });
+        var blocking = await _adminService.CountSessionBlockingEventsAsync(endpointId, statuses);
+        return new OkObjectResult(new CountResponse { Count = count, BlockingCount = blocking });
     }
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByStatusAsync(string endpointId, DeleteByStatusRequest body)

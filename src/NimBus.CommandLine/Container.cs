@@ -121,8 +121,20 @@ static class Container
         AnsiConsole.MarkupLine($"[green]Copy complete: {eventCount} events + {messageCount} messages[/]");
     }
 
-    static async Task RemoveMessagesFromCosmosDB(CosmosDbClient dbClient, string endpoint, List<string> statuses)
+    // Deleting the event a session is blocked on (a failure, or a pending hand-off) would leave the
+    // session blocked by an event no one can see, with nothing left to skip (#288).
+    static bool KeepsBlockingEvent(UnresolvedEvent @event)
     {
+        if (!BlockedEventRules.BlocksItsSession(@event))
+            return false;
+
+        AnsiConsole.MarkupLine($"[yellow]Keeping {@event.EventId.EscapeMarkup()}: it blocks its session. Skip it first (nb container skip), then delete it as Skipped.[/]");
+        return true;
+    }
+
+    internal static async Task<int> RemoveMessagesFromCosmosDB(IMessageTrackingStore dbClient, string endpoint, List<string> statuses)
+    {
+        int kept = 0;
         AnsiConsole.MarkupLine("[blue]Removing messages in CosmosDB...[/]");
 
         string? continuationToken = string.Empty;
@@ -138,6 +150,12 @@ static class Container
 
             foreach (var @event in searchResponse.Events)
             {
+                if (KeepsBlockingEvent(@event))
+                {
+                    kept++;
+                    continue;
+                }
+
                 AnsiConsole.MarkupLine($"[dim]Removing message with EventId {@event.EventId.EscapeMarkup()} from DB[/]");
                 bool messageRemovedFromDb = await dbClient.RemoveMessage(@event.EventId, @event.SessionId!, endpoint);
                 if (messageRemovedFromDb)
@@ -147,6 +165,8 @@ static class Container
             }
         }
         while (continuationToken != null);
+
+        return kept;
     }
 
     static async Task UpdateMessagesAndResubmit(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, string endpoint, ResolutionStatus resolutionStatus)
@@ -280,8 +300,9 @@ static class Container
         return sent;
     }
 
-    static async Task RemoveMessageFromCosmosDB(CosmosDbClient dbClient, string endpoint, string eventId)
+    internal static async Task<int> RemoveMessageFromCosmosDB(IMessageTrackingStore dbClient, string endpoint, string eventId)
     {
+        int kept = 0;
         AnsiConsole.MarkupLine("[blue]Removing messages in CosmosDB...[/]");
 
         string? continuationToken = string.Empty;
@@ -297,6 +318,12 @@ static class Container
 
             foreach (var @event in searchResponse.Events)
             {
+                if (KeepsBlockingEvent(@event))
+                {
+                    kept++;
+                    continue;
+                }
+
                 AnsiConsole.MarkupLine($"[dim]Removing message with EventId {@event.EventId.EscapeMarkup()} from DB[/]");
                 bool messageRemovedFromDb = await dbClient.RemoveMessage(@event.EventId, @event.SessionId!, endpoint);
                 if (messageRemovedFromDb)
@@ -306,6 +333,8 @@ static class Container
             }
         }
         while (continuationToken != null);
+
+        return kept;
     }
 
     static QueryDefinition BuildEventQuery(DateTime? from, DateTime? to, List<string> statuses)
