@@ -1,7 +1,9 @@
 # ADR-001: Use Service Bus Sessions for Ordered Delivery
 
 ## Status
-Accepted.
+Accepted. [ADR-018](018-on-prem-rabbitmq-transport.md) (proposed, 2026-10-21) would amend it once
+accepted: sessions stay the ordering model on Azure, and the transport-abstraction exclusion below
+is narrowed to one additional transport, RabbitMQ, for on-premises installations.
 
 ## Context
 NimBus needs guaranteed FIFO ordering per logical entity (e.g., all messages for a single order must be processed sequentially). Without ordering, a payment confirmation could be processed before the order creation, or a retry could execute while the original is still being handled.
@@ -34,6 +36,7 @@ When a handler fails, the session is blocked — subsequent messages for that se
 
 ### Design Choice
 - NimBus is intentionally built for Azure Service Bus — sessions are a core platform capability, not an abstraction to be swapped. Transport abstraction is explicitly out of scope (see roadmap "What NOT to Do"). This focus enables deep integration with Service Bus features (sessions, dead-letter queues, scheduled delivery, forwarding subscriptions) without compromise.
+- *Amendment proposed in ADR-018:* Service Bus stays the reference transport and the default. RabbitMQ with SQL Server would be allowed as one additional transport for on-premises installations, behind the existing Core contracts and matching Service Bus behaviour. A generic transport layer, or a third transport, is still out of scope.
 
 ### Trade-offs
 - Session lock management adds complexity (lock renewal, idle timeout)
