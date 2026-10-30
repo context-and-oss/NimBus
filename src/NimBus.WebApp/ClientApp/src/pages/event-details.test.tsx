@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import moment from "moment";
 import * as api from "api-client";
@@ -53,6 +53,9 @@ const clientMocks = vi.hoisted(() => ({
   getEventTypes: vi.fn(),
   getEventBlockedId: vi.fn(),
   getEventIds: vi.fn(),
+  postResubmitEventIds: vi.fn(),
+  postSkipEventIds: vi.fn(),
+  postResubmitWithChangesEventIds: vi.fn(),
 }));
 
 vi.mock("api-client", async () => {
@@ -64,6 +67,9 @@ vi.mock("api-client", async () => {
     getEventTypes = clientMocks.getEventTypes;
     getEventBlockedId = clientMocks.getEventBlockedId;
     getEventIds = clientMocks.getEventIds;
+    postResubmitEventIds = clientMocks.postResubmitEventIds;
+    postSkipEventIds = clientMocks.postSkipEventIds;
+    postResubmitWithChangesEventIds = clientMocks.postResubmitWithChangesEventIds;
   }
   return {
     ...actual,
@@ -87,11 +93,14 @@ beforeEach(() => {
   clientMocks.getEventTypes.mockResolvedValue([]);
   clientMocks.getEventBlockedId.mockResolvedValue({ items: [], total: 0 });
   clientMocks.getEventIds.mockResolvedValue(undefined);
+  clientMocks.postResubmitEventIds.mockResolvedValue(undefined);
+  clientMocks.postSkipEventIds.mockResolvedValue(undefined);
+  clientMocks.postResubmitWithChangesEventIds.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   capturedProps.latest = undefined;
 });
 
@@ -207,6 +216,64 @@ describe("EventDetails -> MessageListing wiring (spec 005)", () => {
       ).toEqual(sampleHistory);
     });
   });
+});
+
+describe("EventDetails operator actions", () => {
+  it.each(["resubmit", "skip", "resubmit with changes"] as const)(
+    "leaves the archived event after a successful %s without fetching it again",
+    async (action) => {
+      clientMocks.getEventId
+        .mockResolvedValueOnce(Object.assign(new api.Event(), {
+          eventId: "evt-1",
+          sessionId: "sess-1",
+          endpointId: "ep-1",
+          lastMessageId: "msg-1",
+          resolutionStatus: "Failed",
+        }))
+        .mockRejectedValueOnce({ status: 404 });
+
+      render(
+        <MemoryRouter initialEntries={["/Message/Index/ep-1/evt-1/0"]}>
+          <Routes>
+            <Route path="/Message/Index/:endpointId/:id/:backindex" element={<EventDetails />} />
+            <Route path="/Endpoints/Details/:endpointId" element={<div>Endpoint details</div>} />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => expect(capturedProps.latest).toBeDefined());
+      await act(async () => {
+        if (action === "resubmit") {
+          const submit = capturedProps.latest!.resubmitEvent as (eventId: string, messageId: string) => Promise<void>;
+          await submit("evt-1", "msg-1");
+        } else if (action === "skip") {
+          const skip = capturedProps.latest!.skipEvent as (eventId: string, messageId: string) => Promise<void>;
+          await skip("evt-1", "msg-1");
+        } else {
+          const submit = capturedProps.latest!.resubmitEventWithChanges as (
+            eventId: string, messageId: string, body: api.ResubmitWithChanges,
+          ) => Promise<void>;
+          await submit("evt-1", "msg-1", api.ResubmitWithChanges.fromJS({
+            eventTypeId: "Demo.Type", eventContent: "{}",
+          }));
+        }
+      });
+
+      const post = action === "resubmit"
+        ? clientMocks.postResubmitEventIds
+        : action === "skip"
+          ? clientMocks.postSkipEventIds
+          : clientMocks.postResubmitWithChangesEventIds;
+      expect(post).toHaveBeenCalledTimes(1);
+      if (action === "resubmit with changes") {
+        expect(post).toHaveBeenCalledWith("evt-1", "msg-1", expect.any(api.ResubmitWithChanges));
+      } else {
+        expect(post).toHaveBeenCalledWith("evt-1", "msg-1");
+      }
+      expect(clientMocks.getEventId).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Endpoint details")).toBeTruthy();
+    },
+  );
 });
 
 describe("EventDetails independent-request parallelization", () => {

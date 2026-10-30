@@ -158,14 +158,19 @@ const EventDetails = (props: EventDetailsProps) => {
     if (generation === routeGeneration.current) setCosmosEvent(updated);
   };
 
+  // Successful operator commands archive the failed row, so the detail URL
+  // no longer resolves. Replace it in history to keep Back from reopening it.
+  const leaveArchivedEvent = () =>
+    navigate(`/Endpoints/Details/${params.endpointId!}`, { replace: true });
+
   const skipEvent = async (eventId: string, messageId: string) => {
     await client.postSkipEventIds(eventId, messageId);
-    await reloadEvent();
+    leaveArchivedEvent();
   };
 
   const resubmitEvent = async (eventId: string, messageId: string) => {
     await client.postResubmitEventIds(eventId, messageId);
-    await reloadEvent();
+    leaveArchivedEvent();
   };
 
   const reprocessDeferred = async () => {
@@ -201,7 +206,7 @@ const EventDetails = (props: EventDetailsProps) => {
     body: api.ResubmitWithChanges,
   ) => {
     await client.postResubmitWithChangesEventIds(eventId, messageId, body);
-    await reloadEvent();
+    leaveArchivedEvent();
   };
 
   // Settle a pending handoff on the operator's behalf. The Pending → Completed/

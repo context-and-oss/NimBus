@@ -181,5 +181,6 @@
 - SQL conditional-write correction: timestamp versions read from DATETIME2 must be rebound explicitly as DbType.DateTime2. Dapper's inferred DateTime can round a returned timestamp and intermittently reject an unchanged row; verify against a live SQL Server, not only the in-memory provider.
 - Deferred broker inspection correction: the local emulator exposes transfer dead-letter runtime counts but does not support peeking that subqueue. Accept an explicit zero count as point-in-time absence; failed or nonzero counts never imply absence. Qualify Azure.Response in tests that also define a Response helper.
 - Event Details layout correction: TabPanel is a flex row. Wrap vertically stacked recovery and message sections in one full-width block; a React fragment turns them into cramped side-by-side flex children. Verify in the real browser shell.
+- Operator-command navigation correction: successful resubmit and skip archive the failed event row. Leave its detail URL after the POST succeeds; re-fetching that row produces a 404 that the UI can misreport as a command failure.
 
 - Resolver dead-letter UI correction: Service Bus topic names retain broker casing. Compare Resolver names case-insensitively and cover lowercase/uppercase API names; run Vitest from ClientApp (npm exec from the repository root misses Vite aliases).
