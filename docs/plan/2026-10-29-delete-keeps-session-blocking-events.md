@@ -65,6 +65,21 @@ Reprocess for one already stranded.
 - **Vitest:** the Delete by status note and the Skipped option, and the single-delete card's 409
   message.
 
+## Follow-up (2026-10-31): Event Details → Delete
+
+The first pass missed the Event Details Delete button. Its route,
+`DELETE /api/event/invalid/{endpointId}/{eventId}/{sessionId}`, called `RemoveMessage` directly, and
+the button showed for Failed events. Now:
+
+- The route refuses a row that blocks its session with 409, using the same text as
+  `EventBlocksSessionException`. The API spec documents the 404 and 409.
+- The page doesn't offer Delete for a Failed event. Dead-lettered and Unsupported events keep it.
+- A refused or failed delete says why in a toast instead of only changing the button to
+  "Delete failed".
+
+Not covered: a message-version check on that route. A Delete sent after the event has moved on to
+a newer, non-blocking attempt still removes it.
+
 ## Out of scope
 
 - Releasing a session already stranded: Reprocess on a Deferred row already does it.

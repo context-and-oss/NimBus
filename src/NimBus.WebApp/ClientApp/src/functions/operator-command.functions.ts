@@ -16,6 +16,18 @@ const statusOf = (caught: unknown): number | undefined =>
 export const isStaleCommand = (caught: unknown): boolean =>
   statusOf(caught) === 409;
 
+/** A toast-ready explanation of why deleting an event failed. */
+export const describeDeleteError = (caught: unknown): string => {
+  switch (statusOf(caught)) {
+    case 409:
+      return "This event blocks its session, so it was not deleted. Skip or resubmit it first.";
+    case 404:
+      return "The event was not found. Refresh and try again.";
+    default:
+      return "The delete failed.";
+  }
+};
+
 /** A toast-ready explanation of why an operator command was refused. */
 export const describeCommandError = (
   caught: unknown,

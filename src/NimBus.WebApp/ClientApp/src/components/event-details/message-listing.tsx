@@ -32,6 +32,7 @@ import { useEffect, useMemo, useState } from "react";
 import { notifyError } from "functions/notifications.functions";
 import {
   describeCommandError,
+  describeDeleteError,
   isStaleCommand,
 } from "functions/operator-command.functions";
 
@@ -551,6 +552,11 @@ export default function MessageListing(props: IMessageListingProps) {
   // Pending handoffs are driven by the Hero card's Complete/Fail actions, so the
   // Details-header resubmit/skip buttons are only for terminally failed events.
   const showFailedActions = isFailedMessage(props.eventDetails?.resolutionStatus);
+  // A Failed event blocks its session, and the server refuses to delete it
+  // (#288): Skip or Resubmit is the way out for it.
+  const canDelete =
+    showFailedActions &&
+    props.eventDetails?.resolutionStatus?.toLowerCase() !== "failed";
 
   // The hero shows for any pending handoff, and stays visible (in its settled/
   // failed form) immediately after the operator acts.
@@ -697,7 +703,8 @@ export default function MessageListing(props: IMessageListingProps) {
     try {
       await props.deleteEvent?.();
       setDeleteButton({ text: "Deleted", isDisabled: true });
-    } catch {
+    } catch (caught) {
+      notifyError(describeDeleteError(caught));
       setDeleteButton({ text: "Delete failed", isDisabled: false });
     }
   };
@@ -779,7 +786,7 @@ export default function MessageListing(props: IMessageListingProps) {
             >
               {skipButton.text}
             </Button>
-            {props.deleteEvent && isFailedMessage(props.eventDetails?.resolutionStatus) && (
+            {props.deleteEvent && canDelete && (
               <Button
                 size="xs"
                 colorScheme="red"

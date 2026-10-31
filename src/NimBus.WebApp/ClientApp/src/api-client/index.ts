@@ -2340,6 +2340,14 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             return;
             });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("The endpoint or the event was not found.", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            return throwException("The event blocks its session (it failed, or is a pending hand-off), so deleting it would leave the session blocked. Skip or resubmit it first. Nothing was deleted.", status, _responseText, _headers);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);

@@ -658,6 +658,10 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<Event>>> GetEventPendingIdAsync(string endpointId);
 
+        /// <remarks>
+        /// Permanently delete one stored event. Refused with 409 for the event its session is blocked on.
+        /// </remarks>
+
 
 
         /// <returns>OK</returns>
@@ -928,6 +932,9 @@ namespace NimBus.WebApp.ManagementApi
             return _implementation.GetEventPendingIdAsync(endpointId);
         }
 
+        /// <remarks>
+        /// Permanently delete one stored event. Refused with 409 for the event its session is blocked on.
+        /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpDelete, Microsoft.AspNetCore.Mvc.Route("api/event/invalid/{endpointId}/{eventId}/{sessionId}")]
         public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> DeleteEventInvalidId(string endpointId, string eventId, string sessionId)

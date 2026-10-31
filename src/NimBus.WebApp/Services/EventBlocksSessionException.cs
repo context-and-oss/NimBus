@@ -10,11 +10,15 @@ namespace NimBus.WebApp.Services;
 public class EventBlocksSessionException : InvalidOperationException
 {
     public EventBlocksSessionException(string eventId)
-        : base($"Event '{eventId}' blocks its session, so deleting it would leave the session blocked. " +
-            "Skip it first (or resubmit it); then it can be deleted.")
+        : base(Describe(eventId))
     {
         EventId = eventId;
     }
+
+    /// <summary>Why <paramref name="eventId"/> can't be deleted, for callers that answer without throwing.</summary>
+    public static string Describe(string eventId) =>
+        $"Event '{eventId}' blocks its session, so deleting it would leave the session blocked. " +
+        "Skip it first (or resubmit it); then it can be deleted.";
 
     /// <summary>The event that blocks its session.</summary>
     public string EventId { get; }
