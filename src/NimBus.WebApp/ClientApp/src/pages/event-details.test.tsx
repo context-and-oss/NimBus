@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import moment from "moment";
 import * as api from "api-client";
 import EventDetails, { enrichBlockedItems } from "./event-details";
@@ -53,6 +53,7 @@ const clientMocks = vi.hoisted(() => ({
   getEventTypes: vi.fn(),
   getEventBlockedId: vi.fn(),
   getEventIds: vi.fn(),
+  postResubmitEventIds: vi.fn(),
 }));
 
 vi.mock("api-client", async () => {
@@ -64,6 +65,7 @@ vi.mock("api-client", async () => {
     getEventTypes = clientMocks.getEventTypes;
     getEventBlockedId = clientMocks.getEventBlockedId;
     getEventIds = clientMocks.getEventIds;
+    postResubmitEventIds = clientMocks.postResubmitEventIds;
   }
   return {
     ...actual,
@@ -182,6 +184,276 @@ describe("enrichBlockedItems", () => {
       "keep-0",
       "keep-1",
     ]);
+  });
+});
+
+describe("EventDetails after an operator command", () => {
+  const failedEvent = (lastMessageId: string, resolutionStatus = "Failed") =>
+    Object.assign(new api.Event(), {
+      eventId: "evt-1",
+      sessionId: "sess-1",
+      endpointId: "ep-1",
+      lastMessageId,
+      resolutionStatus,
+    });
+
+  // The follow-up's timer callbacks set React state. Advancing inside act makes
+  // those updates render before the assertions that read the captured props.
+  const advance = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    // clearAllMocks keeps queued *Once values; drop them so a test that stops
+    // early cannot feed its leftovers to the next one.
+    clientMocks.getEventId.mockReset();
+    clientMocks.getEventDetailsHistoryId.mockReset();
+    clientMocks.postResubmitEventIds.mockReset();
+  });
+
+  it("reports a resubmit as done while the archived row 404s, then shows the next attempt", async () => {
+    // The command archives the row until the Resolver records the next attempt,
+    // so the event 404s, then moves through Pending before it fails again.
+    clientMocks.getEventId
+      .mockResolvedValueOnce(failedEvent("msg-1"))
+      .mockRejectedValueOnce(Object.assign(new Error("Event not found"), { status: 404 }))
+      .mockResolvedValueOnce(failedEvent("msg-2", "Pending"))
+      .mockResolvedValue(failedEvent("msg-3"));
+    clientMocks.postResubmitEventIds.mockResolvedValue(undefined);
+
+    render(
+      <MemoryRouter initialEntries={["/Message/Index/ep-1/evt-1/0"]}>
+        <Routes>
+          <Route
+            path="/Message/Index/:endpointId/:id/:backindex"
+            element={<EventDetails />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const shownMessageId = () =>
+      (capturedProps.latest?.eventDetails as api.Event | undefined)?.lastMessageId;
+    await waitFor(() => expect(shownMessageId()).toBe("msg-1"));
+
+    vi.useFakeTimers();
+    const resubmit = capturedProps.latest!.resubmitEvent as (
+      eventId: string,
+      messageId: string,
+    ) => Promise<void>;
+    await act(async () => {
+      await expect(resubmit("evt-1", "msg-1")).resolves.toBeUndefined();
+    });
+    expect(clientMocks.postResubmitEventIds).toHaveBeenCalledWith("evt-1", "msg-1");
+
+    // The listing keeps the actions closed for the attempt the command acted on.
+    expect(capturedProps.latest!.commandAcceptedFor).toBe("msg-1");
+
+    await advance(15_000);
+    expect(shownMessageId()).toBe("msg-3");
+    expect(clientMocks.getEventDetailsHistoryId.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("keeps the settled attempt's history when an older history response arrives late", async () => {
+    clientMocks.getEventId
+      .mockResolvedValueOnce(failedEvent("msg-1"))
+      .mockResolvedValueOnce(failedEvent("msg-2", "Pending"))
+      .mockResolvedValue(failedEvent("msg-3"));
+    clientMocks.postResubmitEventIds.mockResolvedValue(undefined);
+    const history = (label: string) => [
+      Object.assign(new api.Message(), { messageId: label }),
+    ];
+    let releasePendingHistory: (value: api.Message[]) => void = () => {};
+    clientMocks.getEventDetailsHistoryId
+      .mockResolvedValueOnce(history("initial"))
+      .mockReturnValueOnce(
+        new Promise<api.Message[]>((resolve) => {
+          releasePendingHistory = resolve;
+        }),
+      )
+      .mockResolvedValue(history("settled"));
+
+    render(
+      <MemoryRouter initialEntries={["/Message/Index/ep-1/evt-1/0"]}>
+        <Routes>
+          <Route
+            path="/Message/Index/:endpointId/:id/:backindex"
+            element={<EventDetails />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const shownHistory = () =>
+      (capturedProps.latest?.messages as api.Message[] | undefined)?.[0]?.messageId;
+    await waitFor(() => expect(shownHistory()).toBe("initial"));
+
+    vi.useFakeTimers();
+    const resubmit = capturedProps.latest!.resubmitEvent as (
+      eventId: string,
+      messageId: string,
+    ) => Promise<void>;
+    await resubmit("evt-1", "msg-1");
+    await advance(15_000);
+    expect(shownHistory()).toBe("settled");
+
+    releasePendingHistory(history("pending"));
+    await advance(0);
+    expect(shownHistory()).toBe("settled");
+  });
+
+  const renderPage = () =>
+    render(
+      <MemoryRouter initialEntries={["/Message/Index/ep-1/evt-1/0"]}>
+        <Routes>
+          <Route
+            path="/Message/Index/:endpointId/:id/:backindex"
+            element={<EventDetails />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+  const shownEvent = () => capturedProps.latest?.eventDetails as api.Event | undefined;
+  const resubmitShownEvent = async () => {
+    const resubmit = capturedProps.latest!.resubmitEvent as (
+      eventId: string,
+      messageId: string,
+    ) => Promise<void>;
+    await act(async () => {
+      await resubmit("evt-1", "msg-1");
+    });
+  };
+
+  it("keeps following an attempt that is still Pending after the fast checks", async () => {
+    // Initial load, then Pending for the five fast checks and two slow ones.
+    let calls = 0;
+    clientMocks.getEventId.mockImplementation(() => {
+      calls++;
+      if (calls === 1) return Promise.resolve(failedEvent("msg-1"));
+      if (calls <= 8) return Promise.resolve(failedEvent("msg-2", "Pending"));
+      return Promise.resolve(failedEvent("msg-3"));
+    });
+    clientMocks.postResubmitEventIds.mockResolvedValue(undefined);
+    renderPage();
+    await waitFor(() => expect(shownEvent()?.lastMessageId).toBe("msg-1"));
+
+    vi.useFakeTimers();
+    await resubmitShownEvent();
+    await advance(60_000);
+
+    expect(shownEvent()?.lastMessageId).toBe("msg-3");
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("offers a refresh when the attempt has not settled after two minutes", async () => {
+    clientMocks.getEventId
+      .mockResolvedValueOnce(failedEvent("msg-1"))
+      .mockResolvedValue(failedEvent("msg-2", "Pending"));
+    clientMocks.postResubmitEventIds.mockResolvedValue(undefined);
+    renderPage();
+    await waitFor(() => expect(shownEvent()?.lastMessageId).toBe("msg-1"));
+
+    vi.useFakeTimers();
+    await resubmitShownEvent();
+    await advance(130_000);
+
+    const notice = screen.getByRole("status");
+    expect(notice.textContent).toContain("still being processed");
+
+    clientMocks.getEventId.mockResolvedValue(failedEvent("msg-3"));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    });
+    await advance(0);
+
+    expect(shownEvent()?.lastMessageId).toBe("msg-3");
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("keeps the settled attempt's history when the page's first history response arrives last", async () => {
+    clientMocks.getEventId
+      .mockResolvedValueOnce(failedEvent("msg-1"))
+      .mockResolvedValue(failedEvent("msg-3"));
+    clientMocks.postResubmitEventIds.mockResolvedValue(undefined);
+    const history = (label: string) => [
+      Object.assign(new api.Message(), { messageId: label }),
+    ];
+    let releaseFirstHistory: (value: api.Message[]) => void = () => {};
+    clientMocks.getEventDetailsHistoryId
+      .mockReturnValueOnce(
+        new Promise<api.Message[]>((resolve) => {
+          releaseFirstHistory = resolve;
+        }),
+      )
+      .mockResolvedValue(history("settled"));
+    renderPage();
+    await waitFor(() => expect(shownEvent()?.lastMessageId).toBe("msg-1"));
+    const shownHistory = () =>
+      (capturedProps.latest?.messages as api.Message[] | undefined)?.[0]?.messageId;
+
+    vi.useFakeTimers();
+    await resubmitShownEvent();
+    await advance(15_000);
+    expect(shownHistory()).toBe("settled");
+
+    releaseFirstHistory(history("initial"));
+    await advance(0);
+    expect(shownHistory()).toBe("settled");
+  });
+
+  it("does not follow the old event after the operator moves on during the POST", async () => {
+    clientMocks.getEventId.mockImplementation((eventId: string) =>
+      Promise.resolve(
+        eventId === "evt-2"
+          ? Object.assign(failedEvent("msg-9"), { eventId: "evt-2" })
+          : failedEvent("msg-1"),
+      ),
+    );
+    let acceptPost: () => void = () => {};
+    clientMocks.postResubmitEventIds.mockReturnValue(
+      new Promise<void>((resolve) => {
+        acceptPost = resolve;
+      }),
+    );
+    let navigateTo: (to: string) => void = () => {};
+    const Navigator = () => {
+      const navigate = useNavigate();
+      navigateTo = navigate;
+      return null;
+    };
+
+    render(
+      <MemoryRouter initialEntries={["/Message/Index/ep-1/evt-1/0"]}>
+        <Navigator />
+        <Routes>
+          <Route
+            path="/Message/Index/:endpointId/:id/:backindex"
+            element={<EventDetails />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const shownEventId = () =>
+      (capturedProps.latest?.eventDetails as api.Event | undefined)?.eventId;
+    await waitFor(() => expect(shownEventId()).toBe("evt-1"));
+
+    const resubmit = capturedProps.latest!.resubmitEvent as (
+      eventId: string,
+      messageId: string,
+    ) => Promise<void>;
+    const command = resubmit("evt-1", "msg-1");
+    act(() => navigateTo("/Message/Index/ep-1/evt-2/0"));
+    await waitFor(() => expect(shownEventId()).toBe("evt-2"));
+
+    vi.useFakeTimers();
+    clientMocks.getEventId.mockClear();
+    acceptPost();
+    await command;
+    await advance(15_000);
+
+    expect(clientMocks.getEventId).not.toHaveBeenCalled();
+    expect(shownEventId()).toBe("evt-2");
+    expect(capturedProps.latest!.commandAcceptedFor).toBeUndefined();
   });
 });
 

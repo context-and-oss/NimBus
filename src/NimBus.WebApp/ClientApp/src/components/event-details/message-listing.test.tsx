@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import moment from "moment";
 import * as api from "api-client";
+import { notifyError, notifySuccess } from "functions/notifications.functions";
 import MessageListing, {
   diffMs,
   getHandoffResult,
@@ -17,6 +18,13 @@ import MessageListing, {
 // so the component tests stay hermetic.
 vi.mock("components/ui/toast", () => ({
   useToast: () => ({ addToast: () => {} }),
+}));
+vi.mock("functions/notifications.functions", () => ({
+  notifySuccess: vi.fn(),
+  notifyError: vi.fn(),
+  notifyWarning: vi.fn(),
+  notifyInfo: vi.fn(),
+  notifyWithUndo: vi.fn(),
 }));
 
 vi.mock("api-client", async () => {
@@ -846,5 +854,90 @@ describe("MessageListing memoised payload derivations", () => {
     } finally {
       parseSpy.mockRestore();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Operator commands: a command the server accepted reads as done, and the
+// actions come back once the event's next attempt has been recorded.
+// ---------------------------------------------------------------------------
+describe("MessageListing operator commands", () => {
+  const failed = (lastMessageId: string): api.Event =>
+    ({
+      eventId: "evt-1",
+      sessionId: "sess-1",
+      endpointId: "ep-1",
+      lastMessageId,
+      resolutionStatus: "Failed",
+    }) as unknown as api.Event;
+
+  function renderListing(
+    eventDetails: api.Event,
+    commands: { resubmitEvent?: () => Promise<void>; skipEvent?: () => Promise<void> },
+    commandAcceptedFor?: string,
+  ) {
+    const listing = (details: api.Event) => (
+      <MemoryRouter>
+        <MessageListing
+          eventDetails={details}
+          eventTypes={[]}
+          skipEvent={commands.skipEvent ?? vi.fn()}
+          resubmitEvent={commands.resubmitEvent ?? vi.fn()}
+          resubmitEventWithChanges={vi.fn()}
+          deleteEvent={vi.fn()}
+          commandAcceptedFor={commandAcceptedFor}
+        />
+      </MemoryRouter>
+    );
+    const view = render(listing(eventDetails));
+    return { rerender: (details: api.Event) => view.rerender(listing(details)) };
+  }
+
+  beforeEach(() => {
+    vi.mocked(notifySuccess).mockClear();
+    vi.mocked(notifyError).mockClear();
+  });
+
+  it.each([
+    ["Resubmit", "Resubmitted", "resubmitEvent"],
+    ["Skip", "Skipped", "skipEvent"],
+  ] as const)(
+    "confirms an accepted %s and offers it again for the next attempt",
+    async (label, done, command) => {
+      const run = vi.fn().mockResolvedValue(undefined);
+      const { rerender } = renderListing(failed("msg-1"), { [command]: run });
+
+      fireEvent.click(screen.getByRole("button", { name: label }));
+
+      const doneButton = await screen.findByRole<HTMLButtonElement>("button", { name: done });
+      expect(doneButton.disabled).toBe(true);
+      expect(run).toHaveBeenCalledWith("evt-1", "msg-1");
+      expect(notifySuccess).toHaveBeenCalledWith(`${done}.`);
+      expect(notifyError).not.toHaveBeenCalled();
+
+      // The event failed again: a new attempt with its own message id.
+      rerender(failed("msg-2"));
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: label }).disabled).toBe(false);
+    },
+  );
+
+  it("keeps every action closed for the attempt a command was accepted for, even when mounted fresh", () => {
+    // A fresh mount is what switching back to the Message tab does.
+    const { rerender } = renderListing(failed("msg-1"), {}, "msg-1");
+    const disabled = (name: string) =>
+      screen.getByRole<HTMLButtonElement>("button", { name }).disabled;
+
+    expect(disabled("Resubmit")).toBe(true);
+    expect(disabled("Resubmit with changes")).toBe(true);
+    expect(disabled("Skip")).toBe(true);
+    // Delete removes the row by event and session, so it could remove a newer
+    // attempt the page has not shown yet.
+    expect(disabled("Delete")).toBe(true);
+
+    rerender(failed("msg-2"));
+    expect(disabled("Resubmit")).toBe(false);
+    expect(disabled("Resubmit with changes")).toBe(false);
+    expect(disabled("Skip")).toBe(false);
+    expect(disabled("Delete")).toBe(false);
   });
 });
