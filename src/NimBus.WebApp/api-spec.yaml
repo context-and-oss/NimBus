@@ -5214,6 +5214,10 @@ components:
           type: array
           items:
             type: string
+        rowsDeleted:
+          type: integer
+          nullable: true
+          description: Stored rows deleted by the operation. Set only by Purge subscription; null for every other operation.
     DeadLetterOverview:
       title: DeadLetterOverview
       type: object

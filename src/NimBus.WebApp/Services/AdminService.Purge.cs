@@ -342,6 +342,15 @@ public partial class AdminService
         int failed = 0;
         var errors = new List<string>();
 
+        // The event id and session of every message the purge completes, first one wins, so a
+        // row shared by several messages is looked up and deleted once (#289).
+        var completedEvents = new Dictionary<string, string>(StringComparer.Ordinal);
+        void RecordCompleted(ServiceBusReceivedMessage message, string sessionId)
+        {
+            if (EventIdOf(message) is { Length: > 0 } eventId)
+                completedEvents.TryAdd(eventId, sessionId);
+        }
+
         foreach (var (sid, messages) in sessionMessages)
         {
             ServiceBusSessionReceiver sessionReceiver;
@@ -368,6 +377,7 @@ public partial class AdminService
                         {
                             await sessionReceiver.CompleteMessageAsync(msg);
                             succeeded++;
+                            RecordCompleted(msg, sid);
                         }
                     }
                     catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessageNotFound) { }
@@ -389,6 +399,7 @@ public partial class AdminService
                             {
                                 await sessionReceiver.CompleteMessageAsync(msg);
                                 succeeded++;
+                                RecordCompleted(msg, sid);
                                 anyCompleted = true;
                             }
                             else
@@ -406,8 +417,50 @@ public partial class AdminService
             }
         }
 
-        return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
+        // The Resolver recorded each purged message as Pending (or Deferred); with the message gone
+        // nothing would ever settle that row. Rows that block their session, and settled rows,
+        // are kept. A row that cannot be deleted is a failure; its message is still purged.
+        int rowsDeleted = 0;
+        foreach (var (eventId, sessionId) in completedEvents)
+        {
+            try
+            {
+                var row = await _messageStore.GetEvent(endpointId, eventId);
+                if (row is null || !IsLeftByPurge(row))
+                    continue;
+
+                if (await _messageStore.RemoveMessage(eventId, sessionId, endpointId))
+                {
+                    rowsDeleted++;
+                }
+                else
+                {
+                    failed++;
+                    errors.Add($"Stored row {eventId}: not removed");
+                }
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                errors.Add($"Stored row {eventId}: {ex.Message}");
+            }
+        }
+
+        return new BulkOperationResult
+        {
+            Processed = succeeded + failed,
+            Succeeded = succeeded,
+            Failed = failed,
+            Errors = errors,
+            RowsDeleted = rowsDeleted,
+        };
     }
+
+    // A Pending row (other than a pending hand-off, which blocks its session) or a Deferred row
+    // only ever waits for its message, so it is stranded once the purge removes that message.
+    private static bool IsLeftByPurge(MessageStore.UnresolvedEvent row) =>
+        row.ResolutionStatus == MessageStore.ResolutionStatus.Deferred
+        || (row.ResolutionStatus == MessageStore.ResolutionStatus.Pending && !BlockedEventRules.BlocksItsSession(row));
 
     public async Task<int> DeleteMessagesByToPreviewAsync(string toField)
     {

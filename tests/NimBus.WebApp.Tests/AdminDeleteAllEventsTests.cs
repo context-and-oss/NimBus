@@ -46,6 +46,7 @@ public sealed class AdminDeleteAllEventsTests
         Assert.AreEqual(4, result.Succeeded);
         Assert.AreEqual(0, result.Failed);
         Assert.AreEqual(0, result.Errors.Count);
+        Assert.IsNull(result.RowsDeleted, "only Purge subscription reports deleted rows");
 
         Assert.IsNull(await store.GetEvent(EndpointId, "evt-1"));
         Assert.IsNull(await store.GetEvent(EndpointId, "evt-2"));
