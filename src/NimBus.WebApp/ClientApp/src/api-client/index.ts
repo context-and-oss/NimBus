@@ -5271,6 +5271,14 @@ export class Client extends ApiClientBase {
             result200 = CountResponse.fromJS(resultData200);
             return result200;
             });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
@@ -5315,6 +5323,14 @@ export class Client extends ApiClientBase {
             let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
             result200 = BulkOperationResult.fromJS(resultData200);
             return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5551,6 +5567,18 @@ export class Client extends ApiClientBase {
             let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
             result200 = CopyResult.fromJS(resultData200);
             return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {

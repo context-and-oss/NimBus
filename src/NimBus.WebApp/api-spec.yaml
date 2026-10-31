@@ -2558,6 +2558,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CountResponse'
+        '400':
+          description: The operation needs the Cosmos DB storage provider
+        '403':
+          description: Forbidden (requires the site Owner role)
   /api/admin/messages/delete-by-to:
     post:
       summary: Delete messages by To field
@@ -2576,6 +2580,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
+        '400':
+          description: The operation needs the Cosmos DB storage provider
+        '403':
+          description: Forbidden (requires the site Owner role)
   '/api/admin/endpoint/{endpointId}/delete-by-status-preview':
     post:
       summary: Preview delete events by status
@@ -2704,6 +2712,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CopyResult'
+        '400':
+          description: The operation needs the Cosmos DB storage provider
+        '403':
+          description: Forbidden (requires the site Owner role)
+        '404':
+          description: Endpoint not found
   /api/messages/search:
     post:
       summary: Search messages across all endpoints

@@ -730,15 +730,30 @@ public class AdminImplementation : IAdminApiController
     public async Task<ActionResult<CountResponse>> PostAdminDeleteByToPreviewAsync(DeleteByToRequest body)
     {
         if (!await IsSiteOwnerAsync()) return new ForbidResult();
-        var count = await _adminService.DeleteMessagesByToPreviewAsync(body.ToField);
-        return new OkObjectResult(new CountResponse { Count = count });
+        try
+        {
+            var count = await _adminService.DeleteMessagesByToPreviewAsync(body.ToField);
+            return new OkObjectResult(new CountResponse { Count = count });
+        }
+        catch (NotSupportedException exception)
+        {
+            // Cosmos-only: answer 400 with the reason rather than an unhandled 500 (#285).
+            return new BadRequestObjectResult(exception.Message);
+        }
     }
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByToAsync(DeleteByToRequest body)
     {
         if (!await IsSiteOwnerAsync()) return new ForbidResult();
-        var result = await _adminService.DeleteMessagesByToAsync(body.ToField);
-        return new OkObjectResult(result);
+        try
+        {
+            var result = await _adminService.DeleteMessagesByToAsync(body.ToField);
+            return new OkObjectResult(result);
+        }
+        catch (NotSupportedException exception)
+        {
+            return new BadRequestObjectResult(exception.Message);
+        }
     }
 
     public async Task<ActionResult<CountResponse>> PostAdminDeleteByStatusPreviewAsync(string endpointId, DeleteByStatusRequest body)
@@ -805,11 +820,18 @@ public class AdminImplementation : IAdminApiController
         if (!await IsSiteOwnerAsync()) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
 
-        var result = await _adminService.CopyEndpointDataAsync(
-            endpointId, body.TargetConnectionString,
-            body.From, body.To,
-            body.Statuses?.ToList() ?? new(), body.BatchSize);
-        return new OkObjectResult(result);
+        try
+        {
+            var result = await _adminService.CopyEndpointDataAsync(
+                endpointId, body.TargetConnectionString,
+                body.From, body.To,
+                body.Statuses?.ToList() ?? new(), body.BatchSize);
+            return new OkObjectResult(result);
+        }
+        catch (NotSupportedException exception)
+        {
+            return new BadRequestObjectResult(exception.Message);
+        }
     }
 
     // ───────────── Audit settings ─────────────
