@@ -930,14 +930,12 @@ describe("MessageListing operator commands", () => {
     expect(disabled("Resubmit")).toBe(true);
     expect(disabled("Resubmit with changes")).toBe(true);
     expect(disabled("Skip")).toBe(true);
-    // Delete removes the row by event and session, so it could remove a newer
-    // attempt the page has not shown yet.
-    expect(disabled("Delete")).toBe(true);
+    // A Failed event blocks its session, so the page offers no Delete for it (#301).
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
 
     rerender(failed("msg-2"));
     expect(disabled("Resubmit")).toBe(false);
     expect(disabled("Resubmit with changes")).toBe(false);
     expect(disabled("Skip")).toBe(false);
-    expect(disabled("Delete")).toBe(false);
   });
 });
