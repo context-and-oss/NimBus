@@ -20041,6 +20041,7 @@ export enum MessageAuditAuditType {
     AgentApiKeyCreated = "agentApiKeyCreated",
     AgentApiKeyRevoked = "agentApiKeyRevoked",
     AgentApiKeyRemoved = "agentApiKeyRemoved",
+    CopyEndpointData = "copyEndpointData",
 }
 
 export class MessageContent implements IMessageContent {
@@ -20187,6 +20188,7 @@ export enum AuditSearchFilterAuditType {
     AgentApiKeyCreated = "agentApiKeyCreated",
     AgentApiKeyRevoked = "agentApiKeyRevoked",
     AgentApiKeyRemoved = "agentApiKeyRemoved",
+    CopyEndpointData = "copyEndpointData",
 }
 
 export enum StalePendingRowVerdict {
@@ -20269,6 +20271,7 @@ export enum AuditEntryAuditType {
     AgentApiKeyCreated = "agentApiKeyCreated",
     AgentApiKeyRevoked = "agentApiKeyRevoked",
     AgentApiKeyRemoved = "agentApiKeyRemoved",
+    CopyEndpointData = "copyEndpointData",
 }
 
 export enum AgentSettleRequestOutcome {
