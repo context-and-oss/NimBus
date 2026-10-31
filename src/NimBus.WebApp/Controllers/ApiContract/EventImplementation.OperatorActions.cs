@@ -262,6 +262,12 @@ public partial class EventImplementation
 
         try
         {
+            // Deleting the event its session is blocked on would strand the session (#288).
+            var blocking = await messageStore.GetFailedEvent(endpointId, eventId, sessionId)
+                ?? await messageStore.GetPendingEvent(endpointId, eventId, sessionId);
+            if (blocking != null && BlockedEventRules.BlocksItsSession(blocking))
+                return new ConflictObjectResult(EventBlocksSessionException.Describe(eventId));
+
             var result = await messageStore.RemoveMessage(eventId, sessionId, endpointId);
             return result
                 ? new OkResult()

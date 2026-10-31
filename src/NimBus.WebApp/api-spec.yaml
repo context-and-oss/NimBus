@@ -1092,7 +1092,15 @@ paths:
       responses:
         '200':
           description: OK
-      description: ''
+        '404':
+          description: The endpoint or the event was not found.
+        '409':
+          description: >-
+            The event blocks its session (it failed, or is a pending hand-off), so deleting it
+            would leave the session blocked. Skip or resubmit it first. Nothing was deleted.
+      description: >-
+        Permanently delete one stored event. Refused with 409 for the event its session is
+        blocked on.
       tags:
         - Event
   '/api/endpoint/{endpointId}/roleAssignmentScript':
