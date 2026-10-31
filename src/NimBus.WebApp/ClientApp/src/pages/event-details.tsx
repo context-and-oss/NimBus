@@ -6,6 +6,7 @@ import DeferredRecovery from "components/event-details/deferred-recovery";
 import { useParams, useNavigate } from "react-router-dom";
 import TabSelection from "components/tab-selection";
 import Loading from "components/loading/loading";
+import { Button } from "components/ui/button";
 import BlockedListing from "components/event-details/blocked-listing";
 import AuditListing from "components/event-details/audit-listing";
 import FlowTimeline from "components/event-details/flow-timeline";
@@ -32,8 +33,16 @@ const BLOCKED_PAGE_SIZE = 20;
 
 // An accepted resubmit or skip archives the row until the Resolver records the
 // next attempt, so the event 404s for a moment and then passes through Pending.
-// The page follows it on this schedule (about 10 seconds in all) until it settles.
-const COMMAND_FOLLOW_UP_DELAYS_MS = [300, 700, 1500, 3000, 5000];
+// The page follows it until it settles: quick checks first, then every 10
+// seconds, about two minutes in all, after which it offers a manual refresh.
+const COMMAND_FOLLOW_UP_DELAYS_MS = [
+  300,
+  700,
+  1500,
+  3000,
+  5000,
+  ...Array<number>(11).fill(10_000),
+];
 
 const isInFlight = (event: api.Event) =>
   event.resolutionStatus?.toLowerCase() === "pending" &&
@@ -79,7 +88,22 @@ const EventDetails = (props: EventDetailsProps) => {
   // The attempt (by message id) an accepted resubmit or skip acted on. Kept
   // here, not in MessageListing, because switching tabs remounts the listing.
   const [commandAcceptedFor, setCommandAcceptedFor] = useState<string>();
+  // Set when the follow-up gave up before the event settled.
+  const [followUpExpired, setFollowUpExpired] = useState(false);
   const routeGeneration = useRef(0);
+  const historyRequest = useRef(0);
+
+  // Every history fetch goes through here, and only the newest may land: an
+  // older one (the page's first, or an earlier follow-up) can answer late.
+  const loadHistory = (current: () => boolean) => {
+    const request = ++historyRequest.current;
+    client
+      .getEventDetailsHistoryId(params.id!, params.endpointId!)
+      .then((res) => {
+        if (current() && request === historyRequest.current) setHistories(res);
+      })
+      .catch(() => {});
+  };
 
   useEffect(() => {
     const generation = ++routeGeneration.current;
@@ -93,16 +117,13 @@ const EventDetails = (props: EventDetailsProps) => {
     setBlockedEvents([]);
     setBlockedTotal(0);
     setCommandAcceptedFor(undefined);
+    setFollowUpExpired(false);
 
     const fetchData = async () => {
       // History, audits and event types are keyed off the route params, not the
       // resolved event, so start them immediately — they run concurrently with
       // the event fetch instead of waiting for it to resolve first.
-      client
-        .getEventDetailsHistoryId(params.id!, params.endpointId!)
-        .then((res) => {
-          if (current()) setHistories(res);
-        });
+      loadHistory(current);
 
       client.getMessageAuditsEventId(params.id!).then((res) => {
         if (current()) setAudits(res);
@@ -180,6 +201,7 @@ const EventDetails = (props: EventDetailsProps) => {
     await send();
     if (generation !== routeGeneration.current) return;
     setCommandAcceptedFor(actedOnMessageId);
+    setFollowUpExpired(false);
     followCommand(generation, actedOnMessageId);
   };
 
@@ -187,7 +209,6 @@ const EventDetails = (props: EventDetailsProps) => {
   // never reads as a failed command. Stops when the operator leaves the event.
   const followCommand = async (generation: number, actedOnMessageId: string) => {
     const current = () => generation === routeGeneration.current;
-    let historyRequest = 0;
     for (const delay of COMMAND_FOLLOW_UP_DELAYS_MS) {
       await new Promise((resolve) => setTimeout(resolve, delay));
       if (!current()) return;
@@ -200,19 +221,32 @@ const EventDetails = (props: EventDetailsProps) => {
       if (!current()) return;
       if (updated.lastMessageId === actedOnMessageId) continue;
       setCosmosEvent(updated);
-      // Only the newest history request may land; an older one can answer late.
-      const request = ++historyRequest;
-      client
-        .getEventDetailsHistoryId(params.id!, params.endpointId!)
-        .then((res) => {
-          if (current() && request === historyRequest) setHistories(res);
-        })
-        .catch(() => {});
+      loadHistory(current);
       if (!isInFlight(updated)) {
         reloadAudits();
         return;
       }
     }
+    if (current()) setFollowUpExpired(true);
+  };
+
+  // The manual refresh offered once the follow-up has given up. The notice stays
+  // until the event shows a settled attempt other than the one acted on.
+  const refreshEvent = async () => {
+    const generation = routeGeneration.current;
+    const current = () => generation === routeGeneration.current;
+    let updated: api.Event;
+    try {
+      updated = await client.getEventId(params.id!, params.endpointId!);
+    } catch {
+      return; // still archived
+    }
+    if (!current()) return;
+    setCosmosEvent(updated);
+    loadHistory(current);
+    reloadAudits();
+    if (updated.lastMessageId !== commandAcceptedFor && !isInFlight(updated))
+      setFollowUpExpired(false);
   };
 
   const skipEvent = (eventId: string, messageId: string) =>
@@ -330,6 +364,20 @@ const EventDetails = (props: EventDetailsProps) => {
                   reloadAudits();
                 }}
               />
+            )}
+            {followUpExpired && (
+              <div
+                role="status"
+                className="my-4 flex items-center justify-between gap-4 rounded-nb-lg border border-border bg-surface p-4 text-sm"
+              >
+                <span>
+                  This event is still being processed. Refresh to see its latest
+                  state.
+                </span>
+                <Button size="xs" variant="outline" onClick={refreshEvent}>
+                  Refresh
+                </Button>
+              </div>
             )}
             <MessageListing
               resubmitEventWithChanges={resubmitEventWithChanges}

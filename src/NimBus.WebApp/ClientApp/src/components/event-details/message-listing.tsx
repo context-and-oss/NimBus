@@ -392,7 +392,8 @@ interface IMessageListingProps {
   /**
    * Message id of the attempt an accepted resubmit or skip acted on. While it
    * is still the event's latest message, every action stays closed: the server
-   * would refuse a second command on that attempt.
+   * would refuse a second command on that attempt, and Delete (by event and
+   * session) could remove a newer attempt the page has not shown yet.
    */
   commandAcceptedFor?: string;
 }
@@ -803,7 +804,7 @@ export default function MessageListing(props: IMessageListingProps) {
               <Button
                 size="xs"
                 colorScheme="red"
-                disabled={deleteButton.isDisabled}
+                disabled={deleteButton.isDisabled || attemptActedOn}
                 onClick={() => setShowDeleteConfirm(true)}
               >
                 {deleteButton.text}
