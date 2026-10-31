@@ -29,7 +29,7 @@ import {
 } from "functions/endpoint.functions";
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { notifyError } from "functions/notifications.functions";
+import { notifyError, notifySuccess } from "functions/notifications.functions";
 import {
   describeCommandError,
   isStaleCommand,
@@ -389,12 +389,25 @@ interface IMessageListingProps {
    * in the Properties panel. Omit when not deferred or no GUID could be parsed.
    */
   blockedByEventId?: string;
+  /**
+   * Message id of the attempt an accepted resubmit or skip acted on. While it
+   * is still the event's latest message, every action stays closed: the server
+   * would refuse a second command on that attempt.
+   */
+  commandAcceptedFor?: string;
 }
 
 interface IButtonState {
   isDisabled: boolean;
   text: string;
 }
+
+const RESUBMIT_IDLE: IButtonState = { isDisabled: false, text: "Resubmit" };
+const RESUBMIT_WITH_CHANGES_IDLE: IButtonState = {
+  isDisabled: false,
+  text: "Resubmit with changes",
+};
+const SKIP_IDLE: IButtonState = { isDisabled: false, text: "Skip" };
 
 export default function MessageListing(props: IMessageListingProps) {
   const failureOccurrences = getFailureOccurrences(props.eventDetails, props.messages);
@@ -486,18 +499,22 @@ export default function MessageListing(props: IMessageListingProps) {
     };
   }, []);
 
-  const resubmitWithChanges: IButtonState = {
-    isDisabled: false,
-    text: "Resubmit with changes",
-  };
   const [resubmitWithChangesButton, setResubmitWithChangesButton] =
-    useState(resubmitWithChanges);
+    useState(RESUBMIT_WITH_CHANGES_IDLE);
+  const [resubmitButton, setResubmitButton] = useState(RESUBMIT_IDLE);
+  const [skipButton, setSkipButton] = useState(SKIP_IDLE);
 
-  const resubmit: IButtonState = { isDisabled: false, text: "Resubmit" };
-  const [resubmitButton, setResubmitButton] = useState(resubmit);
+  const attemptActedOn =
+    !!props.commandAcceptedFor &&
+    props.commandAcceptedFor === props.eventDetails?.lastMessageId;
 
-  const skip: IButtonState = { isDisabled: false, text: "Skip" };
-  const [skipButton, setSkipButton] = useState(skip);
+  // The event's next attempt (it failed again, or someone else acted on it) has
+  // its own message id, and the commands apply to it afresh.
+  useEffect(() => {
+    setResubmitWithChangesButton(RESUBMIT_WITH_CHANGES_IDLE);
+    setResubmitButton(RESUBMIT_IDLE);
+    setSkipButton(SKIP_IDLE);
+  }, [props.eventDetails?.lastMessageId]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const inputValue = e.target.value;
@@ -663,6 +680,7 @@ export default function MessageListing(props: IMessageListingProps) {
         props.eventDetails?.lastMessageId!,
       );
       setSkipButton({ text: "Skipped", isDisabled: true });
+      notifySuccess("Skipped.");
     } catch (caught) {
       notifyError(describeCommandError(caught, "skip"));
       setSkipButton(
@@ -681,6 +699,7 @@ export default function MessageListing(props: IMessageListingProps) {
         props.eventDetails?.lastMessageId!,
       );
       setResubmitButton({ text: "Resubmitted", isDisabled: true });
+      notifySuccess("Resubmitted.");
     } catch (caught) {
       notifyError(describeCommandError(caught, "resubmit"));
       setResubmitButton(
@@ -716,6 +735,7 @@ export default function MessageListing(props: IMessageListingProps) {
         body,
       );
       setResubmitWithChangesButton({ text: "Resubmitted", isDisabled: true });
+      notifySuccess("Resubmitted.");
     } catch (caught) {
       notifyError(describeCommandError(caught, "resubmit"));
       setResubmitWithChangesButton(
@@ -757,7 +777,7 @@ export default function MessageListing(props: IMessageListingProps) {
             <Button
               size="xs"
               colorScheme="blue"
-              disabled={resubmitButton.isDisabled}
+              disabled={resubmitButton.isDisabled || attemptActedOn}
               onClick={resubmitEventClick}
             >
               {resubmitButton.text}
@@ -765,7 +785,7 @@ export default function MessageListing(props: IMessageListingProps) {
             <Button
               size="xs"
               colorScheme="green"
-              disabled={resubmitWithChangesButton.isDisabled}
+              disabled={resubmitWithChangesButton.isDisabled || attemptActedOn}
               onClick={onOpen}
             >
               {resubmitWithChangesButton.text}
@@ -774,7 +794,7 @@ export default function MessageListing(props: IMessageListingProps) {
               size="xs"
               colorScheme="red"
               variant="outline"
-              disabled={skipButton.isDisabled}
+              disabled={skipButton.isDisabled || attemptActedOn}
               onClick={skipEventClick}
             >
               {skipButton.text}

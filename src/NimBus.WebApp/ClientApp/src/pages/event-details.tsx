@@ -30,6 +30,15 @@ type EventDetailsProps = {
 // Initial blocked-events page size. Server clamps `take` to [1, 200] so this fits comfortably.
 const BLOCKED_PAGE_SIZE = 20;
 
+// An accepted resubmit or skip archives the row until the Resolver records the
+// next attempt, so the event 404s for a moment and then passes through Pending.
+// The page follows it on this schedule (about 10 seconds in all) until it settles.
+const COMMAND_FOLLOW_UP_DELAYS_MS = [300, 700, 1500, 3000, 5000];
+
+const isInFlight = (event: api.Event) =>
+  event.resolutionStatus?.toLowerCase() === "pending" &&
+  event.pendingSubStatus?.toLowerCase() !== "handoff";
+
 // Resolve the BlockedEvent ID list into displayable rows (one detail fetch per ID).
 // The server returns only the requested page, so the number of fetches is bounded by
 // the page size, not the full set of blocked siblings on the session. The fetches are
@@ -67,6 +76,9 @@ const EventDetails = (props: EventDetailsProps) => {
   // its own data, so remounting it on this key is what makes a just-added
   // comment appear without a page reload.
   const [auditReloadKey, setAuditReloadKey] = useState(0);
+  // The attempt (by message id) an accepted resubmit or skip acted on. Kept
+  // here, not in MessageListing, because switching tabs remounts the listing.
+  const [commandAcceptedFor, setCommandAcceptedFor] = useState<string>();
   const routeGeneration = useRef(0);
 
   useEffect(() => {
@@ -80,6 +92,7 @@ const EventDetails = (props: EventDetailsProps) => {
     setAudits([]);
     setBlockedEvents([]);
     setBlockedTotal(0);
+    setCommandAcceptedFor(undefined);
 
     const fetchData = async () => {
       // History, audits and event types are keyed off the route params, not the
@@ -158,15 +171,55 @@ const EventDetails = (props: EventDetailsProps) => {
     if (generation === routeGeneration.current) setCosmosEvent(updated);
   };
 
-  const skipEvent = async (eventId: string, messageId: string) => {
-    await client.postSkipEventIds(eventId, messageId);
-    await reloadEvent();
+  // Sends an operator command for the attempt on screen. Once the server accepts
+  // it, the actions stay closed for that attempt and the page follows the event.
+  // The route is captured before the POST so a late answer cannot act on the
+  // event the operator moved to.
+  const runCommand = async (actedOnMessageId: string, send: () => Promise<void>) => {
+    const generation = routeGeneration.current;
+    await send();
+    if (generation !== routeGeneration.current) return;
+    setCommandAcceptedFor(actedOnMessageId);
+    followCommand(generation, actedOnMessageId);
   };
 
-  const resubmitEvent = async (eventId: string, messageId: string) => {
-    await client.postResubmitEventIds(eventId, messageId);
-    await reloadEvent();
+  // Runs after the command's promise has resolved, so a refresh that fails here
+  // never reads as a failed command. Stops when the operator leaves the event.
+  const followCommand = async (generation: number, actedOnMessageId: string) => {
+    const current = () => generation === routeGeneration.current;
+    let historyRequest = 0;
+    for (const delay of COMMAND_FOLLOW_UP_DELAYS_MS) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (!current()) return;
+      let updated: api.Event;
+      try {
+        updated = await client.getEventId(params.id!, params.endpointId!);
+      } catch {
+        continue; // still archived
+      }
+      if (!current()) return;
+      if (updated.lastMessageId === actedOnMessageId) continue;
+      setCosmosEvent(updated);
+      // Only the newest history request may land; an older one can answer late.
+      const request = ++historyRequest;
+      client
+        .getEventDetailsHistoryId(params.id!, params.endpointId!)
+        .then((res) => {
+          if (current() && request === historyRequest) setHistories(res);
+        })
+        .catch(() => {});
+      if (!isInFlight(updated)) {
+        reloadAudits();
+        return;
+      }
+    }
   };
+
+  const skipEvent = (eventId: string, messageId: string) =>
+    runCommand(messageId, () => client.postSkipEventIds(eventId, messageId));
+
+  const resubmitEvent = (eventId: string, messageId: string) =>
+    runCommand(messageId, () => client.postResubmitEventIds(eventId, messageId));
 
   const reprocessDeferred = async () => {
     if (!cosmosEvent?.endpointId || !cosmosEvent?.sessionId) return;
@@ -195,14 +248,14 @@ const EventDetails = (props: EventDetailsProps) => {
     navigate(`/Endpoints/Details/${params.endpointId!}`);
   };
 
-  const resubmitEventWithChanges = async (
+  const resubmitEventWithChanges = (
     eventId: string,
     messageId: string,
     body: api.ResubmitWithChanges,
-  ) => {
-    await client.postResubmitWithChangesEventIds(eventId, messageId, body);
-    await reloadEvent();
-  };
+  ) =>
+    runCommand(messageId, () =>
+      client.postResubmitWithChangesEventIds(eventId, messageId, body),
+    );
 
   // Settle a pending handoff on the operator's behalf. The Pending → Completed/
   // Failed transition itself is asynchronous (the owning subscriber processes
@@ -289,6 +342,7 @@ const EventDetails = (props: EventDetailsProps) => {
               onCommentAdded={reloadAudits}
               eventTypes={eventTypes}
               eventDetails={cosmosEvent}
+              commandAcceptedFor={commandAcceptedFor}
               // Spec 005 (FR-016): the same `histories` array already fed to
               // `FlowTimeline` is forwarded here so MessageListing can derive a
               // lifecycle-aware Queue value for deferred / pending-handoff
