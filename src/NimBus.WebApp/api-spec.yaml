@@ -4235,6 +4235,7 @@ components:
             - agentApiKeyCreated
             - agentApiKeyRevoked
             - agentApiKeyRemoved
+            - copyEndpointData
         comment:
           type: string
           nullable: true
@@ -5542,6 +5543,7 @@ components:
             - agentApiKeyCreated
             - agentApiKeyRevoked
             - agentApiKeyRemoved
+            - copyEndpointData
         createdAtFrom:
           type: string
           format: date-time
@@ -6615,6 +6617,7 @@ components:
             - agentApiKeyCreated
             - agentApiKeyRevoked
             - agentApiKeyRemoved
+            - copyEndpointData
         comment:
           type: string
           nullable: true

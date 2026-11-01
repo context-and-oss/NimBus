@@ -30,6 +30,7 @@ const GROUPS: { title: string; types: string[] }[] = [
       "reportEvent",
       "compose",
       "purgeMessages",
+      "copyEndpointData",
       "reconcileStalePending",
       "failureClassified",
     ],
