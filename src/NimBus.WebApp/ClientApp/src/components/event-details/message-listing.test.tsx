@@ -922,8 +922,11 @@ describe("MessageListing operator commands", () => {
   );
 
   it("keeps every action closed for the attempt a command was accepted for, even when mounted fresh", () => {
-    // A fresh mount is what switching back to the Message tab does.
-    const { rerender } = renderListing(failed("msg-1"), {}, "msg-1");
+    // A fresh mount is what switching back to the Message tab does. Dead-lettered, because
+    // a Failed event no longer offers Delete (#301).
+    const deadLettered = (lastMessageId: string): api.Event =>
+      ({ ...failed(lastMessageId), resolutionStatus: "DeadLettered" }) as unknown as api.Event;
+    const { rerender } = renderListing(deadLettered("msg-1"), {}, "msg-1");
     const disabled = (name: string) =>
       screen.getByRole<HTMLButtonElement>("button", { name }).disabled;
 
@@ -933,7 +936,7 @@ describe("MessageListing operator commands", () => {
     // A Failed event blocks its session, so the page offers no Delete for it (#301).
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
 
-    rerender(failed("msg-2"));
+    rerender(deadLettered("msg-2"));
     expect(disabled("Resubmit")).toBe(false);
     expect(disabled("Resubmit with changes")).toBe(false);
     expect(disabled("Skip")).toBe(false);
