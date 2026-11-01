@@ -74,6 +74,22 @@ describe("AuditSettings", () => {
     expect(screen.getByText("4 of 5 action types recorded.")).toBeTruthy();
   });
 
+  it("lists Copy endpoint data under Message operations, not Other", async () => {
+    mocks.getAdminAuditSettings.mockResolvedValue({
+      disabledAuditTypes: [],
+      configurableAuditTypes: ["purgeMessages", "copyEndpointData"],
+    });
+    render(<AuditSettings />);
+
+    await screen.findByRole("switch", { name: "Record Copy endpoint data" });
+    expect(
+      within(
+        screen.getByRole("region", { name: "Message operations" }),
+      ).getByText("Copy endpoint data"),
+    ).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Other" })).toBeNull();
+  });
+
   it("saves the disabled types and only enables Save when something changed", async () => {
     render(<AuditSettings />);
 

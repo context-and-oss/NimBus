@@ -353,6 +353,11 @@ Scans all messages, filters by state and time, organizes by session, prompts for
 
 ---
 
+> **No audit record.** The `nb container` commands below (`event delete`, `message delete`,
+> `delete`, `resubmit`, `copy` and `skip`) work on the store directly and write no audit record.
+> The matching WebApp Operations actions are audited (Admin → Audit log). Use the WebApp when a
+> run must show who ran it, on which endpoint, and what it changed.
+
 ### `nb container event delete`
 
 Delete a specific event from Cosmos DB.

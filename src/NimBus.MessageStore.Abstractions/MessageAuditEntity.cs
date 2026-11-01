@@ -191,4 +191,11 @@ public enum MessageAuditType
 
     /// <summary>A site Owner removed a revoked or expired agent API key (Spec 039). Always recorded.</summary>
     AgentApiKeyRemoved,
+
+    /// <summary>
+    /// A site Owner copied an endpoint's stored events and messages to another store
+    /// (Operations → Copy endpoint data). Data carries the time window, statuses and counts,
+    /// never the target connection string.
+    /// </summary>
+    CopyEndpointData,
 }

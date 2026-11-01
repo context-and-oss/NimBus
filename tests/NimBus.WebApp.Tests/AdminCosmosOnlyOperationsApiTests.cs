@@ -56,6 +56,20 @@ public sealed class AdminCosmosOnlyOperationsApiTests
     }
 
     [TestMethod]
+    public async Task Unsupported_actions_do_not_write_success_audits()
+    {
+        var audit = new NoAudit();
+        var controller = NonCosmosController(audit: audit);
+
+        var delete = await controller.PostAdminDeleteByToAsync(new DeleteByToRequest { ToField = Endpoint });
+        var copy = await controller.PostAdminCopyAsync(Endpoint, new CopyRequest { TargetConnectionString = "AccountEndpoint=x" });
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(delete.Result);
+        Assert.IsInstanceOfType<BadRequestObjectResult>(copy.Result);
+        Assert.AreEqual(0, audit.Calls);
+    }
+
+    [TestMethod]
     public async Task A_non_owner_still_gets_403_from_all_three()
     {
         var controller = NonCosmosController(owner: false);
@@ -114,7 +128,7 @@ public sealed class AdminCosmosOnlyOperationsApiTests
     private static readonly IPlatform Platform = new SingleEndpointPlatform();
 
     /// <summary>The real admin service on a store that can't copy across accounts, as on SQL Server.</summary>
-    private static AdminImplementation NonCosmosController(bool owner = true)
+    private static AdminImplementation NonCosmosController(bool owner = true, IAuditLogService? audit = null)
     {
         var store = new InMemoryMessageStore();
         var adminService = new AdminService(
@@ -126,10 +140,10 @@ public sealed class AdminCosmosOnlyOperationsApiTests
             managerClient: null!,
             subscriptionAdmin: null!,
             logger: NullLogger<AdminService>.Instance);
-        return Controller(adminService, owner, store);
+        return Controller(adminService, owner, store, audit);
     }
 
-    private static AdminImplementation Controller(IAdminService adminService, bool owner = true, InMemoryMessageStore? store = null)
+    private static AdminImplementation Controller(IAdminService adminService, bool owner = true, InMemoryMessageStore? store = null, IAuditLogService? audit = null)
     {
         var claims = owner ? new[] { new Claim("groups", "EIP_Management") } : Array.Empty<Claim>();
         var accessor = new HttpContextAccessor
@@ -153,7 +167,7 @@ public sealed class AdminCosmosOnlyOperationsApiTests
             subscriptionAdminService: null!,
             Platform,
             configuration,
-            new NoAudit(),
+            audit ?? new NoAudit(),
             authorization,
             heartbeatService: null!);
     }
@@ -174,9 +188,15 @@ public sealed class AdminCosmosOnlyOperationsApiTests
 
     private sealed class NoAudit : IAuditLogService
     {
+        public int Calls { get; private set; }
+
         public Task LogAuditAsync(MessageAuditType type, HttpContext context, bool accessDenied = false, string? data = null,
             string? eventId = null, string? endpointId = null, string? eventTypeId = null, string? auditorNameOverride = null,
-            System.Threading.CancellationToken cancellationToken = default) => Task.CompletedTask;
+            System.Threading.CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.CompletedTask;
+        }
 
         public Task LogRequiredAuditAsync(MessageAuditType type, HttpContext context, string? data = null, string? eventId = null,
             string? endpointId = null, string? eventTypeId = null, System.Threading.CancellationToken cancellationToken = default) => Task.CompletedTask;

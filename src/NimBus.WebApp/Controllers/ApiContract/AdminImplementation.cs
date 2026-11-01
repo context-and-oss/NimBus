@@ -145,12 +145,25 @@ public class AdminImplementation : IAdminApiController
     public async Task<ActionResult<BulkOperationResult>> PostAdminBulkResubmitAsync(string endpointId)
     {
         if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.Resubmit, _context,
+                accessDenied: true, endpointId: endpointId);
             return new ForbidResult();
+        }
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
             return new NotFoundObjectResult("Endpoint not found");
 
         var result = await _adminService.BulkResubmitFailedAsync(endpointId);
+        await _auditLogService.LogAuditAsync(MessageAuditType.Resubmit, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                action = "bulk-resubmit-failed",
+                processed = result.Processed,
+                succeeded = result.Succeeded,
+                failed = result.Failed,
+            }));
         return new OkObjectResult(result);
     }
 
@@ -232,7 +245,11 @@ public class AdminImplementation : IAdminApiController
     public async Task<IActionResult> DeleteAdminEventAsync(string endpointId, string eventId)
     {
         if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, eventId: eventId, endpointId: endpointId);
             return new ForbidResult();
+        }
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
             return new NotFoundObjectResult("Endpoint not found");
@@ -244,14 +261,21 @@ public class AdminImplementation : IAdminApiController
         }
         catch (EventBlocksSessionException exception)
         {
+            await LogDeleteEventAuditAsync(endpointId, eventId, "blocks-session");
             return new ConflictObjectResult(exception.Message);
         }
 
+        await LogDeleteEventAuditAsync(endpointId, eventId, deleted ? "deleted" : "not-found");
         if (deleted)
             return new OkResult();
 
         return new NotFoundResult();
     }
+
+    private Task LogDeleteEventAuditAsync(string endpointId, string eventId, string outcome) =>
+        _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            eventId: eventId, endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new { action = "delete-event", eventId, outcome }));
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteAllAsync(string endpointId)
     {
@@ -723,7 +747,16 @@ public class AdminImplementation : IAdminApiController
         var result = await _adminService.PurgeSubscriptionAsync(endpointId, subscription, body.States?.ToList() ?? new(), body.Before);
         await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
             endpointId: endpointId,
-            data: JsonConvert.SerializeObject(body));
+            data: JsonConvert.SerializeObject(new
+            {
+                subscription = body.Subscription,
+                states = body.States,
+                before = body.Before,
+                processed = result.Processed,
+                succeeded = result.Succeeded,
+                failed = result.Failed,
+                rowsDeleted = result.RowsDeleted,
+            }));
         return new OkObjectResult(result);
     }
 
@@ -744,16 +777,35 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByToAsync(DeleteByToRequest body)
     {
-        if (!await IsSiteOwnerAsync()) return new ForbidResult();
+        // The route names no endpoint, so neither record carries one; the To filter is in the data.
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true,
+                data: JsonConvert.SerializeObject(new { action = "delete-by-to", toField = body?.ToField }));
+            return new ForbidResult();
+        }
+
+        BulkOperationResult result;
         try
         {
-            var result = await _adminService.DeleteMessagesByToAsync(body.ToField);
-            return new OkObjectResult(result);
+            result = await _adminService.DeleteMessagesByToAsync(body.ToField);
         }
         catch (NotSupportedException exception)
         {
             return new BadRequestObjectResult(exception.Message);
         }
+
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            data: JsonConvert.SerializeObject(new
+            {
+                action = "delete-by-to",
+                toField = body.ToField,
+                processed = result.Processed,
+                succeeded = result.Succeeded,
+                failed = result.Failed,
+            }));
+        return new OkObjectResult(result);
     }
 
     public async Task<ActionResult<CountResponse>> PostAdminDeleteByStatusPreviewAsync(string endpointId, DeleteByStatusRequest body)
@@ -773,7 +825,12 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByStatusAsync(string endpointId, DeleteByStatusRequest body)
     {
-        if (!await IsSiteOwnerAsync()) return new ForbidResult();
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointId);
+            return new ForbidResult();
+        }
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
         if (!AdminStatusValidation.TryNormalizeDeleteStatuses(
                 body?.Statuses?.Select(status => status.ToString()),
@@ -782,6 +839,16 @@ public class AdminImplementation : IAdminApiController
             return new BadRequestObjectResult(error);
 
         var result = await _adminService.DeleteByStatusAsync(endpointId, statuses);
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                action = "delete-by-status",
+                statuses,
+                processed = result.Processed,
+                succeeded = result.Succeeded,
+                failed = result.Failed,
+            }));
         return new OkObjectResult(result);
     }
 
@@ -817,21 +884,42 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<CopyResult>> PostAdminCopyAsync(string endpointId, CopyRequest body)
     {
-        if (!await IsSiteOwnerAsync()) return new ForbidResult();
+        // The target connection string is a secret: no part of it goes into either record.
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.CopyEndpointData, _context,
+                accessDenied: true, endpointId: endpointId);
+            return new ForbidResult();
+        }
+
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
 
+        var statuses = body.Statuses?.ToList() ?? new();
+        CopyResult result;
         try
         {
-            var result = await _adminService.CopyEndpointDataAsync(
+            result = await _adminService.CopyEndpointDataAsync(
                 endpointId, body.TargetConnectionString,
                 body.From, body.To,
-                body.Statuses?.ToList() ?? new(), body.BatchSize);
-            return new OkObjectResult(result);
+                statuses, body.BatchSize);
         }
         catch (NotSupportedException exception)
         {
             return new BadRequestObjectResult(exception.Message);
         }
+
+        await _auditLogService.LogAuditAsync(MessageAuditType.CopyEndpointData, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                action = "copy-endpoint-data",
+                from = body.From,
+                to = body.To,
+                statuses,
+                eventsCopied = result.EventsCopied,
+                messagesCopied = result.MessagesCopied,
+            }));
+        return new OkObjectResult(result);
     }
 
     // ───────────── Audit settings ─────────────

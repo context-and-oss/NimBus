@@ -12190,6 +12190,7 @@ namespace NimBus.WebApp.ManagementApi
         private int _succeeded;
         private int _failed;
         private System.Collections.Generic.List<string> _errors;
+        private int? _rowsDeleted;
 
         [Newtonsoft.Json.JsonProperty("processed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public int Processed    {
@@ -12238,6 +12239,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_errors != value)
                 {
                     _errors = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stored rows deleted by the operation. Set only by Purge subscription; null for every other operation.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("rowsDeleted", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? RowsDeleted    {
+            get { return _rowsDeleted; }
+            set
+            {
+                if (_rowsDeleted != value)
+                {
+                    _rowsDeleted = value;
                     RaisePropertyChanged();
                 }
             }
@@ -20838,6 +20855,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyRemoved")]
         AgentApiKeyRemoved = 39,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"copyEndpointData")]
+        CopyEndpointData = 40,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -21144,6 +21164,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyRemoved")]
         AgentApiKeyRemoved = 39,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"copyEndpointData")]
+        CopyEndpointData = 40,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -21371,6 +21394,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"agentApiKeyRemoved")]
         AgentApiKeyRemoved = 39,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"copyEndpointData")]
+        CopyEndpointData = 40,
 
     }
 

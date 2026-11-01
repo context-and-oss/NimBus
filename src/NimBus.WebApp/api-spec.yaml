@@ -4249,6 +4249,7 @@ components:
             - agentApiKeyCreated
             - agentApiKeyRevoked
             - agentApiKeyRemoved
+            - copyEndpointData
         comment:
           type: string
           nullable: true
@@ -5228,6 +5229,10 @@ components:
           type: array
           items:
             type: string
+        rowsDeleted:
+          type: integer
+          nullable: true
+          description: Stored rows deleted by the operation. Set only by Purge subscription; null for every other operation.
     DeadLetterOverview:
       title: DeadLetterOverview
       type: object
@@ -5556,6 +5561,7 @@ components:
             - agentApiKeyCreated
             - agentApiKeyRevoked
             - agentApiKeyRemoved
+            - copyEndpointData
         createdAtFrom:
           type: string
           format: date-time
@@ -6629,6 +6635,7 @@ components:
             - agentApiKeyCreated
             - agentApiKeyRevoked
             - agentApiKeyRemoved
+            - copyEndpointData
         comment:
           type: string
           nullable: true

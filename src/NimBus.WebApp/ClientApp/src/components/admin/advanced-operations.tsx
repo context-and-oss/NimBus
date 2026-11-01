@@ -161,9 +161,12 @@ export function SubscriptionPurgeCard({ endpoints, initialEndpoint }: { endpoint
           )}
 
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
+          {result?.rowsDeleted != null && (
+            <p className="text-sm">Stored rows deleted: <span className="font-bold">{result.rowsDeleted}</span></p>
+          )}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Purge Subscription Messages" confirmLabel="Purge subscription" description={`This will purge ${preview?.totalMatching ?? 0} messages from endpoint "${selected[0] ?? ""}".`}
+            title="Purge Subscription Messages" confirmLabel="Purge subscription" description={`This will purge ${preview?.totalMatching ?? 0} messages from endpoint "${selected[0] ?? ""}". The stored Pending and Deferred rows of the purged messages are deleted too.`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>
