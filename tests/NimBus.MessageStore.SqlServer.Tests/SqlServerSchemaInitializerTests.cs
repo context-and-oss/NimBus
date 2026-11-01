@@ -62,6 +62,22 @@ public sealed class SqlServerSchemaInitializerTests
     }
 
     [TestMethod]
+    public async Task AutoApply_creates_retention_cutoff_indexes()
+    {
+        var schema = NewSchemaName();
+        var initializer = CreateInitializer(schema, SchemaProvisioningMode.AutoApply);
+
+        await initializer.StartAsync(CancellationToken.None);
+
+        Assert.IsTrue(
+            await IndexExists(schema, "Messages", "IX_Messages_CreatedAtUtc"),
+            "IX_Messages_CreatedAtUtc should exist so the 90-day retention batch seeks instead of scanning.");
+        Assert.IsTrue(
+            await IndexExists(schema, "UnresolvedEvents", "IX_UnresolvedEvents_Archived_UpdatedAtUtc"),
+            "IX_UnresolvedEvents_Archived_UpdatedAtUtc should exist for the archived-row retention batch.");
+    }
+
+    [TestMethod]
     public async Task AutoApply_adds_nullable_CloudEvent_columns_to_tracking_and_audit_tables()
     {
         var schema = NewSchemaName();

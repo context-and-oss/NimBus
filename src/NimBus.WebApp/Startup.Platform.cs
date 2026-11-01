@@ -167,6 +167,8 @@ public partial class Startup
             if (string.Equals(storageProvider, "sqlserver", StringComparison.OrdinalIgnoreCase))
             {
                 nimbus.AddSqlServerMessageStore();
+                // Only the WebApp runs SQL Server retention, so a deployment deletes in one place.
+                nimbus.AddSqlServerMessageStoreRetention();
             }
             else
             {

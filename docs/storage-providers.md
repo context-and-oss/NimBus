@@ -297,6 +297,55 @@ table). Composite indexes target the dominant queries: per-endpoint status
 counts, recent-events lists, per-event lookups. See
 `src/NimBus.MessageStore.SqlServer/Schema/` for the canonical scripts.
 
+### Retention
+
+SQL Server has no TTL, so a retention job deletes old rows on a schedule that
+mirrors the Cosmos DB TTLs (see [Retention of unresolved rows](#retention-of-unresolved-rows)
+for the Cosmos DB side). Each rule compares against a cutoff of "now (UTC) minus the
+retention period", computed once at the start of each run; a row exactly at the
+cutoff is kept.
+
+| Rule | Table | Deletes rows where | Period |
+|---|---|---|---|
+| R1 | `Messages` | `CreatedAtUtc` is older than the cutoff | 90 days (fixed) |
+| R2 | `MessageAudits` | `CreatedAtUtc` is older than the cutoff | 365 days (fixed) |
+| R3 | `UnresolvedEvents` | `Deleted = 1` (archived or removed) and `UpdatedAtUtc` is older than the cutoff | 30 days (fixed) |
+| R4 | `UnresolvedEvents` | `Deleted = 0` (any status) and `UpdatedAtUtc` is older than the cutoff | `UnresolvedRetentionDays`; never by default |
+
+No other table is touched.
+
+| Option (`SqlServerMessageStoreOptions`) | Configuration key | Environment form | Default | Valid values |
+|---|---|---|---|---|
+| `UnresolvedRetentionDays` | `NimBus:SqlServer:UnresolvedRetentionDays` | `NimBus__SqlServer__UnresolvedRetentionDays` | `-1` (never) | `-1` or `1`–`365` whole days |
+| `RetentionEnabled` | `NimBus:SqlServer:RetentionEnabled` | `NimBus__SqlServer__RetentionEnabled` | `true` | `true` / `false`; `false` issues no deletes |
+| `RetentionInterval` | `NimBus:SqlServer:RetentionInterval` | `NimBus__SqlServer__RetentionInterval` | `01:00:00` (1 hour) | greater than zero, at most 49 days |
+
+As on Cosmos DB, configuration binds first and the `AddSqlServerMessageStore(configure)`
+delegate runs after it, so code wins. An invalid value fails host startup with a message
+naming the option and the offending value.
+
+**Only the WebApp runs the job.** `AddSqlServerMessageStore()` does not register it;
+the WebApp adds it on its SQL Server path with `nimbus.AddSqlServerMessageStoreRetention()`
+(calling it twice still registers one job). The Resolver and other hosts never delete.
+The first run starts once the schema initializer has finished, and later runs start one
+`RetentionInterval` apart. A failed run is logged at Error and the next run still happens.
+Each completed run logs one Information entry with the rows deleted per rule and the
+run duration.
+
+Each rule deletes with `DELETE TOP (5000)` and repeats until a batch deletes fewer than
+5,000 rows, so no single statement locks more than 5,000 rows. Schema script
+`0025_RetentionIndexes.sql` adds the indexes that let R1 and R3 seek to old rows; deployments
+on `VerifyOnly` must apply it before upgrading.
+
+> **Retention deletes rows permanently.** A tracking row deleted by R4 can no longer be
+> resubmitted or skipped, and its payload and status are gone — the same warning as for
+> Cosmos DB expiry.
+
+> **Known divergence from Cosmos DB.** On SQL Server, Completed and Skipped tracking rows
+> keep `Deleted = 0`, so R3 never deletes them. They are kept until
+> `UnresolvedRetentionDays` applies (never, by default), whereas Cosmos DB expires them
+> after 30 days.
+
 ## SQL-only deployment
 
 To deploy NimBus without Cosmos DB at all (no Cosmos resources provisioned, no

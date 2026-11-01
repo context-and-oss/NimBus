@@ -1,6 +1,7 @@
 using System;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -39,6 +40,8 @@ public static class SqlServerMessageStoreBuilderExtensions
         services.AddOptions<SqlServerMessageStoreOptions>()
             .Configure<IConfiguration>((options, configuration) =>
             {
+                configuration.GetSection(SqlServerMessageStoreOptions.SectionName).Bind(options);
+
                 if (string.IsNullOrEmpty(options.ConnectionString))
                 {
                     options.ConnectionString =
@@ -52,7 +55,14 @@ public static class SqlServerMessageStoreBuilderExtensions
             .Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString),
                 "SqlServerMessageStoreOptions.ConnectionString is required (set 'SqlConnection', the 'sqlserver' connection string, or 'SqlServerConnection').")
             .Validate(o => !string.IsNullOrWhiteSpace(o.Schema),
-                "SqlServerMessageStoreOptions.Schema is required.");
+                "SqlServerMessageStoreOptions.Schema is required.")
+            .Validate(o => o.RetentionInterval > TimeSpan.Zero && o.RetentionInterval <= SqlServerMessageStoreOptions.MaxRetentionInterval,
+                "SqlServerMessageStoreOptions.RetentionInterval must be greater than zero and at most 49 days.");
+
+        // IValidateOptions rather than Validate(predicate, message): the failure must name the offending value.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IValidateOptions<SqlServerMessageStoreOptions>, SqlServerMessageStoreOptionsValidator>());
+        services.TryAddSingleton<SqlServerSchemaReadiness>();
 
         services.AddSingleton<INimBusMessageStore, SqlServerMessageStore>();
         services.AddSingleton<IMessageTrackingStore>(sp =>
@@ -78,6 +88,33 @@ public static class SqlServerMessageStoreBuilderExtensions
 
         return builder;
     }
+
+    /// <summary>
+    /// Registers the SQL Server retention job: a hosted service that, once per
+    /// <see cref="SqlServerMessageStoreOptions.RetentionInterval"/>, deletes <c>Messages</c> older
+    /// than 90 days, <c>MessageAudits</c> older than 365 days, archived or removed
+    /// <c>UnresolvedEvents</c> older than 30 days, and — when
+    /// <see cref="SqlServerMessageStoreOptions.UnresolvedRetentionDays"/> is set — other
+    /// <c>UnresolvedEvents</c> older than that. Call it from exactly one kind of host (the WebApp)
+    /// after <see cref="AddSqlServerMessageStore(INimBusBuilder)"/>; calling it twice registers one job.
+    /// </summary>
+    public static INimBusBuilder AddSqlServerMessageStoreRetention(this INimBusBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Services.TryAddSingleton<SqlServerSchemaReadiness>();
+        builder.Services.AddHostedService<SqlServerRetentionService>();
+        return builder;
+    }
+}
+
+internal sealed class SqlServerMessageStoreOptionsValidator : IValidateOptions<SqlServerMessageStoreOptions>
+{
+    public ValidateOptionsResult Validate(string? name, SqlServerMessageStoreOptions options)
+        => options.IsUnresolvedRetentionDaysValid
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail(
+                SqlServerMessageStoreOptions.DescribeInvalidUnresolvedRetentionDays(options.UnresolvedRetentionDays));
 }
 
 internal sealed class SqlServerStorageProviderRegistration : IStorageProviderRegistration

@@ -27,6 +27,12 @@ internal static class SqlConnectionTransientExtensions
         SqlServerExceptionTranslation.TranslateAsync(() =>
             SqlMapper.ExecuteAsync(connection, sql, param, transaction, commandTimeout, commandType));
 
+    public static Task<int> ExecuteAsync(
+        this SqlConnection connection,
+        CommandDefinition command) =>
+        SqlServerExceptionTranslation.TranslateAsync(() =>
+            SqlMapper.ExecuteAsync(connection, command));
+
     public static Task<IEnumerable<dynamic>> QueryAsync(
         this SqlConnection connection,
         string sql,

@@ -29,6 +29,52 @@ public sealed class SqlServerMessageStoreOptions
     /// Default command timeout for storage operations, in seconds.
     /// </summary>
     public int CommandTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Configuration section the retention settings bind from (environment form:
+    /// <c>NimBus__SqlServer__UnresolvedRetentionDays</c>). A delegate passed to
+    /// <c>AddSqlServerMessageStore(configure)</c> runs after binding and overrides it.
+    /// </summary>
+    public const string SectionName = "NimBus:SqlServer";
+
+    /// <summary>Sentinel meaning "never delete" — the default for <see cref="UnresolvedRetentionDays"/>.</summary>
+    public const int UnlimitedRetentionDays = -1;
+
+    /// <summary>Largest supported <see cref="UnresolvedRetentionDays"/>; the same bound as the Cosmos DB provider.</summary>
+    public const int MaxRetentionDays = 365;
+
+    /// <summary>
+    /// Retention, in whole days, for <c>UnresolvedEvents</c> rows that are not archived or removed
+    /// (<c>Deleted = 0</c>, any status). Valid values are <see cref="UnlimitedRetentionDays"/>
+    /// (the default: never delete) or 1 to <see cref="MaxRetentionDays"/>. A row deleted by
+    /// retention can no longer be resubmitted or skipped. Applied by the retention job that
+    /// <c>AddSqlServerMessageStoreRetention()</c> registers.
+    /// </summary>
+    public int UnresolvedRetentionDays { get; set; } = UnlimitedRetentionDays;
+
+    /// <summary>
+    /// Whether the retention job deletes old rows. Defaults to <see langword="true"/>; when
+    /// <see langword="false"/> the job issues no deletes. Has no effect unless the host registers
+    /// the job with <c>AddSqlServerMessageStoreRetention()</c>.
+    /// </summary>
+    public bool RetentionEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Time between the start of one retention run and the start of the next. Defaults to one
+    /// hour; must be greater than zero and at most 49 days.
+    /// </summary>
+    public TimeSpan RetentionInterval { get; set; } = TimeSpan.FromHours(1);
+
+    // PeriodicTimer's upper bound (uint.MaxValue - 1 ms, about 49.7 days); rounded down to 49 days.
+    internal static readonly TimeSpan MaxRetentionInterval = TimeSpan.FromDays(49);
+
+    internal bool IsUnresolvedRetentionDaysValid =>
+        UnresolvedRetentionDays == UnlimitedRetentionDays
+        || (UnresolvedRetentionDays >= 1 && UnresolvedRetentionDays <= MaxRetentionDays);
+
+    internal static string DescribeInvalidUnresolvedRetentionDays(int value) =>
+        $"{nameof(SqlServerMessageStoreOptions)}.{nameof(UnresolvedRetentionDays)} must be "
+        + $"{UnlimitedRetentionDays} (unlimited) or between 1 and {MaxRetentionDays} days; was {value}.";
 }
 
 public enum SchemaProvisioningMode

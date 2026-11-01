@@ -59,13 +59,30 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
     private readonly SqlServerMessageStoreOptions _options;
     private readonly ILogger<SqlServerSchemaInitializer> _logger;
 
+    private readonly SqlServerSchemaReadiness? _readiness;
+
     public SqlServerSchemaInitializer(IOptions<SqlServerMessageStoreOptions> options, ILogger<SqlServerSchemaInitializer> logger)
+        : this(options, logger, readiness: null)
+    {
+    }
+
+    public SqlServerSchemaInitializer(
+        IOptions<SqlServerMessageStoreOptions> options,
+        ILogger<SqlServerSchemaInitializer> logger,
+        SqlServerSchemaReadiness? readiness)
     {
         _options = options.Value;
         _logger = logger;
+        _readiness = readiness;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _readiness?.MarkReady();
+    }
+
+    private async Task InitializeAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.ConnectionString))
             throw new InvalidOperationException("SqlServerMessageStoreOptions.ConnectionString is required.");

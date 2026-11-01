@@ -39,6 +39,13 @@ public sealed class SqlConnectionTransientBindingTests
     }
 
     [TestMethod]
+    public void ExecuteAsync_with_CommandDefinition_binds_to_the_translating_overload()
+    {
+        // The retention job passes a CommandDefinition so shutdown can cancel a running DELETE.
+        AssertTranslated<int>(connection => connection.ExecuteAsync(new CommandDefinition("SELECT 1")));
+    }
+
+    [TestMethod]
     public void QuerySingleOrDefaultAsync_binds_to_the_translating_overload()
     {
         AssertTranslated<int>(connection => connection.QuerySingleOrDefaultAsync<int>("SELECT 1"));
