@@ -13469,6 +13469,8 @@ export class BulkOperationResult implements IBulkOperationResult {
     succeeded?: number;
     failed?: number;
     errors?: string[];
+    /** Stored rows deleted by the operation. Set only by Purge subscription; null for every other operation. */
+    rowsDeleted?: number | undefined;
 
     [key: string]: any;
 
@@ -13495,6 +13497,7 @@ export class BulkOperationResult implements IBulkOperationResult {
                 for (let item of _data["errors"])
                     this.errors!.push(item);
             }
+            this.rowsDeleted = _data["rowsDeleted"];
         }
     }
 
@@ -13519,6 +13522,7 @@ export class BulkOperationResult implements IBulkOperationResult {
             for (let item of this.errors)
                 data["errors"].push(item);
         }
+        data["rowsDeleted"] = this.rowsDeleted;
         return data;
     }
 
@@ -13535,6 +13539,8 @@ export interface IBulkOperationResult {
     succeeded?: number;
     failed?: number;
     errors?: string[];
+    /** Stored rows deleted by the operation. Set only by Purge subscription; null for every other operation. */
+    rowsDeleted?: number | undefined;
 
     [key: string]: any;
 }

@@ -129,6 +129,7 @@ public sealed class SubscriptionAdminServiceTests
         // that the failed restore is reported and not swallowed by the drain's own error.
         Assert.IsTrue(result.Errors.Any(error => error.Contains("is now Active", StringComparison.Ordinal)),
             $"Expected a restore-failure error, got: {string.Join(" | ", result.Errors)}");
+        Assert.IsNull(result.RowsDeleted, "only Operations → Purge subscription reports deleted rows");
     }
 
     // Issue #286: nothing used to empty a subscription's dead-letter queues, and Service Bus never

@@ -747,7 +747,16 @@ public class AdminImplementation : IAdminApiController
         var result = await _adminService.PurgeSubscriptionAsync(endpointId, subscription, body.States?.ToList() ?? new(), body.Before);
         await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
             endpointId: endpointId,
-            data: JsonConvert.SerializeObject(body));
+            data: JsonConvert.SerializeObject(new
+            {
+                subscription = body.Subscription,
+                states = body.States,
+                before = body.Before,
+                processed = result.Processed,
+                succeeded = result.Succeeded,
+                failed = result.Failed,
+                rowsDeleted = result.RowsDeleted,
+            }));
         return new OkObjectResult(result);
     }
 

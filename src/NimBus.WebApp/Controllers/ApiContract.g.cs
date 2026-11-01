@@ -12190,6 +12190,7 @@ namespace NimBus.WebApp.ManagementApi
         private int _succeeded;
         private int _failed;
         private System.Collections.Generic.List<string> _errors;
+        private int? _rowsDeleted;
 
         [Newtonsoft.Json.JsonProperty("processed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public int Processed    {
@@ -12238,6 +12239,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_errors != value)
                 {
                     _errors = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stored rows deleted by the operation. Set only by Purge subscription; null for every other operation.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("rowsDeleted", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? RowsDeleted    {
+            get { return _rowsDeleted; }
+            set
+            {
+                if (_rowsDeleted != value)
+                {
+                    _rowsDeleted = value;
                     RaisePropertyChanged();
                 }
             }
