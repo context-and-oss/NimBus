@@ -434,6 +434,18 @@ nimbus-ops requires sign-in in Azure, so the enrichment agent needs an agent API
 4. A PartnerPortal lead arrives in crm-web's contacts about every 45 seconds.
 5. A new contact is enriched by the agent. Its hand-off on **AgentZoneEndpoint** is Completed, and the audit names `enrichment-agent`.
 
+### Turn it off and on
+
+Every app runs one always-on replica, so the apps bill compute around the clock even when nobody uses the demo. To stop that without tearing anything down, deactivate the apps' revisions:
+
+```powershell
+samples/CrmErpDemo/scripts/demo-power.ps1 off      # every app to 0 replicas
+samples/CrmErpDemo/scripts/demo-power.ps1 on       # back on, except enrichment-agent
+samples/CrmErpDemo/scripts/demo-power.ps1 status   # active state, replicas and public URLs
+```
+
+SQL, Service Bus, the registry and the data stay as they are, so the fixed monthly cost below remains. While the apps are off, their URLs don't answer. `on` leaves enrichment-agent off unless you pass `-IncludeEnrichmentAgent`, because without its [key](#give-the-enrichment-agent-its-key) it only logs 401s. Add `-WhatIf` to preview, or `-ResourceGroup` for a group other than `rg-crmerp-demo`. A redeploy activates every app again.
+
 ### Tear down
 
 ```bash
