@@ -13,6 +13,8 @@ import { Input } from "components/ui/input";
 import { Spinner } from "components/ui/spinner";
 import ConfirmDestructiveAction from "./confirm-destructive-action";
 import OperationProgress from "./operation-progress";
+import OperationErrorAlert from "./operation-error-alert";
+import { describeOperationError } from "./operation-error";
 
 interface EndpointOption {
   value: string;
@@ -56,18 +58,27 @@ export function BulkResubmitCard({ endpoints, initialEndpoint }: { endpoints: En
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // A failure drops the preview too: the server may have partly changed, so preview again.
+  function fail(err: unknown) {
+    setError(describeOperationError(err));
+    setPreview(null);
+    setResult(null);
+  }
 
   async function handlePreview() {
     if (selected.length === 0) return;
     setLoading(true);
     setPreview(null);
     setResult(null);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const p = await client.getAdminFailedPreview(selected[0]);
       setPreview(p);
-    } catch {
-      // error handling
+    } catch (err) {
+      fail(err);
     } finally {
       setLoading(false);
     }
@@ -77,13 +88,14 @@ export function BulkResubmitCard({ endpoints, initialEndpoint }: { endpoints: En
     if (selected.length === 0) return;
     setShowConfirm(false);
     setExecuting(true);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const r = await client.postAdminBulkResubmit(selected[0]);
       setResult(r);
       setPreview(null);
-    } catch {
-      // error
+    } catch (err) {
+      fail(err);
     } finally {
       setExecuting(false);
     }
@@ -108,6 +120,7 @@ export function BulkResubmitCard({ endpoints, initialEndpoint }: { endpoints: En
                   setSelected(v);
                   setPreview(null);
                   setResult(null);
+                  setError(null);
                 }}
                 placeholder="Select endpoint..."
                 label="Endpoint"
@@ -123,6 +136,8 @@ export function BulkResubmitCard({ endpoints, initialEndpoint }: { endpoints: En
               Preview
             </Button>
           </div>
+
+          <OperationErrorAlert message={error} />
 
           {preview && (
             <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
@@ -194,6 +209,13 @@ export function DeleteDeadLetteredCard({
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function fail(err: unknown) {
+    setError(describeOperationError(err));
+    setCount(null);
+    setResult(null);
+  }
 
   // Queue messages with no stored event: the delete leaves them for Purge dead letters.
   const unmatched = queueCount !== null && matchingCount !== null ? queueCount - matchingCount : 0;
@@ -204,14 +226,15 @@ export function DeleteDeadLetteredCard({
     setLoading(true);
     setCount(null);
     setResult(null);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const p = await client.getAdminDeadletteredPreview(selected[0]);
       setQueueCount(p.queueCount ?? null);
       setMatchingCount(p.matchingQueueCount ?? null);
       setCount(p.count ?? 0);
-    } catch {
-      // error
+    } catch (err) {
+      fail(err);
     } finally {
       setLoading(false);
     }
@@ -221,13 +244,14 @@ export function DeleteDeadLetteredCard({
     if (selected.length === 0) return;
     setShowConfirm(false);
     setExecuting(true);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const r = await client.postAdminDeleteDeadlettered(selected[0]);
       setResult(r);
       setCount(null);
-    } catch {
-      // error
+    } catch (err) {
+      fail(err);
     } finally {
       setExecuting(false);
     }
@@ -252,6 +276,7 @@ export function DeleteDeadLetteredCard({
                   setSelected(v);
                   setCount(null);
                   setResult(null);
+                  setError(null);
                 }}
                 placeholder="Select endpoint..."
                 label="Endpoint"
@@ -267,6 +292,8 @@ export function DeleteDeadLetteredCard({
               Preview
             </Button>
           </div>
+
+          <OperationErrorAlert message={error} />
 
           {count !== null && (
             <div className="bg-yellow-50 border border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-900/60 rounded-md p-4 space-y-2">

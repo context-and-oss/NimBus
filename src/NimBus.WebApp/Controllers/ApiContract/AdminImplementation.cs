@@ -763,8 +763,16 @@ public class AdminImplementation : IAdminApiController
     public async Task<ActionResult<CountResponse>> PostAdminDeleteByToPreviewAsync(DeleteByToRequest body)
     {
         if (!await IsSiteOwnerAsync()) return new ForbidResult();
-        var count = await _adminService.DeleteMessagesByToPreviewAsync(body.ToField);
-        return new OkObjectResult(new CountResponse { Count = count });
+        try
+        {
+            var count = await _adminService.DeleteMessagesByToPreviewAsync(body.ToField);
+            return new OkObjectResult(new CountResponse { Count = count });
+        }
+        catch (NotSupportedException exception)
+        {
+            // Cosmos-only: answer 400 with the reason rather than an unhandled 500 (#285).
+            return new BadRequestObjectResult(exception.Message);
+        }
     }
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByToAsync(DeleteByToRequest body)
@@ -778,7 +786,16 @@ public class AdminImplementation : IAdminApiController
             return new ForbidResult();
         }
 
-        var result = await _adminService.DeleteMessagesByToAsync(body.ToField);
+        BulkOperationResult result;
+        try
+        {
+            result = await _adminService.DeleteMessagesByToAsync(body.ToField);
+        }
+        catch (NotSupportedException exception)
+        {
+            return new BadRequestObjectResult(exception.Message);
+        }
+
         await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
             data: JsonConvert.SerializeObject(new
             {
@@ -878,10 +895,19 @@ public class AdminImplementation : IAdminApiController
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
 
         var statuses = body.Statuses?.ToList() ?? new();
-        var result = await _adminService.CopyEndpointDataAsync(
-            endpointId, body.TargetConnectionString,
-            body.From, body.To,
-            statuses, body.BatchSize);
+        CopyResult result;
+        try
+        {
+            result = await _adminService.CopyEndpointDataAsync(
+                endpointId, body.TargetConnectionString,
+                body.From, body.To,
+                statuses, body.BatchSize);
+        }
+        catch (NotSupportedException exception)
+        {
+            return new BadRequestObjectResult(exception.Message);
+        }
+
         await _auditLogService.LogAuditAsync(MessageAuditType.CopyEndpointData, _context,
             endpointId: endpointId,
             data: JsonConvert.SerializeObject(new
