@@ -2389,6 +2389,139 @@ paths:
           description: Forbidden
         '404':
           description: Endpoint or session not found
+  '/api/admin/endpoint/{endpointId}/session/{sessionId}/state':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    get:
+      summary: Look up a session's Service Bus session state
+      description: >-
+        Reads the session state on the endpoint subscription under a briefly held session
+        lock, together with the session's queued messages and store counts. Never writes.
+      operationId: get-admin-session-state
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStateView'
+        '400':
+          description: Invalid session id
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+    post:
+      summary: Change a session's Service Bus session state
+      description: >-
+        Applies a guided action or replaces the state with validated JSON. The change is
+        refused with 409 when the stored state no longer matches expectedVersion or the
+        session is locked by a receiver, and with 503 when the audit record cannot be written.
+      operationId: post-admin-session-state
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStateChangeRequest'
+      responses:
+        '200':
+          description: The state after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStateView'
+        '400':
+          description: Invalid request or session state JSON
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+        '409':
+          description: The state changed since it was read, or the session is locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStateView'
+        '503':
+          description: The audit record could not be written; nothing was changed
+  '/api/admin/endpoint/{endpointId}/session-cleanup/preview':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Preview which sessions hold idle session state
+      operationId: post-admin-session-cleanup-preview
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCleanupPreviewRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionCleanupPreview'
+        '400':
+          description: Invalid request
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  '/api/admin/endpoint/{endpointId}/session-cleanup':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Reset the session state of previewed idle sessions
+      operationId: post-admin-session-cleanup
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCleanupRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionCleanupResult'
+        '400':
+          description: Invalid request
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+        '503':
+          description: The audit record could not be written; nothing was changed
   '/api/admin/endpoint/{endpointId}/event/{eventId}':
     parameters:
       - schema:
@@ -4254,6 +4387,7 @@ components:
             - agentApiKeyRevoked
             - agentApiKeyRemoved
             - copyEndpointData
+            - changeSessionState
         comment:
           type: string
           nullable: true
@@ -5333,6 +5467,192 @@ components:
           type: array
           items:
             type: string
+    SessionStateView:
+      title: SessionStateView
+      description: >-
+        A session's Service Bus session state on the endpoint subscription, read under a
+        session lock, with the session's queued messages and store counts.
+      type: object
+      properties:
+        sessionId:
+          type: string
+        locked:
+          type: boolean
+          description: A receiver holds the session, so its state could not be read.
+        readable:
+          type: boolean
+          description: The stored state parses as NimBus session state.
+        isEmpty:
+          type: boolean
+        stateJson:
+          type: string
+          nullable: true
+          description: The stored state as text; null when nothing is stored.
+        stateVersion:
+          type: string
+          nullable: true
+          description: SHA-256 of the stored bytes; send it back as expectedVersion.
+        blockedByEventId:
+          type: string
+          nullable: true
+        blockedByMessageId:
+          type: string
+          nullable: true
+        deferredCount:
+          type: integer
+        nextDeferralSequence:
+          type: integer
+        replayedThroughSequence:
+          type: integer
+          nullable: true
+        drainRequestedForSequence:
+          type: integer
+          nullable: true
+        drainRequestedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        legacyDeferredCount:
+          type: integer
+        blocked:
+          type: boolean
+        hasUnreplayedMessages:
+          type: boolean
+        activeMessageCount:
+          type: integer
+          description: Messages queued on the session (peeked, at most 100).
+        deferredSubscriptionCount:
+          type: integer
+          description: Messages parked on the Deferred subscription (peeked, at most 100).
+        storePendingCount:
+          type: integer
+        storeDeferredCount:
+          type: integer
+        blockingEventStatus:
+          type: string
+          nullable: true
+          description: Stored status of the blocking event; null when not blocked or not found.
+        message:
+          type: string
+          nullable: true
+    SessionStateChangeRequest:
+      title: SessionStateChangeRequest
+      type: object
+      required:
+        - action
+        - expectedVersion
+      properties:
+        action:
+          type: string
+          enum:
+            - clearBlock
+            - markReplayed
+            - reset
+            - replace
+        expectedVersion:
+          type: string
+          description: The stateVersion the change was based on.
+        stateJson:
+          type: string
+          nullable: true
+          description: The new state, for replace.
+    SessionCleanupPreviewRequest:
+      title: SessionCleanupPreviewRequest
+      type: object
+      properties:
+        updatedSince:
+          type: string
+          format: date-time
+          nullable: true
+          description: Only sessions of events updated since; defaults to 30 days ago.
+        maxSessions:
+          type: integer
+          nullable: true
+          description: Most sessions to inspect, 1 to 1000; defaults to 200.
+        includeStaleBlocks:
+          type: boolean
+    SessionCleanupPreview:
+      title: SessionCleanupPreview
+      type: object
+      properties:
+        inspectedCount:
+          type: integer
+        emptyCount:
+          type: integer
+          description: Inspected sessions that hold no state.
+        truncated:
+          type: boolean
+          description: More sessions matched than maxSessions.
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionCleanupCandidate'
+    SessionCleanupCandidate:
+      title: SessionCleanupCandidate
+      type: object
+      properties:
+        sessionId:
+          type: string
+        classification:
+          type: string
+          enum:
+            - idle
+            - staleBlock
+            - inUse
+        reason:
+          type: string
+          nullable: true
+        stateVersion:
+          type: string
+          nullable: true
+        stateJson:
+          type: string
+          nullable: true
+    SessionCleanupRequest:
+      title: SessionCleanupRequest
+      type: object
+      required:
+        - sessions
+      properties:
+        includeStaleBlocks:
+          type: boolean
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionCleanupSelection'
+    SessionCleanupSelection:
+      title: SessionCleanupSelection
+      type: object
+      required:
+        - sessionId
+        - stateVersion
+      properties:
+        sessionId:
+          type: string
+        stateVersion:
+          type: string
+    SessionCleanupResult:
+      title: SessionCleanupResult
+      type: object
+      properties:
+        resetCount:
+          type: integer
+        skipped:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionCleanupSkip'
+        errors:
+          type: array
+          items:
+            type: string
+    SessionCleanupSkip:
+      title: SessionCleanupSkip
+      type: object
+      properties:
+        sessionId:
+          type: string
+        reason:
+          type: string
     MetricsOverview:
       title: MetricsOverview
       type: object
@@ -5588,6 +5908,7 @@ components:
             - agentApiKeyRevoked
             - agentApiKeyRemoved
             - copyEndpointData
+            - changeSessionState
         createdAtFrom:
           type: string
           format: date-time
@@ -6662,6 +6983,7 @@ components:
             - agentApiKeyRevoked
             - agentApiKeyRemoved
             - copyEndpointData
+            - changeSessionState
         comment:
           type: string
           nullable: true

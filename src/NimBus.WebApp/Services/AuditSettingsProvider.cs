@@ -64,6 +64,7 @@ public sealed class AuditSettingsProvider : IAuditSettingsProvider
         MessageAuditType.AgentApiKeyCreated,
         MessageAuditType.AgentApiKeyRevoked,
         MessageAuditType.AgentApiKeyRemoved,
+        MessageAuditType.ChangeSessionState,
     };
 
     /// <summary>

@@ -198,4 +198,11 @@ public enum MessageAuditType
     /// never the target connection string.
     /// </summary>
     CopyEndpointData,
+
+    /// <summary>
+    /// A site Owner changed or reset Service Bus session state (Operations → Session state, or
+    /// Clean up session state). Data carries the session, the action and the state before and
+    /// after. Always recorded: the change is refused when the record can't be written.
+    /// </summary>
+    ChangeSessionState,
 }
