@@ -1,25 +1,16 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.5.4">
+<Project Sdk="Aspire.AppHost.Sdk/13.6.4">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsAspireHost>true</IsAspireHost>
+    <AspireUseCliBundle>true</AspireUseCliBundle>
     <UserSecretsId>aspire-pubsub-sample</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.5.4" />
-    <!-- Force the patched MessagePack over Aspire's vulnerable transitive 2.5.302
-         (CVE-2026-48109 et al., patched in 2.5.301; GHSA-qhrr-8q5h-9q3h, patched in 2.5.303) so the audited Release build passes.
-         This is a security FLOOR, not a version to keep current: nothing in this repo
-         calls MessagePack, and Aspire — which does, for the dashboard's resource
-         stream — is built against 2.x. MessagePack 3.x resolves and the AppHost even
-         starts on it, but it puts a major under a dependency that did not ask for one,
-         where a break would surface as a serialization failure on some dashboard path
-         rather than at build time. 3.x buys nothing here; 2.5.303 already clears the
-         advisories. Raise this only when Aspire itself moves. -->
-    <PackageReference Include="MessagePack" Version="2.5.303" />
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.6.4" />
   </ItemGroup>
 
   <ItemGroup>
