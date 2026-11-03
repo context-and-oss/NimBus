@@ -310,22 +310,77 @@ public sealed class ServiceBusTopologyProvisionerTests
     }
 
     [Fact]
-    public void DeferredSubscription_DropsToAnEmulatorSafeTimeToLive()
+    public void DeferredSubscription_KeepsParkedMessagesUntilReplayedAndDeadLettersAnyThatExpire()
     {
-        Assert.Equal(TimeSpan.FromDays(14), TopologyDescriptor.DeferredSubscription().DefaultMessageTimeToLive);
+        // A parked message waits for its blocking event to be resolved, which can take an
+        // operator weeks. A capped TTL silently dropped it, leaving the row Deferred forever
+        // with nothing to replay.
+        var deferred = TopologyDescriptor.DeferredSubscription();
+        Assert.Equal(TimeSpan.MaxValue, deferred.DefaultMessageTimeToLive);
+        Assert.True(deferred.DeadLetterOnMessageExpiration);
+
         Assert.Equal(TimeSpan.FromHours(1), TopologyDescriptor.DeferredSubscription(isEmulator: true).DefaultMessageTimeToLive);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_CreatesDeferredSubscriptionWithUnboundedTtlAndDeadLetteringOnExpiration()
+    {
+        var client = new RecordingAdministrationClient();
+        var sut = CreateProvisioner(client, new TestPlatform(new TestEndpoint("orders")));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        var deferred = Assert.Single(client.CreatedSubscriptions, x =>
+            x.TopicName == "orders" && x.SubscriptionName == Constants.DeferredSubscriptionName);
+        Assert.Equal(TimeSpan.MaxValue, deferred.DefaultMessageTimeToLive);
+        Assert.True(deferred.DeadLetteringOnMessageExpiration);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_UpdatesAnExistingDeferredSubscriptionInPlaceWithoutRecreatingIt()
+    {
+        // Existing namespaces were provisioned with a 14-day TTL. Recreating the subscription
+        // would delete every parked message, so the settings must change in place.
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("orders");
+        client.SeedSubscription("orders", MakeSubscriptionProperties("orders", Constants.DeferredSubscriptionName,
+            requiresSession: true, defaultMessageTimeToLive: TimeSpan.FromDays(14)));
+
+        var sut = CreateProvisioner(client, new TestPlatform(new TestEndpoint("orders")));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.DoesNotContain(client.DeletedSubscriptions, x => x.SubscriptionName == Constants.DeferredSubscriptionName);
+        Assert.DoesNotContain(client.CreatedSubscriptions, x => x.SubscriptionName == Constants.DeferredSubscriptionName);
+        var updated = Assert.Single(client.UpdatedSubscriptions);
+        Assert.Equal(("orders", Constants.DeferredSubscriptionName), (updated.TopicName, updated.SubscriptionName));
+        Assert.Equal(TimeSpan.MaxValue, updated.DefaultMessageTimeToLive);
+        Assert.True(updated.DeadLetteringOnMessageExpiration);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_LeavesSubscriptionsThatAlreadyMatchUntouched()
+    {
+        var client = new RecordingAdministrationClient();
+        var sut = CreateProvisioner(client, new TestPlatform(new TestEndpoint("orders")));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.Empty(client.UpdatedSubscriptions);
     }
 
     private static SubscriptionProperties MakeSubscriptionProperties(
         string topicName, string subscriptionName,
-        bool requiresSession = false, string? forwardTo = null) =>
+        bool requiresSession = false, string? forwardTo = null,
+        TimeSpan? defaultMessageTimeToLive = null, bool deadLetteringOnMessageExpiration = false) =>
         ServiceBusModelFactory.SubscriptionProperties(
             topicName, subscriptionName,
             lockDuration: TimeSpan.FromMinutes(1),
             requiresSession: requiresSession,
-            defaultMessageTimeToLive: TimeSpan.MaxValue,
+            defaultMessageTimeToLive: defaultMessageTimeToLive ?? TimeSpan.MaxValue,
             autoDeleteOnIdle: TimeSpan.MaxValue,
-            deadLetteringOnMessageExpiration: false,
+            deadLetteringOnMessageExpiration: deadLetteringOnMessageExpiration,
             maxDeliveryCount: 10,
             enableBatchedOperations: true,
             status: EntityStatus.Active,
@@ -402,11 +457,22 @@ public sealed class ServiceBusTopologyProvisionerTests
                 options.TopicName,
                 options.SubscriptionName,
                 requiresSession: options.RequiresSession,
-                forwardTo: _forwardToNormalizer(options.ForwardTo));
+                forwardTo: _forwardToNormalizer(options.ForwardTo),
+                defaultMessageTimeToLive: options.DefaultMessageTimeToLive,
+                deadLetteringOnMessageExpiration: options.DeadLetteringOnMessageExpiration);
             _subscriptions[(options.TopicName, options.SubscriptionName)] = subscription;
             // Azure Service Bus auto-creates a $Default rule on new subscriptions
             _rules[(options.TopicName, options.SubscriptionName, "$Default")] =
                 ServiceBusModelFactory.RuleProperties("$Default", new TrueRuleFilter());
+            return Task.FromResult(Response.FromValue(subscription, FakeResponse.Instance));
+        }
+
+        public List<SubscriptionProperties> UpdatedSubscriptions { get; } = new();
+
+        public override Task<Response<SubscriptionProperties>> UpdateSubscriptionAsync(SubscriptionProperties subscription, CancellationToken cancellationToken = default)
+        {
+            UpdatedSubscriptions.Add(subscription);
+            _subscriptions[(subscription.TopicName, subscription.SubscriptionName)] = subscription;
             return Task.FromResult(Response.FromValue(subscription, FakeResponse.Instance));
         }
 
