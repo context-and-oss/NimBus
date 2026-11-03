@@ -76,6 +76,17 @@ function formatMs(ms: number | undefined): string {
   return `${Math.round(ms)} ms`;
 }
 
+// Accumulated time across many messages — ranges from seconds to hundreds of
+// hours, so it climbs units further than formatMs.
+function formatDuration(ms: number): string {
+  const s = ms / 1000;
+  if (s < 60) return formatMs(ms);
+  const min = s / 60;
+  if (min < 60) return `${Math.round(min)} min`;
+  const h = min / 60;
+  return h >= 10 ? `${Math.round(h)} h` : `${h.toFixed(1)} h`;
+}
+
 function formatNumber(n: number): string {
   return n.toLocaleString();
 }
@@ -182,8 +193,17 @@ export default function Metrics() {
     return (latency?.latencies ?? []).map((l) => {
       const queueAvg = l.queue?.avgMs ?? 0;
       const procAvg = l.processing?.avgMs ?? 0;
+      const queueMax = l.queue?.maxMs ?? 0;
       const procMax = l.processing?.maxMs ?? 0;
+      // The two aggregates come from separate queries, so the longest single
+      // phase is the honest route max; summing the maxes would pair up
+      // different messages.
+      const maxPhase: LatPhase = queueMax > procMax ? "queue" : "processing";
       const totalAvg = queueAvg + procAvg;
+      // Each side weighted by its own sample count: the two aggregates are
+      // queried separately and may cover different message sets.
+      const totalMs =
+        (l.queue?.count ?? 0) * queueAvg + (l.processing?.count ?? 0) * procAvg;
       const queueRatio = totalAvg > 0 ? queueAvg / totalAvg : 0;
       return {
         endpointId: l.endpointId ?? "",
@@ -191,8 +211,10 @@ export default function Metrics() {
         count: l.processing?.count ?? l.queue?.count ?? 0,
         queueAvg,
         procAvg,
-        procMax,
+        maxMs: Math.max(queueMax, procMax),
+        maxPhase,
         totalAvg,
+        totalMs,
         queueRatio,
       };
     });
@@ -200,24 +222,24 @@ export default function Metrics() {
 
   const latencyKpis = useMemo(() => {
     if (latRows.length === 0) {
-      return { avgProc: 0, maxProc: 0, slow: 0, outliers: 0, totalRoutes: 0 };
+      return { avgProc: 0, maxMs: 0, slow: 0, outliers: 0, totalRoutes: 0 };
     }
     let weighted = 0;
     let weight = 0;
-    let maxProc = 0;
+    let maxMs = 0;
     let slow = 0;
     let outliers = 0;
     for (const r of latRows) {
       const c = Math.max(r.count, 1);
       weighted += r.procAvg * c;
       weight += c;
-      if (r.procMax > maxProc) maxProc = r.procMax;
+      if (r.maxMs > maxMs) maxMs = r.maxMs;
       if (r.procAvg > SLOW_MS) slow += 1;
-      if (r.procMax > OUTLIER_MS) outliers += 1;
+      if (isOutlier(r)) outliers += 1;
     }
     return {
       avgProc: weight > 0 ? weighted / weight : 0,
-      maxProc,
+      maxMs,
       slow,
       outliers,
       totalRoutes: latRows.length,
@@ -242,9 +264,9 @@ export default function Metrics() {
         ? "warning"
         : "default";
   const maxLatencyTone: StatTileTone =
-    latencyKpis.maxProc >= OUTLIER_MS
+    latencyKpis.maxMs >= OUTLIER_MS
       ? "danger"
-      : latencyKpis.maxProc >= SLOW_MS
+      : latencyKpis.maxMs >= SLOW_MS
         ? "warning"
         : "default";
   const avgLatencyTone: StatTileTone =
@@ -342,11 +364,11 @@ export default function Metrics() {
                 />
                 <StatTile
                   label="Max Latency"
-                  value={loading ? "—" : formatMs(latencyKpis.maxProc)}
+                  value={loading ? "—" : formatDuration(latencyKpis.maxMs)}
                   delta={
                     loading
                       ? undefined
-                      : latencyKpis.maxProc === 0
+                      : latencyKpis.maxMs === 0
                         ? "no samples"
                         : latencyKpis.outliers > 0
                           ? `${latencyKpis.outliers} outlier route${latencyKpis.outliers === 1 ? "" : "s"}`
@@ -436,7 +458,7 @@ export default function Metrics() {
                 "profile the handler" at a glance (design §03 · pin 5). */}
                   <ChartCard
                     title="Latency by route"
-                    meta="queue + processing · sorted by max desc"
+                    meta="queue + processing · max is the longer phase · sorted by total time"
                   >
                     {latRows.length === 0 ? (
                       <EmptyState
@@ -754,23 +776,32 @@ const BarList: React.FC<{
 // 80% processing → profile the handler" without doing arithmetic in their
 // head (design §03 · pin 5).
 // -------------------------------------------------------------------------
+type LatPhase = "queue" | "processing";
+
+const isOutlier = (r: LatRow) => r.maxMs >= OUTLIER_MS;
+
 interface LatRow {
   endpointId: string;
   eventTypeId: string;
   count: number;
   queueAvg: number;
   procAvg: number;
-  procMax: number;
+  /** Longest single phase seen on the route: queue max or processing max. */
+  maxMs: number;
+  maxPhase: LatPhase;
   totalAvg: number;
+  /** Count × avg latency — the route's accumulated time in the window. */
+  totalMs: number;
   /** 0..1 — share of total avg latency spent in the queue (vs processing). */
   queueRatio: number;
 }
 
 const LatencyTable: React.FC<{ rows: LatRow[] }> = ({ rows }) => {
-  // Sort by max desc by default — the worst route should sit on top so a
-  // glance answers "is there an outlier?".
+  // Sort by total time desc — a fast route with a large backlog can cost far
+  // more than a slow route with few messages, and its max processing time
+  // alone would hide it. Outlier rows stay highlighted wherever they land.
   const sorted = useMemo(
-    () => [...rows].sort((a, b) => b.procMax - a.procMax),
+    () => [...rows].sort((a, b) => b.totalMs - a.totalMs),
     [rows],
   );
   return (
@@ -796,18 +827,21 @@ const LatencyTable: React.FC<{ rows: LatRow[] }> = ({ rows }) => {
             <th className="text-right font-semibold uppercase tracking-[0.06em] text-[10.5px] px-3 py-2 whitespace-nowrap">
               Max
             </th>
+            <th className="text-right font-semibold uppercase tracking-[0.06em] text-[10.5px] px-3 py-2 whitespace-nowrap">
+              Total time
+            </th>
           </tr>
         </thead>
         <tbody>
           {sorted.map((r, i) => {
-            const isOutlier = r.procMax >= OUTLIER_MS;
-            const isSlow = !isOutlier && r.procAvg >= SLOW_MS;
+            const outlier = isOutlier(r);
+            const isSlow = !outlier && r.procAvg >= SLOW_MS;
             return (
               <tr
                 key={`${r.endpointId}/${r.eventTypeId}/${i}`}
                 className={cn(
                   "border-t border-border",
-                  isOutlier && "bg-status-danger-50/60",
+                  outlier && "bg-status-danger-50/60",
                   isSlow && "bg-status-warning-50/40",
                 )}
               >
@@ -851,15 +885,23 @@ const LatencyTable: React.FC<{ rows: LatRow[] }> = ({ rows }) => {
                 <td
                   className={cn(
                     "px-3 py-2 text-right font-mono",
-                    isOutlier && "text-status-danger font-bold",
+                    outlier && "text-status-danger font-bold",
                   )}
                 >
-                  {formatMs(r.procMax)}
-                  {isOutlier && (
+                  {formatDuration(r.maxMs)}
+                  {r.maxMs > 0 && (
+                    <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                      {r.maxPhase === "queue" ? "queue" : "proc"}
+                    </span>
+                  )}
+                  {outlier && (
                     <span className="ml-1.5 inline-block bg-status-danger-50 text-status-danger-ink text-[10px] font-bold px-1.5 py-0.5 rounded-full align-middle">
                       outlier
                     </span>
                   )}
+                </td>
+                <td className="px-3 py-2 text-right font-mono font-semibold">
+                  {formatDuration(r.totalMs)}
                 </td>
               </tr>
             );
