@@ -28,7 +28,8 @@ vi.mock("functions/notifications.functions", () => ({
 }));
 
 vi.mock("api-client", async () => {
-  const actual = await vi.importActual<typeof import("api-client")>("api-client");
+  const actual =
+    await vi.importActual<typeof import("api-client")>("api-client");
   class MockClient {
     getMe() {
       return Promise.resolve(undefined);
@@ -75,7 +76,9 @@ function msg(
 describe("getHistoryQueueTimeMs (spec 005)", () => {
   it("case 1 - returns undefined for empty / undefined messages", () => {
     expect(getHistoryQueueTimeMs(undefined)).toBeUndefined();
-    expect(getHistoryQueueTimeMs(null as unknown as api.Message[])).toBeUndefined();
+    expect(
+      getHistoryQueueTimeMs(null as unknown as api.Message[]),
+    ).toBeUndefined();
     expect(getHistoryQueueTimeMs([])).toBeUndefined();
   });
 
@@ -142,7 +145,10 @@ describe("getHistoryQueueTimeMs (spec 005)", () => {
   it("ignores unknown forward-compat messageType values without throwing", () => {
     const history: api.Message[] = [
       msg("eventRequest", "2026-05-28T16:00:00.000Z"),
-      msg("someFutureUnknownType" as api.MessageType, "2026-05-28T16:00:01.000Z"),
+      msg(
+        "someFutureUnknownType" as api.MessageType,
+        "2026-05-28T16:00:01.000Z",
+      ),
       msg("deferralResponse", "2026-05-28T16:00:02.000Z"),
     ];
     expect(getHistoryQueueTimeMs(history)).toBe(2_000);
@@ -151,10 +157,23 @@ describe("getHistoryQueueTimeMs (spec 005)", () => {
 
 describe("getFailureOccurrences (Spec 033)", () => {
   it("returns each stored failure row, including a dead-letter row without error content", () => {
-    const event = { eventId: "event-1", lastMessageId: "last" } as unknown as api.Event;
+    const event = {
+      eventId: "event-1",
+      lastMessageId: "last",
+    } as unknown as api.Event;
     const rows = [
-      { eventId: "event-1", messageId: "failure-1", messageType: "ErrorResponse", errorContent: "details" },
-      { eventId: "event-1", messageId: "failure-2", messageType: "DeadLetter", deadLetterReason: "expired" },
+      {
+        eventId: "event-1",
+        messageId: "failure-1",
+        messageType: "ErrorResponse",
+        errorContent: "details",
+      },
+      {
+        eventId: "event-1",
+        messageId: "failure-2",
+        messageType: "DeadLetter",
+        deadLetterReason: "expired",
+      },
     ] as unknown as api.Message[];
 
     expect(getFailureOccurrences(event, rows)).toEqual([
@@ -164,10 +183,16 @@ describe("getFailureOccurrences (Spec 033)", () => {
   });
 
   it("falls back to the event last message only when no failure row is available", () => {
-    expect(getFailureOccurrences(
-      { eventId: "event-1", lastMessageId: "last", resolutionStatus: "DeadLettered" } as unknown as api.Event,
-      [],
-    )).toEqual([{ eventId: "event-1", messageId: "last" }]);
+    expect(
+      getFailureOccurrences(
+        {
+          eventId: "event-1",
+          lastMessageId: "last",
+          resolutionStatus: "DeadLettered",
+        } as unknown as api.Event,
+        [],
+      ),
+    ).toEqual([{ eventId: "event-1", messageId: "last" }]);
   });
 });
 
@@ -303,7 +328,10 @@ function spec006BuildEvent(overrides: Partial<api.Event>): api.Event {
   } as unknown as api.Event;
 }
 
-function spec006RenderListing(eventDetails: api.Event, blockedByEventId?: string) {
+function spec006RenderListing(
+  eventDetails: api.Event,
+  blockedByEventId?: string,
+) {
   return render(
     <MemoryRouter>
       <MessageListing
@@ -346,12 +374,18 @@ describe("MessageListing — Blocked by row (spec 006)", () => {
   });
 
   it("does not render 'Blocked by' for a deferred event when blockedByEventId is omitted", () => {
-    spec006RenderListing(spec006BuildEvent({ resolutionStatus: "Deferred" }), undefined);
+    spec006RenderListing(
+      spec006BuildEvent({ resolutionStatus: "Deferred" }),
+      undefined,
+    );
     expect(screen.queryByText("Blocked by")).toBeNull();
   });
 
   it("does not render 'Blocked by' for a non-deferred event even when blockedByEventId is provided", () => {
-    spec006RenderListing(spec006BuildEvent({ resolutionStatus: "Completed" }), SPEC_006_BLOCKED_BY);
+    spec006RenderListing(
+      spec006BuildEvent({ resolutionStatus: "Completed" }),
+      SPEC_006_BLOCKED_BY,
+    );
     expect(screen.queryByText("Blocked by")).toBeNull();
   });
 });
@@ -873,7 +907,10 @@ describe("MessageListing operator commands", () => {
 
   function renderListing(
     eventDetails: api.Event,
-    commands: { resubmitEvent?: () => Promise<void>; skipEvent?: () => Promise<void> },
+    commands: {
+      resubmitEvent?: () => Promise<void>;
+      skipEvent?: () => Promise<void>;
+    },
     commandAcceptedFor?: string,
   ) {
     const listing = (details: api.Event) => (
@@ -890,7 +927,9 @@ describe("MessageListing operator commands", () => {
       </MemoryRouter>
     );
     const view = render(listing(eventDetails));
-    return { rerender: (details: api.Event) => view.rerender(listing(details)) };
+    return {
+      rerender: (details: api.Event) => view.rerender(listing(details)),
+    };
   }
 
   beforeEach(() => {
@@ -909,7 +948,9 @@ describe("MessageListing operator commands", () => {
 
       fireEvent.click(screen.getByRole("button", { name: label }));
 
-      const doneButton = await screen.findByRole<HTMLButtonElement>("button", { name: done });
+      const doneButton = await screen.findByRole<HTMLButtonElement>("button", {
+        name: done,
+      });
       expect(doneButton.disabled).toBe(true);
       expect(run).toHaveBeenCalledWith("evt-1", "msg-1");
       expect(notifySuccess).toHaveBeenCalledWith(`${done}.`);
@@ -917,7 +958,9 @@ describe("MessageListing operator commands", () => {
 
       // The event failed again: a new attempt with its own message id.
       rerender(failed("msg-2"));
-      expect(screen.getByRole<HTMLButtonElement>("button", { name: label }).disabled).toBe(false);
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: label }).disabled,
+      ).toBe(false);
     },
   );
 
@@ -925,7 +968,10 @@ describe("MessageListing operator commands", () => {
     // A fresh mount is what switching back to the Message tab does. Dead-lettered, because
     // a Failed event no longer offers Delete (#301).
     const deadLettered = (lastMessageId: string): api.Event =>
-      ({ ...failed(lastMessageId), resolutionStatus: "DeadLettered" }) as unknown as api.Event;
+      ({
+        ...failed(lastMessageId),
+        resolutionStatus: "DeadLettered",
+      }) as unknown as api.Event;
     const { rerender } = renderListing(deadLettered("msg-1"), {}, "msg-1");
     const disabled = (name: string) =>
       screen.getByRole<HTMLButtonElement>("button", { name }).disabled;
@@ -942,5 +988,57 @@ describe("MessageListing operator commands", () => {
     expect(disabled("Resubmit with changes")).toBe(false);
     expect(disabled("Skip")).toBe(false);
     expect(disabled("Delete")).toBe(false);
+  });
+});
+
+describe("resubmit editor readability", () => {
+  const show = (stack?: string) =>
+    render(
+      <MemoryRouter>
+        <MessageListing
+          eventDetails={
+            new api.Event({
+              eventId: "edit-event",
+              lastMessageId: "edit-message",
+              eventTypeId: "Order",
+              resolutionStatus: api.ResolutionStatus.Failed,
+              messageContent: new api.MessageContent({
+                eventContent: new api.EventContent({
+                  eventJson: '{"amount":1}',
+                }),
+                errorContent: new api.ErrorContent({
+                  errorText: "failure",
+                  exceptionStackTrace: stack,
+                }),
+              }),
+            })
+          }
+          eventTypes={[new api.EventType({ id: "Order" })]}
+          messages={[]}
+          resubmitEvent={vi.fn()}
+          skipEvent={vi.fn()}
+          resubmitEventWithChanges={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+  it("pretty prints editable JSON and preserves newlines while typing", () => {
+    show();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Resubmit with changes" }),
+    );
+    const editor = screen.getByRole("textbox", { name: "Modified event:" });
+    expect((editor as HTMLTextAreaElement).value).toBe('{\n  "amount": 1\n}');
+    expect(editor.className).toContain("font-mono");
+    fireEvent.change(editor, { target: { value: '{\n  "amount": 2\n}' } });
+    expect((editor as HTMLTextAreaElement).value).toContain("\n");
+  });
+  it("omits the Exception heading when no stack trace is stored", () => {
+    show();
+    expect(screen.queryByText("Exception")).toBeNull();
+  });
+  it("keeps an available stack trace", () => {
+    show("at OrderHandler.Handle()");
+    expect(screen.getByText("Exception")).toBeTruthy();
+    expect(screen.getByText("at OrderHandler.Handle()")).toBeTruthy();
   });
 });

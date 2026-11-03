@@ -3,7 +3,7 @@ import * as api from "api-client";
 import Page from "components/page";
 import MessageListing from "components/event-details/message-listing";
 import DeferredRecovery from "components/event-details/deferred-recovery";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import TabSelection from "components/tab-selection";
 import Loading from "components/loading/loading";
 import { Button } from "components/ui/button";
@@ -74,6 +74,8 @@ const EventDetails = (props: EventDetailsProps) => {
   const client = new api.Client(api.CookieAuth());
   const params = useParams();
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const fromFailed = new URLSearchParams(search).get("from") === "failed";
 
   const [cosmosEvent, setCosmosEvent] = useState<api.Event>();
   const [eventTypes, setEventTypes] = useState<api.EventType[]>([]);
@@ -196,7 +198,10 @@ const EventDetails = (props: EventDetailsProps) => {
   // it, the actions stay closed for that attempt and the page follows the event.
   // The route is captured before the POST so a late answer cannot act on the
   // event the operator moved to.
-  const runCommand = async (actedOnMessageId: string, send: () => Promise<void>) => {
+  const runCommand = async (
+    actedOnMessageId: string,
+    send: () => Promise<void>,
+  ) => {
     const generation = routeGeneration.current;
     await send();
     if (generation !== routeGeneration.current) return;
@@ -207,7 +212,10 @@ const EventDetails = (props: EventDetailsProps) => {
 
   // Runs after the command's promise has resolved, so a refresh that fails here
   // never reads as a failed command. Stops when the operator leaves the event.
-  const followCommand = async (generation: number, actedOnMessageId: string) => {
+  const followCommand = async (
+    generation: number,
+    actedOnMessageId: string,
+  ) => {
     const current = () => generation === routeGeneration.current;
     for (const delay of COMMAND_FOLLOW_UP_DELAYS_MS) {
       await new Promise((resolve) => setTimeout(resolve, delay));
@@ -253,7 +261,9 @@ const EventDetails = (props: EventDetailsProps) => {
     runCommand(messageId, () => client.postSkipEventIds(eventId, messageId));
 
   const resubmitEvent = (eventId: string, messageId: string) =>
-    runCommand(messageId, () => client.postResubmitEventIds(eventId, messageId));
+    runCommand(messageId, () =>
+      client.postResubmitEventIds(eventId, messageId),
+    );
 
   const reprocessDeferred = async () => {
     if (!cosmosEvent?.endpointId || !cosmosEvent?.sessionId) return;
@@ -450,7 +460,9 @@ const EventDetails = (props: EventDetailsProps) => {
         <Page
           title="Event Details"
           backbutton={true}
-          backUrl={`/Endpoints/Details/${params.endpointId!}`}
+          backUrl={
+            fromFailed ? "/Failed" : `/Endpoints/Details/${params.endpointId!}`
+          }
           backIndex={params.backindex!}
         >
           <TabSelection tabs={tabs()} />

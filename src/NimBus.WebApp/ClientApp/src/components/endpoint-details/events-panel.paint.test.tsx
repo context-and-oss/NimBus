@@ -103,6 +103,28 @@ describe("EventsPanel paints before the session-status batch resolves", () => {
 });
 
 describe("EventsPanel id cells filter on click", () => {
+  it("provides a direct event details link", async () => {
+    getByFilterMock.mockResolvedValue({
+      events: [
+        new api.Event({
+          eventId: "evt-details",
+          sessionId: "sess",
+          eventTypeId: "DetailsEvent",
+          resolutionStatus: api.ResolutionStatus.Completed,
+        }),
+      ],
+    });
+    render(
+      <MemoryRouter>
+        <EventsPanel endpointId="ep-1" />
+      </MemoryRouter>,
+    );
+    expect(
+      (await screen.findByRole("link", { name: "evt-deta…" })).getAttribute(
+        "href",
+      ),
+    ).toBe("/Message/Index/ep-1/evt-details/0");
+  });
   it("clicking a Session Id re-queries with that session instead of copying", async () => {
     const event = Object.assign(new api.Event(), {
       eventId: "evt-1",
@@ -171,10 +193,8 @@ describe("EventsPanel duplicate status display", () => {
     expect(screen.getAllByText("Skipped")).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Grouped by Error" }));
-    fireEvent.click(screen.getByText("Unknown").closest("tr")!);
-
-    expect(screen.getByText("Skipped (duplicate)")).toBeTruthy();
-    expect(screen.getAllByText("Skipped")).toHaveLength(1);
+    expect(screen.getByText("No failed events to group.")).toBeTruthy();
+    expect(screen.queryByText("Unknown")).toBeNull();
   });
 });
 

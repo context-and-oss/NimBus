@@ -1,7 +1,10 @@
+import ResubmitEditor from "components/event-details/resubmit-editor";
+import { getResubmitPayload } from "functions/resubmit.functions";
 import * as React from "react";
 import * as api from "api-client";
 import { Link } from "react-router-dom";
 import moment from "moment";
+import { formatMoment } from "functions/endpoint.functions";
 import IntelligenceCard from "components/event-details/intelligence-card";
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
@@ -44,7 +47,7 @@ interface PanelData {
 }
 
 const stamp = (m: moment.Moment | undefined, withMs = false) =>
-  m ? m.format(withMs ? "DD/MM/YYYY HH:mm:ss.SSS" : "DD/MM/YYYY HH:mm:ss") : "—";
+  m ? formatMoment(m, !withMs) : "—";
 
 const prettyJson = (raw: string | undefined) => {
   if (!raw) return undefined;
@@ -80,13 +83,21 @@ export default function FailureDetailPanel({
   onAct,
   onShowSimilar,
 }: FailureDetailPanelProps) {
+  const routeGeneration = React.useRef(0);
+  const [editorOpen, setEditorOpen] = React.useState(false);
+  const [eventTypes, setEventTypes] = React.useState<api.EventType[]>([]);
+  const [acceptedFor, setAcceptedFor] = React.useState<string>();
   const [data, setData] = React.useState<PanelData>();
   const [loadError, setLoadError] = React.useState<string>();
   const [selectedKey, setSelectedKey] = React.useState<string>();
 
   React.useEffect(() => {
     let cancelled = false;
+    const generation = ++routeGeneration.current;
     setData(undefined);
+    setEditorOpen(false);
+    setEventTypes([]);
+    setAcceptedFor(undefined);
     setLoadError(undefined);
     setSelectedKey(undefined);
     const client = new api.Client(api.CookieAuth());
@@ -118,8 +129,23 @@ export default function FailureDetailPanel({
     })();
     return () => {
       cancelled = true;
+      routeGeneration.current = generation + 1;
     };
   }, [endpointId, eventId]);
+
+  React.useEffect(() => {
+    if (!editorOpen) return;
+    let active = true;
+    new api.Client(api.CookieAuth())
+      .getEventTypes()
+      .then((types) => {
+        if (active) setEventTypes(types);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [editorOpen]);
 
   const flow = React.useMemo(
     () => buildFlowRows(data?.history ?? [], data?.audits ?? []),
@@ -130,14 +156,28 @@ export default function FailureDetailPanel({
 
   const event = data?.event;
   const status = event?.resolutionStatus ?? "";
-  const fullPage = `/Message/Index/${endpointId}/${eventId}/0`;
+  const fullPage = `/Message/Index/${endpointId}/${eventId}/0?from=failed`;
   const blockedTotal = data?.blocked?.total ?? 0;
-  const payload = prettyJson(
-    event?.messageContent?.eventContent?.eventJson ??
-      [...(data?.history ?? [])].reverse().find((m) => m.eventContent)
-        ?.eventContent,
-  );
-  const canAct = !!event?.lastMessageId && isFailure(status);
+  const rawPayload =
+    getResubmitPayload(data?.history) ??
+    event?.messageContent?.eventContent?.eventJson;
+  const payload = prettyJson(rawPayload);
+  const canAct =
+    !!event?.lastMessageId &&
+    isFailure(status) &&
+    acceptedFor !== event.lastMessageId;
+  const resubmitWithChanges = async (body: api.ResubmitWithChanges) => {
+    if (!event?.lastMessageId) return;
+    const generation = routeGeneration.current;
+    await new api.Client(api.CookieAuth()).postResubmitWithChangesEventIds(
+      eventId,
+      event.lastMessageId,
+      body,
+    );
+    if (generation !== routeGeneration.current) return;
+    setAcceptedFor(event.lastMessageId);
+    setEditorOpen(false);
+  };
 
   const navButton =
     "inline-flex h-8 w-8 items-center justify-center rounded-nb-sm border border-border-strong text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40";
@@ -153,7 +193,9 @@ export default function FailureDetailPanel({
             <span
               aria-hidden="true"
               className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ background: STATUS_COLORS[status] ?? STATUS_COLORS.Failed }}
+              style={{
+                background: STATUS_COLORS[status] ?? STATUS_COLORS.Failed,
+              }}
             />
             <span className="truncate">
               {event?.eventTypeId ?? "Loading…"}
@@ -173,7 +215,17 @@ export default function FailureDetailPanel({
             onClick={onPrevious}
             className={navButton}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
               <path d="M18 15l-6-6-6 6" />
             </svg>
           </button>
@@ -184,7 +236,17 @@ export default function FailureDetailPanel({
             onClick={onNext}
             className={navButton}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
               <path d="M6 9l6 6 6-6" />
             </svg>
           </button>
@@ -206,7 +268,16 @@ export default function FailureDetailPanel({
             onClick={onClose}
             className="inline-flex h-8 w-8 items-center justify-center rounded-nb-sm text-foreground hover:bg-muted"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
@@ -222,13 +293,15 @@ export default function FailureDetailPanel({
         >
           Resubmit
         </Button>
-        <Link
-          to={fullPage}
-          className="inline-flex h-8 items-center rounded-md border border-border-strong px-3 text-[13px] font-semibold text-foreground hover:bg-muted"
-          title="Edit the payload on the event's full page"
+        <Button
+          size="sm"
+          variant="outline"
+          colorScheme="gray"
+          disabled={!canAct}
+          onClick={() => setEditorOpen(true)}
         >
           Resubmit with changes…
-        </Link>
+        </Button>
         <Button
           size="sm"
           variant="outline"
@@ -256,11 +329,28 @@ export default function FailureDetailPanel({
         )}
       </div>
 
+      {editorOpen && (
+        <ResubmitEditor
+          payload={rawPayload}
+          eventTypeId={event?.eventTypeId}
+          eventTypes={eventTypes}
+          onClose={() => setEditorOpen(false)}
+          onSubmit={resubmitWithChanges}
+        />
+      )}
+      {acceptedFor && (
+        <p role="status" className="px-6 py-3 text-sm">
+          Resubmission accepted. Processing continues in the background. Refresh
+          the list to see the latest attempt.
+        </p>
+      )}
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 pb-6 pt-4">
         {loadError ? (
           <div role="alert" className="rounded-nb-md border border-border p-5">
             <p className="m-0 font-semibold">The failure could not be loaded</p>
-            <p className="m-0 mt-1 text-sm text-muted-foreground">{loadError}</p>
+            <p className="m-0 mt-1 text-sm text-muted-foreground">
+              {loadError}
+            </p>
           </div>
         ) : !data ? (
           <div aria-label="Loading failure" className="flex flex-col gap-3">
@@ -288,7 +378,9 @@ export default function FailureDetailPanel({
                 aria-label="Similar failures"
                 className="flex flex-col gap-2 rounded-nb-md border border-border bg-background p-3.5"
               >
-                <h3 className="m-0 text-[14.5px] font-bold">Similar failures</h3>
+                <h3 className="m-0 text-[14.5px] font-bold">
+                  Similar failures
+                </h3>
                 {data.event.lastMessageId && (
                   <IntelligenceCard
                     endpointId={data.event.endpointId ?? endpointId}
@@ -393,7 +485,18 @@ function SelectedEntry({
       <div className="flex flex-col gap-3 px-3.5 py-3">
         {errorText ? (
           <div className="flex gap-2.5 rounded-nb-sm bg-status-danger-50 px-3 py-2.5 text-[13px] leading-snug text-status-danger-ink dark:bg-red-950/40 dark:text-red-200">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-px shrink-0">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              className="mt-px shrink-0"
+            >
               <path d="M12 3l10 18H2z" />
               <path d="M12 10v5M12 18v.5" />
             </svg>
@@ -490,7 +593,9 @@ function Properties({ event }: { event: api.Event }) {
             className="flex gap-3 border-b border-border/60 py-1.5 text-[12.5px] last:border-b-0"
           >
             <dt className="w-[118px] shrink-0 text-muted-foreground">{name}</dt>
-            <dd className={`m-0 min-w-0 font-semibold text-foreground ${cls ?? ""}`}>
+            <dd
+              className={`m-0 min-w-0 font-semibold text-foreground ${cls ?? ""}`}
+            >
               {value || "—"}
             </dd>
           </div>
@@ -551,9 +656,7 @@ function BlockedInSession({
             </li>
           ))}
           <li className="py-1.5 text-[11.5px] text-muted-foreground">
-            {total > items.length
-              ? `${total - items.length} more. `
-              : ""}
+            {total > items.length ? `${total - items.length} more. ` : ""}
             Deferred until this failure is resubmitted or skipped.
           </li>
         </ul>

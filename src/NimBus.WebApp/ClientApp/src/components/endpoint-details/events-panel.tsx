@@ -369,8 +369,7 @@ const EventsPanel = (props: EventsPanelProps) => {
 
   const maxResults = Number(applied.maxResults) || 100;
   const viewMode = (applied.viewMode === "grouped" ? "grouped" : "list") as
-    | "list"
-    | "grouped";
+    "list" | "grouped";
 
   // EventFilter (draft) is derived from URL on mount and on URL change. Sub-filters
   // mutate this via the FilterContext as the user types; URL only updates on Search.
@@ -592,7 +591,9 @@ const EventsPanel = (props: EventsPanelProps) => {
     removeFromTable(event);
     client
       .postSkipEventIds(event.eventId!, event.lastMessageId!)
-      .catch((caught: unknown) => notifyError(describeCommandError(caught, "skip")));
+      .catch((caught: unknown) =>
+        notifyError(describeCommandError(caught, "skip")),
+      );
   };
 
   const resubmitSingleEvent = (event: api.Event): void => {
@@ -865,7 +866,7 @@ const EventsPanel = (props: EventsPanelProps) => {
               value: (
                 <TruncatedGuid
                   guid={item.eventId}
-                  onClick={(g) => handleFilterById("eventId", g)}
+                  linkTo={`/Message/Index/${endpointId}/${item.eventId}/0`}
                 />
               ),
               searchValue: item.eventId!,

@@ -1,5 +1,7 @@
 #pragma warning disable CA1707, CA1515, CA2007
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using NimBus.Core.Pipeline;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Extensions;
@@ -12,6 +14,67 @@ namespace NimBus.Core.Tests;
 [TestClass]
 public class StrictMessageHandlerTests
 {
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task HandlerFailure_LogsOneError_WithOrWithoutLoggingMiddleware(bool withPipeline)
+    {
+        var logger = new OperatorRecordingLogger();
+        using var services = new ServiceCollection().AddSingleton(new LoggingMiddleware(logger)).BuildServiceProvider();
+        var pipeline = withPipeline ? new MessagePipeline(new PipelineBehaviorRegistry([typeof(LoggingMiddleware)]), services) : null;
+        var response = new FakeResponseService();
+        var sut = new StrictMessageHandler(new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("handler failure") }, response, logger, pipeline: pipeline);
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, logger.Entries.Count(e => e.Level == LogLevel.Error));
+        Assert.IsTrue(logger.Entries.Single(e => e.Level == LogLevel.Error).Message.Contains(ctx.EventId, StringComparison.Ordinal));
+        Assert.AreEqual(1, response.ErrorCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SessionDeferral_LogsNoWarningOrErrorOrStackTrace(bool withPipeline)
+    {
+        var logger = new OperatorRecordingLogger();
+        using var services = new ServiceCollection().AddSingleton(new LoggingMiddleware(logger)).BuildServiceProvider();
+        var pipeline = withPipeline ? new MessagePipeline(new PipelineBehaviorRegistry([typeof(LoggingMiddleware)]), services) : null;
+        var response = new FakeResponseService();
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        ctx.BlockedByEventId = "blocking-event";
+        var sut = new StrictMessageHandler(new FakeEventContextHandler(), response, logger, pipeline: pipeline);
+
+        await sut.Handle(ctx);
+
+        Assert.IsFalse(logger.Entries.Any(e => e.Level >= LogLevel.Warning || e.Exception != null));
+        Assert.IsTrue(logger.Entries.Any(e => e.Level == LogLevel.Information && e.Message.Contains("blocking-event", StringComparison.Ordinal)));
+        Assert.AreEqual(1, response.DeferralCalls);
+        Assert.AreEqual(1, response.SendToDeferredSubscriptionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task LoggingMiddleware_UnexpectedFailure_StillLogsErrorAndRethrows()
+    {
+        var logger = new OperatorRecordingLogger();
+        var failure = new InvalidOperationException("pipeline failed");
+        var middleware = new LoggingMiddleware(logger);
+        var caught = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => middleware.Handle(CreateContext(MessageType.EventRequest), (_, _) => throw failure));
+        Assert.AreSame(failure, caught);
+        Assert.AreSame(failure, logger.Entries.Single(e => e.Level == LogLevel.Error).Exception);
+    }
+
+    private sealed class OperatorRecordingLogger : ILogger<LoggingMiddleware>
+    {
+        public List<(LogLevel Level, Exception? Exception, string Message)> Entries { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, exception, formatter(state, exception)));
+    }
+
     // ── HandleEventRequest ──────────────────────────────────────────────
 
     [TestMethod]

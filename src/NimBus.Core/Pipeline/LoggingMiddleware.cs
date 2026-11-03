@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
+using NimBus.Core.Messages.Exceptions;
 
 namespace NimBus.Core.Pipeline;
 
@@ -36,6 +37,23 @@ public sealed class LoggingMiddleware : IMessagePipelineBehavior
             _logger.LogInformation(
                 "Completed {MessageType} in {ElapsedMs}ms | EventType={EventTypeId} EventId={EventId}",
                 context.MessageType, sw.ElapsedMilliseconds, context.EventTypeId, context.EventId);
+        }
+        catch (SessionBlockedException)
+        {
+            _logger.LogInformation("Deferred {MessageType}: session blocked | EventId={EventId} SessionId={SessionId}",
+                context.MessageType, context.EventId, context.SessionId);
+            throw;
+        }
+        catch (EventContextHandlerException)
+        {
+            // StrictMessageHandler already logged and settled this handler failure.
+            _logger.LogDebug("Handler failure recorded for {MessageType} after {ElapsedMs}ms | EventId={EventId}",
+                context.MessageType, sw.ElapsedMilliseconds, context.EventId);
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

@@ -102,7 +102,7 @@ describe("parseBlockedByEventId", () => {
 });
 
 describe("formatMoment", () => {
-  const ts = moment.utc("2026-05-28T10:04:05.123Z");
+  const ts = moment("2026-05-28T10:04:05.123");
 
   it("omits milliseconds in the slim format used by message listings", () => {
     expect(formatMoment(ts, true)).toBe("28/05/26 10:04:05");
