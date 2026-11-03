@@ -31,6 +31,7 @@ import { cn } from "lib/utils";
 import ReportPopover from "./report-popover";
 import { notifyWithUndo, notifyError } from "functions/notifications.functions";
 import { describeCommandError } from "functions/operator-command.functions";
+import { failureBacklog } from "functions/failed-messages.functions";
 import { reportedCellState } from "functions/reported.functions";
 import { useTicketLinkTemplate } from "hooks/app-status";
 import { useCurrentUser } from "hooks/use-current-user";
@@ -78,6 +79,14 @@ interface EventsPanelProps {
 
 interface SessionState {
   deferredCount: number;
+}
+
+// Values behind the Failed (Failed + DeadLettered + Unsupported), Deferred and
+// Pending summary tiles.
+interface TileCounts {
+  failed: number;
+  deferred: number;
+  pending: number;
 }
 
 const ACTIONABLE_STATUSES = [
@@ -313,6 +322,11 @@ const EventsPanel = (props: EventsPanelProps) => {
     string | undefined
   >();
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
+  // Endpoint-wide Failed/Deferred/Pending totals; undefined until read (or when
+  // the read fails), in which case the tiles fall back to the loaded page.
+  const [endpointTotals, setEndpointTotals] = React.useState<TileCounts>();
+  // Same ordering guard as fetchTicket, for the totals request.
+  const totalsTicket = React.useRef(0);
   const [searchError, setSearchError] = React.useState<string>();
   const [currentFilter, setCurrentFilter] = React.useState<
     api.EventFilter | undefined
@@ -402,8 +416,31 @@ const EventsPanel = (props: EventsPanelProps) => {
     if (!endpointId) return;
     setSessions({});
     fetchEvents(buildEventFilterFromParams(applied, endpointId));
+    void fetchEndpointTotals();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applied, endpointId, searchNonce]);
+
+  // Endpoint-wide totals for the summary tiles. Refreshed with every result-set
+  // load, so a Search, Reset or row action updates them too.
+  const fetchEndpointTotals = async (): Promise<void> => {
+    const ticket = ++totalsTicket.current;
+    let totals: TileCounts | undefined;
+    try {
+      const count = await client.getEndpointStatusCountId(endpointId);
+      if (count) {
+        totals = {
+          failed: failureBacklog([count]),
+          deferred: count.deferredCount ?? 0,
+          pending: count.pendingCount ?? 0,
+        };
+      }
+    } catch {
+      // Unreadable totals leave the tiles on the loaded page's counts.
+    }
+    if (ticket === totalsTicket.current) {
+      setEndpointTotals(totals);
+    }
+  };
 
   const isActionableStatus = (status: string | undefined): boolean => {
     if (!status) return false;
@@ -1106,10 +1143,10 @@ const EventsPanel = (props: EventsPanelProps) => {
   // from `initialValue` props whenever the URL changes (e.g. browser Back/forward).
   const filterRemountKey = `${applied.status.join(",")}|${applied.eventTypeId.join(",")}|${applied.eventId}|${applied.sessionId}`;
 
-  // Counts derived from the currently-loaded page. Server-wide totals would
-  // need a dedicated stats endpoint — this gives an honest "what's on screen"
-  // summary that matches the operator's mental model of the result set.
-  const counts = React.useMemo(() => {
+  // Counts derived from the currently-loaded page. Only a fallback: the tiles
+  // read as endpoint totals (Failed opens the endpoint's whole backlog), and a
+  // page holds at most maxResults rows of every status.
+  const pageCounts = React.useMemo((): TileCounts => {
     let failed = 0;
     let deferred = 0;
     let pending = 0;
@@ -1130,6 +1167,7 @@ const EventsPanel = (props: EventsPanelProps) => {
     }
     return { failed, deferred, pending };
   }, [events]);
+  const counts = endpointTotals ?? pageCounts;
 
   // Applied advanced filters, surfaced through the Advanced-filters popover
   // (next to the column chooser) and the chip row below the view controls.

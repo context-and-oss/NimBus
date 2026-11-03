@@ -19,7 +19,7 @@ import EventsPanel from "./events-panel";
 // Shared mock handles. `getByFilterMock` resolves the events immediately;
 // `postSessionsBatchMock` returns a promise we resolve by hand so the test can
 // observe the table BEFORE the session-status batch settles.
-const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock } =
+const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock, statusCountMock } =
   vi.hoisted(() => {
     const sessionsDeferreds: Array<(value: unknown) => void> = [];
     const postSessionsBatchMock = vi.fn(
@@ -29,7 +29,14 @@ const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock } =
         }),
     );
     const getByFilterMock = vi.fn();
-    return { sessionsDeferreds, postSessionsBatchMock, getByFilterMock };
+    // The endpoint-wide totals behind the Failed/Deferred/Pending tiles.
+    const statusCountMock = vi.fn();
+    return {
+      sessionsDeferreds,
+      postSessionsBatchMock,
+      getByFilterMock,
+      statusCountMock,
+    };
   });
 
 // DataTable reads the toast provider for action feedback; no-op it.
@@ -43,6 +50,7 @@ vi.mock("api-client", async () => {
   class FakeClient {
     postApiEventEndpointIdGetByFilter = getByFilterMock;
     postEndpointSessionsBatch = postSessionsBatchMock;
+    getEndpointStatusCountId = statusCountMock;
     // EventTypeFiltering fetches the endpoint's event-type catalog on mount.
     getEventtypesByEndpointId = vi.fn().mockResolvedValue({});
     // useTicketLinkTemplate reads the app status on mount.
@@ -56,6 +64,7 @@ afterEach(() => {
   sessionsDeferreds.length = 0;
   postSessionsBatchMock.mockClear();
   getByFilterMock.mockReset();
+  statusCountMock.mockReset();
 });
 
 describe("EventsPanel paints before the session-status batch resolves", () => {
@@ -281,4 +290,67 @@ describe("EventsPanel payload URL filters", () => {
       expect(request.eventFilter?.payload).toBe(expected);
     },
   );
+});
+
+describe("EventsPanel summary tiles", () => {
+  // The tile's value sits right after its caps label.
+  const tileValue = (label: string): string | null | undefined =>
+    screen
+      .getAllByText(label, { exact: true })
+      .find((e) => e.className.includes("uppercase"))?.nextElementSibling
+      ?.textContent;
+
+  const pageWithOneFailure = () =>
+    getByFilterMock.mockResolvedValue({
+      events: [
+        Object.assign(new api.Event(), {
+          eventId: "evt-tile",
+          sessionId: "sess-tile",
+          eventTypeId: "TileEvent",
+          lastMessageId: "msg-tile",
+          resolutionStatus: api.ResolutionStatus.Failed,
+        }),
+      ],
+      continuationToken: undefined,
+    });
+
+  it("shows the endpoint's totals, not just the loaded page", async () => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    // failedCount already includes DeadLettered; Unsupported is added on top.
+    statusCountMock.mockResolvedValue({
+      endpointId: "ep-1",
+      failedCount: 11,
+      unsupportedCount: 2,
+      deferredCount: 3,
+      pendingCount: 19,
+    });
+
+    render(
+      <MemoryRouter>
+        <EventsPanel endpointId="ep-1" />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(tileValue("Failed")).toBe("13"));
+    expect(tileValue("Deferred")).toBe("3");
+    expect(tileValue("Pending")).toBe("19");
+    expect(statusCountMock).toHaveBeenCalledWith("ep-1");
+  });
+
+  it("falls back to the loaded page when the totals can't be read", async () => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    statusCountMock.mockRejectedValue(new Error("unavailable"));
+
+    render(
+      <MemoryRouter>
+        <EventsPanel endpointId="ep-1" />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByText("TileEvent")).toBeTruthy());
+    expect(tileValue("Failed")).toBe("1");
+    expect(tileValue("Pending")).toBe("0");
+  });
 });
