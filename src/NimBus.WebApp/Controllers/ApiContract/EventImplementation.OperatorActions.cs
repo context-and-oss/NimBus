@@ -81,7 +81,7 @@ public partial class EventImplementation
         return new OkObjectResult(result);
     }
 
-    public async Task<IActionResult> PostComposeNewEventAsync(ResubmitWithChanges body)
+    public async Task<ActionResult<ComposeNewEventResult>> PostComposeNewEventAsync(ResubmitWithChanges body)
     {
         logger.LogInformation("Compose new event. EventTypeId:{EventTypeId}", ForLog(body?.EventTypeId));
 
@@ -127,12 +127,23 @@ public partial class EventImplementation
             // Publish directly to the producing endpoint's topic via the SDK PublisherClient,
             // so the message envelope (sessionId, correlationId, EventRequest type, EventContent)
             // matches what every other producer in the platform sends.
+            // The ids Publish(@event) would derive itself, made explicit so the response can
+            // name what was published: the operator follows it by message id (carried by every
+            // subscriber's Event Request) or by session.
+            var sessionId = @event.GetSessionId();
+            var messageId = PublisherClient.GetMessageId(@event);
             var publisher = await PublisherClient.CreateAsync(serviceBusClient, producingEndpoint.Id);
-            await publisher.Publish(@event);
+            await publisher.Publish(@event, sessionId, Guid.NewGuid().ToString(), messageId);
             await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext!,
                 data: JsonConvert.SerializeObject(body),
                 endpointId: producingEndpoint.Id, eventTypeId: body.EventTypeId);
-            return new OkResult();
+            return new OkObjectResult(new ComposeNewEventResult
+            {
+                EventTypeId = eventType.Id,
+                PublishedBy = producingEndpoint.Id,
+                MessageId = messageId,
+                SessionId = sessionId,
+            });
         }
         catch (JsonReaderException e)
         {

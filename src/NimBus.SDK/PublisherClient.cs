@@ -434,7 +434,7 @@ public class PublisherClient : IPublisherClient
 
         var eventType = @event.GetEventType().Id;
         var messagePayload = JsonConvert.SerializeObject(@event);
-        messageId ??= $"{eventType}-{DeterministicHash(messagePayload)}";
+        messageId ??= DeterministicMessageId(eventType, messagePayload);
         sessionId ??= @event.GetSessionId();
         correlationId ??= Guid.NewGuid().ToString();
         var message = new Message()
@@ -460,6 +460,22 @@ public class PublisherClient : IPublisherClient
         // IMessage.DiagnosticId property is no longer populated or read.
         return message;
     }
+
+    /// <summary>
+    /// Returns the MessageId that <see cref="Publish(IEvent)"/> stamps on <paramref name="event"/>
+    /// when no explicit id is given: the event type id plus a hash of the event's JSON. Publishing
+    /// the same content again yields the same id, which is what duplicate detection keys on.
+    /// </summary>
+    /// <param name="event">The event to derive the id for.</param>
+    /// <returns>The content-derived MessageId.</returns>
+    public static string GetMessageId(IEvent @event)
+    {
+        ArgumentNullException.ThrowIfNull(@event);
+        return DeterministicMessageId(@event.GetEventType().Id, JsonConvert.SerializeObject(@event));
+    }
+
+    private static string DeterministicMessageId(string eventTypeId, string messagePayload) =>
+        $"{eventTypeId}-{DeterministicHash(messagePayload)}";
 
     private static string DeterministicHash(string input)
     {

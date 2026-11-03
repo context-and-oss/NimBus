@@ -1773,7 +1773,7 @@ export class Client extends ApiClientBase {
      * @param body (optional) 
      * @return OK
      */
-    postComposeNewEvent(body?: ResubmitWithChanges | undefined): Promise<void> {
+    postComposeNewEvent(body?: ResubmitWithChanges | undefined): Promise<ComposeNewEventResult> {
         let url_ = this.baseUrl + "/api/event/compose-new";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -1784,6 +1784,7 @@ export class Client extends ApiClientBase {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                "Accept": "application/json"
             }
         };
 
@@ -1794,12 +1795,15 @@ export class Client extends ApiClientBase {
         });
     }
 
-    protected processPostComposeNewEvent(response: Response): Promise<void> {
+    protected processPostComposeNewEvent(response: Response): Promise<ComposeNewEventResult> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = ComposeNewEventResult.fromJS(resultData200);
+            return result200;
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
@@ -1810,7 +1814,7 @@ export class Client extends ApiClientBase {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<ComposeNewEventResult>(null as any);
     }
 
     /**
@@ -10337,6 +10341,83 @@ export class ResubmitWithChanges implements IResubmitWithChanges {
 export interface IResubmitWithChanges {
     eventTypeId?: string;
     eventContent?: string;
+
+    [key: string]: any;
+}
+
+/** Identity of the event a compose published, so the operator can follow it. */
+export class ComposeNewEventResult implements IComposeNewEventResult {
+    /** The composed event type. */
+    eventTypeId!: string;
+    /** The producing endpoint whose topic the event was published to. */
+    publishedBy!: string;
+    /** The published message id. Every subscriber's Event Request carries it, so it finds the event on each subscriber. */
+    messageId!: string;
+    /** The session the event was published on. */
+    sessionId!: string;
+
+    [key: string]: any;
+
+    constructor(data?: IComposeNewEventResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventTypeId = _data["eventTypeId"];
+            this.publishedBy = _data["publishedBy"];
+            this.messageId = _data["messageId"];
+            this.sessionId = _data["sessionId"];
+        }
+    }
+
+    static fromJS(data: any): ComposeNewEventResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new ComposeNewEventResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventTypeId"] = this.eventTypeId;
+        data["publishedBy"] = this.publishedBy;
+        data["messageId"] = this.messageId;
+        data["sessionId"] = this.sessionId;
+        return data;
+    }
+
+    clone(): ComposeNewEventResult {
+        const json = this.toJSON();
+        let result = new ComposeNewEventResult();
+        result.init(json);
+        return result;
+    }
+}
+
+/** Identity of the event a compose published, so the operator can follow it. */
+export interface IComposeNewEventResult {
+    /** The composed event type. */
+    eventTypeId: string;
+    /** The producing endpoint whose topic the event was published to. */
+    publishedBy: string;
+    /** The published message id. Every subscriber's Event Request carries it, so it finds the event on each subscriber. */
+    messageId: string;
+    /** The session the event was published on. */
+    sessionId: string;
 
     [key: string]: any;
 }

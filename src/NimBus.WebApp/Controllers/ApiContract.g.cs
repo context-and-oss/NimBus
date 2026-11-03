@@ -632,7 +632,7 @@ namespace NimBus.WebApp.ManagementApi
 
         /// <returns>OK</returns>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostComposeNewEventAsync(ResubmitWithChanges body);
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<ComposeNewEventResult>> PostComposeNewEventAsync(ResubmitWithChanges body);
 
         /// <summary>
         /// Get blocked events on a session (paginated)
@@ -901,7 +901,7 @@ namespace NimBus.WebApp.ManagementApi
         /// </summary>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/event/compose-new")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostComposeNewEvent([Microsoft.AspNetCore.Mvc.FromBody] ResubmitWithChanges body)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<ComposeNewEventResult>> PostComposeNewEvent([Microsoft.AspNetCore.Mvc.FromBody] ResubmitWithChanges body)
         {
 
             return _implementation.PostComposeNewEventAsync(body);
@@ -7781,6 +7781,116 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<ResubmitWithChanges>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// Identity of the event a compose published, so the operator can follow it.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ComposeNewEventResult : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _eventTypeId;
+        private string _publishedBy;
+        private string _messageId;
+        private string _sessionId;
+
+        /// <summary>
+        /// The composed event type.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The producing endpoint whose topic the event was published to.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("publishedBy", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string PublishedBy    {
+            get { return _publishedBy; }
+            set
+            {
+                if (_publishedBy != value)
+                {
+                    _publishedBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The published message id. Every subscriber's Event Request carries it, so it finds the event on each subscriber.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("messageId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string MessageId    {
+            get { return _messageId; }
+            set
+            {
+                if (_messageId != value)
+                {
+                    _messageId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The session the event was published on.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("sessionId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string SessionId    {
+            get { return _sessionId; }
+            set
+            {
+                if (_sessionId != value)
+                {
+                    _sessionId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static ComposeNewEventResult FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<ComposeNewEventResult>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
