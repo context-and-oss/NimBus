@@ -57,6 +57,13 @@ const renderList = (props: Partial<FailedItemListProps> = {}) => {
 afterEach(cleanup);
 
 describe("FailedItemList", () => {
+  it("opens the drawer from its event ID and preserves Failed context for full-page links", () => {
+    const props = renderList();
+    const link = screen.getByRole("link", { name: "e1" });
+    expect(link.getAttribute("href")).toContain("?from=failed");
+    fireEvent.click(link);
+    expect(props.onOpen).toHaveBeenCalledWith(props.events[0]);
+  });
   it("shows each failure's status, error text and badges", () => {
     renderList({
       events: [
@@ -70,8 +77,9 @@ describe("FailedItemList", () => {
       blocked: { "Crm/s1": 3 },
     });
 
-    const items = within(screen.getByRole("list", { name: "Failures" }))
-      .getAllByRole("listitem");
+    const items = within(
+      screen.getByRole("list", { name: "Failures" }),
+    ).getAllByRole("listitem");
     expect(items).toHaveLength(2);
     expect(within(items[0]).getByText(/- FAILED$/)).toBeTruthy();
     expect(within(items[0]).getByText("boom e1")).toBeTruthy();

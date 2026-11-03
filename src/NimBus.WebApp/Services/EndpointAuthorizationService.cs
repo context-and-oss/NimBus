@@ -167,7 +167,7 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
     {
         if (_configuration.GetValue<bool>("BypassEndpointAuthorization", false))
         {
-            _logger.LogWarning("Endpoint authorization bypassed - BypassEndpointAuthorization is enabled");
+            _logger.LogDebug("Endpoint authorization bypassed - BypassEndpointAuthorization is enabled");
             return AccessRole.Owner;
         }
 

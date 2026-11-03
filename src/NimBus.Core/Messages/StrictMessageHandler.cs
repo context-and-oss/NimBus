@@ -168,7 +168,7 @@ public class StrictMessageHandler : MessageHandler
         }
         catch (SessionBlockedException exception)
         {
-            LogError(messageContext, "Failed to handle event", exception);
+            LogInfo(messageContext, exception.Message);
             await SendDeferralResponse(messageContext, exception);
             await DeferMessageToSubscription(messageContext);
             throw;
@@ -248,7 +248,7 @@ public class StrictMessageHandler : MessageHandler
             // The event no longer blocks its session (resubmitted or skipped meanwhile), so
             // the retry is answered as resolved without running the handler.
             messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
-            LogError(messageContext, "Failed to handle event (RetryRequest)", exception);
+            LogInfo(messageContext, exception.Message);
             await SendResolutionResponse(messageContext);
             await CompleteMessage(messageContext);
         }

@@ -1,9 +1,52 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import * as api from "api-client";
 import type { ITableRow } from "components/data-table";
 import MessagesList from "./messages-list";
+
+vi.mock("components/ui/toast", () => ({
+  useToast: () => ({ addToast: vi.fn() }),
+}));
+
+it("links an event ID to details while retaining an explicit filter action", async () => {
+  render(
+    <MemoryRouter>
+      <MessagesList />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(mocks.deferreds).toHaveLength(1));
+  await act(async () =>
+    mocks.deferreds[0].resolve({
+      messages: [
+        new api.Message({
+          messageId: "message-1",
+          eventId: "event-1",
+          endpointId: "Crm",
+        }),
+      ],
+    }),
+  );
+  render(
+    <MemoryRouter>
+      {captured.rows?.[0].data.get("eventId")?.value}
+    </MemoryRouter>,
+  );
+  expect(
+    screen.getByRole("link", { name: "event-1" }).getAttribute("href"),
+  ).toBe("/Message/Index/Crm/event-1/0");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Filter by event event-1" }),
+  );
+  await waitFor(() => expect(mocks.deferreds).toHaveLength(2));
+});
 
 // A manually-controlled queue of pending searches. Every postMessagesSearch call
 // parks a deferred whose promise the test resolves by hand, so we can make an
@@ -29,10 +72,9 @@ const mocks = vi.hoisted(() => {
 // won without depending on the table's internal markup.
 const captured: { rows?: ITableRow[] } = {};
 vi.mock("components/data-table", async () => {
-  const actual =
-    await vi.importActual<typeof import("components/data-table")>(
-      "components/data-table",
-    );
+  const actual = await vi.importActual<typeof import("components/data-table")>(
+    "components/data-table",
+  );
   return {
     ...actual,
     default: (props: { rows: ITableRow[] }) => {

@@ -55,7 +55,7 @@ export const formatMoment = (moment?: moment.Moment, slim = false): string => {
   const formatString = slim ? "DD/MM/YY HH:mm:ss" : "DD/MM/YYYY HH:mm:ss.SSS";
   if (moment === undefined) return "";
   return typeof moment?.format === "function"
-    ? moment.format(formatString)
+    ? moment.clone().local().format(formatString)
     : "Invalid timestamp";
 };
 

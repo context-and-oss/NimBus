@@ -1,4 +1,6 @@
 import * as React from "react";
+import moment from "moment";
+import TruncatedGuid from "components/common/truncated-guid";
 import * as api from "api-client";
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
@@ -7,7 +9,6 @@ import {
   formatMoment,
   formatResolutionStatus,
 } from "functions/endpoint.functions";
-import TruncatedGuid from "components/common/truncated-guid";
 
 interface ErrorGroupedViewProps {
   events: api.Event[];
@@ -42,6 +43,12 @@ const ErrorGroupedView = ({
   const groups = React.useMemo(() => {
     const map = new Map<string, api.Event[]>();
     for (const event of events) {
+      if (
+        !["failed", "deadlettered", "unsupported"].includes(
+          (event.resolutionStatus ?? "").toLowerCase(),
+        )
+      )
+        continue;
       const errorText =
         event.messageContent?.errorContent?.errorText ?? undefined;
       const pattern = normalizeErrorPattern(errorText);
@@ -57,9 +64,7 @@ const ErrorGroupedView = ({
     for (const [pattern, groupEvents] of map) {
       const eventTypes = [
         ...new Set(
-          groupEvents
-            .map((e) => e.eventTypeId)
-            .filter((t): t is string => !!t),
+          groupEvents.map((e) => e.eventTypeId).filter((t): t is string => !!t),
         ),
       ];
 
@@ -85,10 +90,7 @@ const ErrorGroupedView = ({
     return result;
   }, [events]);
 
-  const handleResubmitAll = (
-    group: ErrorGroup,
-    e: React.MouseEvent,
-  ) => {
+  const handleResubmitAll = (group: ErrorGroup, e: React.MouseEvent) => {
     e.stopPropagation();
     const actionable = group.events.filter((ev) =>
       isActionableStatus(ev.resolutionStatus),
@@ -96,10 +98,7 @@ const ErrorGroupedView = ({
     actionable.forEach((ev) => onResubmitEvent(ev));
   };
 
-  const handleSkipAll = (
-    group: ErrorGroup,
-    e: React.MouseEvent,
-  ) => {
+  const handleSkipAll = (group: ErrorGroup, e: React.MouseEvent) => {
     e.stopPropagation();
     const actionable = group.events.filter((ev) =>
       isActionableStatus(ev.resolutionStatus),
@@ -110,7 +109,7 @@ const ErrorGroupedView = ({
   if (groups.length === 0) {
     return (
       <p className="text-muted-foreground text-sm py-4">
-        No events to group.
+        No failed events to group.
       </p>
     );
   }
@@ -118,7 +117,8 @@ const ErrorGroupedView = ({
   return (
     <div className="flex flex-col gap-1">
       <p className="text-xs text-muted-foreground mb-2">
-        {events.length} events in {groups.length} error groups
+        {groups.reduce((total, group) => total + group.events.length, 0)} events
+        in {groups.length} error groups
       </p>
       <table className="w-full text-sm">
         <thead>
@@ -168,7 +168,7 @@ const ErrorGroupedView = ({
                   </td>
                   <td className="py-2 px-3 whitespace-nowrap text-xs">
                     {group.latestOccurrence
-                      ? new Date(group.latestOccurrence).toLocaleString()
+                      ? formatMoment(moment(group.latestOccurrence), true)
                       : "-"}
                   </td>
                   <td className="text-right py-2 px-3">
@@ -207,9 +207,7 @@ const ErrorGroupedView = ({
                               <th className="text-left py-1 px-3">
                                 Event Type
                               </th>
-                              <th className="text-left py-1 px-3">
-                                Updated
-                              </th>
+                              <th className="text-left py-1 px-3">Updated</th>
                               <th className="text-right py-1 px-3">Actions</th>
                             </tr>
                           </thead>
@@ -220,7 +218,10 @@ const ErrorGroupedView = ({
                                 className="border-b last:border-b-0 hover:bg-accent/50"
                               >
                                 <td className="py-1 px-3 pl-10">
-                                  <TruncatedGuid guid={ev.eventId} />
+                                  <TruncatedGuid
+                                    guid={ev.eventId}
+                                    linkTo={`/Message/Index/${ev.endpointId}/${ev.eventId}/0`}
+                                  />
                                 </td>
                                 <td className="py-1 px-3">
                                   {formatResolutionStatus(
@@ -228,16 +229,12 @@ const ErrorGroupedView = ({
                                     ev.reason,
                                   )}
                                 </td>
-                                <td className="py-1 px-3">
-                                  {ev.eventTypeId}
-                                </td>
+                                <td className="py-1 px-3">{ev.eventTypeId}</td>
                                 <td className="py-1 px-3">
                                   {formatMoment(ev.updatedAt, true)}
                                 </td>
                                 <td className="text-right py-1 px-3">
-                                  {isActionableStatus(
-                                    ev.resolutionStatus,
-                                  ) && (
+                                  {isActionableStatus(ev.resolutionStatus) && (
                                     <span className="inline-flex gap-1">
                                       <Button
                                         size="xs"

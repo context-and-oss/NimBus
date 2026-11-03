@@ -1,3 +1,4 @@
+import { formatMoment } from "functions/endpoint.functions";
 import React, { useState, useEffect, useCallback } from "react";
 import moment from "moment";
 import * as api from "api-client";
@@ -78,7 +79,7 @@ export default function Insights() {
     category:
       (g.errorCategory ?? "").length > 40
         ? (g.errorCategory ?? "").substring(0, 40) + "..."
-        : g.errorCategory ?? "",
+        : (g.errorCategory ?? ""),
     count: g.count ?? 0,
   }));
 
@@ -143,10 +144,7 @@ export default function Insights() {
                       layout="vertical"
                       margin={{ left: 200, right: 20, top: 5, bottom: 5 }}
                     >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        horizontal={false}
-                      />
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                       <XAxis type="number" />
                       <YAxis
                         type="category"
@@ -186,9 +184,7 @@ export default function Insights() {
                           <th className="text-left py-2 px-3">
                             Latest Occurrence
                           </th>
-                          <th className="text-left py-2 px-3">
-                            Example Error
-                          </th>
+                          <th className="text-left py-2 px-3">Example Error</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -248,9 +244,7 @@ export default function Insights() {
                                 </td>
                                 <td className="py-2 px-3 whitespace-nowrap">
                                   {g.latestOccurrence
-                                    ? new Date(
-                                        g.latestOccurrence.toString(),
-                                      ).toLocaleString()
+                                    ? formatMoment(g.latestOccurrence, true)
                                     : "-"}
                                 </td>
                                 <td
@@ -273,9 +267,7 @@ export default function Insights() {
                                       {sg.normalizedPattern}
                                     </td>
                                     <td className="text-right py-2 px-3">
-                                      <Badge variant="error">
-                                        {sg.count}
-                                      </Badge>
+                                      <Badge variant="error">{sg.count}</Badge>
                                     </td>
                                     <td className="py-2 px-3">
                                       <div className="flex flex-wrap gap-1">
@@ -297,9 +289,10 @@ export default function Insights() {
                                     </td>
                                     <td className="py-2 px-3 whitespace-nowrap">
                                       {sg.latestOccurrence
-                                        ? new Date(
-                                            sg.latestOccurrence.toString(),
-                                          ).toLocaleString()
+                                        ? formatMoment(
+                                            sg.latestOccurrence,
+                                            true,
+                                          )
                                         : "-"}
                                     </td>
                                     <td

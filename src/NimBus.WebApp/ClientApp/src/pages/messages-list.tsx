@@ -50,10 +50,25 @@ function mapMessageToRow(
         Column.eventId,
         {
           value: (
-            <TruncatedGuid
-              guid={msg.eventId}
-              onClick={(g) => onFilterById("eventId", g)}
-            />
+            <span className="inline-flex items-center gap-2">
+              <TruncatedGuid
+                guid={msg.eventId}
+                linkTo={`/Message/Index/${msg.endpointId ?? msg.to}/${msg.eventId}/0`}
+              />
+              {msg.eventId && (
+                <button
+                  type="button"
+                  aria-label={`Filter by event ${msg.eventId}`}
+                  className="text-xs text-muted-foreground hover:text-primary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFilterById("eventId", msg.eventId!);
+                  }}
+                >
+                  Filter
+                </button>
+              )}
+            </span>
           ),
           searchValue: msg.eventId ?? "",
         },
