@@ -173,6 +173,15 @@ public sealed class ServiceBusTopologyProvisioner
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, expected), cancellationToken).ConfigureAwait(false);
             log($"{(mismatched ? "Recreated" : "Created")} {DescribeKind(expected)}subscription '{expected.Name}' on topic '{topicName}'{DescribeForwarding(expected)}.");
         }
+        else if (NeedsExpiryUpdate(existing, expected))
+        {
+            // TTL and dead-lettering on expiry can change in place. Recreating would delete
+            // whatever the subscription holds — for Deferred, every parked message.
+            existing.DefaultMessageTimeToLive = expected.DefaultMessageTimeToLive ?? existing.DefaultMessageTimeToLive;
+            existing.DeadLetteringOnMessageExpiration |= expected.DeadLetterOnMessageExpiration;
+            await client.UpdateSubscriptionAsync(existing, cancellationToken).ConfigureAwait(false);
+            log($"Updated message expiry on subscription '{expected.Name}' on topic '{topicName}'.");
+        }
 
         // Service Bus auto-creates a $Default true-filter on every new subscription. Left
         // in place it hands the subscription everything published to the topic, which is
@@ -187,6 +196,15 @@ public sealed class ServiceBusTopologyProvisioner
             await EnsureRuleAsync(client, topicName, expected.Name, rule.Name, rule.Filter, rule.Action, log, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// True when an existing subscription expires messages sooner than expected, or drops
+    /// them on expiry where they should be dead-lettered. Never shortens a longer TTL or
+    /// turns dead-lettering off that an operator turned on.
+    /// </summary>
+    private static bool NeedsExpiryUpdate(SubscriptionProperties existing, ExpectedSubscription expected) =>
+        (expected.DefaultMessageTimeToLive is { } timeToLive && existing.DefaultMessageTimeToLive < timeToLive)
+        || (expected.DeadLetterOnMessageExpiration && !existing.DeadLetteringOnMessageExpiration);
 
     private static string DescribeKind(ExpectedSubscription expected) =>
         expected.ForwardTo is not null ? "forward " : expected.RequiresSession ? "session " : string.Empty;
@@ -305,6 +323,7 @@ public sealed class ServiceBusTopologyProvisioner
             EnableBatchedOperations = true,
             EnableDeadLetteringOnFilterEvaluationExceptions = true,
             RequiresSession = expected.RequiresSession,
+            DeadLetteringOnMessageExpiration = expected.DeadLetterOnMessageExpiration,
         };
 
         if (!string.IsNullOrWhiteSpace(expected.ForwardTo))

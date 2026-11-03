@@ -214,6 +214,20 @@ Nothing resets `DeferredCount`, so every later unblock of the session sends anot
 `ProcessDeferredRequest`, and the next drain picks up whatever is still parked. A drain
 that finds nothing parked does nothing.
 
+## How long a parked message is kept
+
+A parked message waits until the event blocking its session is resolved, however long an
+operator takes. On a real namespace the Deferred subscription therefore has no message TTL
+(the Service Bus default), and dead-letters any message that does expire, for example one
+whose own `TimeToLive` was set by the publisher. An expired parked message lands in
+`Deferred/DeadLetter`, where the recovery panel below finds it, instead of vanishing.
+
+Namespaces provisioned before this change had a 14-day TTL and dropped expired messages.
+The provisioner (`nb setup` / topology apply) updates an existing Deferred subscription in
+place; it never recreates it, which would delete every parked message. A message keeps the
+expiry it was enqueued with, so copies parked before the update still expire on the old
+schedule, but are then dead-lettered rather than lost. The emulator keeps its one-hour TTL.
+
 ## A tracking row is Deferred but the broker message is missing
 
 Open the event details page and choose **Check deferred message**. The recovery panel
