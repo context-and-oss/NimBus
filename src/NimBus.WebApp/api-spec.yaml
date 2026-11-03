@@ -832,6 +832,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComposeNewEventResult'
         '400':
           description: Bad Request
       tags:
@@ -4358,6 +4362,28 @@ components:
           type: string
         eventContent:
           type: string
+    ComposeNewEventResult:
+      title: ComposeNewEventResult
+      type: object
+      description: Identity of the event a compose published, so the operator can follow it.
+      required:
+        - eventTypeId
+        - publishedBy
+        - messageId
+        - sessionId
+      properties:
+        eventTypeId:
+          type: string
+          description: The composed event type.
+        publishedBy:
+          type: string
+          description: The producing endpoint whose topic the event was published to.
+        messageId:
+          type: string
+          description: The published message id. Every subscriber's Event Request carries it, so it finds the event on each subscriber.
+        sessionId:
+          type: string
+          description: The session the event was published on.
     CompleteHandoffRequest:
       title: CompleteHandoffRequest
       type: object

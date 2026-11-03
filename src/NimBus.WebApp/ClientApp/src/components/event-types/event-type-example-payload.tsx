@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "components/ui/button";
 import { Textarea } from "components/ui/textarea";
 import { CodeBlock } from "components/ui/code-block";
@@ -59,6 +60,40 @@ interface IEventTypeExamplePayloadProps {
   eventType: api.EventType;
 }
 
+// What a Send published. Subscribers each record their own event id, but every
+// subscriber's Event Request carries the published message id, so filtering
+// Messages by it finds the event on each of them.
+const PublishedResult = ({ result }: { result: api.ComposeNewEventResult }) => (
+  <div
+    role="status"
+    className="mt-3 rounded-md border border-status-success/40 bg-status-success/5 px-3 py-2 text-sm"
+  >
+    <p className="font-medium text-status-success">
+      Published to {result.publishedBy}
+    </p>
+    <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+      <dt className="text-muted-foreground">Message ID</dt>
+      <dd className="font-mono text-xs break-all">{result.messageId}</dd>
+      <dt className="text-muted-foreground">Session ID</dt>
+      <dd className="font-mono text-xs break-all">{result.sessionId}</dd>
+    </dl>
+    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+      <Link
+        to={`/Messages?messageId=${encodeURIComponent(result.messageId)}`}
+        className="text-primary hover:underline"
+      >
+        View on each subscriber →
+      </Link>
+      <Link
+        to={`/Messages?sessionId=${encodeURIComponent(result.sessionId)}`}
+        className="text-primary hover:underline"
+      >
+        View session →
+      </Link>
+    </div>
+  </div>
+);
+
 const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
   eventType,
 }) => {
@@ -84,6 +119,8 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
     text: string;
   }>({ hasError: false, text: "" });
   const [isGenerating, setIsGenerating] = useState(false);
+  // The last successful Send; stays until the next Send or until Compose reopens.
+  const [published, setPublished] = useState<api.ComposeNewEventResult>();
 
   const handleCopy = async () => {
     try {
@@ -115,6 +152,7 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
   const handleComposeOpen = () => {
     setEditedJson(exampleJson);
     setResponseMessage({ hasError: false, text: "" });
+    setPublished(undefined);
     setIsOpen(true);
   };
 
@@ -177,15 +215,11 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
     body.eventContent = editedJson;
 
     try {
-      await client.postComposeNewEvent(body);
-      setResponseMessage({
-        hasError: false,
-        text: "Event composed successfully.",
-      });
-      setTimeout(() => {
-        setResponseMessage({ hasError: false, text: "" });
-      }, 4000);
+      const result = await client.postComposeNewEvent(body);
+      setResponseMessage({ hasError: false, text: "" });
+      setPublished(result);
     } catch (err: unknown) {
+      setPublished(undefined);
       // SwaggerException carries the server's response body on .response,
       // which is far more useful than the bare "Bad Request" reason phrase.
       const swaggerResponse =
@@ -244,6 +278,7 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
               {responseMessage.text}
             </p>
           )}
+          {published && <PublishedResult result={published} />}
         </ModalBody>
         <ModalFooter>
           <Button variant="outline" onClick={() => setIsOpen(false)}>

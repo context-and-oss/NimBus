@@ -6,7 +6,8 @@ import {
   beforeEach,
   afterEach,
 } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { act, render, screen, cleanup, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import EventTypeExamplePayload from "./event-type-example-payload";
 import * as api from "api-client";
@@ -22,13 +23,15 @@ vi.mock("components/ui/toast", () => ({
 // invokes. We replace the Client class so we can drive the response.
 // Note: vi.mock is hoisted; using vi.hoisted lets us share the mock fn
 // across the factory body and the test assertions.
-const { getEventtypesEventtypeidFakeMock } = vi.hoisted(() => ({
+const { getEventtypesEventtypeidFakeMock, postComposeNewEventMock } = vi.hoisted(() => ({
   getEventtypesEventtypeidFakeMock: vi.fn(),
+  postComposeNewEventMock: vi.fn(),
 }));
 vi.mock("api-client", async () => {
   const actual = await vi.importActual<typeof import("api-client")>("api-client");
   class MockClient {
     getEventtypesEventtypeidFake = getEventtypesEventtypeidFakeMock;
+    postComposeNewEvent = postComposeNewEventMock;
   }
   return {
     ...actual,
@@ -165,5 +168,85 @@ describe("EventTypeExamplePayload — Generate fake data wiring", () => {
       variant: "error",
     });
     expect(textarea.value).toBe(before);
+  });
+});
+
+describe("EventTypeExamplePayload — Send Event result", () => {
+  const PUBLISHED = {
+    eventTypeId: "TestEvent",
+    publishedBy: "StorefrontEndpoint",
+    messageId: "TestEvent-00c0ffee00c0ffee",
+    sessionId: "sess-9",
+  };
+
+  beforeEach(() => {
+    postComposeNewEventMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+  });
+
+  const renderInRouter = () =>
+    render(
+      <MemoryRouter>
+        <EventTypeExamplePayload eventType={buildEventType()} />
+      </MemoryRouter>,
+    );
+
+  it("names what was published and links to it on each subscriber and in its session", async () => {
+    postComposeNewEventMock.mockResolvedValue(PUBLISHED);
+    renderInRouter();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /Compose Event/ }));
+    await user.click(screen.getByRole("button", { name: /Send Event/ }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Published to StorefrontEndpoint/)).toBeTruthy(),
+    );
+    expect(screen.getByText(PUBLISHED.messageId)).toBeTruthy();
+    expect(screen.getByText(PUBLISHED.sessionId)).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: /View on each subscriber/ })
+        .getAttribute("href"),
+    ).toBe(`/Messages?messageId=${encodeURIComponent(PUBLISHED.messageId)}`);
+    expect(
+      screen.getByRole("link", { name: /View session/ }).getAttribute("href"),
+    ).toBe(`/Messages?sessionId=${encodeURIComponent(PUBLISHED.sessionId)}`);
+  });
+
+  it("keeps the result on screen instead of hiding it after a few seconds", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    postComposeNewEventMock.mockResolvedValue(PUBLISHED);
+    renderInRouter();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+    await user.click(screen.getByRole("button", { name: /Compose Event/ }));
+    await user.click(screen.getByRole("button", { name: /Send Event/ }));
+    await waitFor(() => expect(screen.getByText(PUBLISHED.messageId)).toBeTruthy());
+
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(screen.getByText(PUBLISHED.messageId)).toBeTruthy();
+  });
+
+  it("clears the previous result when Compose is opened again", async () => {
+    postComposeNewEventMock.mockResolvedValue(PUBLISHED);
+    renderInRouter();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /Compose Event/ }));
+    await user.click(screen.getByRole("button", { name: /Send Event/ }));
+    await waitFor(() => expect(screen.getByText(PUBLISHED.messageId)).toBeTruthy());
+
+    await user.click(screen.getAllByRole("button", { name: /^Close$/ })[0]);
+    await user.click(screen.getByRole("button", { name: /Compose Event/ }));
+
+    expect(screen.queryByText(PUBLISHED.messageId)).toBeNull();
   });
 });
