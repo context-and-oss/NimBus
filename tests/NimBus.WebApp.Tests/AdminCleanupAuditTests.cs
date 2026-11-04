@@ -278,7 +278,9 @@ public sealed class AdminCleanupAuditTests
         Assert.AreEqual(14, (int)MessageAuditType.PurgeMessages);
         Assert.AreEqual(39, (int)MessageAuditType.AgentApiKeyRemoved);
         Assert.AreEqual(40, (int)MessageAuditType.CopyEndpointData);
-        Assert.AreEqual(MessageAuditType.CopyEndpointData, Enum.GetValues<MessageAuditType>().Max());
+        // Session state changes (Operations → Session state) were appended after it.
+        Assert.AreEqual(41, (int)MessageAuditType.ChangeSessionState);
+        Assert.AreEqual(MessageAuditType.ChangeSessionState, Enum.GetValues<MessageAuditType>().Max());
     }
 
     [TestMethod]

@@ -573,6 +573,14 @@ public class RateLimitEnforcementTests
 
         public Task<ActionResult<SessionPurgeResult>> PostAdminSessionPurgeAsync(string endpointId, string sessionId) => Ok<SessionPurgeResult>();
 
+        public Task<ActionResult<SessionStateView>> GetAdminSessionStateAsync(string endpointId, string sessionId) => Ok<SessionStateView>();
+
+        public Task<ActionResult<SessionStateView>> PostAdminSessionStateAsync(SessionStateChangeRequest body, string endpointId, string sessionId) => Ok<SessionStateView>();
+
+        public Task<ActionResult<SessionCleanupPreview>> PostAdminSessionCleanupPreviewAsync(SessionCleanupPreviewRequest body, string endpointId) => Ok<SessionCleanupPreview>();
+
+        public Task<ActionResult<SessionCleanupResult>> PostAdminSessionCleanupAsync(SessionCleanupRequest body, string endpointId) => Ok<SessionCleanupResult>();
+
         public Task<IActionResult> DeleteAdminEventAsync(string endpointId, string eventId) => OkPlain();
 
         public Task<ActionResult<BulkOperationResult>> PostAdminDeleteAllAsync(string endpointId) => Ok<BulkOperationResult>();

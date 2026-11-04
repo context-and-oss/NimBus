@@ -98,6 +98,7 @@ public partial class Startup
         services.AddTransient<IMessageApiController, MessageImplementation>();
         services.AddTransient<IFailedApiController, FailedImplementation>();
         services.AddScoped<IAdminService, AdminService>();
+        services.AddScoped<ISessionStateService, SessionStateService>();
         // The emulator caps entity TTLs far below a real namespace, so a rebuild has to
         // ask the descriptor for emulator-safe values when that is what we're pointed at.
         var isEmulator = ServiceBusTopologyProvisioner.IsEmulator(

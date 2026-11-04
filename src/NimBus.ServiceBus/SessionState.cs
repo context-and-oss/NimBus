@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -120,7 +121,19 @@ public class SessionState
     public void ClearAfterPurge()
     {
         ClearForReprocess();
+        MarkAllReplayed();
+    }
+
+    /// <summary>
+    /// Records that no parked message is waiting any more: the deferred count is zero, every
+    /// sequence assigned so far counts as replayed and no drain is pending. The block and the
+    /// deferral sequence stay. For an operator who has confirmed nothing is parked for the session.
+    /// </summary>
+    public void MarkAllReplayed()
+    {
         DeferredCount = 0;
+        DrainRequestedForSequence = null;
+        DrainRequestedAtUtc = null;
         if (NextDeferralSequence > 0)
             ReplayedThroughSequence = NextDeferralSequence - 1;
     }
@@ -146,6 +159,76 @@ public class SessionState
             // NullReferenceException when SetSessionStateAsync is passed null.
             ? new BinaryData(Array.Empty<byte>())
             : new BinaryData(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(this)));
+
+    /// <summary>
+    /// Parses session state JSON strictly, as an operator edit must be: the text must be a JSON
+    /// object whose members are all <see cref="SessionState"/> properties, and the result must
+    /// pass <see cref="Validate"/>.
+    /// </summary>
+    /// <param name="json">The session state JSON.</param>
+    /// <param name="state">The parsed state, or <see langword="null"/> when parsing fails.</param>
+    /// <param name="errors">Why the JSON was rejected; empty on success.</param>
+    /// <returns><see langword="true"/> when the JSON is valid session state.</returns>
+    public static bool TryParseJson(string json, out SessionState? state, out IReadOnlyList<string> errors)
+    {
+        state = null;
+        SessionState parsed;
+        try
+        {
+            var token = JToken.Parse(json ?? string.Empty);
+            if (token is not JObject obj)
+            {
+                errors = new[] { "Session state must be a JSON object." };
+                return false;
+            }
+
+            parsed = obj.ToObject<SessionState>(JsonSerializer.Create(StrictSettings))!;
+        }
+        catch (JsonException ex)
+        {
+            errors = new[] { $"Invalid session state JSON: {ex.Message}" };
+            return false;
+        }
+
+        errors = parsed.Validate();
+        if (errors.Count > 0)
+            return false;
+
+        state = parsed;
+        return true;
+    }
+
+    private static readonly JsonSerializerSettings StrictSettings = new()
+    {
+        MissingMemberHandling = MissingMemberHandling.Error,
+        DateTimeZoneHandling = DateTimeZoneHandling.Utc,
+    };
+
+    /// <summary>
+    /// Checks the invariants the endpoint's ordering guard relies on: counts and sequences are
+    /// not negative, the replay position and a drain request refer to assigned sequences, a
+    /// drain timestamp comes with its sequence, and a block names its event.
+    /// </summary>
+    /// <returns>The broken invariants; empty when the state is consistent.</returns>
+    public IReadOnlyList<string> Validate()
+    {
+        var errors = new List<string>();
+        if (DeferredCount < 0)
+            errors.Add($"{nameof(DeferredCount)} must not be negative.");
+        if (NextDeferralSequence < 0)
+            errors.Add($"{nameof(NextDeferralSequence)} must not be negative.");
+        if (ReplayedThroughSequence is { } replayed && (replayed < -1 || replayed >= Math.Max(NextDeferralSequence, 0)))
+            errors.Add($"{nameof(ReplayedThroughSequence)} must be at least -1 and below {nameof(NextDeferralSequence)}.");
+        if (DrainRequestedForSequence is { } drain && (drain < 0 || drain >= Math.Max(NextDeferralSequence, 0)))
+            errors.Add($"{nameof(DrainRequestedForSequence)} must be an assigned sequence, below {nameof(NextDeferralSequence)}.");
+        if (DrainRequestedAtUtc != null && DrainRequestedForSequence == null)
+            errors.Add($"{nameof(DrainRequestedAtUtc)} requires {nameof(DrainRequestedForSequence)}.");
+        if (BlockedByEventId != null && string.IsNullOrWhiteSpace(BlockedByEventId))
+            errors.Add($"{nameof(BlockedByEventId)} must not be blank; use null to clear the block.");
+        if (BlockedByMessageId != null && BlockedByEventId == null)
+            errors.Add($"{nameof(BlockedByMessageId)} requires {nameof(BlockedByEventId)}.");
+        return errors;
+    }
 
     public bool IsEmpty() =>
         BlockedByEventId == null &&

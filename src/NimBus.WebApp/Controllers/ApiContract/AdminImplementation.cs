@@ -22,7 +22,7 @@ using AsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
-public class AdminImplementation : IAdminApiController
+public partial class AdminImplementation : IAdminApiController
 {
     private readonly IAdminService _adminService;
     private readonly ISubscriptionAdminService _subscriptionAdminService;
@@ -35,6 +35,7 @@ public class AdminImplementation : IAdminApiController
     private readonly ILogger<AdminImplementation> _logger;
     private readonly ICosmosContainerAdmin? _containerAdmin;
     private readonly IAuditSettingsProvider? _auditSettings;
+    private readonly ISessionStateService? _sessionStates;
 
     public AdminImplementation(
         IHttpContextAccessor contextAccessor,
@@ -47,7 +48,8 @@ public class AdminImplementation : IAdminApiController
         IHeartbeatService heartbeatService,
         ILogger<AdminImplementation>? logger = null,
         ICosmosContainerAdmin? containerAdmin = null,
-        IAuditSettingsProvider? auditSettings = null)
+        IAuditSettingsProvider? auditSettings = null,
+        ISessionStateService? sessionStates = null)
     {
         _adminService = adminService;
         _subscriptionAdminService = subscriptionAdminService;
@@ -60,6 +62,7 @@ public class AdminImplementation : IAdminApiController
         _logger = logger ?? NullLogger<AdminImplementation>.Instance;
         _containerAdmin = containerAdmin;
         _auditSettings = auditSettings;
+        _sessionStates = sessionStates;
     }
 
     public async Task<ActionResult<PlatformConfig>> GetAdminPlatformConfigAsync()

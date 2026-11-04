@@ -4931,6 +4931,259 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Look up a session's Service Bus session state
+     * @return OK
+     */
+    getAdminSessionState(endpointId: string, sessionId: string): Promise<SessionStateView> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session/{sessionId}/state";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (sessionId === undefined || sessionId === null)
+            throw new globalThis.Error("The parameter 'sessionId' must be defined.");
+        url_ = url_.replace("{sessionId}", encodeURIComponent("" + sessionId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminSessionState(_response);
+        });
+    }
+
+    protected processGetAdminSessionState(response: Response): Promise<SessionStateView> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SessionStateView.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid session id", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SessionStateView>(null as any);
+    }
+
+    /**
+     * Change a session's Service Bus session state
+     * @return The state after the change
+     */
+    postAdminSessionState(body: SessionStateChangeRequest, endpointId: string, sessionId: string): Promise<SessionStateView> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session/{sessionId}/state";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (sessionId === undefined || sessionId === null)
+            throw new globalThis.Error("The parameter 'sessionId' must be defined.");
+        url_ = url_.replace("{sessionId}", encodeURIComponent("" + sessionId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSessionState(_response);
+        });
+    }
+
+    protected processPostAdminSessionState(response: Response): Promise<SessionStateView> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SessionStateView.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid request or session state JSON", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = SessionStateView.fromJS(resultData409);
+            return throwException("The state changed since it was read, or the session is locked", status, _responseText, _headers, result409);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("The audit record could not be written; nothing was changed", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SessionStateView>(null as any);
+    }
+
+    /**
+     * Preview which sessions hold idle session state
+     * @return OK
+     */
+    postAdminSessionCleanupPreview(body: SessionCleanupPreviewRequest, endpointId: string): Promise<SessionCleanupPreview> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session-cleanup/preview";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSessionCleanupPreview(_response);
+        });
+    }
+
+    protected processPostAdminSessionCleanupPreview(response: Response): Promise<SessionCleanupPreview> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SessionCleanupPreview.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SessionCleanupPreview>(null as any);
+    }
+
+    /**
+     * Reset the session state of previewed idle sessions
+     * @return OK
+     */
+    postAdminSessionCleanup(body: SessionCleanupRequest, endpointId: string): Promise<SessionCleanupResult> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session-cleanup";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSessionCleanup(_response);
+        });
+    }
+
+    protected processPostAdminSessionCleanup(response: Response): Promise<SessionCleanupResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SessionCleanupResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("The audit record could not be written; nothing was changed", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SessionCleanupResult>(null as any);
+    }
+
+    /**
      * Delete a specific event from Cosmos DB
      * @return OK
      */
@@ -14005,6 +14258,712 @@ export interface ISessionPurgeResult {
     [key: string]: any;
 }
 
+/** A session's Service Bus session state on the endpoint subscription, read under a session lock, with the session's queued messages and store counts. */
+export class SessionStateView implements ISessionStateView {
+    sessionId?: string;
+    /** A receiver holds the session, so its state could not be read. */
+    locked?: boolean;
+    /** The stored state parses as NimBus session state. */
+    readable?: boolean;
+    isEmpty?: boolean;
+    /** The stored state as text; null when nothing is stored. */
+    stateJson?: string | undefined;
+    /** SHA-256 of the stored bytes; send it back as expectedVersion. */
+    stateVersion?: string | undefined;
+    blockedByEventId?: string | undefined;
+    blockedByMessageId?: string | undefined;
+    deferredCount?: number;
+    nextDeferralSequence?: number;
+    replayedThroughSequence?: number | undefined;
+    drainRequestedForSequence?: number | undefined;
+    drainRequestedAtUtc?: moment.Moment | undefined;
+    legacyDeferredCount?: number;
+    blocked?: boolean;
+    hasUnreplayedMessages?: boolean;
+    /** Messages queued on the session (peeked, at most 100). */
+    activeMessageCount?: number;
+    /** Messages parked on the Deferred subscription (peeked, at most 100). */
+    deferredSubscriptionCount?: number;
+    storePendingCount?: number;
+    storeDeferredCount?: number;
+    /** Stored status of the blocking event; null when not blocked or not found. */
+    blockingEventStatus?: string | undefined;
+    message?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionStateView) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.sessionId = _data["sessionId"];
+            this.locked = _data["locked"];
+            this.readable = _data["readable"];
+            this.isEmpty = _data["isEmpty"];
+            this.stateJson = _data["stateJson"];
+            this.stateVersion = _data["stateVersion"];
+            this.blockedByEventId = _data["blockedByEventId"];
+            this.blockedByMessageId = _data["blockedByMessageId"];
+            this.deferredCount = _data["deferredCount"];
+            this.nextDeferralSequence = _data["nextDeferralSequence"];
+            this.replayedThroughSequence = _data["replayedThroughSequence"];
+            this.drainRequestedForSequence = _data["drainRequestedForSequence"];
+            this.drainRequestedAtUtc = _data["drainRequestedAtUtc"] ? moment(_data["drainRequestedAtUtc"].toString()) : undefined as any;
+            this.legacyDeferredCount = _data["legacyDeferredCount"];
+            this.blocked = _data["blocked"];
+            this.hasUnreplayedMessages = _data["hasUnreplayedMessages"];
+            this.activeMessageCount = _data["activeMessageCount"];
+            this.deferredSubscriptionCount = _data["deferredSubscriptionCount"];
+            this.storePendingCount = _data["storePendingCount"];
+            this.storeDeferredCount = _data["storeDeferredCount"];
+            this.blockingEventStatus = _data["blockingEventStatus"];
+            this.message = _data["message"];
+        }
+    }
+
+    static fromJS(data: any): SessionStateView {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionStateView();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["sessionId"] = this.sessionId;
+        data["locked"] = this.locked;
+        data["readable"] = this.readable;
+        data["isEmpty"] = this.isEmpty;
+        data["stateJson"] = this.stateJson;
+        data["stateVersion"] = this.stateVersion;
+        data["blockedByEventId"] = this.blockedByEventId;
+        data["blockedByMessageId"] = this.blockedByMessageId;
+        data["deferredCount"] = this.deferredCount;
+        data["nextDeferralSequence"] = this.nextDeferralSequence;
+        data["replayedThroughSequence"] = this.replayedThroughSequence;
+        data["drainRequestedForSequence"] = this.drainRequestedForSequence;
+        data["drainRequestedAtUtc"] = this.drainRequestedAtUtc ? this.drainRequestedAtUtc.toISOString() : undefined as any;
+        data["legacyDeferredCount"] = this.legacyDeferredCount;
+        data["blocked"] = this.blocked;
+        data["hasUnreplayedMessages"] = this.hasUnreplayedMessages;
+        data["activeMessageCount"] = this.activeMessageCount;
+        data["deferredSubscriptionCount"] = this.deferredSubscriptionCount;
+        data["storePendingCount"] = this.storePendingCount;
+        data["storeDeferredCount"] = this.storeDeferredCount;
+        data["blockingEventStatus"] = this.blockingEventStatus;
+        data["message"] = this.message;
+        return data;
+    }
+
+    clone(): SessionStateView {
+        const json = this.toJSON();
+        let result = new SessionStateView();
+        result.init(json);
+        return result;
+    }
+}
+
+/** A session's Service Bus session state on the endpoint subscription, read under a session lock, with the session's queued messages and store counts. */
+export interface ISessionStateView {
+    sessionId?: string;
+    /** A receiver holds the session, so its state could not be read. */
+    locked?: boolean;
+    /** The stored state parses as NimBus session state. */
+    readable?: boolean;
+    isEmpty?: boolean;
+    /** The stored state as text; null when nothing is stored. */
+    stateJson?: string | undefined;
+    /** SHA-256 of the stored bytes; send it back as expectedVersion. */
+    stateVersion?: string | undefined;
+    blockedByEventId?: string | undefined;
+    blockedByMessageId?: string | undefined;
+    deferredCount?: number;
+    nextDeferralSequence?: number;
+    replayedThroughSequence?: number | undefined;
+    drainRequestedForSequence?: number | undefined;
+    drainRequestedAtUtc?: moment.Moment | undefined;
+    legacyDeferredCount?: number;
+    blocked?: boolean;
+    hasUnreplayedMessages?: boolean;
+    /** Messages queued on the session (peeked, at most 100). */
+    activeMessageCount?: number;
+    /** Messages parked on the Deferred subscription (peeked, at most 100). */
+    deferredSubscriptionCount?: number;
+    storePendingCount?: number;
+    storeDeferredCount?: number;
+    /** Stored status of the blocking event; null when not blocked or not found. */
+    blockingEventStatus?: string | undefined;
+    message?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class SessionStateChangeRequest implements ISessionStateChangeRequest {
+    action!: SessionStateChangeRequestAction;
+    /** The stateVersion the change was based on. */
+    expectedVersion!: string;
+    /** The new state, for replace. */
+    stateJson?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionStateChangeRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.action = _data["action"];
+            this.expectedVersion = _data["expectedVersion"];
+            this.stateJson = _data["stateJson"];
+        }
+    }
+
+    static fromJS(data: any): SessionStateChangeRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionStateChangeRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["action"] = this.action;
+        data["expectedVersion"] = this.expectedVersion;
+        data["stateJson"] = this.stateJson;
+        return data;
+    }
+
+    clone(): SessionStateChangeRequest {
+        const json = this.toJSON();
+        let result = new SessionStateChangeRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionStateChangeRequest {
+    action: SessionStateChangeRequestAction;
+    /** The stateVersion the change was based on. */
+    expectedVersion: string;
+    /** The new state, for replace. */
+    stateJson?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class SessionCleanupPreviewRequest implements ISessionCleanupPreviewRequest {
+    /** Only sessions of events updated since; defaults to 30 days ago. */
+    updatedSince?: moment.Moment | undefined;
+    /** Most sessions to inspect, 1 to 1000; defaults to 200. */
+    maxSessions?: number | undefined;
+    includeStaleBlocks?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupPreviewRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.updatedSince = _data["updatedSince"] ? moment(_data["updatedSince"].toString()) : undefined as any;
+            this.maxSessions = _data["maxSessions"];
+            this.includeStaleBlocks = _data["includeStaleBlocks"];
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupPreviewRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupPreviewRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["updatedSince"] = this.updatedSince ? this.updatedSince.toISOString() : undefined as any;
+        data["maxSessions"] = this.maxSessions;
+        data["includeStaleBlocks"] = this.includeStaleBlocks;
+        return data;
+    }
+
+    clone(): SessionCleanupPreviewRequest {
+        const json = this.toJSON();
+        let result = new SessionCleanupPreviewRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupPreviewRequest {
+    /** Only sessions of events updated since; defaults to 30 days ago. */
+    updatedSince?: moment.Moment | undefined;
+    /** Most sessions to inspect, 1 to 1000; defaults to 200. */
+    maxSessions?: number | undefined;
+    includeStaleBlocks?: boolean;
+
+    [key: string]: any;
+}
+
+export class SessionCleanupPreview implements ISessionCleanupPreview {
+    inspectedCount?: number;
+    /** Inspected sessions that hold no state. */
+    emptyCount?: number;
+    /** More sessions matched than maxSessions. */
+    truncated?: boolean;
+    sessions?: SessionCleanupCandidate[];
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupPreview) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.inspectedCount = _data["inspectedCount"];
+            this.emptyCount = _data["emptyCount"];
+            this.truncated = _data["truncated"];
+            if (Array.isArray(_data["sessions"])) {
+                this.sessions = [] as any;
+                for (let item of _data["sessions"])
+                    this.sessions!.push(SessionCleanupCandidate.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupPreview {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupPreview();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["inspectedCount"] = this.inspectedCount;
+        data["emptyCount"] = this.emptyCount;
+        data["truncated"] = this.truncated;
+        if (Array.isArray(this.sessions)) {
+            data["sessions"] = [];
+            for (let item of this.sessions)
+                data["sessions"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): SessionCleanupPreview {
+        const json = this.toJSON();
+        let result = new SessionCleanupPreview();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupPreview {
+    inspectedCount?: number;
+    /** Inspected sessions that hold no state. */
+    emptyCount?: number;
+    /** More sessions matched than maxSessions. */
+    truncated?: boolean;
+    sessions?: SessionCleanupCandidate[];
+
+    [key: string]: any;
+}
+
+export class SessionCleanupCandidate implements ISessionCleanupCandidate {
+    sessionId?: string;
+    classification?: SessionCleanupCandidateClassification;
+    reason?: string | undefined;
+    stateVersion?: string | undefined;
+    stateJson?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupCandidate) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.sessionId = _data["sessionId"];
+            this.classification = _data["classification"];
+            this.reason = _data["reason"];
+            this.stateVersion = _data["stateVersion"];
+            this.stateJson = _data["stateJson"];
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupCandidate {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupCandidate();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["sessionId"] = this.sessionId;
+        data["classification"] = this.classification;
+        data["reason"] = this.reason;
+        data["stateVersion"] = this.stateVersion;
+        data["stateJson"] = this.stateJson;
+        return data;
+    }
+
+    clone(): SessionCleanupCandidate {
+        const json = this.toJSON();
+        let result = new SessionCleanupCandidate();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupCandidate {
+    sessionId?: string;
+    classification?: SessionCleanupCandidateClassification;
+    reason?: string | undefined;
+    stateVersion?: string | undefined;
+    stateJson?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class SessionCleanupRequest implements ISessionCleanupRequest {
+    includeStaleBlocks?: boolean;
+    sessions!: SessionCleanupSelection[];
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+        if (!data) {
+            this.sessions = [];
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.includeStaleBlocks = _data["includeStaleBlocks"];
+            if (Array.isArray(_data["sessions"])) {
+                this.sessions = [] as any;
+                for (let item of _data["sessions"])
+                    this.sessions!.push(SessionCleanupSelection.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["includeStaleBlocks"] = this.includeStaleBlocks;
+        if (Array.isArray(this.sessions)) {
+            data["sessions"] = [];
+            for (let item of this.sessions)
+                data["sessions"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): SessionCleanupRequest {
+        const json = this.toJSON();
+        let result = new SessionCleanupRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupRequest {
+    includeStaleBlocks?: boolean;
+    sessions: SessionCleanupSelection[];
+
+    [key: string]: any;
+}
+
+export class SessionCleanupSelection implements ISessionCleanupSelection {
+    sessionId!: string;
+    stateVersion!: string;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupSelection) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.sessionId = _data["sessionId"];
+            this.stateVersion = _data["stateVersion"];
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupSelection {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupSelection();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["sessionId"] = this.sessionId;
+        data["stateVersion"] = this.stateVersion;
+        return data;
+    }
+
+    clone(): SessionCleanupSelection {
+        const json = this.toJSON();
+        let result = new SessionCleanupSelection();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupSelection {
+    sessionId: string;
+    stateVersion: string;
+
+    [key: string]: any;
+}
+
+export class SessionCleanupResult implements ISessionCleanupResult {
+    resetCount?: number;
+    skipped?: SessionCleanupSkip[];
+    errors?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.resetCount = _data["resetCount"];
+            if (Array.isArray(_data["skipped"])) {
+                this.skipped = [] as any;
+                for (let item of _data["skipped"])
+                    this.skipped!.push(SessionCleanupSkip.fromJS(item));
+            }
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["resetCount"] = this.resetCount;
+        if (Array.isArray(this.skipped)) {
+            data["skipped"] = [];
+            for (let item of this.skipped)
+                data["skipped"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        return data;
+    }
+
+    clone(): SessionCleanupResult {
+        const json = this.toJSON();
+        let result = new SessionCleanupResult();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupResult {
+    resetCount?: number;
+    skipped?: SessionCleanupSkip[];
+    errors?: string[];
+
+    [key: string]: any;
+}
+
+export class SessionCleanupSkip implements ISessionCleanupSkip {
+    sessionId?: string;
+    reason?: string;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupSkip) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.sessionId = _data["sessionId"];
+            this.reason = _data["reason"];
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupSkip {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupSkip();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["sessionId"] = this.sessionId;
+        data["reason"] = this.reason;
+        return data;
+    }
+
+    clone(): SessionCleanupSkip {
+        const json = this.toJSON();
+        let result = new SessionCleanupSkip();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupSkip {
+    sessionId?: string;
+    reason?: string;
+
+    [key: string]: any;
+}
+
 export class MetricsOverview implements IMetricsOverview {
     published?: EndpointEventTypeMessageCount[];
     handled?: EndpointEventTypeMessageCount[];
@@ -20157,6 +21116,7 @@ export enum MessageAuditAuditType {
     AgentApiKeyRevoked = "agentApiKeyRevoked",
     AgentApiKeyRemoved = "agentApiKeyRemoved",
     CopyEndpointData = "copyEndpointData",
+    ChangeSessionState = "changeSessionState",
 }
 
 export class MessageContent implements IMessageContent {
@@ -20262,6 +21222,19 @@ export enum DeadLetterResubmitRequestScope {
     Reason = "reason",
 }
 
+export enum SessionStateChangeRequestAction {
+    ClearBlock = "clearBlock",
+    MarkReplayed = "markReplayed",
+    Reset = "reset",
+    Replace = "replace",
+}
+
+export enum SessionCleanupCandidateClassification {
+    Idle = "idle",
+    StaleBlock = "staleBlock",
+    InUse = "inUse",
+}
+
 export enum AuditSearchFilterAuditType {
     Resubmit = "resubmit",
     ResubmitWithChanges = "resubmitWithChanges",
@@ -20304,6 +21277,7 @@ export enum AuditSearchFilterAuditType {
     AgentApiKeyRevoked = "agentApiKeyRevoked",
     AgentApiKeyRemoved = "agentApiKeyRemoved",
     CopyEndpointData = "copyEndpointData",
+    ChangeSessionState = "changeSessionState",
 }
 
 export enum StalePendingRowVerdict {
@@ -20387,6 +21361,7 @@ export enum AuditEntryAuditType {
     AgentApiKeyRevoked = "agentApiKeyRevoked",
     AgentApiKeyRemoved = "agentApiKeyRemoved",
     CopyEndpointData = "copyEndpointData",
+    ChangeSessionState = "changeSessionState",
 }
 
 export enum AgentSettleRequestOutcome {

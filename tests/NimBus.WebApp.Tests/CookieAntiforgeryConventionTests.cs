@@ -69,6 +69,10 @@ public sealed class CookieAntiforgeryConventionTests
                      nameof(AdminApiController.PostAdminServicebusSubscriptionRecreate),
                      nameof(AdminApiController.PostAdminDeleteDeadlettered),
                      nameof(AdminApiController.PostAdminServicebusSubscriptionDeadlettersPurge),
+                     // Operations → Session state and Clean up session state.
+                     nameof(AdminApiController.PostAdminSessionState),
+                     nameof(AdminApiController.PostAdminSessionCleanupPreview),
+                     nameof(AdminApiController.PostAdminSessionCleanup),
                  })
         {
             var action = actions.Single(candidate =>

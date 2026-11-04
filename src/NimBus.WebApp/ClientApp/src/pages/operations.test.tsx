@@ -73,6 +73,8 @@ vi.mock("components/admin/advanced-operations", () => ({
   DeleteAllEventsCard: card("Delete all events"),
 }));
 vi.mock("components/admin/session-management", () => ({ SessionPurgeCard: card("Session purge") }));
+vi.mock("components/admin/session-state", () => ({ SessionStateCard: card("Session state") }));
+vi.mock("components/admin/session-cleanup", () => ({ SessionCleanupCard: card("Clean up session state") }));
 vi.mock("components/admin/stale-pending-reconcile", () => ({
   StalePendingReconcileCard: card("Reconcile stale pending"),
 }));
