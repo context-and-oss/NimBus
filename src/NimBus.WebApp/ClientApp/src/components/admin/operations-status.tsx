@@ -4,10 +4,9 @@ import { failureBacklog } from "functions/failed-messages.functions";
 
 // The Operations page's status strip (Spec 038 §6.1). Each tile is also a shortcut.
 //
-// Status counts overlap: failedCount already includes dead-lettered messages and
-// pendingCount includes unsupported ones (Mapper.EndpointStatusCountFromEndpointStateCount).
-// Failed therefore matches the sidebar's Failed badge (failed + unsupported), and
-// Pending leaves unsupported out so nothing is counted twice.
+// Status counts overlap: failedCount already includes dead-lettered and unsupported
+// messages (Mapper.EndpointStatusCountFromEndpointStateCount), so Failed matches the
+// sidebar's Failed badge and Dead-lettered is a subset of it.
 
 const sum = (counts: api.EndpointStatusCount[], pick: (c: api.EndpointStatusCount) => number) =>
   counts.reduce((total, c) => total + pick(c), 0);
@@ -53,7 +52,7 @@ export default function OperationsStatus({ counts, paused, onOpen, onShowPaused 
       />
       <StatTile
         label="Pending"
-        value={value((c) => sum(c, (x) => Math.max(0, (x.pendingCount ?? 0) - (x.unsupportedCount ?? 0))))}
+        value={value((c) => sum(c, (x) => x.pendingCount ?? 0))}
         tone="muted"
         delta="Reconcile if stuck →"
         onClick={() => onOpen("stale")}

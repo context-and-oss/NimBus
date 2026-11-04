@@ -36,15 +36,17 @@ public sealed class MonitorAcknowledgementTests
     // ───────── Policy ─────────
 
     [TestMethod]
-    public async Task Acknowledge_records_the_live_failed_count_including_dead_letters()
+    public async Task Acknowledge_records_the_live_failed_count_including_dead_letters_and_unsupported()
     {
         var harness = new Harness();
         await harness.Fail(Endpoint, "f1");
         await harness.DeadLetter(Endpoint, "d1");
+        await harness.Unsupported(Endpoint, "u1");
 
         var ack = await harness.Service.AcknowledgeAsync(Endpoint, "  ERP outage  ", "alice@example.com");
 
-        Assert.AreEqual(2, ack.FailedCountAtAcknowledgement);
+        // Same total as the status API's failedCount, which the Monitor compares it with.
+        Assert.AreEqual(3, ack.FailedCountAtAcknowledgement);
         Assert.AreEqual("ERP outage", ack.Reason);
         Assert.AreEqual("alice@example.com", ack.AcknowledgedBy);
         Assert.AreEqual(harness.Clock.GetUtcNow().UtcDateTime, ack.AcknowledgedAtUtc);
@@ -90,6 +92,20 @@ public sealed class MonitorAcknowledgementTests
         Assert.AreEqual(0, (await harness.Service.GetActiveAsync()).Count);
         Assert.AreEqual(0, (await harness.Store.GetEndpointAcknowledgements()).Count,
             "A recovered endpoint's ack is gone for good, so a later failure is not pre-silenced.");
+    }
+
+    [TestMethod]
+    public async Task GetActive_keeps_the_acknowledgement_while_unsupported_messages_remain()
+    {
+        var harness = new Harness(DateTimeOffset.UtcNow.AddMinutes(-1));
+        await harness.Fail(Endpoint, "f1");
+        await harness.Unsupported(Endpoint, "u1");
+        await harness.Service.AcknowledgeAsync(Endpoint, "known", null);
+
+        await harness.Store.RemoveMessage("f1", "f1", Endpoint);
+
+        Assert.AreEqual(1, (await harness.Service.GetActiveAsync()).Count,
+            "An unsupported message is still a failure, so the endpoint hasn't recovered.");
     }
 
     [TestMethod]
@@ -243,6 +259,9 @@ public sealed class MonitorAcknowledgementTests
 
         public Task DeadLetter(string endpointId, string eventId)
             => Store.UploadDeadletteredMessage(eventId, eventId, endpointId, new UnresolvedEvent { EventId = eventId, SessionId = eventId, EndpointId = endpointId });
+
+        public Task Unsupported(string endpointId, string eventId)
+            => Store.UploadUnsupportedMessage(eventId, eventId, endpointId, new UnresolvedEvent { EventId = eventId, SessionId = eventId, EndpointId = endpointId });
 
         public MonitorImplementation Api(RoleStub roles, params string[] platformEndpoints)
             => new(

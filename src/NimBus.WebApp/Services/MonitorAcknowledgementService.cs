@@ -72,7 +72,7 @@ public sealed class MonitorAcknowledgementService : IMonitorAcknowledgementServi
             AcknowledgedBy = string.IsNullOrWhiteSpace(acknowledgedBy) ? null : acknowledgedBy,
             AcknowledgedAtUtc = now,
             ExpiresAtUtc = now + AcknowledgementTtl,
-            FailedCountAtAcknowledgement = counts.FailedCount + counts.DeadletterCount,
+            FailedCountAtAcknowledgement = FailedTotal(counts),
         };
         await _store.SetEndpointAcknowledgement(acknowledgement);
         return acknowledgement;
@@ -82,7 +82,7 @@ public sealed class MonitorAcknowledgementService : IMonitorAcknowledgementServi
 
     /// <summary>
     /// Recovered = acknowledged while failing, and a status count taken after the
-    /// acknowledgement shows no failed or dead-lettered messages. The count comes from
+    /// acknowledgement shows no failed, dead-lettered or unsupported messages. The count comes from
     /// the status API's short-lived cache; comparing its query time to the
     /// acknowledgement time keeps a pre-acknowledgement snapshot from clearing it.
     /// </summary>
@@ -94,7 +94,7 @@ public sealed class MonitorAcknowledgementService : IMonitorAcknowledgementServi
         {
             var counts = await _storeResultCache.GetEndpointStateCountAsync(_trackingStore, acknowledgement.EndpointId);
             return counts.EventTime > acknowledgement.AcknowledgedAtUtc
-                && counts.FailedCount + counts.DeadletterCount == 0;
+                && FailedTotal(counts) == 0;
         }
 #pragma warning disable CA1031 // One endpoint's unavailable storage must not fail the whole list.
         catch (Exception ex)
@@ -104,4 +104,9 @@ public sealed class MonitorAcknowledgementService : IMonitorAcknowledgementServi
             return false;
         }
     }
+
+    // Matches the status API's failedCount (Mapper.EndpointStatusCountFromEndpointStateCount),
+    // which the Monitor compares this baseline with.
+    private static int FailedTotal(EndpointStateCount counts)
+        => counts.FailedCount + counts.DeadletterCount + counts.UnsupportedCount;
 }

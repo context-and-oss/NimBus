@@ -375,7 +375,7 @@ public sealed record EndpointHealthResult(string? Environment, DateTimeOffset As
 public sealed record EndpointHealth(string EndpointId, StatusCounts? Counts, DateTime? OldestFailureAt, string? SubscriptionStatus, AcknowledgementInfo? Acknowledgement);
 
 /// <summary>Message counts by resolution status.</summary>
-/// <param name="Failed">Failed messages.</param>
+/// <param name="Failed">Messages that need an operator: failed, dead-lettered and unsupported. Includes <paramref name="DeadLettered"/> and <paramref name="Unsupported"/>.</param>
 /// <param name="DeadLettered">Dead-lettered messages.</param>
 /// <param name="Unsupported">Messages of an unsupported event type.</param>
 /// <param name="Deferred">Messages waiting behind a blocked session.</param>

@@ -8,7 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import * as api from "api-client";
 // Static import: vi.mock is hoisted above it, so the mocks still apply, and the
 // component graph loads while the file is collected. A per-test dynamic import
@@ -29,7 +29,7 @@ const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock, statusCountMo
         }),
     );
     const getByFilterMock = vi.fn();
-    // The endpoint-wide totals behind the Failed/Deferred/Pending tiles.
+    // The endpoint-wide totals behind the status summary line.
     const statusCountMock = vi.fn();
     return {
       sessionsDeferreds,
@@ -200,16 +200,11 @@ describe("EventsPanel duplicate status display", () => {
       expect(screen.getByText("Skipped (duplicate)")).toBeTruthy(),
     );
     expect(screen.getAllByText("Skipped")).toHaveLength(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "Grouped by Error" }));
-    expect(screen.getByText("No failed events to group.")).toBeTruthy();
-    expect(screen.queryByText("Unknown")).toBeNull();
   });
 });
 
 describe("EventsPanel row actions and report flag", () => {
   it("shows a flag-only Report button and an Actions menu only on actionable rows", async () => {
-    // The previous test left viewMode=grouped in the per-endpoint filter store.
     window.sessionStorage.clear();
     const failed = Object.assign(new api.Event(), {
       eventId: "evt-failed",
@@ -312,13 +307,19 @@ describe("EventsPanel payload URL filters", () => {
   );
 });
 
-describe("EventsPanel summary tiles", () => {
-  // The tile's value sits right after its caps label.
-  const tileValue = (label: string): string | null | undefined =>
-    screen
-      .getAllByText(label, { exact: true })
-      .find((e) => e.className.includes("uppercase"))?.nextElementSibling
-      ?.textContent;
+describe("EventsPanel status summary line", () => {
+  // Shows where the summary links navigate to.
+  const LocationProbe = () => {
+    const location = useLocation();
+    return (
+      <div data-testid="location">{location.pathname + location.search}</div>
+    );
+  };
+
+  const summaryItem = (name: RegExp) =>
+    within(
+      screen.getByRole("navigation", { name: "Endpoint status summary" }),
+    ).getByRole("button", { name });
 
   const pageWithOneFailure = () =>
     getByFilterMock.mockResolvedValue({
@@ -334,27 +335,37 @@ describe("EventsPanel summary tiles", () => {
       continuationToken: undefined,
     });
 
-  it("shows the endpoint's totals, not just the loaded page", async () => {
-    window.sessionStorage.clear();
-    pageWithOneFailure();
-    // failedCount already includes DeadLettered; Unsupported is added on top.
+  const endpointTotals = () =>
+    // failedCount already includes DeadLettered and Unsupported; pendingCount
+    // is Pending only, so the line shows both as sent.
     statusCountMock.mockResolvedValue({
       endpointId: "ep-1",
-      failedCount: 11,
+      failedCount: 13,
       unsupportedCount: 2,
       deferredCount: 3,
-      pendingCount: 19,
+      pendingCount: 17,
     });
 
+  const renderPanel = (url = "/") =>
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[url]}>
         <EventsPanel endpointId="ep-1" />
+        <LocationProbe />
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(tileValue("Failed")).toBe("13"));
-    expect(tileValue("Deferred")).toBe("3");
-    expect(tileValue("Pending")).toBe("19");
+  it("shows the endpoint's totals, not just the loaded page", async () => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    endpointTotals();
+
+    renderPanel();
+
+    await waitFor(() =>
+      expect(summaryItem(/^13 failed$/)).toBeTruthy(),
+    );
+    expect(summaryItem(/^3 deferred$/)).toBeTruthy();
+    expect(summaryItem(/^17 pending$/)).toBeTruthy();
     expect(statusCountMock).toHaveBeenCalledWith("ep-1");
   });
 
@@ -363,14 +374,89 @@ describe("EventsPanel summary tiles", () => {
     pageWithOneFailure();
     statusCountMock.mockRejectedValue(new Error("unavailable"));
 
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByText("TileEvent")).toBeTruthy());
+    expect(summaryItem(/^1 failed$/)).toBeTruthy();
+    expect(summaryItem(/^0 pending$/)).toBeTruthy();
+  });
+
+  it("disables zero counts", async () => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    statusCountMock.mockResolvedValue({
+      endpointId: "ep-1",
+      failedCount: 1,
+      deferredCount: 0,
+      pendingCount: 0,
+    });
+
+    renderPanel();
+
+    await waitFor(() =>
+      expect(summaryItem(/^1 failed$/).hasAttribute("disabled")).toBe(false),
+    );
+    expect(summaryItem(/^0 deferred$/).hasAttribute("disabled")).toBe(true);
+    expect(summaryItem(/^0 pending$/).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("opens the endpoint's failures on the Failed page", async () => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    endpointTotals();
+
+    renderPanel();
+
+    await waitFor(() => expect(summaryItem(/^13 failed$/)).toBeTruthy());
+    fireEvent.click(summaryItem(/^13 failed$/));
+    expect(screen.getByTestId("location").textContent).toBe(
+      "/Failed?endpointId=ep-1",
+    );
+  });
+
+  it.each([
+    [/^3 deferred$/, api.ResolutionStatus.Deferred],
+    [/^17 pending$/, api.ResolutionStatus.Pending],
+  ])("filters the list when %s is clicked", async (name, status) => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    endpointTotals();
+
+    renderPanel();
+
+    await waitFor(() => expect(summaryItem(name)).toBeTruthy());
+    fireEvent.click(summaryItem(name));
+    await waitFor(() => {
+      const request = getByFilterMock.mock.calls.at(-1)![1];
+      expect(request.eventFilter?.resolutionStatus).toEqual([status]);
+    });
+  });
+});
+
+describe("EventsPanel view", () => {
+  it("offers only the list view, even for an old grouped-view link", async () => {
+    window.sessionStorage.clear();
+    getByFilterMock.mockResolvedValue({
+      events: [
+        Object.assign(new api.Event(), {
+          eventId: "evt-old-link",
+          sessionId: "sess-old-link",
+          eventTypeId: "OldLinkEvent",
+          lastMessageId: "msg-old-link",
+          resolutionStatus: api.ResolutionStatus.Failed,
+        }),
+      ],
+      continuationToken: undefined,
+    });
+
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={["/?viewMode=grouped"]}>
         <EventsPanel endpointId="ep-1" />
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(screen.getByText("TileEvent")).toBeTruthy());
-    expect(tileValue("Failed")).toBe("1");
-    expect(tileValue("Pending")).toBe("0");
+    await waitFor(() => expect(screen.getByText("OldLinkEvent")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Grouped by Error" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
   });
 });

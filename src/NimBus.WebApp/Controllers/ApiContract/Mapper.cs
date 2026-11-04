@@ -269,6 +269,8 @@ public static class Mapper
     // Pending+Handoff entries (PendingSubStatus = "Handoff") roll into PendingCount
     // automatically because their ResolutionStatus is Pending — no change needed
     // here for the FR-040 dashboard-count requirement.
+    // FailedCount folds in DeadLettered and Unsupported: neither drains on its own,
+    // so every failure view (Endpoints list, Monitor, Failed page) counts them.
     internal static EndpointStatusCount EndpointStatusCountFromEndpointStateCount(EndpointStateCount state)
     {
         return new EndpointStatusCount
@@ -277,10 +279,10 @@ public static class Mapper
             EventTime = state.EventTime,
             OldestFailureAt = state.OldestFailureAt,
             DeferredCount = state.DeferredCount,
-            PendingCount = state.PendingCount + state.UnsupportedCount,
+            PendingCount = state.PendingCount,
             UnsupportedCount = state.UnsupportedCount,
             DeadletterCount = state.DeadletterCount,
-            FailedCount = state.FailedCount + state.DeadletterCount,
+            FailedCount = state.FailedCount + state.DeadletterCount + state.UnsupportedCount,
             StorageStatus = "ok"
         };
     }
