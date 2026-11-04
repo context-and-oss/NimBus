@@ -336,15 +336,14 @@ describe("EventsPanel status summary line", () => {
     });
 
   const endpointTotals = () =>
-    // failedCount already includes DeadLettered; Unsupported is added on top.
-    // pendingCount arrives with Unsupported folded in, which the line removes
-    // so the number matches what the Pending filter lists.
+    // failedCount already includes DeadLettered and Unsupported; pendingCount
+    // is Pending only, so the line shows both as sent.
     statusCountMock.mockResolvedValue({
       endpointId: "ep-1",
-      failedCount: 11,
+      failedCount: 13,
       unsupportedCount: 2,
       deferredCount: 3,
-      pendingCount: 19,
+      pendingCount: 17,
     });
 
   const renderPanel = (url = "/") =>

@@ -385,11 +385,8 @@ export function formatBucket(
 
 /**
  * Unresolved failures in endpoint status counts. The API's failedCount already includes
- * DeadLettered (Mapper.EndpointStatusCountFromEndpointStateCount), so only Unsupported is added.
+ * DeadLettered and Unsupported (Mapper.EndpointStatusCountFromEndpointStateCount).
  */
 export function failureBacklog(counts: api.EndpointStatusCount[]): number {
-  return counts.reduce(
-    (sum, c) => sum + (c.failedCount ?? 0) + (c.unsupportedCount ?? 0),
-    0,
-  );
+  return counts.reduce((sum, c) => sum + (c.failedCount ?? 0), 0);
 }

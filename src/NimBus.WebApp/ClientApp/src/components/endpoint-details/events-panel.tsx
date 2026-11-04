@@ -423,12 +423,7 @@ const EventsPanel = (props: EventsPanelProps) => {
         totals = {
           failed: failureBacklog([count]),
           deferred: count.deferredCount ?? 0,
-          // The API folds Unsupported into pendingCount, but Unsupported is
-          // already part of Failed and the Pending filter doesn't list it.
-          pending: Math.max(
-            0,
-            (count.pendingCount ?? 0) - (count.unsupportedCount ?? 0),
-          ),
+          pending: count.pendingCount ?? 0,
         };
       }
     } catch {

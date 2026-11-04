@@ -39,11 +39,11 @@ describe("Sidebar Failed badge", () => {
     vi.unstubAllGlobals();
   });
 
-  it("sums failed (which already includes dead-lettered) and unsupported counts across endpoints", async () => {
+  it("sums failed (which already includes dead-lettered and unsupported) across endpoints", async () => {
     stubFetch([
       {
         endpointId: "Crm",
-        failedCount: 20,
+        failedCount: 22,
         deadletterCount: 4,
         unsupportedCount: 2,
         deferredCount: 9,
