@@ -1,6 +1,7 @@
 #pragma warning disable CA1707, CA2007
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -99,7 +100,11 @@ public sealed class SessionStateEmulatorTests
 
         // A lookup peeks: the messages are still there, never delivered.
         await using var receiver = await Client.AcceptSessionAsync(Endpoint, Endpoint, session);
-        var received = await receiver.ReceiveMessagesAsync(10, TimeSpan.FromSeconds(5));
+        // One receive may return fewer messages than are available, so keep receiving.
+        var received = new List<ServiceBusReceivedMessage>();
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (received.Count < 2 && DateTime.UtcNow < deadline)
+            received.AddRange(await receiver.ReceiveMessagesAsync(10, TimeSpan.FromSeconds(2)));
         Assert.HasCount(2, received);
         Assert.IsTrue(received.All(m => m.DeliveryCount == 1), "A lookup must not count as a delivery.");
     }
