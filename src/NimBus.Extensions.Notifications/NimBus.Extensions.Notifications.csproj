@@ -13,7 +13,7 @@
   <ItemGroup>
     <!-- IHttpClientFactory / AddHttpClient for the Webhook, Teams and SendGrid (email) channels.
          Newtonsoft.Json, IServiceCollection and System.Net.Mail flow in transitively via NimBus.Core. -->
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup>
