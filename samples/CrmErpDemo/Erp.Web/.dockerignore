@@ -1,0 +1,9 @@
+# Aspire builds this app with `npm ci` followed by `COPY . .`. Keep local build output
+# out of the image, or a Windows node_modules overwrites the Linux one and breaks `vite build`.
+node_modules
+dist
+build
+.vite
+*.log
+*.stackdump
+tsconfig.tsbuildinfo
