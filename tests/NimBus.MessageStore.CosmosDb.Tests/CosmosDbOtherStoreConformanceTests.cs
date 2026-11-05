@@ -13,6 +13,16 @@ public sealed class CosmosDbSubscriptionStoreTests : SubscriptionStoreConformanc
 }
 
 [TestClass]
+public sealed class CosmosDbSubscriptionNotificationStoreTests : SubscriptionNotificationStoreConformanceTests
+{
+    protected override ISubscriptionStore CreateStore()
+        => CosmosDbStoreTestHarness.CreateStore();
+
+    protected override ISubscriptionNotificationStore NotificationStoreFor(ISubscriptionStore store)
+        => (ISubscriptionNotificationStore)store;
+}
+
+[TestClass]
 public sealed class CosmosDbEndpointMetadataStoreTests : EndpointMetadataStoreConformanceTests
 {
     protected override IEndpointMetadataStore CreateStore()
