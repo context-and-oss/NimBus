@@ -40,7 +40,7 @@ transport.
 | Gap | Where | Effect on the port |
 |---|---|---|
 | SQL and in-memory `GetSubscriptionsOnEndpointWithEventtype` ignore the event-type filter and return every subscription on the endpoint | `SqlServerSubscriptionStore.cs:59`, `InMemoryMessageStore.cs:658` | The notifier filters by event type itself |
-| SQL `UpdateSubscription` doesn't write `NotifiedAt`, although the column exists | `SqlServerSubscriptionStore.cs:62-75`, `Schema/0005_Subscriptions.sql:10` | Throttling through `UpdateSubscription` would never apply on SQL. The new claim method writes the column directly |
+| SQL `UpdateSubscription` doesn't write `NotifiedAt`, although the column exists | `SqlServerSubscriptionStore.cs:62-75`, `Schema/0005_Subscriptions.sql:10` | Throttling through `UpdateSubscription` would never apply on SQL. The new compare-and-set writes the column directly |
 | Cosmos `UpdateSubscription` stamps `NotifiedAt = now` and also re-queries the endpoint error list | `CosmosDbSubscriptionStore.cs:202-206` | Not usable as a conditional claim |
 | `ResolverService` already runs `maxConcurrentSessions` sessions in parallel, and Flex Consumption scales out | `deploy/bicep/deploy.core.bicep` (`AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions`) | Read-then-stamp as in DIS sends one mail per concurrent failure during a burst |
 
@@ -70,14 +70,15 @@ transport.
    `ISubscriptionNotificationStore` to `NimBus.MessageStore.Abstractions`:
 
    ```csharp
-   /// Atomically moves a subscription's NotifiedAt from expected to notifiedAt.
-   /// Returns false when the subscription is gone or NotifiedAt no longer equals expected.
-   Task<bool> TryClaimNotificationAsync(string subscriptionId, string? expectedNotifiedAt,
-       string notifiedAt, CancellationToken cancellationToken = default);
+   /// Sets NotifiedAt to notifiedAt only when it still equals expectedNotifiedAt
+   /// (null or empty = never notified). False when the subscription is gone or the value moved.
+   Task<bool> TrySetNotifiedAtAsync(string subscriptionId, string? expectedNotifiedAt,
+       string? notifiedAt, CancellationToken cancellationToken = default);
    ```
 
-   The flow is: read the subscription, check the `Frequency` window, claim, send. If sending
-   fails, release the claim with a conditional write back to the previous value. For
+   The flow is: read the subscription, check the `Frequency` window, claim the window by
+   setting `NotifiedAt` from the value just read to now, then send. If sending fails, release
+   the claim with a second compare-and-set back to the previous value. For
    `Frequency <= 0`, send without a claim and then stamp best-effort. `NotifiedAt` keeps its
    `yyyy-MM-dd HH:mm` UTC format so existing documents still parse; an unparsable value counts
    as "never notified" (DIS parity).
@@ -113,7 +114,7 @@ transport.
 
 ## Implementation
 
-### PR 1: `feat(storage): conditional subscription notification claim`
+### PR 1: `feat(storage): compare-and-set a subscription's NotifiedAt`
 
 - `src/NimBus.MessageStore.Abstractions/ISubscriptionNotificationStore.cs`: new interface, with
   XML docs.
@@ -123,17 +124,24 @@ transport.
 - SQL (`SqlServerSubscriptionStore`): one statement,
   `UPDATE … SET NotifiedAt = @New WHERE Id = @Id AND (NotifiedAt = @Expected OR (NotifiedAt IS NULL AND @Expected IS NULL))`,
   through the existing transient-translation shim; return `rows > 0`.
-- In-memory (`InMemoryMessageStore`): compare-and-swap under a lock.
-- Register `ISubscriptionNotificationStore` next to `ISubscriptionStore` in
-  `CosmosDbMessageStoreBuilderExtensions.cs:133`, `SqlServerMessageStoreBuilderExtensions.cs:63`
-  and `InMemoryMessageStoreServiceCollectionExtensions`.
-- Conformance (`src/NimBus.Testing/Conformance/SubscriptionStoreConformanceTests.cs`, written
-  first and failing):
-  - a claim from null succeeds once; a second claim with expected null fails;
-  - a claim with the current value succeeds; a stale expected value fails;
-  - a claim on a missing id returns false;
-  - the claimed `NotifiedAt` round-trips through `GetSubscriptionsOnEndpoint`;
-  - releasing (claim back to the previous value) restores it.
+- In-memory (`InMemoryMessageStore`): compare-and-swap with `ConcurrentDictionary.TryUpdate`
+  on a copy. Readers hold references to the stored instances, so mutating in place would
+  change a caller's earlier snapshot.
+- The composites (`CosmosDbClient`, `SqlServerMessageStore`) implement the interface and
+  forward. Register `ISubscriptionNotificationStore` next to `IHeartbeatHistoryStore` in
+  `CosmosDbMessageStoreBuilderExtensions` and `SqlServerMessageStoreBuilderExtensions`, by the
+  same cast. The in-memory store has no DI registration of store contracts.
+- Conformance: a new `SubscriptionNotificationStoreConformanceTests` suite, separate from
+  `SubscriptionStoreConformanceTests` so third-party providers' existing runs don't fail on a
+  cast. Written first and failing:
+  - a set from never-notified succeeds once; a second with expected null fails;
+  - a set with a stale snapshot fails (catches live-reference stores);
+  - a set with the current value succeeds;
+  - setting back to null releases the window;
+  - a set on a missing id returns false;
+  - other fields are unchanged;
+  - eight concurrent sets from the same value: exactly one wins.
+- Registration tests assert the aggregate resolves as `ISubscriptionNotificationStore`.
 
 ### PR 2: `feat(resolver): mail endpoint alert subscribers on failure`
 
