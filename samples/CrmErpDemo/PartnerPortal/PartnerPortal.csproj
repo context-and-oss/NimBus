@@ -15,7 +15,7 @@
   -->
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
-    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.2" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
   </ItemGroup>
 
   <ItemGroup>

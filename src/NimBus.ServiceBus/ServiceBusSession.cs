@@ -62,11 +62,11 @@ public class ServiceBusSession : IServiceBusSession
         }
         if (_sessionReceiver != null)
         {
-            return _sessionReceiver.CompleteMessageAsync(message.Message, cancellationToken);
+            return FromReceiver(() => _sessionReceiver.CompleteMessageAsync(message.Message, cancellationToken));
         }
         if (_processSessionArgs != null)
         {
-            return _processSessionArgs.CompleteMessageAsync(message.Message, cancellationToken);
+            return FromReceiver(() => _processSessionArgs.CompleteMessageAsync(message.Message, cancellationToken));
         }
 
         throw new InvalidOperationException(
@@ -81,11 +81,11 @@ public class ServiceBusSession : IServiceBusSession
         }
         if (_sessionReceiver != null)
         {
-            return _sessionReceiver.DeadLetterMessageAsync(message.Message, deadLetterReason, deadLetterErrorDescription, cancellationToken);
+            return FromReceiver(() => _sessionReceiver.DeadLetterMessageAsync(message.Message, deadLetterReason, deadLetterErrorDescription, cancellationToken));
         }
         if (_processSessionArgs != null)
         {
-            return _processSessionArgs.DeadLetterMessageAsync(message.Message, new System.Collections.Generic.Dictionary<string, object>(), deadLetterReason, deadLetterErrorDescription, cancellationToken);
+            return FromReceiver(() => _processSessionArgs.DeadLetterMessageAsync(message.Message, new System.Collections.Generic.Dictionary<string, object>(), deadLetterReason, deadLetterErrorDescription, cancellationToken));
         }
 
         throw new InvalidOperationException(
@@ -101,11 +101,11 @@ public class ServiceBusSession : IServiceBusSession
         }
         else if (_processSessionArgs != null)
         {
-            sessionData = await _processSessionArgs.GetSessionStateAsync(cancellationToken);
+            sessionData = await FromReceiver(() => _processSessionArgs.GetSessionStateAsync(cancellationToken));
         }
         else
         {
-            sessionData = await _sessionReceiver!.GetSessionStateAsync(cancellationToken);
+            sessionData = await FromReceiver(() => _sessionReceiver!.GetSessionStateAsync(cancellationToken));
         }
 
         return SessionState.FromBinaryData(sessionData);
@@ -121,11 +121,11 @@ public class ServiceBusSession : IServiceBusSession
         }
         else if (_processSessionArgs != null)
         {
-            await _processSessionArgs.SetSessionStateAsync(sessionData, cancellationToken);
+            await FromReceiver(() => _processSessionArgs.SetSessionStateAsync(sessionData, cancellationToken));
         }
         else
         {
-            await _sessionReceiver!.SetSessionStateAsync(sessionData, cancellationToken);
+            await FromReceiver(() => _sessionReceiver!.SetSessionStateAsync(sessionData, cancellationToken));
         }
     }
 
@@ -171,6 +171,41 @@ public class ServiceBusSession : IServiceBusSession
             throw serviceBusException;
         }
     }
+
+    // From Azure.Messaging.ServiceBus 7.21, a session receiver whose link was lost reports itself
+    // as closed, so settlement and session-state calls fail locally with ObjectDisposedException
+    // instead of the SessionLockLost ServiceBusException that earlier versions threw. Restore
+    // SessionLockLost so a lost lock is retried (see MessageContext) instead of dead-lettering a
+    // message that the broker redelivers to the next session owner.
+    private static async Task FromReceiver(Func<Task> call)
+    {
+        try
+        {
+            await call();
+        }
+        catch (ObjectDisposedException e) when (IsClosedReceiver(e))
+        {
+            throw SessionLockLost(e);
+        }
+    }
+
+    private static async Task<T> FromReceiver<T>(Func<Task<T>> call)
+    {
+        try
+        {
+            return await call();
+        }
+        catch (ObjectDisposedException e) when (IsClosedReceiver(e))
+        {
+            throw SessionLockLost(e);
+        }
+    }
+
+    private static bool IsClosedReceiver(ObjectDisposedException exception) =>
+        exception.ObjectName is nameof(ServiceBusReceiver) or nameof(ServiceBusSessionReceiver);
+
+    private static ServiceBusException SessionLockLost(ObjectDisposedException exception) =>
+        new("The session receiver is closed, so its session lock is lost.", ServiceBusFailureReason.SessionLockLost, innerException: exception);
 
     // The host formats the outermost exception first, as "<type>: <message> (<reason>). For
     // troubleshooting information, see ...", followed by any inner exceptions after " ---> ".
