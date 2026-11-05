@@ -100,6 +100,10 @@ transport.
    `From`, `FromName` ("NimBus"), `WebAppUrl`, `Timeout` (10 s), `IncludeErrorText` (true).
    When `Smtp:Host` or `From` is empty, the Resolver registers a no-op notifier and logs once
    at startup that alert mail is disabled. Existing deployments are unaffected until configured.
+   Invalid settings (a malformed `From`, a port outside 1–65535, a non-positive `Timeout`, a
+   relative `WebAppUrl`) also leave the no-op notifier in place and log an error: a bad alert
+   setting must never stop the Resolver from settling messages. A notifier the host registers
+   before `AddResolver` is kept (`TryAddSingleton`).
 8. **Mail content.** HTML with a plain-text alternate view; every value is HTML-encoded.
    - Subject: `[NimBus] {EndpointId}: {EventTypeId} failed` (or `dead-lettered`).
    - Body: endpoint, event type, event id, session id, status, UTC time, and the error text

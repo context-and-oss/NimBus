@@ -782,6 +782,10 @@ public class ResolverServiceTests
         /// for a write StaleWriteGuard refused because the row already holds a later outcome.</summary>
         public bool PendingUploadResult { get; set; } = true;
 
+        /// <summary>What <see cref="UploadFailedMessage"/> reports back: false stands for a
+        /// refused (stale) failure write.</summary>
+        public bool FailedUploadResult { get; set; } = true;
+
         public List<MessageEntity> StoredMessages { get; } = new();
         public List<(string EventId, MessageAuditEntity Audit)> StoredAudits { get; } = new();
         public List<UploadCall> PendingUploads { get; } = new();
@@ -812,7 +816,7 @@ public class ResolverServiceTests
         {
             if (UploadException is not null) return Task.FromException<bool>(UploadException);
             FailedUploads.Add(new UploadCall(eventId, sessionId, endpointId, content));
-            return Task.FromResult(true);
+            return Task.FromResult(FailedUploadResult);
         }
 
         public Task<bool> UploadDeadletteredMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
