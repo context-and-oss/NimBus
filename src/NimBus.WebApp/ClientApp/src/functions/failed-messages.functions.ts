@@ -67,15 +67,50 @@ export function periodOption(period: string): PeriodOption {
   );
 }
 
+/** The browser's IANA time zone, which the server aligns the chart's bars to. */
+export function browserTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Bars follow the browser's wall clock: they start at local midnight and step in whole
+// buckets of local time (every bucket size divides a day). Mirrors FailedImplementation.ToUtc:
+// Date moves a time skipped by a daylight-saving change forward and resolves a repeated time
+// to the earlier instant.
+
+/** The local wall-clock time `minutes` past midnight of `at`'s local day (may overflow). */
+function localTime(at: Date, minutes: number): Date {
+  return new Date(at.getFullYear(), at.getMonth(), at.getDate(), 0, minutes);
+}
+
+/** Minutes past local midnight of the bucket boundary at or before `at`. */
+function flooredMinutes(at: Date, bucketMinutes: number): number {
+  const minutes = at.getHours() * 60 + at.getMinutes();
+  return minutes - (minutes % bucketMinutes);
+}
+
+/** End of the bar starting at `start`: one bucket of local time later. */
+export function bucketEnd(start: Date, bucketMinutes: number): Date {
+  return localTime(
+    start,
+    start.getHours() * 60 + start.getMinutes() + bucketMinutes,
+  );
+}
+
 /** The window a preset covers: it ends at the end of the bucket holding `now`. */
 export function resolveWindow(
   period: string,
   now: Date,
 ): { from: Date; to: Date } {
   const option = periodOption(period);
-  const bucketMs = option.bucketMinutes * 60_000;
-  const to = Math.floor(now.getTime() / bucketMs) * bucketMs + bucketMs;
-  return { from: new Date(to - option.spanMinutes * 60_000), to: new Date(to) };
+  const end = flooredMinutes(now, option.bucketMinutes) + option.bucketMinutes;
+  return {
+    from: localTime(now, end - option.spanMinutes),
+    to: localTime(now, end),
+  };
 }
 
 // Mirror FailedImplementation.MaxBuckets and CustomBucketSizes.
@@ -113,10 +148,12 @@ export function rangeWindow(
     CUSTOM_BUCKET_MINUTES.find(
       (m) => Math.floor(span / (m * 60_000)) <= MAX_CUSTOM_BUCKETS,
     ) ?? CUSTOM_BUCKET_MINUTES[CUSTOM_BUCKET_MINUTES.length - 1];
-  const bucketMs = bucketMinutes * 60_000;
+  const last = flooredMinutes(custom.to, bucketMinutes);
+  let to = localTime(custom.to, last);
+  if (to < custom.to) to = localTime(custom.to, last + bucketMinutes);
   return {
-    from: new Date(Math.floor(custom.from.getTime() / bucketMs) * bucketMs),
-    to: new Date(Math.ceil(custom.to.getTime() / bucketMs) * bucketMs),
+    from: localTime(custom.from, flooredMinutes(custom.from, bucketMinutes)),
+    to,
     bucketMinutes,
   };
 }
@@ -242,10 +279,7 @@ export function selectedWindow(
   const start = new Date(values.bucket);
   if (Number.isNaN(start.getTime())) return undefined;
   const { bucketMinutes } = rangeWindow(values, new Date());
-  return {
-    from: start,
-    to: new Date(start.getTime() + bucketMinutes * 60_000),
-  };
+  return { from: start, to: bucketEnd(start, bucketMinutes) };
 }
 
 /** The URL values for a list window (undefined clears it). Always drops the legacy `bucket`. */
@@ -367,20 +401,31 @@ export function deferredCountsBySession(
   return counts;
 }
 
-/** Axis / tooltip label for a bucket start. Carries the date once buckets span days. */
+/**
+ * Axis / tooltip label for a bucket start, with its range when `end` is given (a bar ends
+ * where the next starts). Carries the date once buckets span days.
+ */
 export function formatBucket(
   start: moment.Moment | Date | undefined,
   bucketMinutes: number,
-  withEnd = false,
+  end?: moment.Moment | Date,
 ): string {
   if (!start) return "";
   const m = moment(start);
   if (bucketMinutes >= 1440) return m.format("DD MMM");
   const label =
     bucketMinutes >= 180 ? m.format("ddd DD HH:mm") : m.format("HH:mm");
-  if (!withEnd) return label;
-  const end = m.clone().add(bucketMinutes, "minutes");
-  return `${m.format("DD/MM HH:mm")}–${end.format("HH:mm")}`;
+  if (!end) return label;
+  return `${m.format("DD/MM HH:mm")}–${moment(end).format("HH:mm")}`;
+}
+
+/** Where the bar at `index` ends: the next bar's start, or the window's end for the last. */
+export function barEnd(
+  histogram: Pick<api.FailedHistogram, "buckets" | "to"> | undefined,
+  index: number,
+): Date | undefined {
+  const next = histogram?.buckets?.[index + 1]?.start ?? histogram?.to;
+  return next ? moment(next).toDate() : undefined;
 }
 
 /**

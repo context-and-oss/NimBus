@@ -4867,13 +4867,22 @@ components:
           format: date-time
           nullable: true
           description: Custom window end; used with `from` instead of `period`.
+        timeZone:
+          type: string
+          nullable: true
+          description: >-
+            IANA time zone (for example Europe/Berlin) the bars follow: they start
+            at local midnight and step in whole buckets of local time. UTC when
+            absent or unknown.
     FailedHistogram:
       title: FailedHistogram
       type: object
       properties:
         bucketMinutes:
           type: integer
-          description: Bucket size in minutes.
+          description: >-
+            Nominal bucket size in minutes. Each bucket ends where the next one
+            starts, so a bar across a daylight-saving change is shorter or longer.
         from:
           type: string
           format: date-time

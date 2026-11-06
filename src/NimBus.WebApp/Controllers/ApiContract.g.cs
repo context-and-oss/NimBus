@@ -9506,6 +9506,7 @@ namespace NimBus.WebApp.ManagementApi
         private Period _period;
         private System.DateTime? _from;
         private System.DateTime? _to;
+        private string _timeZone;
 
         [Newtonsoft.Json.JsonProperty("filter", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public FailedSearchFilter Filter    {
@@ -9566,6 +9567,22 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// IANA time zone (for example Europe/Berlin) the bars follow: they start at local midnight and step in whole buckets of local time. UTC when absent or unknown.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("timeZone", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TimeZone    {
+            get { return _timeZone; }
+            set
+            {
+                if (_timeZone != value)
+                {
+                    _timeZone = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -9608,7 +9625,7 @@ namespace NimBus.WebApp.ManagementApi
         private bool _truncated;
 
         /// <summary>
-        /// Bucket size in minutes.
+        /// Nominal bucket size in minutes. Each bucket ends where the next one starts, so a bar across a daylight-saving change is shorter or longer.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("bucketMinutes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public int BucketMinutes    {
