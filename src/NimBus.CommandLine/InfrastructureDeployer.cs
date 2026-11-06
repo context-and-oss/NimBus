@@ -460,6 +460,7 @@ internal sealed class InfrastructureDeployer
             arguments.Add(FormattableString.Invariant($"{resolverMaxInstances.ParameterName}={resolverMaxInstances.Value}"));
         }
 
+        AddAlertMailParameters(arguments, options.AlertMail);
         AddServiceBusParameters(arguments, serviceBus);
         if (privateNetwork is not null)
         {
@@ -496,11 +497,52 @@ internal sealed class InfrastructureDeployer
             command.AddSecureParameter("sqlAdminPassword", options.SqlAdminPassword ?? string.Empty);
         }
 
+        if (options.AlertMail?.SmtpPassword is { } alertMailSmtpPassword)
+        {
+            command.AddSecureParameter("alertMailSmtpPassword", alertMailSmtpPassword);
+        }
+
         await _az.EnsureSuccessAsync(
             command.BuildArguments(),
             _context.DeployDirectory,
             cancellationToken,
             "Core infrastructure deployment failed.").ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Endpoint alert mail for the Resolver. Nothing is passed when it is off, so the template
+    /// leaves the settings out; the Resolver's app settings are template-owned, so that also
+    /// turns off alert mail an earlier run turned on. Unset optional values keep the template
+    /// defaults. The password is a secure parameter, never a process argument.
+    /// </summary>
+    private static void AddAlertMailParameters(List<string> arguments, AlertMailDeployment? alertMail)
+    {
+        if (alertMail is null)
+        {
+            return;
+        }
+
+        arguments.Add($"alertMailSmtpHost={alertMail.SmtpHost}");
+        arguments.Add($"alertMailFrom={alertMail.From}");
+        if (alertMail.SmtpPort is { } port)
+        {
+            arguments.Add(FormattableString.Invariant($"alertMailSmtpPort={port}"));
+        }
+
+        if (alertMail.SmtpUseSsl is { } useSsl)
+        {
+            arguments.Add($"alertMailSmtpUseSsl={(useSsl ? "true" : "false")}");
+        }
+
+        if (alertMail.SmtpUsername is { } username)
+        {
+            arguments.Add($"alertMailSmtpUsername={username}");
+        }
+
+        if (alertMail.WebAppUrl is { } webAppUrl)
+        {
+            arguments.Add($"alertMailWebAppUrl={webAppUrl}");
+        }
     }
 
     private async Task DeployWebAppInfrastructureAsync(

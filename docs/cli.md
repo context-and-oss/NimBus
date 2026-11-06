@@ -123,6 +123,16 @@ before they are released.
 | `--service-bus-capacity` | No | Premium messaging units: `1`, `2`, `4`, `8` or `16`. Defaults to the existing namespace's capacity, otherwise 1. |
 | `--service-bus-namespace-name` | No | Override the namespace name (default `sb-{solution-id}-{environment}`), e.g. a new Premium namespace next to the Standard one it replaces. Recorded, so `nb topology apply` follows it. |
 | `--dns-wait` | No | Minutes to wait for this machine to resolve the private endpoints before locking at the end of a transition (default 10; `0` checks once). |
+| `--alert-mail-smtp-host` | No | SMTP server the Resolver mails [endpoint alert](notifications.md#endpoint-alerts-alerts-tab) subscribers through, e.g. `smtp.azurecomm.net`. Alert mail is on only with both this and `--alert-mail-from`. |
+| `--alert-mail-from` | With `--alert-mail-smtp-host` | Sender address of endpoint alert mail. |
+| `--alert-mail-smtp-port` | No | SMTP port (1–65535). Default 587. |
+| `--alert-mail-smtp-use-ssl` | No | `true` (default) or `false`. |
+| `--alert-mail-smtp-username` | No | SMTP user name; the password is read from `NIMBUS_ALERT_MAIL_SMTP_PASSWORD`. |
+| `--alert-mail-webapp-url` | No | Public WebApp URL for the links in each mail. Default `https://webapp-{solution-id}-{environment}-management.azurewebsites.net`. |
+
+**Endpoint alert mail.** The alert mail options are not recorded. The Resolver's app settings are
+replaced on every run, so a run without `--alert-mail-smtp-host` and `--alert-mail-from` turns
+alert mail off; pass the same options on every `nb infra apply` and `nb setup`.
 
 **Private networking.** Private mode deploys Service Bus Premium and creates every data
 service and both apps with public network access disabled. `nb` checks the subnets'
@@ -142,6 +152,7 @@ Deployment secrets are intentionally not accepted as command-line options becaus
 | `NIMBUS_SQL_CONNECTION_STRING` | `--storage-provider sqlserver --sql-mode external` |
 | `NIMBUS_SQL_ADMIN_PASSWORD` | `--storage-provider sqlserver --sql-mode provision` |
 | `NIMBUS_IDENTITY_ADMIN_PASSWORD` | `nb setup` is given `--identity-admin-email` |
+| `NIMBUS_ALERT_MAIL_SMTP_PASSWORD` | The SMTP server for `--alert-mail-smtp-host` needs a password |
 
 Canceling `nb` terminates its local Azure CLI process tree before removing the
 ephemeral parameter file. An ARM deployment that Azure already accepted may
@@ -295,7 +306,7 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, `--resolver-max-sessions`, `--resolver-max-instances`, `--management-plan-sku`, the private networking options, `--assembly`, and `--from-source`. On a private deployment the topology and app steps each check first that this machine resolves the private endpoints, so the check runs after the infrastructure step has created them. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, `--resolver-max-sessions`, `--resolver-max-instances`, `--management-plan-sku`, the private networking options, the `--alert-mail-*` options, `--assembly`, and `--from-source`. On a private deployment the topology and app steps each check first that this machine resolves the private endpoints, so the check runs after the infrastructure step has created them. SQL, bootstrap-admin and SMTP secrets use the environment variables documented under `nb infra apply`.
 
 Like the individual commands, this needs no repository clone. Deploying your own event
 catalog means passing `--platform-package`: the topology step provisions your endpoints and

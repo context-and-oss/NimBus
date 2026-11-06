@@ -39,6 +39,7 @@ internal static class InfraCommands
                 var resolverMaxInstances = applyCommand.Option("--resolver-max-instances <N>", "Resolver Function App instance ceiling. Elastic Premium: 0 (no cap, default) to 10, applied as functionAppScaleLimit. Flex Consumption: 1-1000, applied as maximumInstanceCount (default 100).", CommandOptionType.SingleValue);
                 var managementPlanSku = applyCommand.Option("--management-plan-sku <SKU>", "SKU for the management App Service Plan hosting the WebApp. Defaults to the existing plan's SKU when one is deployed, otherwise 'B1' for dev/development and 'S1' for other environments.", CommandOptionType.SingleValue);
                 var networkOptions = NetworkCommandOptions.Register(applyCommand);
+                var alertMailOptions = AlertMailCommandOptions.Register(applyCommand);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
@@ -54,6 +55,7 @@ internal static class InfraCommands
                     var network = networkOptions.Build();
                     var serviceBusCapacity = networkOptions.ServiceBusCapacity;
                     var secrets = DeploymentSecrets.Load();
+                    var alertMail = alertMailOptions.Build(secrets);
 
                     if (providerChoice == StorageProviderChoice.SqlServer)
                     {
@@ -84,7 +86,8 @@ internal static class InfraCommands
                         Network: network,
                         ServiceBusCapacity: serviceBusCapacity,
                         ServiceBusNamespaceName: networkOptions.ServiceBusNamespaceName,
-                        DnsWait: networkOptions.DnsWait);
+                        DnsWait: networkOptions.DnsWait,
+                        AlertMail: alertMail);
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;

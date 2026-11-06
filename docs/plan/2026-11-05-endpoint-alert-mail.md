@@ -209,10 +209,14 @@ Tests in `tests/NimBus.Resolver.Tests`, written failing first:
   Azure deployment leaves alert mail off). `CrmErpDemo.AppHost.Tests/AlertMailTests` pins both.
   The SMTP password is passed only through `resolverSecretSettings`, guarded by
   `DeploymentSecretTests.CoreBicep_KeepsTheAlertMailPasswordSecure`.
-- Gap found while building it: `nb setup` passes a fixed parameter list to `deploy.core.bicep`,
-  so it doesn't pass the `alertMail*` parameters, and because the Resolver's app settings are
-  replaced on every deploy, a later `nb setup` turns alert mail off. Follow-up: `nb setup` flags
-  for the alert mail parameters, with the password from the deployment-secret source.
+- Gap found while building it: `nb setup` passed a fixed parameter list to `deploy.core.bicep`,
+  so a later `nb setup` turned alert mail off (the Resolver's app settings are replaced on every
+  deploy). Closed in the same branch: `nb setup` and `nb infra apply` take `--alert-mail-smtp-host`,
+  `--alert-mail-from`, `--alert-mail-smtp-port`, `--alert-mail-smtp-use-ssl`,
+  `--alert-mail-smtp-username` and `--alert-mail-webapp-url` (`AlertMailCommandOptions`, parsed
+  before any Azure call), with the password from `NIMBUS_ALERT_MAIL_SMTP_PASSWORD` passed as a
+  secure parameter. The options are not recorded on the resource group, so each run must repeat
+  them, like the Resolver capacity options.
 - Docs: a "Endpoint alerts" section in `docs/notifications.md`, separating the two mechanisms
   (adapter-side `AddNimBusNotifications` channels versus Resolver-side Alerts-tab subscriptions);
   the configuration table; and the deployment guide.

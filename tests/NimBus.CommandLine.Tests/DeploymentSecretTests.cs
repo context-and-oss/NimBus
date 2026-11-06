@@ -16,6 +16,7 @@ public sealed class DeploymentSecretTests
             [DeploymentSecrets.SqlConnectionStringEnvironmentVariable] = "Server=example;Password=sql-secret",
             [DeploymentSecrets.SqlAdminPasswordEnvironmentVariable] = "admin-secret",
             [DeploymentSecrets.IdentityAdminPasswordEnvironmentVariable] = "identity-secret",
+            [DeploymentSecrets.AlertMailSmtpPasswordEnvironmentVariable] = "smtp-secret",
         };
 
         var secrets = DeploymentSecrets.Load(name => values.GetValueOrDefault(name));
@@ -23,6 +24,7 @@ public sealed class DeploymentSecretTests
         Assert.Equal(values[DeploymentSecrets.SqlConnectionStringEnvironmentVariable], secrets.SqlConnectionString);
         Assert.Equal(values[DeploymentSecrets.SqlAdminPasswordEnvironmentVariable], secrets.SqlAdminPassword);
         Assert.Equal(values[DeploymentSecrets.IdentityAdminPasswordEnvironmentVariable], secrets.IdentityAdminPassword);
+        Assert.Equal(values[DeploymentSecrets.AlertMailSmtpPasswordEnvironmentVariable], secrets.AlertMailSmtpPassword);
     }
 
     [Fact]
@@ -33,6 +35,7 @@ public sealed class DeploymentSecretTests
         Assert.Null(secrets.SqlConnectionString);
         Assert.Null(secrets.SqlAdminPassword);
         Assert.Null(secrets.IdentityAdminPassword);
+        Assert.Null(secrets.AlertMailSmtpPassword);
     }
 
     [Fact]
@@ -43,6 +46,7 @@ public sealed class DeploymentSecretTests
             [DeploymentSecrets.SqlConnectionStringEnvironmentVariable] = "sql-connection-secret",
             [DeploymentSecrets.SqlAdminPasswordEnvironmentVariable] = "sql-password-secret",
             [DeploymentSecrets.IdentityAdminPasswordEnvironmentVariable] = "identity-password-secret",
+            [DeploymentSecrets.AlertMailSmtpPasswordEnvironmentVariable] = "smtp-password-secret",
             ["PATH"] = "expected-path",
         };
 
@@ -51,6 +55,7 @@ public sealed class DeploymentSecretTests
         Assert.DoesNotContain(DeploymentSecrets.SqlConnectionStringEnvironmentVariable, environment.Keys);
         Assert.DoesNotContain(DeploymentSecrets.SqlAdminPasswordEnvironmentVariable, environment.Keys);
         Assert.DoesNotContain(DeploymentSecrets.IdentityAdminPasswordEnvironmentVariable, environment.Keys);
+        Assert.DoesNotContain(DeploymentSecrets.AlertMailSmtpPasswordEnvironmentVariable, environment.Keys);
         Assert.Equal("expected-path", environment["PATH"]);
     }
 

@@ -343,7 +343,18 @@ alert mail off; they never stop the Resolver.
 every message, so any address works; open the `mailpit` resource's URL in the Aspire dashboard to
 read the mail.
 
-**In Azure**, pass the `alertMail*` parameters to `deploy/bicep/deploy.core.bicep`
-([deployment guide](deployment.md#41-core-infrastructure)). `nb setup` doesn't pass them yet, and
-the Resolver's app settings are replaced on every deploy, so a later `nb setup` turns alert mail
-off again.
+**In Azure**, pass the alert mail options to `nb setup` or `nb infra apply`, with the SMTP
+password in `NIMBUS_ALERT_MAIL_SMTP_PASSWORD`:
+
+```bash
+export NIMBUS_ALERT_MAIL_SMTP_PASSWORD='<smtp password>'
+nb setup --solution-id nimbus --environment prod --resource-group rg-nimbus-prod \
+  --alert-mail-smtp-host smtp.azurecomm.net \
+  --alert-mail-smtp-username '<smtp user name>' \
+  --alert-mail-from alerts@contoso.com
+```
+
+The Resolver's app settings are replaced on every deploy, so pass the same options every time: a
+run without them turns alert mail off. Deploying the Bicep directly takes the matching `alertMail*`
+parameters ([deployment guide](deployment.md#41-core-infrastructure)). See the [CLI reference](cli.md)
+for every option.
