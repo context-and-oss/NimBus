@@ -299,7 +299,7 @@ Quotes, Price Lists, Invoices, Payments, Purchase Orders are subsets of the abov
 
 ```
 samples/CrmErpDemo/
-  CrmErpDemo.AppHost/        Aspire host (SQL Server + DbGate + everything below)
+  CrmErpDemo.AppHost/        Aspire host (SQL Server + DbGate + Mailpit + everything below)
   CrmErpDemo.Contracts/      Shared events + endpoints + CrmErpPlatformConfiguration
   CrmErpDemo.Provisioner/    Code-first SB topology (CrmEndpoint, ErpEndpoint)
   Crm.Api/                   ASP.NET Core minimal API + EF Core SQL Server
@@ -373,6 +373,7 @@ In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver
 | SQL Server container + DbGate | Azure SQL (`crm`, `erp`, `nimbus`) on the Basic tier, Entra-only; each app's identity gets `db_owner` |
 | Vite dev servers for crm-web / erp-web | `crm-api` and `erp-api` serve the built UIs from `wwwroot` |
 | Local-dev auth bypass on nimbus-ops | NimBus Identity sign-in with a bootstrap admin |
+| Mailpit catches the Resolver's endpoint alert mail | No Mailpit; endpoint alert mail is off |
 | crm-web and erp-web are anonymous | crm-web and erp-web require sign-in with the nimbus-ops accounts; the adapters present a generated service key |
 | Provisioner runs before the subscribers | Provisioner is a manually started Container Apps job |
 | enrichment-agent signs in through the local-dev bypass | enrichment-agent signs in with an agent API key issued in nimbus-ops (Spec 039) |
@@ -550,6 +551,20 @@ erp-web (Error mode / Service mode toggle)
    Flipping **Service mode** ON instead rejects inbound messages in middleware, which dead-letters
    them immediately: each produces an **Error** alert and a **Critical** **dead-lettered** alert.
 5. Turn the toggles OFF to stop new alerts; click **Clear** to empty the panel.
+
+### Endpoint alert mail (Alerts tab → Mailpit)
+
+The Resolver also mails the people who subscribe on an endpoint's **Alerts** tab in nimbus-ops
+([how it works](../../docs/notifications.md#endpoint-alerts-alerts-tab)). Locally it sends to the
+**mailpit** container, which catches every message, so any address works.
+
+1. In **nimbus-ops**, open **Endpoints → ErpEndpoint → Alerts** and subscribe an address
+   (type *Mail*, frequency *Hourly*).
+2. Flip **Error mode** ON in **erp-web** and create an account in **crm-web**.
+3. Open **mailpit** from the Aspire dashboard: one mail arrives, `[NimBus] ErpEndpoint: … failed`,
+   with links back to the event and the endpoint. Further failures within the hour send nothing.
+
+The Azure deployment has no Mailpit and leaves alert mail off.
 
 ### Failure reasons (Integration Intelligence showcase)
 

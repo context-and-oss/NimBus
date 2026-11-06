@@ -13,6 +13,10 @@ routing, rate limiting, and deduplication so a cascading outage cannot bury the 
 > wires the Webhook channel onto its ERP adapter — flip a failure toggle and watch alerts appear in
 > the web UI.
 
+> **Two alert mechanisms.** This extension runs inside an adapter and sends to recipients fixed
+> in code. Separately, the Resolver mails the people who subscribe on an endpoint's **Alerts** tab
+> in the management WebApp; see [Endpoint alerts (Alerts tab)](#endpoint-alerts-alerts-tab).
+
 ## Quick start
 
 ```csharp
@@ -271,3 +275,75 @@ INotificationRouter             (severity filter → dedup → rate limit → st
 
 Adding a channel never requires touching the observer or the core handler — new channels are plain
 `INotificationChannel` implementations registered through the builder.
+
+## Endpoint alerts (Alerts tab)
+
+The management WebApp's endpoint page has an **Alerts** tab where an endpoint Owner subscribes an
+email address to the endpoint. The Resolver mails those subscribers; no adapter code is involved.
+
+| | Notification channels (above) | Endpoint alerts |
+|---|---|---|
+| Runs in | the adapter (`AddNimBusNotifications`) | the Resolver |
+| Recipients | fixed in code (`EmailChannelOptions.To`) | each subscription's address, managed in the WebApp |
+| Triggers | handler failure, dead-letter, session block, circuit change | a recorded Failed or DeadLettered outcome |
+| Delivery | Webhook, Teams, Email (SendGrid or SMTP) | Email over SMTP |
+
+### When a subscriber is mailed
+
+After the Resolver records an outcome and completes the message, it mails the endpoint's
+subscribers when the outcome is **Failed** or **DeadLettered** and it changed the endpoint's
+state. A late duplicate that changed nothing sends no mail. A subscription gets the mail when:
+
+- its type includes `mail` (`mail`, or a `;`/`,` list such as `mail;teams`);
+- its event-type filter is empty or contains the event's type (exact match);
+- it has no payload filter. Payload filters aren't evaluated, so those subscriptions are skipped
+  with a warning in the Resolver log.
+
+Webhook and Teams subscriptions aren't delivered yet.
+
+**Frequency.** Each subscription is mailed at most once per its frequency (hourly, daily or weekly
+in the WebApp; stored in seconds). Failures inside the window are not mailed and not summarized
+later. Several Resolver instances can process failures at the same time, so the Resolver claims the
+window in the store before it sends: a burst of failures sends one mail. If delivery fails, the
+window is released and the next failure tries again. A frequency of `0` mails every failure.
+
+**Content.** The subject is `[NimBus] {Endpoint}: {EventType} failed` (or `was dead-lettered`). The
+mail has a plain-text and an HTML part with the endpoint, event type, event ID, session ID, status,
+time, the error text (cut to 500 characters), and links to the event and the endpoint in the
+WebApp. The event payload is never included.
+
+Notifying is best-effort and happens after the message is settled: a slow or failing mail server
+never delays or dead-letters a message. Failures are logged under `NimBus.Resolver.Alerts`.
+
+### Configuration
+
+Alert mail is off until both `Smtp:Host` and `From` are set. Settings live under
+`NimBus:Alerts:Mail` on the Resolver (app settings use `__`, for example
+`NimBus__Alerts__Mail__Smtp__Host`).
+
+| Setting | Default | Notes |
+|---|---|---|
+| `Smtp:Host` | (unset) | SMTP server, e.g. `smtp.azurecomm.net` (Azure Communication Services), `smtp.office365.com`, `smtp.sendgrid.net` |
+| `Smtp:Port` | `587` | |
+| `Smtp:UseSsl` | `true` | |
+| `Smtp:Username` | (unset) | Omit for an anonymous relay |
+| `Smtp:Password` | (unset) | Keep it in a secret store |
+| `From` | (unset) | Sender address; must be a valid address the server may send as |
+| `FromName` | `NimBus` | Sender display name |
+| `WebAppUrl` | (unset) | Public WebApp URL for the links; no links when unset |
+| `Timeout` | `00:00:10` | Per delivery |
+| `IncludeErrorText` | `true` | Set `false` if error text may contain personal data |
+
+The Resolver logs at startup whether alert mail is on. Invalid settings (an invalid `From`, a port
+outside 1–65535, a non-positive `Timeout`, a relative `WebAppUrl`) are logged as an error and leave
+alert mail off; they never stop the Resolver.
+
+**Locally**, both Aspire AppHosts (`src/NimBus.AppHost` and the CRM/ERP demo) start a
+[Mailpit](https://mailpit.axllent.org/) container and point the Resolver at it. Mailpit accepts
+every message, so any address works; open the `mailpit` resource's URL in the Aspire dashboard to
+read the mail.
+
+**In Azure**, pass the `alertMail*` parameters to `deploy/bicep/deploy.core.bicep`
+([deployment guide](deployment.md#41-core-infrastructure)). `nb setup` doesn't pass them yet, and
+the Resolver's app settings are replaced on every deploy, so a later `nb setup` turns alert mail
+off again.

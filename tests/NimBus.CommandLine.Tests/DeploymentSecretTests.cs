@@ -244,6 +244,19 @@ public sealed class DeploymentSecretTests
         Assert.DoesNotContain("output connectionString", cosmos, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void CoreBicep_KeepsTheAlertMailPasswordSecure()
+    {
+        var coreDeployment = ReadNormalized(Path.Combine(FindRepositoryRoot(), "deploy", "bicep", "deploy.core.bicep"));
+
+        Assert.Contains("@secure()\nparam alertMailSmtpPassword string", coreDeployment, StringComparison.Ordinal);
+        // Only the secure settings object may carry it: the plain settings array is kept in
+        // the nested deployment's history.
+        Assert.Contains("NimBus__Alerts__Mail__Smtp__Password: alertMailSmtpPassword", coreDeployment, StringComparison.Ordinal);
+        Assert.DoesNotContain("value: alertMailSmtpPassword", coreDeployment, StringComparison.Ordinal);
+        Assert.Contains("alertMailResolverSecretSettings)", coreDeployment, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

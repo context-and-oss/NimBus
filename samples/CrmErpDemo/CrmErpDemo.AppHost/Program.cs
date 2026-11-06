@@ -267,6 +267,22 @@ if (isPublish)
     resolver.WithEnvironment("EventGrid__WebhookKey", flowWebhookKey);
     nimbusOps.WithEnvironment("EventGrid__WebhookKey", flowWebhookKey);
 }
+else
+{
+    // Endpoint alert mail (the Alerts tab on an endpoint). Locally the Resolver sends it to
+    // Mailpit, which catches every message and shows it in its web UI, so subscribing any
+    // address works without a real mail server. The Azure deployment leaves alert mail off.
+    var mailpit = builder.AddContainer("mailpit", "axllent/mailpit", "v1.33.0")
+        .WithHttpEndpoint(targetPort: 8025, name: "http")
+        .WithEndpoint(targetPort: 1025, name: "smtp", scheme: "tcp");
+    var smtp = mailpit.GetEndpoint("smtp");
+    resolver
+        .WithEnvironment("NimBus__Alerts__Mail__Smtp__Host", smtp.Property(EndpointProperty.Host))
+        .WithEnvironment("NimBus__Alerts__Mail__Smtp__Port", smtp.Property(EndpointProperty.Port))
+        .WithEnvironment("NimBus__Alerts__Mail__Smtp__UseSsl", "false")
+        .WithEnvironment("NimBus__Alerts__Mail__From", "nimbus-alerts@crmerp-demo.example")
+        .WithEnvironment("NimBus__Alerts__Mail__WebAppUrl", nimbusOps.GetEndpoint("https"));
+}
 
 // Provider-specific wiring. The WebApp/Resolver pick their backend off NimBus__StorageProvider;
 // we set it explicitly so the AppHost CLI flag wins over the runtime auto-detect fallback.

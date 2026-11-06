@@ -159,6 +159,23 @@ param serviceBusCapacity int = 1
 // one it replaces (spec 034 §6, option A). Empty means sb-{solutionId}-{environment}.
 param serviceBusNamespaceName string = ''
 
+// Endpoint alert mail: the Resolver mails the subscribers on an endpoint's Alerts tab over
+// SMTP (Azure Communication Services, Microsoft 365, a SendGrid relay). Off unless both
+// alertMailSmtpHost and alertMailFrom are set. The Resolver's app settings are replaced on
+// every deploy, so pass these on every deploy; settings added by hand are removed.
+param alertMailSmtpHost string = ''
+@minValue(1)
+@maxValue(65535)
+param alertMailSmtpPort int = 587
+param alertMailSmtpUseSsl bool = true
+param alertMailSmtpUsername string = ''
+@secure()
+param alertMailSmtpPassword string = ''
+param alertMailFrom string = ''
+// The management WebApp's public URL, linked from each mail. Empty means the default
+// https://webapp-{solutionId}-{environment}-management.azurewebsites.net.
+param alertMailWebAppUrl string = ''
+
 //##############################################
 // Define names Azure resource names
 //##############################################
@@ -427,7 +444,40 @@ var cosmosResolverSetting = storageProvider == 'cosmos' ? [
   }
 ] : []
 
-var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, cosmosResolverSetting)
+var alertMailEnabled = !empty(alertMailSmtpHost) && !empty(alertMailFrom)
+var effectiveAlertMailWebAppUrl = empty(alertMailWebAppUrl)
+  ? 'https://webapp-${toLower(solutionId)}-${toLower(environment)}-management.azurewebsites.net'
+  : alertMailWebAppUrl
+
+var alertMailResolverSettings = alertMailEnabled ? concat([
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__Host'
+    value: alertMailSmtpHost
+  }
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__Port'
+    value: string(alertMailSmtpPort)
+  }
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__UseSsl'
+    value: string(alertMailSmtpUseSsl)
+  }
+  {
+    name: 'NimBus__Alerts__Mail__From'
+    value: alertMailFrom
+  }
+  {
+    name: 'NimBus__Alerts__Mail__WebAppUrl'
+    value: effectiveAlertMailWebAppUrl
+  }
+], empty(alertMailSmtpUsername) ? [] : [
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__Username'
+    value: alertMailSmtpUsername
+  }
+]) : []
+
+var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, cosmosResolverSetting, alertMailResolverSettings)
 
 // Secrets must remain secure across the nested module boundary. Passing them in
 // the ordinary settings array would retain their values in nested deployment
@@ -450,10 +500,15 @@ var sqlResolverSecretSettings = storageProvider == 'sqlserver' && sqlMode == 'pr
   SqlConnection: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;'
 } : {}
 
+var alertMailResolverSecretSettings = alertMailEnabled && !empty(alertMailSmtpPassword) ? {
+  NimBus__Alerts__Mail__Smtp__Password: alertMailSmtpPassword
+} : {}
+
 var resolverSecretSettings = union(
   sharedResolverSecretSettings,
   elasticPremiumSecretSettings,
-  sqlResolverSecretSettings)
+  sqlResolverSecretSettings,
+  alertMailResolverSecretSettings)
 
 //##############################################
 //# Private endpoints for the data services (private mode only)

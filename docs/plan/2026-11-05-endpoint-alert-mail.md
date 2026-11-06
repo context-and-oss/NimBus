@@ -205,6 +205,14 @@ Tests in `tests/NimBus.Resolver.Tests`, written failing first:
   `sharedResolverSettings` only when the host is set. Resolver app settings are template-owned
   and replaced on every deploy (comment at `deploy.core.bicep:396-401`), so they must live in
   the template, not be set by hand.
+- As built: Mailpit is pinned to `v1.33.0`, and the CRM/ERP demo adds it only to local runs (its
+  Azure deployment leaves alert mail off). `CrmErpDemo.AppHost.Tests/AlertMailTests` pins both.
+  The SMTP password is passed only through `resolverSecretSettings`, guarded by
+  `DeploymentSecretTests.CoreBicep_KeepsTheAlertMailPasswordSecure`.
+- Gap found while building it: `nb setup` passes a fixed parameter list to `deploy.core.bicep`,
+  so it doesn't pass the `alertMail*` parameters, and because the Resolver's app settings are
+  replaced on every deploy, a later `nb setup` turns alert mail off. Follow-up: `nb setup` flags
+  for the alert mail parameters, with the password from the deployment-secret source.
 - Docs: a "Endpoint alerts" section in `docs/notifications.md`, separating the two mechanisms
   (adapter-side `AddNimBusNotifications` channels versus Resolver-side Alerts-tab subscriptions);
   the configuration table; and the deployment guide.
