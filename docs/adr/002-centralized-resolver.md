@@ -1,7 +1,9 @@
 # ADR-002: Centralized Resolver for Message State Tracking
 
 ## Status
-Accepted
+Accepted. [ADR-018](018-on-prem-rabbitmq-transport.md) (proposed, 2026-10-21) would narrow the
+"subscribers depend only on Service Bus" principle below to Azure installations: on the on-premises
+RabbitMQ transport, every endpoint also needs SQL Server for transport state.
 
 ## Context
 In an event-driven system, operators need visibility into message state: which messages are pending, completed, failed, deferred, or dead-lettered. Two approaches were considered:
