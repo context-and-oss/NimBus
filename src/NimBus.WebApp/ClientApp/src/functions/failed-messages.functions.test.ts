@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import moment from "moment";
 import * as api from "api-client";
 import {
   EMPTY_FAILED_FILTER,
+  barEnd,
   customRange,
   deferredCountsBySession,
   errorTextOf,
+  formatBucket,
   parseSearchQuery,
   rangeParams,
   rangeWindow,
@@ -15,6 +18,86 @@ import {
   toggleStatus,
   windowParams,
 } from "./failed-messages.functions";
+
+// The chart's bars follow the browser's wall clock, so pin the zone: UTC unless a block
+// below picks another.
+const ORIGINAL_TZ = process.env.TZ;
+beforeAll(() => {
+  process.env.TZ = "UTC";
+});
+afterAll(() => {
+  if (ORIGINAL_TZ === undefined) delete process.env.TZ;
+  else process.env.TZ = ORIGINAL_TZ;
+});
+
+describe("in a local time zone (Europe/Berlin)", () => {
+  beforeAll(() => {
+    process.env.TZ = "Europe/Berlin";
+  });
+  afterAll(() => {
+    process.env.TZ = "UTC";
+  });
+
+  // Thursday 5 November 2026, 13:00 CET. Summer time ended on 25 October.
+  const now = new Date("2026-11-05T12:00:00Z");
+
+  it("starts 30-day bars at local midnight, like the server", () => {
+    const w = resolveWindow(api.Period._30d, now);
+    expect(w.from.toISOString()).toBe("2026-10-06T22:00:00.000Z"); // 7 Oct, 00:00 CEST
+    expect(w.to.toISOString()).toBe("2026-11-05T23:00:00.000Z"); // 6 Nov, 00:00 CET
+  });
+
+  it("aligns 6-hour bars to local hours", () => {
+    const w = resolveWindow(api.Period._7d, now);
+    expect(w.to.toISOString()).toBe("2026-11-05T17:00:00.000Z"); // 18:00 CET
+  });
+
+  it("widens a custom range to local buckets", () => {
+    const w = rangeWindow(
+      {
+        ...EMPTY_FAILED_FILTER,
+        rangeStart: "2026-10-28T22:30:00.000Z",
+        rangeEnd: "2026-11-04T22:30:00.000Z",
+      },
+      now,
+    );
+    expect(w.bucketMinutes).toBe(180);
+    expect(w.from.toISOString()).toBe("2026-10-28T20:00:00.000Z"); // 21:00 CET
+    expect(w.to.toISOString()).toBe("2026-11-04T23:00:00.000Z"); // 00:00 CET
+  });
+
+  it("sizes a legacy bucket link by local days, so 25 October has 25 hours", () => {
+    const w = selectedWindow({
+      ...EMPTY_FAILED_FILTER,
+      period: api.Period._30d,
+      bucket: "2026-10-24T22:00:00.000Z",
+    });
+    expect(w?.to.toISOString()).toBe("2026-10-25T23:00:00.000Z");
+  });
+
+  it("ends a bar at the next bar's start, and the last at the window's end", () => {
+    const histogram = {
+      buckets: [
+        new api.FailedHistogramBucket({ start: moment.utc("2026-10-24T22:00:00Z") }),
+        new api.FailedHistogramBucket({ start: moment.utc("2026-10-25T23:00:00Z") }),
+      ],
+      to: moment.utc("2026-10-26T23:00:00Z"),
+    };
+    expect(barEnd(histogram, 0)?.toISOString()).toBe("2026-10-25T23:00:00.000Z");
+    expect(barEnd(histogram, 1)?.toISOString()).toBe("2026-10-26T23:00:00.000Z");
+  });
+
+  it("labels a bar with the end it was given", () => {
+    // 02:00 CEST to 03:00 CET: two hours, as the repeated hour is one bar.
+    expect(
+      formatBucket(
+        new Date("2026-10-25T00:00:00Z"),
+        60,
+        new Date("2026-10-25T02:00:00Z"),
+      ),
+    ).toBe("25/10 02:00–03:00");
+  });
+});
 
 describe("resolveWindow", () => {
   it("ends at the end of the bucket holding now, like the server", () => {

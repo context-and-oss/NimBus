@@ -11631,6 +11631,8 @@ export class FailedHistogramRequest implements IFailedHistogramRequest {
     from?: moment.Moment | undefined;
     /** Custom window end; used with `from` instead of `period`. */
     to?: moment.Moment | undefined;
+    /** IANA time zone (for example Europe/Berlin) the bars follow: they start at local midnight and step in whole buckets of local time. UTC when absent or unknown. */
+    timeZone?: string | undefined;
 
     [key: string]: any;
 
@@ -11653,6 +11655,7 @@ export class FailedHistogramRequest implements IFailedHistogramRequest {
             this.period = _data["period"];
             this.from = _data["from"] ? moment(_data["from"].toString()) : undefined as any;
             this.to = _data["to"] ? moment(_data["to"].toString()) : undefined as any;
+            this.timeZone = _data["timeZone"];
         }
     }
 
@@ -11673,6 +11676,7 @@ export class FailedHistogramRequest implements IFailedHistogramRequest {
         data["period"] = this.period;
         data["from"] = this.from ? this.from.toISOString() : undefined as any;
         data["to"] = this.to ? this.to.toISOString() : undefined as any;
+        data["timeZone"] = this.timeZone;
         return data;
     }
 
@@ -11691,12 +11695,14 @@ export interface IFailedHistogramRequest {
     from?: moment.Moment | undefined;
     /** Custom window end; used with `from` instead of `period`. */
     to?: moment.Moment | undefined;
+    /** IANA time zone (for example Europe/Berlin) the bars follow: they start at local midnight and step in whole buckets of local time. UTC when absent or unknown. */
+    timeZone?: string | undefined;
 
     [key: string]: any;
 }
 
 export class FailedHistogram implements IFailedHistogram {
-    /** Bucket size in minutes. */
+    /** Nominal bucket size in minutes. Each bucket ends where the next one starts, so a bar across a daylight-saving change is shorter or longer. */
     bucketMinutes?: number;
     /** Start of the first bucket (inclusive). */
     from?: moment.Moment;
@@ -11773,7 +11779,7 @@ export class FailedHistogram implements IFailedHistogram {
 }
 
 export interface IFailedHistogram {
-    /** Bucket size in minutes. */
+    /** Nominal bucket size in minutes. Each bucket ends where the next one starts, so a bar across a daylight-saving change is shorter or longer. */
     bucketMinutes?: number;
     /** Start of the first bucket (inclusive). */
     from?: moment.Moment;

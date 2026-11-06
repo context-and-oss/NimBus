@@ -30,6 +30,9 @@ public class FailedImplementation : IFailedApiController
     /// <summary>Most bars a custom window may produce.</summary>
     internal const int MaxBuckets = 60;
 
+    /// <summary>Largest step the store counts in; local bars are folded from these steps.</summary>
+    internal static readonly TimeSpan StoreStep = TimeSpan.FromMinutes(15);
+
     // Error text kept per failure in the error grouping; the full text is on the event page.
     private const int ErrorTextLimit = 1000;
 
@@ -102,13 +105,16 @@ public class FailedImplementation : IFailedApiController
         var (scope, refused) = await ResolveScopeAsync(body?.Filter, JsonConvert.SerializeObject(body));
         if (refused != null) return refused;
 
-        var window = ResolveWindow(body!.Period, body.From, body.To, _timeProvider.GetUtcNow().UtcDateTime);
+        var zone = ResolveTimeZone(body!.TimeZone);
+        var window = ResolveWindow(body.Period, body.From, body.To, _timeProvider.GetUtcNow().UtcDateTime, zone);
         if (window == null)
             return new BadRequestObjectResult($"The custom window needs from < to and may span at most {MaxWindow.TotalDays} days.");
 
-        var (from, to, bucket) = window.Value;
-        var histogram = await _messageStore.GetFailedEventHistogram(ToEventFilter(body.Filter), scope!, from, to, bucket);
-        return BuildHistogram(histogram, from, to, bucket);
+        // The store counts in fixed steps from the window start; local bars are whole numbers of
+        // steps, because every time zone offset and daylight-saving shift is a multiple of 15 minutes.
+        var step = window.Bucket < StoreStep ? window.Bucket : StoreStep;
+        var histogram = await _messageStore.GetFailedEventHistogram(ToEventFilter(body.Filter), scope!, window.From, window.To, step);
+        return BuildHistogram(histogram, window);
     }
 
     /// <inheritdoc />
@@ -198,15 +204,19 @@ public class FailedImplementation : IFailedApiController
     /// <summary>
     /// The histogram window and bucket size: a custom from/to when both are given (the smallest
     /// bucket that keeps it within <see cref="MaxBuckets"/> bars), else the period preset. The
-    /// window ends at the end of the bucket holding <paramref name="nowUtc"/>. Null for an
-    /// invalid custom window.
+    /// window ends at the end of the bucket holding <paramref name="nowUtc"/>. Bars follow the
+    /// wall clock of <paramref name="zone"/> (UTC when null): they start at local midnight and
+    /// step in whole buckets of local time, so a bar across a daylight-saving change is an hour
+    /// shorter or longer. Null for an invalid custom window.
     /// </summary>
-    internal static (DateTime From, DateTime To, TimeSpan Bucket)? ResolveWindow(
+    internal static HistogramWindow? ResolveWindow(
         Period period,
         DateTime? from,
         DateTime? to,
-        DateTime nowUtc)
+        DateTime nowUtc,
+        TimeZoneInfo? zone = null)
     {
+        zone ??= TimeZoneInfo.Utc;
         if (from.HasValue && to.HasValue)
         {
             var start = DateTime.SpecifyKind(from.Value.ToUniversalTime(), DateTimeKind.Utc);
@@ -215,9 +225,10 @@ public class FailedImplementation : IFailedApiController
 
             var span = end - start;
             var bucket = CustomBucketSizes.FirstOrDefault(b => span.Ticks / b.Ticks <= MaxBuckets, CustomBucketSizes[^1]);
-            var alignedFrom = Floor(start, bucket);
-            var alignedTo = Ceiling(end, bucket);
-            return (alignedFrom, alignedTo, bucket);
+            var firstWall = FloorWall(ToWall(start, zone), bucket);
+            var lastWall = FloorWall(ToWall(end, zone), bucket);
+            if (ToUtc(lastWall, zone) < end) lastWall += bucket;
+            return new HistogramWindow(Boundaries(firstWall, lastWall, bucket, zone), bucket);
         }
 
         var (window, size) = period switch
@@ -229,18 +240,74 @@ public class FailedImplementation : IFailedApiController
             Period._30d => (TimeSpan.FromDays(30), TimeSpan.FromDays(1)),
             _ => (TimeSpan.FromDays(1), TimeSpan.FromHours(1)),
         };
-        var windowEnd = Floor(nowUtc, size) + size;
-        return (windowEnd - window, windowEnd, size);
+        var endWall = FloorWall(ToWall(nowUtc, zone), size) + size;
+        return new HistogramWindow(Boundaries(endWall - window, endWall, size, zone), size);
+    }
+
+    /// <summary>The zone named by an IANA id, or UTC when it is absent or unknown.</summary>
+    internal static TimeZoneInfo ResolveTimeZone(string? id) =>
+        !string.IsNullOrWhiteSpace(id) && TimeZoneInfo.TryFindSystemTimeZoneById(id.Trim(), out var zone)
+            ? zone
+            : TimeZoneInfo.Utc;
+
+    /// <summary>
+    /// The UTC instant of a wall-clock time in <paramref name="zone"/>, resolved the way a
+    /// JavaScript <c>Date</c> resolves local times: a time skipped by a daylight-saving change
+    /// moves forward by the gap, and a repeated time is the earlier of the two instants.
+    /// </summary>
+    internal static DateTime ToUtc(DateTime wallClock, TimeZoneInfo zone)
+    {
+        var wall = DateTime.SpecifyKind(wallClock, DateTimeKind.Unspecified);
+        TimeSpan offset;
+        if (zone.IsInvalidTime(wall))
+        {
+            // Read with the offset in force just before the gap, which lands after it.
+            var before = wall;
+            do before = before.AddMinutes(-15); while (zone.IsInvalidTime(before));
+            offset = zone.GetUtcOffset(before);
+        }
+        else if (zone.IsAmbiguousTime(wall))
+        {
+            offset = zone.GetAmbiguousTimeOffsets(wall).Max();
+        }
+        else
+        {
+            offset = zone.GetUtcOffset(wall);
+        }
+
+        return DateTime.SpecifyKind(wall - offset, DateTimeKind.Utc);
+    }
+
+    private static DateTime ToWall(DateTime utc, TimeZoneInfo zone) =>
+        DateTime.SpecifyKind(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), zone), DateTimeKind.Unspecified);
+
+    // Every bucket size divides a day, so whole buckets from midnight tile each local day.
+    private static DateTime FloorWall(DateTime wall, TimeSpan bucket) =>
+        wall.Date + TimeSpan.FromTicks(wall.TimeOfDay.Ticks - wall.TimeOfDay.Ticks % bucket.Ticks);
+
+    // The UTC instants of the wall-clock boundaries from first to last, dropping any that a
+    // skipped hour collapses onto the previous one.
+    private static List<DateTime> Boundaries(DateTime firstWall, DateTime lastWall, TimeSpan bucket, TimeZoneInfo zone)
+    {
+        var boundaries = new List<DateTime>();
+        for (var wall = firstWall; wall <= lastWall; wall += bucket)
+        {
+            var utc = ToUtc(wall, zone);
+            if (boundaries.Count == 0 || utc > boundaries[^1]) boundaries.Add(utc);
+        }
+
+        return boundaries;
     }
 
     /// <summary>Every bucket in the window, oldest first and zero-filled, plus totals.</summary>
-    internal static FailedHistogram BuildHistogram(FailedEventHistogram histogram, DateTime from, DateTime to, TimeSpan bucket)
+    internal static FailedHistogram BuildHistogram(FailedEventHistogram histogram, HistogramWindow window)
     {
-        var count = (int)((to - from).Ticks / bucket.Ticks);
+        var bounds = window.Boundaries;
+        var count = bounds.Count - 1;
         var buckets = Enumerable.Range(0, count)
             .Select(k => new FailedHistogramBucket
             {
-                Start = from + TimeSpan.FromTicks(bucket.Ticks * k),
+                Start = bounds[k],
                 ByEndpoint = new Dictionary<string, int>(),
             })
             .ToList();
@@ -249,8 +316,11 @@ public class FailedImplementation : IFailedApiController
         var totals = new FailedHistogramTotals();
         foreach (var row in histogram.Rows)
         {
-            var index = (int)((row.BucketStartUtc - from).Ticks / bucket.Ticks);
-            if (index < 0 || index >= count) continue;
+            if (row.BucketStartUtc < bounds[0] || row.BucketStartUtc >= bounds[^1]) continue;
+
+            // The last boundary at or before the row's start: the bar the store step falls in.
+            var found = bounds.BinarySearch(row.BucketStartUtc);
+            var index = found >= 0 ? found : ~found - 1;
 
             var target = buckets[index];
             if (!totalsByEndpoint.TryGetValue(row.EndpointId, out var endpointTotals))
@@ -281,9 +351,9 @@ public class FailedImplementation : IFailedApiController
 
         return new FailedHistogram
         {
-            BucketMinutes = (int)bucket.TotalMinutes,
-            From = from,
-            To = to,
+            BucketMinutes = (int)window.Bucket.TotalMinutes,
+            From = window.From,
+            To = window.To,
             Buckets = buckets,
             Totals = totals,
             Truncated = histogram.Truncated,
@@ -368,12 +438,27 @@ public class FailedImplementation : IFailedApiController
 
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static DateTime Floor(DateTime value, TimeSpan size) =>
-        new(value.Ticks - value.Ticks % size.Ticks, DateTimeKind.Utc);
+}
 
-    private static DateTime Ceiling(DateTime value, TimeSpan size)
+/// <summary>
+/// A failure histogram's bars: <paramref name="Boundaries"/> are the UTC starts of every bar plus
+/// the end of the last, ascending; each bar ends where the next starts.
+/// </summary>
+/// <param name="Boundaries">Bar starts, then the window end, in UTC.</param>
+/// <param name="Bucket">Nominal bar size.</param>
+internal sealed record HistogramWindow(List<DateTime> Boundaries, TimeSpan Bucket)
+{
+    /// <summary>Start of the first bar.</summary>
+    public DateTime From => Boundaries[0];
+
+    /// <summary>End of the last bar (exclusive).</summary>
+    public DateTime To => Boundaries[^1];
+
+    /// <summary>Deconstructs into the window's start, end and nominal bar size.</summary>
+    public void Deconstruct(out DateTime from, out DateTime to, out TimeSpan bucket)
     {
-        var floor = Floor(value, size);
-        return floor.Ticks == value.Ticks ? floor : floor + size;
+        from = From;
+        to = To;
+        bucket = Bucket;
     }
 }

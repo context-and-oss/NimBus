@@ -34,19 +34,32 @@ describe("brushIndexes", () => {
 });
 
 describe("windowOfIndexes", () => {
+  const end = t0 + 6 * HOUR;
+
   it("covers the brushed bars through the end of the last one", () => {
-    const w = windowOfIndexes(starts, 60, 1, 3);
+    const w = windowOfIndexes(starts, end, 1, 3);
     expect(w?.from.toISOString()).toBe("2026-09-25T01:00:00.000Z");
     expect(w?.to.toISOString()).toBe("2026-09-25T04:00:00.000Z");
   });
 
+  it("ends a bar where the next one starts, so a 25-hour day stays whole", () => {
+    // Local days in Berlin around the end of summer time: 24 Oct, 25 Oct (25 h), 26 Oct.
+    const days = [
+      "2026-10-23T22:00:00.000Z",
+      "2026-10-24T22:00:00.000Z",
+      "2026-10-25T23:00:00.000Z",
+    ].map(Date.parse);
+    const w = windowOfIndexes(days, Date.parse("2026-10-26T23:00:00.000Z"), 0, 1);
+    expect(w?.to.toISOString()).toBe("2026-10-25T23:00:00.000Z");
+  });
+
   it("is undefined when the brush spans every bar", () => {
-    expect(windowOfIndexes(starts, 60, 0, 5)).toBeUndefined();
-    expect(windowOfIndexes([], 60, 0, 0)).toBeUndefined();
+    expect(windowOfIndexes(starts, end, 0, 5)).toBeUndefined();
+    expect(windowOfIndexes([], end, 0, 0)).toBeUndefined();
   });
 
   it("round-trips through brushIndexes", () => {
-    const w = windowOfIndexes(starts, 60, 2, 4);
+    const w = windowOfIndexes(starts, end, 2, 4);
     expect(brushIndexes(starts, w)).toEqual({ startIndex: 2, endIndex: 4 });
   });
 });
