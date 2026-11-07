@@ -185,7 +185,8 @@ internal sealed record InfrastructureOptions(
     NetworkOptions? Network = null,
     int? ServiceBusCapacity = null,
     string? ServiceBusNamespaceName = null,
-    TimeSpan? DnsWait = null);
+    TimeSpan? DnsWait = null,
+    AlertMailDeployment? AlertMail = null);
 
 internal enum StorageProviderChoice
 {

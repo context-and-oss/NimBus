@@ -16,6 +16,7 @@ public sealed class DeploymentSecretTests
             [DeploymentSecrets.SqlConnectionStringEnvironmentVariable] = "Server=example;Password=sql-secret",
             [DeploymentSecrets.SqlAdminPasswordEnvironmentVariable] = "admin-secret",
             [DeploymentSecrets.IdentityAdminPasswordEnvironmentVariable] = "identity-secret",
+            [DeploymentSecrets.AlertMailSmtpPasswordEnvironmentVariable] = "smtp-secret",
         };
 
         var secrets = DeploymentSecrets.Load(name => values.GetValueOrDefault(name));
@@ -23,6 +24,7 @@ public sealed class DeploymentSecretTests
         Assert.Equal(values[DeploymentSecrets.SqlConnectionStringEnvironmentVariable], secrets.SqlConnectionString);
         Assert.Equal(values[DeploymentSecrets.SqlAdminPasswordEnvironmentVariable], secrets.SqlAdminPassword);
         Assert.Equal(values[DeploymentSecrets.IdentityAdminPasswordEnvironmentVariable], secrets.IdentityAdminPassword);
+        Assert.Equal(values[DeploymentSecrets.AlertMailSmtpPasswordEnvironmentVariable], secrets.AlertMailSmtpPassword);
     }
 
     [Fact]
@@ -33,6 +35,7 @@ public sealed class DeploymentSecretTests
         Assert.Null(secrets.SqlConnectionString);
         Assert.Null(secrets.SqlAdminPassword);
         Assert.Null(secrets.IdentityAdminPassword);
+        Assert.Null(secrets.AlertMailSmtpPassword);
     }
 
     [Fact]
@@ -43,6 +46,7 @@ public sealed class DeploymentSecretTests
             [DeploymentSecrets.SqlConnectionStringEnvironmentVariable] = "sql-connection-secret",
             [DeploymentSecrets.SqlAdminPasswordEnvironmentVariable] = "sql-password-secret",
             [DeploymentSecrets.IdentityAdminPasswordEnvironmentVariable] = "identity-password-secret",
+            [DeploymentSecrets.AlertMailSmtpPasswordEnvironmentVariable] = "smtp-password-secret",
             ["PATH"] = "expected-path",
         };
 
@@ -51,6 +55,7 @@ public sealed class DeploymentSecretTests
         Assert.DoesNotContain(DeploymentSecrets.SqlConnectionStringEnvironmentVariable, environment.Keys);
         Assert.DoesNotContain(DeploymentSecrets.SqlAdminPasswordEnvironmentVariable, environment.Keys);
         Assert.DoesNotContain(DeploymentSecrets.IdentityAdminPasswordEnvironmentVariable, environment.Keys);
+        Assert.DoesNotContain(DeploymentSecrets.AlertMailSmtpPasswordEnvironmentVariable, environment.Keys);
         Assert.Equal("expected-path", environment["PATH"]);
     }
 
@@ -242,6 +247,19 @@ public sealed class DeploymentSecretTests
         // apps use Entra RBAC, and nothing may read the account keys into outputs.
         Assert.DoesNotContain("listConnectionStrings", cosmos, StringComparison.Ordinal);
         Assert.DoesNotContain("output connectionString", cosmos, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CoreBicep_KeepsTheAlertMailPasswordSecure()
+    {
+        var coreDeployment = ReadNormalized(Path.Combine(FindRepositoryRoot(), "deploy", "bicep", "deploy.core.bicep"));
+
+        Assert.Contains("@secure()\nparam alertMailSmtpPassword string", coreDeployment, StringComparison.Ordinal);
+        // Only the secure settings object may carry it: the plain settings array is kept in
+        // the nested deployment's history.
+        Assert.Contains("NimBus__Alerts__Mail__Smtp__Password: alertMailSmtpPassword", coreDeployment, StringComparison.Ordinal);
+        Assert.DoesNotContain("value: alertMailSmtpPassword", coreDeployment, StringComparison.Ordinal);
+        Assert.Contains("alertMailResolverSecretSettings)", coreDeployment, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

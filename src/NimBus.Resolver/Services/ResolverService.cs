@@ -6,6 +6,7 @@ using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
+using NimBus.Resolver.Alerts;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -24,6 +25,7 @@ public class ResolverService : IMessageHandler
     private readonly ILogger? _logger;
     private readonly IEndpointMetadataStore? _metadataStore;
     private readonly IServiceHealthStore? _serviceHealthStore;
+    private readonly IEndpointAlertNotifier _alertNotifier;
 
     private const string CosmosThrottleDeadLetterReason = "CosmosDbThrottled";
     private const int BaseDelaySeconds = 5;
@@ -77,18 +79,25 @@ public class ResolverService : IMessageHandler
     /// Optional service-liveness store backing the Resolver's own probe. Same graceful
     /// degradation as <paramref name="metadataStore"/> when absent.
     /// </param>
+    /// <param name="alertNotifier">
+    /// Optional endpoint alert notifier (the Alerts tab). Told about every applied
+    /// <see cref="ResolutionStatus.Failed"/> or <see cref="ResolutionStatus.DeadLettered"/>
+    /// outcome after the message is settled; nothing is sent when omitted.
+    /// </param>
     public ResolverService(
         IMessageTrackingStore store,
         IMessageStateChangeNotifier? notifier = null,
         ILogger<ResolverService>? logger = null,
         IEndpointMetadataStore? metadataStore = null,
-        IServiceHealthStore? serviceHealthStore = null)
+        IServiceHealthStore? serviceHealthStore = null,
+        IEndpointAlertNotifier? alertNotifier = null)
     {
         _store = store;
         _notifier = notifier ?? new NoopMessageStateChangeNotifier();
         _logger = logger;
         _metadataStore = metadataStore;
         _serviceHealthStore = serviceHealthStore;
+        _alertNotifier = alertNotifier ?? new NoopEndpointAlertNotifier();
     }
 
     public async Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default)
@@ -146,6 +155,14 @@ public class ResolverService : IMessageHandler
             // keeps showing the late copy after the response — the forensic trail that made
             // the Spec 030 incident diagnosable.
             await messageContext.Complete(cancellationToken);
+
+            // After settlement, so a slow or failing mail server can neither hold the lock nor
+            // turn a recorded failure into a dead-letter. Only outcomes that changed the
+            // endpoint's state alert: a stale copy would mail about nothing new.
+            if (applied && status is ResolutionStatus.Failed or ResolutionStatus.DeadLettered)
+            {
+                await NotifyAlertSubscribers(messageEntity, status, cancellationToken);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -332,6 +349,40 @@ public class ResolverService : IMessageHandler
     // Fire the state-change notification (provider-neutral). Webhook is no longer
     // the only way for the WebApp to learn about updates; this works for any
     // storage provider including SQL Server which has no Change Feed.
+    /// <summary>
+    /// Hands an applied failure to the endpoint alert notifier. The message is already settled,
+    /// so every exception, including cancellation on host shutdown, is logged and dropped.
+    /// </summary>
+    private async Task NotifyAlertSubscribers(MessageEntity message, ResolutionStatus status, CancellationToken cancellationToken)
+    {
+        var context = new EndpointAlertContext
+        {
+            EndpointId = message.EndpointId,
+            EventId = message.EventId,
+            EventTypeId = message.EventTypeId,
+            SessionId = message.SessionId,
+            Status = status,
+            ErrorText = status == ResolutionStatus.DeadLettered
+                ? message.DeadLetterErrorDescription ?? message.MessageContent?.ErrorContent?.ErrorText
+                : message.MessageContent?.ErrorContent?.ErrorText,
+            OccurredAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        try
+        {
+            await _alertNotifier.NotifyAsync(context, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger?.LogInformation("Resolver: Endpoint alert notification cancelled by shutdown. EventId:{EventId}", message.EventId);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Resolver: Endpoint alert notification failed (non-fatal). EndpointId:{EndpointId}, EventId:{EventId}",
+                message.EndpointId, message.EventId);
+        }
+    }
+
     private async Task NotifyEndpointStateChanged(string endpointId, CancellationToken cancellationToken)
     {
         try { await _notifier.NotifyEndpointStateChangedAsync(endpointId, cancellationToken); }

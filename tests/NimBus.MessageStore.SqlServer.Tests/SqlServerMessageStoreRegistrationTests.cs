@@ -28,6 +28,7 @@ public sealed class SqlServerMessageStoreRegistrationTests
         var aggregate = provider.GetRequiredService<INimBusMessageStore>();
         Assert.IsNotNull(provider.GetRequiredService<IMessageTrackingStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<ISubscriptionStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<ISubscriptionNotificationStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IEndpointMetadataStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IMetricsStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IEventSchemaStore>());

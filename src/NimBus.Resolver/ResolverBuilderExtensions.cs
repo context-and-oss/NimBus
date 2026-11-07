@@ -27,6 +27,7 @@ public static class ResolverBuilderExtensions
 
         services.AddSingleton<IMessageHandler, ResolverService>();
         services.AddFlowStateChangeNotifier();
+        services.AddEndpointAlertNotifier();
 
         services.AddSingleton(sp =>
         {

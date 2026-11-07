@@ -8,7 +8,10 @@ using NimBus.MessageStore.Abstractions;
 using NimBus.ServiceBus;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using NimBus.Resolver.Alerts;
 
 namespace NimBus.Resolver;
 
@@ -31,8 +34,10 @@ public static class ServiceExtensions
             sp.GetRequiredService<IMessageStateChangeNotifier>(),
             sp.GetService<ILogger<ResolverService>>(),
             sp.GetService<IEndpointMetadataStore>(),
-            sp.GetService<IServiceHealthStore>()));
+            sp.GetService<IServiceHealthStore>(),
+            sp.GetRequiredService<IEndpointAlertNotifier>()));
         services.AddFlowStateChangeNotifier();
+        services.AddEndpointAlertNotifier();
 
         services.AddSingleton(sp =>
         {
@@ -94,6 +99,63 @@ public static class ServiceExtensions
             };
             var logger = sp.GetService<ILogger<HttpEndpointStateChangeNotifier>>();
             return new HttpEndpointStateChangeNotifier(httpClient, webhookKey, logger);
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the endpoint alert notifier (the WebApp's Alerts tab). It mails subscribers
+    /// when <c>NimBus:Alerts:Mail</c> has an SMTP host and a sender, and the storage provider
+    /// offers <see cref="ISubscriptionNotificationStore"/>; otherwise it registers the no-op
+    /// notifier and logs why. Invalid settings never stop the Resolver: they are logged and
+    /// alert mail stays off. A notifier the host registered first is kept.
+    /// </summary>
+    internal static IServiceCollection AddEndpointAlertNotifier(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IEndpointAlertNotifier>(sp =>
+        {
+            var logger = sp.GetService<ILoggerFactory>()?.CreateLogger("NimBus.Resolver.Alerts")
+                ?? NullLogger.Instance;
+            var options = sp.GetService<IConfiguration>()?.GetSection(AlertMailOptions.SectionName).Get<AlertMailOptions>()
+                ?? new AlertMailOptions();
+
+            if (!options.IsConfigured)
+            {
+                logger.LogInformation(
+                    "Endpoint alert mail is off: set {Section}:Smtp:Host and {Section}:From to mail Alerts-tab subscribers.",
+                    AlertMailOptions.SectionName, AlertMailOptions.SectionName);
+                return new NoopEndpointAlertNotifier();
+            }
+
+            var errors = options.Validate();
+            if (errors.Count > 0)
+            {
+                logger.LogError("Endpoint alert mail is off because its settings are invalid: {Errors}",
+                    string.Join(" ", errors));
+                return new NoopEndpointAlertNotifier();
+            }
+
+            var subscriptions = sp.GetService<ISubscriptionStore>();
+            var notifications = sp.GetService<ISubscriptionNotificationStore>();
+            if (subscriptions is null || notifications is null)
+            {
+                logger.LogWarning(
+                    "Endpoint alert mail is off: the storage provider registers no {SubscriptionStore} or {NotificationStore}.",
+                    nameof(ISubscriptionStore), nameof(ISubscriptionNotificationStore));
+                return new NoopEndpointAlertNotifier();
+            }
+
+            logger.LogInformation("Endpoint alert mail is on: SMTP {Host}:{Port}, from {From}.",
+                options.Smtp.Host, options.Smtp.Port, options.From);
+            return new SubscriptionAlertNotifier(
+                subscriptions,
+                notifications,
+                new SmtpAlertMailSender(options),
+                new AlertMailComposer(options),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetService<ILogger<SubscriptionAlertNotifier>>() ?? NullLogger<SubscriptionAlertNotifier>.Instance);
         });
 
         return services;

@@ -29,7 +29,7 @@ namespace NimBus.MessageStore.SqlServer;
 /// Concurrency: ROWVERSION on UnresolvedEvents enables optimistic conflict
 /// detection if needed by future writers.
 /// </summary>
-public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
+public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore
 {
     private readonly SqlServerMessageStoreOptions _options;
     private readonly string _schema;
@@ -161,6 +161,10 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
 
     public Task<bool> DeleteSubscription(string subscriptionId)
         => _subscriptions.DeleteSubscription(subscriptionId);
+
+    /// <inheritdoc />
+    public Task<bool> TrySetNotifiedAtAsync(string subscriptionId, string? expectedNotifiedAt, string? notifiedAt, CancellationToken cancellationToken = default)
+        => _subscriptions.TrySetNotifiedAtAsync(subscriptionId, expectedNotifiedAt, notifiedAt, cancellationToken);
     // ───────── IEndpointMetadataStore — implementation in SqlServerEndpointMetadataStore ─────────
     public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId) => _endpointMetadata.GetEndpointMetadata(endpointId);
     public Task<List<EndpointMetadata>> GetMetadatas() => _endpointMetadata.GetMetadatas();

@@ -49,6 +49,7 @@ internal static class SetupCommand
                 "IPlatform type name when the assembly or package exposes more than one",
                 CommandOptionType.SingleValue);
             var setupNetworkOptions = NetworkCommandOptions.Register(setupCommand);
+            var setupAlertMailOptions = AlertMailCommandOptions.Register(setupCommand);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
@@ -62,6 +63,7 @@ internal static class SetupCommand
                 var setupServiceBusCapacity = setupNetworkOptions.ServiceBusCapacity;
                 var setupDnsWait = setupNetworkOptions.DnsWait;
                 NetworkSelection.ValidateSyntax(setupNetwork);
+                var setupAlertMail = setupAlertMailOptions.Build(DeploymentSecrets.Load());
                 var setupPlatformPackage = setupPackage.HasValue()
                     ? await PlatformPackage.ResolveAsync(PlatformHttpClient, setupPackage.Value()!, setupFeed.Value(), setupPlatform.Value(), cancellationToken).ConfigureAwait(false)
                     : null;
@@ -117,7 +119,8 @@ internal static class SetupCommand
                     Network: setupNetwork,
                     ServiceBusCapacity: setupServiceBusCapacity,
                     ServiceBusNamespaceName: setupNetworkOptions.ServiceBusNamespaceName,
-                    DnsWait: setupDnsWait);
+                    DnsWait: setupDnsWait,
+                    AlertMail: setupAlertMail);
 
                 var topologyOptions = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, setupNetworkOptions.ServiceBusNamespaceName, setupDnsWait);
                 var appOptions = new AppDeploymentOptions(

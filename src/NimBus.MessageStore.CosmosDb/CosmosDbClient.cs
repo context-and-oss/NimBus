@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
 
-public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore
+public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore
 {
     /// <inheritdoc />
     public bool PrunesHeartbeatHistoryAutomatically => _heartbeatHistory.PrunesHeartbeatHistoryAutomatically;
@@ -150,6 +150,10 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     public Task<bool> DeleteSubscription(string subscriptionId)
         => _subscriptions.DeleteSubscription(subscriptionId);
+
+    /// <inheritdoc />
+    public Task<bool> TrySetNotifiedAtAsync(string subscriptionId, string? expectedNotifiedAt, string? notifiedAt, CancellationToken cancellationToken = default)
+        => _subscriptions.TrySetNotifiedAtAsync(subscriptionId, expectedNotifiedAt, notifiedAt, cancellationToken);
     // Resolves a container handle through _containerCache, running "ensure
     // exists" exactly once per container id and caching the resulting handle.
     // A faulted creation is never left cached: the faulted entry is evicted

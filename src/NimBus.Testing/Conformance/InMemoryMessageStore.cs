@@ -22,7 +22,7 @@ namespace NimBus.Testing.Conformance;
 /// transitions, message persistence, and basic queries the conformance suite cares
 /// about. Search/pagination methods return empty results.
 /// </summary>
-public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
+public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore
 {
     private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _events = new();
     // Rows archived by TryArchiveUnresolvedEvent, kept so TryRestoreArchivedEvent can put them back.
@@ -676,6 +676,55 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
 
     public Task<bool> DeleteSubscription(string subscriptionId)
         => Task.FromResult(_subscriptions.TryRemove(subscriptionId, out _));
+
+    /// <inheritdoc />
+    public Task<bool> TrySetNotifiedAtAsync(
+        string subscriptionId,
+        string? expectedNotifiedAt,
+        string? notifiedAt,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Readers hold references to the stored instances, so the new value goes on a copy:
+        // mutating in place would also change a caller's earlier snapshot, and that snapshot
+        // would then win a compare it should lose. TryUpdate compares by reference, so a
+        // concurrent replacement makes this loop re-read and re-check.
+        while (_subscriptions.TryGetValue(subscriptionId, out var current))
+        {
+            if (!string.Equals(NullIfEmpty(current.NotifiedAt), NullIfEmpty(expectedNotifiedAt), StringComparison.Ordinal))
+            {
+                return Task.FromResult(false);
+            }
+
+            var updated = CopySubscription(current);
+            updated.NotifiedAt = notifiedAt;
+            if (_subscriptions.TryUpdate(subscriptionId, updated, current))
+            {
+                return Task.FromResult(true);
+            }
+        }
+
+        return Task.FromResult(false);
+    }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    private static EndpointSubscription CopySubscription(EndpointSubscription source) => new()
+    {
+        Id = source.Id,
+        EndpointId = source.EndpointId,
+        Type = source.Type,
+        NotificationSeverity = source.NotificationSeverity,
+        Mail = source.Mail,
+        AuthorId = source.AuthorId,
+        NotifiedAt = source.NotifiedAt,
+        ErrorList = source.ErrorList,
+        Url = source.Url,
+        EventTypes = source.EventTypes is null ? null : new List<string>(source.EventTypes),
+        Payload = source.Payload,
+        Frequency = source.Frequency,
+    };
 
     public Task<EventSchema?> GetSchema(string eventTypeId)
         => Task.FromResult(_schemas.TryGetValue(eventTypeId, out var s) ? s : (EventSchema?)null);

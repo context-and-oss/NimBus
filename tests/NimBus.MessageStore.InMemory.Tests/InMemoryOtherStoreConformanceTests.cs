@@ -12,6 +12,15 @@ public sealed class InMemorySubscriptionStoreTests : SubscriptionStoreConformanc
 }
 
 [TestClass]
+public sealed class InMemorySubscriptionNotificationStoreTests : SubscriptionNotificationStoreConformanceTests
+{
+    protected override ISubscriptionStore CreateStore() => new InMemoryMessageStore();
+
+    protected override ISubscriptionNotificationStore NotificationStoreFor(ISubscriptionStore store)
+        => (ISubscriptionNotificationStore)store;
+}
+
+[TestClass]
 public sealed class InMemoryEndpointMetadataStoreTests : EndpointMetadataStoreConformanceTests
 {
     protected override IEndpointMetadataStore CreateStore() => new InMemoryMessageStore();

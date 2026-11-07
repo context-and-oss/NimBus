@@ -22,6 +22,24 @@ public sealed class SqlServerSubscriptionStoreTests : SubscriptionStoreConforman
 }
 
 [TestClass]
+public sealed class SqlServerSubscriptionNotificationStoreTests : SubscriptionNotificationStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerSubscriptionNotificationStoreTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerSubscriptionNotificationStoreTests));
+
+    protected override ISubscriptionStore CreateStore()
+        => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerSubscriptionNotificationStoreTests));
+
+    protected override ISubscriptionNotificationStore NotificationStoreFor(ISubscriptionStore store)
+        => (ISubscriptionNotificationStore)store;
+}
+
+[TestClass]
 public sealed class SqlServerEndpointMetadataStoreTests : EndpointMetadataStoreConformanceTests
 {
     [ClassInitialize]

@@ -115,6 +115,20 @@ var webapp = builder.AddProject<Projects.NimBus_WebApp>("webapp")
 // broadcasts fire for storage providers without a Change Feed (e.g. SQL).
 resolver.WithEnvironment("NimBus__Flow__WebAppUrl", webapp.GetEndpoint("http"));
 
+// Endpoint alert mail (the Alerts tab on an endpoint). The Resolver sends it to Mailpit, which
+// catches every message and shows it in its web UI, so subscribing any address works without
+// a real mail server. Matches CrmErpDemo.AppHost.
+var mailpit = builder.AddContainer("mailpit", "axllent/mailpit", "v1.33.0")
+    .WithHttpEndpoint(targetPort: 8025, name: "http")
+    .WithEndpoint(targetPort: 1025, name: "smtp", scheme: "tcp");
+var smtp = mailpit.GetEndpoint("smtp");
+resolver
+    .WithEnvironment("NimBus__Alerts__Mail__Smtp__Host", smtp.Property(EndpointProperty.Host))
+    .WithEnvironment("NimBus__Alerts__Mail__Smtp__Port", smtp.Property(EndpointProperty.Port))
+    .WithEnvironment("NimBus__Alerts__Mail__Smtp__UseSsl", "false")
+    .WithEnvironment("NimBus__Alerts__Mail__From", "nimbus-alerts@nimbus.example")
+    .WithEnvironment("NimBus__Alerts__Mail__WebAppUrl", webapp.GetEndpoint("https"));
+
 // Bind the active storage provider to both runtime services. Each provider package
 // resolves its own connection string at runtime.
 if (storageProvider == "sqlserver")

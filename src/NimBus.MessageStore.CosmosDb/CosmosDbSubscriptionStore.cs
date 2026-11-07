@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,7 @@ using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore;
 
-internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
+internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore, ISubscriptionNotificationStore
 {
     private readonly Func<Task<ICosmosContainerAdapter>> _getSubscriptionsContainer;
     private readonly Func<string, Task<string>> _getEndpointErrorList;
@@ -216,6 +217,35 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
             return false;
         }
     }
+
+    public async Task<bool> TrySetNotifiedAtAsync(string subscriptionId, string? expectedNotifiedAt, string? notifiedAt, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var container = await _getSubscriptionsContainer();
+        var partitionKey = new PartitionKey(subscriptionId);
+        try
+        {
+            // Pin the write to the version that passed the compare: a concurrent writer
+            // changes the ETag and this replace fails with 412.
+            var current = await container.ReadItemAsync<EndpointSubscription>(subscriptionId, partitionKey);
+            if (!string.Equals(NullIfEmpty(current.Resource.NotifiedAt), NullIfEmpty(expectedNotifiedAt), StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            current.Resource.NotifiedAt = notifiedAt;
+            await container.ReplaceItemAsync(current.Resource, subscriptionId, partitionKey,
+                new ItemRequestOptions { IfMatchEtag = current.ETag, EnableContentResponseOnWrite = false });
+            return true;
+        }
+        catch (CosmosException exception) when (exception.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
     private sealed class SubscriptionDbo
     {
