@@ -65,6 +65,13 @@ public class FailedMessageInfo
     /// treat attempt identity as unavailable rather than guess it from <see cref="EventId"/>.
     /// </summary>
     public string? MessageId { get; set; }
+
+    /// <summary>
+    /// The failed attempt's session. Together with <see cref="EventId"/> it forms the stored event id,
+    /// <c>{EventId}_{SessionId}</c>, which <c>IMessageTrackingStore.GetEventsByIds</c> requires (a bare
+    /// event id finds nothing on Cosmos). Null when a provider does not project it.
+    /// </summary>
+    public string? SessionId { get; set; }
 }
 
 public class EndpointLatencyMetricsResult

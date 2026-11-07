@@ -89,6 +89,28 @@ public abstract class MetricsStoreConformanceTests
         Assert.AreEqual("OrderPlaced", row.EventTypeId);
         Assert.AreEqual("Downstream timeout", row.ErrorText);
         Assert.AreEqual(Id("msg-insight"), row.MessageId);
+        // With EventId it forms the stored event id ({EventId}_{SessionId}) that GetEventsByIds needs.
+        Assert.AreEqual("session-1", row.SessionId);
+    }
+
+    [TestMethod]
+    public async Task GetFailedMessageInsights_rows_resolve_their_current_event_through_the_stored_id()
+    {
+        // Spec 043 §4.3: the drill-down reads current status with GetEventsByIds, which is only
+        // guaranteed for stored ids ({EventId}_{SessionId}); a bare EventId finds nothing on Cosmos.
+        var store = CreateStore();
+        var from = DateTime.UtcNow.AddHours(-1);
+        var eventId = Id("evt-status");
+        var receiver = Id("receiver");
+        await store.StoreMessage(SampleMessage(eventId, Id("msg-status"), MessageType.ErrorResponse, from.AddMinutes(1),
+            endpointId: receiver, errorText: "Downstream timeout"));
+        await store.UploadFailedMessage(eventId, "session-1", receiver, SampleFailedEvent(eventId, from.AddMinutes(1), "Downstream timeout", receiver));
+
+        var row = (await store.GetFailedMessageInsights(from, from.AddHours(2))).Single(i => i.EventId == eventId);
+        var events = await store.GetEventsByIds(row.EndpointId, [$"{row.EventId}_{row.SessionId}"]);
+
+        Assert.AreEqual(eventId, events.Single().EventId);
+        Assert.AreEqual(ResolutionStatus.Failed, events.Single().ResolutionStatus);
     }
 
     [TestMethod]
@@ -117,6 +139,7 @@ public abstract class MetricsStoreConformanceTests
         Assert.AreEqual("First failure", rows[0].ErrorText);
         Assert.AreEqual(secondAttempt, rows[1].MessageId);
         Assert.AreEqual("Second failure", rows[1].ErrorText);
+        Assert.IsTrue(rows.All(r => r.SessionId == "session-1"));
     }
 
     [TestMethod]
