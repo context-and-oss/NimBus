@@ -37,11 +37,12 @@ Bound in a new `FailedInsightsOptions` (WebApp, `Services/Insights/`), validated
 - PR 2: one cold enrichment of 10 000 ids in 500-id batches on SQL and on the Cosmos emulator
   (p95 wall time), with the enrichment cache warm and cold. The bulk reader only exists from
   PR 2, so this cannot run earlier.
-- Cosmos RU for both reads needs a live account: the vNext emulator reports no request charge.
-  Measure it on the dev account (`rg-nbdemo-dev`) before PR 3 merges, not before it opens.
+- Cosmos latency and RU need a live account: the vNext emulator reports no request charge and
+  is not representative for latency (see "Measurements"). Measure both on the dev account
+  (`rg-nbdemo-dev`) before PR 3 merges, not before it opens.
 
-Accept the enrichment defaults if a cold 10 000-id enrichment stays under 3 s p95 on both
-local providers and under 50 000 RU on the live account; otherwise lower
+Accept the enrichment defaults if a cold 10 000-id enrichment stays under 3 s p95 on SQL and on
+the live Cosmos account, and under 50 000 RU on the live account; otherwise lower
 `EnrichmentCeiling` to the largest scope that meets both, and record why.
 
 ### D2. Contracts
@@ -337,9 +338,36 @@ Decision: no index migration in Phase 1. A persisted `ErrorText` column (or a co
 over the JSON path, indexed with the identity columns) is the only change that would move the
 30-day read; it is a separate storage change and is listed under Out of scope.
 
-### Enrichment (PR 2)
+### Enrichment (PR 2, 2026-11-07)
 
-To be filled in by PR 2.
+Setup: 10 000 classification documents, one to three completed revisions each (~2–6 KB of
+JSON per document), read through `FailureClassificationReader.ReadLatestInBulkAsync` from a
+throwaway harness on the development workstation. Six measured runs after one warm-up; SQL runs
+drop the buffer pool and the connection pool first. The Cosmos emulator is the vNext preview in
+gateway mode.
+
+| Provider | Batch × concurrency | Median | Max |
+|---|---|---|---|
+| SQL Server 2022 | 500 × 4 (default) | 1 886 ms | 1 974 ms |
+| SQL Server 2022 | 1 000 × 4 | 1 925 ms | 2 034 ms |
+| SQL Server 2022 | 500 × 8 | 2 832 ms | 4 061 ms |
+| Cosmos vNext emulator | 500 × 4 (default) | 20 846 ms | 22 398 ms |
+| Cosmos vNext emulator | 1 000 × 4 | 14 534 ms | 14 732 ms |
+| Cosmos vNext emulator | 500 × 8 | 17 514 ms | 18 093 ms |
+
+Findings:
+
+- SQL meets the 3 s gate with the defaults. More concurrency is slower on a cold buffer pool,
+  so `BulkReadConcurrency` stays at 4.
+- The emulator misses the gate by a factor of about seven. It is not a performance reference:
+  it is Postgres-backed, gateway-only, and reports no request charge. Lowering the ceiling on
+  its evidence would cap a live account at roughly 1 000 occurrences for no measured reason.
+
+Decision: keep the defaults for now. The Cosmos gate (3 s p95 and 50 000 RU for a cold
+10 000-id read) moves entirely to the live-account measurement, which must pass before PR 3
+merges. Seeding 10 000 documents into the shared dev account needs the owner's approval
+first. If the live account misses the gate, lower `EnrichmentCeiling` (and consider a
+1 000-id batch, which the emulator favoured) before PR 3 merges.
 
 ## Out of scope
 
