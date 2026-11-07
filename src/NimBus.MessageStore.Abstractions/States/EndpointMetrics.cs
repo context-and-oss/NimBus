@@ -58,6 +58,13 @@ public class FailedMessageInfo
     public string? ErrorText { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; }
     public string EventId { get; set; } = null!;
+
+    /// <summary>
+    /// The failed attempt's own message id: the ErrorResponse's broker-assigned id, which failure
+    /// classifications are keyed on. Null when a provider does not project it; consumers must then
+    /// treat attempt identity as unavailable rather than guess it from <see cref="EventId"/>.
+    /// </summary>
+    public string? MessageId { get; set; }
 }
 
 public class EndpointLatencyMetricsResult

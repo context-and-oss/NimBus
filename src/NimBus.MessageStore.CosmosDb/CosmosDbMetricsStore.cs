@@ -159,7 +159,7 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
 
         var sql = "SELECT c.endpointId, c.message.EventTypeId, " +
                   "c.message.MessageContent.ErrorContent.ErrorText, " +
-                  "c.message.EnqueuedTimeUtc, c.message.EventId " +
+                  "c.message.EnqueuedTimeUtc, c.message.EventId, c.message.MessageId " +
                   "FROM c " +
                   "WHERE c.message.MessageType = 'ErrorResponse' " +
                   "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to";
@@ -183,7 +183,8 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
                     EventTypeId = item.EventTypeId,
                     ErrorText = item.ErrorText,
                     EnqueuedTimeUtc = item.EnqueuedTimeUtc,
-                    EventId = item.EventId
+                    EventId = item.EventId,
+                    MessageId = item.MessageId
                 });
             }
         }
@@ -418,6 +419,9 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
 
         [JsonProperty("EventId")]
         public string EventId { get; set; } = null!;
+
+        [JsonProperty("MessageId")]
+        public string? MessageId { get; set; }
     }
 
     private sealed class BucketCountResult
