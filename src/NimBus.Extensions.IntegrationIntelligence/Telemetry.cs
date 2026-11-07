@@ -69,6 +69,15 @@ public static class NimBusIntelligenceTelemetry
     /// <summary>Bulk read duration in milliseconds.</summary>
     public static readonly Histogram<double> BulkReadDuration = Meter.CreateHistogram<double>("nimbus.intelligence.insights.bulk_read_duration", "ms");
 
+    /// <summary>Insights responses by enrichment status (available, disabled, unavailable, unsupported, limitExceeded).</summary>
+    public static readonly Counter<long> InsightsEnrichment = Meter.CreateCounter<long>("nimbus.intelligence.insights.enrichment");
+
+    /// <summary>Saved classifications whose endpoint or event did not match their failure occurrence.</summary>
+    public static readonly Counter<long> InsightsIdentityMismatches = Meter.CreateCounter<long>("nimbus.intelligence.insights.identity_mismatches");
+
+    /// <summary>Duplicate failure identities collapsed from a metrics projection.</summary>
+    public static readonly Counter<long> InsightsDuplicateIdentities = Meter.CreateCounter<long>("nimbus.intelligence.insights.duplicate_identities");
+
     /// <summary>Records one bulk read without identifiers.</summary>
     internal static void RecordBulkRead(string outcome, int failures, TimeSpan? elapsed)
     {

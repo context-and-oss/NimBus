@@ -26,6 +26,12 @@ public interface IStoreResultCache
     /// to every awaiting caller but are never cached.
     /// </summary>
     Task<T> GetOrCreateAsync<T>(string key, TimeSpan ttl, Func<Task<T>> factory);
+
+    /// <summary>
+    /// Drops the cached value for <paramref name="key"/> so the next <see cref="GetOrCreateAsync"/>
+    /// runs its factory. An in-flight creation already awaited by other callers completes for them.
+    /// </summary>
+    void Remove(string key);
 }
 
 /// <summary>
@@ -70,6 +76,12 @@ public sealed class StoreResultCache : IStoreResultCache
             _cache.Remove(key);
             throw;
         }
+    }
+
+    public void Remove(string key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        lock (_creationLock) _cache.Remove(key);
     }
 }
 
