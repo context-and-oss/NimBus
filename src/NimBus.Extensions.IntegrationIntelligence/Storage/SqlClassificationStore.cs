@@ -60,6 +60,27 @@ public sealed class SqlClassificationStore(string connectionString, TimeProvider
         catch (SqlException exception) when (exception.Number is 2601 or 2627) { return false; }
     }
 
+    /// <summary>
+    /// One round trip per batch: the ids travel as a single JSON array parameter, so the batch size
+    /// is not limited by SQL Server's 2 100-parameter cap. A missing table raises a SqlException.
+    /// </summary>
+    protected override async Task<IReadOnlyList<ClassificationDocument>> ReadManyAsync(IReadOnlyList<string> failureIds, CancellationToken ct)
+    {
+        if (failureIds.Count == 0) return [];
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT c.StateJson FROM OPENJSON(@ids) WITH (Id nvarchar(200) '$') AS i " +
+            "INNER JOIN dbo.FailureClassifications AS c ON c.FailureMessageId = i.Id";
+        command.Parameters.Add("@ids", System.Data.SqlDbType.NVarChar, -1).Value = JsonConvert.SerializeObject(failureIds);
+        var documents = new List<ClassificationDocument>(failureIds.Count);
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            documents.Add(JsonConvert.DeserializeObject<ClassificationDocument>(reader.GetString(0))!);
+        return documents;
+    }
+
     protected override async IAsyncEnumerable<ClassificationDocument> EnumerateAsync([EnumeratorCancellation] CancellationToken ct)
     {
         await using var connection = new SqlConnection(_connectionString);

@@ -56,16 +56,54 @@ public sealed class IntelligenceActivationTests
     }
 
     [TestMethod]
-    [DataRow("not-an-integer")]
-    [DataRow("999")]
-    public async Task Bad_Provider_Configuration_Prunes_Only_Execution_Routes(string timeout)
+    public async Task Unbindable_Configuration_Fails_Closed_To_The_Status_Route_Only()
     {
-        using var host = await CreateHost("local", true, timeout);
+        using var host = await CreateHost("local", true, "not-an-integer");
         var routes = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().Select(e => e.RoutePattern.RawText).ToList();
         CollectionAssert.Contains(routes, "api/integration-intelligence/status");
         Assert.IsFalse(routes.Any(r => r!.Contains("/classification", StringComparison.Ordinal)));
         CollectionAssert.Contains(routes, "api/app/stats");
-        Assert.IsFalse(host.Services.GetRequiredService<IntegrationIntelligenceActivation>().Ready);
+        var activation = host.Services.GetRequiredService<IntegrationIntelligenceActivation>();
+        Assert.IsFalse(activation.Ready);
+        Assert.IsFalse(activation.Readable);
+        Assert.IsNull(host.Services.GetService<IFailureClassificationStore>());
+    }
+
+    [TestMethod]
+    [DataRow("999", true)]
+    [DataRow("20", false)]
+    public async Task Invalid_Provider_Settings_Keep_Saved_Classifications_Readable_And_Prune_Only_Analysis(string timeout, bool withApiKey)
+    {
+        // Spec 043 §9 read-only mode: an out-of-range timeout or a missing API key blocks analysis,
+        // not reading what was already saved.
+        using var host = await CreateHost("local", true, timeout, apiKey: withApiKey ? "test-only" : null);
+
+        var activation = host.Services.GetRequiredService<IntegrationIntelligenceActivation>();
+        Assert.IsTrue(activation.Readable);
+        Assert.IsFalse(activation.Ready);
+        var actions = host.Services.GetRequiredService<EndpointDataSource>().Endpoints
+            .Select(e => e.Metadata.GetMetadata<ControllerActionDescriptor>())
+            .Where(d => d is not null && d.ControllerTypeInfo.Namespace == typeof(IntegrationIntelligenceController).Namespace)
+            .Select(d => d!.ActionName)
+            .ToList();
+        CollectionAssert.IsSubsetOf(new[] { "GetStatus", "GetClassification", "GetHistory" }, actions);
+        CollectionAssert.DoesNotContain(actions, nameof(IntegrationIntelligenceController.PostClassification));
+        using var scope = host.Services.CreateScope();
+        Assert.IsNotNull(scope.ServiceProvider.GetService<FailureClassificationReader>());
+        Assert.IsNull(scope.ServiceProvider.GetService<FailureClassificationService>());
+    }
+
+    [TestMethod]
+    public async Task Read_Only_Mode_Registers_Storage_Schema_And_Retention()
+    {
+        var hosted = new List<Type>();
+        using var host = await CreateHost("local", true, "20", descriptors =>
+            hosted.AddRange(descriptors.Where(d => d.ServiceType == typeof(IHostedService)).Select(d => d.ImplementationType ?? typeof(object))),
+            apiKey: null);
+
+        Assert.IsNotNull(host.Services.GetService<IFailureClassificationStore>());
+        CollectionAssert.Contains(hosted.Select(t => t.Name).ToList(), "ClassificationRetentionWorker");
+        CollectionAssert.Contains(hosted.Select(t => t.Name).ToList(), "SqlClassificationSchemaInitializer");
     }
 
     [TestMethod]
@@ -103,17 +141,18 @@ public sealed class IntelligenceActivationTests
         Assert.AreEqual(rateLimit ? RateLimitPolicyNames.Intelligence : null, policy);
     }
 
-    private static Task<IHost> CreateHost(string branch, bool enabled, string timeout, Action<IServiceCollection>? inspect = null, bool rateLimit = true, Action<IServiceCollection>? configure = null, IConfiguration? overrides = null)
+    private static Task<IHost> CreateHost(string branch, bool enabled, string timeout, Action<IServiceCollection>? inspect = null, bool rateLimit = true, Action<IServiceCollection>? configure = null, IConfiguration? overrides = null, string? apiKey = "test-only")
     {
         var settings = new Dictionary<string, string?>
         {
             ["NimBus:StorageProvider"] = "sqlserver", ["SqlConnection"] = "Server=localhost;Database=unused;Integrated Security=true;TrustServerCertificate=true",
             ["ServiceBusNamespace"] = "unit-test", ["EnableLocalDevAuthentication"] = (branch == "local").ToString(),
             ["NimBus:IntegrationIntelligence:Enabled"] = enabled.ToString(),
-            ["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:ApiKey"] = "test-only",
             ["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:TimeoutSeconds"] = timeout,
             ["RateLimiting:Enabled"] = rateLimit.ToString(),
         };
+        // A chained configuration treats an empty value as missing, so "no key" means omitting it.
+        if (apiKey is not null) settings["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:ApiKey"] = apiKey;
         if (branch is "identity" or "dual") settings["NimBusIdentity:ConnectionString"] = "Server=localhost;Database=unused;Integrated Security=true";
         if (branch is "dual" or "entra")
         {

@@ -60,6 +60,24 @@ public static class NimBusIntelligenceTelemetry
         if (inputTokens is { } tokens) InputTokens.Add(tokens, tags);
     }
 
+    /// <summary>Bulk classification reads by outcome (available, unavailable, unsupported).</summary>
+    public static readonly Counter<long> BulkReads = Meter.CreateCounter<long>("nimbus.intelligence.insights.bulk_reads");
+
+    /// <summary>Distinct failure ids requested per bulk read.</summary>
+    public static readonly Histogram<long> BulkReadFailures = Meter.CreateHistogram<long>("nimbus.intelligence.insights.bulk_read_failures");
+
+    /// <summary>Bulk read duration in milliseconds.</summary>
+    public static readonly Histogram<double> BulkReadDuration = Meter.CreateHistogram<double>("nimbus.intelligence.insights.bulk_read_duration", "ms");
+
+    /// <summary>Records one bulk read without identifiers.</summary>
+    internal static void RecordBulkRead(string outcome, int failures, TimeSpan? elapsed)
+    {
+        var tags = new TagList { { "nimbus.intelligence.outcome", outcome } };
+        BulkReads.Add(1, tags);
+        if (failures > 0) BulkReadFailures.Record(failures, tags);
+        if (elapsed is { } duration) BulkReadDuration.Record(duration.TotalMilliseconds, tags);
+    }
+
     private static void AddTag(ref TagList tags, string name, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value)) tags.Add(name, value);
