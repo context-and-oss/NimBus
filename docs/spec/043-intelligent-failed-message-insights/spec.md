@@ -310,9 +310,11 @@ once per occurrence, load payloads or stack traces for enrichment, or scan the c
 classification store without scope constraints.
 
 The ceiling below bounds only the classification read. The occurrence projection read remains
-unbounded, as today: Cosmos drains every matching row, and SQL has no index leading on
-`(MessageType, EnqueuedTimeUtc)`, so the query scans. Decision 1 measures it on both providers
-and decides whether to add an index migration.
+unbounded, as today: Cosmos drains every matching row. On SQL the date-leading
+`IX_Messages_EnqueuedTimeUtc` serves short windows, but for windows covering a large share of
+rows the optimizer scans the clustered index, and the error text must be read from
+`MessageContentJson` per row either way. Decision 1 measured it; no index migration in Phase 1
+(see the plan's Measurements).
 
 For this draft, propose a configurable enrichment ceiling of **10,000 occurrences per scope**,
 counted after the endpoint filter. Above the ceiling, return `limitExceeded` with the configured
@@ -466,8 +468,8 @@ PR description. This draft itself introduces no runtime code.
 
 1. Validate the proposed 10,000-occurrence enrichment ceiling, batch sizes, concurrency,
    enrichment-cache TTL, and latency/RU budget with SQL and Cosmos measurements, including the
-   occurrence projection read and whether SQL needs an index on `(MessageType, EnqueuedTimeUtc)`.
-   Fix the accepted defaults in the plan.
+   occurrence projection read and whether SQL needs an index for it. Fix the accepted defaults
+   in the plan.
 2. Specify the bulk-read contract (whole-document reads versus a latest-result summary), the
    read-only service shape, the final additive API schemas for overview, drill-down, and group
    detail, the hash format for group keys, and the cursor encoding, without changing public APIs

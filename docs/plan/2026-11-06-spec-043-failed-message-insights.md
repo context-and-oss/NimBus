@@ -29,22 +29,20 @@ that each leave `master` releasable. Everything below was checked against the wo
 Bound in a new `FailedInsightsOptions` (WebApp, `Services/Insights/`), validated at startup
 (ceiling 100–100 000, cache 0–30 s, batch 50–1 000, concurrency 1–8, patterns 1–50).
 
-**Measurement step (PR 1, before PR 3 is opened).** Using the local Cosmos emulator and SQL
-container recipe, seed 100 000 `ErrorResponse` rows over 30 days and 10 000 classification
-documents with one to three operations each, then record:
+**Measurement step, split across PR 1 and PR 2 (both before PR 3 is opened).**
 
-- the occurrence projection read for the 1d, 7d and 30d presets on both providers (Cosmos RU
-  from `FeedResponse.RequestCharge`, SQL duration and logical reads);
-- one cold enrichment of 10 000 ids in 500-id batches (total RU, p95 duration);
-- the same with the enrichment cache warm.
+- PR 1: the SQL occurrence projection read for 1d, 7d and 30d windows. Done; see
+  "Measurements". Result: no index migration (the candidate index does not move the 30-day
+  read).
+- PR 2: one cold enrichment of 10 000 ids in 500-id batches on SQL and on the Cosmos emulator
+  (p95 wall time), with the enrichment cache warm and cold. The bulk reader only exists from
+  PR 2, so this cannot run earlier.
+- Cosmos RU for both reads needs a live account: the vNext emulator reports no request charge.
+  Measure it on the dev account (`rg-nbdemo-dev`) before PR 3 merges, not before it opens.
 
-Accept the defaults if a cold 10 000-id enrichment stays under 50 000 RU and 3 s p95, and a
-30-day projection read under 1 s on SQL. If the SQL projection read exceeds that, add a
-migration in `src/NimBus.MessageStore.SqlServer/Schema/` (next free number) creating
-`IX_Messages_MessageType_EnqueuedTimeUtc ON Messages (MessageType, EnqueuedTimeUtc) INCLUDE
-(EndpointId, EventTypeId, EventId, MessageId)`; the error text still comes from
-`JSON_VALUE(MessageContentJson, …)` per row. Record the numbers in this plan under
-"Measurements" before PR 3.
+Accept the enrichment defaults if a cold 10 000-id enrichment stays under 3 s p95 on both
+local providers and under 50 000 RU on the live account; otherwise lower
+`EnrichmentCeiling` to the largest scope that meets both, and record why.
 
 ### D2. Contracts
 
@@ -166,7 +164,7 @@ Delivered as five PRs, in order. Each has its own branch, RED-first tests and a 
   `InMemoryMessageStore` maps `m.MessageId`.
 - `MetricsStoreConformanceTests.GetFailedMessageInsights_returns_recent_failed_error_details`
   asserts the id.
-- Measurement step from D1; results appended to this plan.
+- The SQL projection part of the D1 measurement step; results appended to this plan.
 
 ### PR 2 — `feat(intelligence): read saved classifications without a provider`
 
@@ -181,6 +179,8 @@ Delivered as five PRs, in order. Each has its own branch, RED-first tests and a 
   and `nimbus.intelligence.insights.documents` (histogram of ids per read) in
   `NimBusIntelligenceTelemetry`.
 - `docs/integration-intelligence.md`: the three activation modes and what each serves.
+- The enrichment part of the D1 measurement step, through the new bulk reader; results
+  appended to this plan.
 
 ### PR 3 — `feat(webapp): group failed insights by likely cause and recovery guidance`
 
@@ -302,7 +302,44 @@ measurement results from D1 must be in this plan before PR 3 is opened.
 
 ## Measurements
 
-To be filled in by PR 1.
+### SQL occurrence projection (PR 1, 2026-11-07)
+
+Setup: SQL Server 2022 in Docker on the development workstation; a `Messages` table with the
+production DDL and all five production indexes (`0002_Messages.sql`, `0014_SearchSortIndexes.sql`);
+1 000 000 rows over 30 days, every tenth an `ErrorResponse` (100 000 failures) with a ~1 KB
+`MessageContentJson` including error text and stack trace, the rest `EventRequest` and
+`ResolutionResponse` with ~0.7 KB JSON. The query is the exact `GetFailedMessageInsights`
+projection with `MessageId`, results inserted into a table variable. Cold means after
+`CHECKPOINT; DBCC DROPCLEANBUFFERS`.
+
+| Window | Failures | Today cold / warm | With `(MessageType, EnqueuedTimeUtc) INCLUDE (EndpointId, EventTypeId, EventId, MessageId)` cold / warm |
+|---|---|---|---|
+| 1d | 3 333 | 410 / 132 ms | 181 / 78 ms |
+| 7d | 23 333 | 1 914 / 721 ms | 1 012 / 495 ms |
+| 30d | 100 000 | 3 114 / 2 124 ms | 3 319 / 2 363 ms |
+
+Findings:
+
+- The existing date-leading `IX_Messages_EnqueuedTimeUtc` (migration 0014) is not used for a
+  7-day window: the range covers about 23 % of rows, and the optimizer chooses a clustered
+  index scan over 23 000 key lookups. The spec's "no index leading on (MessageType,
+  EnqueuedTimeUtc)" is literally true; the effect is a scan for wide windows.
+- The candidate index halves the 1d and 7d reads but does not change the 30d read, which is
+  dominated by reading 100 000 JSON documents for `$.ErrorContent.ErrorText`. Any index that
+  helps the 30-day read would have to include the error text, which today lives only inside
+  `MessageContentJson`.
+- The 30-day read misses the 1 s target either way. It is today's cost for the existing page,
+  Phase 1 does not change it, the occurrence cache bounds it to one read per window per 30 s,
+  and a 100 000-occurrence scope is above the 10 000 enrichment ceiling, so it returns
+  `limitExceeded` for the new perspectives.
+
+Decision: no index migration in Phase 1. A persisted `ErrorText` column (or a computed column
+over the JSON path, indexed with the identity columns) is the only change that would move the
+30-day read; it is a separate storage change and is listed under Out of scope.
+
+### Enrichment (PR 2)
+
+To be filled in by PR 2.
 
 ## Out of scope
 
@@ -311,3 +348,5 @@ To be filled in by PR 1.
   (spec section 12).
 - Changing the single-failure GET route's 409/503 answers (D4).
 - A `nb` CLI counterpart.
+- A persisted or computed `ErrorText` column on SQL `Messages` to speed up long-window
+  projections (see "Measurements").
