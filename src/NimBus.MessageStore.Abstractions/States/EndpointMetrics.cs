@@ -58,6 +58,20 @@ public class FailedMessageInfo
     public string? ErrorText { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; }
     public string EventId { get; set; } = null!;
+
+    /// <summary>
+    /// The failed attempt's own message id: the ErrorResponse's broker-assigned id, which failure
+    /// classifications are keyed on. Null when a provider does not project it; consumers must then
+    /// treat attempt identity as unavailable rather than guess it from <see cref="EventId"/>.
+    /// </summary>
+    public string? MessageId { get; set; }
+
+    /// <summary>
+    /// The failed attempt's session. Together with <see cref="EventId"/> it forms the stored event id,
+    /// <c>{EventId}_{SessionId}</c>, which <c>IMessageTrackingStore.GetEventsByIds</c> requires (a bare
+    /// event id finds nothing on Cosmos). Null when a provider does not project it.
+    /// </summary>
+    public string? SessionId { get; set; }
 }
 
 public class EndpointLatencyMetricsResult
