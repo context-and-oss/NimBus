@@ -49,7 +49,17 @@ Evidence is bounded and redacted before it leaves the process. Event payload inc
 3. High change-required likelihood → `ChangeLikelyRequired`.
 4. Otherwise → `Investigate`.
 
-For Cosmos deployments, provision the `failureclassifications` and `intelligencesettings` containers by setting the deployment parameter `integrationIntelligenceEnabled` to `true`. SQL deployments use the message-store connection with extension-owned `dbo.FailureClassifications` and a separate DbUp journal, `dbo.IntelligenceSchemaVersions`. There is no in-memory fallback. Keep the feature disabled while changing provider credentials or storage configuration; invalid provider settings leave the status route available as `ProviderNotConfigured` and do not expose the analysis route.
+For Cosmos deployments, provision the `failureclassifications` and `intelligencesettings` containers by setting the deployment parameter `integrationIntelligenceEnabled` to `true`. SQL deployments use the message-store connection with extension-owned `dbo.FailureClassifications` and a separate DbUp journal, `dbo.IntelligenceSchemaVersions`. There is no in-memory fallback. Keep the feature disabled while changing provider credentials or storage configuration.
+
+### Activation modes
+
+| Mode | When | What is available |
+|---|---|---|
+| Off | `Enabled` is false, the configuration can't be bound, or saved Admin settings can't be read | Nothing. Classification storage is not read. |
+| Read-only | Enabled with storage configured, but provider, threshold or evidence settings fail validation (for example no API key) | Saved classifications: the classification GET and `history` routes, the MCP `nimbus_get_classification` tool and Failed Message Insights enrichment. Storage, its schema and the retention reconciler run. Status reports `ProviderNotConfigured`. No new analysis: POST is not exposed and `nimbus_classify_failure` reports that no provider is configured. |
+| Ready | Enabled and every setting is valid | Everything, including analysis. |
+
+Read-only mode means a key rotation or a cleared key never hides results that were already saved.
 
 ## Settings
 

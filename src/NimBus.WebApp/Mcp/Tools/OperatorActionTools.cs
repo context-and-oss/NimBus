@@ -167,6 +167,8 @@ public sealed class OperatorActionTools
         await _access.RequireScopeAsync(OperatorAction.Classify).ConfigureAwait(false);
         if (!_classifications.IsAvailable)
             throw OperatorToolErrors.FeatureUnavailable("AI failure classification is not enabled in this deployment.");
+        if (!_classifications.CanAnalyze)
+            throw OperatorToolErrors.FeatureUnavailable("AI failure classification can't start a new analysis in this deployment: no provider is configured. Saved classifications can still be read.");
 
         var endpoint = await _catalog.RequireReadableAsync(endpointId).ConfigureAwait(false);
         await _access.RequireChangeAllowedOnAsync(OperatorAction.Classify, endpoint).ConfigureAwait(false);
