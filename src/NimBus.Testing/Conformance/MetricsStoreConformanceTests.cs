@@ -88,6 +88,35 @@ public abstract class MetricsStoreConformanceTests
         Assert.AreEqual(receiver, row.EndpointId);
         Assert.AreEqual("OrderPlaced", row.EventTypeId);
         Assert.AreEqual("Downstream timeout", row.ErrorText);
+        Assert.AreEqual(Id("msg-insight"), row.MessageId);
+    }
+
+    [TestMethod]
+    public async Task GetFailedMessageInsights_returns_one_row_per_failed_attempt_with_its_message_id()
+    {
+        // Spec 043 §4.1: the counting unit is a failed attempt, identified by its exact MessageId,
+        // so an event that failed twice yields two rows that classifications can join to.
+        var store = CreateStore();
+        var from = DateTime.UtcNow.AddHours(-1);
+        var eventId = Id("evt-attempts");
+        var receiver = Id("receiver");
+        var firstAttempt = Id("msg-attempt-1");
+        var secondAttempt = Id("msg-attempt-2");
+        await store.StoreMessage(SampleMessage(eventId, firstAttempt, MessageType.ErrorResponse, from.AddMinutes(1),
+            endpointId: receiver, errorText: "First failure"));
+        await store.StoreMessage(SampleMessage(eventId, secondAttempt, MessageType.ErrorResponse, from.AddMinutes(2),
+            endpointId: receiver, errorText: "Second failure"));
+
+        var rows = (await store.GetFailedMessageInsights(from, from.AddHours(2)))
+            .Where(i => i.EventId == eventId)
+            .OrderBy(i => i.EnqueuedTimeUtc)
+            .ToList();
+
+        Assert.HasCount(2, rows);
+        Assert.AreEqual(firstAttempt, rows[0].MessageId);
+        Assert.AreEqual("First failure", rows[0].ErrorText);
+        Assert.AreEqual(secondAttempt, rows[1].MessageId);
+        Assert.AreEqual("Second failure", rows[1].ErrorText);
     }
 
     [TestMethod]

@@ -118,7 +118,7 @@ public sealed class ServiceAndEvidenceTests
         Assert.AreEqual(403, error.StatusCode);
         fixture.Host.Reader = true;
         fixture.Source.Throw = true;
-        var response = await new IntegrationIntelligenceController(fixture.Service).GetClassification("event", "failure", default);
+        var response = await new IntegrationIntelligenceReadController(fixture.Reader).GetClassification("event", "failure", default);
         Assert.AreEqual(503, ((ObjectResult)response).StatusCode);
         Assert.DoesNotContain("credential", System.Text.Json.JsonSerializer.Serialize(((ObjectResult)response).Value));
     }
@@ -199,11 +199,14 @@ internal sealed class ServiceFixture
     public MessageSource Source => (MessageSource)(object)Messages;
     public FailureEvidenceBuilder Evidence { get; }
     public FailureClassificationService Service { get; }
+    public FailureClassificationReader Reader { get; }
     public ServiceFixture(IFailureClassificationStore? store = null)
     {
+        store ??= new InMemoryClassificationStore();
         Messages = DispatchProxy.Create<IMessageTrackingStore, MessageSource>();
         Evidence = new(Messages, new TestMasker(), null, new IntelligenceDataRedactor(), Options);
-        Service = new(Options, Host, store ?? new InMemoryClassificationStore(), Evidence, Provider, Messages);
+        Service = new(Options, Host, store, Evidence, Provider, Messages);
+        Reader = new(Host, store, Messages);
     }
 }
 

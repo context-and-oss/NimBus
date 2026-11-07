@@ -2760,9 +2760,13 @@ namespace NimBus.WebApp.ManagementApi
 
         /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
 
-        /// <returns>Failed message insights grouped by error pattern</returns>
+        /// <param name="endpointId">Exact endpoint id to narrow the failures to. Omitted selects every endpoint.</param>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period, System.DateTime? from, System.DateTime? to);
+        /// <param name="refresh">Re-read saved classifications instead of using the short-lived enrichment cache. New failures can still lag by the metrics cache lifetime.</param>
+
+        /// <returns>Failed message insights grouped by error pattern, and by likely cause and recovery guidance when saved classifications are available</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period, System.DateTime? from, System.DateTime? to, string endpointId, bool? refresh);
 
         /// <summary>
         /// Get time-bucketed message counts
@@ -2833,12 +2837,14 @@ namespace NimBus.WebApp.ManagementApi
         /// </summary>
         /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
         /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
-        /// <returns>Failed message insights grouped by error pattern</returns>
+        /// <param name="endpointId">Exact endpoint id to narrow the failures to. Omitted selects every endpoint.</param>
+        /// <param name="refresh">Re-read saved classifications instead of using the short-lived enrichment cache. New failures can still lag by the metrics cache lifetime.</param>
+        /// <returns>Failed message insights grouped by error pattern, and by likely cause and recovery guidance when saved classifications are available</returns>
         [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/metrics/failed-insights")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsights([Microsoft.AspNetCore.Mvc.FromQuery] Period period, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? to)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsights([Microsoft.AspNetCore.Mvc.FromQuery] Period period, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? to, [Microsoft.AspNetCore.Mvc.FromQuery] string endpointId, [Microsoft.AspNetCore.Mvc.FromQuery] bool? refresh)
         {
 
-            return _implementation.GetMetricsFailedInsightsAsync(period, from, to);
+            return _implementation.GetMetricsFailedInsightsAsync(period, from, to, endpointId, refresh);
         }
 
         /// <summary>
@@ -14393,6 +14399,17 @@ namespace NimBus.WebApp.ManagementApi
     {
         private System.Collections.Generic.List<ErrorPatternGroup> _groups;
         private int _totalFailed;
+        private System.DateTime _from;
+        private System.DateTime _to;
+        private string _endpointId;
+        private int _totalOccurrences;
+        private System.DateTime _occurrencesReadAt;
+        private System.DateTime? _classificationsReadAt;
+        private InsightsEnrichmentStatus _enrichment;
+        private int _enrichmentLimit;
+        private InsightsCoverage _coverage;
+        private System.Collections.Generic.List<InsightGroup> _causeGroups;
+        private System.Collections.Generic.List<InsightGroup> _guidanceGroups;
 
         [Newtonsoft.Json.JsonProperty("groups", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<ErrorPatternGroup> Groups    {
@@ -14407,6 +14424,9 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// Failure occurrences in the window. Always equal to totalOccurrences; kept for existing clients.
+        /// </summary>
         [Newtonsoft.Json.JsonProperty("totalFailed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public int TotalFailed    {
             get { return _totalFailed; }
@@ -14415,6 +14435,177 @@ namespace NimBus.WebApp.ManagementApi
                 if (_totalFailed != value)
                 {
                     _totalFailed = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolved window start (inclusive, UTC). Send it back unchanged with to for drill-down.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("from", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime From    {
+            get { return _from; }
+            set
+            {
+                if (_from != value)
+                {
+                    _from = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolved window end (exclusive, UTC).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("to", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime To    {
+            get { return _to; }
+            set
+            {
+                if (_to != value)
+                {
+                    _to = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The endpoint filter applied, or null for every endpoint.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Failed attempts in the scope. An event that failed three times counts three.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("totalOccurrences", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int TotalOccurrences    {
+            get { return _totalOccurrences; }
+            set
+            {
+                if (_totalOccurrences != value)
+                {
+                    _totalOccurrences = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When the failure occurrences were read from the message store.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("occurrencesReadAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime OccurrencesReadAt    {
+            get { return _occurrencesReadAt; }
+            set
+            {
+                if (_occurrencesReadAt != value)
+                {
+                    _occurrencesReadAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When saved classifications were read, or null when enrichment is not available.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("classificationsReadAt", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ClassificationsReadAt    {
+            get { return _classificationsReadAt; }
+            set
+            {
+                if (_classificationsReadAt != value)
+                {
+                    _classificationsReadAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("enrichment", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public InsightsEnrichmentStatus Enrichment    {
+            get { return _enrichment; }
+            set
+            {
+                if (_enrichment != value)
+                {
+                    _enrichment = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The largest scope, in occurrences, that is enriched with saved classifications.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("enrichmentLimit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int EnrichmentLimit    {
+            get { return _enrichmentLimit; }
+            set
+            {
+                if (_enrichmentLimit != value)
+                {
+                    _enrichmentLimit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Occurrences grouped by likely failure cause. Null unless enrichment is available.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("causeGroups", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightGroup> CauseGroups    {
+            get { return _causeGroups; }
+            set
+            {
+                if (_causeGroups != value)
+                {
+                    _causeGroups = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Occurrences grouped by saved recovery guidance. Null unless enrichment is available.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("guidanceGroups", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightGroup> GuidanceGroups    {
+            get { return _guidanceGroups; }
+            set
+            {
+                if (_guidanceGroups != value)
+                {
+                    _guidanceGroups = value;
                     RaisePropertyChanged();
                 }
             }
@@ -14451,16 +14642,456 @@ namespace NimBus.WebApp.ManagementApi
         }
     }
 
+    /// <summary>
+    /// Whether saved classifications enrich this response. Every value except available leaves coverage and the cause and guidance groups null. disabled is listed first so an unset value never reads as available.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum InsightsEnrichmentStatus
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disabled")]
+        Disabled = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"available")]
+        Available = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"unavailable")]
+        Unavailable = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"unsupported")]
+        Unsupported = 3,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"limitExceeded")]
+        LimitExceeded = 4,
+
+    }
+
+    /// <summary>
+    /// How many occurrences have saved analysis. classified + uncertain + notAnalyzed + notEligible = total.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightsCoverage : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _total;
+        private int _analyzed;
+        private int _classified;
+        private int _uncertain;
+        private int _notAnalyzed;
+        private int _notEligible;
+
+        [Newtonsoft.Json.JsonProperty("total", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Total    {
+            get { return _total; }
+            set
+            {
+                if (_total != value)
+                {
+                    _total = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// classified + uncertain.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("analyzed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Analyzed    {
+            get { return _analyzed; }
+            set
+            {
+                if (_analyzed != value)
+                {
+                    _analyzed = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("classified", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Classified    {
+            get { return _classified; }
+            set
+            {
+                if (_classified != value)
+                {
+                    _classified = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("uncertain", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Uncertain    {
+            get { return _uncertain; }
+            set
+            {
+                if (_uncertain != value)
+                {
+                    _uncertain = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// No completed result, and analysis could be requested. Includes failures that can no longer be analyzed because their event has since completed or been skipped.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("notAnalyzed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int NotAnalyzed    {
+            get { return _notAnalyzed; }
+            set
+            {
+                if (_notAnalyzed != value)
+                {
+                    _notAnalyzed = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// No completed result, and the endpoint is outside the configured analysis allow-list.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("notEligible", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int NotEligible    {
+            get { return _notEligible; }
+            set
+            {
+                if (_notEligible != value)
+                {
+                    _notEligible = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightsCoverage FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightsCoverage>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// One likely-cause or recovery-guidance group.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightGroup : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _groupKey;
+        private string _label;
+        private int _count;
+        private InsightsCoverage _coverage;
+        private System.Collections.Generic.List<string> _endpoints;
+        private System.Collections.Generic.List<string> _eventTypes;
+        private System.DateTime _latestOccurrence;
+        private System.Collections.Generic.List<InsightGroupPattern> _topPatterns;
+        private int _morePatterns;
+
+        /// <summary>
+        /// Stable within this response. A taxonomy or guidance name, or uncertain, notAnalyzed, notEligible.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("groupKey", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string GroupKey    {
+            get { return _groupKey; }
+            set
+            {
+                if (_groupKey != value)
+                {
+                    _groupKey = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("label", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Label    {
+            get { return _label; }
+            set
+            {
+                if (_label != value)
+                {
+                    _label = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Count    {
+            get { return _count; }
+            set
+            {
+                if (_count != value)
+                {
+                    _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventTypes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> EventTypes    {
+            get { return _eventTypes; }
+            set
+            {
+                if (_eventTypes != value)
+                {
+                    _eventTypes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("latestOccurrence", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime LatestOccurrence    {
+            get { return _latestOccurrence; }
+            set
+            {
+                if (_latestOccurrence != value)
+                {
+                    _latestOccurrence = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The group's most frequent error patterns, at most the configured limit.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("topPatterns", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightGroupPattern> TopPatterns    {
+            get { return _topPatterns; }
+            set
+            {
+                if (_topPatterns != value)
+                {
+                    _topPatterns = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Distinct error patterns in the group beyond topPatterns.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("morePatterns", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int MorePatterns    {
+            get { return _morePatterns; }
+            set
+            {
+                if (_morePatterns != value)
+                {
+                    _morePatterns = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightGroup FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightGroup>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightGroupPattern : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _groupKey;
+        private string _normalizedPattern;
+        private int _count;
+        private string _exampleErrorText;
+
+        /// <summary>
+        /// The error pattern's key, as on ErrorSubGroup.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("groupKey", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string GroupKey    {
+            get { return _groupKey; }
+            set
+            {
+                if (_groupKey != value)
+                {
+                    _groupKey = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("normalizedPattern", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string NormalizedPattern    {
+            get { return _normalizedPattern; }
+            set
+            {
+                if (_normalizedPattern != value)
+                {
+                    _normalizedPattern = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Count    {
+            get { return _count; }
+            set
+            {
+                if (_count != value)
+                {
+                    _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("exampleErrorText", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ExampleErrorText    {
+            get { return _exampleErrorText; }
+            set
+            {
+                if (_exampleErrorText != value)
+                {
+                    _exampleErrorText = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightGroupPattern FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightGroupPattern>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class ErrorPatternGroup : System.ComponentModel.INotifyPropertyChanged
     {
+        private string _groupKey;
         private string _errorCategory;
         private int _count;
+        private InsightsCoverage _coverage;
         private System.Collections.Generic.List<string> _endpoints;
         private System.Collections.Generic.List<string> _eventTypes;
         private System.DateTime _latestOccurrence;
         private string _exampleErrorText;
         private System.Collections.Generic.List<ErrorSubGroup> _subGroups;
+
+        /// <summary>
+        /// Stable within this response; not durable across releases.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("groupKey", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string GroupKey    {
+            get { return _groupKey; }
+            set
+            {
+                if (_groupKey != value)
+                {
+                    _groupKey = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
 
         [Newtonsoft.Json.JsonProperty("errorCategory", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string ErrorCategory    {
@@ -14483,6 +15114,19 @@ namespace NimBus.WebApp.ManagementApi
                 if (_count != value)
                 {
                     _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
                     RaisePropertyChanged();
                 }
             }
@@ -14587,12 +15231,30 @@ namespace NimBus.WebApp.ManagementApi
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class ErrorSubGroup : System.ComponentModel.INotifyPropertyChanged
     {
+        private string _groupKey;
         private string _normalizedPattern;
         private int _count;
+        private InsightsCoverage _coverage;
         private System.Collections.Generic.List<string> _endpoints;
         private System.Collections.Generic.List<string> _eventTypes;
         private System.DateTime _latestOccurrence;
         private string _exampleErrorText;
+
+        /// <summary>
+        /// Stable within this response; not durable across releases.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("groupKey", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string GroupKey    {
+            get { return _groupKey; }
+            set
+            {
+                if (_groupKey != value)
+                {
+                    _groupKey = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
 
         [Newtonsoft.Json.JsonProperty("normalizedPattern", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string NormalizedPattern    {
@@ -14615,6 +15277,19 @@ namespace NimBus.WebApp.ManagementApi
                 if (_count != value)
                 {
                     _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
                     RaisePropertyChanged();
                 }
             }
