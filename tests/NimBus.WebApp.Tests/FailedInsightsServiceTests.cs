@@ -31,7 +31,7 @@ namespace NimBus.WebApp.Tests;
 
 /// <summary>Spec 043: failed-message insights enriched with saved classifications.</summary>
 [TestClass]
-public sealed class FailedInsightsServiceTests
+public sealed partial class FailedInsightsServiceTests
 {
     private static readonly DateTime Now = new(2026, 11, 7, 12, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime From = Now.AddHours(-6);
@@ -385,17 +385,17 @@ public sealed class FailedInsightsServiceTests
 
     internal static StoreResultCache NewCache() => new(new MemoryCache(new MemoryCacheOptions()));
 
-    internal static FailedInsightsService Service(IMetricsStore store, IInsightsEnrichmentSource enrichment, IStoreResultCache? cache = null,
+    internal static FailedInsightsService Service(InMemoryMessageStore store, IInsightsEnrichmentSource enrichment, IStoreResultCache? cache = null,
         IEndpointAuthorizationService? authorization = null, FailedInsightsOptions? options = null)
-        => new(store, cache ?? NewCache(), authorization ?? new Authorization(true), enrichment,
+        => new(store, store, cache ?? NewCache(), authorization ?? new Authorization(true), enrichment,
             Options.Create(options ?? new FailedInsightsOptions()), new FixedClock(Now));
 
     /// <summary>A MetricsImplementation wired to a real FailedInsightsService with intelligence off.</summary>
-    internal static MetricsImplementation Metrics(IMetricsStore store, IStoreResultCache cache, IEndpointAuthorizationService authorization)
-        => new(store, cache, authorization, new FailedInsightsService(store, cache, authorization,
+    internal static MetricsImplementation Metrics(InMemoryMessageStore store, IStoreResultCache cache, IEndpointAuthorizationService authorization)
+        => new(store, cache, authorization, new FailedInsightsService(store, store, cache, authorization,
             new FakeEnrichment { IsEnabled = false }, Options.Create(new FailedInsightsOptions())));
 
-    private static async Task<FailedInsightsOverview> Build(IMetricsStore store, IInsightsEnrichmentSource enrichment, string? endpointId = null,
+    private static async Task<FailedInsightsOverview> Build(InMemoryMessageStore store, IInsightsEnrichmentSource enrichment, string? endpointId = null,
         IStoreResultCache? cache = null, FailedInsightsOptions? options = null, bool enrich = true, bool refresh = false)
     {
         var result = await Service(store, enrichment, cache, options: options)
@@ -408,11 +408,12 @@ public sealed class FailedInsightsServiceTests
         => groups!.Single(g => g.GroupKey == key);
 
     private static Task Fail(InMemoryMessageStore store, string endpointId, string eventId, string messageId, string errorText,
-        int minutesAgo = 60, DateTime? at = null)
+        int minutesAgo = 60, DateTime? at = null, string sessionId = "s1")
         => store.StoreMessage(new MessageEntity
         {
             EventId = eventId,
             MessageId = messageId,
+            SessionId = sessionId,
             EndpointId = endpointId,
             EventTypeId = "OrderPlaced",
             MessageType = NimBus.Core.Messages.MessageType.ErrorResponse,
@@ -461,7 +462,7 @@ public sealed class FailedInsightsServiceTests
         }
     }
 
-    private sealed class CountingStore : InMemoryMessageStore
+    internal class CountingStore : InMemoryMessageStore
     {
         private int _calls;
         public int Calls => _calls;

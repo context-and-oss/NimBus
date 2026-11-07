@@ -6279,6 +6279,160 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Page the failure occurrences of one insights group
+     * @param from Window start (inclusive), as returned by the overview.
+     * @param to Window end (exclusive), as returned by the overview.
+     * @param groupKey A groupKey from the overview for the same perspective.
+     * @param endpointId (optional) 
+     * @param pageSize (optional) 1 to 100; default 50.
+     * @param continuationToken (optional) 
+     * @return One page of occurrences
+     */
+    getMetricsFailedInsightsOccurrences(from: moment.Moment, to: moment.Moment, perspective: InsightsPerspective, groupKey: string, endpointId?: string | undefined, pageSize?: number | undefined, continuationToken?: string | undefined): Promise<InsightOccurrencePage> {
+        let url_ = this.baseUrl + "/api/metrics/failed-insights/occurrences?";
+        if (from === undefined || from === null)
+            throw new globalThis.Error("The parameter 'from' must be defined and cannot be null.");
+        else
+            url_ += "from=" + encodeURIComponent(from ? "" + from.toISOString() : "") + "&";
+        if (to === undefined || to === null)
+            throw new globalThis.Error("The parameter 'to' must be defined and cannot be null.");
+        else
+            url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
+        if (perspective === undefined || perspective === null)
+            throw new globalThis.Error("The parameter 'perspective' must be defined and cannot be null.");
+        else
+            url_ += "perspective=" + encodeURIComponent("" + perspective) + "&";
+        if (groupKey === undefined || groupKey === null)
+            throw new globalThis.Error("The parameter 'groupKey' must be defined and cannot be null.");
+        else
+            url_ += "groupKey=" + encodeURIComponent("" + groupKey) + "&";
+        if (endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' cannot be null.");
+        else if (endpointId !== undefined)
+            url_ += "endpointId=" + encodeURIComponent("" + endpointId) + "&";
+        if (pageSize === null)
+            throw new globalThis.Error("The parameter 'pageSize' cannot be null.");
+        else if (pageSize !== undefined)
+            url_ += "pageSize=" + encodeURIComponent("" + pageSize) + "&";
+        if (continuationToken === null)
+            throw new globalThis.Error("The parameter 'continuationToken' cannot be null.");
+        else if (continuationToken !== undefined)
+            url_ += "continuationToken=" + encodeURIComponent("" + continuationToken) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMetricsFailedInsightsOccurrences(_response);
+        });
+    }
+
+    protected processGetMetricsFailedInsightsOccurrences(response: Response): Promise<InsightOccurrencePage> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = InsightOccurrencePage.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid window, page size, group key or continuation token, or saved classifications unavailable for a cause or guidance group", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<InsightOccurrencePage>(null as any);
+    }
+
+    /**
+     * Page the error patterns of one likely-cause or recovery-guidance group
+     * @param perspective cause or guidance.
+     * @param endpointId (optional) 
+     * @param pageSize (optional) 1 to 100; default 50.
+     * @param continuationToken (optional) 
+     * @return One page of error patterns, most frequent first
+     */
+    getMetricsFailedInsightsPatterns(from: moment.Moment, to: moment.Moment, perspective: InsightsPerspective, groupKey: string, endpointId?: string | undefined, pageSize?: number | undefined, continuationToken?: string | undefined): Promise<InsightGroupPatternPage> {
+        let url_ = this.baseUrl + "/api/metrics/failed-insights/patterns?";
+        if (from === undefined || from === null)
+            throw new globalThis.Error("The parameter 'from' must be defined and cannot be null.");
+        else
+            url_ += "from=" + encodeURIComponent(from ? "" + from.toISOString() : "") + "&";
+        if (to === undefined || to === null)
+            throw new globalThis.Error("The parameter 'to' must be defined and cannot be null.");
+        else
+            url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
+        if (perspective === undefined || perspective === null)
+            throw new globalThis.Error("The parameter 'perspective' must be defined and cannot be null.");
+        else
+            url_ += "perspective=" + encodeURIComponent("" + perspective) + "&";
+        if (groupKey === undefined || groupKey === null)
+            throw new globalThis.Error("The parameter 'groupKey' must be defined and cannot be null.");
+        else
+            url_ += "groupKey=" + encodeURIComponent("" + groupKey) + "&";
+        if (endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' cannot be null.");
+        else if (endpointId !== undefined)
+            url_ += "endpointId=" + encodeURIComponent("" + endpointId) + "&";
+        if (pageSize === null)
+            throw new globalThis.Error("The parameter 'pageSize' cannot be null.");
+        else if (pageSize !== undefined)
+            url_ += "pageSize=" + encodeURIComponent("" + pageSize) + "&";
+        if (continuationToken === null)
+            throw new globalThis.Error("The parameter 'continuationToken' cannot be null.");
+        else if (continuationToken !== undefined)
+            url_ += "continuationToken=" + encodeURIComponent("" + continuationToken) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMetricsFailedInsightsPatterns(_response);
+        });
+    }
+
+    protected processGetMetricsFailedInsightsPatterns(response: Response): Promise<InsightGroupPatternPage> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = InsightGroupPatternPage.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid window, perspective, page size, group key or continuation token, or saved classifications unavailable", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<InsightGroupPatternPage>(null as any);
+    }
+
+    /**
      * Get time-bucketed message counts
      * @param from (optional) Custom window start (inclusive). Used with `to` instead of `period`.
      * @param to (optional) Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
@@ -15690,6 +15844,296 @@ export interface IInsightGroup {
     topPatterns?: InsightGroupPattern[];
     /** Distinct error patterns in the group beyond topPatterns. */
     morePatterns?: number;
+
+    [key: string]: any;
+}
+
+export enum InsightsPerspective {
+    ErrorPattern = "errorPattern",
+    Cause = "cause",
+    Guidance = "guidance",
+}
+
+/** The occurrence's coverage state. unavailable (listed first so an unset value never claims analysis) means saved classifications could not be read for this scope. */
+export enum InsightAnalysisState {
+    Unavailable = "unavailable",
+    Classified = "classified",
+    Uncertain = "uncertain",
+    NotAnalyzed = "notAnalyzed",
+    NotEligible = "notEligible",
+}
+
+/** One failed attempt. */
+export class InsightOccurrence implements IInsightOccurrence {
+    messageId?: string;
+    eventId?: string;
+    endpointId?: string;
+    eventTypeId?: string;
+    failedAt?: moment.Moment;
+    errorPatternKey?: string;
+    normalizedPattern?: string;
+    analysisState?: InsightAnalysisState;
+    /** analysisRunning, outcomeUnknown, lastAnalysisFailed or identityMismatch; null when the latest operation is the completed result. */
+    operationMarker?: string | undefined;
+    /** The saved category; for an uncertain result, the provider's suggestion. */
+    category?: string | undefined;
+    categoryConfidence?: number | undefined;
+    /** The saved guidance name, or the raw stored value when unrecognized. */
+    guidance?: string | undefined;
+    revision?: number | undefined;
+    model?: string | undefined;
+    classifiedAt?: moment.Moment | undefined;
+    /** The event's current resolution status, or null when unavailable. Never implies unresolved. */
+    currentStatus?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightOccurrence) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.messageId = _data["messageId"];
+            this.eventId = _data["eventId"];
+            this.endpointId = _data["endpointId"];
+            this.eventTypeId = _data["eventTypeId"];
+            this.failedAt = _data["failedAt"] ? moment(_data["failedAt"].toString()) : undefined as any;
+            this.errorPatternKey = _data["errorPatternKey"];
+            this.normalizedPattern = _data["normalizedPattern"];
+            this.analysisState = _data["analysisState"];
+            this.operationMarker = _data["operationMarker"];
+            this.category = _data["category"];
+            this.categoryConfidence = _data["categoryConfidence"];
+            this.guidance = _data["guidance"];
+            this.revision = _data["revision"];
+            this.model = _data["model"];
+            this.classifiedAt = _data["classifiedAt"] ? moment(_data["classifiedAt"].toString()) : undefined as any;
+            this.currentStatus = _data["currentStatus"];
+        }
+    }
+
+    static fromJS(data: any): InsightOccurrence {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightOccurrence();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["messageId"] = this.messageId;
+        data["eventId"] = this.eventId;
+        data["endpointId"] = this.endpointId;
+        data["eventTypeId"] = this.eventTypeId;
+        data["failedAt"] = this.failedAt ? this.failedAt.toISOString() : undefined as any;
+        data["errorPatternKey"] = this.errorPatternKey;
+        data["normalizedPattern"] = this.normalizedPattern;
+        data["analysisState"] = this.analysisState;
+        data["operationMarker"] = this.operationMarker;
+        data["category"] = this.category;
+        data["categoryConfidence"] = this.categoryConfidence;
+        data["guidance"] = this.guidance;
+        data["revision"] = this.revision;
+        data["model"] = this.model;
+        data["classifiedAt"] = this.classifiedAt ? this.classifiedAt.toISOString() : undefined as any;
+        data["currentStatus"] = this.currentStatus;
+        return data;
+    }
+
+    clone(): InsightOccurrence {
+        const json = this.toJSON();
+        let result = new InsightOccurrence();
+        result.init(json);
+        return result;
+    }
+}
+
+/** One failed attempt. */
+export interface IInsightOccurrence {
+    messageId?: string;
+    eventId?: string;
+    endpointId?: string;
+    eventTypeId?: string;
+    failedAt?: moment.Moment;
+    errorPatternKey?: string;
+    normalizedPattern?: string;
+    analysisState?: InsightAnalysisState;
+    /** analysisRunning, outcomeUnknown, lastAnalysisFailed or identityMismatch; null when the latest operation is the completed result. */
+    operationMarker?: string | undefined;
+    /** The saved category; for an uncertain result, the provider's suggestion. */
+    category?: string | undefined;
+    categoryConfidence?: number | undefined;
+    /** The saved guidance name, or the raw stored value when unrecognized. */
+    guidance?: string | undefined;
+    revision?: number | undefined;
+    model?: string | undefined;
+    classifiedAt?: moment.Moment | undefined;
+    /** The event's current resolution status, or null when unavailable. Never implies unresolved. */
+    currentStatus?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class InsightOccurrencePage implements IInsightOccurrencePage {
+    occurrences?: InsightOccurrence[];
+    continuationToken?: string | undefined;
+    occurrencesReadAt?: moment.Moment;
+    classificationsReadAt?: moment.Moment | undefined;
+    enrichment?: InsightsEnrichmentStatus;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightOccurrencePage) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["occurrences"])) {
+                this.occurrences = [] as any;
+                for (let item of _data["occurrences"])
+                    this.occurrences!.push(InsightOccurrence.fromJS(item));
+            }
+            this.continuationToken = _data["continuationToken"];
+            this.occurrencesReadAt = _data["occurrencesReadAt"] ? moment(_data["occurrencesReadAt"].toString()) : undefined as any;
+            this.classificationsReadAt = _data["classificationsReadAt"] ? moment(_data["classificationsReadAt"].toString()) : undefined as any;
+            this.enrichment = _data["enrichment"];
+        }
+    }
+
+    static fromJS(data: any): InsightOccurrencePage {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightOccurrencePage();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.occurrences)) {
+            data["occurrences"] = [];
+            for (let item of this.occurrences)
+                data["occurrences"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["continuationToken"] = this.continuationToken;
+        data["occurrencesReadAt"] = this.occurrencesReadAt ? this.occurrencesReadAt.toISOString() : undefined as any;
+        data["classificationsReadAt"] = this.classificationsReadAt ? this.classificationsReadAt.toISOString() : undefined as any;
+        data["enrichment"] = this.enrichment;
+        return data;
+    }
+
+    clone(): InsightOccurrencePage {
+        const json = this.toJSON();
+        let result = new InsightOccurrencePage();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IInsightOccurrencePage {
+    occurrences?: InsightOccurrence[];
+    continuationToken?: string | undefined;
+    occurrencesReadAt?: moment.Moment;
+    classificationsReadAt?: moment.Moment | undefined;
+    enrichment?: InsightsEnrichmentStatus;
+
+    [key: string]: any;
+}
+
+export class InsightGroupPatternPage implements IInsightGroupPatternPage {
+    patterns?: InsightGroupPattern[];
+    continuationToken?: string | undefined;
+    occurrencesReadAt?: moment.Moment;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightGroupPatternPage) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["patterns"])) {
+                this.patterns = [] as any;
+                for (let item of _data["patterns"])
+                    this.patterns!.push(InsightGroupPattern.fromJS(item));
+            }
+            this.continuationToken = _data["continuationToken"];
+            this.occurrencesReadAt = _data["occurrencesReadAt"] ? moment(_data["occurrencesReadAt"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): InsightGroupPatternPage {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightGroupPatternPage();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.patterns)) {
+            data["patterns"] = [];
+            for (let item of this.patterns)
+                data["patterns"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["continuationToken"] = this.continuationToken;
+        data["occurrencesReadAt"] = this.occurrencesReadAt ? this.occurrencesReadAt.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): InsightGroupPatternPage {
+        const json = this.toJSON();
+        let result = new InsightGroupPatternPage();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IInsightGroupPatternPage {
+    patterns?: InsightGroupPattern[];
+    continuationToken?: string | undefined;
+    occurrencesReadAt?: moment.Moment;
 
     [key: string]: any;
 }

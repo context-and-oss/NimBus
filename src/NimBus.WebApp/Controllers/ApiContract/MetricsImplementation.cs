@@ -138,6 +138,22 @@ public class MetricsImplementation : IMetricsApiController
         };
     }
 
+    public async Task<ActionResult<InsightOccurrencePage>> GetMetricsFailedInsightsOccurrencesAsync(DateTime from, DateTime to, string? endpointId,
+        InsightsPerspective perspective, string groupKey, int? pageSize, string? continuationToken)
+        => Page(await _failedInsights.GetOccurrencesAsync(new FailedInsightsPageRequest(from, to, endpointId, perspective, groupKey, pageSize, continuationToken)));
+
+    public async Task<ActionResult<InsightGroupPatternPage>> GetMetricsFailedInsightsPatternsAsync(DateTime from, DateTime to, string? endpointId,
+        InsightsPerspective perspective, string groupKey, int? pageSize, string? continuationToken)
+        => Page(await _failedInsights.GetPatternsAsync(new FailedInsightsPageRequest(from, to, endpointId, perspective, groupKey, pageSize, continuationToken)));
+
+    private static ActionResult<T> Page<T>(FailedInsightsPageResult<T> result) where T : class => result.Status switch
+    {
+        FailedInsightsQueryStatus.Forbidden => new ForbidResult(),
+        FailedInsightsQueryStatus.InvalidWindow => InvalidWindow(),
+        FailedInsightsQueryStatus.BadRequest => new BadRequestObjectResult(result.Error),
+        _ => result.Page!,
+    };
+
     public async Task<ActionResult<TimeSeriesOverview>> GetMetricsTimeseriesAsync(Period period, DateTime? from = null, DateTime? to = null)
     {
         if (!await IsSiteReaderAsync())

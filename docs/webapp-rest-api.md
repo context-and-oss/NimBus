@@ -349,6 +349,22 @@ never starts an analysis.
   is never reported as zero coverage.
 - `totalFailed` stays for existing clients and always equals `totalOccurrences`.
 
+Two read-only routes page one group of the overview. Both take the overview's `from` and `to`,
+the same `endpointId`, a `perspective` (`errorPattern`, `cause` or `guidance`), a `groupKey` from
+that perspective, `pageSize` (1–100, default 50) and `continuationToken`:
+
+- `GET /api/metrics/failed-insights/occurrences`: the group's failed attempts, newest first, each
+  with its analysis state, saved cause and guidance when there are any, an `operationMarker`
+  (`analysisRunning`, `outcomeUnknown`, `lastAnalysisFailed` or `identityMismatch`) and the event's
+  `currentStatus`, which is null when unavailable. Cause and guidance groups need saved
+  classifications; error-pattern groups page without them.
+- `GET /api/metrics/failed-insights/patterns`: a cause or guidance group's error patterns, most
+  frequent first.
+
+Group keys are valid only for the scope that issued them and are not durable across releases. A
+continuation token is bound to its window, endpoint and group; reusing it elsewhere is a `400`.
+Pages are live reads, not a snapshot: new classifications can move occurrences between groups.
+
 Limits, under `NimBus:Insights`:
 
 | Setting | Default | Range | Meaning |

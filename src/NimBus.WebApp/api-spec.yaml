@@ -3087,6 +3087,119 @@ paths:
           description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
       tags:
         - Metrics
+  /api/metrics/failed-insights/occurrences:
+    get:
+      summary: Page the failure occurrences of one insights group
+      description: Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis.
+      operationId: get-metrics-failed-insights-occurrences
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Window start (inclusive), as returned by the overview.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Window end (exclusive), as returned by the overview.
+          schema:
+            type: string
+            format: date-time
+        - name: endpointId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: perspective
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/InsightsPerspective'
+        - name: groupKey
+          in: query
+          required: true
+          description: A groupKey from the overview for the same perspective.
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          required: false
+          description: 1 to 100; default 50.
+          schema:
+            type: integer
+        - name: continuationToken
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of occurrences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightOccurrencePage'
+        '400':
+          description: Invalid window, page size, group key or continuation token, or saved classifications unavailable for a cause or guidance group
+      tags:
+        - Metrics
+  /api/metrics/failed-insights/patterns:
+    get:
+      summary: Page the error patterns of one likely-cause or recovery-guidance group
+      operationId: get-metrics-failed-insights-patterns
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: endpointId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: perspective
+          in: query
+          required: true
+          description: cause or guidance.
+          schema:
+            $ref: '#/components/schemas/InsightsPerspective'
+        - name: groupKey
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          required: false
+          description: 1 to 100; default 50.
+          schema:
+            type: integer
+        - name: continuationToken
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of error patterns, most frequent first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightGroupPatternPage'
+        '400':
+          description: Invalid window, perspective, page size, group key or continuation token, or saved classifications unavailable
+      tags:
+        - Metrics
   /api/metrics/timeseries:
     get:
       summary: Get time-bucketed message counts
@@ -5863,6 +5976,108 @@ components:
         morePatterns:
           type: integer
           description: Distinct error patterns in the group beyond topPatterns.
+    InsightsPerspective:
+      title: InsightsPerspective
+      type: string
+      enum:
+        - errorPattern
+        - cause
+        - guidance
+    InsightAnalysisState:
+      title: InsightAnalysisState
+      type: string
+      description: The occurrence's coverage state. unavailable (listed first so an unset value never claims analysis) means saved classifications could not be read for this scope.
+      enum:
+        - unavailable
+        - classified
+        - uncertain
+        - notAnalyzed
+        - notEligible
+    InsightOccurrence:
+      title: InsightOccurrence
+      type: object
+      description: One failed attempt.
+      properties:
+        messageId:
+          type: string
+        eventId:
+          type: string
+        endpointId:
+          type: string
+        eventTypeId:
+          type: string
+        failedAt:
+          type: string
+          format: date-time
+        errorPatternKey:
+          type: string
+        normalizedPattern:
+          type: string
+        analysisState:
+          $ref: '#/components/schemas/InsightAnalysisState'
+        operationMarker:
+          type: string
+          nullable: true
+          description: analysisRunning, outcomeUnknown, lastAnalysisFailed or identityMismatch; null when the latest operation is the completed result.
+        category:
+          type: string
+          nullable: true
+          description: The saved category; for an uncertain result, the provider's suggestion.
+        categoryConfidence:
+          type: number
+          nullable: true
+        guidance:
+          type: string
+          nullable: true
+          description: The saved guidance name, or the raw stored value when unrecognized.
+        revision:
+          type: integer
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        classifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        currentStatus:
+          type: string
+          nullable: true
+          description: The event's current resolution status, or null when unavailable. Never implies unresolved.
+    InsightOccurrencePage:
+      title: InsightOccurrencePage
+      type: object
+      properties:
+        occurrences:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsightOccurrence'
+        continuationToken:
+          type: string
+          nullable: true
+        occurrencesReadAt:
+          type: string
+          format: date-time
+        classificationsReadAt:
+          type: string
+          format: date-time
+          nullable: true
+        enrichment:
+          $ref: '#/components/schemas/InsightsEnrichmentStatus'
+    InsightGroupPatternPage:
+      title: InsightGroupPatternPage
+      type: object
+      properties:
+        patterns:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsightGroupPattern'
+        continuationToken:
+          type: string
+          nullable: true
+        occurrencesReadAt:
+          type: string
+          format: date-time
     InsightGroupPattern:
       title: InsightGroupPattern
       type: object

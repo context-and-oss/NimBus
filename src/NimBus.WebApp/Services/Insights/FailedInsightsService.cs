@@ -12,6 +12,7 @@ using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
+using UnresolvedEvent = NimBus.MessageStore.UnresolvedEvent;
 
 namespace NimBus.WebApp.Services.Insights;
 
@@ -35,10 +36,27 @@ public enum FailedInsightsQueryStatus
 
     /// <summary>The custom window is invalid.</summary>
     InvalidWindow,
+
+    /// <summary>A page parameter is invalid; the result carries the reason.</summary>
+    BadRequest,
 }
 
 /// <summary>Result of <see cref="IFailedInsightsQuery.GetOverviewAsync"/>.</summary>
 public sealed record FailedInsightsQueryResult(FailedInsightsQueryStatus Status, FailedInsightsOverview? Overview);
+
+/// <summary>A request for one page of an insights group (spec 043 §8.2).</summary>
+/// <param name="From">Window start, as returned by the overview.</param>
+/// <param name="To">Window end, as returned by the overview.</param>
+/// <param name="EndpointId">Exact endpoint filter, or null.</param>
+/// <param name="Perspective">The perspective <paramref name="GroupKey"/> belongs to.</param>
+/// <param name="GroupKey">A group key from the overview.</param>
+/// <param name="PageSize">1–100; null means 50.</param>
+/// <param name="ContinuationToken">The previous page's token, or null for the first page.</param>
+public sealed record FailedInsightsPageRequest(DateTime From, DateTime To, string? EndpointId, InsightsPerspective Perspective,
+    string GroupKey, int? PageSize, string? ContinuationToken);
+
+/// <summary>Result of a page query.</summary>
+public sealed record FailedInsightsPageResult<T>(FailedInsightsQueryStatus Status, T? Page, string? Error = null) where T : class;
 
 /// <summary>
 /// Builds the failed-message insights overview: error patterns from the message store, enriched
@@ -49,6 +67,12 @@ public interface IFailedInsightsQuery
 {
     /// <summary>Builds the overview for one request.</summary>
     Task<FailedInsightsQueryResult> GetOverviewAsync(FailedInsightsRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>One page of a group's occurrences, newest first, with current event status.</summary>
+    Task<FailedInsightsPageResult<InsightOccurrencePage>> GetOccurrencesAsync(FailedInsightsPageRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>One page of a cause or guidance group's error patterns, most frequent first.</summary>
+    Task<FailedInsightsPageResult<InsightGroupPatternPage>> GetPatternsAsync(FailedInsightsPageRequest request, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Limits for failed-insights enrichment, bound from <c>NimBus:Insights</c>.</summary>
@@ -160,6 +184,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     };
 
     private readonly IMetricsStore _metricsStore;
+    private readonly IMessageTrackingStore _events;
     private readonly IStoreResultCache _cache;
     private readonly IEndpointAuthorizationService _authorization;
     private readonly IInsightsEnrichmentSource _enrichment;
@@ -169,6 +194,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     /// <summary>Creates the service.</summary>
     public FailedInsightsService(
         IMetricsStore metricsStore,
+        IMessageTrackingStore events,
         IStoreResultCache cache,
         IEndpointAuthorizationService authorization,
         IInsightsEnrichmentSource enrichment,
@@ -176,6 +202,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
         TimeProvider? clock = null)
     {
         _metricsStore = metricsStore;
+        _events = events;
         _cache = cache;
         _authorization = authorization;
         _enrichment = enrichment;
@@ -187,55 +214,243 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     public async Task<FailedInsightsQueryResult> GetOverviewAsync(FailedInsightsRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        // Authorization stays outside every shared cache (spec 043 §8.3).
+        var (status, scope) = await LoadScopeAsync(request.Period, request.From, request.To, request.EndpointId,
+            request.Enrich, request.Refresh, cancellationToken).ConfigureAwait(false);
+        if (scope is null) return new FailedInsightsQueryResult(status, null);
+
+        var (rows, assessed) = (scope.Rows, scope.Assessed);
+        return new FailedInsightsQueryResult(FailedInsightsQueryStatus.Ok, new FailedInsightsOverview
+        {
+            Groups = BuildErrorPatternGroups(rows, assessed),
+            TotalFailed = rows.Count,
+            From = scope.Window.From,
+            To = scope.Window.To,
+            EndpointId = scope.EndpointId,
+            TotalOccurrences = rows.Count,
+            OccurrencesReadAt = scope.Occurrences.ReadAt.UtcDateTime,
+            ClassificationsReadAt = scope.Read?.ReadAt.UtcDateTime,
+            Enrichment = scope.Enrichment,
+            EnrichmentLimit = _options.EnrichmentCeiling,
+            Coverage = assessed is null ? null : Coverage(assessed.Values),
+            CauseGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.CauseKey, CauseLabels),
+            GuidanceGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.GuidanceKey, GuidanceLabels),
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task<FailedInsightsPageResult<InsightOccurrencePage>> GetOccurrencesAsync(FailedInsightsPageRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var (error, group) = await LoadGroupAsync<InsightOccurrencePage>(request, cancellationToken).ConfigureAwait(false);
+        if (error is not null) return error;
+        var (scope, members, pageSize, scopeHash) = (group!.Scope, group.Members, group.PageSize, group.ScopeHash);
+
+        var ordered = members
+            .OrderByDescending(r => r.Info.EnqueuedTimeUtc)
+            .ThenBy(r => r.Info.MessageId ?? string.Empty, StringComparer.Ordinal);
+        IEnumerable<OccurrenceRow> remaining = ordered;
+        if (request.ContinuationToken is { } token)
+        {
+            if (OccurrenceCursor.Decode(token) is not { } cursor || cursor.Scope != scopeHash)
+                return BadRequest<InsightOccurrencePage>("The continuation token does not belong to this window, endpoint and group.");
+            remaining = ordered.Where(r => r.Info.EnqueuedTimeUtc.Ticks < cursor.Ticks
+                || (r.Info.EnqueuedTimeUtc.Ticks == cursor.Ticks && string.CompareOrdinal(r.Info.MessageId ?? string.Empty, cursor.MessageId) > 0));
+        }
+
+        var window = remaining.Take(pageSize + 1).ToList();
+        var page = window.Take(pageSize).ToList();
+        var statuses = await ReadCurrentStatusAsync(page).ConfigureAwait(false);
+        var last = page.LastOrDefault();
+        return new FailedInsightsPageResult<InsightOccurrencePage>(FailedInsightsQueryStatus.Ok, new InsightOccurrencePage
+        {
+            Occurrences = page.Select(r => Occurrence(r, scope.Assessed, statuses)).ToList(),
+            ContinuationToken = window.Count > pageSize && last is not null
+                ? new OccurrenceCursor(last.Info.EnqueuedTimeUtc.Ticks, last.Info.MessageId ?? string.Empty, scopeHash).Encode()
+                : null,
+            OccurrencesReadAt = scope.Occurrences.ReadAt.UtcDateTime,
+            ClassificationsReadAt = scope.Read?.ReadAt.UtcDateTime,
+            Enrichment = scope.Enrichment,
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task<FailedInsightsPageResult<InsightGroupPatternPage>> GetPatternsAsync(FailedInsightsPageRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Perspective == InsightsPerspective.ErrorPattern)
+            return BadRequest<InsightGroupPatternPage>("Error-pattern groups list their patterns in the overview; page patterns of a cause or guidance group.");
+        var (error, group) = await LoadGroupAsync<InsightGroupPatternPage>(request, cancellationToken).ConfigureAwait(false);
+        if (error is not null) return error;
+        var (scope, members, pageSize, scopeHash) = (group!.Scope, group.Members, group.PageSize, group.ScopeHash);
+
+        var ordered = members
+            .GroupBy(r => r.PatternKey, StringComparer.Ordinal)
+            .Select(p => (Key: p.Key, Rows: p.ToList()))
+            .OrderByDescending(p => p.Rows.Count).ThenBy(p => p.Key, StringComparer.Ordinal)
+            .ToList();
+        IEnumerable<(string Key, List<OccurrenceRow> Rows)> remaining = ordered;
+        if (request.ContinuationToken is { } token)
+        {
+            if (PatternCursor.Decode(token) is not { } cursor || cursor.Scope != scopeHash)
+                return BadRequest<InsightGroupPatternPage>("The continuation token does not belong to this window, endpoint and group.");
+            remaining = ordered.Where(p => p.Rows.Count < cursor.Count
+                || (p.Rows.Count == cursor.Count && string.CompareOrdinal(p.Key, cursor.Key) > 0));
+        }
+
+        var window = remaining.Take(pageSize + 1).ToList();
+        var page = window.Take(pageSize).ToList();
+        return new FailedInsightsPageResult<InsightGroupPatternPage>(FailedInsightsQueryStatus.Ok, new InsightGroupPatternPage
+        {
+            Patterns = page.Select(p => new InsightGroupPattern
+            {
+                GroupKey = p.Key,
+                NormalizedPattern = p.Rows[0].Pattern,
+                Count = p.Rows.Count,
+                ExampleErrorText = p.Rows[0].Info.ErrorText,
+            }).ToList(),
+            ContinuationToken = window.Count > pageSize ? new PatternCursor(page[^1].Rows.Count, page[^1].Key, scopeHash).Encode() : null,
+            OccurrencesReadAt = scope.Occurrences.ReadAt.UtcDateTime,
+        });
+    }
+
+    /// <summary>
+    /// Validates a page request, loads its scope and selects the group's occurrences. Returns either
+    /// a failure result or the selection.
+    /// </summary>
+    private async Task<(FailedInsightsPageResult<T>? Error, GroupSelection? Group)> LoadGroupAsync<T>(FailedInsightsPageRequest request, CancellationToken cancellationToken) where T : class
+    {
+        var pageSize = request.PageSize ?? 50;
+        if (pageSize is < 1 or > 100) return (BadRequest<T>("pageSize must be between 1 and 100."), null);
+        if (string.IsNullOrWhiteSpace(request.GroupKey)) return (BadRequest<T>("groupKey is required."), null);
+
+        var (status, scope) = await LoadScopeAsync(Period._1d, request.From, request.To, request.EndpointId,
+            enrich: true, refresh: false, cancellationToken).ConfigureAwait(false);
+        if (scope is null) return (new FailedInsightsPageResult<T>(status, null), null);
+
+        List<OccurrenceRow> members;
+        if (request.Perspective == InsightsPerspective.ErrorPattern)
+        {
+            members = scope.Rows.Where(r => r.CategoryKey == request.GroupKey || r.PatternKey == request.GroupKey).ToList();
+            if (members.Count == 0) return (BadRequest<T>("Unknown groupKey for this window and endpoint."), null);
+        }
+        else
+        {
+            if (scope.Assessed is null)
+                return (BadRequest<T>($"Saved classifications are not available for this scope ({scope.Enrichment})."), null);
+            var cause = request.Perspective == InsightsPerspective.Cause;
+            if (!(cause ? IsCauseKey(request.GroupKey) : IsGuidanceKey(request.GroupKey)))
+                return (BadRequest<T>("Unknown groupKey for this perspective."), null);
+            members = scope.Rows.Where(r => (cause ? scope.Assessed[r].CauseKey : scope.Assessed[r].GuidanceKey) == request.GroupKey).ToList();
+        }
+
+        var scopeHash = Key("s", $"{scope.Window.From.Ticks}|{scope.Window.To.Ticks}|{scope.EndpointId?.ToUpperInvariant()}|{request.Perspective}|{request.GroupKey}");
+        return (null, new GroupSelection(scope, members, pageSize, scopeHash));
+    }
+
+    private static FailedInsightsPageResult<T> BadRequest<T>(string error) where T : class
+        => new(FailedInsightsQueryStatus.BadRequest, null, error);
+
+    private static bool IsCauseKey(string key)
+        => key is Uncertain or NotAnalyzed or NotEligible
+            || (key != "unknown" && FailureClassificationQuestionSet.Categories.Contains(key));
+
+    private static bool IsGuidanceKey(string key)
+        => key is NotAnalyzed or NotEligible || Enum.GetNames<FailureGuidance>().Contains(key, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Current event status for one page: one GetEventsByIds call per endpoint, with stored ids
+    /// ({EventId}_{SessionId}); a bare event id finds nothing on Cosmos (spec 043 §4.3).
+    /// </summary>
+    private async Task<Dictionary<(string, string), string>> ReadCurrentStatusAsync(IReadOnlyList<OccurrenceRow> page)
+    {
+        var statuses = new Dictionary<(string, string), string>();
+        foreach (var endpoint in page.GroupBy(r => r.Info.EndpointId, StringComparer.Ordinal))
+        {
+            var storedIds = endpoint.Select(r => StoredId(r.Info.EventId, r.Info.SessionId)).Distinct(StringComparer.Ordinal).ToList();
+            List<UnresolvedEvent> events;
+            try { events = await _events.GetEventsByIds(endpoint.Key, storedIds).ConfigureAwait(false); }
+            catch (EndpointNotFoundException) { continue; }
+            foreach (var current in events)
+                statuses[(endpoint.Key, StoredId(current.EventId, current.SessionId))] = current.ResolutionStatus.ToString();
+        }
+        return statuses;
+    }
+
+    private static string StoredId(string? eventId, string? sessionId) => $"{eventId}_{sessionId}";
+
+    private static InsightOccurrence Occurrence(OccurrenceRow row, Dictionary<OccurrenceRow, Assessment>? assessed,
+        Dictionary<(string, string), string> statuses)
+    {
+        var assessment = assessed?.GetValueOrDefault(row);
+        var result = assessment?.Result;
+        return new InsightOccurrence
+        {
+            MessageId = row.Info.MessageId,
+            EventId = row.Info.EventId,
+            EndpointId = row.Info.EndpointId,
+            EventTypeId = row.Info.EventTypeId,
+            FailedAt = row.Info.EnqueuedTimeUtc,
+            ErrorPatternKey = row.PatternKey,
+            NormalizedPattern = row.Pattern,
+            AnalysisState = assessment?.State switch
+            {
+                CoverageState.Classified => InsightAnalysisState.Classified,
+                CoverageState.Uncertain => InsightAnalysisState.Uncertain,
+                CoverageState.NotAnalyzed => InsightAnalysisState.NotAnalyzed,
+                CoverageState.NotEligible => InsightAnalysisState.NotEligible,
+                _ => InsightAnalysisState.Unavailable,
+            },
+            OperationMarker = assessment?.Marker,
+            Category = result?.Category,
+            CategoryConfidence = result?.CategoryConfidence,
+            Guidance = result is null ? null : Enum.IsDefined(result.Guidance) ? result.Guidance.ToString() : ((int)result.Guidance).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Revision = result?.Revision,
+            Model = result?.Model,
+            ClassifiedAt = result?.CreatedAtUtc.UtcDateTime,
+            CurrentStatus = statuses.GetValueOrDefault((row.Info.EndpointId, StoredId(row.Info.EventId, row.Info.SessionId))),
+        };
+    }
+
+    /// <summary>
+    /// The shared read for overview and pages: authorization (outside every cache), the resolved
+    /// window, the cached occurrences filtered to the endpoint, and one enrichment pass.
+    /// </summary>
+    private async Task<(FailedInsightsQueryStatus Status, Scope? Scope)> LoadScopeAsync(Period period, DateTime? from, DateTime? to, string? endpoint,
+        bool enrich, bool refresh, CancellationToken cancellationToken)
+    {
         if (!await _authorization.HasRoleAsync(AccessRole.Reader).ConfigureAwait(false))
-            return new FailedInsightsQueryResult(FailedInsightsQueryStatus.Forbidden, null);
-        if (await ResolveWindowAsync(request).ConfigureAwait(false) is not { } window)
-            return new FailedInsightsQueryResult(FailedInsightsQueryStatus.InvalidWindow, null);
+            return (FailedInsightsQueryStatus.Forbidden, null);
+        if (await ResolveWindowAsync(period, from, to).ConfigureAwait(false) is not { } window)
+            return (FailedInsightsQueryStatus.InvalidWindow, null);
 
         var occurrences = await ReadOccurrencesAsync(window).ConfigureAwait(false);
-        var endpointId = string.IsNullOrWhiteSpace(request.EndpointId) ? null : request.EndpointId.Trim();
-        var scoped = endpointId is null
+        var endpointId = string.IsNullOrWhiteSpace(endpoint) ? null : endpoint.Trim();
+        var rows = endpointId is null
             ? occurrences.Rows
             : occurrences.Rows.Where(r => string.Equals(r.Info.EndpointId, endpointId, StringComparison.OrdinalIgnoreCase)).ToList();
 
-        var (status, read) = request.Enrich
-            ? await EnrichAsync(window, endpointId, scoped, request.Refresh, cancellationToken).ConfigureAwait(false)
+        var (status, read) = enrich
+            ? await EnrichAsync(window, endpointId, rows, refresh, cancellationToken).ConfigureAwait(false)
             : (InsightsEnrichmentStatus.Disabled, null);
-        if (request.Enrich)
+        if (enrich)
             NimBusIntelligenceTelemetry.InsightsEnrichment.Add(1, new TagList { { "nimbus.insights.enrichment", status.ToString() } });
 
-        var assessed = read is null ? null : Assess(scoped, read.Result.Snapshots);
-        return new FailedInsightsQueryResult(FailedInsightsQueryStatus.Ok, new FailedInsightsOverview
-        {
-            Groups = BuildErrorPatternGroups(scoped, assessed),
-            TotalFailed = scoped.Count,
-            From = window.From,
-            To = window.To,
-            EndpointId = endpointId,
-            TotalOccurrences = scoped.Count,
-            OccurrencesReadAt = occurrences.ReadAt.UtcDateTime,
-            ClassificationsReadAt = read?.ReadAt.UtcDateTime,
-            Enrichment = status,
-            EnrichmentLimit = _options.EnrichmentCeiling,
-            Coverage = assessed is null ? null : Coverage(assessed.Values),
-            CauseGroups = assessed is null ? null : BuildInsightGroups(scoped, assessed, a => a.CauseKey, CauseLabels),
-            GuidanceGroups = assessed is null ? null : BuildInsightGroups(scoped, assessed, a => a.GuidanceKey, GuidanceLabels),
-        });
+        var assessed = read is null ? null : Assess(rows, read.Result.Snapshots);
+        return (FailedInsightsQueryStatus.Ok, new Scope(window, occurrences, endpointId, rows, status, read, assessed));
     }
 
     /// <summary>
     /// A preset resolves once to a fixed window that is cached under the preset name, so every
     /// request in one interaction sees the same bounds. A custom window is already fixed.
     /// </summary>
-    private async Task<MetricsWindow?> ResolveWindowAsync(FailedInsightsRequest request)
+    private async Task<MetricsWindow?> ResolveWindowAsync(Period period, DateTime? from, DateTime? to)
     {
-        if (request.From.HasValue || request.To.HasValue)
-            return MetricsImplementation.ResolveWindow(request.Period, request.From, request.To, _clock.GetUtcNow().UtcDateTime);
+        if (from.HasValue || to.HasValue)
+            return MetricsImplementation.ResolveWindow(period, from, to, _clock.GetUtcNow().UtcDateTime);
         return await _cache.GetOrCreateAsync(
-            $"metrics:failed-insights:window:{request.Period}",
+            $"metrics:failed-insights:window:{period}",
             MetricsTtl,
-            () => Task.FromResult(MetricsImplementation.ResolveWindow(request.Period, null, null, _clock.GetUtcNow().UtcDateTime)!.Value)).ConfigureAwait(false);
+            () => Task.FromResult(MetricsImplementation.ResolveWindow(period, null, null, _clock.GetUtcNow().UtcDateTime)!.Value)).ConfigureAwait(false);
     }
 
     /// <summary>The window's failure occurrences, normalized and de-duplicated once per cache fill.</summary>
@@ -314,20 +529,23 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
         foreach (var row in scoped)
         {
             snapshots.TryGetValue(row.Info.MessageId!, out var snapshot);
-            var latest = snapshot is { Deleted: false } ? snapshot.Latest : null;
+            var live = snapshot is { Deleted: false } ? snapshot : null;
+            var latest = live?.Latest;
+            var marker = Marker(live);
             if (latest is null)
             {
                 var state = _enrichment.IsEligible(row.Info.EndpointId) ? CoverageState.NotAnalyzed : CoverageState.NotEligible;
                 var key = state == CoverageState.NotAnalyzed ? NotAnalyzed : NotEligible;
-                assessed[row] = new Assessment(state, key, key);
+                assessed[row] = new Assessment(state, key, key, null, marker);
                 continue;
             }
 
             if (!string.Equals(latest.EndpointId, row.Info.EndpointId, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(latest.EventId, row.Info.EventId, StringComparison.Ordinal))
             {
+                // A result that names another source is never shown, only counted as uncertain.
                 mismatches++;
-                assessed[row] = new Assessment(CoverageState.Uncertain, Uncertain, nameof(FailureGuidance.Uncertain));
+                assessed[row] = new Assessment(CoverageState.Uncertain, Uncertain, nameof(FailureGuidance.Uncertain), null, "identityMismatch");
                 continue;
             }
 
@@ -338,12 +556,24 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             var classified = guidanceKnown && categoryKnown
                 && latest.Category != "unknown" && latest.Guidance != FailureGuidance.Uncertain;
             assessed[row] = classified
-                ? new Assessment(CoverageState.Classified, latest.Category, guidanceKey)
-                : new Assessment(CoverageState.Uncertain, Uncertain, guidanceKey);
+                ? new Assessment(CoverageState.Classified, latest.Category, guidanceKey, latest, marker)
+                : new Assessment(CoverageState.Uncertain, Uncertain, guidanceKey, latest, marker);
         }
         if (mismatches > 0) NimBusIntelligenceTelemetry.InsightsIdentityMismatches.Add(mismatches);
         return assessed;
     }
+
+    /// <summary>
+    /// Why the latest operation differs from the counted result: a newer analysis is running, its
+    /// outcome is unknown, or it failed (spec 043 §5). Null when the latest operation completed.
+    /// </summary>
+    private static string? Marker(ClassificationSnapshot? snapshot) => snapshot?.LatestOperationStatus switch
+    {
+        "Active" => "analysisRunning",
+        "Failed" when snapshot.LatestOperationErrorCode == "AnalysisOutcomeUnknown" => "outcomeUnknown",
+        "Failed" => "lastAnalysisFailed",
+        _ => null,
+    };
 
     private static List<ErrorPatternGroup> BuildErrorPatternGroups(IReadOnlyList<OccurrenceRow> scoped, Dictionary<OccurrenceRow, Assessment>? assessed)
         => scoped
@@ -452,11 +682,58 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
 
     internal enum CoverageState { Classified, Uncertain, NotAnalyzed, NotEligible }
 
-    internal sealed record Assessment(CoverageState State, string CauseKey, string GuidanceKey);
+    /// <summary>One occurrence's coverage state, perspective keys, the result shown in details and its operation marker.</summary>
+    internal sealed record Assessment(CoverageState State, string CauseKey, string GuidanceKey, FailureClassification? Result, string? Marker);
 
     internal sealed record OccurrenceRow(FailedMessageInfo Info, string Category, string CategoryKey, string Pattern, string PatternKey);
 
     internal sealed record OccurrenceSet(DateTimeOffset ReadAt, IReadOnlyList<OccurrenceRow> Rows);
 
     internal sealed record EnrichmentRead(DateTimeOffset ReadAt, IReadOnlySet<string> RequestedIds, ClassificationBulkReadResult Result);
+
+    internal sealed record Scope(MetricsWindow Window, OccurrenceSet Occurrences, string? EndpointId, IReadOnlyList<OccurrenceRow> Rows,
+        InsightsEnrichmentStatus Enrichment, EnrichmentRead? Read, Dictionary<OccurrenceRow, Assessment>? Assessed);
+
+    internal sealed record GroupSelection(Scope Scope, IReadOnlyList<OccurrenceRow> Members, int PageSize, string ScopeHash);
+
+    /// <summary>Keyset position after (failed time, message id), bound to one scope.</summary>
+    internal sealed record OccurrenceCursor(long Ticks, string MessageId, string Scope)
+    {
+        public string Encode() => Cursors.Encode(new CursorBody { T = Ticks, M = MessageId, S = Scope });
+        public static OccurrenceCursor? Decode(string token)
+            => Cursors.Decode(token) is { M: { } messageId, S: { } scope } body ? new OccurrenceCursor(body.T, messageId, scope) : null;
+    }
+
+    /// <summary>Keyset position after (count, pattern key), bound to one scope.</summary>
+    internal sealed record PatternCursor(int Count, string Key, string Scope)
+    {
+        public string Encode() => Cursors.Encode(new CursorBody { C = Count, K = Key, S = Scope });
+        public static PatternCursor? Decode(string token)
+            => Cursors.Decode(token) is { K: { } key, S: { } scope } body ? new PatternCursor(body.C, key, scope) : null;
+    }
+
+    /// <summary>
+    /// Opaque base64url JSON. Unsigned on purpose: it carries no secret, and every page request
+    /// re-sends and re-authorizes its scope, which the cursor's scope hash must match.
+    /// </summary>
+    private static class Cursors
+    {
+        public static string Encode(CursorBody body)
+            => System.Buffers.Text.Base64Url.EncodeToString(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(body));
+
+        public static CursorBody? Decode(string token)
+        {
+            try { return System.Text.Json.JsonSerializer.Deserialize<CursorBody>(System.Buffers.Text.Base64Url.DecodeFromChars(token)); }
+            catch (Exception exception) when (exception is FormatException or System.Text.Json.JsonException) { return null; }
+        }
+    }
+
+    internal sealed class CursorBody
+    {
+        public long T { get; set; }
+        public string? M { get; set; }
+        public int C { get; set; }
+        public string? K { get; set; }
+        public string? S { get; set; }
+    }
 }
