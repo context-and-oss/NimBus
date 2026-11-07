@@ -158,6 +158,9 @@ Delivered as five PRs, in order. Each has its own branch, RED-first tests and a 
 
 ### PR 1 — `feat(store): expose the failed attempt's message id in failed-message insights`
 
+- `FailedMessageInfo.SessionId` (`string?`) for the stored event id that PR 4's status lookup
+  needs, with a conformance test that resolves a projected row through `GetEventsByIds` on every
+  provider. Added after PR 4's design showed that bare event ids miss on Cosmos.
 - `FailedMessageInfo.MessageId` (`string?`, nullable so a custom provider that never sets it
   reads as `unsupported`).
 - Projections: SQL `SqlServerMetricsStore.GetFailedMessageInsights` adds `MessageId` to the
@@ -216,7 +219,8 @@ Delivered as five PRs, in order. Each has its own branch, RED-first tests and a 
 - `FailedInsightsService.PageOccurrencesAsync` and `PagePatternsAsync` over the same cached
   inputs; keyset ordering, cursor encode/validate, 400 mapping.
 - Current status per page: group rows by endpoint, call
-  `IMessageTrackingStore.GetEventsByIds(endpointId, eventIds)` once per endpoint, map
+  `IMessageTrackingStore.GetEventsByIds(endpointId, storedIds)` once per endpoint with stored
+  ids `{EventId}_{SessionId}` (a bare event id finds nothing on Cosmos; see spec 4.3), map
   `ResolutionStatus`; a thrown `EndpointNotFoundException` or a missing event → `currentStatus`
   null (shown as unavailable).
 

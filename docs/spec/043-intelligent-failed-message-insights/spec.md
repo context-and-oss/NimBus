@@ -46,7 +46,7 @@ Later increments are described in section 12 and are not acceptance requirements
 | Component | Current behavior | Required change |
 |---|---|---|
 | `MetricsImplementation.BuildFailedInsightsAsync` | Groups normalized error text and caches the finished aggregate for 30 s in a single-flight cache keyed by preset name or custom bounds | Split into a cached occurrence projection and a separately, briefly cached enrichment (section 8.3); build the additional perspectives from the same occurrence set |
-| `FailedMessageInfo` / `IMetricsStore.GetFailedMessageInsights` | Projects endpoint, event type, error text, enqueue time, and event ID | Include the exact failure occurrence's message ID. No new overload: the endpoint filter is applied in memory |
+| `FailedMessageInfo` / `IMetricsStore.GetFailedMessageInsights` | Projects endpoint, event type, error text, enqueue time, and event ID | Include the exact failure occurrence's message ID and session ID (section 4.3). No new overload: the endpoint filter is applied in memory |
 | `IFailureClassificationStore` | Reads the latest result for one failure ID, plus revision history. Each failure is one document holding every operation (SQL `StateJson`; Cosmos item `state` partitioned by failure ID) | Add a bounded bulk-read contract returning the latest completed result and latest operation state per failure ID, separate from analysis orchestration |
 | `FailureClassificationService` | Coordinates individual analysis, authorization, evidence, and persistence; registered only when a provider is ready | Preserve existing analysis semantics; do not invoke it to enrich Insights. Add a read-only service that needs no provider |
 | `FailureGuidanceRules` | Derives guidance when a result is created | Display persisted guidance without recalculating it under today's settings |
@@ -113,9 +113,12 @@ Its saved guidance describes the evidence at analysis time and is not a current 
 
 Occurrence drill-down shows current event status, when available, separately from failure time
 and classification time. Resolve status per page with the existing
-`IMessageTrackingStore.GetEventsByIds(endpointId, eventIds)`, grouping the page's rows by
-endpoint: at most one call per endpoint per page, bounded by the page size. No new storage member
-is needed. Missing current status is shown as unavailable; it must not imply unresolved.
+`IMessageTrackingStore.GetEventsByIds(endpointId, storedIds)`, grouping the page's rows by
+endpoint: at most one call per endpoint per page, bounded by the page size. The ids must be
+**stored ids**, `{EventId}_{SessionId}`: SQL and in-memory also match a bare event id, but Cosmos
+point-reads the event document whose id is the stored id, so a bare event id finds nothing there.
+The projection therefore carries the attempt's `SessionId`. No new storage member is needed.
+Missing current status is shown as unavailable; it must not imply unresolved.
 
 An occurrence whose event has since completed or been skipped can no longer be analyzed: the
 evidence builder requires a currently Failed or DeadLettered event. Phase 1 does not compute this
@@ -437,7 +440,7 @@ empty-success state. Cancellation and time budgets propagate through all reads.
 | A result's coordinates do not match its occurrence | `uncertain` with an identity-mismatch marker; never `notAnalyzed`; the telemetry counter increments |
 | No result exists and the endpoint is outside `AllowedEndpoints` | `notEligible`, counted in totals and in its own group |
 | Confidence thresholds change after analysis | Historical guidance and coverage are not recomputed under the new thresholds |
-| A selected event has since completed or been skipped | Historical occurrence remains, with current status displayed separately; status comes from `GetEventsByIds`, at most one call per endpoint per page |
+| A selected event has since completed or been skipped | Historical occurrence remains, with current status displayed separately; status comes from `GetEventsByIds` with stored ids, at most one call per endpoint per page, and resolves on every provider including Cosmos |
 | Endpoint filter and `[from, to)` boundaries | Overview and drill-down include exactly the matching occurrences |
 | Preset overview, then drill-down with the returned bounds | Same occurrence set; one projection read for the interaction |
 | A custom provider returns duplicate identities, or an occurrence without a `MessageId` | Duplicates count once; a missing identity makes the scope `unsupported` while error patterns still render |
