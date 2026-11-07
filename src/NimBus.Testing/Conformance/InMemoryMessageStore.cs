@@ -1338,6 +1338,8 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
                 ErrorText = m.MessageContent?.ErrorContent?.ErrorText ?? m.DeadLetterErrorDescription ?? string.Empty,
                 EnqueuedTimeUtc = m.EnqueuedTimeUtc,
                 EventId = m.EventId,
+                MessageId = m.MessageId,
+                SessionId = m.SessionId,
             })
             .ToList();
 
