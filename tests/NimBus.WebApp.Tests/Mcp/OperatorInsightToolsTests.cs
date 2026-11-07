@@ -28,6 +28,7 @@ public class OperatorInsightToolsTests
 
     private InterfaceFake<IMessageApiController> _messages = null!;
     private InterfaceFake<IMetricsApiController> _metrics = null!;
+    private InterfaceFake<NimBus.WebApp.Services.Insights.IFailedInsightsQuery> _failedInsights = null!;
     private InterfaceFake<IEventApiController> _events = null!;
     private FakeClassifications _classifications = null!;
 
@@ -36,6 +37,7 @@ public class OperatorInsightToolsTests
     {
         _messages = InterfaceFake<IMessageApiController>.Create();
         _metrics = InterfaceFake<IMetricsApiController>.Create();
+        _failedInsights = InterfaceFake<NimBus.WebApp.Services.Insights.IFailedInsightsQuery>.Create();
         _events = InterfaceFake<IEventApiController>.Create();
         _classifications = new FakeClassifications();
     }
@@ -111,11 +113,17 @@ public class OperatorInsightToolsTests
     [TestMethod]
     public async Task Metrics_failures_truncate_example_error_text()
     {
-        _metrics.On(nameof(IMetricsApiController.GetMetricsFailedInsightsAsync), _ => Ok(new FailedInsightsOverview
+        NimBus.WebApp.Services.Insights.FailedInsightsRequest? request = null;
+        _failedInsights.On(nameof(NimBus.WebApp.Services.Insights.IFailedInsightsQuery.GetOverviewAsync), args =>
         {
-            TotalFailed = 5,
-            Groups = [new ErrorPatternGroup { ErrorCategory = "Timeout", Count = 5, Endpoints = ["ErpEndpoint"], EventTypes = ["CustomerChanged"], ExampleErrorText = new string('e', 3000) }],
-        }));
+            request = (NimBus.WebApp.Services.Insights.FailedInsightsRequest)args[0]!;
+            return Task.FromResult(new NimBus.WebApp.Services.Insights.FailedInsightsQueryResult(
+                NimBus.WebApp.Services.Insights.FailedInsightsQueryStatus.Ok, new FailedInsightsOverview
+                {
+                    TotalFailed = 5,
+                    Groups = [new ErrorPatternGroup { ErrorCategory = "Timeout", Count = 5, Endpoints = ["ErpEndpoint"], EventTypes = ["CustomerChanged"], ExampleErrorText = new string('e', 3000) }],
+                }));
+        });
 
         var json = await CallAsync("nimbus_get_metrics", new() { ["view"] = "failures" }, siteReader: true);
 
@@ -123,6 +131,21 @@ public class OperatorInsightToolsTests
         Assert.AreEqual("Timeout", group.GetProperty("errorCategory").GetString());
         Assert.AreEqual(500, group.GetProperty("exampleErrorText").GetString()!.Length);
         Assert.AreEqual(5, json.GetProperty("failures").GetProperty("totalFailed").GetInt32());
+        // Spec 043 §8.4: the MCP failures view never reads classification storage.
+        Assert.IsFalse(request!.Enrich);
+    }
+
+    [TestMethod]
+    public async Task Metrics_failures_without_site_reader_report_the_role_requirement()
+    {
+        _failedInsights.On(nameof(NimBus.WebApp.Services.Insights.IFailedInsightsQuery.GetOverviewAsync), _ =>
+            Task.FromResult(new NimBus.WebApp.Services.Insights.FailedInsightsQueryResult(
+                NimBus.WebApp.Services.Insights.FailedInsightsQueryStatus.Forbidden, null)));
+
+        var result = await CallRawAsync("nimbus_get_metrics", new() { ["view"] = "failures" }, siteReader: true);
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(ErrorText(result), "PermissionDenied");
     }
 
     [TestMethod]
@@ -286,6 +309,7 @@ public class OperatorInsightToolsTests
         services.AddSingleton(new McpTestHost.StubAccess { PiiReader = piiReader, SiteReader = siteReader });
         services.AddSingleton(_messages.Instance);
         services.AddSingleton(_metrics.Instance);
+        services.AddSingleton(_failedInsights.Instance);
         services.AddSingleton(_events.Instance);
         services.AddSingleton<IOperatorClassificationSource>(_classifications);
     }

@@ -43,12 +43,17 @@ function OccurrenceCard(props: IntelligenceCardProps) {
         if (!response.ok) return;
         const capability = await response.json() as IntelligenceStatus;
         if (controller.signal.aborted) return;
-        if (capability.status !== "Ready" || capability.contractVersion !== 1) return;
-        setStatus(capability);
+        // Spec 043 read-only mode: with no provider configured, saved results stay readable, so the
+        // card appears only when one exists and never offers analysis.
+        const readOnly = capability.status === "ProviderNotConfigured";
+        if ((capability.status !== "Ready" && !readOnly) || capability.contractVersion !== 1) return;
+        if (!readOnly) setStatus(capability);
         const latest = await fetch(baseUrl, { headers, signal: controller.signal });
         if (latest.status === 404) return;
+        if (readOnly && !latest.ok) return;
         const payload = await latest.json();
         if (controller.signal.aborted) return;
+        if (readOnly) setStatus({ ...capability, canAnalyze: false });
         if (latest.ok) { setClassification(payload); setError(undefined); setUnknownOutcome(false); setAnalysisActive(false); }
         else if (payload.code === "AnalysisInProgress") {
           setBusy(true);
@@ -125,6 +130,8 @@ function OccurrenceCard(props: IntelligenceCardProps) {
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         {error && <p role="status" className="text-status-danger">{error}</p>}
+        {status.status === "ProviderNotConfigured" &&
+          <p className="text-muted-foreground">New analysis is unavailable because no provider is configured.</p>}
         {(unknownOutcome || classification) && status.canAnalyze && eligible &&
           <p>Re-analyzing makes a new provider request and may incur an additional charge.</p>}
         {analysisActive && <p role="status">Analyzing failure…</p>}
