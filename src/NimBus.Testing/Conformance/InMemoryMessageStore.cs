@@ -1339,6 +1339,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
                 EnqueuedTimeUtc = m.EnqueuedTimeUtc,
                 EventId = m.EventId,
                 MessageId = m.MessageId,
+                SessionId = m.SessionId,
             })
             .ToList();
 
