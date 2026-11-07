@@ -45,6 +45,22 @@ public sealed class CosmosClassificationStore : AtomicClassificationStore
         }
     }
 
+    /// <summary>
+    /// Point reads of the per-failure <c>state</c> items through <c>ReadManyItemsAsync</c>; never a
+    /// cross-partition query. ReadMany omits missing items silently, so when any id is absent the
+    /// container itself is checked, and a missing container raises instead of reading as empty.
+    /// </summary>
+    protected override async Task<IReadOnlyList<ClassificationDocument>> ReadManyAsync(IReadOnlyList<string> failureIds, CancellationToken ct)
+    {
+        if (failureIds.Count == 0) return [];
+        var items = failureIds.Select(id => ("state", new PartitionKey(id))).ToList();
+        var response = await _container.ReadManyItemsAsync<ClassificationDocument>(items, cancellationToken: ct).ConfigureAwait(false);
+        var documents = response.Resource.ToList();
+        if (documents.Count < failureIds.Count)
+            await _container.ReadContainerAsync(cancellationToken: ct).ConfigureAwait(false);
+        return documents;
+    }
+
     protected override async IAsyncEnumerable<ClassificationDocument> EnumerateAsync([EnumeratorCancellation] CancellationToken ct)
     {
         using var iterator = _container.GetItemQueryIterator<ClassificationDocument>("SELECT * FROM c WHERE c.id='state' AND c.Deleted=false",
