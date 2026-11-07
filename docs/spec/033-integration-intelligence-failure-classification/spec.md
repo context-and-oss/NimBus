@@ -9,6 +9,13 @@ third-party service; a deployment that enables the feature supplies its own API 
 no licence check and takes no revenue from it.
 Baseline: NimBus 3.7.1 (`master`), WebApp access model from spec 026, audit contract from spec 008.
 
+> **Amended by [Spec 043 §9](../043-intelligent-failed-message-insights/spec.md) (2026-11-07).**
+> `ProviderNotConfigured` with readable storage is now a read-only mode: the classification GET
+> and `history` routes, the MCP read tool and the WebApp card serve saved results, and only POST
+> analyze is pruned. A configuration binding failure still exposes the status route only. The
+> statements below that `ProviderNotConfigured` returns `404` for classification and history
+> describe the behavior before that change.
+
 ### 2026-09-21 addendum — administrator-managed settings
 
 The stock WebApp adds an always-discoverable, site-Owner-only Admin settings surface

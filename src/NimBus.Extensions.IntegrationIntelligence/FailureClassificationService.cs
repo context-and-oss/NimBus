@@ -17,6 +17,7 @@ public sealed class FailureClassificationService
     private readonly IFailureIntelligenceProvider _provider;
     private readonly TimeProvider _clock;
     private readonly IMessageTrackingStore _messages;
+    private readonly FailureClassificationReader _reader;
 
     /// <summary>Creates the service.</summary>
     public FailureClassificationService(
@@ -35,25 +36,16 @@ public sealed class FailureClassificationService
         _provider = provider;
         _messages = messages;
         _clock = clock ?? TimeProvider.System;
+        _reader = new FailureClassificationReader(host, store, messages);
     }
 
-    /// <summary>Loads the latest authorized classification.</summary>
-    public async Task<FailureClassification?> GetLatestAsync(string eventId, string messageId, CancellationToken cancellationToken)
-    {
-        var input = await LoadAuthorizedMessageAsync(eventId, messageId, requireContributor: false, cancellationToken: cancellationToken).ConfigureAwait(false);
-        var operation = await _store.GetLatestOperationAsync(input.MessageId, cancellationToken).ConfigureAwait(false);
-        if (operation is { Status: "Active" }) throw new ClassificationServiceException("AnalysisInProgress", 409);
-        if (operation is { Status: "Failed", ErrorCode: "AnalysisOutcomeUnknown" }) throw new ClassificationServiceException("AnalysisOutcomeUnknown", 409);
-        if (operation is { Status: "Failed" }) throw new ClassificationServiceException(operation.ErrorCode ?? "AnalysisFailed", 503);
-        return await _store.GetLatestAsync(input.MessageId, cancellationToken).ConfigureAwait(false);
-    }
+    /// <summary>Loads the latest authorized classification. Same as <see cref="FailureClassificationReader.GetLatestAsync"/>.</summary>
+    public Task<FailureClassification?> GetLatestAsync(string eventId, string messageId, CancellationToken cancellationToken)
+        => _reader.GetLatestAsync(eventId, messageId, cancellationToken);
 
-    /// <summary>Loads all authorized revisions.</summary>
-    public async Task<IReadOnlyList<FailureClassification>> GetHistoryAsync(string eventId, string messageId, CancellationToken cancellationToken)
-    {
-        var input = await LoadAuthorizedMessageAsync(eventId, messageId, requireContributor: false, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return await _store.GetHistoryAsync(input.MessageId, cancellationToken).ConfigureAwait(false);
-    }
+    /// <summary>Loads all authorized revisions. Same as <see cref="FailureClassificationReader.GetHistoryAsync"/>.</summary>
+    public Task<IReadOnlyList<FailureClassification>> GetHistoryAsync(string eventId, string messageId, CancellationToken cancellationToken)
+        => _reader.GetHistoryAsync(eventId, messageId, cancellationToken);
 
     /// <summary>Runs one idempotent analysis request.</summary>
     public async Task<(FailureClassification Result, bool Cached)> AnalyzeAsync(
@@ -249,31 +241,8 @@ public sealed class FailureClassificationService
         catch { /* Expiry is an unknown outcome, never permission to replay. */ }
     }
 
-    private async Task<MessageEntity> LoadAuthorizedMessageAsync(string eventId, string messageId, bool requireContributor, Action<MessageEntity>? loadedMessage = null, CancellationToken cancellationToken = default)
-    {
-        var input = await _messages.GetMessage(eventId, messageId).ConfigureAwait(false);
-        if (input is null)
-        {
-            throw new ClassificationServiceException("FailureNotFound", 404);
-        }
-        loadedMessage?.Invoke(input);
-
-        if (!await _host.EndpointExistsAsync(input.EndpointId, cancellationToken).ConfigureAwait(false)
-            || await _messages.GetEvent(input.EndpointId, eventId).ConfigureAwait(false) is null)
-        {
-            throw new ClassificationServiceException("FailureNotFound", 404);
-        }
-
-        var authorized = requireContributor
-            ? await _host.HasContributorAsync(input.EndpointId, cancellationToken).ConfigureAwait(false)
-            : await _host.HasReaderAsync(input.EndpointId, cancellationToken).ConfigureAwait(false);
-        if (!authorized)
-        {
-            throw new ClassificationServiceException("Forbidden", 403);
-        }
-
-        return input;
-    }
+    private Task<MessageEntity> LoadAuthorizedMessageAsync(string eventId, string messageId, bool requireContributor, Action<MessageEntity>? loadedMessage = null, CancellationToken cancellationToken = default)
+        => _reader.LoadAuthorizedMessageAsync(eventId, messageId, requireContributor, loadedMessage, cancellationToken);
 
     private async Task AuditAsync(string eventId, string endpointId, string messageId, FailureClassification? result, bool cached, string outcome, bool accessDenied, CancellationToken cancellationToken)
     {

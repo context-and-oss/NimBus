@@ -303,6 +303,41 @@ public class OperatorActionToolsTests
     }
 
     [TestMethod]
+    public async Task Classify_in_read_only_mode_says_no_provider_is_configured_and_does_not_analyze()
+    {
+        // Spec 043 read-only mode: saved classifications are readable, new analyses are not.
+        var classifications = new FakeClassifications { Analyze = false };
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true },
+            extra: services => services.AddSingleton<IOperatorClassificationSource>(classifications));
+        await SeedFailureAsync(host);
+        await using var client = await host.CreateClientAsync();
+
+        var result = await client.CallToolAsync("nimbus_classify_failure", new Dictionary<string, object?>
+        {
+            ["endpointId"] = Endpoint, ["eventId"] = EventId, ["idempotencyKey"] = Guid.NewGuid().ToString(),
+        });
+
+        AssertError(result, "FeatureUnavailable");
+        StringAssert.Contains(ErrorText(result), "no provider is configured");
+        Assert.IsNull(classifications.LastAnalyze);
+    }
+
+    [TestMethod]
+    public void Classification_source_reads_in_read_only_mode_and_analyzes_only_when_ready()
+    {
+        var reader = new FailureClassificationReader(InterfaceFake<IIntegrationIntelligenceHost>.Create().Instance,
+            InterfaceFake<IFailureClassificationStore>.Create().Instance, new InMemoryMessageStore());
+
+        var readOnly = new OperatorClassificationSource([reader], []);
+        Assert.IsTrue(readOnly.IsAvailable);
+        Assert.IsFalse(readOnly.CanAnalyze);
+
+        var off = new OperatorClassificationSource([], []);
+        Assert.IsFalse(off.IsAvailable);
+        Assert.IsFalse(off.CanAnalyze);
+    }
+
+    [TestMethod]
     public async Task Classify_rejects_a_revoked_contributor_before_analysis()
     {
         var classifications = new FakeClassifications();
@@ -429,7 +464,11 @@ public class OperatorActionToolsTests
     {
         public (string EventId, string MessageId, string Key, bool Force)? LastAnalyze { get; private set; }
 
+        public bool Analyze { get; init; } = true;
+
         public bool IsAvailable => true;
+
+        public bool CanAnalyze => Analyze;
 
         public Task<FailureClassification?> GetLatestAsync(string eventId, string messageId, CancellationToken cancellationToken)
             => Task.FromResult<FailureClassification?>(null);
