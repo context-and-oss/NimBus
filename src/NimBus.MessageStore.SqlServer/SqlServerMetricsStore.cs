@@ -157,7 +157,8 @@ GROUP BY EndpointId, EventTypeId";
                    COALESCE(NULLIF(JSON_VALUE(MessageContentJson, '$.ErrorContent.ErrorText'), ''), DeadLetterErrorDescription, '') AS ErrorText,
                    EnqueuedTimeUtc,
                    EventId,
-                   MessageId
+                   MessageId,
+                   SessionId
                FROM {T("Messages")}
                WHERE MessageType = 'ErrorResponse'
                  AND EnqueuedTimeUtc >= @From
