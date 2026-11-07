@@ -373,6 +373,42 @@ merges. Seeding 10 000 documents into the shared dev account needs the owner's a
 first. If the live account misses the gate, lower `EnrichmentCeiling` (and consider a
 1 000-id batch, which the emulator favoured) before PR 3 merges.
 
+### Enrichment on a live Cosmos account (2026-11-07)
+
+No NimBus Cosmos account existed (the dev environment named above had been removed), so with
+the owner's approval a temporary **serverless** account was created in swedencentral, measured
+and deleted: `cosmos-nbinsights-perf-1107` in `rg-nimbus-insights-perf`. Same 10 000 documents
+and harness as above, Direct mode (the SDK default NimBus uses), every response's request
+charge summed. Measured from the development workstation in Europe over the internet (about
+20 ms per round trip), so in-region latency from the WebApp will be lower; RU are exact.
+
+| Scope | Batch × concurrency | Median | Max | RU per read | 429s |
+|---|---|---|---|---|---|
+| 10 000 | 500 × 4 (default) | 1 863 ms | 3 044 ms | 3 556 | 0 |
+| 10 000 | 1 000 × 4 | 2 058 ms | 2 284 ms | 3 971 | 0 |
+| 10 000 | 500 × 8 | 1 449 ms | 1 468 ms | 3 556 | 0 |
+| 5 000 | 500 × 4 | 1 001 ms | 1 216 ms | 1 779 | 0 |
+| 5 000 | 500 × 8 | 861 ms | 972 ms | 1 779 | 0 |
+| 2 500 | 500 × 4 | 624 ms | 646 ms | 889 | 0 |
+| 1 000 | 500 × 4 | 298 ms | 300 ms | 355 | 0 |
+
+Findings:
+
+- **RU**: a cold 10 000-id enrichment costs about 3 600 RU, about 0.36 RU per failure and 7 %
+  of the 50 000 RU budget. ReadMany point reads are cheap; whole-document reads (D2) do not
+  need a summary field for cost reasons.
+- **Latency**: with the defaults the median is 1.9 s; one of six runs took 3.04 s, just over
+  the 3 s target, and the other five stayed under 1.9 s. With 8 batches in flight every run
+  stayed under 1.5 s. Cost scales linearly with scope (1 000 ids: 0.3 s).
+- **Concurrency differs by provider**: 8 in flight is faster on Cosmos but slower on SQL (2.8 s
+  median, 4.1 s max above), so no single default is best for both.
+- Seeding needed rate-limit retries on serverless (429 `RUBudgetExceeded` at 32 concurrent
+  writes); the reads were never throttled.
+
+Decision: the gate passes. Keep `EnrichmentCeiling` at 10 000 and the SQL-safe defaults
+(500 × 4). Document that Cosmos deployments may set `NimBus:Insights:BulkReadConcurrency` to 8.
+The single 3.04 s run came from a cross-internet path; it does not justify lowering the ceiling.
+
 ## Out of scope
 
 - Selective analysis, representative hypotheses, resumable bulk execution, hidden-endpoint
