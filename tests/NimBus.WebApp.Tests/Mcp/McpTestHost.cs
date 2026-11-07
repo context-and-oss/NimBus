@@ -138,6 +138,7 @@ internal sealed class McpTestHost : IAsyncDisposable
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMonitorApiController>.Create().Instance);
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMessageApiController>.Create().Instance);
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMetricsApiController>.Create().Instance);
+                    services.AddSingleton(InterfaceFake<NimBus.WebApp.Services.Insights.IFailedInsightsQuery>.Create().Instance);
 
                     // Mirrors the local-dev branch of Startup.AddAuthenticationStack.
                     var authentication = services.AddAuthentication();

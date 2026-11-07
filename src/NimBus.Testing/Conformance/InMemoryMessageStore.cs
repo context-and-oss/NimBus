@@ -226,7 +226,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
     public Task<UnresolvedEvent?> GetEventById(string endpointId, string id)
         => Task.FromResult(_events.Values.FirstOrDefault(e => e.EndpointId == endpointId && CompositeEventId(e) == id));
 
-    public Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds)
+    public virtual Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds)
     {
         var set = new HashSet<string>(eventIds);
         return Task.FromResult(_events.Values.Where(e => e.EndpointId == endpointId && (set.Contains(e.EventId) || set.Contains(CompositeEventId(e)))).ToList());
@@ -1338,6 +1338,8 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
                 ErrorText = m.MessageContent?.ErrorContent?.ErrorText ?? m.DeadLetterErrorDescription ?? string.Empty,
                 EnqueuedTimeUtc = m.EnqueuedTimeUtc,
                 EventId = m.EventId,
+                MessageId = m.MessageId,
+                SessionId = m.SessionId,
             })
             .ToList();
 

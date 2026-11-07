@@ -28,6 +28,13 @@ public static class FailureClassificationQuestionSet
     /// <summary>Returns an immutable view of the current question set.</summary>
     public static IReadOnlyDictionary<string, Question> Items => Questions;
 
+    /// <summary>
+    /// Every category name the current question set can return, including <c>unknown</c>. Readers use
+    /// it to treat a stored category from a newer question set as unrecognized (spec 043 §5).
+    /// </summary>
+    public static IReadOnlySet<string> Categories { get; } =
+        new HashSet<string>(Questions["failure_category"].Criteria!.Keys, StringComparer.Ordinal);
+
     /// <summary>Provider question structure.</summary>
     public sealed record Question(string Type, string Instructions, IReadOnlyDictionary<string, object?>? Criteria);
 }

@@ -12,13 +12,14 @@ import type { Moment } from "moment";
 import * as api from "api-client";
 import Insights from "./insights";
 
-const mocks = vi.hoisted(() => ({ insights: vi.fn() }));
+const mocks = vi.hoisted(() => ({ insights: vi.fn(), endpoints: vi.fn() }));
 
 vi.mock("api-client", async () => {
   const actual =
     await vi.importActual<typeof import("api-client")>("api-client");
   class FakeClient {
     getMetricsFailedInsights = mocks.insights;
+    getEndpointStatusCountAll = mocks.endpoints;
   }
   return { ...actual, Client: FakeClient, CookieAuth: () => ({}) };
 });
@@ -48,16 +49,20 @@ describe("Insights page time range", () => {
     mocks.insights.mockResolvedValue(
       new api.FailedInsightsOverview({ groups: [], totalFailed: 0 }),
     );
+    mocks.endpoints.mockResolvedValue([]);
     render(
       <MemoryRouter>
         <Insights />
       </MemoryRouter>,
     );
     await waitFor(() => expect(mocks.insights).toHaveBeenCalledTimes(1));
+    // Spec 043: no endpoint filter, and the first load reads saved classifications afresh.
     expect(mocks.insights).toHaveBeenLastCalledWith(
       api.Period._1d,
       undefined,
       undefined,
+      undefined,
+      true,
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Custom…" }));
@@ -89,6 +94,8 @@ describe("Insights page time range", () => {
     await waitFor(() => expect(mocks.insights).toHaveBeenCalledTimes(3));
     expect(mocks.insights).toHaveBeenLastCalledWith(
       api.Period._7d,
+      undefined,
+      undefined,
       undefined,
       undefined,
     );

@@ -248,6 +248,75 @@ public interface IFailureClassificationStore
     Task FailAsync(ClassificationReservation reservation, string errorCode, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// The saved classification state of one failure as read in bulk: the latest completed result,
+/// the latest operation's state (an expired active operation reads as failed with
+/// <c>AnalysisOutcomeUnknown</c>), and whether the failure was tombstoned.
+/// </summary>
+/// <param name="FailureMessageId">The failed attempt's message id.</param>
+/// <param name="Latest">The latest completed result, or null when none exists or the failure was tombstoned.</param>
+/// <param name="LatestOperationStatus">The latest operation's status (Active, Completed or Failed), or null when there is none.</param>
+/// <param name="LatestOperationErrorCode">The latest operation's error code, when it failed.</param>
+/// <param name="Deleted">True when retention tombstoned the failure; no classification data may be exposed.</param>
+public sealed record ClassificationSnapshot(
+    string FailureMessageId,
+    FailureClassification? Latest,
+    string? LatestOperationStatus,
+    string? LatestOperationErrorCode,
+    bool Deleted);
+
+/// <summary>
+/// Optional bulk-read capability of a classification store (spec 043). Implementations read many
+/// failures per call without one round trip per failure, and throw when storage is unavailable,
+/// including a missing table or container; an id with no stored state is simply absent from the
+/// result.
+/// </summary>
+public interface IFailureClassificationBulkReader
+{
+    /// <summary>Reads the saved state of each listed failure. Absent ids are omitted.</summary>
+    Task<IReadOnlyDictionary<string, ClassificationSnapshot>> ReadLatestAsync(
+        IReadOnlyCollection<string> failureMessageIds, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Outcome of a bulk classification read.</summary>
+public enum ClassificationBulkReadStatus
+{
+    /// <summary>Storage answered for every id; absent ids have no saved classification.</summary>
+    Available,
+
+    /// <summary>Storage failed or is missing; nothing may be inferred about absence.</summary>
+    Unavailable,
+
+    /// <summary>The registered store cannot read in bulk.</summary>
+    Unsupported,
+}
+
+/// <summary>Result of <see cref="FailureClassificationReader.ReadLatestInBulkAsync"/>.</summary>
+/// <param name="Status">Whether the snapshots are complete.</param>
+/// <param name="Snapshots">Saved state by failure message id; empty unless <paramref name="Status"/> is Available.</param>
+public sealed record ClassificationBulkReadResult(
+    ClassificationBulkReadStatus Status,
+    IReadOnlyDictionary<string, ClassificationSnapshot> Snapshots);
+
+/// <summary>Limits for one bulk classification read.</summary>
+public sealed record ClassificationBulkReadOptions
+{
+    /// <summary>Creates options; both limits must be positive.</summary>
+    public ClassificationBulkReadOptions(int BatchSize = 500, int MaxConcurrency = 4)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(BatchSize);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(MaxConcurrency);
+        this.BatchSize = BatchSize;
+        this.MaxConcurrency = MaxConcurrency;
+    }
+
+    /// <summary>Failure ids per store call.</summary>
+    public int BatchSize { get; }
+
+    /// <summary>Store calls in flight at once.</summary>
+    public int MaxConcurrency { get; }
+}
+
 /// <summary>Durable cleanup of classifications whose source event has been deleted.</summary>
 public interface IClassificationRetentionStore
 {

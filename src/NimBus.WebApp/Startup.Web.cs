@@ -114,6 +114,13 @@ public partial class Startup
             sp.GetRequiredService<IResolverDeadLetterClient>()));
         services.AddTransient<IAdminApiController, AdminImplementation>();
         services.AddTransient<IMetricsApiController, MetricsImplementation>();
+        // Spec 043: failed-message insights with saved-classification enrichment.
+        services.AddOptions<Services.Insights.FailedInsightsOptions>()
+            .Bind(Configuration.GetSection(Services.Insights.FailedInsightsOptions.SectionName))
+            .Validate(options => options.Validate().Count == 0, "NimBus:Insights settings are out of range.")
+            .ValidateOnStart();
+        services.AddScoped<Services.Insights.IInsightsEnrichmentSource, Services.Insights.InsightsEnrichmentSource>();
+        services.AddScoped<Services.Insights.IFailedInsightsQuery, Services.Insights.FailedInsightsService>();
         services.AddTransient<IHeartbeatApiController, HeartbeatImplementation>();
         services.AddTransient<IMonitorApiController, MonitorImplementation>();
         services.AddScoped<IMonitorAcknowledgementService, MonitorAcknowledgementService>();

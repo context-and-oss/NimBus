@@ -32,7 +32,32 @@ public sealed class IntegrationIntelligenceStatusController : ControllerBase
     }
 }
 
-/// <summary>Serves advisory failure classification requests and results.</summary>
+/// <summary>
+/// Serves saved classification results. Available whenever classification storage is readable,
+/// including read-only mode with no provider configured (spec 043).
+/// </summary>
+[ApiController]
+[Authorize]
+[Route("api/integration-intelligence/failures/{eventId}/{messageId}/classification")]
+public sealed class IntegrationIntelligenceReadController : ControllerBase
+{
+    private readonly FailureClassificationReader _reader;
+
+    /// <summary>Creates the read controller.</summary>
+    public IntegrationIntelligenceReadController(FailureClassificationReader reader) => _reader = reader;
+
+    /// <summary>Returns the latest classification.</summary>
+    [HttpGet]
+    public async Task<IActionResult> GetClassification(string eventId, string messageId, CancellationToken cancellationToken)
+        => await ClassificationResults.ExecuteAsync(() => _reader.GetLatestAsync(eventId, messageId, cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>Returns all classification revisions.</summary>
+    [HttpGet("history")]
+    public async Task<IActionResult> GetHistory(string eventId, string messageId, CancellationToken cancellationToken)
+        => await ClassificationResults.ExecuteAsync(() => _reader.GetHistoryAsync(eventId, messageId, cancellationToken)).ConfigureAwait(false);
+}
+
+/// <summary>Serves advisory failure classification requests. Available only when a provider is ready.</summary>
 [ApiController]
 [Authorize]
 [Route("api/integration-intelligence/failures/{eventId}/{messageId}/classification")]
@@ -43,29 +68,23 @@ public sealed class IntegrationIntelligenceController : ControllerBase
     /// <summary>Creates the classification controller.</summary>
     public IntegrationIntelligenceController(FailureClassificationService service) => _service = service;
 
-    /// <summary>Returns the latest classification.</summary>
-    [HttpGet]
-    public async Task<IActionResult> GetClassification(string eventId, string messageId, CancellationToken cancellationToken)
-        => await ExecuteAsync(() => _service.GetLatestAsync(eventId, messageId, cancellationToken)).ConfigureAwait(false);
-
-    /// <summary>Returns all classification revisions.</summary>
-    [HttpGet("history")]
-    public async Task<IActionResult> GetHistory(string eventId, string messageId, CancellationToken cancellationToken)
-        => await ExecuteAsync(() => _service.GetHistoryAsync(eventId, messageId, cancellationToken)).ConfigureAwait(false);
-
     /// <summary>Starts or reuses one idempotent analysis request.</summary>
     [HttpPost]
     public async Task<IActionResult> PostClassification(string eventId, string messageId, [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] ClassificationRequest? request, CancellationToken cancellationToken)
     {
         HttpContext.Items[IntegrationIntelligenceRequestMarkers.ControllerEntered] = true;
-        return await ExecuteAsync(async () =>
+        return await ClassificationResults.ExecuteAsync(async () =>
         {
             var result = await _service.AnalyzeAsync(eventId, messageId, Request.Headers["Idempotency-Key"].ToString(), request?.Force ?? false, cancellationToken).ConfigureAwait(false);
             return new ClassificationResponse(result.Result, result.Cached);
         }).ConfigureAwait(false);
     }
+}
 
-    private static async Task<IActionResult> ExecuteAsync<T>(Func<Task<T>> action)
+/// <summary>Maps classification outcomes to the routes' stable error bodies.</summary>
+internal static class ClassificationResults
+{
+    internal static async Task<IActionResult> ExecuteAsync<T>(Func<Task<T>> action)
     {
         try
         {

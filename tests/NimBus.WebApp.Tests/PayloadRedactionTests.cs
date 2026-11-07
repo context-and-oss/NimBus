@@ -192,7 +192,7 @@ public class ReaderFloorTests
         public string? GetCurrentUserName() => "test-user";
     }
 
-    private static MetricsImplementation Metrics(StubAuthz authz) => new(
+    private static MetricsImplementation Metrics(StubAuthz authz) => FailedInsightsServiceTests.Metrics(
         new InMemoryMessageStore(),
         new StoreResultCache(new Microsoft.Extensions.Caching.Memory.MemoryCache(
             new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions())),
