@@ -114,9 +114,9 @@ const Tab = ({
       className={cn(
         "flex-1 px-4 py-2 text-sm font-semibold transition-colors",
         "border border-b-0 rounded-t-md -mb-px",
-        "focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-inset",
+        "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset",
         isActive
-          ? "bg-primary/10 text-primary border-primary dark:bg-primary/15 dark:text-primary-300"
+          ? "bg-primary/10 text-primary border-primary dark:bg-primary/25 dark:text-primary-200"
           : "bg-background text-muted-foreground border-border hover:bg-accent hover:text-foreground",
         isDisabled && "opacity-50 cursor-not-allowed hover:bg-background",
         className,

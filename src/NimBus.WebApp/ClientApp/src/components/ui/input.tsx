@@ -7,6 +7,8 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   rightElement?: React.ReactNode;
 }
 
+const DATE_TYPES = new Set(["date", "datetime-local", "time", "month", "week"]);
+
 const Input = forwardRef<HTMLInputElement, InputProps>(
   (
     { className, error, leftElement, rightElement, type = "text", ...props },
@@ -14,12 +16,16 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
   ) => {
     const hasLeftElement = !!leftElement;
     const hasRightElement = !!rightElement;
+    // display:flex shrinks a date input's inner box in Chromium, leaving the
+    // picker icon right after the text instead of at the right edge.
+    const isDateLike = DATE_TYPES.has(type);
 
     const inputElement = (
       <input
         type={type}
         className={cn(
-          "flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground",
+          isDateLike ? "block" : "flex",
+          "h-10 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground",
           "placeholder:text-muted-foreground",
           "focus:outline-hidden focus:ring-2 focus:ring-offset-0",
           "disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-muted",
