@@ -19,6 +19,8 @@ export interface Toast {
   duration?: number;
   /** Optional inline action (e.g. "Undo"). Dismisses the toast on click. */
   action?: { label: string; onClick: () => void };
+  /** Shows a bar that drains over `duration`, for a toast that counts down to something. */
+  progress?: boolean;
 }
 
 interface ToastContextType {
@@ -41,7 +43,12 @@ export const emitToast: ToastEmitter = (toast) => {
   if (imperativeEmit) {
     imperativeEmit(toast);
   } else if (typeof console !== "undefined") {
-    console.warn("[toast]", toast.variant ?? "info", toast.title ?? "", toast.description ?? "");
+    console.warn(
+      "[toast]",
+      toast.variant ?? "info",
+      toast.title ?? "",
+      toast.description ?? "",
+    );
   }
 };
 
@@ -119,12 +126,20 @@ const ToastItem = ({
   toast: Toast;
   onClose: () => void;
 }) => {
-  const variants: Record<ToastVariant, { bg: string; icon: ReactNode }> = {
+  // Same paired tint/ink/dark-override convention as every other status surface in the app (see
+  // badge.tsx, admin/operations.tsx, confirm-destructive-action.tsx) — the previous raw Tailwind
+  // literals (bg-red-50 + text-foreground) paired a background that never changed with theme-aware
+  // foreground text, so in dark mode near-white text landed on a near-white background.
+  const variants: Record<
+    ToastVariant,
+    { bg: string; text: string; icon: ReactNode }
+  > = {
     success: {
-      bg: "bg-green-50 border-green-200",
+      bg: "bg-status-success-50 border-status-success/30 dark:bg-green-950/30 dark:border-green-900/60",
+      text: "text-status-success-ink dark:text-green-200",
       icon: (
         <svg
-          className="w-5 h-5 text-green-500"
+          className="w-5 h-5 text-status-success"
           fill="currentColor"
           viewBox="0 0 20 20"
         >
@@ -137,10 +152,11 @@ const ToastItem = ({
       ),
     },
     error: {
-      bg: "bg-red-50 border-red-200",
+      bg: "bg-status-danger-50 border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60",
+      text: "text-status-danger-ink dark:text-red-200",
       icon: (
         <svg
-          className="w-5 h-5 text-red-500"
+          className="w-5 h-5 text-status-danger"
           fill="currentColor"
           viewBox="0 0 20 20"
         >
@@ -153,10 +169,11 @@ const ToastItem = ({
       ),
     },
     warning: {
-      bg: "bg-yellow-50 border-yellow-200",
+      bg: "bg-status-warning-50 border-status-warning/30 dark:bg-yellow-950/30 dark:border-yellow-900/60",
+      text: "text-status-warning-ink dark:text-yellow-200",
       icon: (
         <svg
-          className="w-5 h-5 text-yellow-500"
+          className="w-5 h-5 text-status-warning"
           fill="currentColor"
           viewBox="0 0 20 20"
         >
@@ -169,10 +186,11 @@ const ToastItem = ({
       ),
     },
     info: {
-      bg: "bg-blue-50 border-blue-200",
+      bg: "bg-status-info-50 border-status-info/30 dark:bg-blue-950/30 dark:border-blue-900/60",
+      text: "text-status-info-ink dark:text-blue-200",
       icon: (
         <svg
-          className="w-5 h-5 text-blue-500"
+          className="w-5 h-5 text-status-info"
           fill="currentColor"
           viewBox="0 0 20 20"
         >
@@ -187,7 +205,7 @@ const ToastItem = ({
   };
 
   const variant = toast.variant ?? "info";
-  const { bg, icon } = variants[variant];
+  const { bg, text, icon } = variants[variant];
 
   return (
     <div
@@ -201,10 +219,10 @@ const ToastItem = ({
       <div className="shrink-0">{icon}</div>
       <div className="flex-1 min-w-0">
         {toast.title && (
-          <p className="text-sm font-medium text-foreground">{toast.title}</p>
+          <p className={cn("text-sm font-medium", text)}>{toast.title}</p>
         )}
         {toast.description && (
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className={cn("text-sm mt-0.5 opacity-90", text)}>
             {toast.description}
           </p>
         )}
@@ -220,6 +238,9 @@ const ToastItem = ({
             {toast.action.label}
           </button>
         )}
+        {toast.progress && toast.duration ? (
+          <ToastProgress duration={toast.duration} />
+        ) : null}
       </div>
       <button
         onClick={onClose}
@@ -233,6 +254,30 @@ const ToastItem = ({
           />
         </svg>
       </button>
+    </div>
+  );
+};
+
+// Drains from full to empty over the toast's duration: starts full, then transitions to empty
+// on the next frame.
+const ToastProgress = ({ duration }: { duration: number }) => {
+  const [draining, setDraining] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setDraining(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  return (
+    <div
+      className="mt-2 h-1 overflow-hidden rounded-full bg-black/10 dark:bg-white/10"
+      aria-hidden="true"
+    >
+      <div
+        className="h-full rounded-full bg-current opacity-60"
+        style={{
+          width: draining ? "0%" : "100%",
+          transition: `width ${duration}ms linear`,
+        }}
+      />
     </div>
   );
 };
