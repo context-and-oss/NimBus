@@ -96,7 +96,7 @@ public sealed class MetricsImplementationTests
     public async Task A_custom_range_reaches_the_store_as_its_exact_bounds()
     {
         var store = new RecordingStore();
-        var sut = new MetricsImplementation(store, NewCache(), new AllowAllAuthorizationService());
+        var sut = FailedInsightsServiceTests.Metrics(store, NewCache(), new AllowAllAuthorizationService());
         var from = new DateTime(2026, 9, 20, 6, 0, 0, DateTimeKind.Utc);
         var to = new DateTime(2026, 9, 21, 15, 30, 0, DateTimeKind.Utc);
 
@@ -110,7 +110,7 @@ public sealed class MetricsImplementationTests
     public async Task An_invalid_custom_range_is_a_bad_request_without_a_store_query()
     {
         var store = new RecordingStore();
-        var sut = new MetricsImplementation(store, NewCache(), new AllowAllAuthorizationService());
+        var sut = FailedInsightsServiceTests.Metrics(store, NewCache(), new AllowAllAuthorizationService());
         var from = new DateTime(2026, 9, 20, 6, 0, 0, DateTimeKind.Utc);
 
         Assert.IsInstanceOfType<BadRequestObjectResult>((await sut.GetMetricsOverviewAsync(Period._1d, from, null)).Result);
@@ -125,7 +125,7 @@ public sealed class MetricsImplementationTests
     public async Task The_query_string_binds_iso_utc_bounds_to_the_same_instants()
     {
         var store = new RecordingStore();
-        using var host = await CreateHost(new MetricsImplementation(store, NewCache(), new AllowAllAuthorizationService()));
+        using var host = await CreateHost(FailedInsightsServiceTests.Metrics(store, NewCache(), new AllowAllAuthorizationService()));
         using var client = host.GetTestServer().CreateClient();
 
         var ok = await client.GetAsync("/api/metrics/timeseries?period=1d&from=2026-09-20T06:00:00.000Z&to=2026-09-21T15:30:00.000Z");

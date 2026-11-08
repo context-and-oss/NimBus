@@ -3064,9 +3064,21 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: endpointId
+          in: query
+          required: false
+          description: Exact endpoint id to narrow the failures to. Omitted selects every endpoint.
+          schema:
+            type: string
+        - name: refresh
+          in: query
+          required: false
+          description: Re-read saved classifications instead of using the short-lived enrichment cache. New failures can still lag by the metrics cache lifetime.
+          schema:
+            type: boolean
       responses:
         '200':
-          description: Failed message insights grouped by error pattern
+          description: Failed message insights grouped by error pattern, and by likely cause and recovery guidance when saved classifications are available
           content:
             application/json:
               schema:
@@ -5743,14 +5755,140 @@ components:
             $ref: '#/components/schemas/ErrorPatternGroup'
         totalFailed:
           type: integer
+          description: Failure occurrences in the window. Always equal to totalOccurrences; kept for existing clients.
+        from:
+          type: string
+          format: date-time
+          description: Resolved window start (inclusive, UTC). Send it back unchanged with to for drill-down.
+        to:
+          type: string
+          format: date-time
+          description: Resolved window end (exclusive, UTC).
+        endpointId:
+          type: string
+          nullable: true
+          description: The endpoint filter applied, or null for every endpoint.
+        totalOccurrences:
+          type: integer
+          description: Failed attempts in the scope. An event that failed three times counts three.
+        occurrencesReadAt:
+          type: string
+          format: date-time
+          description: When the failure occurrences were read from the message store.
+        classificationsReadAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When saved classifications were read, or null when enrichment is not available.
+        enrichment:
+          $ref: '#/components/schemas/InsightsEnrichmentStatus'
+        enrichmentLimit:
+          type: integer
+          description: The largest scope, in occurrences, that is enriched with saved classifications.
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
+        causeGroups:
+          type: array
+          nullable: true
+          description: Occurrences grouped by likely failure cause. Null unless enrichment is available.
+          items:
+            $ref: '#/components/schemas/InsightGroup'
+        guidanceGroups:
+          type: array
+          nullable: true
+          description: Occurrences grouped by saved recovery guidance. Null unless enrichment is available.
+          items:
+            $ref: '#/components/schemas/InsightGroup'
+    InsightsEnrichmentStatus:
+      title: InsightsEnrichmentStatus
+      type: string
+      description: Whether saved classifications enrich this response. Every value except available leaves coverage and the cause and guidance groups null. disabled is listed first so an unset value never reads as available.
+      enum:
+        - disabled
+        - available
+        - unavailable
+        - unsupported
+        - limitExceeded
+    InsightsCoverage:
+      title: InsightsCoverage
+      type: object
+      nullable: true
+      description: How many occurrences have saved analysis. classified + uncertain + notAnalyzed + notEligible = total.
+      properties:
+        total:
+          type: integer
+        analyzed:
+          type: integer
+          description: classified + uncertain.
+        classified:
+          type: integer
+        uncertain:
+          type: integer
+        notAnalyzed:
+          type: integer
+          description: No completed result, and analysis could be requested. Includes failures that can no longer be analyzed because their event has since completed or been skipped.
+        notEligible:
+          type: integer
+          description: No completed result, and the endpoint is outside the configured analysis allow-list.
+    InsightGroup:
+      title: InsightGroup
+      type: object
+      description: One likely-cause or recovery-guidance group.
+      properties:
+        groupKey:
+          type: string
+          description: Stable within this response. A taxonomy or guidance name, or uncertain, notAnalyzed, notEligible.
+        label:
+          type: string
+        count:
+          type: integer
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
+        endpoints:
+          type: array
+          items:
+            type: string
+        eventTypes:
+          type: array
+          items:
+            type: string
+        latestOccurrence:
+          type: string
+          format: date-time
+        topPatterns:
+          type: array
+          description: The group's most frequent error patterns, at most the configured limit.
+          items:
+            $ref: '#/components/schemas/InsightGroupPattern'
+        morePatterns:
+          type: integer
+          description: Distinct error patterns in the group beyond topPatterns.
+    InsightGroupPattern:
+      title: InsightGroupPattern
+      type: object
+      properties:
+        groupKey:
+          type: string
+          description: The error pattern's key, as on ErrorSubGroup.
+        normalizedPattern:
+          type: string
+        count:
+          type: integer
+        exampleErrorText:
+          type: string
     ErrorPatternGroup:
       title: ErrorPatternGroup
       type: object
       properties:
+        groupKey:
+          type: string
+          description: Stable within this response; not durable across releases.
         errorCategory:
           type: string
         count:
           type: integer
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
         endpoints:
           type: array
           items:
@@ -5772,10 +5910,15 @@ components:
       title: ErrorSubGroup
       type: object
       properties:
+        groupKey:
+          type: string
+          description: Stable within this response; not durable across releases.
         normalizedPattern:
           type: string
         count:
           type: integer
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
         endpoints:
           type: array
           items:

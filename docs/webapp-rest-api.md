@@ -332,6 +332,35 @@ curl -H "Authorization: Bearer $TOKEN" \
      "https://nimbus.example.com/api/metrics/overview?period=1d"
 ```
 
+#### Failed insights
+
+`GET /api/metrics/failed-insights` groups failure occurrences (one per failed attempt) by error
+pattern. When saved failure classifications are readable it also groups them by likely cause
+and by recovery guidance, and reports coverage: `classified`, `uncertain`, `notAnalyzed` and
+`notEligible` ([Spec 043](spec/043-intelligent-failed-message-insights/spec.md)). Reading it
+never starts an analysis.
+
+- `endpointId` narrows the scope to one endpoint. `refresh=true` re-reads saved
+  classifications; new failures can still lag by the 30 s metrics cache.
+- The response returns the resolved `from` and `to`. Send them back unchanged to page through
+  the same occurrences.
+- `enrichment` is `available`, `disabled`, `unavailable`, `unsupported` or `limitExceeded`.
+  Every value except `available` leaves `coverage`, `causeGroups` and `guidanceGroups` null; it
+  is never reported as zero coverage.
+- `totalFailed` stays for existing clients and always equals `totalOccurrences`.
+
+Limits, under `NimBus:Insights`:
+
+| Setting | Default | Range | Meaning |
+|---|---|---|---|
+| `EnrichmentCeiling` | 10000 | 100–100000 | Largest scope, after the endpoint filter, that is enriched; above it the response is `limitExceeded` |
+| `EnrichmentCacheSeconds` | 15 | 0–30 | Lifetime of a cached classification read |
+| `BulkReadBatchSize` | 500 | 50–1000 | Failures per classification-store call |
+| `BulkReadConcurrency` | 4 | 1–8 | Classification-store calls in flight |
+| `TopPatternsPerGroup` | 10 | 1–50 | Error patterns embedded in each cause or guidance group |
+
+Out-of-range values stop the WebApp at startup.
+
 ### Dev
 
 Seed-data helpers used during local development. Not intended for production

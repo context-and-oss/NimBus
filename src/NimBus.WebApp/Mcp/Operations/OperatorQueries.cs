@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Services.Insights;
 
 namespace NimBus.WebApp.Mcp.Operations;
 
@@ -16,6 +17,7 @@ public sealed class OperatorQueries
     private readonly IMonitorApiController _monitor;
     private readonly IMessageApiController _messages;
     private readonly IMetricsApiController _metrics;
+    private readonly IFailedInsightsQuery _failedInsights;
 
     /// <summary>Creates the queries for one request.</summary>
     public OperatorQueries(
@@ -23,13 +25,15 @@ public sealed class OperatorQueries
         IEventApiController events,
         IMonitorApiController monitor,
         IMessageApiController messages,
-        IMetricsApiController metrics)
+        IMetricsApiController metrics,
+        IFailedInsightsQuery failedInsights)
     {
         _endpoints = endpoints;
         _events = events;
         _monitor = monitor;
         _messages = messages;
         _metrics = metrics;
+        _failedInsights = failedInsights;
     }
 
     /// <summary>Status counts for every endpoint the caller can read.</summary>
@@ -95,9 +99,17 @@ public sealed class OperatorQueries
     public async Task<LatencyOverview> GetLatencyAsync(Period period)
         => Unwrap(await _metrics.GetMetricsLatencyAsync(period, null, null).ConfigureAwait(false), SiteReaderRequired);
 
-    /// <summary>Failures grouped by error pattern. Requires site Reader.</summary>
+    /// <summary>
+    /// Failures grouped by error pattern. Requires site Reader. Built without classification
+    /// enrichment (spec 043 §8.4): the tool hides endpoints per caller, and coverage and cause
+    /// totals cannot be split per endpoint, so the MCP path never reads classification storage.
+    /// </summary>
     public async Task<FailedInsightsOverview> GetFailureInsightsAsync(Period period)
-        => Unwrap(await _metrics.GetMetricsFailedInsightsAsync(period, null, null).ConfigureAwait(false), SiteReaderRequired);
+    {
+        var result = await _failedInsights.GetOverviewAsync(
+            new FailedInsightsRequest(period, null, null, null, Enrich: false, Refresh: false)).ConfigureAwait(false);
+        return result.Status == FailedInsightsQueryStatus.Ok ? result.Overview! : throw SiteReaderRequired();
+    }
 
     // Cross-endpoint reads keep the REST site-Reader floor; a refusal is about the caller's
     // role, not about a resource, so it is reported as such.

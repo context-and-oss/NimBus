@@ -6214,9 +6214,11 @@ export class Client extends ApiClientBase {
      * Get failed message insights grouped by error pattern
      * @param from (optional) Custom window start (inclusive). Used with `to` instead of `period`.
      * @param to (optional) Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
-     * @return Failed message insights grouped by error pattern
+     * @param endpointId (optional) Exact endpoint id to narrow the failures to. Omitted selects every endpoint.
+     * @param refresh (optional) Re-read saved classifications instead of using the short-lived enrichment cache. New failures can still lag by the metrics cache lifetime.
+     * @return Failed message insights grouped by error pattern, and by likely cause and recovery guidance when saved classifications are available
      */
-    getMetricsFailedInsights(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<FailedInsightsOverview> {
+    getMetricsFailedInsights(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined, endpointId?: string | undefined, refresh?: boolean | undefined): Promise<FailedInsightsOverview> {
         let url_ = this.baseUrl + "/api/metrics/failed-insights?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
@@ -6230,6 +6232,14 @@ export class Client extends ApiClientBase {
             throw new globalThis.Error("The parameter 'to' cannot be null.");
         else if (to !== undefined)
             url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
+        if (endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' cannot be null.");
+        else if (endpointId !== undefined)
+            url_ += "endpointId=" + encodeURIComponent("" + endpointId) + "&";
+        if (refresh === null)
+            throw new globalThis.Error("The parameter 'refresh' cannot be null.");
+        else if (refresh !== undefined)
+            url_ += "refresh=" + encodeURIComponent("" + refresh) + "&";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -15328,7 +15338,28 @@ export interface ILatencyStats {
 
 export class FailedInsightsOverview implements IFailedInsightsOverview {
     groups?: ErrorPatternGroup[];
+    /** Failure occurrences in the window. Always equal to totalOccurrences; kept for existing clients. */
     totalFailed?: number;
+    /** Resolved window start (inclusive, UTC). Send it back unchanged with to for drill-down. */
+    from?: moment.Moment;
+    /** Resolved window end (exclusive, UTC). */
+    to?: moment.Moment;
+    /** The endpoint filter applied, or null for every endpoint. */
+    endpointId?: string | undefined;
+    /** Failed attempts in the scope. An event that failed three times counts three. */
+    totalOccurrences?: number;
+    /** When the failure occurrences were read from the message store. */
+    occurrencesReadAt?: moment.Moment;
+    /** When saved classifications were read, or null when enrichment is not available. */
+    classificationsReadAt?: moment.Moment | undefined;
+    enrichment?: InsightsEnrichmentStatus;
+    /** The largest scope, in occurrences, that is enriched with saved classifications. */
+    enrichmentLimit?: number;
+    coverage?: InsightsCoverage | undefined;
+    /** Occurrences grouped by likely failure cause. Null unless enrichment is available. */
+    causeGroups?: InsightGroup[] | undefined;
+    /** Occurrences grouped by saved recovery guidance. Null unless enrichment is available. */
+    guidanceGroups?: InsightGroup[] | undefined;
 
     [key: string]: any;
 
@@ -15353,6 +15384,25 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
                     this.groups!.push(ErrorPatternGroup.fromJS(item));
             }
             this.totalFailed = _data["totalFailed"];
+            this.from = _data["from"] ? moment(_data["from"].toString()) : undefined as any;
+            this.to = _data["to"] ? moment(_data["to"].toString()) : undefined as any;
+            this.endpointId = _data["endpointId"];
+            this.totalOccurrences = _data["totalOccurrences"];
+            this.occurrencesReadAt = _data["occurrencesReadAt"] ? moment(_data["occurrencesReadAt"].toString()) : undefined as any;
+            this.classificationsReadAt = _data["classificationsReadAt"] ? moment(_data["classificationsReadAt"].toString()) : undefined as any;
+            this.enrichment = _data["enrichment"];
+            this.enrichmentLimit = _data["enrichmentLimit"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
+            if (Array.isArray(_data["causeGroups"])) {
+                this.causeGroups = [] as any;
+                for (let item of _data["causeGroups"])
+                    this.causeGroups!.push(InsightGroup.fromJS(item));
+            }
+            if (Array.isArray(_data["guidanceGroups"])) {
+                this.guidanceGroups = [] as any;
+                for (let item of _data["guidanceGroups"])
+                    this.guidanceGroups!.push(InsightGroup.fromJS(item));
+            }
         }
     }
 
@@ -15375,6 +15425,25 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
                 data["groups"].push(item ? item.toJSON() : undefined as any);
         }
         data["totalFailed"] = this.totalFailed;
+        data["from"] = this.from ? this.from.toISOString() : undefined as any;
+        data["to"] = this.to ? this.to.toISOString() : undefined as any;
+        data["endpointId"] = this.endpointId;
+        data["totalOccurrences"] = this.totalOccurrences;
+        data["occurrencesReadAt"] = this.occurrencesReadAt ? this.occurrencesReadAt.toISOString() : undefined as any;
+        data["classificationsReadAt"] = this.classificationsReadAt ? this.classificationsReadAt.toISOString() : undefined as any;
+        data["enrichment"] = this.enrichment;
+        data["enrichmentLimit"] = this.enrichmentLimit;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
+        if (Array.isArray(this.causeGroups)) {
+            data["causeGroups"] = [];
+            for (let item of this.causeGroups)
+                data["causeGroups"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.guidanceGroups)) {
+            data["guidanceGroups"] = [];
+            for (let item of this.guidanceGroups)
+                data["guidanceGroups"].push(item ? item.toJSON() : undefined as any);
+        }
         return data;
     }
 
@@ -15388,14 +15457,318 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
 
 export interface IFailedInsightsOverview {
     groups?: ErrorPatternGroup[];
+    /** Failure occurrences in the window. Always equal to totalOccurrences; kept for existing clients. */
     totalFailed?: number;
+    /** Resolved window start (inclusive, UTC). Send it back unchanged with to for drill-down. */
+    from?: moment.Moment;
+    /** Resolved window end (exclusive, UTC). */
+    to?: moment.Moment;
+    /** The endpoint filter applied, or null for every endpoint. */
+    endpointId?: string | undefined;
+    /** Failed attempts in the scope. An event that failed three times counts three. */
+    totalOccurrences?: number;
+    /** When the failure occurrences were read from the message store. */
+    occurrencesReadAt?: moment.Moment;
+    /** When saved classifications were read, or null when enrichment is not available. */
+    classificationsReadAt?: moment.Moment | undefined;
+    enrichment?: InsightsEnrichmentStatus;
+    /** The largest scope, in occurrences, that is enriched with saved classifications. */
+    enrichmentLimit?: number;
+    coverage?: InsightsCoverage | undefined;
+    /** Occurrences grouped by likely failure cause. Null unless enrichment is available. */
+    causeGroups?: InsightGroup[] | undefined;
+    /** Occurrences grouped by saved recovery guidance. Null unless enrichment is available. */
+    guidanceGroups?: InsightGroup[] | undefined;
+
+    [key: string]: any;
+}
+
+/** Whether saved classifications enrich this response. Every value except available leaves coverage and the cause and guidance groups null. disabled is listed first so an unset value never reads as available. */
+export enum InsightsEnrichmentStatus {
+    Disabled = "disabled",
+    Available = "available",
+    Unavailable = "unavailable",
+    Unsupported = "unsupported",
+    LimitExceeded = "limitExceeded",
+}
+
+/** How many occurrences have saved analysis. classified + uncertain + notAnalyzed + notEligible = total. */
+export class InsightsCoverage implements IInsightsCoverage {
+    total?: number;
+    /** classified + uncertain. */
+    analyzed?: number;
+    classified?: number;
+    uncertain?: number;
+    /** No completed result, and analysis could be requested. Includes failures that can no longer be analyzed because their event has since completed or been skipped. */
+    notAnalyzed?: number;
+    /** No completed result, and the endpoint is outside the configured analysis allow-list. */
+    notEligible?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightsCoverage) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.total = _data["total"];
+            this.analyzed = _data["analyzed"];
+            this.classified = _data["classified"];
+            this.uncertain = _data["uncertain"];
+            this.notAnalyzed = _data["notAnalyzed"];
+            this.notEligible = _data["notEligible"];
+        }
+    }
+
+    static fromJS(data: any): InsightsCoverage {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightsCoverage();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["total"] = this.total;
+        data["analyzed"] = this.analyzed;
+        data["classified"] = this.classified;
+        data["uncertain"] = this.uncertain;
+        data["notAnalyzed"] = this.notAnalyzed;
+        data["notEligible"] = this.notEligible;
+        return data;
+    }
+
+    clone(): InsightsCoverage {
+        const json = this.toJSON();
+        let result = new InsightsCoverage();
+        result.init(json);
+        return result;
+    }
+}
+
+/** How many occurrences have saved analysis. classified + uncertain + notAnalyzed + notEligible = total. */
+export interface IInsightsCoverage {
+    total?: number;
+    /** classified + uncertain. */
+    analyzed?: number;
+    classified?: number;
+    uncertain?: number;
+    /** No completed result, and analysis could be requested. Includes failures that can no longer be analyzed because their event has since completed or been skipped. */
+    notAnalyzed?: number;
+    /** No completed result, and the endpoint is outside the configured analysis allow-list. */
+    notEligible?: number;
+
+    [key: string]: any;
+}
+
+/** One likely-cause or recovery-guidance group. */
+export class InsightGroup implements IInsightGroup {
+    /** Stable within this response. A taxonomy or guidance name, or uncertain, notAnalyzed, notEligible. */
+    groupKey?: string;
+    label?: string;
+    count?: number;
+    coverage?: InsightsCoverage | undefined;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    /** The group's most frequent error patterns, at most the configured limit. */
+    topPatterns?: InsightGroupPattern[];
+    /** Distinct error patterns in the group beyond topPatterns. */
+    morePatterns?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightGroup) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.groupKey = _data["groupKey"];
+            this.label = _data["label"];
+            this.count = _data["count"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+            if (Array.isArray(_data["eventTypes"])) {
+                this.eventTypes = [] as any;
+                for (let item of _data["eventTypes"])
+                    this.eventTypes!.push(item);
+            }
+            this.latestOccurrence = _data["latestOccurrence"] ? moment(_data["latestOccurrence"].toString()) : undefined as any;
+            if (Array.isArray(_data["topPatterns"])) {
+                this.topPatterns = [] as any;
+                for (let item of _data["topPatterns"])
+                    this.topPatterns!.push(InsightGroupPattern.fromJS(item));
+            }
+            this.morePatterns = _data["morePatterns"];
+        }
+    }
+
+    static fromJS(data: any): InsightGroup {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightGroup();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["groupKey"] = this.groupKey;
+        data["label"] = this.label;
+        data["count"] = this.count;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        if (Array.isArray(this.eventTypes)) {
+            data["eventTypes"] = [];
+            for (let item of this.eventTypes)
+                data["eventTypes"].push(item);
+        }
+        data["latestOccurrence"] = this.latestOccurrence ? this.latestOccurrence.toISOString() : undefined as any;
+        if (Array.isArray(this.topPatterns)) {
+            data["topPatterns"] = [];
+            for (let item of this.topPatterns)
+                data["topPatterns"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["morePatterns"] = this.morePatterns;
+        return data;
+    }
+
+    clone(): InsightGroup {
+        const json = this.toJSON();
+        let result = new InsightGroup();
+        result.init(json);
+        return result;
+    }
+}
+
+/** One likely-cause or recovery-guidance group. */
+export interface IInsightGroup {
+    /** Stable within this response. A taxonomy or guidance name, or uncertain, notAnalyzed, notEligible. */
+    groupKey?: string;
+    label?: string;
+    count?: number;
+    coverage?: InsightsCoverage | undefined;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    /** The group's most frequent error patterns, at most the configured limit. */
+    topPatterns?: InsightGroupPattern[];
+    /** Distinct error patterns in the group beyond topPatterns. */
+    morePatterns?: number;
+
+    [key: string]: any;
+}
+
+export class InsightGroupPattern implements IInsightGroupPattern {
+    /** The error pattern's key, as on ErrorSubGroup. */
+    groupKey?: string;
+    normalizedPattern?: string;
+    count?: number;
+    exampleErrorText?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightGroupPattern) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.groupKey = _data["groupKey"];
+            this.normalizedPattern = _data["normalizedPattern"];
+            this.count = _data["count"];
+            this.exampleErrorText = _data["exampleErrorText"];
+        }
+    }
+
+    static fromJS(data: any): InsightGroupPattern {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightGroupPattern();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["groupKey"] = this.groupKey;
+        data["normalizedPattern"] = this.normalizedPattern;
+        data["count"] = this.count;
+        data["exampleErrorText"] = this.exampleErrorText;
+        return data;
+    }
+
+    clone(): InsightGroupPattern {
+        const json = this.toJSON();
+        let result = new InsightGroupPattern();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IInsightGroupPattern {
+    /** The error pattern's key, as on ErrorSubGroup. */
+    groupKey?: string;
+    normalizedPattern?: string;
+    count?: number;
+    exampleErrorText?: string;
 
     [key: string]: any;
 }
 
 export class ErrorPatternGroup implements IErrorPatternGroup {
+    /** Stable within this response; not durable across releases. */
+    groupKey?: string;
     errorCategory?: string;
     count?: number;
+    coverage?: InsightsCoverage | undefined;
     endpoints?: string[];
     eventTypes?: string[];
     latestOccurrence?: moment.Moment;
@@ -15419,8 +15792,10 @@ export class ErrorPatternGroup implements IErrorPatternGroup {
                 if (_data.hasOwnProperty(property))
                     this[property] = _data[property];
             }
+            this.groupKey = _data["groupKey"];
             this.errorCategory = _data["errorCategory"];
             this.count = _data["count"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
             if (Array.isArray(_data["endpoints"])) {
                 this.endpoints = [] as any;
                 for (let item of _data["endpoints"])
@@ -15454,8 +15829,10 @@ export class ErrorPatternGroup implements IErrorPatternGroup {
             if (this.hasOwnProperty(property))
                 data[property] = this[property];
         }
+        data["groupKey"] = this.groupKey;
         data["errorCategory"] = this.errorCategory;
         data["count"] = this.count;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
         if (Array.isArray(this.endpoints)) {
             data["endpoints"] = [];
             for (let item of this.endpoints)
@@ -15485,8 +15862,11 @@ export class ErrorPatternGroup implements IErrorPatternGroup {
 }
 
 export interface IErrorPatternGroup {
+    /** Stable within this response; not durable across releases. */
+    groupKey?: string;
     errorCategory?: string;
     count?: number;
+    coverage?: InsightsCoverage | undefined;
     endpoints?: string[];
     eventTypes?: string[];
     latestOccurrence?: moment.Moment;
@@ -15497,8 +15877,11 @@ export interface IErrorPatternGroup {
 }
 
 export class ErrorSubGroup implements IErrorSubGroup {
+    /** Stable within this response; not durable across releases. */
+    groupKey?: string;
     normalizedPattern?: string;
     count?: number;
+    coverage?: InsightsCoverage | undefined;
     endpoints?: string[];
     eventTypes?: string[];
     latestOccurrence?: moment.Moment;
@@ -15521,8 +15904,10 @@ export class ErrorSubGroup implements IErrorSubGroup {
                 if (_data.hasOwnProperty(property))
                     this[property] = _data[property];
             }
+            this.groupKey = _data["groupKey"];
             this.normalizedPattern = _data["normalizedPattern"];
             this.count = _data["count"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
             if (Array.isArray(_data["endpoints"])) {
                 this.endpoints = [] as any;
                 for (let item of _data["endpoints"])
@@ -15551,8 +15936,10 @@ export class ErrorSubGroup implements IErrorSubGroup {
             if (this.hasOwnProperty(property))
                 data[property] = this[property];
         }
+        data["groupKey"] = this.groupKey;
         data["normalizedPattern"] = this.normalizedPattern;
         data["count"] = this.count;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
         if (Array.isArray(this.endpoints)) {
             data["endpoints"] = [];
             for (let item of this.endpoints)
@@ -15577,8 +15964,11 @@ export class ErrorSubGroup implements IErrorSubGroup {
 }
 
 export interface IErrorSubGroup {
+    /** Stable within this response; not durable across releases. */
+    groupKey?: string;
     normalizedPattern?: string;
     count?: number;
+    coverage?: InsightsCoverage | undefined;
     endpoints?: string[];
     eventTypes?: string[];
     latestOccurrence?: moment.Moment;
