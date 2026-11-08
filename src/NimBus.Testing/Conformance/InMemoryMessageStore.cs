@@ -54,7 +54,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
     private AgentApiKeySettings? _agentApiKeySettings;
     private readonly ConcurrentDictionary<string, DateTime> _agentApiKeyUsage = new(StringComparer.Ordinal);
 
-    private (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
+    private static (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
     private Task<bool> Upsert(string eventId, string sessionId, string endpointId, ResolutionStatus status, UnresolvedEvent content)
     {

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -30,7 +31,7 @@ using Microsoft.Extensions.Logging;
 
 namespace NimBus.WebApp.Controllers;
 
-public class EndpointImplementation : IEndpointApiController
+public partial class EndpointImplementation : IEndpointApiController
 {
     private readonly IPlatform platform;
     private readonly IConfiguration configuration;
@@ -296,17 +297,17 @@ public class EndpointImplementation : IEndpointApiController
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger.LogWarning(ex, "Storage container missing for endpoint {EndpointId} (Cosmos 404)", endpointId);
+            LogStorageContainerMissingForEndpoint(_logger, ex, endpointId);
             return StorageUnavailableStub(endpointId);
         }
         catch (EndpointNotFoundException ex)
         {
-            _logger.LogWarning(ex, "Storage container missing for endpoint {EndpointId} (EndpointNotFoundException)", endpointId);
+            LogStorageContainerMissingForEndpointEndpointNotFoundException(_logger, ex, endpointId);
             return StorageUnavailableStub(endpointId);
         }
         catch (SqlException ex) when (ex.Number == SqlInvalidObjectNameErrorNumber)
         {
-            _logger.LogWarning(ex, "Storage table missing for endpoint {EndpointId} (SQL 208)", endpointId);
+            LogStorageTableMissingForEndpoint(_logger, ex, endpointId);
             return StorageUnavailableStub(endpointId);
         }
     }
@@ -684,13 +685,13 @@ public class EndpointImplementation : IEndpointApiController
             if (stream != null)
             {
                 using var reader = new StreamReader(stream);
-                builder.AppendLine($"$subscription =\"{subscriptionId}\" \n");
-                builder.AppendLine($"$resourceGroupName = \"{resourceGroupName}\" \n");
+                builder.AppendLine(CultureInfo.InvariantCulture, $"$subscription =\"{subscriptionId}\" \n");
+                builder.AppendLine(CultureInfo.InvariantCulture, $"$resourceGroupName = \"{resourceGroupName}\" \n");
                 builder.Append(await reader.ReadToEndAsync());
                 builder.AppendLine();
                 foreach (var principal in principals)
                 {
-                    builder.AppendLine(
+                    builder.AppendLine(CultureInfo.InvariantCulture,
                         $"Assign-ServiceBusSubscription -assigneeId \"{principal}\" -serviceBusNamespace \"{serviceBusNamespace}\" -topic \"{endpoint.Id}\" -subscription \"{endpoint.Id}\" \n");
                 }
             }
@@ -897,7 +898,7 @@ public class EndpointImplementation : IEndpointApiController
         {
             if (!EndpointVerificationService.EndpointExists(platform, id))
             {
-                return new NotFoundObjectResult(String.Format("Endpoint with id {0} not found",id));
+                return new NotFoundObjectResult(string.Create(CultureInfo.InvariantCulture, $"Endpoint with id {id} not found"));
             }
         }
 
@@ -1044,4 +1045,13 @@ public class EndpointImplementation : IEndpointApiController
             await _metadataStore.SetEndpointMetadata(metadata);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Storage container missing for endpoint {EndpointId} (Cosmos 404)")]
+    private static partial void LogStorageContainerMissingForEndpoint(ILogger logger, Exception exception, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Storage container missing for endpoint {EndpointId} (EndpointNotFoundException)")]
+    private static partial void LogStorageContainerMissingForEndpointEndpointNotFoundException(ILogger logger, Exception exception, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Storage table missing for endpoint {EndpointId} (SQL 208)")]
+    private static partial void LogStorageTableMissingForEndpoint(ILogger logger, Exception exception, string endpointId);
 }

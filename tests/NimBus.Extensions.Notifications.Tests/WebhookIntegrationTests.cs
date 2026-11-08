@@ -59,7 +59,7 @@ public class WebhookIntegrationTests
             await receiveTask.WaitAsync(TimeSpan.FromSeconds(10));
 
             Assert.IsNotNull(receivedBody, "The webhook receiver should have received a POST body.");
-            StringAssert.Contains(receivedContentType, "application/json");
+            StringAssert.Contains(receivedContentType, "application/json", StringComparison.Ordinal);
             var json = JObject.Parse(receivedBody);
             Assert.AreEqual("Integration", (string?)json["title"]);
             Assert.AreEqual("Critical", (string?)json["severity"]);

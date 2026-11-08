@@ -87,7 +87,7 @@ public sealed class SimulationApiTests
         var entry = audit.Entries.Single();
         Assert.AreEqual(MessageAuditType.UpdateSimulationSettings, entry.Type);
         Assert.IsFalse(entry.AccessDenied);
-        StringAssert.Contains(entry.Data, SimulationTestPlatform.Warehouse);
+        StringAssert.Contains(entry.Data, SimulationTestPlatform.Warehouse, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -99,7 +99,7 @@ public sealed class SimulationApiTests
 
         var status = (Api.SimulationStatus)((OkObjectResult)response.Result!).Value!;
         Assert.AreEqual(Api.SimulationRunState.Running, status.State);
-        StringAssert.Contains(audit.Entries.Single().Data, "start");
+        StringAssert.Contains(audit.Entries.Single().Data, "start", StringComparison.Ordinal);
         await sut.Service.StopAsync();
     }
 

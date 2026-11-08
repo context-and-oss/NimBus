@@ -32,7 +32,7 @@ public sealed class InboxRegistrationTests
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
             builder.UseInbox(_ => { }));
 
-        StringAssert.Contains(exception.Message, nameof(InboxOptions.DeduplicationStore));
+        StringAssert.Contains(exception.Message, nameof(InboxOptions.DeduplicationStore), StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -55,7 +55,7 @@ public sealed class InboxRegistrationTests
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
             builder.UseInbox(options => options.DeduplicationStore = InboxStore.SqlServer));
 
-        StringAssert.Contains(exception.Message, "already configured");
+        StringAssert.Contains(exception.Message, "already configured", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -71,9 +71,9 @@ public sealed class InboxRegistrationTests
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
             provider.GetRequiredService<ISubscriberClient>());
 
-        StringAssert.Contains(exception.Message, "SqlServer");
-        StringAssert.Contains(exception.Message, "AddNimBusSqlServerInbox");
-        StringAssert.Contains(exception.Message, "keyed");
+        StringAssert.Contains(exception.Message, "SqlServer", StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, "AddNimBusSqlServerInbox", StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, "keyed", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -145,8 +145,8 @@ public sealed class InboxRegistrationTests
                 builder => builder.UseInbox(options =>
                     options.DeduplicationStore = InboxStore.InMemory)));
 
-        StringAssert.Contains(exception.Message, nameof(ISubscriberClient));
-        StringAssert.Contains(exception.Message, "UseInbox");
+        StringAssert.Contains(exception.Message, nameof(ISubscriberClient), StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, "UseInbox", StringComparison.Ordinal);
         Assert.AreEqual(
             0,
             services.Count(descriptor => descriptor.ServiceType == typeof(IHostedService)),
@@ -192,8 +192,8 @@ public sealed class InboxRegistrationTests
         var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => validator.StartAsync(CancellationToken.None));
 
-        StringAssert.Contains(exception.Message, nameof(ISubscriberClient));
-        StringAssert.Contains(exception.Message, "UseInbox");
+        StringAssert.Contains(exception.Message, nameof(ISubscriberClient), StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, "UseInbox", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -275,8 +275,8 @@ public sealed class InboxRegistrationTests
 
     private sealed class FakeSubscriberClient : ISubscriberClient
     {
-        public void RegisterHandler<T_Event>(Func<EventHandlers.IEventHandler<T_Event>> eventHandlerFactory)
-            where T_Event : Core.Events.IEvent
+        public void RegisterHandler<TEvent>(Func<EventHandlers.IEventHandler<TEvent>> eventHandlerFactory)
+            where TEvent : Core.Events.IEvent
         {
         }
 

@@ -15,7 +15,7 @@ namespace NimBus.WebApp.Services;
 /// Resolves the current principal's roles once per request from the cached ACL
 /// snapshot, unioned with claim-based compat grants. Registered scoped.
 /// </summary>
-public class EndpointAuthorizationService : IEndpointAuthorizationService
+public partial class EndpointAuthorizationService : IEndpointAuthorizationService
 {
     /// <summary>
     /// The internal platform-admin marker claim value. Materialized as a
@@ -90,9 +90,7 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
         if (effective >= required)
             return true;
 
-        _logger.LogDebug(
-            "Authorization denied: required {Required} on '{EndpointId}', principal has site {SiteRole}",
-            required, endpointId ?? "(site)", access.SiteRole);
+        LogAuthorizationDeniedRequired(_logger, required, endpointId ?? "(site)", access.SiteRole);
         return false;
     }
 
@@ -107,7 +105,7 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
         var user = _httpContextAccessor.HttpContext?.User;
         if (user?.Identity?.IsAuthenticated != true)
         {
-            _logger.LogWarning("Authorization check failed: no authenticated user principal available");
+            LogAuthorizationCheckFailedNoAuthenticatedUser(_logger);
             return new CurrentUserAccess();
         }
 
@@ -167,7 +165,7 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
     {
         if (_configuration.GetValue<bool>("BypassEndpointAuthorization", false))
         {
-            _logger.LogDebug("Endpoint authorization bypassed - BypassEndpointAuthorization is enabled");
+            LogEndpointAuthorizationBypassed(_logger);
             return AccessRole.Owner;
         }
 
@@ -250,4 +248,13 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
 
         return name;
     }
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Authorization denied: required {Required} on '{EndpointId}', principal has site {SiteRole}")]
+    private static partial void LogAuthorizationDeniedRequired(ILogger logger, AccessRole required, string endpointId, AccessRole siteRole);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Authorization check failed: no authenticated user principal available")]
+    private static partial void LogAuthorizationCheckFailedNoAuthenticatedUser(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Endpoint authorization bypassed - BypassEndpointAuthorization is enabled")]
+    private static partial void LogEndpointAuthorizationBypassed(ILogger logger);
 }

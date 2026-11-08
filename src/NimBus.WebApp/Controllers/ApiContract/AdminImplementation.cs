@@ -336,7 +336,7 @@ public partial class AdminImplementation : IAdminApiController
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "Could not list Cosmos DB containers");
+            LogCouldNotListCosmosDbContainers(_logger, exception);
             return new ObjectResult("Cosmos DB containers could not be loaded.")
             {
                 StatusCode = StatusCodes.Status503ServiceUnavailable,
@@ -378,7 +378,7 @@ public partial class AdminImplementation : IAdminApiController
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "Could not delete Cosmos DB container {ContainerName}", containerName);
+            LogCouldNotDeleteCosmosDbContainer(_logger, exception, containerName);
             await _auditLogService.LogAuditAsync(MessageAuditType.DeleteStorageContainer, _context,
                 data: JsonConvert.SerializeObject(new { containerName, success = false }));
             return new ObjectResult("The Cosmos DB container could not be deleted.")
@@ -441,9 +441,7 @@ public partial class AdminImplementation : IAdminApiController
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception,
-                "Could not inspect Resolver dead letters for subscription {SubscriptionName}",
-                subscriptionName);
+            LogCouldNotInspectResolverDeadLetters(_logger, exception, subscriptionName);
             return new ObjectResult("Resolver dead letters could not be inspected.")
             {
                 StatusCode = StatusCodes.Status503ServiceUnavailable,
@@ -503,9 +501,7 @@ public partial class AdminImplementation : IAdminApiController
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception,
-                "Could not replay Resolver dead letters for subscription {SubscriptionName}",
-                subscriptionName);
+            LogCouldNotReplayResolverDeadLetters(_logger, exception, subscriptionName);
             await LogResolverReplayResultAsync(
                 action,
                 subscriptionName,
@@ -1085,4 +1081,16 @@ public partial class AdminImplementation : IAdminApiController
     // the gate is the site Owner role (spec 026; the EIP_Management marker claim
     // still maps to site Owner via the authorization service's compat union).
     private Task<bool> IsSiteOwnerAsync() => _authorizationService.HasRoleAsync(AccessRole.Owner);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not list Cosmos DB containers")]
+    private static partial void LogCouldNotListCosmosDbContainers(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not delete Cosmos DB container {ContainerName}")]
+    private static partial void LogCouldNotDeleteCosmosDbContainer(ILogger logger, Exception exception, string containerName);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not inspect Resolver dead letters for subscription {SubscriptionName}")]
+    private static partial void LogCouldNotInspectResolverDeadLetters(ILogger logger, Exception exception, string subscriptionName);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not replay Resolver dead letters for subscription {SubscriptionName}")]
+    private static partial void LogCouldNotReplayResolverDeadLetters(ILogger logger, Exception exception, string subscriptionName);
 }

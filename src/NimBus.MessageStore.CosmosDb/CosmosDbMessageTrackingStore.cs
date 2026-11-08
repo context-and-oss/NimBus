@@ -1,5 +1,6 @@
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 using NimBus.MessageStore.Abstractions;
 
@@ -22,7 +23,7 @@ internal sealed partial class CosmosDbMessageTrackingStore : IMessageTrackingSto
     private readonly Func<Task<ICosmosContainerAdapter>> _getAuditsContainer;
     private readonly Func<Task<ICosmosContainerAdapter>> _getEventReportsContainer;
     private readonly Action<string> _removeEndpointContainerCache;
-    private readonly ILogger? _logger;
+    private readonly ILogger _logger;
     private readonly int _unresolvedTtlSeconds;
 
     public CosmosDbMessageTrackingStore(
@@ -39,7 +40,7 @@ internal sealed partial class CosmosDbMessageTrackingStore : IMessageTrackingSto
         _getAuditsContainer = getAuditsContainer;
         _getEventReportsContainer = getEventReportsContainer;
         _removeEndpointContainerCache = removeEndpointContainerCache;
-        _logger = logger;
+        _logger = logger ?? NullLogger.Instance;
         _unresolvedTtlSeconds = unresolvedTtlSeconds;
     }
 

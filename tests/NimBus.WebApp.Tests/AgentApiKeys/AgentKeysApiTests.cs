@@ -108,8 +108,8 @@ public class AgentKeysApiTests
         var row = api.Audit.Rows.Single();
         Assert.AreEqual(MessageAuditType.AgentApiKeyCreated, row.Type);
         Assert.IsFalse(row.Denied);
-        StringAssert.Contains(row.Data, keyId);
-        StringAssert.Contains(row.Data, "enrichment-agent");
+        StringAssert.Contains(row.Data, keyId, StringComparison.Ordinal);
+        StringAssert.Contains(row.Data, "enrichment-agent", StringComparison.Ordinal);
         Assert.IsFalse(row.Data!.Contains(key, StringComparison.Ordinal), "the key must never be audited");
     }
 
@@ -159,7 +159,7 @@ public class AgentKeysApiTests
         Assert.AreEqual("owner@example.com", listed["revokedBy"]!.GetValue<string>());
         var provided = await api.Services.GetRequiredService<IAgentApiKeyProvider>().GetAsync();
         Assert.IsNotNull(provided!.Keys.Single().RevokedAtUtc);
-        Assert.AreEqual(MessageAuditType.AgentApiKeyRevoked, api.Audit.Rows.Last().Type);
+        Assert.AreEqual(MessageAuditType.AgentApiKeyRevoked, api.Audit.Rows[api.Audit.Rows.Count - 1].Type);
     }
 
     [TestMethod]
@@ -191,7 +191,7 @@ public class AgentKeysApiTests
 
         Assert.AreEqual(HttpStatusCode.OK, removed.StatusCode);
         Assert.AreEqual(0, JsonNode.Parse(await removed.Content.ReadAsStringAsync())!["keys"]!.AsArray().Count);
-        Assert.AreEqual(MessageAuditType.AgentApiKeyRemoved, api.Audit.Rows.Last().Type);
+        Assert.AreEqual(MessageAuditType.AgentApiKeyRemoved, api.Audit.Rows[api.Audit.Rows.Count - 1].Type);
     }
 
     [TestMethod]

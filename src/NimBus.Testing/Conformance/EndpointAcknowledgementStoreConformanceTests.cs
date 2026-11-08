@@ -33,7 +33,7 @@ public abstract class EndpointAcknowledgementStoreConformanceTests
         FailedCountAtAcknowledgement = 42,
     };
 
-    private async Task<EndpointAcknowledgement?> Row(IEndpointAcknowledgementStore store, string endpointId)
+    private static async Task<EndpointAcknowledgement?> Row(IEndpointAcknowledgementStore store, string endpointId)
         => (await store.GetEndpointAcknowledgements()).SingleOrDefault(a => a.EndpointId == endpointId);
 
     [TestMethod]

@@ -18,7 +18,7 @@ public interface IAgentApiKeyProvider
 }
 
 /// <summary>Singleton cache over <see cref="IEndpointMetadataStore.GetAgentApiKeySettings"/>.</summary>
-public sealed class AgentApiKeyProvider : IAgentApiKeyProvider, IDisposable
+public sealed partial class AgentApiKeyProvider : IAgentApiKeyProvider, IDisposable
 {
     /// <summary>How long a successful read is reused; also how long a revoked key may keep
     /// working on another instance.</summary>
@@ -65,7 +65,7 @@ public sealed class AgentApiKeyProvider : IAgentApiKeyProvider, IDisposable
             catch (Exception ex)
             {
                 // Fail closed: keep the last list, or none at all.
-                _logger.LogWarning(ex, "Agent API key read failed; keeping the last loaded keys");
+                LogAgentApiKeyReadFailed(_logger, ex);
                 Volatile.Write(ref _entry, new Entry(entry?.Settings, _time.GetUtcNow() + FailureTtl));
                 return entry?.Settings;
             }
@@ -87,4 +87,7 @@ public sealed class AgentApiKeyProvider : IAgentApiKeyProvider, IDisposable
     public void Dispose() => _refresh.Dispose();
 
     private sealed record Entry(AgentApiKeySettings? Settings, DateTimeOffset ExpiresAt);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Agent API key read failed; keeping the last loaded keys")]
+    private static partial void LogAgentApiKeyReadFailed(ILogger logger, Exception exception);
 }

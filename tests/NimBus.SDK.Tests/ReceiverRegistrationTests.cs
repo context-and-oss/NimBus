@@ -11,7 +11,7 @@ using NimBus.SDK.Hosting;
 namespace NimBus.SDK.Tests;
 
 /// <summary>
-/// Coverage for <see cref="ServiceCollectionExtensions.AddNimBusReceiver"/> registering
+/// Coverage for <see cref="NimBus.SDK.Extensions.ServiceCollectionExtensions.AddNimBusReceiver"/> registering
 /// one hosted receiver PER CALL. It used to go through AddHostedService, whose
 /// TryAddEnumerable dedups on the implementation type — so a second receiver (e.g. one
 /// endpoint draining an extra ingress topic like CrmErpDemo's PartnerInbound) was

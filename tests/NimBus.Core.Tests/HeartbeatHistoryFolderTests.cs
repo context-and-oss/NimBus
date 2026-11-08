@@ -105,7 +105,7 @@ public sealed class HeartbeatHistoryFolderTests
             var result = HeartbeatHistoryFolder.Fold(
                 "orders", [Beat(minute, HeartbeatStatus.Off)], days, gap, Day.AddDays(-1), 300);
             days = result.Days.ToList();
-            gap = result.Gaps.FirstOrDefault() ?? gap;
+            gap = (result.Gaps.Count > 0 ? result.Gaps[0] : null) ?? gap;
         }
 
         Assert.AreEqual(3600, days.Single().LongestGapSeconds);

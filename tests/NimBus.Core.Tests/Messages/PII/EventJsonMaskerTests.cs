@@ -75,7 +75,7 @@ public class EventJsonMaskerTests
 
     // -------- Test platform --------
 
-    private class TestEndpoint : Endpoint
+    private sealed class TestEndpoint : Endpoint
     {
         public TestEndpoint()
         {
@@ -89,7 +89,7 @@ public class EventJsonMaskerTests
         }
     }
 
-    private class TestPlatform : Platform
+    private sealed class TestPlatform : Platform
     {
         public TestPlatform() { AddEndpoint(new TestEndpoint()); }
     }
@@ -138,7 +138,7 @@ public class EventJsonMaskerTests
         Assert.AreEqual(EventJsonMasker.InvalidJsonMarker, masker.Redact(nameof(SimpleEvent), "{bad"));
     }
 
-    private class CombinedSensitiveEvent : Event
+    private sealed class CombinedSensitiveEvent : Event
     {
         [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 4)]
         public string Phone { get; set; } = null!;
@@ -236,7 +236,7 @@ public class EventJsonMaskerTests
     {
         // Serialize via Newtonsoft so the JSON uses "ssn" not "SocialSecurityNumber"
         var json = JsonConvert.SerializeObject(new JsonRenamedEvent { SocialSecurityNumber = "secret" });
-        StringAssert.Contains(json, "\"ssn\"");
+        StringAssert.Contains(json, "\"ssn\"", StringComparison.Ordinal);
 
         var masked = NewMasker().Mask(nameof(JsonRenamedEvent), json);
 
@@ -360,12 +360,12 @@ public class EventJsonMaskerTests
         public string PublicField { get; set; } = null!;
     }
 
-    private class NoSensitiveEndpoint : Endpoint
+    private sealed class NoSensitiveEndpoint : Endpoint
     {
         public NoSensitiveEndpoint() { Produces<NoSensitiveEvent>(); }
     }
 
-    private class NoSensitivePlatform : Platform
+    private sealed class NoSensitivePlatform : Platform
     {
         public NoSensitivePlatform() { AddEndpoint(new NoSensitiveEndpoint()); }
     }
@@ -420,7 +420,7 @@ public class EventJsonMaskerTests
     {
         var json = JsonConvert.SerializeObject(new SimpleEvent { Cpr = "1234567890", EmployeeNumber = "E1" });
         var masked = NewMasker().Mask(nameof(SimpleEvent), json);
-        StringAssert.Contains(masked, EventJsonMasker.PiiMaskedMarker);
+        StringAssert.Contains(masked, EventJsonMasker.PiiMaskedMarker, StringComparison.Ordinal);
 
         var stripped = NewMasker().StripMaskedMarker(masked);
 
@@ -453,7 +453,7 @@ public class EventJsonMaskerTests
         var json = JsonConvert.SerializeObject(
             new SimpleEvent { Cpr = "1234567890", EmployeeNumber = "E1" },
             settings);
-        StringAssert.Contains(json, "\"cpr\"");
+        StringAssert.Contains(json, "\"cpr\"", StringComparison.Ordinal);
 
         var masked = NewMasker().Mask(nameof(SimpleEvent), json);
         var parsed = JObject.Parse(masked);
@@ -472,12 +472,12 @@ public class EventJsonMaskerTests
         public string Phone { get; set; } = null!;
     }
 
-    private class BadPartialEndpoint : Endpoint
+    private sealed class BadPartialEndpoint : Endpoint
     {
         public BadPartialEndpoint() { Produces<BadPartialEvent>(); }
     }
 
-    private class BadPartialPlatform : Platform
+    private sealed class BadPartialPlatform : Platform
     {
         public BadPartialPlatform() { AddEndpoint(new BadPartialEndpoint()); }
     }
@@ -488,8 +488,8 @@ public class EventJsonMaskerTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(
             () => new EventJsonMasker(new BadPartialPlatform()));
 
-        StringAssert.Contains(ex.Message, "PartialReveal");
-        StringAssert.Contains(ex.Message, nameof(BadPartialEvent.Phone));
+        StringAssert.Contains(ex.Message, "PartialReveal", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, nameof(BadPartialEvent.Phone), StringComparison.Ordinal);
     }
 
     public class NegativeRevealEvent : Event

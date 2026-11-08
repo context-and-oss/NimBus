@@ -18,12 +18,12 @@ public class NotificationOptions
     /// <summary>
     /// Whether to send notifications when messages are received (for monitoring). Default: false.
     /// </summary>
-    public bool NotifyOnReceived { get; set; } = false;
+    public bool NotifyOnReceived { get; set; }
 
     /// <summary>
     /// Whether to send notifications on successful completion. Default: false.
     /// </summary>
-    public bool NotifyOnCompleted { get; set; } = false;
+    public bool NotifyOnCompleted { get; set; }
 
     /// <summary>
     /// Whether to send a notification when a message arrives for a session that is blocked by an
@@ -32,7 +32,7 @@ public class NotificationOptions
     /// and <c>AddNimBusNotifications</c>) defaults it to <c>true</c> so production deployments
     /// alert on session blocks out of the box.
     /// </summary>
-    public bool NotifyOnSessionBlock { get; set; } = false;
+    public bool NotifyOnSessionBlock { get; set; }
 
     /// <summary>Whether to notify when an endpoint circuit opens or recovers. Default: true.</summary>
     public bool NotifyOnCircuitOpen { get; set; } = true;

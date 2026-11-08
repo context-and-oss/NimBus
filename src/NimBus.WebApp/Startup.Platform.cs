@@ -17,7 +17,7 @@ namespace NimBus.WebApp;
 
 public partial class Startup
 {
-    private void AddPlatformCatalog(IServiceCollection services)
+    private static void AddPlatformCatalog(IServiceCollection services)
     {
         // IPlatform catalog selection.
         // By default the WebApp shows the bundled PlatformConfiguration (Storefront/Billing/Warehouse).
@@ -116,7 +116,7 @@ public partial class Startup
         }
         string? serviceBusConnection = Configuration.GetConnectionString("servicebus")
             ?? Configuration.GetValue<string>("AzureWebJobsServiceBus");
-        if (!string.IsNullOrEmpty(serviceBusFqns) && !serviceBusFqns.Contains("SharedAccessKey="))
+        if (!string.IsNullOrEmpty(serviceBusFqns) && !serviceBusFqns.Contains("SharedAccessKey=", StringComparison.Ordinal))
         {
             var credential = new DefaultAzureCredential();
             services.AddSingleton(new ServiceBusAdministrationClient(serviceBusFqns, credential));

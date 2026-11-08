@@ -64,8 +64,8 @@ public class OperatorActionToolsTests
         CollectionAssert.AreEqual(new[] { $"resubmit:{Endpoint}:{EventId}" }, host.Get<McpTestHost.RecordingManagerClient>().Sent.ToArray());
         var audit = host.Get<McpTestHost.RecordingAuditLog>().Rows.Single(r => r.Required);
         Assert.AreEqual(MessageAuditType.Resubmit, audit.Type);
-        StringAssert.Contains(audit.Data, "\"channel\":\"Mcp\"");
-        StringAssert.Contains(audit.Data, "\"reason\":\"Downstream fixed\"");
+        StringAssert.Contains(audit.Data, "\"channel\":\"Mcp\"", StringComparison.Ordinal);
+        StringAssert.Contains(audit.Data, "\"reason\":\"Downstream fixed\"", StringComparison.Ordinal);
 
         // The row moved on, so the same token can never send a second command.
         var replay = await client.CallToolAsync("nimbus_resubmit_message", Execute(token, "Again"));
@@ -189,7 +189,7 @@ public class OperatorActionToolsTests
         });
 
         AssertError(result, "PermissionDenied");
-        StringAssert.Contains(ErrorText(result), "nimbus.annotate");
+        StringAssert.Contains(ErrorText(result), "nimbus.annotate", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -318,7 +318,7 @@ public class OperatorActionToolsTests
         });
 
         AssertError(result, "FeatureUnavailable");
-        StringAssert.Contains(ErrorText(result), "no provider is configured");
+        StringAssert.Contains(ErrorText(result), "no provider is configured", StringComparison.Ordinal);
         Assert.IsNull(classifications.LastAnalyze);
     }
 
@@ -443,7 +443,7 @@ public class OperatorActionToolsTests
     private static void AssertError(CallToolResult result, string code)
     {
         Assert.IsTrue(result.IsError == true, "Expected an error result.");
-        StringAssert.Contains(ErrorText(result), $"[{code}]");
+        StringAssert.Contains(ErrorText(result), $"[{code}]", StringComparison.Ordinal);
     }
 
     private static string ErrorText(CallToolResult result)

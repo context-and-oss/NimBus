@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System.IO.Compression;
 using System.Net;
 using NimBus.CommandLine;

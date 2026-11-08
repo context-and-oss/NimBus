@@ -56,9 +56,9 @@ public class SubscriberHandlerRegistrationTests
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() => builder.AddHandlersFromAssembly(
             new TypeSetAssembly(typeof(ScanShippedHandlerA), typeof(ScanShippedHandlerB))));
 
-        StringAssert.Contains(exception.Message, nameof(ScanShippedHandlerA));
-        StringAssert.Contains(exception.Message, nameof(ScanShippedHandlerB));
-        StringAssert.Contains(exception.Message, "before scanning");
+        StringAssert.Contains(exception.Message, nameof(ScanShippedHandlerA), StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, nameof(ScanShippedHandlerB), StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, "before scanning", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -123,7 +123,7 @@ public class SubscriberHandlerRegistrationTests
         var exception = Assert.ThrowsExactly<InvalidOperationException>(
             () => builder.AddHandlersFromAssembly(new TypeSetAssembly(typeof(ScanCancelledHandler))));
 
-        StringAssert.Contains(exception.Message, "dynamic handler");
+        StringAssert.Contains(exception.Message, "dynamic handler", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -215,7 +215,7 @@ public class SubscriberHandlerRegistrationTests
         var exception = await Assert.ThrowsExactlyAsync<EventHandlerNotFoundException>(
             () => provider.Handle(MessageContextStub.ForEventType("scan.unknown.v1", "{}")));
 
-        StringAssert.Contains(exception.Message, "scan.unknown.v1");
+        StringAssert.Contains(exception.Message, "scan.unknown.v1", StringComparison.Ordinal);
     }
 
     [TestMethod]

@@ -24,7 +24,7 @@ using CoreEventContent = NimBus.Core.Messages.EventContent;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
-public class AgentImplementation : IAgentApiController
+public partial class AgentImplementation : IAgentApiController
 {
     // The agent identity a signed-in caller may claim. A caller with an agent API key is
     // identified by the key instead (Spec 039).
@@ -110,7 +110,7 @@ public class AgentImplementation : IAgentApiController
         // (JsonReaderException, InvalidOperationException, etc.) — catch-all is intentional.
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Rejected event type {EventTypeId}: jsonSchema is not valid JSON Schema", body.EventTypeId);
+            LogRejectedEventTypeJsonSchemaIsNot(_logger, ex, body.EventTypeId);
             return new BadRequestObjectResult($"jsonSchema is not a valid JSON Schema: {ex.Message}");
         }
 
@@ -146,7 +146,7 @@ public class AgentImplementation : IAgentApiController
         }
         catch (SchemaConflictException)
         {
-            _logger.LogWarning("Schema conflict for event type {EventTypeId}", body.EventTypeId);
+            LogSchemaConflictForEventType(_logger, body.EventTypeId);
             return new ConflictResult();
         }
     }
@@ -160,7 +160,7 @@ public class AgentImplementation : IAgentApiController
 
         var agentId = CurrentAgentId();
         _subscriptions.Subscribe(agentId, body.EventTypeId);
-        _logger.LogInformation("Agent {AgentId} subscribed to {EventTypeId}", agentId, body.EventTypeId);
+        LogAgentSubscribed(_logger, agentId, body.EventTypeId);
         return Task.FromResult<IActionResult>(new OkResult());
     }
 
@@ -267,7 +267,7 @@ public class AgentImplementation : IAgentApiController
         // (JsonReaderException, InvalidOperationException, etc.) — catch-all is intentional.
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Registered schema for {EventTypeId} is not valid JSON Schema", body.EventTypeId);
+            LogRegisteredSchemaForIsNotValid(_logger, ex, body.EventTypeId);
             return new BadRequestObjectResult($"Registered schema for '{body.EventTypeId}' is not valid JSON Schema: {ex.Message}");
         }
 
@@ -402,7 +402,7 @@ public class AgentImplementation : IAgentApiController
         // degrade to the GUID fallback, not 500. Catch-all matches this file's style.
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not derive session key via '{Path}' for {EventTypeId}; using a random session", sessionKeyPath, eventTypeId);
+            LogCouldNotDeriveSessionKey(_logger, ex, sessionKeyPath, eventTypeId);
             return null;
         }
     }
@@ -420,4 +420,19 @@ public class AgentImplementation : IAgentApiController
         var header = context?.Request?.Headers[AgentIdHeader].ToString();
         return string.IsNullOrWhiteSpace(header) ? DefaultAgentId : header.Trim();
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rejected event type {EventTypeId}: jsonSchema is not valid JSON Schema")]
+    private static partial void LogRejectedEventTypeJsonSchemaIsNot(ILogger logger, Exception exception, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Schema conflict for event type {EventTypeId}")]
+    private static partial void LogSchemaConflictForEventType(ILogger logger, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Agent {AgentId} subscribed to {EventTypeId}")]
+    private static partial void LogAgentSubscribed(ILogger logger, string agentId, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Registered schema for {EventTypeId} is not valid JSON Schema")]
+    private static partial void LogRegisteredSchemaForIsNotValid(ILogger logger, Exception exception, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not derive session key via '{Path}' for {EventTypeId}; using a random session")]
+    private static partial void LogCouldNotDeriveSessionKey(ILogger logger, Exception exception, string path, string eventTypeId);
 }

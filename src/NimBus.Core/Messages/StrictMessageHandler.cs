@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.Core.Messages;
 
-public class StrictMessageHandler : MessageHandler
+public partial class StrictMessageHandler : MessageHandler
 {
     // Once a delivery's outcome is decided, its settlement runs to the end on this token
     // instead of the caller's: every response, session-state change, park, completion and
@@ -452,11 +452,7 @@ public class StrictMessageHandler : MessageHandler
     public override async Task HandleContinuationRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
         messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
-        _logger.LogWarning(
-            "Completing a legacy ContinuationRequest without processing it; the Service Bus defer drain was removed in v4. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            messageContext.GetEventIdOrDefault(),
-            messageContext.GetMessageIdOrDefault(),
-            messageContext.GetSessionIdOrDefault());
+        LogCompletingALegacyContinuationRequestWithoutProcessing(_logger, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
         await CompleteMessage(messageContext);
     }
 
@@ -509,12 +505,7 @@ public class StrictMessageHandler : MessageHandler
     private async Task CompleteRedeliveryOfBlockingEvent(IMessageContext messageContext)
     {
         messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
-        _logger.LogWarning(
-            "Completing a delivery of the event that blocks its session without running it again; the event's outcome is already recorded. EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            messageContext.EventTypeId,
-            messageContext.GetEventIdOrDefault(),
-            messageContext.GetMessageIdOrDefault(),
-            messageContext.GetSessionIdOrDefault());
+        LogCompletingADeliveryOfTheEvent(_logger, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
         await CompleteMessage(messageContext);
     }
 
@@ -626,13 +617,13 @@ public class StrictMessageHandler : MessageHandler
     private Task SendUnsupportedResponse(IMessageContext messageContext) =>
         _responseService.SendUnsupportedResponse(messageContext, SettlementToken);
 
-    private void AuthorizeManagerRequest(IMessageContext messageContext)
+    private static void AuthorizeManagerRequest(IMessageContext messageContext)
     {
         if (!messageContext.From!.Equals(Constants.ManagerId, StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException($"Only {Constants.ManagerId} is authorized to send {messageContext.MessageType} messages.");
     }
 
-    private async Task VerifySessionIsBlockedByThis(IMessageContext messageContext, CancellationToken cancellationToken = default)
+    private static async Task VerifySessionIsBlockedByThis(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
         if (!await messageContext.IsSessionBlockedByThis(cancellationToken))
         {
@@ -706,14 +697,7 @@ public class StrictMessageHandler : MessageHandler
 
     private async Task DiscardMessage(IMessageContext messageContext, DiscardedFailure discardedFailure)
     {
-        _logger.LogWarning(
-            discardedFailure.Exception,
-            "Discarding failed message without retry or dead-letter. Classifier:{ClassifierName}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            discardedFailure.ClassifierName,
-            messageContext.EventTypeId,
-            messageContext.GetEventIdOrDefault(),
-            messageContext.GetMessageIdOrDefault(),
-            messageContext.GetSessionIdOrDefault());
+        LogDiscardingFailedMessageWithoutRetry(_logger, discardedFailure.Exception, discardedFailure.ClassifierName, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
         await _responseService.SendDiscardResponse(
             messageContext,
             discardedFailure.Exception,
@@ -793,15 +777,34 @@ public class StrictMessageHandler : MessageHandler
     // processing of such messages (e.g. the missing-MessageId inbox bypass path).
     private void LogInfo(IMessageContext messageContext, string prefixMessage)
     {
-        _logger.LogInformation("{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            prefixMessage, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            var eventId = messageContext.GetEventIdOrDefault();
+            var messageId = messageContext.GetMessageIdOrDefault();
+            var sessionId = messageContext.GetSessionIdOrDefault();
+            LogMessageInfo(_logger, prefixMessage, messageContext.EventTypeId, eventId, messageId, sessionId);
+        }
     }
 
     private void LogError(IMessageContext messageContext, string prefixMessage, Exception exception)
     {
-        _logger.LogError(exception, "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            prefixMessage, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
+        LogMessageError(_logger, exception, prefixMessage, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
     }
 
     private sealed record DiscardedFailure(Exception Exception, string ClassifierName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Completing a legacy ContinuationRequest without processing it; the Service Bus defer drain was removed in v4. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogCompletingALegacyContinuationRequestWithoutProcessing(ILogger logger, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Completing a delivery of the event that blocks its session without running it again; the event's outcome is already recorded. EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogCompletingADeliveryOfTheEvent(ILogger logger, string eventTypeId, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Discarding failed message without retry or dead-letter. Classifier:{ClassifierName}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogDiscardingFailedMessageWithoutRetry(ILogger logger, Exception exception, string classifierName, string eventTypeId, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogMessageInfo(ILogger logger, string prefix, string eventTypeId, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogMessageError(ILogger logger, Exception exception, string prefix, string eventTypeId, string? eventId, string? messageId, string? sessionId);
 }

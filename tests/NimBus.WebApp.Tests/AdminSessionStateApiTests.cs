@@ -97,7 +97,7 @@ public sealed class AdminSessionStateApiTests
         var data = JObject.Parse(audit.Data!);
         Assert.AreEqual("reset", (string?)data["action"]);
         Assert.AreEqual("s-1", (string?)data["sessionId"]);
-        StringAssert.Contains((string?)data["before"], "evt-1");
+        StringAssert.Contains((string?)data["before"], "evt-1", StringComparison.Ordinal);
         Assert.AreEqual(JTokenType.Null, data["after"]!.Type);
     }
 
@@ -124,7 +124,7 @@ public sealed class AdminSessionStateApiTests
             StateJson = "{\"DeferredCount\":-1}",
         }, Endpoint, "s-1");
 
-        StringAssert.Contains((string)((BadRequestObjectResult)result.Result!).Value!, "DeferredCount");
+        StringAssert.Contains((string)((BadRequestObjectResult)result.Result!).Value!, "DeferredCount", StringComparison.Ordinal);
         Assert.AreEqual(0, _bus.Writes.Count);
     }
 

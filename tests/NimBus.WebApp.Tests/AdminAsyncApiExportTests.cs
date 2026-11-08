@@ -36,7 +36,7 @@ public sealed class AdminAsyncApiExportTests
         var file = AssertFile(result, "nimbus-asyncapi.yaml", "application/x-yaml");
         // Byte-for-byte the shared exporter's YAML output — proves reuse, not a re-implementation.
         Assert.AreEqual(AsyncApiExporter.Serialize(platform, AsyncApiFormat.Yaml), Text(file));
-        StringAssert.Contains(Text(file), "asyncapi:");
+        StringAssert.Contains(Text(file), "asyncapi:", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -81,7 +81,7 @@ public sealed class AdminAsyncApiExportTests
 
         var result = await sut.GetAdminAsyncapiAsync("xml");
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
     }
 
     [TestMethod]
@@ -93,7 +93,7 @@ public sealed class AdminAsyncApiExportTests
 
         var result = await sut.GetAdminAsyncapiAsync("json");
 
-        Assert.IsInstanceOfType(result, typeof(ForbidResult));
+        Assert.IsInstanceOfType<ForbidResult>(result);
     }
 
     // ---------------- helpers ----------------
@@ -138,7 +138,7 @@ public sealed class AdminAsyncApiExportTests
 
     private static FileContentResult AssertFile(IActionResult result, string fileName, string contentType)
     {
-        Assert.IsInstanceOfType(result, typeof(FileContentResult));
+        Assert.IsInstanceOfType<FileContentResult>(result);
         var file = (FileContentResult)result;
         Assert.AreEqual(fileName, file.FileDownloadName);
         Assert.AreEqual(contentType, file.ContentType);

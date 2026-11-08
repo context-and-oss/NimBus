@@ -28,9 +28,9 @@ public static class AsyncApiDocumentServiceCollectionExtensions
         IPlatform platform,
         Func<IPlatform, AsyncApiFormat, AsyncApiEnrichmentRegistry?, string> serialize)
     {
-        if (services is null) throw new ArgumentNullException(nameof(services));
-        if (platform is null) throw new ArgumentNullException(nameof(platform));
-        if (serialize is null) throw new ArgumentNullException(nameof(serialize));
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(platform);
+        ArgumentNullException.ThrowIfNull(serialize);
 
         // Resolve-or-create the SAME registry the fluent publisher path accumulates into, so the
         // provider sees every Publish<T>(o => o.AsyncApi…) registration.

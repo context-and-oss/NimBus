@@ -25,7 +25,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e, "COSMOS STORE-MESSAGE-ERROR: EventId: {EventId}, MessageId: {MessageId}", message.EventId, message.MessageId);
+            LogCosmosStoreMessageError(_logger, e, message.EventId, message.MessageId);
             throw;
         }
     }
@@ -72,7 +72,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
             });
         }
 
-        _logger?.LogInformation("COSMOS PURGE: Deleted {Count} stored messages on endpoint {EndpointId}", deleted, endpointId);
+        LogCosmosPurgeDeletedStoredMessages(_logger, deleted, endpointId);
         return deleted;
     }
 
@@ -187,4 +187,10 @@ internal sealed partial class CosmosDbMessageTrackingStore
 
         return messages;
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS STORE-MESSAGE-ERROR: EventId: {EventId}, MessageId: {MessageId}")]
+    private static partial void LogCosmosStoreMessageError(ILogger logger, Exception exception, string eventId, string messageId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS PURGE: Deleted {Count} stored messages on endpoint {EndpointId}")]
+    private static partial void LogCosmosPurgeDeletedStoredMessages(ILogger logger, int count, string endpointId);
 }

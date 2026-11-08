@@ -28,7 +28,7 @@ public sealed class ApplicationInsightsServiceTests
         const string expectedLiteral = "'evt\\' \" | take 1 //\\\\\\r\\n\\t\\u0001'";
         StringAssert.Contains(
             query,
-            $"tostring(customDimensions['NimBus.EventId']) == {expectedLiteral}");
+            $"tostring(customDimensions['NimBus.EventId']) == {expectedLiteral}", StringComparison.Ordinal);
         Assert.IsFalse(query.Any(char.IsControl), "Control characters must be escaped before sending KQL.");
         Assert.AreEqual(1, CountOccurrences(query, " | top 1000"));
     }

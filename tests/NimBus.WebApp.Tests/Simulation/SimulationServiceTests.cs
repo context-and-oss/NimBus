@@ -267,13 +267,13 @@ public sealed class SimulationServiceTests
 
         Assert.AreEqual(SimulationCommandStatus.Invalid, result.Status);
         var errors = string.Join("\n", result.Errors);
-        StringAssert.Contains(errors, "speed");
-        StringAssert.Contains(errors, "ratePerMinute");
-        StringAssert.Contains(errors, "NotProduced");
-        StringAssert.Contains(errors, "does not own");
-        StringAssert.Contains(errors, "failAttempts");
-        StringAssert.Contains(errors, "latencyMinMs must not exceed");
-        StringAssert.Contains(errors, "sessionPattern");
+        StringAssert.Contains(errors, "speed", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "ratePerMinute", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "NotProduced", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "does not own", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "failAttempts", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "latencyMinMs must not exceed", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "sessionPattern", StringComparison.Ordinal);
         Assert.AreEqual(7, result.Errors.Count, errors);
     }
 

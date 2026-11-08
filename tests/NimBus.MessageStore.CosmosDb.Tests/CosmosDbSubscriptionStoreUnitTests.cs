@@ -15,7 +15,7 @@ public sealed class CosmosDbSubscriptionStoreUnitTests
     [TestMethod]
     public async Task SubscribeToEndpointNotification_UnderTurkishCulture_StoresInvariantLowercaseType()
     {
-        var container = new RecordingCosmosContainerAdapter { UpsertReturnsResponse = true };
+        var container = new RecordingCosmosContainerAdapter();
         var store = CreateStore(container);
 
         var subscription = await WithCulture(new CultureInfo("tr-TR"), () =>

@@ -16,7 +16,7 @@ namespace NimBus.WebApp.Services;
 /// contract; this implementation always writes the audit row after a successful
 /// settlement so no settle path can silently skip it.
 /// </summary>
-public sealed class HandoffSettlementService : IHandoffSettlementService
+public sealed partial class HandoffSettlementService : IHandoffSettlementService
 {
     private const string HandoffSubStatus = "Handoff";
 
@@ -78,12 +78,12 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
         // gone" — let them propagate to a 500 so the caller can retry.
         catch (EndpointNotFoundException e)
         {
-            _logger.LogWarning("Handoff settle: endpoint/event not found. EndpointId: {EndpointId}, EventId: {EventId}, Ex: {Exception}", endpointId, eventId, e.Message);
+            LogHandoffSettleEndpointEventNotFound(_logger, endpointId, eventId, e.Message);
             return new NotFoundObjectResult("Event not found");
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger.LogWarning("Handoff settle: event container not found. EndpointId: {EndpointId}, EventId: {EventId}, Ex: {Exception}", endpointId, eventId, e.Message);
+            LogHandoffSettleEventContainerNotFound(_logger, endpointId, eventId, e.Message);
             return new NotFoundObjectResult("Event not found");
         }
 
@@ -93,9 +93,7 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
         if (pendingEvent.ResolutionStatus != ResolutionStatus.Pending
             || !string.Equals(pendingEvent.PendingSubStatus, HandoffSubStatus, StringComparison.Ordinal))
         {
-            _logger.LogWarning(
-                "Handoff settle rejected: event is not a pending handoff. EndpointId: {EndpointId}, EventId: {EventId}, Status: {Status}, SubStatus: {SubStatus}",
-                endpointId, eventId, pendingEvent.ResolutionStatus, pendingEvent.PendingSubStatus ?? "<null>");
+            LogHandoffSettleRejectedEventIsNot(_logger, endpointId, eventId, pendingEvent.ResolutionStatus, pendingEvent.PendingSubStatus ?? "<null>");
             return new BadRequestObjectResult("Event is not a pending handoff.");
         }
 
@@ -110,18 +108,14 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
             PendingSubStatus = pendingEvent.PendingSubStatus,
         };
 
-        _logger.LogInformation(
-            "Handoff settle ({AuditType}). EndpointId: {EndpointId}, EventId: {EventId}, MessageId: {MessageId}, Auditor: {Auditor}",
-            auditType, endpointId, eventId, messageId, auditorName);
+        LogHandoffSettle(_logger, auditType, endpointId, eventId, messageId, auditorName);
 
         // The row reads Pending+Handoff until the Resolver projects the settlement, so the
         // guard above cannot see one this instance already sent. Claim the parked message so
         // a second settle in that window gets the same 400 it would get once projected.
         if (!_inFlight.TryBegin(endpointId, eventId, pendingEvent.LastMessageId))
         {
-            _logger.LogWarning(
-                "Handoff settle rejected: a settlement is already in flight. EndpointId: {EndpointId}, EventId: {EventId}, Auditor: {Auditor}",
-                ForLog(endpointId), ForLog(eventId), ForLog(auditorName));
+            LogHandoffSettleRejectedASettlement(_logger, ForLog(endpointId), ForLog(eventId), ForLog(auditorName));
             return new BadRequestObjectResult("Event is not a pending handoff: a settlement is already in flight.");
         }
 
@@ -155,4 +149,19 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
     // strip line breaks so they cannot forge log entries.
     private static string ForLog(string? value)
         => (value ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ');
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Handoff settle: endpoint/event not found. EndpointId: {EndpointId}, EventId: {EventId}, Ex: {Exception}")]
+    private static partial void LogHandoffSettleEndpointEventNotFound(ILogger logger, string endpointId, string eventId, string exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Handoff settle: event container not found. EndpointId: {EndpointId}, EventId: {EventId}, Ex: {Exception}")]
+    private static partial void LogHandoffSettleEventContainerNotFound(ILogger logger, string endpointId, string eventId, string exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Handoff settle rejected: event is not a pending handoff. EndpointId: {EndpointId}, EventId: {EventId}, Status: {Status}, SubStatus: {SubStatus}")]
+    private static partial void LogHandoffSettleRejectedEventIsNot(ILogger logger, string endpointId, string eventId, ResolutionStatus status, string subStatus);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Handoff settle ({AuditType}). EndpointId: {EndpointId}, EventId: {EventId}, MessageId: {MessageId}, Auditor: {Auditor}")]
+    private static partial void LogHandoffSettle(ILogger logger, MessageAuditType auditType, string endpointId, string eventId, string messageId, string auditor);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Handoff settle rejected: a settlement is already in flight. EndpointId: {EndpointId}, EventId: {EventId}, Auditor: {Auditor}")]
+    private static partial void LogHandoffSettleRejectedASettlement(ILogger logger, string endpointId, string eventId, string auditor);
 }

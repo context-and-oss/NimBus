@@ -3,21 +3,22 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore;
 
-internal sealed class CosmosDbServiceHealthStore : IServiceHealthStore
+internal sealed partial class CosmosDbServiceHealthStore : IServiceHealthStore
 {
     private readonly Func<Task<ICosmosContainerAdapter>> _getServiceHealthContainer;
-    private readonly ILogger? _logger;
+    private readonly ILogger _logger;
 
     public CosmosDbServiceHealthStore(Func<Task<ICosmosContainerAdapter>> getServiceHealthContainer, ILogger? logger)
     {
         _getServiceHealthContainer = getServiceHealthContainer;
-        _logger = logger;
+        _logger = logger ?? NullLogger.Instance;
     }
     // ── Service health (platform services, not endpoints) ──
     //
@@ -116,14 +117,12 @@ internal sealed class CosmosDbServiceHealthStore : IServiceHealthStore
         try
         {
             var response = await container.UpsertItemAsync(serviceHealth, new PartitionKey(serviceId));
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: ServiceHealth upsert. Id: {ServiceId}, HttpStatusCode: {StatusCode}", serviceId, response.StatusCode);
+            LogCosmosUpsertResponseServiceHealthUpsertId(_logger, serviceId, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: ServiceHealth upsert. Id: {ServiceId}, HttpStatusCode: {StatusCode}", serviceId, e.StatusCode);
+            LogCosmosUpsertErrorServiceHealthUpsertId(_logger, e, serviceId, e.StatusCode);
             throw;
         }
     }
@@ -152,4 +151,10 @@ internal sealed class CosmosDbServiceHealthStore : IServiceHealthStore
     }
 
 
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS UPSERT-RESPONSE: ServiceHealth upsert. Id: {ServiceId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertResponseServiceHealthUpsertId(ILogger logger, string serviceId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: ServiceHealth upsert. Id: {ServiceId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertErrorServiceHealthUpsertId(ILogger logger, Exception exception, string serviceId, HttpStatusCode statusCode);
 }

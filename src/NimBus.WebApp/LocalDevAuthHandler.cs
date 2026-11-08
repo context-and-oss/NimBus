@@ -13,7 +13,7 @@ namespace NimBus.WebApp;
 /// Authentication handler for local development that bypasses Azure AD authentication.
 /// This should only be used in Development environment with EnableLocalDevAuthentication=true.
 /// </summary>
-public class LocalDevAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+public partial class LocalDevAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     /// <summary>The authentication scheme name this handler is registered under.</summary>
     public const string SchemeName = "LocalDev";
@@ -40,7 +40,7 @@ public class LocalDevAuthHandler : AuthenticationHandler<AuthenticationSchemeOpt
         // Defense-in-depth: ensure this handler cannot grant access outside Development
         if (!_environment.IsDevelopment())
         {
-            _authLogger.LogError("CRITICAL: LocalDevAuthHandler was invoked outside of Development environment. This is a security misconfiguration. Denying request.");
+            LogCriticalLocalDevAuthHandlerWasInvokedOutside(_authLogger);
             return Task.FromResult(AuthenticateResult.Fail("Local development authentication is not available outside Development environment."));
         }
 
@@ -49,11 +49,11 @@ public class LocalDevAuthHandler : AuthenticationHandler<AuthenticationSchemeOpt
 
         if (!enableLocalDevAuth)
         {
-            _authLogger.LogWarning("Local development authentication bypass attempted but EnableLocalDevAuthentication is not enabled. Denying request.");
+            LogLocalDevelopmentAuthenticationBypassAttempted(_authLogger);
             return Task.FromResult(AuthenticateResult.Fail("Local development authentication is not enabled. Set EnableLocalDevAuthentication=true in configuration to enable."));
         }
 
-        _authLogger.LogWarning("SECURITY WARNING: Local development authentication bypass is ENABLED. This should NEVER be used in production!");
+        LogSecurityWarningLocalDevelopmentAuthenticationBypass(_authLogger);
 
         var claims = new[]
         {
@@ -69,4 +69,13 @@ public class LocalDevAuthHandler : AuthenticationHandler<AuthenticationSchemeOpt
 
         return Task.FromResult(AuthenticateResult.Success(ticket));
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "CRITICAL: LocalDevAuthHandler was invoked outside of Development environment. This is a security misconfiguration. Denying request.")]
+    private static partial void LogCriticalLocalDevAuthHandlerWasInvokedOutside(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Local development authentication bypass attempted but EnableLocalDevAuthentication is not enabled. Denying request.")]
+    private static partial void LogLocalDevelopmentAuthenticationBypassAttempted(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "SECURITY WARNING: Local development authentication bypass is ENABLED. This should NEVER be used in production!")]
+    private static partial void LogSecurityWarningLocalDevelopmentAuthenticationBypass(ILogger logger);
 }

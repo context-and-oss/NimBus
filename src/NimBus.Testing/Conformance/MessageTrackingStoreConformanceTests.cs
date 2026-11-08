@@ -873,7 +873,7 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(completedId, completed[0].EventId);
         Assert.AreEqual(ResolutionStatus.Skipped, skipped!.ResolutionStatus);
         Assert.AreEqual(nameof(InvalidOperationException), skipped.MessageContent.ErrorContent!.ErrorType);
-        StringAssert.Contains(skipped.MessageContent.ErrorContent.ErrorText, "PartnerFailureDispositionClassifier");
+        StringAssert.Contains(skipped.MessageContent.ErrorContent.ErrorText, "PartnerFailureDispositionClassifier", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -1240,8 +1240,8 @@ public abstract class MessageTrackingStoreConformanceTests
 
         var errorList = await store.GetEndpointErrorList(endpointId);
 
-        StringAssert.Contains(errorList, StoredId(failedId, "s1"));
-        StringAssert.Contains(errorList, StoredId(deferredId, "s2"));
+        StringAssert.Contains(errorList, StoredId(failedId, "s1"), StringComparison.Ordinal);
+        StringAssert.Contains(errorList, StoredId(deferredId, "s2"), StringComparison.Ordinal);
         Assert.IsFalse(errorList.Contains(StoredId(pendingId, "s3"), StringComparison.Ordinal));
     }
 

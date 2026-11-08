@@ -82,6 +82,6 @@ public sealed class ErpFailureReasonsTests
     public void ContractSchema_QuotesTheInboundEventType()
     {
         var message = ErpFailureReasons.CreateException("contract_schema", "CrmAccountUpdated").Message;
-        StringAssert.Contains(message, "CrmAccountUpdated");
+        StringAssert.Contains(message, "CrmAccountUpdated", StringComparison.Ordinal);
     }
 }

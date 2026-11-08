@@ -16,7 +16,7 @@ public sealed class AsyncApiEnrichmentRegistry
     /// <summary>Gets (creating if absent) the enrichment options for <paramref name="eventType"/>.</summary>
     public AsyncApiMessageOptions For(Type eventType)
     {
-        if (eventType is null) throw new ArgumentNullException(nameof(eventType));
+        ArgumentNullException.ThrowIfNull(eventType);
         if (!_entries.TryGetValue(eventType, out var options))
         {
             options = new AsyncApiMessageOptions();
@@ -29,7 +29,7 @@ public sealed class AsyncApiEnrichmentRegistry
     /// <summary>Tries to get the recorded enrichment options for <paramref name="eventType"/>.</summary>
     public bool TryGet(Type eventType, out AsyncApiMessageOptions options)
     {
-        if (eventType is null) throw new ArgumentNullException(nameof(eventType));
+        ArgumentNullException.ThrowIfNull(eventType);
         return _entries.TryGetValue(eventType, out options!);
     }
 

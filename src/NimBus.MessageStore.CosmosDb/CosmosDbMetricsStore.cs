@@ -397,7 +397,7 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
     private sealed class LatencyAggregateRow
     {
         [JsonProperty("endpointId")] public string? EndpointId { get; set; }
-        [JsonProperty("EventTypeId")] public string? EventTypeId { get; set; }
+        [JsonProperty(nameof(EventTypeId))] public string? EventTypeId { get; set; }
         [JsonProperty("count")] public int Count { get; set; }
         [JsonProperty("avg")] public double Avg { get; set; }
         [JsonProperty("min")] public double Min { get; set; }
@@ -409,22 +409,22 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         [JsonProperty("endpointId")]
         public string EndpointId { get; set; } = null!;
 
-        [JsonProperty("EventTypeId")]
+        [JsonProperty(nameof(EventTypeId))]
         public string EventTypeId { get; set; } = null!;
 
-        [JsonProperty("ErrorText")]
+        [JsonProperty(nameof(ErrorText))]
         public string? ErrorText { get; set; }
 
-        [JsonProperty("EnqueuedTimeUtc")]
+        [JsonProperty(nameof(EnqueuedTimeUtc))]
         public DateTime EnqueuedTimeUtc { get; set; }
 
-        [JsonProperty("EventId")]
+        [JsonProperty(nameof(EventId))]
         public string EventId { get; set; } = null!;
 
-        [JsonProperty("MessageId")]
+        [JsonProperty(nameof(MessageId))]
         public string? MessageId { get; set; }
 
-        [JsonProperty("SessionId")]
+        [JsonProperty(nameof(SessionId))]
         public string? SessionId { get; set; }
     }
 
@@ -445,7 +445,7 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         [JsonProperty("endpointId")]
         public string EndpointId { get; set; } = null!;
 
-        [JsonProperty("EventTypeId")]
+        [JsonProperty(nameof(EventTypeId))]
         public string EventTypeId { get; set; } = null!;
     }
 }

@@ -6,7 +6,7 @@ public static class FailureClassificationQuestionSet
     /// <summary>Current question-set version.</summary>
     public const int Version = 1;
 
-    private static readonly IReadOnlyDictionary<string, Question> Questions =
+    private static readonly Dictionary<string, Question> Questions =
         new Dictionary<string, Question>(StringComparer.Ordinal)
         {
             ["failure_category"] = new("choice", "Classify the primary cause of this failure.", new Dictionary<string, object?>

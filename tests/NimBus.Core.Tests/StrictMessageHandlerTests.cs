@@ -887,7 +887,7 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.DeadLetterCalls);
         Assert.AreEqual(1, response.DeadLetterCalls);
         Assert.AreEqual("Failed to handle message.", response.LastDeadLetterReason);
-        Assert.IsInstanceOfType(response.LastDeadLetterException, typeof(UnauthorizedAccessException));
+        Assert.IsInstanceOfType<UnauthorizedAccessException>(response.LastDeadLetterException);
     }
 
     [TestMethod]

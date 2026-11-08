@@ -69,7 +69,7 @@ public sealed class EventImplementationResubmitPiiGateTests
         var result = await sut.PostResubmitWithChangesEventIdsAsync(
             new ResubmitWithChanges { EventContent = MaskedJson() }, EventId, TerminalMessageId);
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
         Assert.IsNull(manager.EventJson, "The masked payload must never reach the manager client.");
     }
 
@@ -81,7 +81,7 @@ public sealed class EventImplementationResubmitPiiGateTests
         var result = await sut.PostResubmitWithChangesEventIdsAsync(
             new ResubmitWithChanges { EventContent = MaskedJson() }, EventId, TerminalMessageId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.IsNotNull(manager.EventJson);
     }
 
@@ -93,7 +93,7 @@ public sealed class EventImplementationResubmitPiiGateTests
         var result = await sut.PostResubmitWithChangesEventIdsAsync(
             new ResubmitWithChanges { EventContent = CleanJson }, EventId, TerminalMessageId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.AreEqual(CleanJson, manager.EventJson);
     }
 
@@ -120,7 +120,7 @@ public sealed class EventImplementationResubmitPiiGateTests
         var result = await sut.PostResubmitWithChangesEventIdsAsync(
             new ResubmitWithChanges { EventContent = CleanJson }, EventId, TerminalMessageId);
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
         Assert.IsNull(manager.EventJson, "Without a resolvable type the payload cannot be proven clean.");
     }
 
@@ -138,7 +138,7 @@ public sealed class EventImplementationResubmitPiiGateTests
             EventId,
             TerminalMessageId);
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
         Assert.IsNull(manager.EventJson, "body.EventTypeId must not be able to bypass the gate.");
     }
 

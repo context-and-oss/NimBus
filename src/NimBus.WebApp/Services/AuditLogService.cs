@@ -17,7 +17,7 @@ namespace NimBus.WebApp.Services;
 /// <see cref="ILogger"/> telemetry). Both writes are best-effort — failures
 /// are absorbed and logged as warnings so the user's privileged action proceeds.
 /// </summary>
-public sealed class AuditLogService : IAuditLogService
+public sealed partial class AuditLogService : IAuditLogService
 {
     /// <summary>4 KB cap on the <c>Data</c> field per NFR-004.</summary>
     internal const int DataTruncationLimit = 4096;
@@ -73,10 +73,7 @@ public sealed class AuditLogService : IAuditLogService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(
-                ex,
-                "Audit write to message store failed for AuditType={AuditType} EventId={EventId} EndpointId={EndpointId} AuditorName={AuditorName}",
-                entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
+            LogAuditWriteToMessageStoreFailed(_logger, ex, entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
         }
 
         EmitStructuredLog(entity);
@@ -101,10 +98,7 @@ public sealed class AuditLogService : IAuditLogService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(
-                ex,
-                "Required audit write failed for AuditType={AuditType} EventId={EventId} EndpointId={EndpointId} AuditorName={AuditorName}; the command is refused",
-                entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
+            LogRequiredAuditWriteFailedForAuditType(_logger, ex, entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
             throw new AuditUnavailableException("The audit row could not be recorded, so the command was not run.", ex);
         }
 
@@ -152,15 +146,12 @@ public sealed class AuditLogService : IAuditLogService
 
             using (_logger.BeginScope(scope))
             {
-                _logger.LogInformation(StructuredLogMessage);
+                LogWebappAuditEventOccurred(_logger);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(
-                ex,
-                "Audit App Insights emit failed for AuditType={AuditType} EventId={EventId} EndpointId={EndpointId} AuditorName={AuditorName}",
-                entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
+            LogAuditAppInsightsEmitFailed(_logger, ex, entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
         }
     }
 
@@ -174,7 +165,7 @@ public sealed class AuditLogService : IAuditLogService
         {
             // The provider already fails open on store faults; this guards anything else
             // so the audit contract (never fail the user action) holds.
-            _logger.LogWarning(ex, "Audit settings check failed for AuditType={AuditType}; recording the row", type);
+            LogAuditSettingsCheckFailedForAuditType(_logger, ex, type);
             return true;
         }
     }
@@ -218,4 +209,19 @@ public sealed class AuditLogService : IAuditLogService
 
         return string.Concat(data.AsSpan(0, DataTruncationLimit), TruncationSuffix);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Audit write to message store failed for AuditType={AuditType} EventId={EventId} EndpointId={EndpointId} AuditorName={AuditorName}")]
+    private static partial void LogAuditWriteToMessageStoreFailed(ILogger logger, Exception exception, MessageAuditType auditType, string? eventId, string? endpointId, string auditorName);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Required audit write failed for AuditType={AuditType} EventId={EventId} EndpointId={EndpointId} AuditorName={AuditorName}; the command is refused")]
+    private static partial void LogRequiredAuditWriteFailedForAuditType(ILogger logger, Exception exception, MessageAuditType auditType, string? eventId, string? endpointId, string auditorName);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = StructuredLogMessage)]
+    private static partial void LogWebappAuditEventOccurred(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Audit App Insights emit failed for AuditType={AuditType} EventId={EventId} EndpointId={EndpointId} AuditorName={AuditorName}")]
+    private static partial void LogAuditAppInsightsEmitFailed(ILogger logger, Exception exception, MessageAuditType auditType, string? eventId, string? endpointId, string auditorName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Audit settings check failed for AuditType={AuditType}; recording the row")]
+    private static partial void LogAuditSettingsCheckFailedForAuditType(ILogger logger, Exception exception, MessageAuditType auditType);
 }

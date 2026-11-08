@@ -44,8 +44,8 @@ public sealed class OperatorCommandCoordinatorTests
         Assert.AreEqual(OperatorCommandStatus.Accepted, result.Status);
         CollectionAssert.AreEqual(new[] { "audit:Resubmit", "send:Resubmit" }, harness.Timeline.ToArray());
         Assert.IsNull(await harness.Store.GetEvent(Endpoint, EventId), "The claimed row is archived.");
-        StringAssert.Contains(harness.Audit.Required.Single().Data, "\"reason\":\"Downstream fixed\"");
-        StringAssert.Contains(harness.Audit.Required.Single().Data, "\"channel\":\"Mcp\"");
+        StringAssert.Contains(harness.Audit.Required.Single().Data, "\"reason\":\"Downstream fixed\"", StringComparison.Ordinal);
+        StringAssert.Contains(harness.Audit.Required.Single().Data, "\"channel\":\"Mcp\"", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -134,7 +134,7 @@ public sealed class OperatorCommandCoordinatorTests
 
         Assert.IsNotNull(await harness.Store.GetFailedEvent(Endpoint, EventId, Session));
         var notSent = harness.Audit.Logged.Single(a => a.Type == MessageAuditType.CommandNotSent);
-        StringAssert.Contains(notSent.Data, "Resubmit");
+        StringAssert.Contains(notSent.Data, "Resubmit", StringComparison.Ordinal);
 
         // The restored row is the same version, so a retry can claim it again.
         harness.Manager.Fail = false;
@@ -187,7 +187,7 @@ public sealed class OperatorCommandCoordinatorTests
         var reports = await harness.Store.GetEventReports(Endpoint, new[] { EventId });
         Assert.IsTrue(reports.TryGetValue(EventId, out var report), "Stored under the catalog's casing.");
         Assert.AreEqual("INC-1", report.TicketId);
-        StringAssert.Contains(harness.Audit.Required.Last().Data, "\"reason\":\"Ticket raised\"");
+        StringAssert.Contains(harness.Audit.Required[harness.Audit.Required.Count - 1].Data, "\"reason\":\"Ticket raised\"", StringComparison.Ordinal);
     }
 
     [TestMethod]

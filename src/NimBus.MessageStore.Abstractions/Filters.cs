@@ -89,7 +89,7 @@ public class EventFilter
     public string? ErrorText { get; set; }
 
     /// <summary>
-    /// Case-insensitive prefix match on <see cref="States.UnresolvedEvent.LastMessageId"/>,
+    /// Case-insensitive prefix match on <see cref="UnresolvedEvent.LastMessageId"/>,
     /// the id of the message the event's current state was recorded for.
     /// </summary>
     public string? LastMessageId { get; set; }

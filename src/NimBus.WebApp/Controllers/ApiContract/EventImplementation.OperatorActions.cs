@@ -27,14 +27,14 @@ public partial class EventImplementation
         }
         catch (Exception e)
         {
-            logger.LogWarning("Failed to PostMessageAudit: {ExceptionMessage}", e.Message);
+            LogFailedToPostMessageAudit(logger, e.Message);
             return new BadRequestResult();
         }
     }
 
     public async Task<IActionResult> PostResubmitEventIdsAsync(string eventId, string messageId)
     {
-        logger.LogInformation("Resubmit message. EventId:{EventId}, MessageId:{MessageId}", eventId, messageId);
+        LogResubmitMessage(logger, eventId, messageId);
 
         var lookup = await operatorCommands.FindByMessageAsync(eventId, messageId);
         if (lookup.Target == null)
@@ -46,7 +46,7 @@ public partial class EventImplementation
 
     public async Task<IActionResult> PostSkipEventIdsAsync(string eventId, string messageId)
     {
-        logger.LogInformation("Skip message. EventId:{EventId}, MessageId:{MessageId}", eventId, messageId);
+        LogSkipMessage(logger, eventId, messageId);
 
         var lookup = await operatorCommands.FindByMessageAsync(eventId, messageId);
         if (lookup.Target == null)
@@ -83,25 +83,29 @@ public partial class EventImplementation
 
     public async Task<ActionResult<ComposeNewEventResult>> PostComposeNewEventAsync(ResubmitWithChanges body)
     {
-        logger.LogInformation("Compose new event. EventTypeId:{EventTypeId}", ForLog(body?.EventTypeId));
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            var eventTypeId = ForLog(body?.EventTypeId);
+            LogComposeNewEvent(logger, eventTypeId);
+        }
 
         var eventType = platform.EventTypes.FirstOrDefault(x => x.Id.Equals(body!.EventTypeId, StringComparison.OrdinalIgnoreCase));
         if (eventType == null)
         {
-            logger.LogError("Could not find event type: {EventTypeId}", ForLog(body!.EventTypeId));
+            LogCouldNotFindEventType(logger, ForLog(body!.EventTypeId));
             return new BadRequestObjectResult("Could not find event type: " + body.EventTypeId);
         }
 
         var producingEndpoint = platform.GetProducers(eventType).FirstOrDefault();
         if (producingEndpoint == null)
         {
-            logger.LogError("Could not find any producers for the given event: {EventTypeId}", eventType.Id);
+            LogCouldNotFindAnyProducers(logger, eventType.Id);
             return new BadRequestObjectResult("Could not find any producers for the given event");
         }
 
         if (string.IsNullOrWhiteSpace(body!.EventContent))
         {
-            logger.LogError("Event content is empty");
+            LogEventContentIsEmpty(logger);
             return new BadRequestObjectResult("Event content is empty");
         }
 
@@ -147,19 +151,23 @@ public partial class EventImplementation
         }
         catch (JsonReaderException e)
         {
-            logger.LogError("Could not parse the event content. Exception: {ExceptionMessage}", e.Message);
+            LogCouldNotParseTheEventContent(logger, e.Message);
             return new BadRequestObjectResult($"Could not parse the value '{e.Path}'");
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Could not compose event.");
+            LogCouldNotComposeEvent(logger, e);
             return new BadRequestObjectResult($"Could not compose event: {e.Message}");
         }
     }
 
     public async Task<IActionResult> PostResubmitWithChangesEventIdsAsync(ResubmitWithChanges body, string eventId, string messageId)
     {
-        logger.LogInformation("Resubmit message with changes. EventId:{EventId}, MessageId:{MessageId}, Body:{Body}", eventId, messageId, JsonConvert.SerializeObject(body));
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            var bodyJson = JsonConvert.SerializeObject(body);
+            LogResubmitMessageWithChanges(logger, eventId, messageId, bodyJson);
+        }
 
         var lookup = await operatorCommands.FindByMessageAsync(eventId, messageId);
         if (lookup.Target == null)
@@ -240,11 +248,11 @@ public partial class EventImplementation
     {
         if (status == OperatorCommandStatus.Stale)
         {
-            logger.LogInformation("Operator command refused: message {MessageId} of event {EventId} is no longer current", messageId, eventId);
+            LogOperatorCommandRefusedMessageOfEvent(logger, messageId, eventId);
             return new ConflictObjectResult(StaleMessageDetail);
         }
 
-        logger.LogWarning("Operator command refused: message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
+        LogOperatorCommandRefusedMessageNotFound(logger, eventId, messageId);
         return new NotFoundObjectResult("Message not found");
     }
 
@@ -293,4 +301,40 @@ public partial class EventImplementation
             return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to PostMessageAudit: {ExceptionMessage}")]
+    private static partial void LogFailedToPostMessageAudit(ILogger logger, string exceptionMessage);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resubmit message. EventId:{EventId}, MessageId:{MessageId}")]
+    private static partial void LogResubmitMessage(ILogger logger, string eventId, string messageId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Skip message. EventId:{EventId}, MessageId:{MessageId}")]
+    private static partial void LogSkipMessage(ILogger logger, string eventId, string messageId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Compose new event. EventTypeId:{EventTypeId}")]
+    private static partial void LogComposeNewEvent(ILogger logger, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not find event type: {EventTypeId}")]
+    private static partial void LogCouldNotFindEventType(ILogger logger, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not find any producers for the given event: {EventTypeId}")]
+    private static partial void LogCouldNotFindAnyProducers(ILogger logger, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Event content is empty")]
+    private static partial void LogEventContentIsEmpty(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not parse the event content. Exception: {ExceptionMessage}")]
+    private static partial void LogCouldNotParseTheEventContent(ILogger logger, string exceptionMessage);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not compose event.")]
+    private static partial void LogCouldNotComposeEvent(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resubmit message with changes. EventId:{EventId}, MessageId:{MessageId}, Body:{Body}")]
+    private static partial void LogResubmitMessageWithChanges(ILogger logger, string eventId, string messageId, string body);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Operator command refused: message {MessageId} of event {EventId} is no longer current")]
+    private static partial void LogOperatorCommandRefusedMessageOfEvent(ILogger logger, string messageId, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Operator command refused: message not found. EventId: {EventId}, MessageId: {MessageId}")]
+    private static partial void LogOperatorCommandRefusedMessageNotFound(ILogger logger, string eventId, string messageId);
 }

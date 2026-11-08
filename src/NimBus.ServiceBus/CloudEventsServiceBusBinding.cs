@@ -51,8 +51,8 @@ public static class CloudEventsServiceBusBinding
     /// </summary>
     public static void WriteBinary(Azure.Messaging.ServiceBus.ServiceBusMessage message, CloudEvent cloudEvent)
     {
-        if (message is null) throw new ArgumentNullException(nameof(message));
-        if (cloudEvent is null) throw new ArgumentNullException(nameof(cloudEvent));
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(cloudEvent);
 
         SetProp(message, AttrSpecVersion, cloudEvent.SpecVersion ?? CloudEvent.CloudEventsSpecVersion);
         SetProp(message, AttrId, cloudEvent.Id);
@@ -80,8 +80,8 @@ public static class CloudEventsServiceBusBinding
         CloudEvent cloudEvent,
         string domainEventJson)
     {
-        if (message is null) throw new ArgumentNullException(nameof(message));
-        if (cloudEvent is null) throw new ArgumentNullException(nameof(cloudEvent));
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(cloudEvent);
 
         var envelope = new JObject
         {

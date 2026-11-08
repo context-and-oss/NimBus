@@ -37,7 +37,7 @@ public class McpAccessPolicyEnforcementTests
         using var response = await host.PostToolsListAsync();
 
         Assert.AreEqual(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-        StringAssert.Contains(await response.Content.ReadAsStringAsync(), "[Disabled]");
+        StringAssert.Contains(await response.Content.ReadAsStringAsync(), "[Disabled]", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -49,7 +49,7 @@ public class McpAccessPolicyEnforcementTests
         using var response = await host.PostToolsListAsync();
 
         Assert.AreEqual(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-        StringAssert.Contains(await response.Content.ReadAsStringAsync(), "[Unavailable]");
+        StringAssert.Contains(await response.Content.ReadAsStringAsync(), "[Unavailable]", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -100,8 +100,8 @@ public class McpAccessPolicyEnforcementTests
         AssertError(second, "PermissionDenied", "turned off by an administrator");
         var refusals = Refusals(host);
         Assert.AreEqual(1, refusals.Count, "A repeated refusal is audited once per window.");
-        StringAssert.Contains(refusals[0].Data, "\"reason\":\"tool\"");
-        StringAssert.Contains(refusals[0].Data, "nimbus_set_message_reported");
+        StringAssert.Contains(refusals[0].Data, "\"reason\":\"tool\"", StringComparison.Ordinal);
+        StringAssert.Contains(refusals[0].Data, "nimbus_set_message_reported", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -167,7 +167,7 @@ public class McpAccessPolicyEnforcementTests
         var result = await client.CallToolAsync("nimbus_set_message_reported", ReportArguments());
 
         AssertError(result, "PermissionDenied", "Changes are not allowed on endpoint 'CrmEndpoint'");
-        StringAssert.Contains(Refusals(host).Single().Data, "\"reason\":\"endpoint\"");
+        StringAssert.Contains(Refusals(host).Single().Data, "\"reason\":\"endpoint\"", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -211,8 +211,8 @@ public class McpAccessPolicyEnforcementTests
 
         Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
         var refusal = Refusals(host).Single();
-        StringAssert.Contains(refusal.Data, "\"reason\":\"client\"");
-        StringAssert.Contains(refusal.Data, McpTestHost.AgentClientId);
+        StringAssert.Contains(refusal.Data, "\"reason\":\"client\"", StringComparison.Ordinal);
+        StringAssert.Contains(refusal.Data, McpTestHost.AgentClientId, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -247,7 +247,7 @@ public class McpAccessPolicyEnforcementTests
 
         Assert.AreEqual(admitted ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
         if (!admitted)
-            StringAssert.Contains(Refusals(host).Single().Data, "\"reason\":\"person\"");
+            StringAssert.Contains(Refusals(host).Single().Data, "\"reason\":\"person\"", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -307,8 +307,8 @@ public class McpAccessPolicyEnforcementTests
     private static void AssertError(CallToolResult result, string code, string detail)
     {
         Assert.IsTrue(result.IsError == true, "Expected an error result.");
-        StringAssert.Contains(ErrorText(result), $"[{code}]");
-        StringAssert.Contains(ErrorText(result), detail);
+        StringAssert.Contains(ErrorText(result), $"[{code}]", StringComparison.Ordinal);
+        StringAssert.Contains(ErrorText(result), detail, StringComparison.Ordinal);
     }
 
     private static string ErrorText(CallToolResult result)

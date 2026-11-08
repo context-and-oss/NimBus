@@ -33,7 +33,7 @@ public static class EventCatalogCli
         string? platformTypeName = null,
         string? title = null)
     {
-        if (writer is null) throw new ArgumentNullException(nameof(writer));
+        ArgumentNullException.ThrowIfNull(writer);
 
         try
         {

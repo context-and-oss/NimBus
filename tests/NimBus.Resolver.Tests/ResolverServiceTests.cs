@@ -20,7 +20,7 @@ public class ResolverServiceTests
         var service = CreateService();
         var message = CreateMessageContext(messageType: MessageType.EventRequest, to: "BillingEndpoint", from: "StorefrontEndpoint");
 
-        var (endpointId, role) = service.DetermineEndpoint(message);
+        var (endpointId, role) = ResolverService.DetermineEndpoint(message);
 
         Assert.AreEqual("BillingEndpoint", endpointId);
         Assert.AreEqual(EndpointRole.Subscriber, role);
@@ -32,7 +32,7 @@ public class ResolverServiceTests
         var service = CreateService();
         var message = CreateMessageContext(messageType: MessageType.ResolutionResponse, to: "Resolver", from: "BillingEndpoint");
 
-        var (endpointId, role) = service.DetermineEndpoint(message);
+        var (endpointId, role) = ResolverService.DetermineEndpoint(message);
 
         Assert.AreEqual("BillingEndpoint", endpointId);
         Assert.AreEqual(EndpointRole.Subscriber, role);

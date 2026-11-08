@@ -50,7 +50,7 @@ public interface IAccessControlSnapshotProvider
 /// (EIP_Management) are unaffected, so configured admins are never locked out by
 /// an outage.
 /// </summary>
-public sealed class AccessControlSnapshotProvider : IAccessControlSnapshotProvider, IDisposable
+public sealed partial class AccessControlSnapshotProvider : IAccessControlSnapshotProvider, IDisposable
 {
     // 45s mirrors DIS's access-control cache; 5s failure TTL bounds hammering a
     // faulting store while keeping recovery quick.
@@ -111,8 +111,7 @@ public sealed class AccessControlSnapshotProvider : IAccessControlSnapshotProvid
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex,
-                        "Access-control snapshot refresh failed; store-granted roles are unavailable until the store recovers");
+                    LogAccessControlSnapshotRefreshFailed(_logger, ex);
                     // An explicit invalidation may represent a revoke, so only
                     // reuse last-known-good within the same generation.
                     var stale = Volatile.Read(ref _current);
@@ -144,4 +143,7 @@ public sealed class AccessControlSnapshotProvider : IAccessControlSnapshotProvid
         => entry != null && entry.Generation == generation && DateTime.UtcNow < entry.ExpiresAtUtc;
 
     private sealed record CacheEntry(AccessControlSnapshot Snapshot, DateTime ExpiresAtUtc, long Generation);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Access-control snapshot refresh failed; store-granted roles are unavailable until the store recovers")]
+    private static partial void LogAccessControlSnapshotRefreshFailed(ILogger logger, Exception exception);
 }

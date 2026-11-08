@@ -79,8 +79,8 @@ public sealed class NotificationChannelBuilder
     /// </summary>
     public NotificationChannelBuilder WithRateLimit(int maxPerMinute, int burstCapacity)
     {
-        if (maxPerMinute <= 0) throw new ArgumentOutOfRangeException(nameof(maxPerMinute));
-        if (burstCapacity <= 0) throw new ArgumentOutOfRangeException(nameof(burstCapacity));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxPerMinute);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(burstCapacity);
 
         _routerOptions.MaxPerMinute = maxPerMinute;
         _routerOptions.BurstCapacity = burstCapacity;
@@ -93,7 +93,7 @@ public sealed class NotificationChannelBuilder
     /// </summary>
     public NotificationChannelBuilder WithDedupWindow(TimeSpan window)
     {
-        if (window <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(window));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(window, TimeSpan.Zero);
         _routerOptions.DedupWindow = window;
         return this;
     }

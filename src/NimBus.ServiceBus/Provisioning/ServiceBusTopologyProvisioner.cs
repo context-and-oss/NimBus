@@ -78,7 +78,7 @@ public sealed class ServiceBusTopologyProvisioner
     public static bool IsEmulator(string? connectionString)
     {
         if (string.IsNullOrWhiteSpace(connectionString)) return false;
-        return connectionString.IndexOf("UseDevelopmentEmulator=true", StringComparison.OrdinalIgnoreCase) >= 0;
+        return connectionString.Contains("UseDevelopmentEmulator=true", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Applies the platform's topology to the target namespace.</summary>

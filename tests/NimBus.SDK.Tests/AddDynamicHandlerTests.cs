@@ -168,8 +168,8 @@ public class AddDynamicHandlerTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
             builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>());
 
-        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
-        StringAssert.Contains(ex.Message, "dynamic");
+        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent), StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "dynamic", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -183,8 +183,8 @@ public class AddDynamicHandlerTests
                 nameof(DynamicCollisionEvent),
                 () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
 
-        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
-        StringAssert.Contains(ex.Message, "typed");
+        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent), StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "typed", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -200,7 +200,7 @@ public class AddDynamicHandlerTests
                 EventTypeId,
                 () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
 
-        StringAssert.Contains(ex.Message, EventTypeId);
+        StringAssert.Contains(ex.Message, EventTypeId, StringComparison.Ordinal);
     }
 
     // ── SP-aware overload: AddDynamicHandler(string, Func<IServiceProvider, IEventJsonHandler>) ──
@@ -275,8 +275,8 @@ public class AddDynamicHandlerTests
                 nameof(DynamicCollisionEvent),
                 p => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
 
-        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
-        StringAssert.Contains(ex.Message, "typed");
+        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent), StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "typed", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -290,8 +290,8 @@ public class AddDynamicHandlerTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
             builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>());
 
-        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
-        StringAssert.Contains(ex.Message, "dynamic");
+        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent), StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "dynamic", StringComparison.Ordinal);
     }
 
     // ── Stub ──────────────────────────────────────────────────────────────

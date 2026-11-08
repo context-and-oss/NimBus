@@ -166,7 +166,7 @@ public class McpOperatorEndpointTests
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         var challenge = string.Join(" ", response.Headers.WwwAuthenticate.Select(h => h.ToString()));
-        StringAssert.Contains(challenge, "resource_metadata=");
+        StringAssert.Contains(challenge, "resource_metadata=", StringComparison.Ordinal);
     }
 
     [TestMethod]

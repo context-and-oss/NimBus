@@ -16,6 +16,8 @@ namespace NimBus.WebApp;
 
 public partial class Startup
 {
+    private static readonly string[] ReadyHealthCheckTags = ["ready"];
+
     private void AddObservability(IServiceCollection services, string storageProvider)
     {
         // Typed HttpClient via IHttpClientFactory — pools the underlying
@@ -83,7 +85,7 @@ public partial class Startup
             healthChecks.AddCheck<SqlServerMessageStoreHealthCheck>(
                 "sqlserver-messagestore",
                 failureStatus: HealthStatus.Unhealthy,
-                tags: new[] { "ready" });
+                tags: ReadyHealthCheckTags);
         }
         else
         {

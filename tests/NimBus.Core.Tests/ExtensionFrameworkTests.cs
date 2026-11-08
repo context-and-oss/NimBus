@@ -94,7 +94,7 @@ public class MessagePipelineTests
 
     // ── Behaviors ────────────────────────────────────────────────────────
 
-    private class FirstBehavior : IMessagePipelineBehavior
+    private sealed class FirstBehavior : IMessagePipelineBehavior
     {
         private readonly List<string> _log;
         public FirstBehavior(List<string> log) => _log = log;
@@ -107,7 +107,7 @@ public class MessagePipelineTests
         }
     }
 
-    private class SecondBehavior : IMessagePipelineBehavior
+    private sealed class SecondBehavior : IMessagePipelineBehavior
     {
         private readonly List<string> _log;
         public SecondBehavior(List<string> log) => _log = log;
@@ -120,7 +120,7 @@ public class MessagePipelineTests
         }
     }
 
-    private class ShortCircuitBehavior : IMessagePipelineBehavior
+    private sealed class ShortCircuitBehavior : IMessagePipelineBehavior
     {
         public Task Handle(IMessageContext context, MessagePipelineDelegate next, CancellationToken ct = default)
         {
@@ -250,7 +250,7 @@ public class MessageLifecycleNotifierTests
 
         await notifier.NotifyReceived(context);
         await notifier.NotifyCompleted(context);
-        await notifier.NotifyFailed(context, new Exception());
+        await notifier.NotifyFailed(context, new InvalidOperationException());
         await notifier.NotifyDeadLettered(context, "test");
 
         Assert.IsFalse(notifier.HasObservers);
@@ -258,7 +258,7 @@ public class MessageLifecycleNotifierTests
 
     // ── Fakes ────────────────────────────────────────────────────────────
 
-    private class RecordingObserver : IMessageLifecycleObserver
+    private sealed class RecordingObserver : IMessageLifecycleObserver
     {
         public List<MessageLifecycleContext> ReceivedEvents { get; } = [];
         public List<MessageLifecycleContext> CompletedEvents { get; } = [];
@@ -380,7 +380,7 @@ public class NimBusBuilderTests
 
     // ── Fakes ────────────────────────────────────────────────────────────
 
-    private class TestExtension : INimBusExtension
+    private sealed class TestExtension : INimBusExtension
     {
         public bool WasConfigured { get; private set; }
 

@@ -117,7 +117,7 @@ public interface ICosmosContainerAdapter
     }
 
     /// <summary>
-    /// Deletes an item with request options (e.g. an <see cref="ItemRequestOptions.IfMatchEtag"/>
+    /// Deletes an item with request options (e.g. an <see cref="RequestOptions.IfMatchEtag"/>
     /// precondition) while propagating cancellation to the provider.
     /// The default implementation fails closed: an adapter that has not overridden this overload
     /// cannot honor a precondition, and silently dropping it would let a stale delete remove a

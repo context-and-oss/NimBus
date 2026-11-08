@@ -268,7 +268,7 @@ public sealed class CosmosDbClientRetentionTests
         var ex = await Assert.ThrowsExactlyAsync<ArgumentException>(
             () => client.DownloadEndpointStateCount(reserved));
 
-        StringAssert.Contains(ex.Message, reserved);
+        StringAssert.Contains(ex.Message, reserved, StringComparison.Ordinal);
         Assert.AreEqual(0, adapter.ContainerCreations.Count,
             "A rejected endpoint id must not create anything.");
     }
@@ -312,7 +312,7 @@ public sealed class CosmosDbClientRetentionTests
         var ex = await Assert.ThrowsExactlyAsync<NotSupportedException>(
             () => client.UploadPendingMessage("event-1", "session-1", "endpoint-1", NewEvent()));
 
-        StringAssert.Contains(ex.Message, nameof(ContainerProperties));
+        StringAssert.Contains(ex.Message, nameof(ContainerProperties), StringComparison.Ordinal);
         Assert.AreEqual(0, adapter.ContainerCreations.Count,
             "Silently falling back to a TTL-disabled container is exactly the defect this guards.");
     }
@@ -354,7 +354,7 @@ public sealed class CosmosDbClientRetentionTests
             null!,
             new CosmosDbMessageStoreOptions { UnresolvedRetentionDays = days }));
 
-        StringAssert.Contains(ex.Message, days.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        StringAssert.Contains(ex.Message, days.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
     [TestMethod]

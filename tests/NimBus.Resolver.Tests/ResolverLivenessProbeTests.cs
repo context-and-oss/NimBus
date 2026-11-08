@@ -36,7 +36,7 @@ public class ResolverLivenessProbeTests
         Assert.AreEqual(Constants.ResolverId, written.ServiceId);
         Assert.AreEqual(HeartbeatStatus.On, written.Status);
         Assert.IsFalse(string.IsNullOrWhiteSpace(written.Version), "The Resolver reports its own assembly version.");
-        Assert.IsFalse(written.Version.Contains('+'), "Version must be the bare package version without the '+<sha>' build suffix");
+        Assert.IsFalse(written.Version.Contains('+', StringComparison.Ordinal), "Version must be the bare package version without the '+<sha>' build suffix");
         Assert.IsNotNull(written.LastSeenUtc);
         Assert.IsNotNull(written.RoundTripMs);
         Assert.IsTrue(written.RoundTripMs >= 0 && written.RoundTripMs <= 60_000,

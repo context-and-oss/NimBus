@@ -11,7 +11,7 @@ namespace NimBus.Agents.Internal;
 /// is in <see cref="ProcessNextAsync"/> so it is unit-testable against a fake gateway/handler.
 /// </summary>
 /// <typeparam name="TInput">The deserialized source-event payload type.</typeparam>
-internal sealed class AgentLoopWorker<TInput> : BackgroundService
+internal sealed partial class AgentLoopWorker<TInput> : BackgroundService
 {
     private readonly IAgentBusGateway _bus;
     private readonly IAgentHandler<TInput> _handler;
@@ -38,7 +38,7 @@ internal sealed class AgentLoopWorker<TInput> : BackgroundService
         try
         {
             await _bus.SubscribeAsync(source, stoppingToken).ConfigureAwait(false);
-            _logger.LogInformation("Subscribed to {EventTypeId}.", source);
+            LogSubscribedTo(_logger, source);
         }
         catch (OperationCanceledException)
         {
@@ -46,7 +46,7 @@ internal sealed class AgentLoopWorker<TInput> : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Subscribe to {EventTypeId} failed; continuing with explicit-type receive.", source);
+            LogSubscribeToFailed(_logger, ex, source);
         }
 
         while (!stoppingToken.IsCancellationRequested)
@@ -67,7 +67,7 @@ internal sealed class AgentLoopWorker<TInput> : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Agent loop iteration failed; backing off before retry.");
+                LogAgentLoopIterationFailed(_logger, ex);
                 try { await Task.Delay(_options.ErrorBackoff, stoppingToken).ConfigureAwait(false); }
                 catch (OperationCanceledException) { break; }
             }
@@ -84,9 +84,7 @@ internal sealed class AgentLoopWorker<TInput> : BackgroundService
         if (msg is null)
             return false;
 
-        _logger.LogInformation(
-            "Received {EventTypeId} event {EventId} on session {SessionId}.",
-            msg.EventTypeId, msg.Coordinates.EventId, msg.Coordinates.SessionId);
+        LogReceivedEventOnSession(_logger, msg.EventTypeId, msg.Coordinates.EventId, msg.Coordinates.SessionId);
 
         await EnsureOutputsDefinedAsync(ct).ConfigureAwait(false);
 
@@ -100,9 +98,7 @@ internal sealed class AgentLoopWorker<TInput> : BackgroundService
         {
             // Poison message: this payload will never deserialize, so retrying forever is pointless.
             // Settle it as failed (with a clear error) to remove it from the parked queue.
-            _logger.LogError(ex,
-                "Could not deserialize {EventTypeId} into {Type}; settling handoff {EventId} as failed (poison message).",
-                msg.EventTypeId, typeof(TInput).Name, msg.Coordinates.EventId);
+            LogCouldNotDeserialize(_logger, ex, msg.EventTypeId, typeof(TInput).Name, msg.Coordinates.EventId);
             await SettleAsync(
                 msg.Coordinates,
                 AgentResult.Fail($"Could not deserialize payload into {typeof(TInput).Name}: {ex.Message}", "DeserializeError"),
@@ -126,7 +122,7 @@ internal sealed class AgentLoopWorker<TInput> : BackgroundService
         {
             var sessionId = publish.SessionId ?? msg.Coordinates.SessionId;
             await _bus.PublishAsync(publish.EventTypeId, publish.Payload, sessionId, ct).ConfigureAwait(false);
-            _logger.LogInformation("Published {EventTypeId} on session {SessionId}.", publish.EventTypeId, sessionId);
+            LogPublishedOnSession(_logger, publish.EventTypeId, sessionId);
         }
 
         await SettleAsync(msg.Coordinates, result, ct).ConfigureAwait(false);
@@ -138,15 +134,13 @@ internal sealed class AgentLoopWorker<TInput> : BackgroundService
         try
         {
             await _bus.SettleAsync(coordinates, result.IsSuccess, result.Result, result.ErrorText, result.ErrorType, ct).ConfigureAwait(false);
-            _logger.LogInformation("Settled handoff {EventId} as {Outcome}.", coordinates.EventId, result.IsSuccess ? "complete" : "fail");
+            LogSettledHandoff(_logger, coordinates.EventId, result.IsSuccess ? "complete" : "fail");
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.BadRequest)
         {
             // At-least-once: a concurrent receive already settled this handoff, so the
             // Pending+Handoff guard returns 400. Safe to ignore.
-            _logger.LogInformation(
-                "Settle for handoff {EventId} returned 400 (already settled by a concurrent receive); ignoring.",
-                coordinates.EventId);
+            LogSettleForHandoffReturned400(_logger, coordinates.EventId);
         }
     }
 
@@ -158,9 +152,36 @@ internal sealed class AgentLoopWorker<TInput> : BackgroundService
         foreach (var output in _options.Outputs)
         {
             await _bus.DefineEventTypeAsync(output.EventTypeId, output.JsonSchema, output.Name, output.Description, output.SessionKeyPath, ct).ConfigureAwait(false);
-            _logger.LogInformation("Ensured event type {EventTypeId} is defined.", output.EventTypeId);
+            LogEnsuredEventTypeIsDefined(_logger, output.EventTypeId);
         }
 
         _outputsDefined = true;
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Subscribed to {EventTypeId}.")]
+    private static partial void LogSubscribedTo(ILogger logger, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Subscribe to {EventTypeId} failed; continuing with explicit-type receive.")]
+    private static partial void LogSubscribeToFailed(ILogger logger, Exception exception, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Agent loop iteration failed; backing off before retry.")]
+    private static partial void LogAgentLoopIterationFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Received {EventTypeId} event {EventId} on session {SessionId}.")]
+    private static partial void LogReceivedEventOnSession(ILogger logger, string eventTypeId, string eventId, string sessionId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not deserialize {EventTypeId} into {Type}; settling handoff {EventId} as failed (poison message).")]
+    private static partial void LogCouldNotDeserialize(ILogger logger, Exception exception, string eventTypeId, string type, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Published {EventTypeId} on session {SessionId}.")]
+    private static partial void LogPublishedOnSession(ILogger logger, string eventTypeId, string sessionId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Settled handoff {EventId} as {Outcome}.")]
+    private static partial void LogSettledHandoff(ILogger logger, string eventId, string outcome);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Settle for handoff {EventId} returned 400 (already settled by a concurrent receive); ignoring.")]
+    private static partial void LogSettleForHandoffReturned400(ILogger logger, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Ensured event type {EventTypeId} is defined.")]
+    private static partial void LogEnsuredEventTypeIsDefined(ILogger logger, string eventTypeId);
 }

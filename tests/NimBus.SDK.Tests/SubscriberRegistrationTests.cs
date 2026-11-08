@@ -24,7 +24,7 @@ using NimBus.SDK.Hosting;
 namespace NimBus.SDK.Tests;
 
 /// <summary>
-/// Coverage for <see cref="ServiceCollectionExtensions.AddNimBusSubscriber"/>'s
+/// Coverage for <see cref="NimBus.SDK.Extensions.ServiceCollectionExtensions.AddNimBusSubscriber(Microsoft.Extensions.DependencyInjection.IServiceCollection, string, System.Action{NimBus.SDK.Extensions.NimBusSubscriberBuilder})"/>'s
 /// one-endpoint-per-process invariant. <see cref="ISubscriberClient"/> is a
 /// non-keyed singleton; a second registration against a different endpoint
 /// used to be silently dropped by TryAddSingleton, binding the second
@@ -67,7 +67,7 @@ public class SubscriberRegistrationTests
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
             services.AddNimBusSubscriber("Billing", builder => builder.WithCircuitBreaker(_ => { })));
 
-        StringAssert.Contains(exception.Message, "first AddNimBusSubscriber");
+        StringAssert.Contains(exception.Message, "first AddNimBusSubscriber", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -92,7 +92,7 @@ public class SubscriberRegistrationTests
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
             services.AddNimBusSubscriber("Billing", builder => builder.WithCircuitBreaker(_ => { })));
 
-        StringAssert.Contains(exception.Message, "WithCircuitBreaker");
+        StringAssert.Contains(exception.Message, "WithCircuitBreaker", StringComparison.Ordinal);
         Assert.IsNull(services.FirstOrDefault(descriptor => descriptor.ServiceType == typeof(IEndpointCircuitBreaker)));
     }
 
@@ -113,7 +113,7 @@ public class SubscriberRegistrationTests
 
         var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => validator.StartAsync(CancellationToken.None));
-        StringAssert.Contains(exception.Message, "WithCircuitBreaker");
+        StringAssert.Contains(exception.Message, "WithCircuitBreaker", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -143,8 +143,8 @@ public class SubscriberRegistrationTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
             services.AddNimBusSubscriber("EndpointB", _ => { }));
 
-        StringAssert.Contains(ex.Message, "EndpointA");
-        StringAssert.Contains(ex.Message, "EndpointB");
+        StringAssert.Contains(ex.Message, "EndpointA", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "EndpointB", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -269,11 +269,11 @@ public class SubscriberRegistrationTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(
             () => provider.GetServices<IHostedService>().ToList());
 
-        StringAssert.Contains(ex.Message, "OutboxDispatcherSender");
+        StringAssert.Contains(ex.Message, "OutboxDispatcherSender", StringComparison.Ordinal);
         Assert.IsFalse(
             ex.Message.Contains("Register AddNimBusPublisher before", StringComparison.Ordinal),
             "Message must not claim AddNimBusPublisher registers OutboxDispatcherSender.");
-        StringAssert.Contains(ex.Message, "AddSingleton");
+        StringAssert.Contains(ex.Message, "AddSingleton", StringComparison.Ordinal);
     }
 
     private static object GetPrivateField(object target, string fieldName)

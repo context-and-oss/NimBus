@@ -15,7 +15,7 @@ using NimBus.Resolver.Alerts;
 
 namespace NimBus.Resolver;
 
-public static class ServiceExtensions
+public static partial class ServiceExtensions
 {
     /// <summary>
     /// Legacy IServiceCollection-based registration. Storage provider must be
@@ -123,17 +123,14 @@ public static class ServiceExtensions
 
             if (!options.IsConfigured)
             {
-                logger.LogInformation(
-                    "Endpoint alert mail is off: set {Section}:Smtp:Host and {Section}:From to mail Alerts-tab subscribers.",
-                    AlertMailOptions.SectionName, AlertMailOptions.SectionName);
+                LogEndpointAlertMailIsOffUntilConfigured(logger, AlertMailOptions.SectionName);
                 return new NoopEndpointAlertNotifier();
             }
 
             var errors = options.Validate();
             if (errors.Count > 0)
             {
-                logger.LogError("Endpoint alert mail is off because its settings are invalid: {Errors}",
-                    string.Join(" ", errors));
+                LogEndpointAlertMailIsOffBecause(logger, string.Join(" ", errors));
                 return new NoopEndpointAlertNotifier();
             }
 
@@ -141,14 +138,11 @@ public static class ServiceExtensions
             var notifications = sp.GetService<ISubscriptionNotificationStore>();
             if (subscriptions is null || notifications is null)
             {
-                logger.LogWarning(
-                    "Endpoint alert mail is off: the storage provider registers no {SubscriptionStore} or {NotificationStore}.",
-                    nameof(ISubscriptionStore), nameof(ISubscriptionNotificationStore));
+                LogEndpointAlertMailIsOff(logger, nameof(ISubscriptionStore), nameof(ISubscriptionNotificationStore));
                 return new NoopEndpointAlertNotifier();
             }
 
-            logger.LogInformation("Endpoint alert mail is on: SMTP {Host}:{Port}, from {From}.",
-                options.Smtp.Host, options.Smtp.Port, options.From);
+            LogEndpointAlertMail(logger, options.Smtp.Host, options.Smtp.Port, options.From);
             return new SubscriptionAlertNotifier(
                 subscriptions,
                 notifications,
@@ -163,4 +157,16 @@ public static class ServiceExtensions
 
     private static string EnsureTrailingSlash(string url) =>
         url.EndsWith('/') ? url : url + "/";
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Endpoint alert mail is off: set {Section}:Smtp:Host and {Section}:From to mail Alerts-tab subscribers.")]
+    private static partial void LogEndpointAlertMailIsOffUntilConfigured(ILogger logger, string section);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Endpoint alert mail is off because its settings are invalid: {Errors}")]
+    private static partial void LogEndpointAlertMailIsOffBecause(ILogger logger, string errors);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint alert mail is off: the storage provider registers no {SubscriptionStore} or {NotificationStore}.")]
+    private static partial void LogEndpointAlertMailIsOff(ILogger logger, string subscriptionStore, string notificationStore);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Endpoint alert mail is on: SMTP {Host}:{Port}, from {From}.")]
+    private static partial void LogEndpointAlertMail(ILogger logger, string? host, int port, string? from);
 }

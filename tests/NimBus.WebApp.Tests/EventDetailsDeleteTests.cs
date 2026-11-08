@@ -29,7 +29,7 @@ public sealed class EventDetailsDeleteTests
 
         var conflict = result as ConflictObjectResult;
         Assert.IsNotNull(conflict, $"Expected 409, got {result.GetType().Name}.");
-        StringAssert.Contains((string)conflict.Value!, "blocks its session");
+        StringAssert.Contains((string)conflict.Value!, "blocks its session", StringComparison.Ordinal);
         Assert.IsNotNull(await store.GetEvent("Crm", "event"));
     }
 

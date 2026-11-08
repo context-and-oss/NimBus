@@ -30,7 +30,7 @@ public readonly record struct HandoffSettlementCoordinates(
 /// <summary>
 /// Builds the Service Bus control messages that drive Pending → Completed /
 /// Pending → Failed transitions for handoff entries. Shared between
-/// <see cref="NimBus.Manager.IManagerClient"/> (legacy bag-of-fields API) and
+/// <c>NimBus.Manager.IManagerClient</c> (legacy bag-of-fields API) and
 /// the new <c>NimBus.SDK.IHandoffClient</c> so on-wire behaviour is identical
 /// across both call sites.
 /// </summary>
@@ -39,7 +39,7 @@ public static class HandoffControlMessageFactory
     /// <summary>
     /// Build a <see cref="MessageType.HandoffCompletedRequest"/> message addressed
     /// to the subscriber that owns the pending row. The optional details payload
-    /// is carried verbatim on <see cref="MessageContent.EventContent.EventJson"/>
+    /// is carried verbatim on <see cref="EventContent.EventJson"/>
     /// so the audit trail / completion-event consumers can read it later.
     /// </summary>
     public static Message CreateCompleted(HandoffSettlementCoordinates coords, string? detailsJson)

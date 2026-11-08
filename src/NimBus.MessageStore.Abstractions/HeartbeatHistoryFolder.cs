@@ -18,10 +18,7 @@ public static class HeartbeatHistoryFolder
         int fallbackIntervalSeconds)
     {
         ArgumentException.ThrowIfNullOrEmpty(endpointId);
-        if (fallbackIntervalSeconds <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(fallbackIntervalSeconds));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(fallbackIntervalSeconds);
 
         var existingDays = (existing ?? [])
             .Where(day => string.Equals(day.EndpointId, endpointId, StringComparison.OrdinalIgnoreCase))

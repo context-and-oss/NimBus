@@ -52,11 +52,11 @@ public sealed class SqlServerOutboxBatchInsertCommandTests
         using var command = outbox.CreateBatchInsertCommand(connection, transaction: null!, messages, offset: 0, count: 5);
 
         Assert.AreEqual(5 * 12, command.Parameters.Count);
-        Assert.AreEqual(5, Regex.Matches(command.CommandText, Regex.Escape("(@Id")).Count,
+        Assert.AreEqual(5, Regex.Count(command.CommandText, Regex.Escape("(@Id")),
             "Expected one VALUES row per message.");
-        Assert.AreEqual(1, Regex.Matches(command.CommandText, "INSERT INTO").Count,
+        Assert.AreEqual(1, Regex.Count(command.CommandText, "INSERT INTO"),
             "The whole page must be a single INSERT statement.");
-        StringAssert.Contains(command.CommandText, "[nimbus].[OutboxMessages]");
+        StringAssert.Contains(command.CommandText, "[nimbus].[OutboxMessages]", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -74,7 +74,7 @@ public sealed class SqlServerOutboxBatchInsertCommandTests
         Assert.AreEqual(DBNull.Value, command.Parameters["@To1"].Value, "Odd rows have null To -> DBNull.");
         Assert.AreEqual(DBNull.Value, command.Parameters["@CorrelationId0"].Value);
         Assert.AreEqual(DBNull.Value, command.Parameters["@ScheduledEnqueueTimeUtc1"].Value);
-        StringAssert.Contains(command.CommandText, "@TraceState1, 1)");
+        StringAssert.Contains(command.CommandText, "@TraceState1, 1)", StringComparison.Ordinal);
     }
 
     [TestMethod]

@@ -1,0 +1,13 @@
+# Test-only analyzer settings; inherits the repository root .editorconfig.
+[*.cs]
+# Performance rules that trade test readability for allocations a test run never notices:
+# inline expected-value arrays (CA1861) and interface-typed helpers (CA1859) read better
+# than hoisted static fields and concrete return types.
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA1859.severity = none
+# Test classes own per-test disposables through [TestInitialize]/[TestCleanup], and the
+# fakes that look disposable hold no resources; some record disposal as the behavior under test.
+dotnet_diagnostic.CA1001.severity = none
+# Test doubles are named for what they stand in for: an event handler, an enum, an xUnit
+# collection definition.
+dotnet_diagnostic.CA1711.severity = none

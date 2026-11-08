@@ -51,7 +51,7 @@ public class OperatorInsightToolsTests
         var result = await CallRawAsync("nimbus_search_messages", new() { ["eventId"] = "event-1" });
 
         Assert.IsTrue(result.IsError);
-        StringAssert.Contains(ErrorText(result), "PermissionDenied");
+        StringAssert.Contains(ErrorText(result), "PermissionDenied", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -145,7 +145,7 @@ public class OperatorInsightToolsTests
         var result = await CallRawAsync("nimbus_get_metrics", new() { ["view"] = "failures" }, siteReader: true);
 
         Assert.IsTrue(result.IsError);
-        StringAssert.Contains(ErrorText(result), "PermissionDenied");
+        StringAssert.Contains(ErrorText(result), "PermissionDenied", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -156,7 +156,7 @@ public class OperatorInsightToolsTests
         var result = await CallRawAsync("nimbus_get_metrics", new() { [argument] = value }, siteReader: true);
 
         Assert.IsTrue(result.IsError);
-        StringAssert.Contains(ErrorText(result), "InvalidArgument");
+        StringAssert.Contains(ErrorText(result), "InvalidArgument", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -167,7 +167,7 @@ public class OperatorInsightToolsTests
 
         var result = await CallRawAsync("nimbus_get_metrics", new());
 
-        StringAssert.Contains(ErrorText(result), "PermissionDenied");
+        StringAssert.Contains(ErrorText(result), "PermissionDenied", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -178,7 +178,7 @@ public class OperatorInsightToolsTests
         var result = await CallRawAsync("nimbus_get_classification", new() { ["endpointId"] = "CrmEndpoint", ["eventId"] = "event-1", ["messageId"] = "m-1" });
 
         Assert.IsTrue(result.IsError);
-        StringAssert.Contains(ErrorText(result), "FeatureUnavailable");
+        StringAssert.Contains(ErrorText(result), "FeatureUnavailable", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -213,7 +213,7 @@ public class OperatorInsightToolsTests
 
         var result = await CallRawAsync("nimbus_get_classification", new() { ["endpointId"] = "CrmEndpoint", ["eventId"] = "event-1", ["messageId"] = "m-1" });
 
-        StringAssert.Contains(ErrorText(result), "MessageNotFound");
+        StringAssert.Contains(ErrorText(result), "MessageNotFound", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -224,7 +224,7 @@ public class OperatorInsightToolsTests
         var result = await CallRawAsync("nimbus_get_message", new() { ["endpointId"] = "CrmEndpoint", ["eventId"] = "event-1", ["includePayload"] = true });
 
         Assert.IsTrue(result.IsError);
-        StringAssert.Contains(ErrorText(result), "PermissionDenied");
+        StringAssert.Contains(ErrorText(result), "PermissionDenied", StringComparison.Ordinal);
     }
 
     [TestMethod]

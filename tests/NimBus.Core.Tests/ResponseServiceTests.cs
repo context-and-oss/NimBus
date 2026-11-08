@@ -158,8 +158,8 @@ public class ResponseServiceTests
         Assert.AreEqual(MessageType.SkipResponse, msg.MessageType);
         Assert.AreSame(ctx.MessageContent.EventContent, msg.MessageContent.EventContent);
         Assert.AreEqual(nameof(InvalidOperationException), msg.MessageContent.ErrorContent!.ErrorType);
-        StringAssert.Contains(msg.MessageContent.ErrorContent.ErrorText, exception.Message);
-        StringAssert.Contains(msg.MessageContent.ErrorContent.ErrorText, classifierName);
+        StringAssert.Contains(msg.MessageContent.ErrorContent.ErrorText, exception.Message, StringComparison.Ordinal);
+        StringAssert.Contains(msg.MessageContent.ErrorContent.ErrorText, classifierName, StringComparison.Ordinal);
         Assert.IsNull(msg.DeadLetterReason);
         Assert.IsNull(msg.DeadLetterErrorDescription);
     }
@@ -216,8 +216,8 @@ public class ResponseServiceTests
         Assert.AreEqual(MessageType.ErrorResponse, msg.MessageType);
         Assert.AreEqual("Failed to handle message.", msg.DeadLetterReason);
         Assert.IsNotNull(msg.DeadLetterErrorDescription);
-        StringAssert.Contains(msg.DeadLetterErrorDescription, "boom");
-        StringAssert.Contains(msg.DeadLetterErrorDescription, nameof(InvalidOperationException));
+        StringAssert.Contains(msg.DeadLetterErrorDescription, "boom", StringComparison.Ordinal);
+        StringAssert.Contains(msg.DeadLetterErrorDescription, nameof(InvalidOperationException), StringComparison.Ordinal);
     }
 
     [TestMethod]

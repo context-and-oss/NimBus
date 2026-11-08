@@ -8,7 +8,7 @@ namespace NimBus.WebApp.Services;
 
 internal static class AdminStatusValidation
 {
-    private static readonly IReadOnlyDictionary<string, string> ResolutionStatusNames =
+    private static readonly Dictionary<string, string> ResolutionStatusNames =
         CreateResolutionStatusNames();
 
     // Bulk skip sends each skip to the endpoint, so it accepts only the statuses a skip settles;
@@ -96,7 +96,7 @@ internal static class AdminStatusValidation
         return true;
     }
 
-    private static IReadOnlyDictionary<string, string> CreateResolutionStatusNames()
+    private static Dictionary<string, string> CreateResolutionStatusNames()
     {
         var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in Enum.GetNames<ResolutionStatus>())

@@ -8,7 +8,7 @@ using NimBus.MessageStore.States;
 namespace NimBus.WebApp.Services;
 
 /// <inheritdoc />
-public sealed class MonitorAcknowledgementService : IMonitorAcknowledgementService
+public sealed partial class MonitorAcknowledgementService : IMonitorAcknowledgementService
 {
     /// <summary>How long an acknowledgement silences an endpoint.</summary>
     public static readonly TimeSpan AcknowledgementTtl = TimeSpan.FromHours(4);
@@ -100,7 +100,7 @@ public sealed class MonitorAcknowledgementService : IMonitorAcknowledgementServi
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            _logger.LogWarning(ex, "Could not read status for acknowledged endpoint {EndpointId}; keeping its acknowledgement", acknowledgement.EndpointId);
+            LogCouldNotReadStatusForAcknowledged(_logger, ex, acknowledgement.EndpointId);
             return false;
         }
     }
@@ -109,4 +109,7 @@ public sealed class MonitorAcknowledgementService : IMonitorAcknowledgementServi
     // which the Monitor compares this baseline with.
     private static int FailedTotal(EndpointStateCount counts)
         => counts.FailedCount + counts.DeadletterCount + counts.UnsupportedCount;
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not read status for acknowledged endpoint {EndpointId}; keeping its acknowledgement")]
+    private static partial void LogCouldNotReadStatusForAcknowledged(ILogger logger, Exception exception, string endpointId);
 }
