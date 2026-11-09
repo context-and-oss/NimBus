@@ -52,7 +52,11 @@ export function publishAfterUndoWindow({
   consumers: string[];
   onSettled: (outcome: SendOutcome) => boolean;
 }): void {
+  // Set when the undo window ends: from then on the publish is under way, and Undo,
+  // still clickable until the countdown toast is removed, can no longer stop it.
+  let publishing = false;
   const timer = setTimeout(async () => {
+    publishing = true;
     let outcome: SendOutcome;
     try {
       const result = await new api.Client(api.CookieAuth()).postComposeNewEvent(body);
@@ -92,6 +96,14 @@ export function publishAfterUndoWindow({
     action: {
       label: "Undo",
       onClick: () => {
+        if (publishing) {
+          emitToast({
+            variant: "warning",
+            title: `${eventTypeName} is already being published`,
+            description: "The undo window had passed. The result follows when the publish finishes.",
+          });
+          return;
+        }
         clearTimeout(timer);
         emitToast({ variant: "info", title: `${eventTypeName} was not published` });
         onSettled({ kind: "undone" });
@@ -194,12 +206,14 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
   // when the same opening of the dialog is still on screen; otherwise into a toast.
   const openingRef = useRef(0);
   const shownRef = useRef(false);
-  useEffect(
-    () => () => {
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
       shownRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   // Shape-only placeholder, used only when the event class authors no Example.
   const generatePlaceholderJson = (): string => {
@@ -222,14 +236,18 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   // The last successful Send; stays until the next Send or until Compose reopens.
   const [published, setPublished] = useState<api.ComposeNewEventResult>();
-  // The payload Send compares against: the example the dialog opened with, then the
-  // last payload published. Sending needs a change from it, or freshly generated data,
-  // so a stray click cannot publish the example and a second click cannot repeat a send.
+  // The last payload published, which Send needs a change from as well as from the
+  // example, unless the data was freshly generated: a stray click cannot publish the
+  // example and a second click cannot repeat a send.
   const [baseline, setBaseline] = useState(exampleJson);
   const [generated, setGenerated] = useState(false);
+  // True from Send until the send settles. It belongs to the component, not to one
+  // opening of the dialog, so reopening Compose cannot queue a second send meanwhile.
   const [sending, setSending] = useState(false);
 
-  const changed = generated || editedJson.trim() !== baseline.trim();
+  const edited = editedJson.trim();
+  const changed =
+    generated || (edited !== exampleJson.trim() && edited !== baseline.trim());
   const canSend = changed && !sending && editedJson.trim() !== "";
 
   const handleCopy = async () => {
@@ -265,7 +283,6 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
     setEditedJson(exampleJson);
     setBaseline(exampleJson);
     setGenerated(false);
-    setSending(false);
     setResponseMessage({ hasError: false, text: "" });
     setPublished(undefined);
     setIsOpen(true);
@@ -345,13 +362,16 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
       eventTypeName: eventType.name ?? eventType.id ?? "Event",
       consumers,
       onSettled: (outcome) => {
-        // A reopened or closed dialog, or a page left behind, has nothing to show it in.
-        if (opening !== openingRef.current || !shownRef.current) return false;
+        // A page left behind has nothing to show the outcome in.
+        if (!mountedRef.current) return false;
         setSending(false);
+        // Sending the same payload again needs another change first, in whichever
+        // opening of the dialog is current when the send settles.
+        if (outcome.kind === "published") setBaseline(sentJson);
+        // A reopened or closed dialog does not show it either.
+        if (opening !== openingRef.current || !shownRef.current) return false;
         if (outcome.kind === "published") {
           setPublished(outcome.result);
-          // Sending the same payload again needs another change first.
-          setBaseline(sentJson);
           setGenerated(false);
         } else if (outcome.kind === "failed") {
           setResponseMessage({

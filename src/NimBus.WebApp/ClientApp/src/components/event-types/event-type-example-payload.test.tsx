@@ -393,6 +393,57 @@ describe("EventTypeExamplePayload — Send Event", () => {
     expect(sendButton().disabled).toBe(true);
   });
 
+  it("does not claim an Undo clicked after the window passed stopped the publish", async () => {
+    let resolvePublish: (result: typeof PUBLISHED) => void = () => {};
+    postComposeNewEventMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePublish = resolve;
+      }),
+    );
+    renderInRouter();
+    const user = setupUser();
+    await composeEditAndSend(user);
+    await passUndoWindow();
+    expect(postComposeNewEventMock).toHaveBeenCalledTimes(1);
+
+    // The countdown toast can still be on screen for a moment after its timer fires.
+    act(() => countdownToast()?.action?.onClick());
+
+    expect(emitToastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "TestEvent is already being published" }),
+    );
+    expect(emitToastMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: "TestEvent was not published" }),
+    );
+    expect(sendButton().disabled).toBe(true);
+
+    await act(async () => resolvePublish(PUBLISHED));
+    await waitFor(() => expect(screen.getByText(PUBLISHED.messageId)).toBeTruthy());
+  });
+
+  it("cannot queue a second send by reopening Compose during the countdown", async () => {
+    postComposeNewEventMock.mockResolvedValue(PUBLISHED);
+    renderInRouter();
+    const user = setupUser();
+    await composeEditAndSend(user);
+    await user.click(screen.getAllByRole("button", { name: /^Close$/ })[0]);
+    await user.click(screen.getByRole("button", { name: /Compose Event/ }));
+
+    editPayload(EDITED);
+    expect(sendButton().disabled).toBe(true);
+    expect(screen.getByText(/Publishing — undo it from the notification/)).toBeTruthy();
+
+    await passUndoWindow();
+    await waitFor(() => expect(postComposeNewEventMock).toHaveBeenCalledTimes(1));
+    // The earlier send settled while this opening was on screen: repeating its
+    // payload still needs a change, and so does the unedited example.
+    await waitFor(() => expect(sendButton().disabled).toBe(true));
+    editPayload(JSON.stringify({ CustomerId: "Guid" }, null, 2));
+    expect(sendButton().disabled).toBe(true);
+    editPayload(SUCCESS_PAYLOAD);
+    expect(sendButton().disabled).toBe(false);
+  });
+
   it("shows a failed publish in the dialog and lets the user send again", async () => {
     postComposeNewEventMock.mockRejectedValue(new Error("payload rejected"));
     renderInRouter();
