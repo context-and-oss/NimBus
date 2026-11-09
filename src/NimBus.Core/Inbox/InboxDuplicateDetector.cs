@@ -24,7 +24,7 @@ namespace NimBus.Core.Inbox;
 /// run the check exclusively in <c>StrictMessageHandler</c> and configure the middleware as
 /// record-only, keeping a fresh delivery at one check plus one record.
 /// </remarks>
-public sealed class InboxDuplicateDetector
+public sealed partial class InboxDuplicateDetector
 {
     /// <summary>The maximum message-id length supported by inbox providers.</summary>
     public const int MaximumMessageIdLength = 512;
@@ -111,14 +111,12 @@ public sealed class InboxDuplicateDetector
 
         context.HandlerOutcome = HandlerOutcome.DuplicateDetected;
         NimBusMeters.InboxDuplicatesDetected.Add(1);
-        _logger.LogInformation(
-            "Inbox duplicate detected. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, InboxMessageId:{InboxMessageId}, SessionId:{SessionId}",
-            endpointId,
-            context.EventTypeId,
-            context.GetEventIdOrDefault(),
-            messageId,
-            parkedFrom,
-            context.GetSessionIdOrDefault());
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            var eventId = context.GetEventIdOrDefault();
+            var sessionId = context.GetSessionIdOrDefault();
+            LogInboxDuplicateDetected(_logger, endpointId, context.EventTypeId, eventId, messageId, parkedFrom, sessionId);
+        }
         await NotifyDuplicateDetectedBestEffort(context, cancellationToken);
         return true;
     }
@@ -163,23 +161,13 @@ public sealed class InboxDuplicateDetector
         var endpointId = _endpointScope ?? context.GetEndpointIdOrDefault();
         if (string.IsNullOrWhiteSpace(messageId) || string.IsNullOrWhiteSpace(endpointId))
         {
-            _logger.LogWarning(
-                "Inbox deduplication bypassed because MessageId or endpoint identity is missing or blank. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}",
-                endpointId,
-                context.EventTypeId);
+            LogInboxDeduplicationBypassedBecauseMessageId(_logger, endpointId, context.EventTypeId);
             return null;
         }
 
         if (messageId.Length > MaximumMessageIdLength || endpointId.Length > MaximumEndpointIdLength)
         {
-            _logger.LogWarning(
-                "Inbox deduplication bypassed because MessageId length {MessageIdLength} or endpoint length {EndpointIdLength} exceeds the supported maximum ({MaximumMessageIdLength}/{MaximumEndpointIdLength}). EndpointId:{EndpointId}, EventTypeId:{EventTypeId}",
-                messageId.Length,
-                endpointId.Length,
-                MaximumMessageIdLength,
-                MaximumEndpointIdLength,
-                endpointId,
-                context.EventTypeId);
+            LogInboxDeduplicationBypassedBecauseMessageIdLength(_logger, messageId.Length, endpointId.Length, MaximumMessageIdLength, MaximumEndpointIdLength, endpointId, context.EventTypeId);
             return null;
         }
 
@@ -197,9 +185,7 @@ public sealed class InboxDuplicateDetector
         NimBusMeters.InboxOperationFailed.Add(
             1,
             new KeyValuePair<string, object?>(MessagingAttributes.NimBusStoreOperation, operation));
-        _logger.LogError(
-            "Inbox store operation {InboxOperation} failed; the message will be retried.",
-            operation);
+        LogInboxStoreOperationFailed(_logger, operation);
         return new InboxStoreException();
     }
 
@@ -220,10 +206,22 @@ public sealed class InboxDuplicateDetector
         }
         catch (Exception)
         {
-            _logger.LogWarning(
-                "A duplicate lifecycle observer failed. Duplicate processing will continue. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}",
-                context.GetEndpointIdOrDefault(),
-                context.EventTypeId);
+            LogADuplicateLifecycleObserverFailed(_logger, context.GetEndpointIdOrDefault(), context.EventTypeId);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Inbox duplicate detected. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, InboxMessageId:{InboxMessageId}, SessionId:{SessionId}")]
+    private static partial void LogInboxDuplicateDetected(ILogger logger, string endpointId, string eventTypeId, string? eventId, string messageId, string? inboxMessageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Inbox deduplication bypassed because MessageId or endpoint identity is missing or blank. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}")]
+    private static partial void LogInboxDeduplicationBypassedBecauseMessageId(ILogger logger, string? endpointId, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Inbox deduplication bypassed because MessageId length {MessageIdLength} or endpoint length {EndpointIdLength} exceeds the supported maximum ({MaximumMessageIdLength}/{MaximumEndpointIdLength}). EndpointId:{EndpointId}, EventTypeId:{EventTypeId}")]
+    private static partial void LogInboxDeduplicationBypassedBecauseMessageIdLength(ILogger logger, int messageIdLength, int endpointIdLength, int maximumMessageIdLength, int maximumEndpointIdLength, string endpointId, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Inbox store operation {InboxOperation} failed; the message will be retried.")]
+    private static partial void LogInboxStoreOperationFailed(ILogger logger, string inboxOperation);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "A duplicate lifecycle observer failed. Duplicate processing will continue. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}")]
+    private static partial void LogADuplicateLifecycleObserverFailed(ILogger logger, string? endpointId, string eventTypeId);
 }

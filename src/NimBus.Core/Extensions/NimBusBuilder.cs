@@ -43,7 +43,7 @@ public class NimBusBuilder : INimBusBuilder
 
     public INimBusBuilder AddExtension(INimBusExtension extension)
     {
-        if (extension == null) throw new ArgumentNullException(nameof(extension));
+        ArgumentNullException.ThrowIfNull(extension);
         extension.Configure(this);
         return this;
     }

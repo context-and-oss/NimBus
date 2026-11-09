@@ -5,6 +5,8 @@ namespace NimBus.CommandLine;
 
 internal sealed class InfrastructureDeployer
 {
+    private static readonly string[] RegisterEventGridArguments = ["provider", "register", "--namespace", "Microsoft.EventGrid"];
+
     private readonly CommandContext _context;
     private readonly IAzureCliRunner _az;
     private readonly PrivateEndpointDnsCheck _dnsCheck;
@@ -44,7 +46,7 @@ internal sealed class InfrastructureDeployer
         // resources (the provider only backs optional storage-hook webhooks).
         // Warn instead of failing the whole deployment.
         var eventGridRegistration = await _az.TryRunAsync(
-            new[] { "provider", "register", "--namespace", "Microsoft.EventGrid" },
+            RegisterEventGridArguments,
             cancellationToken).ConfigureAwait(false);
         if (!eventGridRegistration.Succeeded)
         {
@@ -358,7 +360,7 @@ internal sealed class InfrastructureDeployer
         return plans;
     }
 
-    private static void AddPinnedLocation(List<string> arguments, IReadOnlyDictionary<string, string> existingLocations, string resourceName, string bicepParamName, List<(string Name, string Location)> pinned)
+    private static void AddPinnedLocation(List<string> arguments, Dictionary<string, string> existingLocations, string resourceName, string bicepParamName, List<(string Name, string Location)> pinned)
     {
         if (existingLocations.TryGetValue(resourceName, out var location) && !string.IsNullOrWhiteSpace(location))
         {
@@ -398,7 +400,7 @@ internal sealed class InfrastructureDeployer
         DeploymentNames names,
         ResolverPlanChoice resolverPlan,
         string managementPlanSku,
-        IReadOnlyDictionary<string, string> existingLocations,
+        Dictionary<string, string> existingLocations,
         ServiceBusDeployment serviceBus,
         ResolvedNetwork? privateNetwork,
         CancellationToken cancellationToken)
@@ -554,7 +556,7 @@ internal sealed class InfrastructureDeployer
         string sqlConnectionString,
         string serviceBusFullyQualifiedNamespace,
         bool alwaysOnEnabled,
-        IReadOnlyDictionary<string, string> existingLocations,
+        Dictionary<string, string> existingLocations,
         ServiceBusDeployment serviceBus,
         ResolvedNetwork? privateNetwork,
         CancellationToken cancellationToken)

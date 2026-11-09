@@ -39,8 +39,8 @@ public class PublisherClientFailureModeTests
         var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => publisher.Request<QuoteRequested, QuoteReply>(new QuoteRequested(), TimeSpan.FromSeconds(5)));
 
-        StringAssert.Contains(exception.Message, "CrmEndpoint/CrmEndpoint-reply");
-        StringAssert.Contains(exception.Message, "nb topology apply");
+        StringAssert.Contains(exception.Message, "CrmEndpoint/CrmEndpoint-reply", StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, "nb topology apply", StringComparison.Ordinal);
         Assert.IsInstanceOfType<ServiceBusException>(exception.InnerException);
     }
 

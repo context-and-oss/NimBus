@@ -4,7 +4,7 @@ namespace NimBus.Core.Diagnostics;
 /// Values for the <c>nimbus.store.provider</c> attribute emitted by the
 /// instrumenting message-store decorator. Storage-provider extensions pass the
 /// matching constant to
-/// <see cref="NimBus.OpenTelemetry.NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore"/>
+/// <c>NimBus.OpenTelemetry.NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore</c>
 /// so the tag value is consistent across the codebase.
 /// </summary>
 public static class StoreProvider

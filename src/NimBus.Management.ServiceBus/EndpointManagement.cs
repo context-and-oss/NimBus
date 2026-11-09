@@ -1,18 +1,19 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Messages;
 using System;
 using System.Threading.Tasks;
 
 namespace NimBus.Management.ServiceBus;
-public class EndpointManagement
+public partial class EndpointManagement
 {
     private readonly IServiceBusManagement _serviceBusManagement;
-    private readonly ILogger? _logger;
+    private readonly ILogger _logger;
 
     public EndpointManagement(IServiceBusManagement serviceBusManagement, ILogger<EndpointManagement>? logger = null)
     {
         _serviceBusManagement = serviceBusManagement;
-        _logger = logger;
+        _logger = logger ?? NullLogger<EndpointManagement>.Instance;
     }
 
     public async Task ClearEndpoint(string endpointName)
@@ -42,7 +43,7 @@ public class EndpointManagement
             $"user.To = '{Constants.RetryId}'",
             $"SET user.To = '{subscriptionName}'; SET user.From = '{Constants.RetryId}'");
 
-        _logger?.LogInformation("Cleared endpoint successfully");
+        LogClearedEndpointSuccessfully(_logger);
     }
 
     public async Task DisableEndpoint(string endpointName)
@@ -52,7 +53,7 @@ public class EndpointManagement
 
         await _serviceBusManagement.DisableSubscription(topicName, subscriptionName);
 
-        _logger?.LogInformation("Disabled endpoint successfully");
+        LogDisabledEndpointSuccessfully(_logger);
     }
 
     public async Task EnableEndpoint(string endpointName)
@@ -62,7 +63,7 @@ public class EndpointManagement
 
         await _serviceBusManagement.EnableSubscription(topicName, subscriptionName);
 
-        _logger?.LogInformation("Enabled endpoint successfully");
+        LogEnabledEndpointSuccessfully(_logger);
     }
 
     public async Task<bool> IsEndpointActive(string endpointName)
@@ -79,7 +80,7 @@ public class EndpointManagement
 
         await _serviceBusManagement.DisableTopicSend(topicName);
 
-        _logger?.LogInformation("Disabled endpoint send successfully");
+        LogDisabledEndpointSendSuccessfully(_logger);
     }
 
     public async Task EnableEndpointSend(string endpointName)
@@ -88,7 +89,7 @@ public class EndpointManagement
 
         await _serviceBusManagement.EnableTopicSend(topicName);
 
-        _logger?.LogInformation("Enabled endpoint send successfully");
+        LogEnabledEndpointSendSuccessfully(_logger);
     }
 
     public async Task<TopicSendState> GetEndpointSendState(string endpointName)
@@ -105,4 +106,19 @@ public class EndpointManagement
 
         return await _serviceBusManagement.GetSubscriptionState(topicName, subscriptionName);
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Cleared endpoint successfully")]
+    private static partial void LogClearedEndpointSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Disabled endpoint successfully")]
+    private static partial void LogDisabledEndpointSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Enabled endpoint successfully")]
+    private static partial void LogEnabledEndpointSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Disabled endpoint send successfully")]
+    private static partial void LogDisabledEndpointSendSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Enabled endpoint send successfully")]
+    private static partial void LogEnabledEndpointSendSuccessfully(ILogger logger);
 }

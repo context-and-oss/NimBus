@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using Azure;
 using Azure.Core;
 using Azure.Messaging.ServiceBus;
@@ -613,7 +614,7 @@ public sealed class ServiceBusTopologyProvisionerTests
         public string Name { get; }
         public string Namespace => "Tests";
         public string Description => string.Empty;
-        public string SessionKeyProperty => string.Empty;
+        public static string SessionKeyProperty => string.Empty;
         public IEnumerable<IProperty> Properties => Array.Empty<IProperty>();
         public Type GetEventClassType() => typeof(TestEventType);
         public IEvent GetEventExample() => null!;

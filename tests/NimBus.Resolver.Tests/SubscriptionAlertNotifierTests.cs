@@ -64,7 +64,7 @@ public class SubscriptionAlertNotifierTests
 
         var mail = _sender.Sent.Single();
         Assert.AreEqual("ops@example.com", mail.To);
-        StringAssert.Contains(mail.Subject, Endpoint);
+        StringAssert.Contains(mail.Subject, Endpoint, StringComparison.Ordinal);
     }
 
     [TestMethod]

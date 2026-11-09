@@ -5,16 +5,17 @@ using System.Net;
 using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore;
 
-internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
+internal sealed partial class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
 {
     private readonly Func<Task<ICosmosContainerAdapter>> _getMetadataContainer;
     private readonly Func<Task<ICosmosContainerAdapter>> _getSettingsContainer;
-    private readonly ILogger? _logger;
+    private readonly ILogger _logger;
 
     public CosmosDbEndpointMetadataStore(
         Func<Task<ICosmosContainerAdapter>> getMetadataContainer,
@@ -23,7 +24,7 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
     {
         _getMetadataContainer = getMetadataContainer;
         _getSettingsContainer = getSettingsContainer;
-        _logger = logger;
+        _logger = logger ?? NullLogger.Instance;
     }
     public async Task<EndpointMetadata?> GetEndpointMetadata(string endpointId)
     {
@@ -49,16 +50,16 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         try
         {
             var rel = await container.ReadManyItemsAsync<EndpointMetadata>(endpointIds.Select(x => (x, new PartitionKey(x))).ToList());
-            return rel.Any() ? rel.Resource.ToList() : null;
+            return rel.Count != 0 ? rel.Resource.ToList() : null;
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger?.LogInformation("COSMOS METADATAS: Some endpoints not found in metadata container");
+            LogCosmosMetadatasSomeEndpointsNotFound(_logger);
             return null;
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "COSMOS METADATAS-ERROR: Failed to get metadatas for endpoints");
+            LogCosmosMetadatasError(_logger, e);
             throw;
         }
     }
@@ -96,14 +97,12 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         {
             var response =
                 await container.UpsertItemAsync(endpointMetadata, new PartitionKey(endpointMetadata.EndpointId));
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, response.StatusCode);
+            LogCosmosUpsertResponse(_logger, endpointMetadata.EndpointId, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, e.StatusCode);
+            LogCosmosUpsertError(_logger, e, endpointMetadata.EndpointId, e.StatusCode);
             throw;
         }
     }
@@ -169,14 +168,12 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         try
         {
             var response = await container.UpsertItemAsync(metadata, new PartitionKey(endpointId));
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: Heartbeat upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointId, response.StatusCode);
+            LogCosmosUpsertResponseHeartbeatUpsertId(_logger, endpointId, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: Heartbeat upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointId, e.StatusCode);
+            LogCosmosUpsertErrorHeartbeatUpsertId(_logger, e, endpointId, e.StatusCode);
             throw;
         }
     }
@@ -207,8 +204,7 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
             }
             catch (CosmosException e)
             {
-                _logger?.LogError(e,
-                    "COSMOS UPSERT-ERROR: Heartbeat sweep. Id: {EndpointId}, HttpStatusCode: {StatusCode}", metadata.EndpointId, e.StatusCode);
+                LogCosmosUpsertErrorHeartbeatSweepId(_logger, e, metadata.EndpointId, e.StatusCode);
                 throw;
             }
         }
@@ -250,14 +246,12 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         try
         {
             var response = await container.UpsertItemAsync(settings, new PartitionKey(settings.Id));
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: HeartbeatSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, response.StatusCode);
+            LogCosmosUpsertResponseHeartbeatSettingsUpsertId(_logger, settings.Id, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: HeartbeatSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, e.StatusCode);
+            LogCosmosUpsertErrorHeartbeatSettingsUpsertId(_logger, e, settings.Id, e.StatusCode);
             throw;
         }
     }
@@ -288,14 +282,12 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         try
         {
             var response = await container.UpsertItemAsync(settings, new PartitionKey(settings.Id));
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: AuditSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, response.StatusCode);
+            LogCosmosUpsertResponseAuditSettingsUpsertId(_logger, settings.Id, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: AuditSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, e.StatusCode);
+            LogCosmosUpsertErrorAuditSettingsUpsertId(_logger, e, settings.Id, e.StatusCode);
             throw;
         }
     }
@@ -484,4 +476,37 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
     }
 
 
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS METADATAS: Some endpoints not found in metadata container")]
+    private static partial void LogCosmosMetadatasSomeEndpointsNotFound(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS METADATAS-ERROR: Failed to get metadatas for endpoints")]
+    private static partial void LogCosmosMetadatasError(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS UPSERT-RESPONSE: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertResponse(ILogger logger, string endpointId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertError(ILogger logger, Exception exception, string endpointId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS UPSERT-RESPONSE: Heartbeat upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertResponseHeartbeatUpsertId(ILogger logger, string endpointId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: Heartbeat upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertErrorHeartbeatUpsertId(ILogger logger, Exception exception, string endpointId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: Heartbeat sweep. Id: {EndpointId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertErrorHeartbeatSweepId(ILogger logger, Exception exception, string endpointId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS UPSERT-RESPONSE: HeartbeatSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertResponseHeartbeatSettingsUpsertId(ILogger logger, string id, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: HeartbeatSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertErrorHeartbeatSettingsUpsertId(ILogger logger, Exception exception, string id, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS UPSERT-RESPONSE: AuditSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertResponseAuditSettingsUpsertId(ILogger logger, string id, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: AuditSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertErrorAuditSettingsUpsertId(ILogger logger, Exception exception, string id, HttpStatusCode statusCode);
 }

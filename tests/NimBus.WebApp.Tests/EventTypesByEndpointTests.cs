@@ -100,7 +100,7 @@ public sealed class EventTypesByEndpointTests
 
         var result = await sut.GetEventtypesByEndpointIdAsync("no-such-endpoint");
 
-        Assert.IsInstanceOfType(result.Result, typeof(NotFoundObjectResult));
+        Assert.IsInstanceOfType<NotFoundObjectResult>(result.Result);
     }
 
     private static async Task<Response> GetResponse(EventTypeImplementation sut, string endpointId)

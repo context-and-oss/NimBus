@@ -63,7 +63,7 @@ public class AgentServiceCollectionExtensionsTests
 
         using var provider = services.BuildServiceProvider();
 
-        Assert.IsInstanceOfType(provider.GetRequiredService<IAgentHandler<Ping>>(), typeof(TestHandler));
+        Assert.IsInstanceOfType<TestHandler>(provider.GetRequiredService<IAgentHandler<Ping>>());
         Assert.IsNotNull(provider.GetRequiredService<IAgentBusGateway>());
         Assert.IsTrue(
             provider.GetServices<IHostedService>().Any(h => h is AgentLoopWorker<Ping>),
@@ -127,7 +127,7 @@ public class AgentServiceCollectionExtensionsTests
                 o.BaseAddress = "http://other.test";
             }));
 
-        StringAssert.Contains(ex.Message, "first-agent");
-        StringAssert.Contains(ex.Message, "second-agent");
+        StringAssert.Contains(ex.Message, "first-agent", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "second-agent", StringComparison.Ordinal);
     }
 }

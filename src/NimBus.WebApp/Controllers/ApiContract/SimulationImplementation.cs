@@ -19,6 +19,9 @@ namespace NimBus.WebApp.Controllers.ApiContract;
 /// </summary>
 public class SimulationImplementation : Api.ISimulationApiController
 {
+    private static readonly string[] SettingsBodyRequired = ["A settings body is required."];
+    private static readonly string[] ConfigBodyRequired = ["A config body is required."];
+
     private readonly ISimulationService _simulation;
     private readonly IEndpointAuthorizationService _authorizationService;
     private readonly IAuditLogService _auditLogService;
@@ -55,7 +58,7 @@ public class SimulationImplementation : Api.ISimulationApiController
             () =>
             {
                 if (body is null)
-                    return Task.FromResult(SimulationCommandResult.Invalid(new[] { "A settings body is required." }));
+                    return Task.FromResult(SimulationCommandResult.Invalid(SettingsBodyRequired));
                 return _simulation.UpdateSettingsAsync(SimulationApiMapper.FromApi(body), _context.RequestAborted);
             });
 
@@ -67,7 +70,7 @@ public class SimulationImplementation : Api.ISimulationApiController
             () =>
             {
                 if (body is null)
-                    return Task.FromResult(SimulationCommandResult.Invalid(new[] { "A config body is required." }));
+                    return Task.FromResult(SimulationCommandResult.Invalid(ConfigBodyRequired));
                 return Task.FromResult(_simulation.UpdateConfig(SimulationApiMapper.FromApi(body)));
             });
 

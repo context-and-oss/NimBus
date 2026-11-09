@@ -549,7 +549,7 @@ ORDER BY m.EndpointId";
         return rows.Select(MapHeartbeatRow).Cast<Heartbeat>().ToList();
     }
 
-    private async Task PopulateHeartbeats(SqlConnection conn, IReadOnlyCollection<EndpointMetadata> metadatas)
+    private async Task PopulateHeartbeats(SqlConnection conn, List<EndpointMetadata> metadatas)
     {
         if (metadatas.Count == 0) return;
 

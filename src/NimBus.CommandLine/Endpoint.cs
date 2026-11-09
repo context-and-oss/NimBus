@@ -35,7 +35,7 @@ static class Endpoint
 
     public static async Task RemoveDeprecated(ServiceBusAdministrationClient sbAdmin, CommandArgument nameArg)
     {
-        string endpointName = nameArg.Value!.ToLower();
+        string endpointName = nameArg.Value!.ToLowerInvariant();
 
         var topic = (await sbAdmin.GetTopicAsync(endpointName)).Value;
 
@@ -308,7 +308,7 @@ static class Endpoint
         //
         // GetActualTopic lowercases everything it reads back from the broker, so the
         // descriptor's names are lowercased to match.
-        var endpoint = platform.Endpoints.First(x => x.Name.ToLower() == endpointName);
+        var endpoint = platform.Endpoints.First(x => string.Equals(x.Name, endpointName, StringComparison.OrdinalIgnoreCase));
         var topicName = endpointName.ToLowerInvariant();
 
         return new TopicDto
@@ -345,8 +345,8 @@ static class Endpoint
             var subscriptions = page.Values
                 .Select(x => new SubscriptionDto
                 {
-                    Name = x.SubscriptionName.ToLower(),
-                    TopicName = x.TopicName.ToLower(),
+                    Name = x.SubscriptionName.ToLowerInvariant(),
+                    TopicName = x.TopicName.ToLowerInvariant(),
                     Rules = new List<RuleDto>()
                 })
                 .ToList();
@@ -360,7 +360,7 @@ static class Endpoint
             await foreach (var page in rulesAsync.AsPages())
             {
                 var rules = page.Values
-                    .Select(x => new RuleDto { Name = x.Name.ToLower(), SubscriptionName = subscription.Name.ToLower() })
+                    .Select(x => new RuleDto { Name = x.Name.ToLowerInvariant(), SubscriptionName = subscription.Name.ToLowerInvariant() })
                     .ToArray();
                 subscription.Rules.AddRange(rules);
             }

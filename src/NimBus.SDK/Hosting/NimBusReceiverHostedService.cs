@@ -18,7 +18,7 @@ namespace NimBus.SDK.Hosting;
 /// Background service that receives messages from a Service Bus topic/subscription
 /// using a <see cref="ServiceBusSessionProcessor"/> and delegates to <see cref="IServiceBusAdapter"/>.
 /// </summary>
-public class NimBusReceiverHostedService : BackgroundService
+public partial class NimBusReceiverHostedService : BackgroundService
 {
     private readonly ServiceBusClient _client;
     private readonly IServiceBusAdapter _adapter;
@@ -106,9 +106,7 @@ public class NimBusReceiverHostedService : BackgroundService
 
             try
             {
-                _logger.LogInformation(
-                    "Starting NimBus receiver for {Topic}/{Subscription} (MaxConcurrentSessions={MaxSessions}, PrefetchCount={PrefetchCount})",
-                    _options.TopicName, _options.SubscriptionName, maxConcurrentSessions, _options.PrefetchCount);
+                LogStartingNimBusReceiver(_logger, _options.TopicName, _options.SubscriptionName, maxConcurrentSessions, _options.PrefetchCount);
 
                 await _processor.StartProcessingAsync(stoppingToken).ConfigureAwait(false);
                 _startupCompletion.TrySetResult(true);
@@ -127,22 +125,11 @@ public class NimBusReceiverHostedService : BackgroundService
                     var change = await circuitStateChanged.ConfigureAwait(false);
                     if (change.To == CircuitState.Open)
                     {
-                        _logger.LogWarning(
-                            "Pausing NimBus receiver for {Topic}/{Subscription}; endpoint circuit {Endpoint} opened. Reason: {Reason}",
-                            _options.TopicName,
-                            _options.SubscriptionName,
-                            change.Endpoint,
-                            change.Reason);
+                        LogPausingNimBusReceiver(_logger, _options.TopicName, _options.SubscriptionName, change.Endpoint, change.Reason);
                     }
                     else
                     {
-                        _logger.LogInformation(
-                            "Reconfiguring NimBus receiver for {Topic}/{Subscription}; endpoint circuit {Endpoint} changed from {FromState} to {ToState}",
-                            _options.TopicName,
-                            _options.SubscriptionName,
-                            change.Endpoint,
-                            change.From,
-                            change.To);
+                        LogReconfiguringNimBusReceiver(_logger, _options.TopicName, _options.SubscriptionName, change.Endpoint, change.From, change.To);
                     }
 
                     continue;
@@ -152,14 +139,7 @@ public class NimBusReceiverHostedService : BackgroundService
                 infrastructureRestart = true;
                 restartCount++;
 
-                _logger.LogWarning(
-                    recovery.Exception,
-                    "Restarting NimBus receiver for {Topic}/{Subscription} after {ErrorCount} consecutive recoverable processor errors. RestartCount={RestartCount}, LastErrorSource={ErrorSource}",
-                    _options.TopicName,
-                    _options.SubscriptionName,
-                    recovery.ErrorCount,
-                    restartCount,
-                    recovery.ErrorSource);
+                LogRestartingNimBusReceiverForAfterConsecutive(_logger, recovery.Exception, _options.TopicName, _options.SubscriptionName, recovery.ErrorCount, restartCount, recovery.ErrorSource);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -188,8 +168,7 @@ public class NimBusReceiverHostedService : BackgroundService
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Stopping NimBus receiver for {Topic}/{Subscription}",
-            _options.TopicName, _options.SubscriptionName);
+        LogStoppingNimBusReceiver(_logger, _options.TopicName, _options.SubscriptionName);
 
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
         await StopAndDisposeProcessorAsync(cancellationToken).ConfigureAwait(false);
@@ -244,11 +223,7 @@ public class NimBusReceiverHostedService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(
-                    ex,
-                    "Error while stopping NimBus receiver for {Topic}/{Subscription}",
-                    _options.TopicName,
-                    _options.SubscriptionName);
+                LogErrorWhileStoppingNimBusReceiver(_logger, ex, _options.TopicName, _options.SubscriptionName);
             }
         }
         finally
@@ -272,19 +247,11 @@ public class NimBusReceiverHostedService : BackgroundService
                 // Preserve cooperative shutdown as the primary outcome even if
                 // best-effort cleanup also fails. The cleanup failure remains
                 // observable without replacing the cancellation exception.
-                _logger.LogWarning(
-                    ex,
-                    "Error while disposing NimBus receiver for {Topic}/{Subscription} after cancelled shutdown",
-                    _options.TopicName,
-                    _options.SubscriptionName);
+                LogErrorWhileDisposingNimBusReceiver(_logger, ex, _options.TopicName, _options.SubscriptionName);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(
-                    ex,
-                    "Error while disposing NimBus receiver for {Topic}/{Subscription}",
-                    _options.TopicName,
-                    _options.SubscriptionName);
+                LogErrorWhileDisposingNimBusReceiverFor2(_logger, ex, _options.TopicName, _options.SubscriptionName);
             }
         }
 
@@ -318,11 +285,7 @@ public class NimBusReceiverHostedService : BackgroundService
         }
         catch (OperationCanceledException) when (cleanupCancellation.IsCancellationRequested)
         {
-            _logger.LogWarning(
-                "Timed out after {Timeout} while stopping or disposing NimBus receiver for {Topic}/{Subscription}; continuing processor recovery",
-                _options.ProcessorShutdownTimeout,
-                _options.TopicName,
-                _options.SubscriptionName);
+            LogTimedOutAfterWhileStopping(_logger, _options.ProcessorShutdownTimeout, _options.TopicName, _options.SubscriptionName);
         }
     }
 
@@ -334,11 +297,7 @@ public class NimBusReceiverHostedService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(
-                ex,
-                "NimBus receiver stop completed with an error after recovery stopped waiting for {Topic}/{Subscription}",
-                _options.TopicName,
-                _options.SubscriptionName);
+            LogNimBusReceiverStopCompleted(_logger, ex, _options.TopicName, _options.SubscriptionName);
         }
     }
 
@@ -350,11 +309,7 @@ public class NimBusReceiverHostedService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(
-                ex,
-                "NimBus receiver disposal completed with an error after shutdown stopped waiting for {Topic}/{Subscription}",
-                _options.TopicName,
-                _options.SubscriptionName);
+            LogNimBusReceiverDisposalCompleted(_logger, ex, _options.TopicName, _options.SubscriptionName);
         }
     }
 
@@ -372,9 +327,7 @@ public class NimBusReceiverHostedService : BackgroundService
 
     internal async Task HandleProcessorErrorAsync(ProcessErrorEventArgs args)
     {
-        _logger.LogError(args.Exception,
-            "Error processing message. Source: {ErrorSource}, Namespace: {Namespace}, EntityPath: {EntityPath}",
-            args.ErrorSource, args.FullyQualifiedNamespace, args.EntityPath);
+        LogErrorProcessingMessage(_logger, args.Exception, args.ErrorSource, args.FullyQualifiedNamespace, args.EntityPath);
 
         if (!IsRecoverableProcessorInfrastructureError(args))
         {
@@ -576,4 +529,40 @@ public class NimBusReceiverHostedService : BackgroundService
         public ServiceBusErrorSource ErrorSource { get; }
         public int ErrorCount { get; }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Starting NimBus receiver for {Topic}/{Subscription} (MaxConcurrentSessions={MaxSessions}, PrefetchCount={PrefetchCount})")]
+    private static partial void LogStartingNimBusReceiver(ILogger logger, string topic, string subscription, int maxSessions, int prefetchCount);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Pausing NimBus receiver for {Topic}/{Subscription}; endpoint circuit {Endpoint} opened. Reason: {Reason}")]
+    private static partial void LogPausingNimBusReceiver(ILogger logger, string topic, string subscription, string endpoint, string reason);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Reconfiguring NimBus receiver for {Topic}/{Subscription}; endpoint circuit {Endpoint} changed from {FromState} to {ToState}")]
+    private static partial void LogReconfiguringNimBusReceiver(ILogger logger, string topic, string subscription, string endpoint, CircuitState fromState, CircuitState toState);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Restarting NimBus receiver for {Topic}/{Subscription} after {ErrorCount} consecutive recoverable processor errors. RestartCount={RestartCount}, LastErrorSource={ErrorSource}")]
+    private static partial void LogRestartingNimBusReceiverForAfterConsecutive(ILogger logger, Exception exception, string topic, string subscription, int errorCount, int restartCount, ServiceBusErrorSource errorSource);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Stopping NimBus receiver for {Topic}/{Subscription}")]
+    private static partial void LogStoppingNimBusReceiver(ILogger logger, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Error while stopping NimBus receiver for {Topic}/{Subscription}")]
+    private static partial void LogErrorWhileStoppingNimBusReceiver(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Error while disposing NimBus receiver for {Topic}/{Subscription} after cancelled shutdown")]
+    private static partial void LogErrorWhileDisposingNimBusReceiver(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Error while disposing NimBus receiver for {Topic}/{Subscription}")]
+    private static partial void LogErrorWhileDisposingNimBusReceiverFor2(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Timed out after {Timeout} while stopping or disposing NimBus receiver for {Topic}/{Subscription}; continuing processor recovery")]
+    private static partial void LogTimedOutAfterWhileStopping(ILogger logger, TimeSpan timeout, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "NimBus receiver stop completed with an error after recovery stopped waiting for {Topic}/{Subscription}")]
+    private static partial void LogNimBusReceiverStopCompleted(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "NimBus receiver disposal completed with an error after shutdown stopped waiting for {Topic}/{Subscription}")]
+    private static partial void LogNimBusReceiverDisposalCompleted(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Error processing message. Source: {ErrorSource}, Namespace: {Namespace}, EntityPath: {EntityPath}")]
+    private static partial void LogErrorProcessingMessage(ILogger logger, Exception exception, ServiceBusErrorSource errorSource, string @namespace, string entityPath);
 }

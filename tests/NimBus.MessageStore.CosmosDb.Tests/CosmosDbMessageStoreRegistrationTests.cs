@@ -116,8 +116,8 @@ public sealed class CosmosDbMessageStoreRegistrationTests
         var ex = await Assert.ThrowsExactlyAsync<OptionsValidationException>(
             () => startupValidator.StartAsync(CancellationToken.None));
 
-        StringAssert.Contains(string.Join(" ", ex.Failures), nameof(CosmosDbMessageStoreOptions.UnresolvedRetentionDays));
-        StringAssert.Contains(string.Join(" ", ex.Failures), days.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        StringAssert.Contains(string.Join(" ", ex.Failures), nameof(CosmosDbMessageStoreOptions.UnresolvedRetentionDays), StringComparison.Ordinal);
+        StringAssert.Contains(string.Join(" ", ex.Failures), days.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
     [TestMethod]

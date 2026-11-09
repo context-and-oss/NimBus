@@ -63,7 +63,7 @@ public sealed class SessionStateServiceTests
         Assert.AreEqual(1, view.ActiveMessageCount);
         Assert.AreEqual(2, view.DeferredSubscriptionCount);
         Assert.AreEqual("Failed", view.BlockingEventStatus);
-        StringAssert.Contains(view.StateJson, "evt-1");
+        StringAssert.Contains(view.StateJson, "evt-1", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -134,7 +134,7 @@ public sealed class SessionStateServiceTests
 
         var audit = _audited.Single();
         Assert.AreEqual("clearBlock", audit.Action);
-        StringAssert.Contains(audit.Before, "evt-1");
+        StringAssert.Contains(audit.Before, "evt-1", StringComparison.Ordinal);
         Assert.IsFalse(audit.After!.Contains("evt-1", StringComparison.Ordinal));
     }
 
@@ -158,7 +158,7 @@ public sealed class SessionStateServiceTests
         var outcome = await Change("s-1", SessionStateChangeRequestAction.MarkReplayed);
 
         Assert.AreEqual(SessionStateChangeStatus.Invalid, outcome.Status);
-        StringAssert.Contains(string.Join(" ", outcome.Errors), "parked");
+        StringAssert.Contains(string.Join(" ", outcome.Errors), "parked", StringComparison.Ordinal);
         Assert.AreEqual(0, _bus.Writes.Count);
     }
 
@@ -270,12 +270,12 @@ public sealed class SessionStateServiceTests
         Assert.AreEqual(SessionCleanupCandidateClassification.Idle, byId["idle"].Classification);
         Assert.AreEqual(SessionCleanupCandidateClassification.Idle, byId["legacy-idle"].Classification);
         Assert.AreEqual(SessionCleanupCandidateClassification.StaleBlock, byId["stale"].Classification);
-        StringAssert.Contains(byId["stale"].Reason, "Completed");
+        StringAssert.Contains(byId["stale"].Reason, "Completed", StringComparison.Ordinal);
         foreach (var inUse in new[] { "blocked", "queued", "parked", "pending", "locked" })
             Assert.AreEqual(SessionCleanupCandidateClassification.InUse, byId[inUse].Classification, inUse);
-        StringAssert.Contains(byId["queued"].Reason, "3 messages queued");
-        StringAssert.Contains(byId["parked"].Reason, "Deferred subscription");
-        StringAssert.Contains(byId["pending"].Reason, "pending event");
+        StringAssert.Contains(byId["queued"].Reason, "3 messages queued", StringComparison.Ordinal);
+        StringAssert.Contains(byId["parked"].Reason, "Deferred subscription", StringComparison.Ordinal);
+        StringAssert.Contains(byId["pending"].Reason, "pending event", StringComparison.Ordinal);
         Assert.IsFalse(byId.ContainsKey("empty"));
     }
 
@@ -320,9 +320,9 @@ public sealed class SessionStateServiceTests
         Assert.AreEqual(1, result.ResetCount);
         Assert.AreEqual(0, _bus.GetState(Endpoint, "idle")!.ToArray().Length);
         var skipped = result.Skipped.ToDictionary(s => s.SessionId, s => s.Reason);
-        StringAssert.Contains(skipped["changed"], "changed since the preview");
-        StringAssert.Contains(skipped["busy"], "queued");
-        StringAssert.Contains(skipped["stale"], "gone");
+        StringAssert.Contains(skipped["changed"], "changed since the preview", StringComparison.Ordinal);
+        StringAssert.Contains(skipped["busy"], "queued", StringComparison.Ordinal);
+        StringAssert.Contains(skipped["stale"], "gone", StringComparison.Ordinal);
         Assert.AreEqual(0, result.Errors.Count);
         Assert.IsTrue(SessionState.FromBinaryData(_bus.GetState(Endpoint, "stale")).BlockedByEventId == "gone");
     }

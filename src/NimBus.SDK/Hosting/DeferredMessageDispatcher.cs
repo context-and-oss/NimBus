@@ -59,8 +59,8 @@ public static class DeferredMessageDispatcher
         string topicName,
         CancellationToken cancellationToken = default)
     {
-        if (triggerMessage is null) throw new ArgumentNullException(nameof(triggerMessage));
-        if (processor is null) throw new ArgumentNullException(nameof(processor));
+        ArgumentNullException.ThrowIfNull(triggerMessage);
+        ArgumentNullException.ThrowIfNull(processor);
         if (string.IsNullOrEmpty(topicName)) throw new ArgumentException("Topic name is required.", nameof(topicName));
 
         // Precedence: prefer message.SessionId; fall back to a "SessionId"

@@ -65,8 +65,8 @@ public class RestAgentBusGatewayTests
             () => gw.DefineEventTypeAsync("out.v1", "{}", null, null, null, CancellationToken.None));
 
         Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
-        StringAssert.Contains(ex.Message, "different schema");
-        StringAssert.Contains(ex.Message, "out.v1");
+        StringAssert.Contains(ex.Message, "different schema", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "out.v1", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -79,8 +79,8 @@ public class RestAgentBusGatewayTests
         Assert.IsNull(msg);
         var uri = h.Requests[0].RequestUri!;
         Assert.AreEqual("/api/agent/receive", uri.AbsolutePath);
-        StringAssert.Contains(uri.Query, "waitSeconds=5");
-        StringAssert.Contains(uri.Query, "eventTypeId=CrmContactCreated");
+        StringAssert.Contains(uri.Query, "waitSeconds=5", StringComparison.Ordinal);
+        StringAssert.Contains(uri.Query, "eventTypeId=CrmContactCreated", StringComparison.Ordinal);
     }
 
     [TestMethod]

@@ -616,7 +616,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             .ToList();
 
     private List<InsightGroup> BuildInsightGroups(IReadOnlyList<OccurrenceRow> scoped, Dictionary<OccurrenceRow, Assessment> assessed,
-        Func<Assessment, string> keyOf, IReadOnlyDictionary<string, string> labels)
+        Func<Assessment, string> keyOf, Dictionary<string, string> labels)
         => scoped
             .GroupBy(r => keyOf(assessed[r]), StringComparer.Ordinal)
             .Select(g =>

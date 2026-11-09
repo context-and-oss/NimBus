@@ -26,7 +26,7 @@ public static class PlatformValidation
     /// <returns>One error message per violating command type; empty when the catalog is valid.</returns>
     public static IReadOnlyList<string> ValidateCommandConsumers(IPlatform platform)
     {
-        if (platform is null) throw new ArgumentNullException(nameof(platform));
+        ArgumentNullException.ThrowIfNull(platform);
 
         var errors = new List<string>();
         foreach (var eventType in platform.EventTypes)

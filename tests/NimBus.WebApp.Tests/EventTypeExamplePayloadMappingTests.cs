@@ -59,7 +59,7 @@ public class EventTypeExamplePayloadMappingTests
         var json = JObject.Parse(mapped.ExamplePayload);
         Assert.AreEqual("9c1a6f2e-4c31-4f0e-9a1c-2f7d5b3e8a10", (string?)json["CustomerId"]);
         Assert.AreEqual("Nordvest Logistik A/S", (string?)json["Name"]);
-        Assert.IsTrue(mapped.ExamplePayload.Contains('\n'), "expected indented output");
+        Assert.IsTrue(mapped.ExamplePayload.Contains('\n', StringComparison.Ordinal), "expected indented output");
     }
 
     [TestMethod]

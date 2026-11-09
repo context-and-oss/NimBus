@@ -15,7 +15,7 @@ namespace NimBus.WebApp.Services;
 /// </summary>
 public sealed class AgentEventPublisher : IAgentEventPublisher
 {
-    private readonly IPublisherClient _publisher;
+    private readonly PublisherClient _publisher;
 
     public AgentEventPublisher(ServiceBusClient serviceBusClient, IConfiguration config)
     {

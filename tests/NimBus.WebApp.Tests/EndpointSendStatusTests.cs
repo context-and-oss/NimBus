@@ -64,7 +64,7 @@ public sealed class EndpointSendStatusTests
 
         var result = await sut.PostEndpointSendstatusAsync("disable", "ep-1");
 
-        Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+        Assert.IsInstanceOfType<OkObjectResult>(result);
         Assert.AreEqual(TopicSendState.SendDisabled, sb.TopicState("ep-1"));
         Assert.IsTrue(audit.Entries.Any(e =>
             e.Type == MessageAuditType.DisableEndpointSend && !e.AccessDenied && e.EndpointId == "ep-1"));
@@ -79,7 +79,7 @@ public sealed class EndpointSendStatusTests
 
         var result = await sut.PostEndpointSendstatusAsync("enable", "ep-1");
 
-        Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+        Assert.IsInstanceOfType<OkObjectResult>(result);
         Assert.AreEqual(TopicSendState.Enabled, sb.TopicState("ep-1"));
     }
 
@@ -92,7 +92,7 @@ public sealed class EndpointSendStatusTests
 
         var result = await sut.PostEndpointSendstatusAsync("disable", "ep-1");
 
-        Assert.IsInstanceOfType(result, typeof(ForbidResult));
+        Assert.IsInstanceOfType<ForbidResult>(result);
         Assert.AreEqual(TopicSendState.Enabled, sb.TopicState("ep-1")); // untouched
         Assert.IsTrue(audit.Entries.Any(e =>
             e.Type == MessageAuditType.DisableEndpointSend && e.AccessDenied && e.EndpointId == "ep-1"));
@@ -105,7 +105,7 @@ public sealed class EndpointSendStatusTests
 
         var result = await sut.PostEndpointSendstatusAsync("disable", "does-not-exist");
 
-        Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult));
+        Assert.IsInstanceOfType<NotFoundObjectResult>(result);
     }
 
     [TestMethod]

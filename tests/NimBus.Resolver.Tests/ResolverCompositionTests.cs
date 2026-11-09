@@ -233,7 +233,7 @@ public class ResolverCompositionTests
         await using var provider = Build(registration, new Dictionary<string, string?>());
 
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() => provider.GetRequiredService<ServiceBusClient>());
-        StringAssert.Contains(exception.Message, "AzureWebJobsServiceBus");
+        StringAssert.Contains(exception.Message, "AzureWebJobsServiceBus", StringComparison.Ordinal);
     }
 
     // ── Service Bus adapter ────────────────────────────────────────────────────────────
@@ -246,7 +246,7 @@ public class ResolverCompositionTests
         await using var provider = Build(registration, new Dictionary<string, string?> { ["AzureWebJobsServiceBus"] = ConnectionString });
 
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() => provider.GetRequiredService<IServiceBusAdapter>());
-        StringAssert.Contains(exception.Message, "ResolverId");
+        StringAssert.Contains(exception.Message, "ResolverId", StringComparison.Ordinal);
     }
 
     [TestMethod]

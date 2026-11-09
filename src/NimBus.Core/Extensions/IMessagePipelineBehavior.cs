@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using NimBus.Core.Messages;
 using System;
 using System.Threading;
@@ -36,4 +37,5 @@ public interface IMessagePipelineBehavior
 /// <summary>
 /// Delegate representing the next step in the message pipeline.
 /// </summary>
+[SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "Public API; renaming would break every pipeline behavior.")]
 public delegate Task MessagePipelineDelegate(IMessageContext context, CancellationToken cancellationToken = default);

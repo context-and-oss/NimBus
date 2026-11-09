@@ -22,7 +22,7 @@ public class MessageAuditEntity
     /// Optional structured context for the action: search filter JSON,
     /// ResubmitWithChanges body, or any other payload the caller wants
     /// preserved alongside the audit row. Truncated to ~4 KB by the
-    /// <see cref="NimBus.WebApp.Services"/> audit writer to stay within
+    /// <c>NimBus.WebApp.Services</c> audit writer to stay within
     /// every provider's column / document size budget.
     /// </summary>
     public string? Data { get; set; }

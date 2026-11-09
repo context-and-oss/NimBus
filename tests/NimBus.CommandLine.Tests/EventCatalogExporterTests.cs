@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Nodes;

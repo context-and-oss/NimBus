@@ -50,11 +50,11 @@ internal sealed partial class CosmosDbMessageTrackingStore
             EndpointId = endpointId,
             EventTime = DateTime.UtcNow,
             OldestFailureAt = oldestFailure,
-            DeferredCount = resultDict.ContainsKey(DeferredStatus) ? resultDict[DeferredStatus] : 0,
-            PendingCount = resultDict.ContainsKey(PendingStatus) ? resultDict[PendingStatus] : 0,
-            FailedCount = resultDict.ContainsKey(FailedStatus) ? resultDict[FailedStatus] : 0,
-            DeadletterCount = resultDict.ContainsKey(DLQStatus) ? resultDict[DLQStatus] : 0,
-            UnsupportedCount = resultDict.ContainsKey(UnsupportedStatus) ? resultDict[UnsupportedStatus] : 0,
+            DeferredCount = resultDict.GetValueOrDefault(DeferredStatus),
+            PendingCount = resultDict.GetValueOrDefault(PendingStatus),
+            FailedCount = resultDict.GetValueOrDefault(FailedStatus),
+            DeadletterCount = resultDict.GetValueOrDefault(DLQStatus),
+            UnsupportedCount = resultDict.GetValueOrDefault(UnsupportedStatus),
         };
     }
 
@@ -301,13 +301,19 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger?.LogInformation("COSMOS PAGING: Endpoint container not found for '{EndpointId}'", endpointId);
+            LogCosmosPagingEndpointContainerNotFound(_logger, endpointId);
             return null;
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "COSMOS PAGING-ERROR: Failed to download endpoint state for '{EndpointId}'", endpointId);
+            LogCosmosPagingError(_logger, e, endpointId);
             throw;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS PAGING: Endpoint container not found for '{EndpointId}'")]
+    private static partial void LogCosmosPagingEndpointContainerNotFound(ILogger logger, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS PAGING-ERROR: Failed to download endpoint state for '{EndpointId}'")]
+    private static partial void LogCosmosPagingError(ILogger logger, Exception exception, string endpointId);
 }

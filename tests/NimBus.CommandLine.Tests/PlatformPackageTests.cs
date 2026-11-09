@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System.IO.Compression;
 using System.Net;
 using NimBus.CommandLine;
@@ -129,7 +130,7 @@ public sealed class PlatformPackageTests : IDisposable
         return root;
     }
 
-    private byte[] BuildPackage(string targetFramework, string assemblyPath, string? alsoUnder = null)
+    private static byte[] BuildPackage(string targetFramework, string assemblyPath, string? alsoUnder = null)
     {
         using var buffer = new MemoryStream();
         using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))

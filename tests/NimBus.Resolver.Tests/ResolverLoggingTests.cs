@@ -41,8 +41,8 @@ public class ResolverLoggingTests
         await service.Handle(CreateMessageContext(MessageType.EventRequest, to: Endpoint, throttleRetryCount: 2, deliveryCount: 3));
 
         var entry = logger.Entries.Single(e => e.Level == LogLevel.Warning && e.Message.Contains("Ignored stale", StringComparison.Ordinal));
-        StringAssert.Contains(entry.Message, "ThrottleRetryCount:2");
-        StringAssert.Contains(entry.Message, "DeliveryCount:3");
+        StringAssert.Contains(entry.Message, "ThrottleRetryCount:2", StringComparison.Ordinal);
+        StringAssert.Contains(entry.Message, "DeliveryCount:3", StringComparison.Ordinal);
     }
 
     [TestMethod]

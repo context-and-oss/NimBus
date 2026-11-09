@@ -162,7 +162,7 @@ public class ApplicationStatusDisclosureTests
         // package (e.g. EET.Platform) reports its own assembly name here.
         Assert.AreEqual(typeof(PlatformConfiguration).Assembly.GetName().Name, (string?)json["platformName"]);
         Assert.IsFalse(
-            ((string?)json["platformVersion"] ?? string.Empty).Contains('+'),
+            ((string?)json["platformVersion"] ?? string.Empty).Contains('+', StringComparison.Ordinal),
             "platformVersion must not carry the '+<sha>' build suffix.");
     }
 

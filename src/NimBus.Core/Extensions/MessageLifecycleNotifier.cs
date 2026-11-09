@@ -2,6 +2,7 @@ using NimBus.Core.Messages;
 using NimBus.Core.CircuitBreaker;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,7 +15,7 @@ namespace NimBus.Core.Extensions;
 /// </summary>
 public class MessageLifecycleNotifier
 {
-    private readonly IReadOnlyList<IMessageLifecycleObserver> _observers;
+    private readonly ReadOnlyCollection<IMessageLifecycleObserver> _observers;
 
     public MessageLifecycleNotifier(IEnumerable<IMessageLifecycleObserver> observers)
     {

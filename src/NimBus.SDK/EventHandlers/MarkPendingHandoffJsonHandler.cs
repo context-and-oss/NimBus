@@ -15,7 +15,7 @@ namespace NimBus.SDK.EventHandlers;
 /// <remarks>
 /// Reuses the existing pending-handoff plumbing 100%: it constructs an
 /// <see cref="EventHandlerContext"/> over the raw <see cref="IMessageContext"/> — exactly as
-/// <see cref="EventJsonHandler{T_Event}"/> does for typed handlers — and calls
+/// <see cref="EventJsonHandler{TEvent}"/> does for typed handlers — and calls
 /// <see cref="IEventHandlerContext.MarkPendingHandoff(string, string, System.TimeSpan?)"/>, which
 /// writes the <see cref="HandlerOutcome.PendingHandoff"/> outcome and <see cref="HandoffMetadata"/>
 /// through to the underlying <see cref="IMessageContext"/>. <c>StrictMessageHandler</c> observes

@@ -22,7 +22,7 @@ public sealed class NimBusPublisherBuilder
     public NimBusPublisherBuilder Publish<T>(Action<PublishOptions> configure)
         where T : IEvent
     {
-        if (configure is null) throw new ArgumentNullException(nameof(configure));
+        ArgumentNullException.ThrowIfNull(configure);
 
         // Configure mutates the registry's own options instance, so multiple registrations
         // accumulate and the exporter merges the result with any attribute enrichment.

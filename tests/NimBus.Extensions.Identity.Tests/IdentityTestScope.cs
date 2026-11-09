@@ -36,7 +36,7 @@ internal sealed class IdentityTestScope : IAsyncDisposable
             Assert.Inconclusive("NIMBUS_SQL_TEST_CONNECTION not set; skipping Identity SQL Server integration tests.");
         }
 
-        var schema = "id_" + Guid.NewGuid().ToString("N").Substring(0, 16);
+        var schema = string.Concat("id_", Guid.NewGuid().ToString("N").AsSpan(0, 16));
         var services = new ServiceCollection();
         services.AddLogging(b => b.AddDebug().SetMinimumLevel(LogLevel.Information));
         services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();

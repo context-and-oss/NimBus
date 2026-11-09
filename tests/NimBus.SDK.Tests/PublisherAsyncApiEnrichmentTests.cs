@@ -60,9 +60,9 @@ public sealed class PublisherAsyncApiEnrichmentTests
         var provider = services.BuildServiceProvider();
         var document = provider.GetRequiredService<IAsyncApiDocumentProvider>().GetDocument(AsyncApiFormat.Json);
 
-        StringAssert.Contains(document, "FluentTitle");
-        StringAssert.Contains(document, "FluentName");
-        StringAssert.Contains(document, "FluentTag");
+        StringAssert.Contains(document, "FluentTitle", StringComparison.Ordinal);
+        StringAssert.Contains(document, "FluentName", StringComparison.Ordinal);
+        StringAssert.Contains(document, "FluentTag", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -78,7 +78,7 @@ public sealed class PublisherAsyncApiEnrichmentTests
             typeof(SdkFluentDocumentFactory).FullName);
 
         var document = provider.GetDocument(AsyncApiFormat.Json);
-        StringAssert.Contains(document, SdkFluentDocumentFactory.OwnerMarker);
+        StringAssert.Contains(document, SdkFluentDocumentFactory.OwnerMarker, StringComparison.Ordinal);
     }
 
     [TestMethod]

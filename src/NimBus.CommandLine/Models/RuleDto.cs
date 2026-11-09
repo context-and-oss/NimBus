@@ -11,7 +11,7 @@ public class RuleDto
         public int GetHashCode(RuleDto co)
         {
             if (co == null) return 0;
-            return co.Name.GetHashCode();
+            return co.Name.GetHashCode(StringComparison.Ordinal);
         }
 
         public bool Equals(RuleDto? x1, RuleDto? x2)

@@ -121,7 +121,7 @@ public sealed partial class FailedInsightsServiceTests
         var pattern = await service.GetOccurrencesAsync(new FailedInsightsPageRequest(From, To, null, InsightsPerspective.ErrorPattern, overview.Groups.Single().GroupKey, 10, null));
 
         Assert.AreEqual(FailedInsightsQueryStatus.BadRequest, cause.Status);
-        StringAssert.Contains(cause.Error, "Disabled");
+        StringAssert.Contains(cause.Error, "Disabled", StringComparison.Ordinal);
         Assert.AreEqual(FailedInsightsQueryStatus.Ok, pattern.Status);
         Assert.AreEqual(InsightAnalysisState.Unavailable, pattern.Page!.Occurrences.Single().AnalysisState);
         Assert.AreEqual(InsightsEnrichmentStatus.Disabled, pattern.Page.Enrichment);

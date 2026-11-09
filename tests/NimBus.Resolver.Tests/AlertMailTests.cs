@@ -64,14 +64,14 @@ public class AlertMailTests
 
     [TestMethod]
     public void A_missing_event_type_is_named_as_unknown()
-        => StringAssert.Contains(Compose(context: Context(eventTypeId: null)).Subject, "unknown event type");
+        => StringAssert.Contains(Compose(context: Context(eventTypeId: null)).Subject, "unknown event type", StringComparison.Ordinal);
 
     [TestMethod]
     public void Line_breaks_never_reach_the_subject()
     {
         var subject = Compose(context: Context(eventTypeId: "Order\r\nBcc: someone@example.com")).Subject;
 
-        Assert.IsFalse(subject.Contains('\r') || subject.Contains('\n'), subject);
+        Assert.IsFalse(subject.Contains('\r', StringComparison.Ordinal) || subject.Contains('\n', StringComparison.Ordinal), subject);
     }
 
     [TestMethod]
@@ -81,12 +81,12 @@ public class AlertMailTests
 
         foreach (var body in new[] { mail.HtmlBody, mail.TextBody })
         {
-            StringAssert.Contains(body, Endpoint);
-            StringAssert.Contains(body, "OrderPlaced");
-            StringAssert.Contains(body, "event-1");
-            StringAssert.Contains(body, "session-1");
-            StringAssert.Contains(body, "2026-11-05 10:15:30 UTC");
-            StringAssert.Contains(body, "Handler threw");
+            StringAssert.Contains(body, Endpoint, StringComparison.Ordinal);
+            StringAssert.Contains(body, "OrderPlaced", StringComparison.Ordinal);
+            StringAssert.Contains(body, "event-1", StringComparison.Ordinal);
+            StringAssert.Contains(body, "session-1", StringComparison.Ordinal);
+            StringAssert.Contains(body, "2026-11-05 10:15:30 UTC", StringComparison.Ordinal);
+            StringAssert.Contains(body, "Handler threw", StringComparison.Ordinal);
         }
     }
 
@@ -97,7 +97,7 @@ public class AlertMailTests
 
         Assert.IsFalse(mail.HtmlBody.Contains("<script>", StringComparison.Ordinal), mail.HtmlBody);
         Assert.IsFalse(mail.HtmlBody.Contains("Order<b>", StringComparison.Ordinal), mail.HtmlBody);
-        StringAssert.Contains(mail.HtmlBody, "&lt;script&gt;");
+        StringAssert.Contains(mail.HtmlBody, "&lt;script&gt;", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -107,7 +107,7 @@ public class AlertMailTests
 
         foreach (var body in new[] { mail.HtmlBody, mail.TextBody })
         {
-            StringAssert.Contains(body, new string('x', 500) + "…");
+            StringAssert.Contains(body, new string('x', 500) + "…", StringComparison.Ordinal);
             Assert.IsFalse(body.Contains(new string('x', 501), StringComparison.Ordinal));
         }
     }
@@ -135,8 +135,8 @@ public class AlertMailTests
 
         foreach (var body in new[] { mail.HtmlBody, mail.TextBody })
         {
-            StringAssert.Contains(body, "https://nimbus.example.com/Message/Index/AnalyticsEndpoint/event%201");
-            StringAssert.Contains(body, "https://nimbus.example.com/Endpoints/Details/AnalyticsEndpoint");
+            StringAssert.Contains(body, "https://nimbus.example.com/Message/Index/AnalyticsEndpoint/event%201", StringComparison.Ordinal);
+            StringAssert.Contains(body, "https://nimbus.example.com/Endpoints/Details/AnalyticsEndpoint", StringComparison.Ordinal);
         }
     }
 
@@ -160,8 +160,8 @@ public class AlertMailTests
     {
         var mail = Compose(subscription: Subscription(frequency));
 
-        StringAssert.Contains(mail.HtmlBody, text);
-        StringAssert.Contains(mail.TextBody, text);
+        StringAssert.Contains(mail.HtmlBody, text, StringComparison.Ordinal);
+        StringAssert.Contains(mail.TextBody, text, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -169,7 +169,7 @@ public class AlertMailTests
     {
         var mail = Compose(subscription: Subscription(eventTypes: new List<string> { "OrderPlaced", "OrderShipped" }));
 
-        StringAssert.Contains(mail.TextBody, "OrderPlaced, OrderShipped");
+        StringAssert.Contains(mail.TextBody, "OrderPlaced, OrderShipped", StringComparison.Ordinal);
     }
 
     // ── SMTP message ───────────────────────────────────────────────────────────────────

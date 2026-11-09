@@ -11,7 +11,7 @@ namespace NimBus.WebApp.Services.Simulation;
 /// stop skips the drain and is capped by the host's shutdown token, so it cannot hold up the
 /// WebApp's own shutdown (plan Decision 10).
 /// </summary>
-public sealed class SimulationLifetimeService : BackgroundService
+public sealed partial class SimulationLifetimeService : BackgroundService
 {
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(5);
 
@@ -41,7 +41,7 @@ public sealed class SimulationLifetimeService : BackgroundService
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    _logger.LogWarning(ex, "Simulation auto-stop check failed.");
+                    LogSimulationAutoStopCheckFailed(_logger, ex);
                 }
             }
         }
@@ -61,7 +61,13 @@ public sealed class SimulationLifetimeService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Stopping the simulation during shutdown did not complete cleanly.");
+            LogStoppingTheSimulationDuringShutdownDid(_logger, ex);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Simulation auto-stop check failed.")]
+    private static partial void LogSimulationAutoStopCheckFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Stopping the simulation during shutdown did not complete cleanly.")]
+    private static partial void LogStoppingTheSimulationDuringShutdownDid(ILogger logger, Exception exception);
 }

@@ -17,6 +17,18 @@ namespace NimBus.WebApp;
 
 public partial class Startup
 {
+    private static readonly string[] AdditionalCompressedMimeTypes =
+    [
+        // SPA bundle assets — Vite emits these and they dominate first-load bytes.
+        "application/javascript",
+        // JSON API responses (endpoints/audits/messages lists run 100-500 KB).
+        "application/json",
+        // SPA stylesheet bundle (Tailwind compresses ~80 % under Brotli).
+        "text/css",
+        // Inline icon assets shipped from ClientApp/public.
+        "image/svg+xml",
+    ];
+
     // Controllers/JSON, Razor, NSwag, response compression, SignalR.
     private void AddWebPipeline(IServiceCollection services)
     {
@@ -62,17 +74,7 @@ public partial class Startup
             options.EnableForHttps = true;
             options.Providers.Add<BrotliCompressionProvider>();
             options.Providers.Add<GzipCompressionProvider>();
-            options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(new[]
-            {
-                // SPA bundle assets — Vite emits these and they dominate first-load bytes.
-                "application/javascript",
-                // JSON API responses (endpoints/audits/messages lists run 100-500 KB).
-                "application/json",
-                // SPA stylesheet bundle (Tailwind compresses ~80 % under Brotli).
-                "text/css",
-                // Inline icon assets shipped from ClientApp/public.
-                "image/svg+xml",
-            });
+            options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(AdditionalCompressedMimeTypes);
         });
         services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);
         services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);

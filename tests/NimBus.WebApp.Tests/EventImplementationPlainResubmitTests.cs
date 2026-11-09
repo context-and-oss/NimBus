@@ -74,7 +74,7 @@ public sealed class EventImplementationPlainResubmitTests
 
         var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.AreEqual("{\"Fail\":true}", manager.EventJson);
         Assert.AreEqual("Demo.Type", manager.EventTypeId);
         Assert.AreEqual("SubscriberEp", manager.Endpoint);
@@ -105,7 +105,7 @@ public sealed class EventImplementationPlainResubmitTests
 
         var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.AreEqual("{\"v\":2}", manager.EventJson);
     }
 
@@ -126,7 +126,7 @@ public sealed class EventImplementationPlainResubmitTests
 
         var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.AreEqual("{\"orig\":1}", manager.EventJson);
         Assert.AreEqual("SubscriberEp", manager.Endpoint);
     }
@@ -149,7 +149,7 @@ public sealed class EventImplementationPlainResubmitTests
 
         var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.AreEqual("Demo.Type", manager.EventTypeId);
         Assert.AreEqual("{\"v\":1}", manager.EventJson);
     }
@@ -173,7 +173,7 @@ public sealed class EventImplementationPlainResubmitTests
 
         var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.AreEqual("SubscriberEp", manager.Endpoint,
             "A self-originating terminal must target its To endpoint regardless of casing");
     }

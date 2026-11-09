@@ -64,7 +64,7 @@ public class ResolverStaleCopyTests
         Assert.AreEqual("event-1", eventId);
         Assert.AreEqual(MessageAuditType.Comment, audit.AuditType);
         Assert.AreEqual(Constants.ResolverId, audit.AuditorName);
-        StringAssert.Contains(audit.Data, "req-late");
+        StringAssert.Contains(audit.Data, "req-late", StringComparison.Ordinal);
         Assert.AreEqual(0, notifier.Notifications.Count, "nothing changed, so nothing to notify about");
     }
 

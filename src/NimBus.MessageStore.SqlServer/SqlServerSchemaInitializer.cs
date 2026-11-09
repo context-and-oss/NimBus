@@ -1,3 +1,4 @@
+using System.Globalization;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,7 +19,7 @@ namespace NimBus.MessageStore.SqlServer;
 /// <c>AutoApply</c> upgrades the schema; <c>VerifyOnly</c> fails fast if any
 /// embedded script is unapplied.
 /// </summary>
-internal sealed class SqlServerSchemaInitializer : IHostedService
+internal sealed partial class SqlServerSchemaInitializer : IHostedService
 {
     // Regular SQL Server identifier — letter or underscore start, then letters,
     // digits or underscores. We deliberately exclude `]`, brackets, dots and
@@ -92,7 +93,7 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
                     "or switch to ProvisioningMode.AutoApply for development. Pending scripts: " +
                     string.Join(", ", pending));
             }
-            _logger.LogInformation("SQL Server message-store schema verified.");
+            LogSqlServerMessageStoreSchemaVerified(_logger);
             return;
         }
 
@@ -136,8 +137,11 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
                         $"DbUp failed to apply NimBus message-store schema: {result.Error?.Message}", result.Error);
                 }
 
-                _logger.LogInformation("SQL Server message-store schema upgrade applied {Count} script(s).",
-                    result.Scripts.Count());
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    var scriptCount = result.Scripts.Count();
+                    LogSqlServerMessageStoreSchemaUpgrade(_logger, scriptCount);
+                }
             }
             finally
             {
@@ -197,7 +201,7 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         {
             // Don't let release failures mask the real error from DbUp; we already
             // disable pooling on this connection so the session ends on Dispose.
-            _logger.LogWarning(ex, "Failed to release schema-upgrade lock '{Resource}'; relying on session close.", resource);
+            LogFailedToReleaseSchemaUpgradeLock(_logger, ex, resource);
         }
     }
 
@@ -257,7 +261,7 @@ END";
         cmd.CommandText = "SELECT COUNT(1) FROM sys.schemas WHERE name = @Schema";
         cmd.Parameters.AddWithValue("@Schema", _options.Schema);
         var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return Convert.ToInt32(result) > 0;
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture) > 0;
     }
 
     private async Task<bool> ObjectExists(SqlConnection conn, string type, string name, CancellationToken cancellationToken)
@@ -272,8 +276,17 @@ WHERE s.name = @Schema AND o.name = @Name AND o.type = @Type";
         cmd.Parameters.AddWithValue("@Name", name);
         cmd.Parameters.AddWithValue("@Type", type);
         var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return Convert.ToInt32(result) > 0;
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture) > 0;
     }
 
     private string Qualified(string objectName) => $"[{_options.Schema}].[{objectName}]";
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "SQL Server message-store schema verified.")]
+    private static partial void LogSqlServerMessageStoreSchemaVerified(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "SQL Server message-store schema upgrade applied {Count} script(s).")]
+    private static partial void LogSqlServerMessageStoreSchemaUpgrade(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to release schema-upgrade lock '{Resource}'; relying on session close.")]
+    private static partial void LogFailedToReleaseSchemaUpgradeLock(ILogger logger, Exception exception, string resource);
 }

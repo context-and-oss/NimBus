@@ -34,7 +34,7 @@ public class ErrorPatternNormalizerTests
             "Mandatory fields must be filled in to proceed. The dimension value 60000038 does not exist for dimension Afdeling.");
 
         Assert.AreEqual(first, second);
-        StringAssert.Contains(first, "dimension value <value>");
+        StringAssert.Contains(first, "dimension value <value>", StringComparison.Ordinal);
     }
 
     [TestMethod]

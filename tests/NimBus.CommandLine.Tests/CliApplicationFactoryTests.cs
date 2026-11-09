@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using McMaster.Extensions.CommandLineUtils;
 using Xunit;
 
@@ -67,9 +68,9 @@ public class CliApplicationFactoryTests
     {
         var options = command.Options
             .Where(o => o.LongName != "help")
-            .Select(o => "--" + (o.LongName ?? o.ShortName) + (o.Validators.Any() ? "!" : ""))
+            .Select(o => "--" + (o.LongName ?? o.ShortName) + (o.Validators.Count != 0 ? "!" : ""))
             .OrderBy(o => o, StringComparer.Ordinal);
-        var arguments = command.Arguments.Select(a => "<" + a.Name + (a.Validators.Any() ? "!" : "") + ">");
+        var arguments = command.Arguments.Select(a => "<" + a.Name + (a.Validators.Count != 0 ? "!" : "") + ">");
         yield return $"{path}: {string.Join(" ", arguments.Concat(options))}".TrimEnd();
         foreach (var child in command.Commands.OrderBy(c => c.Name, StringComparer.Ordinal))
         {

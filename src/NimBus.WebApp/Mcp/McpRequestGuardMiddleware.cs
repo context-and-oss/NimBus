@@ -14,7 +14,7 @@ namespace NimBus.WebApp.Mcp;
 /// endpoint switched on; otherwise every call gets 503.</item>
 /// </list>
 /// </summary>
-public sealed class McpRequestGuardMiddleware
+public sealed partial class McpRequestGuardMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly McpOperatorRuntime _runtime;
@@ -47,7 +47,7 @@ public sealed class McpRequestGuardMiddleware
         var origin = context.Request.Headers.Origin.ToString();
         if (origin.Length > 0 && !IsAllowedOrigin(origin, local))
         {
-            _logger.LogWarning("Rejected an MCP request from origin {Origin}", origin);
+            LogRejectedAnMcpRequestFromOrigin(_logger, origin);
             await RejectAsync(context, "Origin not allowed.").ConfigureAwait(false);
             return;
         }
@@ -55,7 +55,7 @@ public sealed class McpRequestGuardMiddleware
         var remote = context.Connection.RemoteIpAddress;
         if (local && remote is not null && !IsLoopback(remote))
         {
-            _logger.LogWarning("Rejected a non-loopback MCP request from {RemoteAddress} in local development mode", remote);
+            LogRejectedANonLoopbackMcpRequest(_logger, remote);
             await RejectAsync(context, "The local development MCP endpoint accepts loopback connections only.").ConfigureAwait(false);
             return;
         }
@@ -103,4 +103,10 @@ public sealed class McpRequestGuardMiddleware
         context.Response.ContentType = "text/plain";
         return context.Response.WriteAsync(message);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rejected an MCP request from origin {Origin}")]
+    private static partial void LogRejectedAnMcpRequestFromOrigin(ILogger logger, string origin);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rejected a non-loopback MCP request from {RemoteAddress} in local development mode")]
+    private static partial void LogRejectedANonLoopbackMcpRequest(ILogger logger, IPAddress remoteAddress);
 }

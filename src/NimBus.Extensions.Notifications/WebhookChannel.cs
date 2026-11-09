@@ -16,7 +16,7 @@ namespace NimBus.Extensions.Notifications;
 /// logged and surfaced as a <see cref="NotificationDeliveryException"/> (caught upstream so it
 /// never affects message processing).
 /// </summary>
-public class WebhookChannel : INotificationChannel
+public partial class WebhookChannel : INotificationChannel
 {
     private readonly WebhookChannelOptions _options;
     private readonly HttpClient _httpClient;
@@ -42,9 +42,7 @@ public class WebhookChannel : INotificationChannel
         using var response = await _httpClient.PostAsync(_options.Url, content, timeoutCts.Token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogWarning(
-                "Webhook notification to {Host} returned non-success status {StatusCode}.",
-                SafeHost(_options.Url), (int)response.StatusCode);
+            LogWebhookNotificationToReturnedNonSuccess(_logger, SafeHost(_options.Url), (int)response.StatusCode);
 
             throw new NotificationDeliveryException(
                 $"Webhook delivery failed with status {(int)response.StatusCode}.");
@@ -53,4 +51,7 @@ public class WebhookChannel : INotificationChannel
 
     private static string SafeHost(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "(invalid-url)";
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Webhook notification to {Host} returned non-success status {StatusCode}.")]
+    private static partial void LogWebhookNotificationToReturnedNonSuccess(ILogger logger, string host, int statusCode);
 }

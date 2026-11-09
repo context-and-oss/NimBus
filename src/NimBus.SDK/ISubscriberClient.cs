@@ -7,5 +7,5 @@ namespace NimBus.SDK;
 
 public interface ISubscriberClient : IServiceBusAdapter 
 {
-    void RegisterHandler<T_Event>(Func<IEventHandler<T_Event>> eventHandlerFactory) where T_Event : IEvent;
+    void RegisterHandler<TEvent>(Func<IEventHandler<TEvent>> eventHandlerFactory) where TEvent : IEvent;
 }

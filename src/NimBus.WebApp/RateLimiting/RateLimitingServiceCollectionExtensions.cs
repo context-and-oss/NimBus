@@ -16,7 +16,7 @@ namespace NimBus.WebApp.RateLimiting;
 /// entry point — see <c>docs/rate-limiting.md</c> for the values and their
 /// rationale.
 /// </summary>
-public static class RateLimitingServiceCollectionExtensions
+public static partial class RateLimitingServiceCollectionExtensions
 {
     private const string SectionName = "RateLimiting";
 
@@ -149,14 +149,9 @@ public static class RateLimitingServiceCollectionExtensions
         // Throttling must be diagnosable from the logs. This is telemetry, not a
         // detector: a caller pacing under a fixed window's sustained rate is
         // never rejected and therefore never appears here.
-        http.RequestServices
+        LogRateLimitRejectedARequest(http.RequestServices
             .GetRequiredService<ILoggerFactory>()
-            .CreateLogger(typeof(RateLimitingServiceCollectionExtensions).FullName!)
-            .LogWarning(
-                "Rate limit '{Policy}' rejected a request to {Path}. Retry-After: {RetryAfter}",
-                policy,
-                http.Request.Path,
-                retryAfter ?? "n/a");
+            .CreateLogger(typeof(RateLimitingServiceCollectionExtensions).FullName!), policy, http.Request.Path, retryAfter ?? "n/a");
 
         // POST /account/login is a browser form surface — a bodyless 429 shows a
         // human nothing at all.
@@ -183,4 +178,7 @@ public static class RateLimitingServiceCollectionExtensions
         public void Configure(MvcOptions options)
             => options.Conventions.Add(new RateLimitPoliciesConvention(_options.Value));
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rate limit '{Policy}' rejected a request to {Path}. Retry-After: {RetryAfter}")]
+    private static partial void LogRateLimitRejectedARequest(ILogger logger, string policy, PathString path, string retryAfter);
 }

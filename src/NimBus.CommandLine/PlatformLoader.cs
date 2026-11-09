@@ -51,7 +51,7 @@ internal static class PlatformLoader
     /// </summary>
     public static IPlatform Resolve(Assembly assembly, string? platformTypeName = null)
     {
-        if (assembly is null) throw new ArgumentNullException(nameof(assembly));
+        ArgumentNullException.ThrowIfNull(assembly);
 
         var candidates = assembly.GetExportedTypes()
             .Where(t => t is { IsClass: true, IsAbstract: false } && t.GetConstructor(Type.EmptyTypes) != null)

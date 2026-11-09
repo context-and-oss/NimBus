@@ -50,7 +50,7 @@ public class SessionStateValidationTests
     {
         Assert.IsFalse(SessionState.TryParseJson(json, out var parsed, out var errors));
         Assert.IsNull(parsed);
-        StringAssert.Contains(string.Join("; ", errors), expectedInError);
+        StringAssert.Contains(string.Join("; ", errors), expectedInError, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -83,7 +83,7 @@ public class SessionStateValidationTests
     {
         var errors = new SessionState { NextDeferralSequence = 2, ReplayedThroughSequence = replayedThrough }.Validate();
 
-        StringAssert.Contains(string.Join("; ", errors), nameof(SessionState.ReplayedThroughSequence));
+        StringAssert.Contains(string.Join("; ", errors), nameof(SessionState.ReplayedThroughSequence), StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -91,7 +91,7 @@ public class SessionStateValidationTests
     {
         var errors = new SessionState { NextDeferralSequence = 1, DrainRequestedForSequence = 1 }.Validate();
 
-        StringAssert.Contains(string.Join("; ", errors), nameof(SessionState.DrainRequestedForSequence));
+        StringAssert.Contains(string.Join("; ", errors), nameof(SessionState.DrainRequestedForSequence), StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -99,7 +99,7 @@ public class SessionStateValidationTests
     {
         var errors = new SessionState { DrainRequestedAtUtc = DateTime.UtcNow }.Validate();
 
-        StringAssert.Contains(string.Join("; ", errors), nameof(SessionState.DrainRequestedAtUtc));
+        StringAssert.Contains(string.Join("; ", errors), nameof(SessionState.DrainRequestedAtUtc), StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -109,7 +109,7 @@ public class SessionStateValidationTests
     {
         var errors = new SessionState { BlockedByEventId = eventId, BlockedByMessageId = messageId }.Validate();
 
-        StringAssert.Contains(string.Join("; ", errors), nameof(SessionState.BlockedByEventId));
+        StringAssert.Contains(string.Join("; ", errors), nameof(SessionState.BlockedByEventId), StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -141,6 +141,6 @@ public class SessionStateValidationTests
     {
         Assert.IsFalse(SessionState.TryParseJson("{\"DeferredCount\":-1}", out var parsed, out var errors));
         Assert.IsNull(parsed);
-        StringAssert.Contains(string.Join("; ", errors), nameof(SessionState.DeferredCount));
+        StringAssert.Contains(string.Join("; ", errors), nameof(SessionState.DeferredCount), StringComparison.Ordinal);
     }
 }

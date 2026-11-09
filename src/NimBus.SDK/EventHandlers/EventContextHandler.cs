@@ -32,7 +32,7 @@ public class EventHandlerProvider : IEventContextHandler
     /// </summary>
     public async Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
     {
-        if (context == null) throw new ArgumentNullException(nameof(context));
+        ArgumentNullException.ThrowIfNull(context);
 
         var eventTypeId = context.EventTypeId;
         if (string.IsNullOrEmpty(eventTypeId))
@@ -73,16 +73,16 @@ public class EventHandlerProvider : IEventContextHandler
         await GetHandler(eventTypeId, scope.ServiceProvider).Handle(context, cancellationToken);
     }
 
-    public void RegisterHandler<T_Event>(Func<IEventHandler<T_Event>> eventHandlerFactory)
-        where T_Event : IEvent
+    public void RegisterHandler<TEvent>(Func<IEventHandler<TEvent>> eventHandlerFactory)
+        where TEvent : IEvent
     {
-        RegisterHandler(typeof(T_Event), eventHandlerFactory);
+        RegisterHandler(typeof(TEvent), eventHandlerFactory);
     }
 
     public void RegisterHandler(Type eventType, Func<object> eventHandlerFactory)
     {
-        if (eventType == null) throw new ArgumentNullException(nameof(eventType));
-        if (eventHandlerFactory == null) throw new ArgumentNullException(nameof(eventHandlerFactory));
+        ArgumentNullException.ThrowIfNull(eventType);
+        ArgumentNullException.ThrowIfNull(eventHandlerFactory);
         if (!typeof(IEvent).IsAssignableFrom(eventType))
             throw new ArgumentException($"Event type '{eventType.FullName}' must implement {nameof(IEvent)}.", nameof(eventType));
 
@@ -91,7 +91,7 @@ public class EventHandlerProvider : IEventContextHandler
 
     internal void RegisterHandler(Type eventType, Func<IServiceProvider?, object> eventHandlerFactory)
     {
-        if (eventHandlerFactory == null) throw new ArgumentNullException(nameof(eventHandlerFactory));
+        ArgumentNullException.ThrowIfNull(eventHandlerFactory);
         RegisterHandlerCore(eventType, eventHandlerFactory);
     }
 
@@ -102,7 +102,7 @@ public class EventHandlerProvider : IEventContextHandler
     /// </summary>
     public void RegisterFallbackHandler(Func<IEventJsonHandler> fallbackFactory)
     {
-        if (fallbackFactory == null) throw new ArgumentNullException(nameof(fallbackFactory));
+        ArgumentNullException.ThrowIfNull(fallbackFactory);
         _fallbackBuilder = _ => fallbackFactory.Invoke();
     }
 
@@ -122,7 +122,7 @@ public class EventHandlerProvider : IEventContextHandler
     {
         if (string.IsNullOrWhiteSpace(eventTypeId))
             throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
-        if (eventJsonHandlerFactory == null) throw new ArgumentNullException(nameof(eventJsonHandlerFactory));
+        ArgumentNullException.ThrowIfNull(eventJsonHandlerFactory);
 
         _handlerBuilders[eventTypeId] = _ => eventJsonHandlerFactory.Invoke();
     }
@@ -131,14 +131,14 @@ public class EventHandlerProvider : IEventContextHandler
     {
         if (string.IsNullOrWhiteSpace(eventTypeId))
             throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
-        if (eventJsonHandlerFactory == null) throw new ArgumentNullException(nameof(eventJsonHandlerFactory));
+        ArgumentNullException.ThrowIfNull(eventJsonHandlerFactory);
 
         _handlerBuilders[eventTypeId] = eventJsonHandlerFactory;
     }
 
     private void RegisterHandlerCore(Type eventType, Func<IServiceProvider?, object> eventHandlerFactory)
     {
-        if (eventType == null) throw new ArgumentNullException(nameof(eventType));
+        ArgumentNullException.ThrowIfNull(eventType);
         if (!typeof(IEvent).IsAssignableFrom(eventType))
             throw new ArgumentException($"Event type '{eventType.FullName}' must implement {nameof(IEvent)}.", nameof(eventType));
 

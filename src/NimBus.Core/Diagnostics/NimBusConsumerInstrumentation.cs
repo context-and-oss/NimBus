@@ -31,8 +31,8 @@ public static class NimBusConsumerInstrumentation
         Func<CancellationToken, Task> handler,
         CancellationToken cancellationToken = default)
     {
-        if (context is null) throw new ArgumentNullException(nameof(context));
-        if (handler is null) throw new ArgumentNullException(nameof(handler));
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(handler);
 
         var destination = SafeRead(() => context.To) ?? "unknown";
         var eventType = SafeRead(() => context.EventTypeId) ?? "unknown";

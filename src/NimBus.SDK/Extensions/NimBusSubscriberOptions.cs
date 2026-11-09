@@ -33,7 +33,7 @@ public class NimBusSubscriberOptions
     /// <param name="configure">Configures the CloudEvents consume options.</param>
     public void UseCloudEvents(Action<CloudEventSubscriberOptions> configure)
     {
-        if (configure is null) throw new ArgumentNullException(nameof(configure));
+        ArgumentNullException.ThrowIfNull(configure);
         var cloudEvents = new CloudEventSubscriberOptions();
         configure(cloudEvents);
         CloudEvents = cloudEvents;

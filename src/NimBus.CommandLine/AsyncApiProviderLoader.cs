@@ -45,7 +45,7 @@ public static class AsyncApiProviderLoader
     /// </summary>
     public static IAsyncApiDocumentProvider Resolve(Assembly assembly, string? providerTypeName = null)
     {
-        if (assembly is null) throw new ArgumentNullException(nameof(assembly));
+        ArgumentNullException.ThrowIfNull(assembly);
 
         // A candidate is either a direct provider type or a factory type — both surface a
         // parameterless way to obtain an IAsyncApiDocumentProvider, so they compete for --provider.

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -46,15 +47,15 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
     // What the Web UI offers resubmit and skip on (events-panel ACTIONABLE_STATUSES, plus the
     // Pending+Handoff manual override). The MCP server is narrower: handoff and deferred
     // recovery are Spec 035 Phase 3.
-    private static readonly IReadOnlySet<ResolutionStatus> WebAppActionable = new HashSet<ResolutionStatus>
+    private static readonly FrozenSet<ResolutionStatus> WebAppActionable = FrozenSet.ToFrozenSet(new[]
     {
         ResolutionStatus.Failed, ResolutionStatus.DeadLettered, ResolutionStatus.Unsupported, ResolutionStatus.Deferred,
-    };
+    });
 
-    private static readonly IReadOnlySet<ResolutionStatus> McpActionable = new HashSet<ResolutionStatus>
+    private static readonly FrozenSet<ResolutionStatus> McpActionable = FrozenSet.ToFrozenSet(new[]
     {
         ResolutionStatus.Failed, ResolutionStatus.DeadLettered, ResolutionStatus.Unsupported,
-    };
+    });
 
     private const string HandoffSubStatus = "Handoff";
 
@@ -371,8 +372,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Publishing {AuditType} for event {EventId} on {EndpointId} failed; releasing the claim",
-                auditType, target.EventId, target.EndpointId);
+            LogPublishingForEventOnFailed(_logger, ex, auditType, target.EventId, target.EndpointId);
             await ReleaseClaimAsync(target);
             await _audit.LogAuditAsync(MessageAuditType.CommandNotSent, httpContext,
                 data: JsonConvert.SerializeObject(new { command = auditType.ToString(), error = ex.GetType().Name }),
@@ -391,14 +391,12 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
             if (!await _store.TryRestoreArchivedEvent(target.EventId, version.SessionId!, target.EndpointId,
                     version.Status, version.LastMessageId, version.UpdatedAt))
             {
-                _logger.LogWarning("Event {EventId} on {EndpointId} could not be restored after an unsent command; a newer write already replaced it",
-                    target.EventId, target.EndpointId);
+                LogEventOnCouldNotBeRestored(_logger, target.EventId, target.EndpointId);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Restoring event {EventId} on {EndpointId} after an unsent command failed; it stays archived",
-                target.EventId, target.EndpointId);
+            LogRestoringEventOnAfterAnUnsent(_logger, ex, target.EventId, target.EndpointId);
         }
     }
 
@@ -435,7 +433,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Fallback lookup failed for endpoint {EndpointId}", ep.Id);
+                LogFallbackLookupFailedForEndpoint(_logger, ex, ep.Id);
                 return (ep.Id, Event: (UnresolvedEvent?)null);
             }
         });
@@ -444,7 +442,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
         if (hit.Event == null)
             return null;
 
-        _logger.LogInformation("Message {MessageId} not found in messages container, using fallback from endpoint {EndpointId}", messageId, hit.Id);
+        LogMessageNotFoundInMessagesContainer(_logger, messageId, hit.Id);
         return MessageEntityFromUnresolvedEvent(hit.Event);
     }
 
@@ -478,4 +476,19 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
     // TicketId column width (64).
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")]
     private static partial Regex TicketIdPattern();
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Publishing {AuditType} for event {EventId} on {EndpointId} failed; releasing the claim")]
+    private static partial void LogPublishingForEventOnFailed(ILogger logger, Exception exception, MessageAuditType auditType, string eventId, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Event {EventId} on {EndpointId} could not be restored after an unsent command; a newer write already replaced it")]
+    private static partial void LogEventOnCouldNotBeRestored(ILogger logger, string eventId, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Restoring event {EventId} on {EndpointId} after an unsent command failed; it stays archived")]
+    private static partial void LogRestoringEventOnAfterAnUnsent(ILogger logger, Exception exception, string eventId, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Fallback lookup failed for endpoint {EndpointId}")]
+    private static partial void LogFallbackLookupFailedForEndpoint(ILogger logger, Exception exception, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Message {MessageId} not found in messages container, using fallback from endpoint {EndpointId}")]
+    private static partial void LogMessageNotFoundInMessagesContainer(ILogger logger, string? messageId, string endpointId);
 }

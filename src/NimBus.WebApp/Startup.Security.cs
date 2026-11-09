@@ -230,7 +230,7 @@ public partial class Startup
         }
     }
 
-    private void AddAuthorizationAndAuditServices(IServiceCollection services)
+    private static void AddAuthorizationAndAuditServices(IServiceCollection services)
     {
         // Short-TTL cache for hot read-only store results (status counts,
         // metrics aggregates). Singleton is required: the consuming

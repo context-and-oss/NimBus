@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System.Text.Json;
 using NimBus.CommandLine;
 using Xunit;
@@ -30,7 +31,7 @@ public sealed class PlatformAppSettingsTests
 
         await service.DeployAsync(Options, CancellationToken.None);
 
-        var settingsCall = Assert.Single(az.Calls, call => call.Contains("appsettings"));
+        var settingsCall = Assert.Single(az.Calls, call => call.Contains("appsettings", StringComparison.Ordinal));
         Assert.Contains("delete", settingsCall, StringComparison.Ordinal);
         Assert.Contains("NimBus__PlatformType", settingsCall, StringComparison.Ordinal);
         Assert.Contains("NimBus__PlatformAssembly", settingsCall, StringComparison.Ordinal);
@@ -44,7 +45,7 @@ public sealed class PlatformAppSettingsTests
 
         await service.DeployAsync(Options with { Target = AppDeploymentTarget.Resolver }, CancellationToken.None);
 
-        Assert.DoesNotContain(az.Calls, call => call.Contains("appsettings"));
+        Assert.DoesNotContain(az.Calls, call => call.Contains("appsettings", StringComparison.Ordinal));
     }
 
     private sealed class StubArtifacts : IDeploymentArtifactSource

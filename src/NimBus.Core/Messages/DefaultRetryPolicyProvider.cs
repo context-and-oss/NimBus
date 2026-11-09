@@ -104,7 +104,7 @@ public class DefaultRetryPolicyProvider : IRetryPolicyProvider
     private static HashSet<string>? ToEventTypeSet(string[]? eventTypeIds) =>
         eventTypeIds?.Length > 0 ? new HashSet<string>(eventTypeIds, StringComparer.OrdinalIgnoreCase) : null;
 
-    private class ExceptionRetryRule
+    private sealed class ExceptionRetryRule
     {
         public string? ExceptionContains { get; set; }
         public Type? ExceptionType { get; set; }

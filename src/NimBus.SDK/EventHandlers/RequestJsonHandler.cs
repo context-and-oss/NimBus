@@ -38,7 +38,7 @@ public class RequestJsonHandler<TRequest, TResponse> : IEventJsonHandler
     /// <inheritdoc />
     public async Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
     {
-        if (context == null) throw new ArgumentNullException(nameof(context));
+        ArgumentNullException.ThrowIfNull(context);
 
         var replyTo = context.ReplyTo;
         var replySessionId = context.ReplyToSessionId;

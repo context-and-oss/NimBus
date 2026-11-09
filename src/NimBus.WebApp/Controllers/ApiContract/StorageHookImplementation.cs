@@ -16,7 +16,7 @@ using NimBus.WebApp.Services;
 
 namespace NimBus.WebApp.Controllers;
 
-public class StorageHookImplementation : IStorageHookApiController
+public partial class StorageHookImplementation : IStorageHookApiController
 {
     /// <summary>
     /// Header carrying the webhook key. Preferred over the legacy ?key=
@@ -126,11 +126,11 @@ public class StorageHookImplementation : IStorageHookApiController
         {
             if (_hostEnvironment.IsDevelopment())
             {
-                _logger.LogWarning("EventGrid:WebhookKey is not configured. Webhook endpoints are unprotected. Configure a webhook key before deploying.");
+                LogEventGridWebhookKeyIsNotConfigured(_logger);
                 return true;
             }
 
-            _logger.LogError("EventGrid:WebhookKey is not configured. Webhook request rejected — set EventGrid:WebhookKey to enable storage hooks in non-Development environments.");
+            LogEventGridWebhookKeyIsNotConfiguredWebhook2(_logger);
             return false;
         }
 
@@ -143,7 +143,7 @@ public class StorageHookImplementation : IStorageHookApiController
 
         if (string.IsNullOrEmpty(requestKey) || !FixedTimeEquals(requestKey, _webhookKey))
         {
-            _logger.LogWarning("Webhook request rejected: invalid or missing webhook key");
+            LogWebhookRequestRejectedInvalidOrMissing(_logger);
             return false;
         }
 
@@ -154,4 +154,13 @@ public class StorageHookImplementation : IStorageHookApiController
         => System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
             System.Text.Encoding.UTF8.GetBytes(left),
             System.Text.Encoding.UTF8.GetBytes(right));
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "EventGrid:WebhookKey is not configured. Webhook endpoints are unprotected. Configure a webhook key before deploying.")]
+    private static partial void LogEventGridWebhookKeyIsNotConfigured(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "EventGrid:WebhookKey is not configured. Webhook request rejected — set EventGrid:WebhookKey to enable storage hooks in non-Development environments.")]
+    private static partial void LogEventGridWebhookKeyIsNotConfiguredWebhook2(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Webhook request rejected: invalid or missing webhook key")]
+    private static partial void LogWebhookRequestRejectedInvalidOrMissing(ILogger logger);
 }

@@ -314,7 +314,7 @@ public sealed partial class FailedInsightsServiceTests
         Assert.HasCount(2, group.TopPatterns);
         Assert.AreEqual(3, group.TopPatterns.First().Count);
         Assert.AreEqual(1, group.MorePatterns);
-        StringAssert.StartsWith(group.TopPatterns.First().GroupKey, "ep:");
+        StringAssert.StartsWith(group.TopPatterns.First().GroupKey, "ep:", StringComparison.Ordinal);
         Assert.AreEqual(group.TopPatterns.First().GroupKey,
             overview.Groups.SelectMany(g => g.SubGroups).Single(s => s.NormalizedPattern == group.TopPatterns.First().NormalizedPattern).GroupKey,
             "A pattern has the same key in every perspective.");

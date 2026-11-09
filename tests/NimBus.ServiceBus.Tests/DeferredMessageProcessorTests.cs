@@ -507,7 +507,7 @@ public class DeferredMessageProcessorTests
         var ex = await Assert.ThrowsExactlyAsync<TransientException>(
             () => sut.ProcessDeferredMessagesAsync("session-1", "my-topic"));
 
-        Assert.IsInstanceOfType(ex.InnerException, typeof(ServiceBusException));
+        Assert.IsInstanceOfType<ServiceBusException>(ex.InnerException);
     }
 
     // ── Cancellation ────────────────────────────────────────────────────

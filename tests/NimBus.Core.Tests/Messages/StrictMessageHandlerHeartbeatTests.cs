@@ -73,7 +73,7 @@ public class StrictMessageHandlerHeartbeatTests
         Assert.AreEqual(heartbeat.ForwardReceivedTime, heartbeat.BackwardSendTime);
         Assert.AreEqual(ctx.To, heartbeat.Endpoint);
         Assert.IsFalse(string.IsNullOrWhiteSpace(heartbeat.SdkVersion));
-        Assert.IsFalse(heartbeat.SdkVersion.Contains('+'), "SdkVersion must be the bare package version without the '+<sha>' build suffix");
+        Assert.IsFalse(heartbeat.SdkVersion.Contains('+', StringComparison.Ordinal), "SdkVersion must be the bare package version without the '+<sha>' build suffix");
     }
 
     [TestMethod]

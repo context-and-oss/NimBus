@@ -48,7 +48,7 @@ public static class AsyncApiExporter
         CoreAsyncApiFormat format,
         AsyncApiEnrichmentRegistry? enrichment = null)
     {
-        if (platform is null) throw new ArgumentNullException(nameof(platform));
+        ArgumentNullException.ThrowIfNull(platform);
 
         var content = Serialize(platform, format, enrichment);
         await File.WriteAllTextAsync(outputPath, content);
@@ -69,7 +69,7 @@ public static class AsyncApiExporter
     /// </param>
     public static string Serialize(IPlatform platform, CoreAsyncApiFormat format, AsyncApiEnrichmentRegistry? enrichment = null)
     {
-        if (platform is null) throw new ArgumentNullException(nameof(platform));
+        ArgumentNullException.ThrowIfNull(platform);
 
         var document = BuildDocument(platform, enrichment);
         return format == CoreAsyncApiFormat.Json
@@ -180,7 +180,7 @@ public static class AsyncApiExporter
 
     private static Map BuildChannels(
         SortedDictionary<string, SortedSet<string>> topicMessages,
-        IReadOnlyDictionary<string, IEndpoint> endpointsById)
+        Dictionary<string, IEndpoint> endpointsById)
     {
         var channels = new Map();
         foreach (var (endpointId, eventIds) in topicMessages)
@@ -233,7 +233,7 @@ public static class AsyncApiExporter
         IPlatform platform,
         IReadOnlyList<IEventType> events,
         IReadOnlyList<DynamicForward> dynamicForwards,
-        IReadOnlyDictionary<string, IEndpoint> endpointsById)
+        Dictionary<string, IEndpoint> endpointsById)
     {
         var operations = new Map();
 

@@ -63,7 +63,7 @@ public class ResolverResponseContractTests
         var row = (await pipeline.Store.GetEvent(Subscriber, eventId))!;
         Assert.AreEqual(ResolutionStatus.Failed, row.ResolutionStatus);
         Assert.AreEqual(MessageType.ErrorResponse, row.MessageType);
-        StringAssert.Contains(row.MessageContent?.ErrorContent?.ErrorText, "ERP rejected the order");
+        StringAssert.Contains(row.MessageContent?.ErrorContent?.ErrorText, "ERP rejected the order", StringComparison.Ordinal);
         Assert.IsTrue(string.IsNullOrEmpty(row.DeadLetterErrorDescription), "A retryable failure is not a dead-letter.");
     }
 
@@ -78,8 +78,8 @@ public class ResolverResponseContractTests
 
         var row = (await pipeline.Store.GetEvent(Subscriber, eventId))!;
         Assert.AreEqual(ResolutionStatus.DeadLettered, row.ResolutionStatus);
-        StringAssert.StartsWith(row.DeadLetterReason, "Permanent failure");
-        StringAssert.Contains(row.Reason, "OrderId is malformed");
+        StringAssert.StartsWith(row.DeadLetterReason, "Permanent failure", StringComparison.Ordinal);
+        StringAssert.Contains(row.Reason, "OrderId is malformed", StringComparison.Ordinal);
         Assert.IsTrue(pipeline.SubscriberSettlement.DeadLetteredCount > 0, "The subscriber dead-letters its own copy.");
         Assert.AreEqual(0, pipeline.ResolverSettlement.DeadLetteredCount, "The Resolver records it; it does not dead-letter the response.");
     }

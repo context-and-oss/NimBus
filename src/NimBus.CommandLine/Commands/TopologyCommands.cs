@@ -39,11 +39,10 @@ internal static class TopologyCommands
 
                 exportCommand.OnExecuteAsync(async cancellationToken =>
                 {
-                    var exporter = new PlatformConfigExporter();
                     var outputPath = output.HasValue() ? output.Value()! : Path.Combine(Environment.CurrentDirectory, "platform-config.json");
                     var factory = await ResolvePlatformFactoryAsync(
                         exportAssembly.Value(), exportPackage.Value(), exportFeed.Value(), exportPlatformType.Value(), cancellationToken).ConfigureAwait(false);
-                    await exporter.ExportAsync(outputPath, cancellationToken, factory).ConfigureAwait(false);
+                    await PlatformConfigExporter.ExportAsync(outputPath, cancellationToken, factory).ConfigureAwait(false);
                     return 0;
                 });
             });

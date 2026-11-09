@@ -17,7 +17,7 @@ using NimBus.ServiceBus;
 namespace NimBus.SDK.Tests;
 
 /// <summary>
-/// Coverage for <see cref="ServiceCollectionExtensions.AddNimBusHandoffClient"/>'s
+/// Coverage for <see cref="NimBus.SDK.Extensions.ServiceCollectionExtensions.AddNimBusHandoffClient"/>'s
 /// DI behaviour. Earlier iterations of the registration used
 /// <c>TryAddSingleton</c> for both the options and the client, which silently
 /// dropped second-endpoint registrations and routed all settlements to the

@@ -23,7 +23,7 @@ namespace NimBus.Resolver.Alerts;
 /// same value lose the compare, so a burst of failures sends one mail. A failed send releases
 /// the claim. Each subscriber is handled on its own: one failure never stops the rest.
 /// </remarks>
-public sealed class SubscriptionAlertNotifier : IEndpointAlertNotifier
+public sealed partial class SubscriptionAlertNotifier : IEndpointAlertNotifier
 {
     /// <summary>The <c>NotifiedAt</c> format, shared with the WebApp and existing documents.</summary>
     public const string NotifiedAtFormat = "yyyy-MM-dd HH:mm";
@@ -73,8 +73,7 @@ public sealed class SubscriptionAlertNotifier : IEndpointAlertNotifier
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning(ex, "Endpoint alerts: could not read the alert subscriptions of {EndpointId}; no mail sent for event {EventId}.",
-                context.EndpointId, context.EventId);
+            LogEndpointAlertsCouldNotRead(_logger, ex, context.EndpointId, context.EventId);
             return;
         }
 
@@ -87,8 +86,7 @@ public sealed class SubscriptionAlertNotifier : IEndpointAlertNotifier
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning(ex, "Endpoint alerts: could not mail subscription {SubscriptionId} on {EndpointId} about event {EventId}.",
-                    subscription.Id, context.EndpointId, context.EventId);
+                LogEndpointAlertsCouldNotMailSubscription(_logger, ex, subscription.Id, context.EndpointId, context.EventId);
             }
         }
     }
@@ -97,15 +95,13 @@ public sealed class SubscriptionAlertNotifier : IEndpointAlertNotifier
     {
         if (!IncludesMail(subscription.Type))
         {
-            _logger.LogDebug("Endpoint alerts: subscription {SubscriptionId} on {EndpointId} has type {Type}; only mail is delivered.",
-                subscription.Id, context.EndpointId, subscription.Type);
+            LogEndpointAlertsSubscriptionOnHasType(_logger, subscription.Id, context.EndpointId, subscription.Type);
             return false;
         }
 
         if (!string.IsNullOrWhiteSpace(subscription.Payload))
         {
-            _logger.LogWarning("Endpoint alerts: skipping payload-filtered subscription {SubscriptionId} on {EndpointId}; payload filters aren't evaluated.",
-                subscription.Id, context.EndpointId);
+            LogEndpointAlertsSkippingPayloadFilteredSubscription(_logger, subscription.Id, context.EndpointId);
             return false;
         }
 
@@ -168,13 +164,12 @@ public sealed class SubscriptionAlertNotifier : IEndpointAlertNotifier
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Endpoint alerts: could not update NotifiedAt on subscription {SubscriptionId}.", subscription.Id);
+            LogEndpointAlertsCouldNotUpdateNotifiedAt(_logger, ex, subscription.Id);
         }
     }
 
     private void LogMailed(EndpointSubscription subscription, EndpointAlertContext context)
-        => _logger.LogInformation("Endpoint alerts: mailed subscription {SubscriptionId} on {EndpointId} about event {EventId} ({Status}).",
-            subscription.Id, context.EndpointId, context.EventId, context.Status);
+        => LogEndpointAlertsMailedSubscriptionOnAbout(_logger, subscription.Id, context.EndpointId, context.EventId, context.Status);
 
     private static bool IncludesMail(string? type)
         => type is not null
@@ -192,4 +187,22 @@ public sealed class SubscriptionAlertNotifier : IEndpointAlertNotifier
 
         return now.UtcDateTime - last < TimeSpan.FromSeconds(frequencySeconds);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint alerts: could not read the alert subscriptions of {EndpointId}; no mail sent for event {EventId}.")]
+    private static partial void LogEndpointAlertsCouldNotRead(ILogger logger, Exception exception, string endpointId, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint alerts: could not mail subscription {SubscriptionId} on {EndpointId} about event {EventId}.")]
+    private static partial void LogEndpointAlertsCouldNotMailSubscription(ILogger logger, Exception exception, string subscriptionId, string endpointId, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Endpoint alerts: subscription {SubscriptionId} on {EndpointId} has type {Type}; only mail is delivered.")]
+    private static partial void LogEndpointAlertsSubscriptionOnHasType(ILogger logger, string subscriptionId, string endpointId, string type);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint alerts: skipping payload-filtered subscription {SubscriptionId} on {EndpointId}; payload filters aren't evaluated.")]
+    private static partial void LogEndpointAlertsSkippingPayloadFilteredSubscription(ILogger logger, string subscriptionId, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint alerts: could not update NotifiedAt on subscription {SubscriptionId}.")]
+    private static partial void LogEndpointAlertsCouldNotUpdateNotifiedAt(ILogger logger, Exception exception, string subscriptionId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Endpoint alerts: mailed subscription {SubscriptionId} on {EndpointId} about event {EventId} ({Status}).")]
+    private static partial void LogEndpointAlertsMailedSubscriptionOnAbout(ILogger logger, string subscriptionId, string endpointId, string eventId, MessageStore.ResolutionStatus status);
 }

@@ -66,8 +66,8 @@ public class McpAuthenticationModeResolverTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
             McpAuthenticationModeResolver.Resolve(options, isDevelopment: false, localDevAuthenticationEnabled: false));
 
-        StringAssert.Contains(ex.Message, "NimBus:Mcp:Entra:TenantId");
-        StringAssert.Contains(ex.Message, "NimBus:Mcp:Entra:ClientId");
+        StringAssert.Contains(ex.Message, "NimBus:Mcp:Entra:TenantId", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "NimBus:Mcp:Entra:ClientId", StringComparison.Ordinal);
     }
 
     [TestMethod]

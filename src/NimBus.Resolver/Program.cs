@@ -1,3 +1,4 @@
+using System.Globalization;
 using NimBus.Resolver;
 using NimBus.Core.Extensions;
 using NimBus.MessageStore;
@@ -23,7 +24,7 @@ builder.Services
 
 // Configure Serilog for structured logging (console output)
 Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console(LogEventLevel.Information)
+    .WriteTo.Console(LogEventLevel.Information, formatProvider: CultureInfo.InvariantCulture)
     .MinimumLevel.Information()
     .Enrich.FromLogContext()
     .CreateLogger();

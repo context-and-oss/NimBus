@@ -29,7 +29,7 @@ public static class AsyncApiCli
         string? assemblyPath = null,
         string? providerType = null)
     {
-        if (writer is null) throw new ArgumentNullException(nameof(writer));
+        ArgumentNullException.ThrowIfNull(writer);
 
         var resolvedFormat = format
             ?? (output != null && output.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
@@ -72,7 +72,7 @@ public static class AsyncApiCli
     /// <summary>Validates an AsyncAPI document. Returns 0 when valid, 1 when invalid or unreadable.</summary>
     public static int RunValidate(string file, TextWriter writer)
     {
-        if (writer is null) throw new ArgumentNullException(nameof(writer));
+        ArgumentNullException.ThrowIfNull(writer);
 
         try
         {
@@ -103,7 +103,7 @@ public static class AsyncApiCli
     /// <summary>Diffs two AsyncAPI documents. Returns 0 for additive-only changes, 1 when breaking.</summary>
     public static int RunDiff(string oldFile, string newFile, TextWriter writer)
     {
-        if (writer is null) throw new ArgumentNullException(nameof(writer));
+        ArgumentNullException.ThrowIfNull(writer);
 
         try
         {

@@ -68,8 +68,8 @@ public static class AsyncApiDiff
     /// <summary>Diffs <paramref name="oldDoc"/> against <paramref name="newDoc"/>.</summary>
     public static AsyncApiDiffResult Diff(JObject oldDoc, JObject newDoc)
     {
-        if (oldDoc is null) throw new ArgumentNullException(nameof(oldDoc));
-        if (newDoc is null) throw new ArgumentNullException(nameof(newDoc));
+        ArgumentNullException.ThrowIfNull(oldDoc);
+        ArgumentNullException.ThrowIfNull(newDoc);
 
         var changes = new List<AsyncApiChange>();
 

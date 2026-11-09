@@ -1,4 +1,5 @@
 ﻿using Microsoft.ApplicationInsights.DataContracts;
+using System.Globalization;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -43,9 +44,9 @@ public class LogTraceCollection : List<LogTrace>
         foreach (var row in table.Rows)
         {
             var logTrace = new LogTrace();
-            logTrace.Timestamp = DateTime.Parse(row[columnIndexes["timestamp"]]);
+            logTrace.Timestamp = DateTime.Parse(row[columnIndexes["timestamp"]], CultureInfo.InvariantCulture);
             logTrace.Text = row[columnIndexes["message"]];
-            logTrace.SeverityLevel = int.Parse(row[columnIndexes["severityLevel"]]);
+            logTrace.SeverityLevel = int.Parse(row[columnIndexes["severityLevel"]], CultureInfo.InvariantCulture);
             logTrace.CustomDimensions = JsonConvert.DeserializeObject<CustomDimensions>(row[columnIndexes["customDimensions"]])!;
             this.Add(logTrace);
         }

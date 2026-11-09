@@ -40,9 +40,9 @@ public sealed class CommandCatalogTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(
             () => PlatformValidation.EnsureCommandConsumers(platform));
 
-        StringAssert.Contains(ex.Message, nameof(PlaceCustomerOnCreditHold));
-        StringAssert.Contains(ex.Message, "2 consumers");
-        StringAssert.Contains(ex.Message, nameof(RogueSecondConsumer));
+        StringAssert.Contains(ex.Message, nameof(PlaceCustomerOnCreditHold), StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "2 consumers", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, nameof(RogueSecondConsumer), StringComparison.Ordinal);
     }
 
     // A throwaway catalog where a second endpoint also consumes the command —

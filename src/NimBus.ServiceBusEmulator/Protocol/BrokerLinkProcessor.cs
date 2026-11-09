@@ -274,7 +274,7 @@ internal sealed class BrokerLinkProcessor(
             }
         }
 
-        private void Complete(MessageContext context)
+        private static void Complete(MessageContext context)
         {
             if (context.DeliveryState is TransactionalState transaction)
             {
