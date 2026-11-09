@@ -246,6 +246,68 @@ public sealed partial class FailedInsightsServiceTests
     }
 
     [TestMethod]
+    public async Task A_cancelled_request_reads_nothing()
+    {
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "m1", "x");
+        var enrichment = new FakeEnrichment();
+        var service = Service(store, enrichment);
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            service.GetOverviewAsync(new FailedInsightsRequest(Period._1d, From, To, null, true, false), cancelled.Token));
+
+        Assert.AreEqual(0, store.Calls);
+        Assert.AreEqual(0, enrichment.Reads);
+    }
+
+    [TestMethod]
+    public async Task A_caller_that_cancels_stops_waiting_without_failing_the_shared_read_for_others()
+    {
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "m1", "x");
+        var enrichment = new FakeEnrichment();
+        enrichment.Save(Result("m1", "e1", "orders", "transient_dependency", FailureGuidance.RetryMayHelp));
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        enrichment.Gate = () => release.Task;
+        var service = Service(store, enrichment);
+        using var leaving = new CancellationTokenSource();
+
+        var first = service.GetOverviewAsync(new FailedInsightsRequest(Period._1d, From, To, null, true, false), leaving.Token);
+        var second = service.GetOverviewAsync(new FailedInsightsRequest(Period._1d, From, To, null, true, false));
+        await Task.Delay(50);
+        await leaving.CancelAsync();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => first);
+        release.SetResult();
+        var overview = (await second).Overview!;
+
+        Assert.AreEqual(InsightsEnrichmentStatus.Available, overview.Enrichment);
+        Assert.AreEqual(1, overview.Coverage!.Classified);
+        Assert.AreEqual(1, enrichment.Reads, "Both callers shared one read.");
+    }
+
+    [TestMethod]
+    public async Task The_metrics_routes_pass_the_request_aborted_token_to_the_insights_query()
+    {
+        var query = new CapturingQuery();
+        using var aborted = new CancellationTokenSource();
+        var accessor = new Microsoft.AspNetCore.Http.HttpContextAccessor
+        {
+            HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext { RequestAborted = aborted.Token },
+        };
+        var store = new CountingStore();
+        var metrics = new MetricsImplementation(store, NewCache(), new Authorization(true), query, accessor);
+
+        await metrics.GetMetricsFailedInsightsAsync(Period._1d);
+        await metrics.GetMetricsFailedInsightsOccurrencesAsync(From, To, null, InsightsPerspective.Cause, "notAnalyzed", null, null);
+        await metrics.GetMetricsFailedInsightsPatternsAsync(From, To, null, InsightsPerspective.Cause, "notAnalyzed", null, null);
+
+        Assert.HasCount(3, query.Tokens);
+        foreach (var token in query.Tokens) Assert.AreEqual(aborted.Token, token);
+    }
+
+    [TestMethod]
     public async Task Concurrent_loads_share_one_bulk_read()
     {
         var store = new CountingStore();
@@ -477,7 +539,8 @@ public sealed partial class FailedInsightsServiceTests
         {
             Interlocked.Increment(ref _reads);
             lock (RequestedCounts) RequestedCounts.Add(failureMessageIds.Count);
-            if (Gate is not null) await Gate();
+            // Like FailureClassificationReader, a cancelled read throws.
+            if (Gate is not null) await Gate().WaitAsync(cancellationToken);
             var snapshots = Status == ClassificationBulkReadStatus.Available
                 ? failureMessageIds.Where(Snapshots.ContainsKey).ToDictionary(id => id, id => Snapshots[id])
                 : new Dictionary<string, ClassificationSnapshot>();
@@ -500,6 +563,30 @@ public sealed partial class FailedInsightsServiceTests
     private sealed class FixedRowsStore(params FailedMessageInfo[] rows) : InMemoryMessageStore
     {
         public override Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from, DateTime to) => Task.FromResult(rows.ToList());
+    }
+
+    /// <summary>Records the cancellation token of every query and answers Forbidden.</summary>
+    private sealed class CapturingQuery : IFailedInsightsQuery
+    {
+        public List<CancellationToken> Tokens { get; } = [];
+
+        public Task<FailedInsightsQueryResult> GetOverviewAsync(FailedInsightsRequest request, CancellationToken cancellationToken = default)
+        {
+            Tokens.Add(cancellationToken);
+            return Task.FromResult(new FailedInsightsQueryResult(FailedInsightsQueryStatus.Forbidden, null));
+        }
+
+        public Task<FailedInsightsPageResult<InsightOccurrencePage>> GetOccurrencesAsync(FailedInsightsPageRequest request, CancellationToken cancellationToken = default)
+        {
+            Tokens.Add(cancellationToken);
+            return Task.FromResult(new FailedInsightsPageResult<InsightOccurrencePage>(FailedInsightsQueryStatus.Forbidden, null));
+        }
+
+        public Task<FailedInsightsPageResult<InsightGroupPatternPage>> GetPatternsAsync(FailedInsightsPageRequest request, CancellationToken cancellationToken = default)
+        {
+            Tokens.Add(cancellationToken);
+            return Task.FromResult(new FailedInsightsPageResult<InsightGroupPatternPage>(FailedInsightsQueryStatus.Forbidden, null));
+        }
     }
 
     private sealed class FixedClock(DateTime now) : TimeProvider

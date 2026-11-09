@@ -262,7 +262,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
 
         var window = remaining.Take(pageSize + 1).ToList();
         var page = window.Take(pageSize).ToList();
-        var statuses = await ReadCurrentStatusAsync(page).ConfigureAwait(false);
+        var statuses = await ReadCurrentStatusAsync(page, cancellationToken).ConfigureAwait(false);
         var last = page.LastOrDefault();
         return new FailedInsightsPageResult<InsightOccurrencePage>(FailedInsightsQueryStatus.Ok, new InsightOccurrencePage
         {
@@ -364,14 +364,15 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     /// Current event status for one page: one GetEventsByIds call per endpoint, with stored ids
     /// ({EventId}_{SessionId}); a bare event id finds nothing on Cosmos (spec 043 §4.3).
     /// </summary>
-    private async Task<Dictionary<(string, string), string>> ReadCurrentStatusAsync(IReadOnlyList<OccurrenceRow> page)
+    private async Task<Dictionary<(string, string), string>> ReadCurrentStatusAsync(IReadOnlyList<OccurrenceRow> page, CancellationToken cancellationToken)
     {
         var statuses = new Dictionary<(string, string), string>();
         foreach (var endpoint in page.GroupBy(r => r.Info.EndpointId, StringComparer.Ordinal))
         {
             var storedIds = endpoint.Select(r => StoredId(r.Info.EventId, r.Info.SessionId)).Distinct(StringComparer.Ordinal).ToList();
             List<UnresolvedEvent> events;
-            try { events = await _events.GetEventsByIds(endpoint.Key, storedIds).ConfigureAwait(false); }
+            // GetEventsByIds takes no token; a cancelled caller stops waiting for it.
+            try { events = await _events.GetEventsByIds(endpoint.Key, storedIds).WaitAsync(cancellationToken).ConfigureAwait(false); }
             catch (EndpointNotFoundException) { continue; }
             foreach (var current in events)
                 statuses[(endpoint.Key, StoredId(current.EventId, current.SessionId))] = current.ResolutionStatus.ToString();
@@ -421,12 +422,15 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     private async Task<(FailedInsightsQueryStatus Status, Scope? Scope)> LoadScopeAsync(Period period, DateTime? from, DateTime? to, string? endpoint,
         bool enrich, bool refresh, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!await _authorization.HasRoleAsync(AccessRole.Reader).ConfigureAwait(false))
             return (FailedInsightsQueryStatus.Forbidden, null);
         if (await ResolveWindowAsync(period, from, to).ConfigureAwait(false) is not { } window)
             return (FailedInsightsQueryStatus.InvalidWindow, null);
 
-        var occurrences = await ReadOccurrencesAsync(window).ConfigureAwait(false);
+        // Shared single-flight reads run to completion for every caller; one that cancels only
+        // stops waiting, so it never fails the read for the others.
+        var occurrences = await ReadOccurrencesAsync(window).WaitAsync(cancellationToken).ConfigureAwait(false);
         var endpointId = string.IsNullOrWhiteSpace(endpoint) ? null : endpoint.Trim();
         var rows = endpointId is null
             ? occurrences.Rows
@@ -522,12 +526,13 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
 
     private async Task<EnrichmentRead> ReadEnrichmentAsync(string key, HashSet<string> ids, CancellationToken cancellationToken)
     {
+        // The factory is shared by every concurrent caller, so it never takes one caller's token.
         var read = await _cache.GetOrCreateAsync(key, TimeSpan.FromSeconds(_options.EnrichmentCacheSeconds), async () =>
         {
             var result = await _enrichment.ReadAsync(ids,
-                new ClassificationBulkReadOptions(_options.BulkReadBatchSize, _options.BulkReadConcurrency), cancellationToken).ConfigureAwait(false);
+                new ClassificationBulkReadOptions(_options.BulkReadBatchSize, _options.BulkReadConcurrency), CancellationToken.None).ConfigureAwait(false);
             return new EnrichmentRead(_clock.GetUtcNow(), ids, result);
-        }).ConfigureAwait(false);
+        }).WaitAsync(cancellationToken).ConfigureAwait(false);
         // Like a faulted read, an unavailable one must not stick: the next request retries storage.
         if (read.Result.Status != ClassificationBulkReadStatus.Available) _cache.Remove(key);
         return read;
