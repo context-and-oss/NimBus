@@ -34,9 +34,10 @@ An incremental build only re-reports projects it recompiles, so every measuremen
 - **Public API.** No public member is removed, renamed or re-typed (`docs/versioning.md`).
   CA1711 on `IEventHandler<T>` and `MessagePipelineDelegate`, and CA1822 on
   `EmailChannel.BuildSubject`, get a `[SuppressMessage]` with a justification.
-  `IServiceBusSession.DeadLetterAsync` renames its parameters `reason`/`v` to the
-  implementation's `deadLetterReason`/`deadLetterErrorDescription` (CA1725); only callers
-  that pass those arguments by name are affected, and none in the repository do. The
+  `IServiceBusSession.DeadLetterAsync` keeps its `reason`/`v` parameter names, and the
+  `ServiceBusSession` implementation keeps `deadLetterReason`/`deadLetterErrorDescription`:
+  renaming either side breaks callers that pass those arguments by name (CS1739), so the
+  implementation suppresses CA1725 with a justification. The
   `T_Event` type parameter becomes `TEvent` (CA1707), which no caller can observe.
 - **Test code.** Test files missing the house pragma `#pragma warning disable CA1707,
   CA2007` get it. `tests/.editorconfig` turns off CA1861 and CA1859 (performance rules that
