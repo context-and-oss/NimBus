@@ -298,5 +298,6 @@ The deferred message flow is covered by dedicated tests:
 | Deferred drain | `ProcessDeferredMessagesAsync_PartialBatches_DrainsRemainingMessages` |
 | Drain stops when the session blocks again | `ProcessDeferredMessagesAsync_FirstReplayBlocksSessionAgain_StopsAtTheReplayParkedAgain` |
 | Recovery triggers | `HandleResubmissionRequest_WhenSucceedsAndDeferredCountGtZero_SendsProcessDeferredRequest` |
+| Drain requested again when a settlement is redelivered after its unblock | `HandleRetryRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock`, `HandleSkipRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock`, `HandleHandoffCompletedRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock` |
 
 Additional tests exist in `tests/NimBus.ServiceBus.Tests/` for session state serialization and deferred message operations. End-to-end tests in `tests/NimBus.EndToEnd.Tests/` verify the complete deferral workflow including retry backoff, resubmission, and metadata integrity.

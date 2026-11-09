@@ -249,6 +249,14 @@ public partial class StrictMessageHandler : MessageHandler
             // the retry is answered as resolved without running the handler.
             messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
             LogInfo(messageContext, exception.Message);
+            // As in HandleSkipRequest: a previous delivery of this retry may have unblocked the
+            // session and then stopped before requesting the drain, and without an inbox nothing
+            // else would request it. Repair that gap on redelivery, but never resume work behind
+            // a newer event's block.
+            if (string.IsNullOrEmpty(exception.BlockedByEventId))
+            {
+                await ContinueWithAnyDeferredMessages(messageContext);
+            }
             await SendResolutionResponse(messageContext);
             await CompleteMessage(messageContext);
         }

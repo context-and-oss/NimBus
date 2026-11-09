@@ -1151,6 +1151,31 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
+    [DataRow(null, 1)]
+    [DataRow("newer-blocking-event", 0)]
+    public async Task HandleRetryRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock(
+        string? blockedBy, int expectedDrainCalls)
+    {
+        // The first delivery handled the event and unblocked the session, but stopped before
+        // sending ProcessDeferredRequest. With no inbox configured, the redelivery reaches the
+        // blocked-by-this guard and must repair that gap, as Skip and handoff completion do.
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = blockedBy;
+        ctx.DeferredCountResult = 2;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+
+        await CreateHandler(handler, response).Handle(ctx);
+
+        Assert.AreEqual(expectedDrainCalls, response.ProcessDeferredCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, response.ResolutionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
     public async Task HandleRetryRequest_HandlerThrows_SendsErrorAndCompletes()
     {
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
