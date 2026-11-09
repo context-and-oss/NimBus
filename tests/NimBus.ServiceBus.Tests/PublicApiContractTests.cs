@@ -52,6 +52,19 @@ public class PublicApiContractTests
     }
 
     [TestMethod]
+    [DataRow(typeof(IServiceBusSession), "message", "reason", "v", "cancellationToken")]
+    [DataRow(typeof(ServiceBusSession), "message", "deadLetterReason", "deadLetterErrorDescription", "cancellationToken")]
+    public void DeadLetterAsync_KeepsParameterNamesForNamedArgumentCallers(System.Type type, string p0, string p1, string p2, string p3)
+    {
+        var method = type.GetMethod(nameof(IServiceBusSession.DeadLetterAsync));
+
+        Assert.IsNotNull(method);
+        CollectionAssert.AreEqual(
+            new[] { p0, p1, p2, p3 },
+            method.GetParameters().Select(parameter => parameter.Name).ToArray());
+    }
+
+    [TestMethod]
     public void ISubscriberClient_ExposesGenericRegisterHandlerMethod()
     {
         var method = typeof(ISubscriberClient).GetMethods().Single(candidate => candidate.Name == "RegisterHandler");

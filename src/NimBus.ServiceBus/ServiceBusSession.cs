@@ -3,6 +3,7 @@ using Grpc.Core;
 using NimBus.Core.Messages;
 using Microsoft.Azure.Functions.Worker;
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,7 +13,7 @@ namespace NimBus.ServiceBus;
 public interface IServiceBusSession
 {
     Task CompleteAsync(IServiceBusMessage message, CancellationToken cancellationToken = default);
-    Task DeadLetterAsync(IServiceBusMessage message, string deadLetterReason, string? deadLetterErrorDescription, CancellationToken cancellationToken = default);
+    Task DeadLetterAsync(IServiceBusMessage message, string reason, string? v, CancellationToken cancellationToken = default);
     Task SetStateAsync(SessionState sessionState, CancellationToken cancellationToken = default);
     Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default);
     Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default);
@@ -73,6 +74,7 @@ public class ServiceBusSession : IServiceBusSession
             "Cannot complete message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
     }
 
+    [SuppressMessage("Naming", "CA1725:Parameter names should match base declaration", Justification = "Public API; renaming the interface or the implementation parameters would break callers that pass them by name.")]
     public Task DeadLetterAsync(IServiceBusMessage message, string deadLetterReason, string? deadLetterErrorDescription, CancellationToken cancellationToken = default)
     {
         if (_messageActions != null)
