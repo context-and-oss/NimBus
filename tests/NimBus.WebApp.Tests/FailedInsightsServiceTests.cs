@@ -223,6 +223,29 @@ public sealed partial class FailedInsightsServiceTests
     }
 
     [TestMethod]
+    public async Task A_preset_window_sent_back_as_the_api_serialized_it_reuses_the_cached_reads()
+    {
+        // The API writes DateTimes to the millisecond (UtcDateTimeJsonConverter); the clock is finer.
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "m1", "Timeout calling CRM");
+        var enrichment = new FakeEnrichment();
+        var cache = NewCache();
+        var service = Service(store, enrichment, cache: cache, clock: new FixedClock(Now.AddTicks(1_234)));
+        var overview = (await service.GetOverviewAsync(new FailedInsightsRequest(Period._1d, null, null, null, true, false))).Overview!;
+
+        var json = new JsonSerializerOptions { Converters = { new UtcDateTimeJsonConverter() } };
+        var from = JsonSerializer.Deserialize<DateTime>(JsonSerializer.Serialize(overview.From, json), json);
+        var to = JsonSerializer.Deserialize<DateTime>(JsonSerializer.Serialize(overview.To, json), json);
+        var page = await service.GetOccurrencesAsync(new FailedInsightsPageRequest(from, to, null, InsightsPerspective.ErrorPattern,
+            overview.Groups.Single().GroupKey, 10, null));
+
+        Assert.AreEqual(FailedInsightsQueryStatus.Ok, page.Status, page.Error);
+        Assert.AreEqual(overview.From, from, "The returned window survives the API's serialization unchanged.");
+        Assert.AreEqual(1, store.Calls, "The drill-down reads the overview's cached occurrences.");
+        Assert.AreEqual(1, enrichment.Reads, "The drill-down reuses the overview's classification read.");
+    }
+
+    [TestMethod]
     public async Task Concurrent_loads_share_one_bulk_read()
     {
         var store = new CountingStore();
@@ -386,9 +409,9 @@ public sealed partial class FailedInsightsServiceTests
     internal static StoreResultCache NewCache() => new(new MemoryCache(new MemoryCacheOptions()));
 
     internal static FailedInsightsService Service(InMemoryMessageStore store, IInsightsEnrichmentSource enrichment, IStoreResultCache? cache = null,
-        IEndpointAuthorizationService? authorization = null, FailedInsightsOptions? options = null)
+        IEndpointAuthorizationService? authorization = null, FailedInsightsOptions? options = null, TimeProvider? clock = null)
         => new(store, store, cache ?? NewCache(), authorization ?? new Authorization(true), enrichment,
-            Options.Create(options ?? new FailedInsightsOptions()), new FixedClock(Now));
+            Options.Create(options ?? new FailedInsightsOptions()), clock ?? new FixedClock(Now));
 
     /// <summary>A MetricsImplementation wired to a real FailedInsightsService with intelligence off.</summary>
     internal static MetricsImplementation Metrics(InMemoryMessageStore store, IStoreResultCache cache, IEndpointAuthorizationService authorization)

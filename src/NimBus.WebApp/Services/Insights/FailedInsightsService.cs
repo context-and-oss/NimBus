@@ -446,12 +446,21 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     private async Task<MetricsWindow?> ResolveWindowAsync(Period period, DateTime? from, DateTime? to)
     {
         if (from.HasValue || to.HasValue)
-            return MetricsImplementation.ResolveWindow(period, from, to, _clock.GetUtcNow().UtcDateTime);
+            return MetricsImplementation.ResolveWindow(period, WholeMilliseconds(from), WholeMilliseconds(to), _clock.GetUtcNow().UtcDateTime);
         return await _cache.GetOrCreateAsync(
             $"metrics:failed-insights:window:{period}",
             MetricsTtl,
-            () => Task.FromResult(MetricsImplementation.ResolveWindow(period, null, null, _clock.GetUtcNow().UtcDateTime)!.Value)).ConfigureAwait(false);
+            () => Task.FromResult(MetricsImplementation.ResolveWindow(period, null, null, WholeMilliseconds(_clock.GetUtcNow().UtcDateTime))!.Value)).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// The API writes DateTimes to the millisecond (<see cref="UtcDateTimeJsonConverter"/>), so the
+    /// window is kept to whole milliseconds: a drill-down then sends back exactly the bounds the
+    /// overview's cache keys were built from (spec 043 §8.3).
+    /// </summary>
+    private static DateTime WholeMilliseconds(DateTime value) => new(value.Ticks - (value.Ticks % TimeSpan.TicksPerMillisecond), value.Kind);
+
+    private static DateTime? WholeMilliseconds(DateTime? value) => value is { } v ? WholeMilliseconds(v) : null;
 
     /// <summary>The window's failure occurrences, normalized and de-duplicated once per cache fill.</summary>
     private Task<OccurrenceSet> ReadOccurrencesAsync(MetricsWindow window)
