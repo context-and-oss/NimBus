@@ -29,7 +29,7 @@ import {
   formatMoment,
   formatResolutionStatus,
 } from "functions/endpoint.functions";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { notifyError, notifySuccess } from "functions/notifications.functions";
 import {
@@ -407,6 +407,9 @@ export default function MessageListing(props: IMessageListingProps) {
     props.eventDetails,
     props.messages,
   );
+  // A link to one failed attempt (Insights drill-down, spec 043 §7) names it with ?message=.
+  const [searchParams] = useSearchParams();
+  const linkedMessageId = searchParams.get("message") ?? undefined;
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const handleErrorDetailsToggle = () => setShowErrorDetails(!showErrorDetails);
   const [isOpen, setIsOpen] = useState(false);
@@ -1118,6 +1121,7 @@ export default function MessageListing(props: IMessageListingProps) {
                   messageId={occurrence.messageId}
                   resolutionStatus={props.eventDetails?.resolutionStatus}
                   occurrenceLabel={`occurrence ${index + 1}`}
+                  highlighted={linkedMessageId === occurrence.messageId}
                 />
               ))}
             </div>

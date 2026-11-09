@@ -80,6 +80,22 @@ public sealed partial class FailedInsightsServiceTests
     }
 
     [TestMethod]
+    public async Task A_cause_or_guidance_key_without_occurrences_in_the_scope_is_a_bad_request()
+    {
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "m1", "x");
+        var service = Service(store, new FakeEnrichment());
+
+        Assert.AreEqual(FailedInsightsQueryStatus.BadRequest, (await service.GetOccurrencesAsync(
+            new FailedInsightsPageRequest(From, To, null, InsightsPerspective.Cause, "business_rule", 10, null))).Status);
+        Assert.AreEqual(FailedInsightsQueryStatus.BadRequest, (await service.GetPatternsAsync(
+            new FailedInsightsPageRequest(From, To, null, InsightsPerspective.Guidance, nameof(FailureGuidance.RetryMayHelp), 10, null))).Status);
+        Assert.AreEqual(FailedInsightsQueryStatus.Ok, (await service.GetOccurrencesAsync(
+            new FailedInsightsPageRequest(From, To, null, InsightsPerspective.Cause, FailedInsightsService.NotAnalyzed, 10, null))).Status,
+            "A key with occurrences in the scope pages.");
+    }
+
+    [TestMethod]
     [DataRow(0)]
     [DataRow(101)]
     public async Task A_page_size_outside_1_to_100_is_a_bad_request(int pageSize)

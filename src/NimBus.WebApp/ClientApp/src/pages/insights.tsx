@@ -35,6 +35,8 @@ const PERIODS: { label: string; value: api.Period; hours: number }[] = [
 ];
 
 const NO_FAILURES = "No failure occurrences in this period.";
+/** The cause and guidance group key of occurrences without a completed result. */
+const NOT_ANALYZED = "notAnalyzed";
 
 const segmentClass = (active: boolean) =>
   `px-4 py-2 text-sm font-semibold rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -252,6 +254,12 @@ export default function Insights() {
           </div>
         )}
 
+        {enriched && data?.analysisAvailable === false && (
+          <p role="status" className="text-sm text-muted-foreground">
+            New analysis is unavailable because no provider is configured. Saved results are shown; not analyzed failures stay
+            that way until a provider is configured.
+          </p>
+        )}
         {banner && (
           <p role="status" className="rounded-md border border-status-warning/40 bg-status-warning/10 px-4 py-3 text-sm">
             {banner}
@@ -475,7 +483,13 @@ function InsightGroupTable({
         <tbody>
           {groups.map((g) => (
             <tr key={g.groupKey} className="border-b align-top">
-              <td className="py-2 px-3 font-medium">{g.label}</td>
+              <td className="py-2 px-3 font-medium">
+                {g.label}
+                {g.groupKey === NOT_ANALYZED && (
+                  // Spec 043 §5: an event that has since completed or been skipped can't be analyzed.
+                  <div className="text-xs font-normal text-muted-foreground">Includes failures that can no longer be analyzed</div>
+                )}
+              </td>
               <td className="text-right py-2 px-3">
                 <Badge variant="error">{g.count}</Badge>
               </td>

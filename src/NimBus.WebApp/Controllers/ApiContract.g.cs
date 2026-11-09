@@ -14476,6 +14476,7 @@ namespace NimBus.WebApp.ManagementApi
         private System.DateTime? _classificationsReadAt;
         private InsightsEnrichmentStatus _enrichment;
         private int _enrichmentLimit;
+        private bool _analysisAvailable;
         private InsightsCoverage _coverage;
         private System.Collections.Generic.List<InsightGroup> _causeGroups;
         private System.Collections.Generic.List<InsightGroup> _guidanceGroups;
@@ -14630,6 +14631,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_enrichmentLimit != value)
                 {
                     _enrichmentLimit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("analysisAvailable", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AnalysisAvailable    {
+            get { return _analysisAvailable; }
+            set
+            {
+                if (_analysisAvailable != value)
+                {
+                    _analysisAvailable = value;
                     RaisePropertyChanged();
                 }
             }

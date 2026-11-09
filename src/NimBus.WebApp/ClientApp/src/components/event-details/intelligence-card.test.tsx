@@ -126,6 +126,31 @@ describe("IntelligenceCard", () => {
     expect(screen.getByText("Question set v1")).toBeTruthy();
   });
 
+  it("names the provider, says threshold settings were not recorded, and marks the linked occurrence", async () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      globalThis.fetch = vi.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: false, contractVersion: 1 })))
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          category: "business_rule", categoryConfidence: 0.9, retryLikelihood: 0, changeRequiredLikelihood: 1,
+          externalDependencyLikelihood: 0, guidance: "Investigate", revision: 2, provider: "TypeSafe", model: "test",
+          createdAtUtc: "2026-09-20T00:00:00Z", questionSetVersion: 1,
+        }))) as typeof fetch;
+      const view = render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" highlighted />);
+
+      await screen.findByText("business_rule (90%)");
+      expect(screen.getByText(/Revision 2 · TypeSafe · test/)).toBeTruthy();
+      await userEvent.click(screen.getByText("Classification details"));
+      expect(screen.getByText("Threshold settings not recorded")).toBeTruthy();
+      expect(view.container.querySelector('[aria-current="true"]')).toBeTruthy();
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("marks a saved result historical while a newer analysis is in progress", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: true, contractVersion: 1 })))

@@ -5898,6 +5898,9 @@ components:
         enrichmentLimit:
           type: integer
           description: The largest scope, in occurrences, that is enriched with saved classifications.
+        analysisAvailable:
+          type: boolean
+          description: Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is.
         coverage:
           $ref: '#/components/schemas/InsightsCoverage'
         causeGroups:

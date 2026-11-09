@@ -15509,6 +15509,8 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
     enrichment?: InsightsEnrichmentStatus;
     /** The largest scope, in occurrences, that is enriched with saved classifications. */
     enrichmentLimit?: number;
+    /** Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is. */
+    analysisAvailable?: boolean;
     coverage?: InsightsCoverage | undefined;
     /** Occurrences grouped by likely failure cause. Null unless enrichment is available. */
     causeGroups?: InsightGroup[] | undefined;
@@ -15546,6 +15548,7 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
             this.classificationsReadAt = _data["classificationsReadAt"] ? moment(_data["classificationsReadAt"].toString()) : undefined as any;
             this.enrichment = _data["enrichment"];
             this.enrichmentLimit = _data["enrichmentLimit"];
+            this.analysisAvailable = _data["analysisAvailable"];
             this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
             if (Array.isArray(_data["causeGroups"])) {
                 this.causeGroups = [] as any;
@@ -15587,6 +15590,7 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
         data["classificationsReadAt"] = this.classificationsReadAt ? this.classificationsReadAt.toISOString() : undefined as any;
         data["enrichment"] = this.enrichment;
         data["enrichmentLimit"] = this.enrichmentLimit;
+        data["analysisAvailable"] = this.analysisAvailable;
         data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
         if (Array.isArray(this.causeGroups)) {
             data["causeGroups"] = [];
@@ -15628,6 +15632,8 @@ export interface IFailedInsightsOverview {
     enrichment?: InsightsEnrichmentStatus;
     /** The largest scope, in occurrences, that is enriched with saved classifications. */
     enrichmentLimit?: number;
+    /** Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is. */
+    analysisAvailable?: boolean;
     coverage?: InsightsCoverage | undefined;
     /** Occurrences grouped by likely failure cause. Null unless enrichment is available. */
     causeGroups?: InsightGroup[] | undefined;
