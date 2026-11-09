@@ -342,8 +342,9 @@ never starts an analysis.
 
 - `endpointId` narrows the scope to one endpoint. `refresh=true` re-reads saved
   classifications; new failures can still lag by the 30 s metrics cache.
-- The response returns the resolved `from` and `to`. Send them back unchanged to page through
-  the same occurrences.
+- The response returns the resolved `from` and `to`, in whole milliseconds (a custom window's
+  bounds are truncated to the millisecond too). Send them back unchanged to page through the same
+  occurrences.
 - `enrichment` is `available`, `disabled`, `unavailable`, `unsupported` or `limitExceeded`.
   Every value except `available` leaves `coverage`, `causeGroups` and `guidanceGroups` null; it
   is never reported as zero coverage.

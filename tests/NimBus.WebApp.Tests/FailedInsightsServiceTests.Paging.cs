@@ -55,6 +55,31 @@ public sealed partial class FailedInsightsServiceTests
     }
 
     [TestMethod]
+    public async Task Paging_visits_every_row_when_failure_times_tie_and_message_ids_are_missing()
+    {
+        // A store without failed-attempt ids (enrichment unsupported) still pages error patterns.
+        var tie = Now.AddMinutes(-30);
+        var store = new FixedRowsStore(Row("orders", "e1", null, tie), Row("orders", "e2", null, tie), Row("billing", "e1", null, tie));
+        var service = Service(store, new FakeEnrichment());
+        var overview = (await service.GetOverviewAsync(new FailedInsightsRequest(Period._1d, From, To, null, true, false))).Overview!;
+        Assert.AreEqual(InsightsEnrichmentStatus.Unsupported, overview.Enrichment);
+
+        var seen = new List<string>();
+        string? token = null;
+        do
+        {
+            var page = await service.GetOccurrencesAsync(new FailedInsightsPageRequest(From, To, null, InsightsPerspective.ErrorPattern,
+                overview.Groups.Single().GroupKey, 1, token));
+            Assert.AreEqual(FailedInsightsQueryStatus.Ok, page.Status, page.Error);
+            seen.AddRange(page.Page!.Occurrences.Select(o => $"{o.EndpointId}/{o.EventId}"));
+            token = page.Page.ContinuationToken;
+        }
+        while (token is not null && seen.Count < 10);
+
+        CollectionAssert.AreEquivalent(new[] { "orders/e1", "orders/e2", "billing/e1" }, seen);
+    }
+
+    [TestMethod]
     [DataRow(0)]
     [DataRow(101)]
     public async Task A_page_size_outside_1_to_100_is_a_bad_request(int pageSize)

@@ -65,7 +65,7 @@ export default function Insights() {
   const period = parsePeriod(searchParams.get("period"));
   const range = parseRange(searchParams.get("from"), searchParams.get("to"));
   const endpointId = searchParams.get("endpoint") || undefined;
-  const by = parseBy(searchParams.get("by"));
+  const requestedBy = parseBy(searchParams.get("by"));
   const group = searchParams.get("group") || undefined;
   const panel = searchParams.get("panel") === "patterns" ? "patterns" : "failures";
 
@@ -136,6 +136,10 @@ export default function Insights() {
   };
 
   const enriched = data?.enrichment === api.InsightsEnrichmentStatus.Available;
+  // Without saved classifications a cause or guidance link (shared, or after a failed retry)
+  // shows error patterns and the banner. The URL keeps the request, so a later refresh restores it.
+  const by: InsightsGroupBy = data && !enriched && requestedBy !== "patterns" ? "patterns" : requestedBy;
+  const openPanel = group && by === requestedBy ? group : undefined;
   const scope: InsightsScope | undefined = data?.from && data?.to ? { from: data.from, to: data.to, endpointId } : undefined;
   const insightGroups = by === "cause" ? data?.causeGroups : by === "guidance" ? data?.guidanceGroups : undefined;
   const total = data?.totalOccurrences ?? data?.totalFailed ?? 0;
@@ -170,7 +174,7 @@ export default function Insights() {
     });
 
   const openGroup = (groupKey: string, view: "failures" | "patterns" = "failures") =>
-    update({ group: groupKey, panel: view === "patterns" ? "patterns" : undefined });
+    update({ by: by === "patterns" ? undefined : by, group: groupKey, panel: view === "patterns" ? "patterns" : undefined });
 
   const presetHours = PERIODS.find((p) => p.value === period)?.hours ?? 24;
   const endpointOptions = [
@@ -299,23 +303,23 @@ export default function Insights() {
               </CardContent>
             </Card>
 
-            {group && scope && (
+            {openPanel && scope && (
               panel === "patterns" && by !== "patterns" ? (
                 <GroupPatterns
-                  key={`patterns|${by}|${group}|${scope.from.toISOString()}|${scope.to.toISOString()}|${endpointId ?? ""}`}
+                  key={`patterns|${by}|${openPanel}|${scope.from.toISOString()}|${scope.to.toISOString()}|${endpointId ?? ""}`}
                   scope={scope}
                   perspective={PERSPECTIVE[by]}
-                  groupKey={group}
-                  title={groupTitle ?? group}
+                  groupKey={openPanel}
+                  title={groupTitle ?? openPanel}
                   onClose={() => update({ group: undefined, panel: undefined })}
                 />
               ) : (
                 <OccurrenceTable
-                  key={`failures|${by}|${group}|${scope.from.toISOString()}|${scope.to.toISOString()}|${endpointId ?? ""}`}
+                  key={`failures|${by}|${openPanel}|${scope.from.toISOString()}|${scope.to.toISOString()}|${endpointId ?? ""}`}
                   scope={scope}
                   perspective={PERSPECTIVE[by]}
-                  groupKey={group}
-                  title={groupTitle ?? group}
+                  groupKey={openPanel}
+                  title={groupTitle ?? openPanel}
                   onClose={() => update({ group: undefined, panel: undefined })}
                 />
               )

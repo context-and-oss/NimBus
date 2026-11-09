@@ -141,6 +141,27 @@ describe("Insights page", () => {
     expect(screen.queryByText(/analyzed \(/)).toBeNull();
   });
 
+  it("shows error patterns, not an empty period, when a cause link is opened without saved classifications", async () => {
+    mocks.insights.mockResolvedValue(
+      overview({ enrichment: api.InsightsEnrichmentStatus.LimitExceeded, coverage: undefined, causeGroups: undefined, guidanceGroups: undefined }),
+    );
+    renderAt("/Insights?by=cause&group=transient_dependency");
+
+    expect(await screen.findByText(/more than 10\D?000 failures/)).toBeTruthy();
+    expect(screen.getByText("TimeoutException")).toBeTruthy();
+    expect(screen.queryByText("No failure occurrences in this period.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Error patterns" }).getAttribute("aria-pressed")).toBe("true");
+    // The cause group can't be resolved without classifications, so no drill-down is requested.
+    expect(mocks.occurrences).not.toHaveBeenCalled();
+
+    // Opening an error-pattern group from the fallback view drills into that pattern.
+    mocks.occurrences.mockResolvedValue(new api.InsightOccurrencePage({ occurrences: [] }));
+    fireEvent.click(screen.getByRole("button", { name: "View failures" }));
+    await waitFor(() =>
+      expect(mocks.occurrences).toHaveBeenCalledWith(from, to, api.InsightsPerspective.ErrorPattern, "ec:timeout", undefined, 50, undefined),
+    );
+  });
+
   it("opens a group's failures with the overview's window and pages with the continuation token", async () => {
     mocks.insights.mockResolvedValue(overview());
     mocks.occurrences
