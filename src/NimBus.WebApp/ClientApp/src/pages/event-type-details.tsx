@@ -89,7 +89,7 @@ const EventTypeDetails: React.FC = () => {
         {eventType && (
           <section>
             <SectionTitle>Example Payload</SectionTitle>
-            <EventTypeExamplePayload eventType={eventType} />
+            <EventTypeExamplePayload eventType={eventType} consumers={consumers} />
           </section>
         )}
       </div>
