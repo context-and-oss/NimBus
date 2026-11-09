@@ -711,17 +711,21 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
-    [DataRow(null, 1)]
-    [DataRow("newer-blocking-event", 0)]
+    [DataRow(null, true, 1)]
+    [DataRow(null, false, 0)]
+    [DataRow("newer-blocking-event", true, 0)]
     public async Task HandleHandoffCompletedRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock(
-        string? blockedBy, int expectedDrainCalls)
+        string? blockedBy, bool hasUnreplayed, int expectedDrainCalls)
     {
         // The first delivery lost its lock after clearing the block but before
-        // sending ProcessDeferredRequest. Redelivery must repair that gap.
+        // sending ProcessDeferredRequest. Redelivery must repair that gap, but only while a
+        // parked message awaits its replay: the deferred count only grows, so it alone must not
+        // trigger a drain.
         var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "Manager");
         ctx.IsSessionBlockedByThisResult = false;
         ctx.BlockedByEventId = blockedBy;
         ctx.DeferredCountResult = 2;
+        ctx.HasUnreplayedResult = hasUnreplayed;
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
 
@@ -1151,6 +1155,47 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
+    [DataRow(null, true, 1)]
+    [DataRow(null, false, 0)]
+    [DataRow("newer-blocking-event", true, 0)]
+    public async Task HandleRetryRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock(
+        string? blockedBy, bool hasUnreplayed, int expectedDrainCalls)
+    {
+        // The first delivery handled the event and unblocked the session, but stopped before
+        // sending ProcessDeferredRequest. With no inbox configured, the redelivery reaches the
+        // blocked-by-this guard and must repair that gap, as Skip and handoff completion do.
+        // A stale retry for an event resolved some other way, on a session whose parked
+        // messages were all replayed, must not drain: the deferred count stays above zero
+        // after the replays, so it alone must not trigger one.
+        var trace = new OperationTrace();
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.Trace = trace;
+        ctx.TraceName = "event-1";
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = blockedBy;
+        ctx.DeferredCountResult = 2;
+        ctx.HasUnreplayedResult = hasUnreplayed;
+        var handler = new FakeEventContextHandler(trace);
+        var response = new FakeResponseService(trace);
+
+        await CreateHandler(handler, response).Handle(ctx);
+
+        Assert.AreEqual(expectedDrainCalls, response.ProcessDeferredCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, response.ResolutionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+        if (expectedDrainCalls > 0)
+        {
+            // The drain comes before completion, or a crash after completing loses the repair.
+            trace.AssertInOrder(
+                "event-1.response-process-deferred",
+                "event-1.response-resolution",
+                "event-1.complete");
+        }
+    }
+
+    [TestMethod]
     public async Task HandleRetryRequest_HandlerThrows_SendsErrorAndCompletes()
     {
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
@@ -1314,17 +1359,20 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
-    [DataRow(null, 1)]
-    [DataRow("newer-blocking-event", 0)]
+    [DataRow(null, true, 1)]
+    [DataRow(null, false, 0)]
+    [DataRow("newer-blocking-event", true, 0)]
     public async Task HandleSkipRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock(
-        string? blockedBy, int expectedDrainCalls)
+        string? blockedBy, bool hasUnreplayed, int expectedDrainCalls)
     {
         // The first delivery unblocked the session but stopped before sending
-        // ProcessDeferredRequest. Redelivery must repair that gap, as handoff completion does.
+        // ProcessDeferredRequest. Redelivery must repair that gap, as handoff completion does,
+        // but only while a parked message awaits its replay.
         var ctx = CreateContext(messageType: MessageType.SkipRequest, from: "Manager");
         ctx.IsSessionBlockedByThisResult = false;
         ctx.BlockedByEventId = blockedBy;
         ctx.DeferredCountResult = 2;
+        ctx.HasUnreplayedResult = hasUnreplayed;
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
 
@@ -1518,15 +1566,20 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
-    public async Task HandleRetryRequest_RecordedDuplicate_WithUnblockedSession_DrainsDeferredSiblings()
+    [DataRow(true, 1)]
+    [DataRow(false, 0)]
+    public async Task HandleRetryRequest_RecordedDuplicate_WithUnblockedSession_DrainsDeferredSiblings(
+        bool hasUnreplayed, int expectedDrainCalls)
     {
         // Crash window: the first attempt recorded and unblocked, then died before the
         // deferred drain. The redelivered duplicate is the only remaining drain trigger —
-        // completing it without draining would park deferred siblings indefinitely.
+        // completing it without draining would park deferred siblings indefinitely. Once every
+        // parked message has been replayed there is nothing to drain, whatever the count says.
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
         ctx.IsSessionBlockedByThisResult = false;
         ctx.BlockedByEventId = null!;
         ctx.DeferredCountResult = 2;
+        ctx.HasUnreplayedResult = hasUnreplayed;
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
         var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore { HasProcessed = true });
@@ -1535,7 +1588,7 @@ public class StrictMessageHandlerTests
 
         Assert.AreEqual(0, handler.HandleCalls);
         Assert.AreEqual(0, ctx.UnblockSessionCalls);
-        Assert.AreEqual(1, response.ProcessDeferredCalls);
+        Assert.AreEqual(expectedDrainCalls, response.ProcessDeferredCalls);
         Assert.AreEqual(1, response.DuplicateCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
     }
@@ -2279,6 +2332,7 @@ public class StrictMessageHandlerTests
         public string? BlockedByEventId { get; set; }
         public bool IsSessionBlockedByThisResult { get; set; }
         public int DeferredCountResult { get; set; }
+        public bool HasUnreplayedResult { get; set; }
 
         // Call counters
         public int CompletedCalls { get; private set; }
@@ -2303,6 +2357,7 @@ public class StrictMessageHandlerTests
         public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
         public Task<int> GetDeferredCount(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferred-count-read", ct); return Task.FromResult(DeferredCountResult); }
         public Task<bool> HasDeferredMessages(CancellationToken ct = default) => Task.FromResult(DeferredCountResult > 0);
+        public Task<bool> HasUnreplayedDeferredMessages(CancellationToken ct = default) => Task.FromResult(HasUnreplayedResult);
         public Task ResetDeferredCount(CancellationToken ct = default) { ResetDeferredCountCalls++; return Task.CompletedTask; }
         public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken ct = default) => Task.CompletedTask;
     }
