@@ -187,6 +187,15 @@ When the failed event is resolved (resubmit, retry, or skip succeeds):
 2. `ContinueWithAnyDeferredMessages()` checks whether `DeferredCount > 0` and, if so,
    sends a `ProcessDeferredRequest`
 
+A delivery can stop between these two steps, for example after a process crash or a lost
+session lock. The session is then unblocked, but nothing has requested the drain. When the
+retry, skip or handoff-completion settlement is redelivered, it no longer blocks its session.
+It is answered as resolved (or skipped) without running the handler, and it requests the drain
+itself, but only when no event blocks the session and a parked message still awaits its replay.
+A newer blocking event owns the drain. A stale settlement on a session whose parked messages
+were all replayed sends nothing. With an [inbox](inbox-pattern.md), a redelivered retry is
+recognised as a duplicate first and follows the same rule.
+
 ### 4. Deferred Messages Are Re-Published
 
 `DeferredMessageProcessor.ProcessDeferredMessagesAsync()` (`src/NimBus.ServiceBus/DeferredMessageProcessor.cs`):

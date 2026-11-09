@@ -207,9 +207,10 @@ public partial class StrictMessageHandler : MessageHandler
                     await UnblockSession(messageContext);
                     await ContinueWithAnyDeferredMessages(messageContext);
                 }
-                else if (string.IsNullOrEmpty(await messageContext.GetBlockedByEventId(cancellationToken)))
+                else
                 {
-                    await ContinueWithAnyDeferredMessages(messageContext);
+                    await ResumeDrainIfSessionUnblocked(
+                        messageContext, await messageContext.GetBlockedByEventId(cancellationToken));
                 }
 
                 await SendDuplicateResponseAndComplete(messageContext, "RetryRequest DuplicateDetected");
@@ -245,18 +246,15 @@ public partial class StrictMessageHandler : MessageHandler
         }
         catch (SessionBlockedException exception)
         {
-            // The event no longer blocks its session (resubmitted or skipped meanwhile), so
-            // the retry is answered as resolved without running the handler.
+            // The event no longer blocks its session: it was resubmitted or skipped meanwhile, or
+            // this is a redelivery of a retry whose earlier delivery already handled it and
+            // unblocked the session. The retry is answered as resolved without running the
+            // handler. In the redelivery case that earlier delivery may have stopped before
+            // requesting the drain, and without an inbox nothing else would request it, so repair
+            // the gap here as HandleSkipRequest does.
             messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
             LogInfo(messageContext, exception.Message);
-            // As in HandleSkipRequest: a previous delivery of this retry may have unblocked the
-            // session and then stopped before requesting the drain, and without an inbox nothing
-            // else would request it. Repair that gap on redelivery, but never resume work behind
-            // a newer event's block.
-            if (string.IsNullOrEmpty(exception.BlockedByEventId))
-            {
-                await ContinueWithAnyDeferredMessages(messageContext);
-            }
+            await ResumeDrainIfSessionUnblocked(messageContext, exception.BlockedByEventId);
             await SendResolutionResponse(messageContext);
             await CompleteMessage(messageContext);
         }
@@ -370,14 +368,8 @@ public partial class StrictMessageHandler : MessageHandler
         catch (SessionBlockedException exception)
         {
             // As in HandleHandoffCompletedRequest: a previous delivery may have cleared the
-            // block and then stopped before requesting the drain, and nothing else would request
-            // it. Repair that gap on redelivery, but never resume work behind a newer event's
-            // block. A skip of an event that never blocked the session at most requests a drain
-            // that finds nothing to replay.
-            if (string.IsNullOrEmpty(exception.BlockedByEventId))
-            {
-                await ContinueWithAnyDeferredMessages(messageContext);
-            }
+            // block and then stopped before requesting the drain. Repair that gap on redelivery.
+            await ResumeDrainIfSessionUnblocked(messageContext, exception.BlockedByEventId);
             await SendSkipResponse(messageContext);
             await CompleteMessage(messageContext);
         }
@@ -411,12 +403,8 @@ public partial class StrictMessageHandler : MessageHandler
             // swallow it and silently dead-letter. Do NOT unblock.
             LogError(messageContext, "HandoffCompleted settlement does not match a blocked session — surfacing as resolved", exception);
             // A previous delivery may have cleared the block and then lost its
-            // lock before scheduling the drain. Repair that gap on redelivery,
-            // but never resume work behind a newer event's block.
-            if (string.IsNullOrEmpty(exception.BlockedByEventId))
-            {
-                await ContinueWithAnyDeferredMessages(messageContext);
-            }
+            // lock before scheduling the drain. Repair that gap on redelivery.
+            await ResumeDrainIfSessionUnblocked(messageContext, exception.BlockedByEventId);
             await SendResolutionResponse(messageContext);
             await CompleteMessage(messageContext);
         }
@@ -725,6 +713,21 @@ public partial class StrictMessageHandler : MessageHandler
             await _responseService.SendProcessDeferredRequest(messageContext, SettlementToken);
             LogInfo(messageContext, $"Send ProcessDeferredRequest ({deferredCount} deferred messages)");
         }
+    }
+
+    // Redelivery repair: an earlier delivery of a settlement may have unblocked the session and
+    // then stopped before requesting the drain, and nothing else would request it. Drains only
+    // when no event blocks the session (a newer blocker owns the drain) and a parked message
+    // still awaits its replay. The deferred count can't decide that: it only ever grows, so it
+    // says a session has parked messages at some point, not that any are parked now.
+    private async Task ResumeDrainIfSessionUnblocked(IMessageContext messageContext, string? blockedByEventId)
+    {
+        if (!string.IsNullOrEmpty(blockedByEventId)
+            || !await messageContext.HasUnreplayedDeferredMessages(SettlementToken))
+            return;
+
+        await _responseService.SendProcessDeferredRequest(messageContext, SettlementToken);
+        LogInfo(messageContext, "Send ProcessDeferredRequest (redelivered settlement on an unblocked session)");
     }
 
     private async Task CheckForRetry(IMessageContext messageContext, EventContextHandlerException exception)
