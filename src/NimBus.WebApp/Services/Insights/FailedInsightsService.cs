@@ -245,16 +245,19 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
         if (error is not null) return error;
         var (scope, members, pageSize, scopeHash) = (group!.Scope, group.Members, group.PageSize, group.ScopeHash);
 
+        // Newest first, then message id; endpoint and event id break the remaining ties, which
+        // occur only on stores that record no failed-attempt id (enrichment unsupported).
         var ordered = members
             .OrderByDescending(r => r.Info.EnqueuedTimeUtc)
-            .ThenBy(r => r.Info.MessageId ?? string.Empty, StringComparer.Ordinal);
+            .ThenBy(r => r.Info.MessageId ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(r => r.Info.EndpointId ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(r => r.Info.EventId ?? string.Empty, StringComparer.Ordinal);
         IEnumerable<OccurrenceRow> remaining = ordered;
         if (request.ContinuationToken is { } token)
         {
             if (OccurrenceCursor.Decode(token) is not { } cursor || cursor.Scope != scopeHash)
                 return BadRequest<InsightOccurrencePage>("The continuation token does not belong to this window, endpoint and group.");
-            remaining = ordered.Where(r => r.Info.EnqueuedTimeUtc.Ticks < cursor.Ticks
-                || (r.Info.EnqueuedTimeUtc.Ticks == cursor.Ticks && string.CompareOrdinal(r.Info.MessageId ?? string.Empty, cursor.MessageId) > 0));
+            remaining = ordered.Where(cursor.Precedes);
         }
 
         var window = remaining.Take(pageSize + 1).ToList();
@@ -265,7 +268,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
         {
             Occurrences = page.Select(r => Occurrence(r, scope.Assessed, statuses)).ToList(),
             ContinuationToken = window.Count > pageSize && last is not null
-                ? new OccurrenceCursor(last.Info.EnqueuedTimeUtc.Ticks, last.Info.MessageId ?? string.Empty, scopeHash).Encode()
+                ? OccurrenceCursor.After(last.Info, scopeHash).Encode()
                 : null,
             OccurrencesReadAt = scope.Occurrences.ReadAt.UtcDateTime,
             ClassificationsReadAt = scope.Read?.ReadAt.UtcDateTime,
@@ -705,12 +708,30 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
 
     internal sealed record GroupSelection(Scope Scope, IReadOnlyList<OccurrenceRow> Members, int PageSize, string ScopeHash);
 
-    /// <summary>Keyset position after (failed time, message id), bound to one scope.</summary>
-    internal sealed record OccurrenceCursor(long Ticks, string MessageId, string Scope)
+    /// <summary>Keyset position after (failed time, message id, endpoint id, event id), bound to one scope.</summary>
+    internal sealed record OccurrenceCursor(long Ticks, string MessageId, string EndpointId, string EventId, string Scope)
     {
-        public string Encode() => Cursors.Encode(new CursorBody { T = Ticks, M = MessageId, S = Scope });
+        public static OccurrenceCursor After(FailedMessageInfo info, string scope)
+            => new(info.EnqueuedTimeUtc.Ticks, info.MessageId ?? string.Empty, info.EndpointId ?? string.Empty, info.EventId ?? string.Empty, scope);
+
+        /// <summary>True when <paramref name="row"/> comes after this position in the drill-down order.</summary>
+        public bool Precedes(OccurrenceRow row)
+        {
+            var info = row.Info;
+            if (info.EnqueuedTimeUtc.Ticks != Ticks) return info.EnqueuedTimeUtc.Ticks < Ticks;
+            var order = string.CompareOrdinal(info.MessageId ?? string.Empty, MessageId);
+            if (order == 0) order = string.CompareOrdinal(info.EndpointId ?? string.Empty, EndpointId);
+            if (order == 0) order = string.CompareOrdinal(info.EventId ?? string.Empty, EventId);
+            return order > 0;
+        }
+
+        public string Encode() => Cursors.Encode(new CursorBody { T = Ticks, M = MessageId, E = EndpointId, V = EventId, S = Scope });
+
+        // A token from before the endpoint/event tiebreak decodes with empty values, the lowest position.
         public static OccurrenceCursor? Decode(string token)
-            => Cursors.Decode(token) is { M: { } messageId, S: { } scope } body ? new OccurrenceCursor(body.T, messageId, scope) : null;
+            => Cursors.Decode(token) is { M: { } messageId, S: { } scope } body
+                ? new OccurrenceCursor(body.T, messageId, body.E ?? string.Empty, body.V ?? string.Empty, scope)
+                : null;
     }
 
     /// <summary>Keyset position after (count, pattern key), bound to one scope.</summary>
@@ -741,6 +762,8 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     {
         public long T { get; set; }
         public string? M { get; set; }
+        public string? E { get; set; }
+        public string? V { get; set; }
         public int C { get; set; }
         public string? K { get; set; }
         public string? S { get; set; }
