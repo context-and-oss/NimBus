@@ -127,10 +127,12 @@ function MonitorWall({ token, canAck }: { token?: string; canAck: (endpointId: s
       style={{ fontSize: WALL_FONT_SIZE }}
     >
       {data.isStale && <StaleBanner lastRefreshAt={data.lastRefreshAt} now={nowMs} />}
+      {metrics?.stale && <StaleBanner label="Metrics are stale" lastRefreshAt={metrics.generatedAtUtc?.valueOf()} now={nowMs} retrySeconds={30} />}
+      {history?.stale && <StaleBanner label="History is stale" lastRefreshAt={history.generatedAtUtc?.valueOf()} now={nowMs} retrySeconds={300} />}
       <div
         className={cn(
           "flex flex-col gap-[0.8em] transition-[opacity,filter]",
-          data.isStale ? "opacity-70 grayscale" : "opacity-100",
+          data.isStale || metrics?.stale || history?.stale ? "opacity-70 grayscale" : "opacity-100",
         )}
       >
         <Hero
@@ -969,8 +971,13 @@ const TickerItem = ({ event }: { event: TickerEvent }) => {
   );
 };
 
-const StaleBanner = ({ lastRefreshAt, now }: { lastRefreshAt: number | undefined; now: number }) => {
-  const seconds = lastRefreshAt ? Math.round((now - lastRefreshAt) / 1000) : 0;
+const StaleBanner = ({ lastRefreshAt, now, label = "Connection lost", retrySeconds = 5 }: {
+  lastRefreshAt: number | undefined;
+  now: number;
+  label?: string;
+  retrySeconds?: number;
+}) => {
+  const seconds = lastRefreshAt ? Math.max(0, Math.round((now - lastRefreshAt) / 1000)) : undefined;
   const lastTs = lastRefreshAt ? moment(lastRefreshAt).format("HH:mm:ss") : "never";
   return (
     <div
@@ -982,9 +989,9 @@ const StaleBanner = ({ lastRefreshAt, now }: { lastRefreshAt: number | undefined
       role="alert"
     >
       <Pulser />
-      <span className="font-bold uppercase">Connection lost</span>
+      <span className="font-bold uppercase">{label}</span>
       <span>
-        Last update {lastTs} · {seconds}s ago · retrying every 5 s
+        Last update {lastTs}{seconds === undefined ? "" : ` · ${seconds}s ago`} · retrying every {retrySeconds} s
       </span>
     </div>
   );

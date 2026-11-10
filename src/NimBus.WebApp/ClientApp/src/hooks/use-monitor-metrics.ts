@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type * as api from "api-client";
+import * as api from "api-client";
 import { createMonitorClient } from "lib/monitor-access";
 
 /** The last-hour metrics refresh with the server's 30 s cache. */
@@ -14,7 +14,7 @@ export interface UseMonitorMetricsResult {
 
 /**
  * Polls the Monitor's metrics (every 30 s) and history (every 5 min) feeds. A failed poll keeps
- * the last good data; the status poll owns the connection-lost banner. Pauses while the tab is
+ * the last good data and its timestamp, marked stale independently of status. Pauses while the tab is
  * hidden and catches up when it is shown again, like the status poll.
  */
 export function useMonitorMetrics(options: { token?: string } = {}): UseMonitorMetricsResult {
@@ -32,7 +32,9 @@ export function useMonitorMetrics(options: { token?: string } = {}): UseMonitorM
         const next = await clientRef.current!.getMonitorFeedMetrics();
         if (!cancelled) setMetrics(next);
       } catch {
-        // Keep the last good data.
+        if (!cancelled) setMetrics(previous => previous
+          ? new api.MonitorFeedMetrics({ ...previous, stale: true })
+          : undefined);
       }
     };
     const loadHistory = async () => {
@@ -40,7 +42,9 @@ export function useMonitorMetrics(options: { token?: string } = {}): UseMonitorM
         const next = await clientRef.current!.getMonitorFeedHistory();
         if (!cancelled) setHistory(next);
       } catch {
-        // Keep the last good data.
+        if (!cancelled) setHistory(previous => previous
+          ? new api.MonitorFeedHistory({ ...previous, stale: true })
+          : undefined);
       }
     };
 
