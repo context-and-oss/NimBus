@@ -100,14 +100,30 @@ public static class TopologyDescriptor
     public static string ToFilter(string to) => $"user.To = '{to}'";
 
     /// <summary>
-    /// Filter for a forwarder rule. <c>user.From IS NULL</c> restricts the rule to
-    /// ORIGINAL publishes: without it, an event type produced AND consumed by both
-    /// endpoints forwards back and forth until Service Bus's MaxHopCount
-    /// dead-letters it. Only <see cref="ForwardAction"/> populates <c>From</c>, so
-    /// checking IS NULL cleanly excludes already-forwarded copies.
+    /// Filter for a forwarder rule. It matches only ORIGINAL publishes of
+    /// <paramref name="eventTypeId"/>, through two guards:
+    /// <list type="bullet">
+    /// <item><description>
+    /// <c>user.MessageType = 'EventRequest'</c> excludes the endpoint's own control
+    /// traffic about an event of that type. Responses to the Resolver, RetryRequest,
+    /// ProcessDeferredRequest, ContinuationRequest and CLI resubmissions all carry the
+    /// inbound <c>EventTypeId</c> and no <c>From</c>; without this guard they would be
+    /// forwarded to the consumer as if they were events, and its dead-letter response
+    /// forwarded back, round after round.
+    /// </description></item>
+    /// <item><description>
+    /// <c>user.From IS NULL</c> excludes already-forwarded copies (only
+    /// <see cref="ForwardAction"/> populates <c>From</c> on the forward path), parked
+    /// copies and deferred replays, which carry a <c>From</c> marker, and Manager
+    /// traffic. Without it an event type produced AND consumed by both endpoints
+    /// forwards back and forth until Service Bus's MaxHopCount dead-letters it.
+    /// </description></item>
+    /// </list>
+    /// A producer outside NimBus must stamp <c>MessageType = EventRequest</c> for its
+    /// publishes to be forwarded.
     /// </summary>
     public static string ForwardFilter(string eventTypeId) =>
-        $"user.EventTypeId = '{eventTypeId}' AND user.From IS NULL";
+        $"user.EventTypeId = '{eventTypeId}' AND user.MessageType = '{nameof(MessageType.EventRequest)}' AND user.From IS NULL";
 
     /// <summary>
     /// Action for a forwarder rule: re-stamps the message as coming from the

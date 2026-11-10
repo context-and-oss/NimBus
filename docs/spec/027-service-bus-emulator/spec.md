@@ -302,7 +302,7 @@ user.To = '{E}-reply'                                     (rule name: ReplyFilte
 user.To = 'Resolver'                → SET user.From = '{E}'
 user.To = 'Deferred' AND user.OriginalSessionId IS NOT NULL
 user.To = 'DeferredProcessor'
-user.EventTypeId = '{et}' AND user.From IS NULL
+user.EventTypeId = '{et}' AND user.MessageType = 'EventRequest' AND user.From IS NULL
    → SET user.From = '{p}'; SET user.EventId = newid(); SET user.To = '{c}';
 ```
 

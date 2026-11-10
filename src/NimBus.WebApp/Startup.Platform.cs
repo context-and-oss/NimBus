@@ -198,9 +198,29 @@ public partial class Startup
         // Rebuilding a subscription after an operator deletes it to discard a backlog
         // is provisioning, so it goes through the provisioner rather than a second
         // implementation that could drift from it.
-        services.AddSingleton<ITopologyRebuilder>(sp => new ServiceBusTopologyRebuilder(
-            sp.GetRequiredService<ServiceBusAdministrationClient>()));
+        services.AddSingleton<ITopologyRebuilder>(sp => CreateTopologyRebuilder(
+            sp.GetRequiredService<ServiceBusAdministrationClient>(),
+            Configuration));
     }
+
+    /// <summary>
+    /// True when the configured Service Bus connection string (<c>ConnectionStrings:servicebus</c>,
+    /// else <c>AzureWebJobsServiceBus</c>) targets an emulator.
+    /// </summary>
+    internal static bool IsServiceBusEmulator(IConfiguration configuration) =>
+        ServiceBusTopologyProvisioner.IsEmulator(
+            configuration.GetConnectionString("servicebus")
+            ?? configuration.GetValue<string>("AzureWebJobsServiceBus"));
+
+    /// <summary>
+    /// The rebuilder behind subscription recreate. On an emulator a mismatched rule is
+    /// deleted and recreated, because the emulator cannot update a rule in place; on a real
+    /// namespace it is updated in place, as <c>nb topology apply</c> does.
+    /// </summary>
+    internal static ServiceBusTopologyRebuilder CreateTopologyRebuilder(
+        ServiceBusAdministrationClient client,
+        IConfiguration configuration) =>
+        new(client, IsServiceBusEmulator(configuration));
 
     // Traffic simulator (Settings → Simulation, /Simulate). Singleton, in-memory state per
     // instance; options are validated at startup, including the production-name exclusion.

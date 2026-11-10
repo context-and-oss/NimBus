@@ -1,7 +1,12 @@
 #pragma warning disable CA1707, CA2007
 
+using NimBus.Core.Messages;
+using NimBus.Core.Messages.Exceptions;
+using NimBus.SDK;
+using NimBus.ServiceBus.Provisioning;
 using NimBus.ServiceBusEmulator.Broker;
 using NimBus.ServiceBusEmulator.Protocol;
+using NimBus.Testing;
 
 namespace NimBus.ServiceBusEmulator.Tests;
 
@@ -42,7 +47,7 @@ public sealed class BrokerNamespaceTests
             "consumer",
             new RuleDefinition(
                 "route",
-                "user.EventTypeId = 'order-created' AND user.From IS NULL",
+                "user.EventTypeId = 'order-created' AND user.MessageType = 'EventRequest' AND user.From IS NULL",
                 "SET user.From = 'orders'; SET user.EventId = newid(); SET user.To = 'consumer';"));
 
         var message = new BrokerMessage
@@ -52,6 +57,7 @@ public sealed class BrokerNamespaceTests
             ApplicationProperties = new Dictionary<string, object?>
             {
                 ["EventTypeId"] = "order-created",
+                ["MessageType"] = "EventRequest",
             },
         };
 
@@ -384,6 +390,238 @@ public sealed class BrokerNamespaceTests
         Assert.AreEqual(1, broker.GetSubscriptionRuntimeProperties("events", "consumer").TotalMessageCount);
         Assert.IsFalse(broker.TopicExists("candidate"));
         Assert.AreEqual(2, mutation.Snapshot.Topics.Count);
+    }
+
+    [TestMethod]
+    public async Task ForwarderRule_MatchesOnlyOriginalPublishes()
+    {
+        // CRM and ERP both produce and consume ContactCreated, so the CrmEndpoint topic
+        // carries an ErpEndpoint forwarder. CRM's own control traffic about a ContactCreated
+        // it handled carries that EventTypeId and no From; the forwarder must not take it.
+        var platform = new ForwarderPlatform(
+            [],
+            new ForwarderEndpoint("CrmEndpoint", produces: [ContactCreatedType], consumes: [ContactCreatedType]),
+            new ForwarderEndpoint("ErpEndpoint", produces: [ContactCreatedType], consumes: [ContactCreatedType]));
+        var crm = platform.Endpoints.Single(endpoint => endpoint.Id == "CrmEndpoint");
+        var expected = TopologyDescriptor.ForEndpointTopic(crm, platform);
+
+        var forwarder = expected.Single(subscription => subscription.Name == "ErpEndpoint");
+        Assert.AreEqual("ErpEndpoint", forwarder.ForwardTo);
+        Assert.AreEqual(TopologyDescriptor.ForwardFilter(nameof(ContactCreated)), forwarder.Rules.Single().Filter);
+
+        await AssertForwarderTakesOnlyOriginalPublishes(expected, "CrmEndpoint", forwarder.Name, "ErpEndpoint");
+    }
+
+    [TestMethod]
+    public async Task DynamicForwarderRule_MatchesOnlyOriginalPublishes()
+    {
+        // The same guards apply to a dynamically-typed forward (spec 022 D5).
+        var platform = new ForwarderPlatform(
+            [new NimBus.Core.Endpoints.DynamicForward("CrmEndpoint", nameof(ContactCreated), "ErpEndpoint")],
+            new ForwarderEndpoint("CrmEndpoint", produces: [], consumes: []),
+            new ForwarderEndpoint("ErpEndpoint", produces: [], consumes: []));
+        var crm = platform.Endpoints.Single(endpoint => endpoint.Id == "CrmEndpoint");
+        var expected = TopologyDescriptor.ForEndpointTopic(crm, platform);
+
+        var forwarder = expected.Single(subscription => subscription.Name == TopologyDescriptor.DynamicForwardPrefix + "ErpEndpoint");
+        Assert.AreEqual("ErpEndpoint", forwarder.ForwardTo);
+        var rule = forwarder.Rules.Single();
+        Assert.AreEqual("dyn-" + nameof(ContactCreated), rule.Name);
+        Assert.AreEqual(TopologyDescriptor.ForwardFilter(nameof(ContactCreated)), rule.Filter);
+
+        await AssertForwarderTakesOnlyOriginalPublishes(expected, "CrmEndpoint", forwarder.Name, "ErpEndpoint");
+    }
+
+    [TestMethod]
+    public void ForwardFilter_GuardsOnMessageTypeAndFrom()
+    {
+        Assert.AreEqual(
+            "user.EventTypeId = 'ContactCreated' AND user.MessageType = 'EventRequest' AND user.From IS NULL",
+            TopologyDescriptor.ForwardFilter("ContactCreated"));
+    }
+
+    private static async Task AssertForwarderTakesOnlyOriginalPublishes(
+        IReadOnlyList<ExpectedSubscription> expected,
+        string topicName,
+        string forwarderName,
+        string consumerId)
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition(topicName));
+        foreach (var subscription in expected)
+        {
+            // ForwardTo is left off so whatever the forwarder takes stays countable here.
+            broker.CreateSubscription(topicName, new SubscriptionDefinition(subscription.Name) { RequiresSession = subscription.RequiresSession });
+            if (!subscription.KeepDefaultRule)
+            {
+                broker.DeleteRule(topicName, subscription.Name, TopologyDescriptor.DefaultRuleName);
+            }
+
+            foreach (var rule in subscription.Rules)
+            {
+                broker.CreateRule(topicName, subscription.Name, new RuleDefinition(rule.Name, rule.Filter, rule.Action));
+            }
+        }
+
+        // An inbound ContactCreated that ERP published and the ErpEndpoint topic forwarded to CRM.
+        var inbound = new InMemoryMessageContext(
+            new NimBus.Core.Messages.Message
+            {
+                To = topicName,
+                From = consumerId,
+                MessageId = "inbound-1",
+                EventId = "event-1",
+                SessionId = "session-1",
+                CorrelationId = "correlation-1",
+                OriginatingMessageId = NimBus.Core.Messages.Constants.Self,
+                EventTypeId = nameof(ContactCreated),
+                MessageType = MessageType.EventRequest,
+                MessageContent = new MessageContent
+                {
+                    EventContent = new EventContent { EventTypeId = nameof(ContactCreated), EventJson = "{}" },
+                },
+            },
+            new InMemorySessionState());
+
+        var controlSender = new CapturingSender();
+        var responses = new ResponseService(controlSender);
+        await responses.SendResolutionResponse(inbound);
+        await responses.SendErrorResponse(inbound, new InvalidOperationException("boom"));
+        await responses.SendDeadLetterResponse(inbound, "HandlerFailed", new InvalidOperationException("boom"));
+        await responses.SendDeferralResponse(inbound, new SessionBlockedException("blocked", "event-0"));
+        await responses.SendRetryResponse(inbound, messageDelayMinutes: 0);
+        await responses.SendProcessDeferredRequest(inbound);
+        await responses.SendUnsupportedResponse(inbound);
+        await responses.SendSkipResponse(inbound);
+        // A parked copy: To = Deferred with a From marker.
+        await responses.SendToDeferredSubscription(inbound, deferralSequence: 1);
+        // A CLI resubmission, shaped like Container.Resubmit: no From.
+        await controlSender.Send(new NimBus.Core.Messages.Message
+        {
+            To = topicName,
+            MessageId = "resubmit-1",
+            EventId = "event-1",
+            SessionId = "session-1",
+            CorrelationId = "correlation-1",
+            OriginatingMessageId = "inbound-1",
+            ParentMessageId = "inbound-1",
+            MessageType = MessageType.ResubmissionRequest,
+            EventTypeId = nameof(ContactCreated),
+            MessageContent = new MessageContent
+            {
+                EventContent = new EventContent { EventTypeId = nameof(ContactCreated), EventJson = "{}" },
+            },
+        });
+
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                MessageType.ResolutionResponse, MessageType.ErrorResponse, MessageType.ErrorResponse,
+                MessageType.DeferralResponse, MessageType.RetryRequest, MessageType.ProcessDeferredRequest,
+                MessageType.UnsupportedResponse, MessageType.SkipResponse, MessageType.EventRequest,
+                MessageType.ResubmissionRequest,
+            },
+            controlSender.Sent.Select(message => message.MessageType).ToArray());
+
+        foreach (var control in controlSender.Sent)
+        {
+            Assert.AreEqual(nameof(ContactCreated), control.EventTypeId);
+            broker.Publish(topicName, ToBrokerMessage(control));
+        }
+
+        Assert.AreEqual(
+            0L,
+            broker.GetSubscriptionRuntimeProperties(topicName, forwarderName).TotalMessageCount,
+            "The forwarder must not take the endpoint's own control traffic or a parked copy.");
+        // The control traffic did land where it belongs, so the zero above is not a broken publish.
+        Assert.IsGreaterThan(0L, broker.GetSubscriptionRuntimeProperties(topicName, NimBus.Core.Messages.Constants.ResolverId).TotalMessageCount);
+        Assert.AreEqual(1L, broker.GetSubscriptionRuntimeProperties(topicName, NimBus.Core.Messages.Constants.DeferredSubscriptionName).TotalMessageCount);
+
+        // An original publish, built exactly as PublisherClient builds it.
+        var publishSender = new CapturingSender();
+        await new PublisherClient(publishSender, topicName).Publish(new ContactCreated { Name = "Ada" });
+        broker.Publish(topicName, ToBrokerMessage(publishSender.Sent.Single()));
+
+        Assert.AreEqual(1L, broker.GetSubscriptionRuntimeProperties(topicName, forwarderName).TotalMessageCount);
+        var forwarded = broker.TryAcquire(topicName, forwarderName, null, "receiver-1");
+        Assert.IsNotNull(forwarded);
+        Assert.AreEqual(consumerId, forwarded.Message.ApplicationProperties["To"]);
+        Assert.AreEqual(topicName, forwarded.Message.ApplicationProperties["From"]);
+    }
+
+    private static readonly NimBus.Core.Events.EventType ContactCreatedType = new(typeof(ContactCreated));
+
+    private static BrokerMessage ToBrokerMessage(IMessage message)
+    {
+        var wire = NimBus.ServiceBus.MessageHelper.ToServiceBusMessage(message);
+        return new BrokerMessage
+        {
+            MessageId = wire.MessageId,
+            SessionId = wire.SessionId,
+            CorrelationId = wire.CorrelationId,
+            Body = wire.Body.ToMemory(),
+            ApplicationProperties = wire.ApplicationProperties.ToDictionary(pair => pair.Key, pair => (object?)pair.Value, StringComparer.Ordinal),
+        };
+    }
+
+    private sealed class ContactCreated : NimBus.Core.Events.Event
+    {
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private sealed class CapturingSender : ISender
+    {
+        public List<IMessage> Sent { get; } = [];
+
+        public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
+        {
+            Sent.Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task Send(IEnumerable<IMessage> messages, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
+        {
+            Sent.AddRange(messages);
+            return Task.CompletedTask;
+        }
+
+        public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+        {
+            Sent.Add(message);
+            return Task.FromResult((long)Sent.Count);
+        }
+
+        public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class ForwarderPlatform : NimBus.Core.Platform
+    {
+        public ForwarderPlatform(IReadOnlyList<NimBus.Core.Endpoints.DynamicForward> dynamicForwards, params NimBus.Core.Endpoints.IEndpoint[] endpoints)
+        {
+            DynamicForwards = dynamicForwards;
+            foreach (var endpoint in endpoints)
+            {
+                AddEndpoint(endpoint);
+            }
+        }
+
+        public override IReadOnlyList<NimBus.Core.Endpoints.DynamicForward> DynamicForwards { get; }
+    }
+
+    private sealed class ForwarderEndpoint(
+        string id,
+        IEnumerable<NimBus.Core.Events.IEventType> produces,
+        IEnumerable<NimBus.Core.Events.IEventType> consumes) : NimBus.Core.Endpoints.IEndpoint
+    {
+        public string Id { get; } = id;
+        public string Name => Id;
+        public string Description => string.Empty;
+        public string Namespace => "Tests";
+        public string SecurityGroupName => string.Empty;
+        public NimBus.Core.Endpoints.ISystem System => null!;
+        public IEnumerable<NimBus.Core.Events.IEventType> EventTypesProduced { get; } = produces.ToList();
+        public IEnumerable<NimBus.Core.Events.IEventType> EventTypesConsumed { get; } = consumes.ToList();
+        public IEnumerable<NimBus.Core.Endpoints.IRoleAssignment> RoleAssignments => [];
     }
 
     private static BrokerMessage NewMessage(string messageId, string? sessionId = null) => new()

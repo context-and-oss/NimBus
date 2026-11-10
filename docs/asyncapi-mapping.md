@@ -17,11 +17,33 @@ NimBus does **not** use a topic per event category. Its runtime shape (created b
   (see `NimBus.Core/Messages/UserPropertyName.cs`), not by topic name.
 - **Auto-forwarding between topics.** A producer publishes only to its *own* topic
   (`user.To` = event class name, `user.From` = null). For each consumer, a forward subscription on
-  the producer topic — rule `user.EventTypeId = 'X' AND user.From IS NULL`, action
-  `SET user.From=<producer>; SET user.EventId=newid(); SET user.To=<consumer>` — auto-forwards a
-  rewritten copy into the consumer's topic.
+  the producer topic — rule `user.EventTypeId = 'X' AND user.MessageType = 'EventRequest' AND user.From IS NULL`,
+  action `SET user.From=<producer>; SET user.EventId=newid(); SET user.To=<consumer>` — auto-forwards a
+  rewritten copy into the consumer's topic. The two guards restrict the rule to **original
+  publishes**: `MessageType = 'EventRequest'` keeps the producer's own control traffic about an
+  event of type X (responses to the Resolver, retry and deferred-processing requests,
+  resubmissions) off the forwarder, and `From IS NULL` keeps forwarded and parked copies off it.
 - **Consumers read their own topic.** Delivery is a **session-required** subscription named after
   the endpoint, filtered `user.To = '<endpoint>'`. The consumer never subscribes to the producer.
+
+### Upgrading forwarder rules
+
+Releases before the `MessageType` guard provisioned forwarder rules that filter only on
+`EventTypeId` and the `From IS NULL` guard. Such a rule also forwarded the producer's own
+control traffic to its consumers whenever an endpoint both consumed and produced the same event
+type.
+
+- **`nb topology apply`** brings every existing forwarder rule to the new filter. On a real
+  namespace it replaces each rule with a single `UpdateRuleAsync` call instead of deleting it
+  and creating it again, which is meant to avoid a window in which publishes go unforwarded.
+  This has been checked only against a recording administration client in the tests, not on a
+  live namespace. On an emulator (`UseDevelopmentEmulator=true`) the rule is deleted and
+  recreated, because the emulator cannot update a rule in place.
+- **The WebApp's subscription rebuild** (Topology → Subscriptions → *Delete & recreate*) follows
+  the same rule: updated in place on a real namespace, deleted and recreated when the WebApp's
+  Service Bus connection string targets an emulator.
+- **Producers outside NimBus** that write `EventTypeId` onto a NimBus topic must also stamp
+  `MessageType = EventRequest` (and leave `From` unset) for their publishes to be forwarded.
 
 ## Why specification extensions (no `servicebus` binding)
 

@@ -45,7 +45,7 @@ Each endpoint topic has these subscriptions:
 | `Retry` | OFF | self topic | `user.To = 'Retry'` | `SET user.To = '{endpointId}'; SET user.From = 'Retry'` | (forwarded back to main sub) |
 | `Deferred` | ON | — | `user.To = 'Deferred'` | — | **DeferredMessageProcessor** (reads via AcceptSession) |
 | `DeferredProcessor` | OFF | — | `user.To = 'DeferredProcessor'` | — | **DeferredProcessorFunction** |
-| `{eventTypeId}` | OFF | consuming endpoint topic | `user.EventTypeId = '{eventTypeId}'` | `SET user.From = '{endpointId}'; SET user.EventId = newid(); SET user.To = '{consumerId}'` | (forwarded to consumer) |
+| `{eventTypeId}` | OFF | consuming endpoint topic | `user.EventTypeId = '{eventTypeId}' AND user.MessageType = 'EventRequest' AND user.From IS NULL` | `SET user.From = '{endpointId}'; SET user.EventId = newid(); SET user.To = '{consumerId}'` | (forwarded to consumer) |
 
 ### Key Design Points
 
@@ -53,6 +53,7 @@ Each endpoint topic has these subscriptions:
 - **Forward subscriptions** (`Continuation`, `Retry`): catch messages, rewrite properties, forward back to the same topic — the rewritten `To` then matches the main subscription
 - **DeferredProcessor**: NOT session-enabled — it can trigger independently of the main function's session lock
 - **Resolver subscription has two rules**: catches both responses (`To = 'Resolver'`) and original EventRequests (`To = '{endpointId}'`) so the Resolver sees the full message history
+- **Forwarder rules match only original publishes**: `MessageType = 'EventRequest'` keeps the endpoint's own control traffic about an event (responses, RetryRequest, ProcessDeferredRequest, resubmissions) off the forwarder, and `From IS NULL` keeps forwarded, parked and Manager copies off it
 
 ---
 
