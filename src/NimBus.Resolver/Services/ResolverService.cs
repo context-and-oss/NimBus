@@ -407,7 +407,7 @@ public partial class ResolverService : IMessageHandler
                 return;
             }
 
-            LogResolverDroppedHeartbeatRequestCopy(_logger, messageContext.EventId, messageContext.MessageId);
+            LogResolverDroppedHeartbeatRequestCopy(_logger, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault());
             await messageContext.Complete(cancellationToken);
             return;
         }
@@ -415,14 +415,14 @@ public partial class ResolverService : IMessageHandler
         var endpointId = GetHeartbeatEndpointId(messageContext);
         if (string.IsNullOrWhiteSpace(endpointId))
         {
-            LogResolverHeartbeatResponseWithoutEndpoint(_logger, messageContext.EventId, messageContext.MessageId);
+            LogResolverHeartbeatResponseWithoutEndpoint(_logger, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault());
             await messageContext.Complete(cancellationToken);
             return;
         }
 
         if (_metadataStore is null)
         {
-            LogResolverHeartbeatStoreNotConfigured(_logger, endpointId, messageContext.EventId);
+            LogResolverHeartbeatStoreNotConfigured(_logger, endpointId, messageContext.GetEventIdOrDefault());
             await messageContext.Complete(cancellationToken);
             return;
         }
@@ -442,11 +442,11 @@ public partial class ResolverService : IMessageHandler
             // Return without settling: the session redelivers the message. Heartbeats
             // deliberately skip the scheduled-redelivery path used for event traffic —
             // the next probe supersedes this one anyway.
-            LogResolverStorageTemporarilyUnavailable(_logger, ex, endpointId, messageContext.EventId);
+            LogResolverStorageTemporarilyUnavailable(_logger, ex, endpointId, messageContext.GetEventIdOrDefault());
             return;
         }
 
-        LogResolverUpdatedHeartbeatEndpointId(_logger, endpointId, heartbeat.EndpointHeartbeatStatus, messageContext.EventId, messageContext.MessageId);
+        LogResolverUpdatedHeartbeatEndpointId(_logger, endpointId, heartbeat.EndpointHeartbeatStatus, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault());
 
         try { await _notifier.NotifyHeartbeatChangedAsync(endpointId, cancellationToken); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -466,7 +466,7 @@ public partial class ResolverService : IMessageHandler
     {
         if (_serviceHealthStore is null)
         {
-            LogResolverServiceHealthStoreNotConfigured(_logger, messageContext.MessageId);
+            LogResolverServiceHealthStoreNotConfigured(_logger, messageContext.GetMessageIdOrDefault());
             await messageContext.Complete(cancellationToken);
             return;
         }
@@ -494,11 +494,11 @@ public partial class ResolverService : IMessageHandler
         }
         catch (StorageProviderTransientException ex)
         {
-            LogResolverStorageTemporarilyUnavailableWillReprocess2(_logger, ex, messageContext.EventId);
+            LogResolverStorageTemporarilyUnavailableWillReprocess2(_logger, ex, messageContext.GetEventIdOrDefault());
             return;
         }
 
-        LogResolverAnsweredLivenessProbe(_logger, health.RoundTripMs, health.Version, messageContext.MessageId);
+        LogResolverAnsweredLivenessProbe(_logger, health.RoundTripMs, health.Version, messageContext.GetMessageIdOrDefault());
 
         try { await _notifier.NotifyServiceHealthChangedAsync(Constants.ResolverId, cancellationToken); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -981,31 +981,31 @@ public partial class ResolverService : IMessageHandler
     private static partial void LogResolverStateChangeNotificationFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(Level = LogLevel.Trace, Message = "Resolver: Dropped Heartbeat request copy. EventId:{EventId}, MessageId:{MessageId}")]
-    private static partial void LogResolverDroppedHeartbeatRequestCopy(ILogger logger, string eventId, string messageId);
+    private static partial void LogResolverDroppedHeartbeatRequestCopy(ILogger logger, string? eventId, string? messageId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: Heartbeat response without endpoint. EventId:{EventId}, MessageId:{MessageId}")]
-    private static partial void LogResolverHeartbeatResponseWithoutEndpoint(ILogger logger, string eventId, string messageId);
+    private static partial void LogResolverHeartbeatResponseWithoutEndpoint(ILogger logger, string? eventId, string? messageId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: heartbeat store not configured; completing without recording. EndpointId:{EndpointId}, EventId:{EventId}")]
-    private static partial void LogResolverHeartbeatStoreNotConfigured(ILogger logger, string endpointId, string eventId);
+    private static partial void LogResolverHeartbeatStoreNotConfigured(ILogger logger, string endpointId, string? eventId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Storage temporarily unavailable, will reprocess heartbeat. EndpointId:{EndpointId}, EventId:{EventId}")]
-    private static partial void LogResolverStorageTemporarilyUnavailable(ILogger logger, Exception exception, string endpointId, string eventId);
+    private static partial void LogResolverStorageTemporarilyUnavailable(ILogger logger, Exception exception, string endpointId, string? eventId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Updated Heartbeat EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}")]
-    private static partial void LogResolverUpdatedHeartbeatEndpointId(ILogger logger, string endpointId, HeartbeatStatus status, string eventId, string messageId);
+    private static partial void LogResolverUpdatedHeartbeatEndpointId(ILogger logger, string endpointId, HeartbeatStatus status, string? eventId, string? messageId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: heartbeat notification failed (non-fatal)")]
     private static partial void LogResolverHeartbeatNotificationFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: service health store not configured; completing liveness probe without recording. MessageId:{MessageId}")]
-    private static partial void LogResolverServiceHealthStoreNotConfigured(ILogger logger, string messageId);
+    private static partial void LogResolverServiceHealthStoreNotConfigured(ILogger logger, string? messageId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Storage temporarily unavailable, will reprocess liveness probe. EventId:{EventId}")]
-    private static partial void LogResolverStorageTemporarilyUnavailableWillReprocess2(ILogger logger, Exception exception, string eventId);
+    private static partial void LogResolverStorageTemporarilyUnavailableWillReprocess2(ILogger logger, Exception exception, string? eventId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Answered liveness probe. RoundTripMs:{RoundTripMs}, Version:{Version}, MessageId:{MessageId}")]
-    private static partial void LogResolverAnsweredLivenessProbe(ILogger logger, long? roundTripMs, string version, string messageId);
+    private static partial void LogResolverAnsweredLivenessProbe(ILogger logger, long? roundTripMs, string version, string? messageId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: service health notification failed (non-fatal)")]
     private static partial void LogResolverServiceHealthNotificationFailed(ILogger logger, Exception exception);
