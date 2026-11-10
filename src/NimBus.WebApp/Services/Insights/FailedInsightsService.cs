@@ -84,7 +84,10 @@ public sealed class FailedInsightsOptions
     /// <summary>Largest scope, in occurrences after the endpoint filter, that is enriched.</summary>
     public int EnrichmentCeiling { get; set; } = 10_000;
 
-    /// <summary>Lifetime of a cached classification read; never above the 30 s metrics TTL.</summary>
+    /// <summary>
+    /// Lifetime of a cached classification read; never above the 30 s metrics TTL. Zero turns the
+    /// cache off: every request, including each drill-down page, reads classifications again.
+    /// </summary>
     public int EnrichmentCacheSeconds { get; set; } = 15;
 
     /// <summary>Failure ids per classification-store call.</summary>
@@ -520,14 +523,13 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
 
         var ids = scoped.Select(r => r.Info.MessageId!).ToHashSet(StringComparer.Ordinal);
         var key = $"metrics:failed-insights:enrichment:{window.From.Ticks}-{window.To.Ticks}:{endpointId?.ToUpperInvariant() ?? "*"}";
-        if (refresh) _cache.Remove(key);
-        var read = await ReadEnrichmentAsync(key, ids, cancellationToken).ConfigureAwait(false);
+        var read = await ReadEnrichmentAsync(key, ids, refresh, cancellationToken).ConfigureAwait(false);
         // The 15 s classification read can outlive the 30 s occurrence read it was made for. An id
         // it did not cover has no established absence, so read again rather than call it unanalyzed.
         if (!ids.IsSubsetOf(read.RequestedIds))
         {
             _cache.Remove(key);
-            read = await ReadEnrichmentAsync(key, ids, cancellationToken).ConfigureAwait(false);
+            read = await ReadEnrichmentAsync(key, ids, refresh: false, cancellationToken).ConfigureAwait(false);
         }
         return read.Result.Status switch
         {
@@ -537,15 +539,22 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
         };
     }
 
-    private async Task<EnrichmentRead> ReadEnrichmentAsync(string key, HashSet<string> ids, CancellationToken cancellationToken)
+    private async Task<EnrichmentRead> ReadEnrichmentAsync(string key, HashSet<string> ids, bool refresh, CancellationToken cancellationToken)
     {
-        // The factory is shared by every concurrent caller, so it never takes one caller's token.
-        var read = await _cache.GetOrCreateAsync(key, TimeSpan.FromSeconds(_options.EnrichmentCacheSeconds), async () =>
+        var ttl = TimeSpan.FromSeconds(_options.EnrichmentCacheSeconds);
+        // The read is shared by every concurrent caller, so it never takes one caller's token.
+        async Task<EnrichmentRead> ReadAsync()
         {
             var result = await _enrichment.ReadAsync(ids,
                 new ClassificationBulkReadOptions(_options.BulkReadBatchSize, _options.BulkReadConcurrency), CancellationToken.None).ConfigureAwait(false);
             return new EnrichmentRead(_clock.GetUtcNow(), ids, result);
-        }).WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // A refresh needs a read that began after it was asked for, and shares it with the other
+        // refreshes waiting for the same thing. The page refreshes on every first load, so
+        // several operators opening it together must not each start a bulk read.
+        var read = await (refresh ? _cache.RefreshAsync(key, ttl, ReadAsync) : _cache.GetOrCreateAsync(key, ttl, ReadAsync))
+            .WaitAsync(cancellationToken).ConfigureAwait(false);
         // Like a faulted read, an unavailable one must not stick: the next request retries storage.
         if (read.Result.Status != ClassificationBulkReadStatus.Available) _cache.Remove(key);
         return read;

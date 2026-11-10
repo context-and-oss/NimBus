@@ -102,6 +102,90 @@ public sealed class StoreResultCacheTests
     }
 
     [TestMethod]
+    public async Task A_zero_ttl_caches_nothing_and_runs_the_factory_for_every_call()
+    {
+        var cache = NewCache();
+        var calls = 0;
+
+        var first = await cache.GetOrCreateAsync("k", TimeSpan.Zero, () => Task.FromResult(++calls));
+        var second = await cache.GetOrCreateAsync("k", TimeSpan.Zero, () => Task.FromResult(++calls));
+        var refreshed = await cache.RefreshAsync("k", TimeSpan.Zero, () => Task.FromResult(++calls));
+
+        Assert.AreEqual(1, first);
+        Assert.AreEqual(2, second);
+        Assert.AreEqual(3, refreshed);
+    }
+
+    [TestMethod]
+    public async Task Refresh_replaces_a_completed_value_and_later_callers_get_the_new_one()
+    {
+        var cache = NewCache();
+        var calls = 0;
+
+        await cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), () => Task.FromResult(++calls));
+        var refreshed = await cache.RefreshAsync("k", TimeSpan.FromMinutes(1), () => Task.FromResult(++calls));
+        var after = await cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), () => Task.FromResult(++calls));
+
+        Assert.AreEqual(2, refreshed);
+        Assert.AreEqual(2, after, "The refreshed value is the cached one.");
+        Assert.AreEqual(2, calls);
+    }
+
+    [TestMethod]
+    public async Task Refreshes_during_a_running_read_share_one_follow_up_that_starts_after_them()
+    {
+        var cache = NewCache();
+        var calls = 0;
+        var firstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async Task<int> Factory()
+        {
+            var call = Interlocked.Increment(ref calls);
+            if (call == 1) await firstRead.Task;
+            return call;
+        }
+
+        var running = cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), Factory);
+        var refreshes = Enumerable.Range(0, 8).Select(_ => cache.RefreshAsync("k", TimeSpan.FromMinutes(1), Factory)).ToList();
+        Assert.AreEqual(1, calls, "The follow-up waits for the running read instead of piling a second one onto the store.");
+        firstRead.SetResult();
+
+        Assert.AreEqual(1, await running, "The caller of the running read still gets its result.");
+        var results = await Task.WhenAll(refreshes);
+        Assert.IsTrue(results.All(r => r == 2), "A refresh never returns a read that began before it.");
+        Assert.AreEqual(2, calls, "Every refresh shares the one follow-up read.");
+        Assert.AreEqual(2, await cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), Factory));
+    }
+
+    [TestMethod]
+    public async Task A_running_read_that_fails_neither_fails_nor_evicts_the_follow_up_refresh()
+    {
+        var cache = NewCache();
+        var calls = 0;
+        var firstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async Task<int> Factory()
+        {
+            var call = Interlocked.Increment(ref calls);
+            if (call == 1)
+            {
+                await firstRead.Task;
+                throw new InvalidOperationException("store down");
+            }
+            return call;
+        }
+
+        var running = cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), Factory);
+        var refresh = cache.RefreshAsync("k", TimeSpan.FromMinutes(1), Factory);
+        firstRead.SetResult();
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => running);
+        Assert.AreEqual(2, await refresh);
+        Assert.AreEqual(2, await cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), Factory), "The follow-up stays cached.");
+        Assert.AreEqual(2, calls);
+    }
+
+    [TestMethod]
     public async Task Endpoint_status_counts_hit_the_store_once_per_ttl_window()
     {
         var store = new CountingStore();
