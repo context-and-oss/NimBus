@@ -29,7 +29,8 @@ The page only reads. It never starts an AI analysis and never resubmits or skips
 - **Groups**: each shows its count, coverage, endpoints, event types, latest occurrence and top
   error patterns. **and N more** lists the rest.
 - **View failures** opens a paged list of the group's failed attempts with their analysis,
-  saved cause and guidance, and the event's status now. A marker shows when a newer analysis is
+  saved cause and guidance, when that result was made (**Analyzed at**), and the event's status
+  now. A marker shows when a newer analysis is
   running, its outcome is unknown or it failed. Each row links to the event's details with that
   failed attempt's failure intelligence card outlined and scrolled into view; the card names the
   provider and model and notes that threshold settings were not recorded with the result.
@@ -44,7 +45,9 @@ new analysis is unavailable, so **Not analyzed** failures stay that way until a 
 configured.
 
 Saved classifications are read again when the page opens and on **Refresh**. New failures can
-take up to 30 seconds to appear. The range, endpoint, grouping and open group live in the URL,
+take up to 30 seconds to appear. Changing the range or endpoint clears the page until that
+selection has loaded; **Refresh** keeps the current content, dimmed, until the new read arrives.
+If a selection can't be loaded, the page says so and offers **Try again**. The range, endpoint, grouping and open group live in the URL,
 so a view can be shared and coming back from event details returns to it.
 
 ## Access

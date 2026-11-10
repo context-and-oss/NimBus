@@ -367,13 +367,16 @@ and by recovery guidance, and reports coverage: `classified`, `uncertain`, `notA
 never starts an analysis.
 
 - `endpointId` narrows the scope to one endpoint. `refresh=true` re-reads saved
-  classifications; new failures can still lag by the 30 s metrics cache.
+  classifications; new failures can still lag by the 30 s metrics cache. The answer comes from a
+  read that began after the request. Requests that refresh the same scope at the same time
+  share that read, so they cost at most one read beyond the one already running.
 - The response returns the resolved `from` and `to`, in whole milliseconds (a custom window's
   bounds are truncated to the millisecond too). Send them back unchanged to page through the same
   occurrences.
 - `enrichment` is `available`, `disabled`, `unavailable`, `unsupported` or `limitExceeded`.
   Every value except `available` leaves `coverage`, `causeGroups` and `guidanceGroups` null; it
-  is never reported as zero coverage.
+  is never reported as zero coverage. When it is `unavailable`, the WebApp log has a warning
+  from `FailureClassificationReader` with the storage exception.
 - `analysisAvailable` is false when new analysis can't be requested: intelligence is off, or
   only saved classifications can be read because no provider is configured.
 - `totalFailed` stays for existing clients and always equals `totalOccurrences`.
@@ -400,7 +403,7 @@ Limits, under `NimBus:Insights`:
 | Setting | Default | Range | Meaning |
 |---|---|---|---|
 | `EnrichmentCeiling` | 10000 | 100–100000 | Largest scope, after the endpoint filter, that is enriched; above it the response is `limitExceeded` |
-| `EnrichmentCacheSeconds` | 15 | 0–30 | Lifetime of a cached classification read |
+| `EnrichmentCacheSeconds` | 15 | 0–30 | Lifetime of a cached classification read. 0 turns the cache off: every request, including each drill-down page, reads classifications again |
 | `BulkReadBatchSize` | 500 | 50–1000 | Failures per classification-store call |
 | `BulkReadConcurrency` | 4 | 1–8 | Classification-store calls in flight |
 | `TopPatternsPerGroup` | 10 | 1–50 | Error patterns embedded in each cause or guidance group |

@@ -180,7 +180,15 @@ describe("Insights page", () => {
               category: "transient_dependency",
               categoryConfidence: 0.82,
               guidance: "RetryMayHelp",
+              classifiedAt: moment.utc("2026-11-07T10:05:30Z"),
               currentStatus: "Completed",
+            }),
+            new api.InsightOccurrence({
+              messageId: "m2",
+              eventId: "e2",
+              endpointId: "crm",
+              failedAt: moment.utc("2026-11-07T09:00:00Z"),
+              analysisState: api.InsightAnalysisState.NotAnalyzed,
             }),
           ],
           continuationToken: "t2",
@@ -198,6 +206,18 @@ describe("Insights page", () => {
     expect(mocks.occurrences).toHaveBeenLastCalledWith(from, to, api.InsightsPerspective.Cause, "transient_dependency", undefined, 50, undefined);
     expect(screen.getByText("Completed")).toBeTruthy();
     expect(screen.getByText("Retry may help", { selector: "td" })).toBeTruthy();
+    // When the saved result was made, apart from when the attempt failed and its status now.
+    const local = (utc: string) => moment.utc(utc).local().format("DD/MM/YY HH:mm:ss");
+    const table = document.querySelector('a[href$="message=m1"]')!.closest("table")!;
+    const headers = within(table).getAllByRole("columnheader").map((h) => h.textContent);
+    const analyzed = headers.indexOf("Analyzed at");
+    expect(analyzed).toBeGreaterThan(headers.indexOf("Failed"));
+    expect(analyzed).toBeLessThan(headers.indexOf("Status now"));
+    const cells = (messageId: string) =>
+      within(document.querySelector(`a[href$="message=${messageId}"]`)!.closest("tr")!).getAllByRole("cell");
+    expect(cells("m1")[analyzed].textContent).toBe(local("2026-11-07T10:05:30Z"));
+    expect(cells("m1")[headers.indexOf("Failed")].textContent).toBe(local("2026-11-07T10:00:00Z"));
+    expect(cells("m2")[analyzed].textContent).toBe("-");
 
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     await waitFor(() => expect(mocks.occurrences).toHaveBeenCalledTimes(2));
@@ -227,9 +247,68 @@ describe("Insights page", () => {
     await waitFor(() => expect(mocks.insights).toHaveBeenCalledTimes(2));
     expect(mocks.insights).toHaveBeenLastCalledWith(api.Period._7d, undefined, undefined, undefined, undefined);
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(mocks.insights).toHaveBeenCalledTimes(3));
     expect(mocks.insights).toHaveBeenLastCalledWith(api.Period._7d, undefined, undefined, undefined, true);
+  });
+
+  it("shows a spinner, not the previous scope's numbers, while another scope loads", async () => {
+    mocks.insights.mockResolvedValueOnce(overview()).mockImplementationOnce(() => new Promise(() => {}));
+    renderAt();
+    await screen.findByText("TimeoutException");
+
+    fireEvent.click(screen.getByRole("button", { name: "7d" }));
+
+    await waitFor(() => expect(mocks.insights).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("TimeoutException")).toBeNull();
+    expect(screen.queryByText(/25 failure occurrences/)).toBeNull();
+    expect(screen.getByLabelText("Loading")).toBeTruthy();
+  });
+
+  it("shows the error with a retry, not the previous scope, when another scope fails to load", async () => {
+    mocks.insights
+      .mockResolvedValueOnce(overview())
+      .mockRejectedValueOnce(new Error("503"))
+      .mockResolvedValueOnce(overview({ groups: [new api.ErrorPatternGroup({ groupKey: "ec:erp", errorCategory: "ErpScope", count: 1, endpoints: [], eventTypes: [], subGroups: [] })] }));
+    renderAt();
+    await screen.findByText("TimeoutException");
+
+    await screen.findByRole("option", { name: "erp" });
+    fireEvent.change(screen.getByLabelText("Endpoint"), { target: { value: "erp" } });
+
+    expect(await screen.findByText("Failure insights couldn't be loaded. Try again.")).toBeTruthy();
+    expect(screen.queryByText("TimeoutException")).toBeNull();
+    expect(screen.queryByRole("button", { name: "View failures" })).toBeNull();
+
+    // The retry keeps the selected endpoint and reads afresh.
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("ErpScope")).toBeTruthy();
+    expect(mocks.insights).toHaveBeenLastCalledWith(api.Period._1d, undefined, undefined, "erp", true);
+    expect(screen.queryByText("Failure insights couldn't be loaded. Try again.")).toBeNull();
+  });
+
+  it("keeps the content, marked busy, while Refresh re-reads the same scope", async () => {
+    mocks.insights.mockResolvedValueOnce(overview()).mockImplementationOnce(() => new Promise(() => {}));
+    renderAt();
+    await screen.findByText("TimeoutException");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(mocks.insights).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("TimeoutException").closest("[aria-busy='true']")).toBeTruthy();
+  });
+
+  it("drills down with the endpoint the overview was built for", async () => {
+    mocks.insights.mockResolvedValue(overview({ endpointId: "crm" }));
+    mocks.occurrences.mockResolvedValue(new api.InsightOccurrencePage({ occurrences: [] }));
+    // A hand-edited link; the server trims the endpoint and returns the one it used.
+    renderAt("/Insights?endpoint=crm%20");
+
+    fireEvent.click(await screen.findByRole("button", { name: "View failures" }));
+
+    await waitFor(() =>
+      expect(mocks.occurrences).toHaveBeenCalledWith(from, to, api.InsightsPerspective.ErrorPattern, "ec:timeout", "crm", 50, undefined),
+    );
   });
 
   it("ignores a response that arrives after the scope changed", async () => {

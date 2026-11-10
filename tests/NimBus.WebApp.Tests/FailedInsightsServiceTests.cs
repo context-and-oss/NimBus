@@ -373,6 +373,42 @@ public sealed partial class FailedInsightsServiceTests
     }
 
     [TestMethod]
+    public async Task Concurrent_refreshing_loads_share_reads_instead_of_one_each()
+    {
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "m1", "x");
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var enrichment = new FakeEnrichment { Gate = () => release.Task };
+        var service = Service(store, enrichment);
+
+        // The Insights page sends refresh=true on every first load, so this is several operators
+        // opening the page at once.
+        var loads = Enumerable.Range(0, 8).Select(_ => service.GetOverviewAsync(new FailedInsightsRequest(Period._1d, From, To, null, true, true))).ToArray();
+        await Task.Delay(50);
+        release.SetResult();
+        await Task.WhenAll(loads);
+
+        Assert.IsLessThanOrEqualTo(2, enrichment.Reads, "The running read plus one follow-up shared by every later refresh.");
+    }
+
+    [TestMethod]
+    public async Task Zero_cache_seconds_reads_classifications_on_every_request()
+    {
+        var options = new FailedInsightsOptions { EnrichmentCacheSeconds = 0 };
+        Assert.AreEqual(0, options.Validate().Count, "0 is inside the documented 0-30 range.");
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "m1", "x");
+        var enrichment = new FakeEnrichment();
+        var cache = NewCache();
+
+        var first = await Build(store, enrichment, cache: cache, options: options);
+        await Build(store, enrichment, cache: cache, options: options);
+
+        Assert.AreEqual(InsightsEnrichmentStatus.Available, first.Enrichment);
+        Assert.AreEqual(2, enrichment.Reads);
+    }
+
+    [TestMethod]
     public async Task Refresh_bypasses_the_classification_cache_but_not_the_occurrence_cache()
     {
         var store = new CountingStore();
