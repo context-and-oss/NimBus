@@ -90,6 +90,17 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     ],
   },
   {
+    id: "dashboard-tokens",
+    group: "Monitoring",
+    name: "Dashboard tokens",
+    description:
+      "Issue and revoke the links wall displays use to show the Monitor read-only without signing in.",
+    applies: "Applies to every instance within 30 s",
+    tabs: [
+      { id: "tokens", label: "Tokens", keywords: "monitor wall display kiosk dashboard token link issue revoke expiry" },
+    ],
+  },
+  {
     id: "simulation",
     group: "Testing",
     name: "Simulation",
