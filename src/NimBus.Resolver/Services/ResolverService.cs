@@ -622,6 +622,9 @@ public partial class ResolverService : IMessageHandler
             // subscriber. Null on EventRequest / original publishes.
             QueueTimeMs = message.QueueTimeMs,
             ProcessingTimeMs = message.ProcessingTimeMs,
+            // SDK retry attempt stamped on the wire (RetryRequest and the responses
+            // that echo it); CreateUnresolvedEvent copies it onto the audit row.
+            RetryCount = message.RetryCount,
             // PendingHandoff metadata. Sub-status is set only on the
             // PendingHandoffResponse audit row (the original Pending+Handoff
             // entry); the Manager-issued HandoffCompleted/HandoffFailed
