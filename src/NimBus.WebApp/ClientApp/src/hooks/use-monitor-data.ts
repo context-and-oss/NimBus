@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "api-client";
+import {
+  createMonitorClient,
+  feedAccessError,
+  type FeedAccessError,
+} from "lib/monitor-access";
 
 const REFRESH_MS = 5_000;
 // How many samples to keep per endpoint — drives the sparkline and the
@@ -78,6 +83,25 @@ export type MonitorEndpoint = {
   ack?: AckRecord;
   /** Failures per minute over the available sample window, or undefined. */
   ratePerMin?: number;
+  /**
+   * Estimated sessions blocked by a failed, dead-lettered or pending hand-off message; undefined
+   * when the server cannot tell.
+   */
+  blockedSessionCount?: number;
+  /** Heartbeat liveness, when the endpoint takes part in heartbeats. */
+  heartbeat?: api.MonitorFeedHeartbeat;
+};
+
+/** What the status feed says about the deployment and the caller. */
+export type MonitorFeedInfo = {
+  environment?: string;
+  platformName?: string;
+  /** True when the page reads the feed with a dashboard token (read-only). */
+  tokenAccess: boolean;
+  /** True when the server could not read the store and returned an earlier result. */
+  serverStale: boolean;
+  /** When the server read the data it returned. */
+  generatedAt?: number;
 };
 
 export type TickerEvent = {
@@ -118,6 +142,10 @@ export interface UseMonitorDataResult {
   lastRefreshAt: number | undefined;
   loading: boolean;
   error: string | undefined;
+  /** Set when the feed refused the caller: no valid session or token, or no Reader role. */
+  accessError?: FeedAccessError;
+  /** Deployment and caller details from the last successful poll. */
+  feed?: MonitorFeedInfo;
   /** Last failed ACK / un-ACK request, cleared by the next successful one. */
   actionError?: string;
   isStale: boolean;
@@ -130,8 +158,9 @@ export interface UseMonitorDataResult {
 }
 
 /**
- * Polls the endpoint-status-count and acknowledgement APIs on a fixed cadence
- * and decorates each endpoint with the derived data the Monitor page needs:
+ * Polls the Monitor status feed (`/api/monitor/feed/status`: counts, acknowledgements, blocked
+ * sessions and heartbeat for every endpoint) on a fixed cadence, with the session or with the
+ * dashboard token, and decorates each endpoint with the derived data the Monitor page needs:
  *  - rolling sample history (drives sparklines + rate / min)
  *  - the oldest open failure's timestamp from the server (drives "Failing
  *    for…" and the header T+ clock), plus the page-observed transition that
@@ -151,11 +180,16 @@ export interface UseMonitorDataResult {
  * catch-up fetch is in flight — real failures still surface after
  * STALE_AFTER_MS of visible, failing polls.
  */
-export function useMonitorData(): UseMonitorDataResult {
+export function useMonitorData(
+  options: { token?: string } = {},
+): UseMonitorDataResult {
+  const { token } = options;
   const [endpoints, setEndpoints] = useState<MonitorEndpoint[]>([]);
   const [lastRefreshAt, setLastRefreshAt] = useState<number | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
+  const [accessError, setAccessError] = useState<FeedAccessError | undefined>();
+  const [feed, setFeed] = useState<MonitorFeedInfo | undefined>();
   const [now, setNow] = useState(Date.now());
   const [ticker, setTicker] = useState<TickerEvent[]>([]);
   const [telemetry, setTelemetry] = useState<FleetSample[]>([]);
@@ -182,14 +216,13 @@ export function useMonitorData(): UseMonitorDataResult {
   const lastMutationSeqRef = useRef<Record<string, number>>({});
   const inFlightRef = useRef<Set<string>>(new Set());
   const clientRef = useRef<api.Client | null>(null);
-  const endpointIdsRef = useRef<string[] | null>(null);
 
   const getClient = useCallback((): api.Client => {
     if (!clientRef.current) {
-      clientRef.current = new api.Client(api.CookieAuth());
+      clientRef.current = createMonitorClient(token);
     }
     return clientRef.current;
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     removeLegacyAcks();
@@ -263,26 +296,25 @@ export function useMonitorData(): UseMonitorDataResult {
   const fetchOnce = useCallback(async (): Promise<void> => {
     const client = getClient();
 
-    let ids = endpointIdsRef.current;
-    if (!ids) {
-      ids = await client.getEndpointsAll();
-      endpointIdsRef.current = ids;
-    }
-
-    if (ids.length === 0) {
-      setEndpoints([]);
-      setLastRefreshAt(Date.now());
-      setError(undefined);
-      setLoading(false);
-      return;
-    }
-
     const seqAtStart = mutationSeqRef.current;
     const inFlightAtStart = new Set(inFlightRef.current);
-    const [snapshot, serverAcks] = await Promise.all([
-      client.postApiEndpointStatusCount(ids),
-      client.getMonitorAcknowledgements(),
-    ]);
+    const status = await client.getMonitorFeedStatus();
+    const feedEndpoints = (status.endpoints ?? []).filter((e) => e.status);
+    const snapshot = feedEndpoints.map((e) => e.status!);
+    const serverAcks = feedEndpoints
+      .map((e) => e.acknowledgement)
+      .filter((a): a is api.MonitorAcknowledgement => a !== undefined && a !== null);
+    const extrasById = new Map(
+      feedEndpoints.map((e) => [e.status!.endpointId ?? "", e]),
+    );
+    setFeed({
+      environment: status.environment ?? undefined,
+      platformName: status.platformName ?? undefined,
+      tokenAccess: status.tokenAccess ?? false,
+      serverStale: status.stale ?? false,
+      generatedAt: status.generatedAtUtc?.valueOf(),
+    });
+    setAccessError(undefined);
     const t = Date.now();
     const failedById = new Map(
       snapshot.map((s) => [s.endpointId ?? "", s.failedCount ?? 0]),
@@ -354,6 +386,7 @@ export function useMonitorData(): UseMonitorDataResult {
         }
       }
 
+      const extras = extrasById.get(id);
       return {
         id,
         status,
@@ -363,6 +396,8 @@ export function useMonitorData(): UseMonitorDataResult {
         isFreshFailure,
         ack,
         ratePerMin,
+        blockedSessionCount: extras?.blockedSessionCount ?? undefined,
+        heartbeat: extras?.heartbeat ?? undefined,
       };
     });
 
@@ -391,6 +426,7 @@ export function useMonitorData(): UseMonitorDataResult {
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to refresh");
+          setAccessError(feedAccessError(err));
           setLoading(false);
         }
       }
@@ -526,6 +562,7 @@ export function useMonitorData(): UseMonitorDataResult {
       await fetchOnce();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to refresh");
+      setAccessError(feedAccessError(err));
       setLoading(false);
     }
   }, [fetchOnce]);
@@ -535,6 +572,8 @@ export function useMonitorData(): UseMonitorDataResult {
     lastRefreshAt,
     loading,
     error,
+    accessError,
+    feed,
     actionError,
     isStale,
     ticker,

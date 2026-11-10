@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import Monitor, {
   BACKLOG_ELEVATED,
   BACKLOG_HIGH,
@@ -9,42 +9,61 @@ import Monitor, {
   failedPerMinuteSeries,
   firstOpenFailureAt,
   formatElapsed,
+  sortForTable,
 } from "./monitor";
 import type {
   FleetSample,
   MonitorEndpoint,
   UseMonitorDataResult,
 } from "hooks/use-monitor-data";
+import type { UseMonitorMetricsResult } from "hooks/use-monitor-metrics";
 
 const mocks = vi.hoisted(() => ({
   endpoints: [] as MonitorEndpoint[],
   telemetry: [] as FleetSample[],
   access: null as unknown,
+  token: undefined as string | undefined,
+  accessError: undefined as "unauthorized" | "forbidden" | undefined,
+  metrics: {} as UseMonitorMetricsResult,
+  useAccess: vi.fn(),
+  dataOptions: vi.fn(),
 }));
 
 vi.mock("hooks/use-monitor-data", () => ({
-  useMonitorData: (): UseMonitorDataResult => ({
-    endpoints: mocks.endpoints,
-    lastRefreshAt: Date.now(),
-    loading: false,
-    error: undefined,
-    isStale: false,
-    ticker: [],
-    telemetry: mocks.telemetry,
-    ack: vi.fn(),
-    unack: vi.fn(),
-    refresh: vi.fn(),
-  }),
+  useMonitorData: (options?: { token?: string }): UseMonitorDataResult => {
+    mocks.dataOptions(options);
+    return {
+      endpoints: mocks.endpoints,
+      lastRefreshAt: Date.now(),
+      loading: false,
+      error: undefined,
+      accessError: mocks.accessError,
+      feed: { environment: "dev", platformName: "Test", tokenAccess: mocks.token !== undefined, serverStale: false },
+      isStale: false,
+      ticker: [],
+      telemetry: mocks.telemetry,
+      ack: vi.fn(),
+      unack: vi.fn(),
+      refresh: vi.fn(),
+    };
+  },
+}));
+
+vi.mock("hooks/use-monitor-metrics", () => ({
+  useMonitorMetrics: () => mocks.metrics,
+}));
+
+vi.mock("lib/monitor-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lib/monitor-access")>()),
+  readDashboardToken: () => mocks.token,
 }));
 
 vi.mock("hooks/use-access", async (importOriginal) => ({
   ...(await importOriginal<typeof import("hooks/use-access")>()),
-  useAccess: () => ({ access: mocks.access }),
-}));
-
-vi.mock("hooks/app-status", () => ({
-  useEnv: () => "dev",
-  getApplicationStatus: () => Promise.resolve({ platformName: "Test" }),
+  useAccess: () => {
+    mocks.useAccess();
+    return { access: mocks.access };
+  },
 }));
 
 interface EndpointOptions {
@@ -53,9 +72,11 @@ interface EndpointOptions {
   deferred?: number;
   failed?: number;
   deadletter?: number;
+  unsupported?: number;
   firstFailureAt?: number;
   acked?: boolean;
   acknowledgedBy?: string;
+  blocked?: number;
   /** Backlog at the oldest sample — lower than current means "growing". */
   pendingWas?: number;
 }
@@ -66,9 +87,11 @@ function endpoint({
   deferred = 0,
   failed = 0,
   deadletter = 0,
+  unsupported = 0,
   firstFailureAt,
   acked = false,
   acknowledgedBy,
+  blocked,
   pendingWas,
 }: EndpointOptions): MonitorEndpoint {
   const now = Date.now();
@@ -87,10 +110,12 @@ function endpoint({
       pendingCount: pending,
       deferredCount: deferred,
       deadletterCount: deadletter,
+      unsupportedCount: unsupported,
     } as MonitorEndpoint["status"],
     samples,
     firstFailureAt,
     isFreshFailure: false,
+    blockedSessionCount: blocked,
     ack: acked
       ? {
           reason: "",
@@ -103,10 +128,24 @@ function endpoint({
   };
 }
 
+const counts = (published: number, handled: number, failed: number, queueMs?: number, processingMs?: number) => ({
+  published,
+  handled,
+  failed,
+  queue: { count: queueMs === undefined ? 0 : 10, avgMs: queueMs ?? 0, minMs: 0, maxMs: 0 },
+  processing: { count: processingMs === undefined ? 0 : 10, avgMs: processingMs ?? 0, minMs: 0, maxMs: 0 },
+});
+
 afterEach(() => {
   mocks.endpoints = [];
   mocks.telemetry = [];
   mocks.access = null;
+  mocks.token = undefined;
+  mocks.accessError = undefined;
+  mocks.metrics = {};
+  mocks.useAccess.mockClear();
+  mocks.dataOptions.mockClear();
+  vi.unstubAllGlobals();
   cleanup();
 });
 
@@ -118,17 +157,11 @@ describe("backlogTotal", () => {
 
 describe("backlogLevel", () => {
   it("stays normal below the elevated threshold", () => {
-    expect(backlogLevel(endpoint({ pending: BACKLOG_ELEVATED - 1 }))).toBe(
-      "normal",
-    );
+    expect(backlogLevel(endpoint({ pending: BACKLOG_ELEVATED - 1 }))).toBe("normal");
   });
 
   it("is elevated at the threshold when the queue is not growing", () => {
-    expect(
-      backlogLevel(
-        endpoint({ pending: BACKLOG_ELEVATED, pendingWas: BACKLOG_ELEVATED }),
-      ),
-    ).toBe("elevated");
+    expect(backlogLevel(endpoint({ pending: BACKLOG_ELEVATED, pendingWas: BACKLOG_ELEVATED }))).toBe("elevated");
   });
 
   it("is high at the high threshold", () => {
@@ -136,44 +169,11 @@ describe("backlogLevel", () => {
   });
 
   it("escalates an elevated backlog that is still growing", () => {
-    expect(
-      backlogLevel(
-        endpoint({ pending: BACKLOG_ELEVATED + 10, pendingWas: 1 }),
-      ),
-    ).toBe("high");
+    expect(backlogLevel(endpoint({ pending: BACKLOG_ELEVATED + 10, pendingWas: 1 }))).toBe("high");
   });
 
   it("does not escalate a small backlog just because it is growing", () => {
-    expect(backlogLevel(endpoint({ pending: 7, pendingWas: 1 }))).toBe(
-      "normal",
-    );
-  });
-});
-
-describe("Monitor backlog highlight", () => {
-  it("tags a deep backlog and leaves a small one alone", () => {
-    mocks.endpoints = [
-      endpoint({ id: "DataPlatformEndpoint", pending: BACKLOG_HIGH + 22 }),
-      endpoint({ id: "AgentZoneEndpoint", pending: 7 }),
-    ];
-
-    render(<Monitor />);
-
-    expect(screen.getByText("high")).toBeDefined();
-    expect(screen.queryAllByText("elevated")).toHaveLength(0);
-    expect(
-      screen.getByText(`1 endpoint at or above ${BACKLOG_ELEVATED} pending`),
-    ).toBeDefined();
-  });
-
-  it("reports an all-quiet backlog band when every queue is shallow", () => {
-    mocks.endpoints = [endpoint({ id: "AgentZoneEndpoint", pending: 7 })];
-
-    render(<Monitor />);
-
-    expect(
-      screen.getByText(`all below ${BACKLOG_ELEVATED} pending`),
-    ).toBeDefined();
+    expect(backlogLevel(endpoint({ pending: 7, pendingWas: 1 }))).toBe("normal");
   });
 });
 
@@ -184,6 +184,30 @@ describe("endpointState", () => {
     expect(endpointState(endpoint({ pending: 4 }))).toBe("hold");
     expect(endpointState(endpoint({ deferred: 2 }))).toBe("hold");
     expect(endpointState(endpoint({}))).toBe("go");
+  });
+});
+
+describe("sortForTable", () => {
+  it("puts failing first by size, then acknowledged, then backlog by depth, then the rest A to Z", () => {
+    const sorted = sortForTable([
+      endpoint({ id: "Zeta" }),
+      endpoint({ id: "Hold-small", pending: 3 }),
+      endpoint({ id: "Acked", failed: 50, acked: true }),
+      endpoint({ id: "Small-fail", failed: 2 }),
+      endpoint({ id: "Alpha" }),
+      endpoint({ id: "Big-fail", failed: 400 }),
+      endpoint({ id: "Hold-big", deferred: 90 }),
+    ]);
+
+    expect(sorted.map((e) => e.id)).toEqual([
+      "Big-fail",
+      "Small-fail",
+      "Acked",
+      "Hold-big",
+      "Hold-small",
+      "Alpha",
+      "Zeta",
+    ]);
   });
 });
 
@@ -200,29 +224,19 @@ describe("firstOpenFailureAt", () => {
   });
 
   it("is undefined when nothing is failing unacknowledged", () => {
-    expect(
-      firstOpenFailureAt([
-        endpoint({ failed: 1, firstFailureAt: 1_000, acked: true }),
-      ]),
-    ).toBeUndefined();
+    expect(firstOpenFailureAt([endpoint({ failed: 1, firstFailureAt: 1_000, acked: true })])).toBeUndefined();
   });
 });
 
 describe("formatElapsed", () => {
   it("adds a day count once a failure is older than 24 hours", () => {
     expect(formatElapsed((6 * 3600 + 24 * 60 + 23) * 1000)).toBe("06:24:23");
-    expect(formatElapsed(((64 * 24 + 6) * 3600 + 24 * 60 + 23) * 1000)).toBe(
-      "64d 06:24:23",
-    );
+    expect(formatElapsed(((64 * 24 + 6) * 3600 + 24 * 60 + 23) * 1000)).toBe("64d 06:24:23");
   });
 });
 
 describe("failedPerMinuteSeries", () => {
-  const sample = (t: number, failed: number): FleetSample => ({
-    t,
-    failed,
-    backlog: 0,
-  });
+  const sample = (t: number, failed: number): FleetSample => ({ t, failed, backlog: 0 });
 
   it("turns cumulative failed totals into failures per minute", () => {
     const telemetry = [0, 1, 2, 3].map((i) => sample(i * 5_000, i * 10));
@@ -230,8 +244,7 @@ describe("failedPerMinuteSeries", () => {
   });
 
   it("never goes negative when failures are resubmitted or skipped", () => {
-    const telemetry = [sample(0, 50), sample(5_000, 20)];
-    expect(failedPerMinuteSeries(telemetry)).toEqual([0, 0]);
+    expect(failedPerMinuteSeries([sample(0, 50), sample(5_000, 20)])).toEqual([0, 0]);
   });
 });
 
@@ -248,51 +261,106 @@ describe("Monitor wall", () => {
     expect(screen.getByRole("img", { name: "2 of 3 endpoints GO" })).toBeDefined();
   });
 
-  it("shows dead-lettered messages as part of the failed count", () => {
+  it("splits unresolved failures into failed, dead-lettered and unsupported", () => {
+    mocks.endpoints = [endpoint({ id: "Billing", failed: 230, deadletter: 16, unsupported: 4, firstFailureAt: Date.now() })];
+
+    render(<Monitor />);
+
+    expect(screen.getByText("210 failed · 16 dead-lettered · 4 unsupported")).toBeDefined();
+  });
+
+  it("adds up blocked sessions and names the endpoints with most", () => {
     mocks.endpoints = [
-      endpoint({
-        id: "TracetoolEndpoint",
-        failed: 208,
-        deadletter: 16,
-        firstFailureAt: Date.now(),
-      }),
+      endpoint({ id: "Billing", failed: 2, blocked: 9, deferred: 61 }),
+      endpoint({ id: "Warehouse", failed: 1, blocked: 8, deferred: 39 }),
+      endpoint({ id: "Crm", blocked: 0 }),
     ];
 
     render(<Monitor />);
 
-    expect(screen.getByText("incl. DLQ")).toBeDefined();
-    expect(screen.getByText("16")).toBeDefined();
+    const tile = screen.getByText("Blocked sessions").parentElement!;
+    expect(within(tile).getByText("17")).toBeDefined();
+    expect(within(tile).getByText("9 Billing · 8 Warehouse · 100 deferred")).toBeDefined();
+  });
+
+  it("shows a dash for blocked sessions when the server cannot tell", () => {
+    mocks.endpoints = [endpoint({ id: "Billing" })];
+
+    render(<Monitor />);
+
+    expect(within(screen.getByText("Blocked sessions").parentElement!).getByText("–")).toBeDefined();
+  });
+
+  it("works out throughput, success rate and time to handle from the metrics feed", () => {
+    mocks.endpoints = [endpoint({ id: "Billing" })];
+    mocks.metrics = {
+      metrics: {
+        lastHour: [
+          { timestamp: "2026-11-10T12:33", published: 120, handled: 90, failed: 10 },
+          { timestamp: "2026-11-10T12:34", published: 7, handled: 1, failed: 0 },
+        ],
+        fleet: counts(3272, 2497, 263, 4000, 1300),
+        endpoints: [],
+      } as never,
+    };
+
+    render(<Monitor />);
+
+    const throughput = screen.getByText("Throughput now").parentElement!;
+    expect(within(throughput).getByText("120")).toBeDefined();
+    expect(within(throughput).getByText("90 handled · 10 failed per min")).toBeDefined();
+    const success = screen.getByText("Success rate · last hour").parentElement!;
+    expect(within(success).getByText("90.5%")).toBeDefined();
+    expect(within(success).getByText(`263 of ${(2760).toLocaleString()} attempts failed`)).toBeDefined();
+    const handle = screen.getByText("Time to handle · last hour").parentElement!;
+    expect(within(handle).getByText("5.3 s")).toBeDefined();
+    expect(within(handle).getByText("queue 4.0 s · processing 1.3 s")).toBeDefined();
+  });
+
+  it("shows per-endpoint figures and calls out processing slower than usual", () => {
+    mocks.endpoints = [endpoint({ id: "Billing", failed: 4, firstFailureAt: Date.now() })];
+    mocks.metrics = {
+      metrics: {
+        lastHour: [],
+        fleet: counts(0, 0, 0),
+        endpoints: [{ endpointId: "billing", counts: counts(0, 754, 124, 9000, 1600) }],
+      } as never,
+      history: {
+        lastThreeDays: [],
+        latencyLastDay: [],
+        endpoints: [{ endpointId: "Billing", processing: { count: 100, avgMs: 1000, minMs: 0, maxMs: 0 } }],
+      } as never,
+    };
+
+    render(<Monitor />);
+
+    const row = screen.getByRole("row", { name: /Billing/ });
+    expect(within(row).getByText("878")).toBeDefined();
+    expect(within(row).getByText("14.1%")).toBeDefined();
+    expect(within(row).getByText("1.6 s")).toBeDefined();
+    expect(within(row).getByText(/1\.6× usual/)).toBeDefined();
+    expect(within(row).getByText("9.0 s")).toBeDefined();
   });
 
   it("counts failing time from the oldest open failure", () => {
     mocks.endpoints = [
-      endpoint({
-        id: "BillingEndpoint",
-        failed: 4,
-        firstFailureAt: Date.now() - (3 * 60 + 20) * 60 * 1000,
-      }),
+      endpoint({ id: "BillingEndpoint", failed: 4, firstFailureAt: Date.now() - (3 * 60 + 20) * 60 * 1000 }),
     ];
 
     render(<Monitor />);
 
-    expect(screen.getByText("Failing for 3h 20m")).toBeDefined();
+    expect(screen.getByText("for 3h 20m")).toBeDefined();
     expect(screen.getByText("T+ since first failure")).toBeDefined();
   });
 
   it("names who acknowledged a failure", () => {
     mocks.endpoints = [
-      endpoint({
-        id: "BillingEndpoint",
-        failed: 4,
-        firstFailureAt: Date.now(),
-        acked: true,
-        acknowledgedBy: "alice@example.com",
-      }),
+      endpoint({ id: "BillingEndpoint", failed: 4, firstFailureAt: Date.now(), acked: true, acknowledgedBy: "alice@example.com" }),
     ];
 
     render(<Monitor />);
 
-    expect(screen.getByText("Acked 0s ago by alice")).toBeDefined();
+    expect(screen.getByText("alice · 0s ago")).toBeDefined();
   });
 
   it("shows readers the ACK state without letting them change it", () => {
@@ -302,12 +370,7 @@ describe("Monitor wall", () => {
     };
     mocks.endpoints = [
       endpoint({ id: "BillingEndpoint", failed: 4, firstFailureAt: Date.now() }),
-      endpoint({
-        id: "OrdersEndpoint",
-        failed: 2,
-        firstFailureAt: Date.now(),
-        acked: true,
-      }),
+      endpoint({ id: "OrdersEndpoint", failed: 2, firstFailureAt: Date.now(), acked: true }),
     ];
 
     render(<Monitor />);
@@ -323,20 +386,60 @@ describe("Monitor wall", () => {
 
     render(<Monitor />);
 
-    expect(screen.getByText("No failing endpoints")).toBeDefined();
     expect(screen.getByText("No open failures")).toBeDefined();
   });
-});
 
-describe("Monitor backlog drain ETA", () => {
-  it("does not call a flat queue growing", () => {
-    mocks.endpoints = [
-      endpoint({ id: "MitHrEndpoint", pending: 880, pendingWas: 879.8 }),
-    ];
+  it("reports a flat backlog as stable", () => {
+    mocks.endpoints = [endpoint({ id: "MitHrEndpoint", pending: 880, pendingWas: 879.8 })];
 
     render(<Monitor />);
 
-    expect(screen.getByText("stable")).toBeDefined();
-    expect(screen.queryByText("growing")).toBeNull();
+    expect(within(screen.getByText("Backlog").parentElement!).getByText("stable")).toBeDefined();
+  });
+});
+
+describe("Monitor with a dashboard token", () => {
+  it("is read-only and never asks for the caller's access", () => {
+    mocks.token = "nbdt_abc";
+    mocks.endpoints = [endpoint({ id: "BillingEndpoint", failed: 4, firstFailureAt: Date.now() })];
+
+    render(<Monitor />);
+
+    expect(mocks.dataOptions).toHaveBeenCalledWith({ token: "nbdt_abc" });
+    expect(mocks.useAccess).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "ack" })).toBeNull();
+    expect(screen.getByText(/read-only dashboard/)).toBeDefined();
+  });
+
+  it("says when the token is refused and stays on the page", () => {
+    mocks.token = "nbdt_abc";
+    mocks.accessError = "unauthorized";
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+
+    render(<Monitor />);
+
+    expect(screen.getByText("This dashboard link is invalid, expired or revoked")).toBeDefined();
+    expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+describe("Monitor without a token", () => {
+  it("sends a signed-out browser to the app root, which picks the login", () => {
+    mocks.accessError = "unauthorized";
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+
+    render(<Monitor />);
+
+    expect(assign).toHaveBeenCalledWith("/");
+  });
+
+  it("explains that the Reader role is needed", () => {
+    mocks.accessError = "forbidden";
+
+    render(<Monitor />);
+
+    expect(screen.getByText("The Monitor requires the Reader role")).toBeDefined();
   });
 });
