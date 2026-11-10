@@ -109,6 +109,63 @@ public class ResolverFailurePathTests
     }
 
     [TestMethod]
+    public async Task Handle_MessageWithoutEventId_IsDeadLettered()
+    {
+        // A foreign or hand-placed message without the EventId property must reach the
+        // dead-letter settlement with the real reason, not escape Handle unsettled and be
+        // dead-lettered later by the broker as MaxDeliveryCountExceeded.
+        var store = new FakeCosmosDbClient();
+        var message = CreateMessageContext(MessageType.EventRequest, to: Endpoint);
+        message.EventIdIsMissing = true;
+        var service = new ResolverService(store);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(1, message.DeadLetterCalls);
+        Assert.AreEqual("Failed to handle message.", message.LastDeadLetterReason);
+        Assert.AreEqual(0, message.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_MessageWithUnreadableBody_IsDeadLettered()
+    {
+        // A body that yields no MessageContent (empty, not JSON, a non-object value or null)
+        // is a permanent failure: dead-letter it with the real reason.
+        var store = new FakeCosmosDbClient();
+        var message = CreateMessageContext(MessageType.EventRequest, to: Endpoint);
+        message.MessageContentIsMissing = true;
+        var service = new ResolverService(store);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(1, message.DeadLetterCalls);
+        Assert.AreEqual("Failed to handle message.", message.LastDeadLetterReason);
+        Assert.AreEqual(0, message.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_StoreFailureOnMessageWithoutEventId_StillReachesItsSettlement()
+    {
+        // The store-failure path logs identity too. A heartbeat answer never reads EventId
+        // before its store write, so a throttle reaches HandleStoreFailure with the property
+        // absent; the final attempt must still dead-letter with the stable reason.
+        var store = new FakeCosmosDbClient
+        {
+            SetHeartbeatException = new RequestLimitException(TimeSpan.FromSeconds(1)),
+        };
+        var message = ResolverHeartbeatTests.CreateHeartbeatContext(MessageType.ResolutionResponse, to: Constants.ResolverId, from: Endpoint);
+        message.EventIdIsMissing = true;
+        message.ThrottleRetryCount = 9;
+        var service = new ResolverService(store, metadataStore: store);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(1, message.DeadLetterCalls);
+        Assert.AreEqual("CosmosDbThrottled", message.LastDeadLetterReason);
+        Assert.AreEqual(0, message.CompletedCalls);
+    }
+
+    [TestMethod]
     [DataRow(MessageType.Unknown)]
     [DataRow(MessageType.ProcessDeferredRequest)]
     public async Task Handle_MessageTypeWithoutAProjection_IsDeadLettered(MessageType messageType)
