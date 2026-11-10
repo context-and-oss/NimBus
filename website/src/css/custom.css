@@ -1,0 +1,41 @@
+/* Portal theme: the NimBus blue from ../site/overview.css on the Infima defaults. */
+
+:root {
+  --ifm-color-primary: #006dc1;
+  --ifm-color-primary-dark: #0062ae;
+  --ifm-color-primary-darker: #005da4;
+  --ifm-color-primary-darkest: #004c87;
+  --ifm-color-primary-light: #0078d4;
+  --ifm-color-primary-lighter: #007dde;
+  --ifm-color-primary-lightest: #0b8ef7;
+  --ifm-font-family-base: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ifm-heading-color: #182538;
+  --ifm-code-font-size: 92%;
+  --ifm-footer-background-color: #141e2d;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 109, 193, 0.12);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #46b4ff;
+  --ifm-color-primary-dark: #26a7ff;
+  --ifm-color-primary-darker: #16a0ff;
+  --ifm-color-primary-darkest: #0086e4;
+  --ifm-color-primary-light: #66c1ff;
+  --ifm-color-primary-lighter: #76c8ff;
+  --ifm-color-primary-lightest: #a6dbff;
+  --ifm-heading-color: #f3f6fa;
+  --ifm-background-color: #141e2d;
+  --ifm-background-surface-color: #182538;
+  --docusaurus-highlighted-code-line-bg: rgba(70, 180, 255, 0.18);
+}
+
+.footer--dark {
+  --ifm-footer-background-color: #141e2d;
+}
+
+/* Wide reference tables scroll inside the page instead of stretching it. */
+.markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}

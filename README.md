@@ -6,7 +6,7 @@ NimBus is an open-source .NET integration platform built on Azure Service Bus. I
 
 It is designed for teams connecting business systems such as CRM, ERP, and billing, where a failed message must be understood and recovered before subsequent work continues.
 
-[Website](https://context-and-oss.github.io/NimBus/) · [Watch the demo](https://www.youtube.com/watch?v=jZ99gbYZLqU) · [Documentation](docs/)
+[Website](https://context-and-oss.github.io/NimBus/) · [Watch the demo](https://www.youtube.com/watch?v=jZ99gbYZLqU) · [Documentation](https://context-and-oss.github.io/NimBus/docs/)
 
 ## What you get
 
