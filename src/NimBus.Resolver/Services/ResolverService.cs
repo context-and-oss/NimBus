@@ -103,8 +103,6 @@ public partial class ResolverService : IMessageHandler
 
     public async Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
-        LogResolverHandleEventId(_logger, messageContext.MessageContent.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
-
         // The consumer span is owned by the transport boundary
         // (ServiceBusAdapter → NimBusConsumerInstrumentation). When invoked
         // through ServiceBusAdapter (the Azure Function `Functions.cs` path),
@@ -115,6 +113,10 @@ public partial class ResolverService : IMessageHandler
         // a transport span when there isn't one.
         try
         {
+            // Identity is read through the non-throwing helpers: a message missing EventId or a
+            // readable body is still logged here and dead-lettered below, never left unsettled.
+            LogResolverHandleEventId(_logger, GetEventTypeIdOrDefault(messageContext), messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
+
             // Platform heartbeat traffic is diverted before anything touches the
             // tracking store: it is infrastructure chatter, not integration events,
             // so it must never appear on the Events / Flow / Monitor pages nor in
@@ -179,12 +181,12 @@ public partial class ResolverService : IMessageHandler
         }
         catch (TransientException transientException)
         {
-            LogResolverTransientExceptionEventId(_logger, transientException, messageContext.EventId);
+            LogResolverTransientExceptionEventId(_logger, transientException, messageContext.GetEventIdOrDefault());
             await messageContext.Abandon(transientException);
         }
         catch (Exception unexpectedException)
         {
-            LogResolverFailedToHandleMessage(_logger, unexpectedException, messageContext.EventId);
+            LogResolverFailedToHandleMessage(_logger, unexpectedException, messageContext.GetEventIdOrDefault());
             await messageContext.DeadLetter("Failed to handle message.", unexpectedException, cancellationToken);
         }
     }
@@ -216,13 +218,16 @@ public partial class ResolverService : IMessageHandler
             ? Math.Max(1, deliveryContext.DeliveryCount)
             : 1;
         var logicalAttempt = messageContext.ThrottleRetryCount + deliveryCount;
-        var (endpointId, _) = DetermineEndpoint(messageContext);
+        // Every identity read on this path is non-throwing so it always reaches a settlement call.
+        var endpointId = DetermineEndpointOrDefault(messageContext);
+        var eventId = messageContext.GetEventIdOrDefault();
+        var sessionId = messageContext.GetSessionIdOrDefault();
 
-        LogResolverStoreWriteFailed(_logger, exception, reason, messageContext.EventId, messageContext.SessionId, logicalAttempt, Constants.ServiceBusMaxDeliveryCount, deliveryCount);
+        LogResolverStoreWriteFailed(_logger, exception, reason, eventId, sessionId, logicalAttempt, Constants.ServiceBusMaxDeliveryCount, deliveryCount);
 
         if (logicalAttempt >= Constants.ServiceBusMaxDeliveryCount)
         {
-            LogResolverStoreFailures(_logger, reason, Constants.ServiceBusMaxDeliveryCount, messageContext.EventId, messageContext.SessionId);
+            LogResolverStoreFailures(_logger, reason, Constants.ServiceBusMaxDeliveryCount, eventId, sessionId);
             await messageContext.DeadLetter(deadLetterReason, null, cancellationToken);
             RecordStoreRetry(endpointId, reason, RetryAction.DeadLettered);
             return;
@@ -234,7 +239,7 @@ public partial class ResolverService : IMessageHandler
         // message unsettled, so the session redelivers it and DeliveryCount carries the budget.
         if (IsHeartbeat(messageContext))
         {
-            LogResolverHeartbeatStoreWriteFailed(_logger, exception, reason, messageContext.EventId, messageContext.SessionId);
+            LogResolverHeartbeatStoreWriteFailed(_logger, exception, reason, eventId, sessionId);
             var heartbeatFailure = $"Heartbeat store write failed ({reason}).";
             await messageContext.Abandon(exception is null
                 ? new TransientException(heartbeatFailure)
@@ -249,7 +254,7 @@ public partial class ResolverService : IMessageHandler
         var useProviderRetryAfter = retryAfter.HasValue && retryAfter.Value > backoff;
         var delay = useProviderRetryAfter ? retryAfter.GetValueOrDefault() : backoff;
 
-        LogResolverStoreWriteFailedSchedulingRedelivery(_logger, reason, delay.TotalSeconds, useProviderRetryAfter ? DelaySource.Provider : DelaySource.Backoff, messageContext.EventId, messageContext.SessionId, logicalAttempt, Constants.ServiceBusMaxDeliveryCount);
+        LogResolverStoreWriteFailedSchedulingRedelivery(_logger, reason, delay.TotalSeconds, useProviderRetryAfter ? DelaySource.Provider : DelaySource.Backoff, eventId, sessionId, logicalAttempt, Constants.ServiceBusMaxDeliveryCount);
 
         try
         {
@@ -257,7 +262,7 @@ public partial class ResolverService : IMessageHandler
         }
         catch (TransientException ex)
         {
-            LogResolverFailedToScheduleRedelivery(_logger, ex, messageContext.EventId, messageContext.SessionId);
+            LogResolverFailedToScheduleRedelivery(_logger, ex, eventId, sessionId);
             await messageContext.Abandon(ex);
             RecordStoreRetry(endpointId, reason, RetryAction.Abandoned);
             return;
@@ -654,6 +659,21 @@ public partial class ResolverService : IMessageHandler
     internal static (string? endpointId, EndpointRole role) DetermineEndpoint(IReceivedMessage message) =>
         (IsRequest(message.MessageType) ? message.To : message.From, EndpointRole.Subscriber);
 
+    // Failure-path variant of DetermineEndpoint: To, From or the message type may be absent on
+    // the wire, and a missing endpoint only drops the metric tag.
+    private static string? DetermineEndpointOrDefault(IReceivedMessage message)
+    {
+        try { return DetermineEndpoint(message).endpointId; }
+        catch (InvalidMessageException) { return null; }
+    }
+
+    // The entry log's event type: the property, else the body's, else null when neither is readable.
+    private static string? GetEventTypeIdOrDefault(IReceivedMessage message)
+    {
+        try { return message.EventTypeId ?? message.MessageContent?.EventContent?.EventTypeId; }
+        catch (InvalidMessageException) { return null; }
+    }
+
     private static bool IsRequest(MessageType messageType) =>
         messageType == MessageType.EventRequest ||
         messageType == MessageType.ContinuationRequest ||
@@ -919,31 +939,31 @@ public partial class ResolverService : IMessageHandler
 
 
     [LoggerMessage(Level = LogLevel.Trace, Message = "Resolver: Handle {EventTypeId} EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
-    private static partial void LogResolverHandleEventId(ILogger logger, string? eventTypeId, string eventId, string messageId, string sessionId);
+    private static partial void LogResolverHandleEventId(ILogger logger, string? eventTypeId, string? eventId, string? messageId, string? sessionId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
     private static partial void LogResolverUpdatedEndpointEndpointId(ILogger logger, string endpointId, ResolutionStatus status, string eventId, string messageId, string sessionId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Resolver: Transient exception EventId:{EventId}")]
-    private static partial void LogResolverTransientExceptionEventId(ILogger logger, Exception exception, string eventId);
+    private static partial void LogResolverTransientExceptionEventId(ILogger logger, Exception exception, string? eventId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Resolver: Failed to handle message, add to DeadLetter. EventId:{EventId}")]
-    private static partial void LogResolverFailedToHandleMessage(ILogger logger, Exception exception, string eventId);
+    private static partial void LogResolverFailedToHandleMessage(ILogger logger, Exception exception, string? eventId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: Store write failed ({Reason}). EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}, DeliveryCount:{DeliveryCount}")]
-    private static partial void LogResolverStoreWriteFailed(ILogger logger, Exception? exception, string reason, string eventId, string sessionId, int logicalAttempt, int maxAttempts, int deliveryCount);
+    private static partial void LogResolverStoreWriteFailed(ILogger logger, Exception? exception, string reason, string? eventId, string? sessionId, int logicalAttempt, int maxAttempts, int deliveryCount);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Resolver: Store failures ({Reason}) exhausted the delivery budget ({MaxAttempts}). Dead-lettering. EventId:{EventId}, SessionId:{SessionId}")]
-    private static partial void LogResolverStoreFailures(ILogger logger, string reason, int maxAttempts, string eventId, string sessionId);
+    private static partial void LogResolverStoreFailures(ILogger logger, string reason, int maxAttempts, string? eventId, string? sessionId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Heartbeat store write failed ({Reason}); leaving it for the session to redeliver. EventId:{EventId}, SessionId:{SessionId}")]
-    private static partial void LogResolverHeartbeatStoreWriteFailed(ILogger logger, Exception? exception, string reason, string eventId, string sessionId);
+    private static partial void LogResolverHeartbeatStoreWriteFailed(ILogger logger, Exception? exception, string reason, string? eventId, string? sessionId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Store write failed ({Reason}). Scheduling redelivery in {DelaySeconds}s ({DelaySource}). EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}")]
-    private static partial void LogResolverStoreWriteFailedSchedulingRedelivery(ILogger logger, string reason, double delaySeconds, string delaySource, string eventId, string sessionId, int logicalAttempt, int maxAttempts);
+    private static partial void LogResolverStoreWriteFailedSchedulingRedelivery(ILogger logger, string reason, double delaySeconds, string delaySource, string? eventId, string? sessionId, int logicalAttempt, int maxAttempts);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}")]
-    private static partial void LogResolverFailedToScheduleRedelivery(ILogger logger, Exception exception, string eventId, string sessionId);
+    private static partial void LogResolverFailedToScheduleRedelivery(ILogger logger, Exception exception, string? eventId, string? sessionId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: Ignored stale {MessageType}; audit row already reflects a later state. EndpointId:{EndpointId}, EventId:{EventId}, SessionId:{SessionId}, MessageId:{MessageId}, EnqueuedTimeUtc:{EnqueuedTimeUtc}, ThrottleRetryCount:{ThrottleRetryCount}, DeliveryCount:{DeliveryCount}")]
     private static partial void LogResolverIgnoredStale(ILogger logger, MessageType messageType, string endpointId, string eventId, string sessionId, string messageId, DateTime enqueuedTimeUtc, int throttleRetryCount, int deliveryCount);

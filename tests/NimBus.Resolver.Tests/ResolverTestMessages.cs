@@ -54,13 +54,32 @@ internal static class ResolverTestMessages
 
 internal sealed class FakeMessageContext : IMessageContext, IMessageDeliveryContext
 {
-    public string EventId { get; set; } = string.Empty;
+    private string _eventId = string.Empty;
+    private MessageContent _messageContent = new();
+
+    // Mirrors the Service Bus MessageContext, which throws when the EventId property is absent.
+    public bool EventIdIsMissing { get; set; }
+
+    // Mirrors the Service Bus MessageContext, which throws when the body is empty, not JSON,
+    // a non-object JSON value or literal null.
+    public bool MessageContentIsMissing { get; set; }
+
+    public string EventId
+    {
+        get => EventIdIsMissing ? throw new InvalidMessageException("Message.UserProperties[EventId] is not defined.") : _eventId;
+        set => _eventId = value;
+    }
+
     public string To { get; set; } = string.Empty;
     public string SessionId { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public string MessageId { get; set; } = string.Empty;
     public MessageType MessageType { get; set; }
-    public MessageContent MessageContent { get; set; } = new();
+    public MessageContent MessageContent
+    {
+        get => MessageContentIsMissing ? throw new InvalidMessageException("Message body does not contain MessageContent.") : _messageContent;
+        set => _messageContent = value;
+    }
     public string ParentMessageId { get; set; } = string.Empty;
     public string OriginatingMessageId { get; set; } = string.Empty;
     public int? RetryCount { get; set; }
