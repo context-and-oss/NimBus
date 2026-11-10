@@ -33,7 +33,7 @@ Entra OIDC flow.
 
 ## Agent API keys
 
-Agents built on `NimBus.Agents` call the agent API (`/api/agent/*`) without a person signed in. A site Owner issues each agent its own key through the nimbus-ops admin API; nimbus-ops has no page for agent keys yet. The design is [Spec 039](spec/039-agent-api-keys/spec.md).
+Agents built on `NimBus.Agents` call the agent API (`/api/agent/*`) without a person signed in. A site Owner issues each agent its own key in **Settings → Agent keys**, or through the admin API below. The design is [Spec 039](spec/039-agent-api-keys/spec.md).
 
 | Request | Does |
 |---|---|
@@ -60,6 +60,41 @@ builder.Services.AddNimBusAgent<MyHandler, MyEvent>(o =>
 ```
 
 The local Aspire AppHost's development sign-in bypass admits agents without a key.
+
+## Dashboard tokens
+
+A wall display shows the Monitor without a person signed in. A site Owner issues each wall its own
+token in **Settings → Dashboard tokens** and opens the link it gives, `/Monitor#token=nbdt_…`, on
+the wall. See [The Monitor wall](webapp-monitor.md).
+
+| Request | Does |
+|---|---|
+| `GET /api/admin/dashboard-tokens` | Lists the tokens, without their secrets, and returns the `csrfToken` that the requests below must send as the `X-NimBus-CSRF` header |
+| `POST /api/admin/dashboard-tokens` | Issues a token. Body: `name` (required, up to 100 characters), optional `expiresAtUtc`. The response's `token` is the full token |
+| `POST /api/admin/dashboard-tokens/{tokenId}/revoke` | Revokes a token |
+| `DELETE /api/admin/dashboard-tokens/{tokenId}` | Removes a revoked or expired token |
+
+- **Works in every sign-in mode.** The page sends the token in the `X-NimBus-Dashboard-Token`
+  header, to a scheme of its own, `DashboardToken`, which is never a default.
+- **Admits only the Monitor feed** (`/api/monitor/feed/*`). A token gets 401 on every other
+  endpoint, ACK included, and its principal carries no admin marker, email or object id, so it
+  cannot hold a site or endpoint role.
+- **The URL is the credential.** The token travels in the URL fragment, after the `#`, which a
+  browser never sends to a server: it stays out of request logs, Application Insights and
+  `Referer`. It does land in the wall browser's history and bookmarks, so issue one token per wall
+  and revoke a wall's token when the screen is retired.
+- **Shown once, stored hashed.** The full token (`nbdt_<tokenId>_<secret>`) appears once, as part of
+  the link. nimbus-ops stores only a SHA-256 of the secret. Issuing, revoking and removing are
+  Owner-only and always audited (`DashboardTokenCreated`, `DashboardTokenRevoked`,
+  `DashboardTokenRemoved`), with the token id but never the token.
+- **Revocation takes effect within 30 seconds** on every instance, and at once on the instance that
+  saved it. While the store is unreachable an instance keeps trusting its last read for at most
+  2 minutes, then refuses every token. A token can carry an expiry; Settings proposes one year.
+- **Needs a storage provider that stores tokens.** Cosmos DB, SQL Server and the in-memory store
+  do. Without one the admin API answers 501.
+
+The local Aspire AppHost's development sign-in bypass signs every request in, so a token-only
+wall can only be tried with `NIMBUS_IDENTITY=true`.
 
 ## Enabling username/password
 
@@ -188,8 +223,8 @@ the cookie's `SameSite=Lax`, which already keeps it off cross-site POSTs in curr
   readable `NimBus.CSRF` cookie (with the HttpOnly antiforgery cookie it pairs with), and the
   generated API client sends it on every write.
 - **Header-authenticated callers need no token**: Entra bearer tokens, agent API keys
-  (`X-NimBus-Agent-Key`) and the MCP endpoint. A browser can't attach their headers to a
-  cross-site request.
+  (`X-NimBus-Agent-Key`), dashboard tokens (`X-NimBus-Dashboard-Token`, read-only) and the MCP
+  endpoint. A browser can't attach their headers to a cross-site request.
 - **Agent keys and MCP access are stricter.** Their writes need the token even without a cookie,
   and their `GET` returns it as `csrfToken`.
 - **The local development bypass is not covered.** `EnableLocalDevAuthentication` signs every

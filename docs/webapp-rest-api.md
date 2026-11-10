@@ -295,6 +295,32 @@ Settings → MCP access (Spec 037): `GET`/`PUT /api/admin/mcp/settings`,
 returns, and `PUT` is fenced by the policy revision (409 when stale). See
 [docs/mcp-server.md](mcp-server.md#managing-access-in-the-webapp).
 
+### DashboardTokens
+
+Settings → Dashboard tokens: `GET`/`POST /api/admin/dashboard-tokens`,
+`POST /api/admin/dashboard-tokens/{tokenId}/revoke` and `DELETE /api/admin/dashboard-tokens/{tokenId}`.
+Site Owner only, under the `nimbus-admin` rate limit; the writes require the `X-NimBus-CSRF` token
+that `GET` returns. 501 when the storage provider cannot store tokens. See
+[Authentication → Dashboard tokens](authentication.md#dashboard-tokens).
+
+### MonitorFeed
+
+The Monitor wall's read API, for a site Reader or a dashboard token (`X-NimBus-Dashboard-Token`).
+Every caller gets the same fleet-wide payload, unfiltered, composed once per cache window:
+
+| Operation | Refresh | Holds |
+|---|---|---|
+| `GET /api/monitor/feed/status` | 5 s | Every endpoint's status counts, estimated blocked sessions, heartbeat and acknowledgement; the environment and platform name; `tokenAccess` |
+| `GET /api/monitor/feed/metrics` | 30 s | 60 minute buckets of published, handled and failed; per endpoint and fleet-wide counts and average queue and processing time over the last 60 minutes |
+| `GET /api/monitor/feed/history` | 5 min | 72 hour buckets of the same counts; queue and processing time per hour for 24 hours; each endpoint's 24-hour average processing time |
+
+Each response carries `generatedAtUtc` and `stale`: when the store cannot be read, the previous
+result is returned with `stale: true` and the store is tried again once per refresh interval. With
+nothing earlier to return the answer is 503. Responses are `Cache-Control: no-store`. A signed-in
+caller without the site Reader role gets 403. The Monitor's existing ACK operations
+(`/api/monitor/acknowledgements`) are unchanged and do not admit a token. See
+[The Monitor wall](webapp-monitor.md).
+
 ### Message
 
 Search the message history (`/api/messages/search`). Cursor-paginated.
@@ -518,6 +544,7 @@ controller method that fires each one:
 | `CommandNotSent`      | `OperatorCommandCoordinator` — a resubmit or skip was audited but publishing it failed, so the event was restored; always recorded |
 | `UpdateMcpSettings`   | `McpAccessImplementation.PutAdminMcpSettingsAsync` / `PostAdminMcpTurnOffAsync` — the revisions and the list of changes as `Data`; always recorded |
 | `McpAccessRefused`    | The operator MCP endpoint — a call refused by the MCP access policy or for a missing scope, with `AccessDenied` set; deduplicated per caller, client, reason and tool for 5 minutes per instance |
+| `DashboardTokenCreated` / `DashboardTokenRevoked` / `DashboardTokenRemoved` | `DashboardTokensImplementation` — the token id, name and expiry as `Data`, never the token; always recorded |
 
 Resubmit, skip and resubmit-with-changes run through `OperatorCommandCoordinator`, shared with the
 operator MCP tools. Their `Data` records the channel (`WebApp` or `Mcp`), the reason and idempotency

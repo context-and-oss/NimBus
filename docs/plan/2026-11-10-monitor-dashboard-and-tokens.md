@@ -513,6 +513,22 @@ implementation". Stacked pull requests are not used.
    sessions. It returns one row per session. Measure it during the live conformance run; if it
    is expensive, raise its cache time.
 
+## Implementation notes
+
+Where the implementation differs from the text above:
+
+- **Subscription status in the feed comes from stored endpoint metadata only.** The endpoint
+  status API probes Service Bus for an unknown status and saves the result; a wall polling every
+  5 seconds does not. The Endpoints page keeps doing the probing.
+- **Series windows end at the end of the current bucket** (`floor(now) + 1 bucket`), not at
+  `now`. The bucket generator emits starts strictly before `to`, so ending at `now` drops the
+  current bucket whenever `now` falls exactly on a boundary. Data cannot lie in the future, so the
+  counts are the same.
+- **The feed lists the endpoints the deployment shows** (`EndpointVisibility.IsListed`), as the
+  endpoint list does, rather than every endpoint in the platform catalog.
+- **The ADR is [ADR-018](../adr/018-optional-store-capabilities-and-dashboard-tokens.md).** The
+  issue from "Before implementation" was not opened before the code; open it with the PR.
+
 ## Review changes
 
 A Codex review of the first version found three blocking problems and eight others. All were
