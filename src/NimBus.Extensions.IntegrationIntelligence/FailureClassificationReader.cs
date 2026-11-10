@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 
@@ -11,12 +12,25 @@ namespace NimBus.Extensions.IntegrationIntelligence;
 /// </summary>
 public sealed class FailureClassificationReader
 {
+    // The count only: failure ids stay out of logs, as they stay out of telemetry.
+    private static readonly Action<ILogger, int, Exception?> BulkReadUnavailableLog =
+        LoggerMessage.Define<int>(LogLevel.Warning, new EventId(1, "BulkReadUnavailable"),
+            "Saved failure classifications could not be read in bulk ({FailureCount} failures); Insights shows them as unavailable.");
+
     private readonly IIntegrationIntelligenceHost _host;
     private readonly IFailureClassificationStore _store;
     private readonly IMessageTrackingStore _messages;
+    private readonly ILogger<FailureClassificationReader>? _logger;
 
-    /// <summary>Creates the reader.</summary>
+    /// <summary>Creates the reader without a logger; a failed bulk read then shows in telemetry only.</summary>
     public FailureClassificationReader(IIntegrationIntelligenceHost host, IFailureClassificationStore store, IMessageTrackingStore messages)
+        : this(host, store, messages, null)
+    {
+    }
+
+    /// <summary>Creates the reader. <paramref name="logger"/> receives the exception behind a failed bulk read.</summary>
+    public FailureClassificationReader(IIntegrationIntelligenceHost host, IFailureClassificationStore store, IMessageTrackingStore messages,
+        ILogger<FailureClassificationReader>? logger)
     {
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(store);
@@ -24,6 +38,7 @@ public sealed class FailureClassificationReader
         _host = host;
         _store = store;
         _messages = messages;
+        _logger = logger;
     }
 
     /// <summary>
@@ -52,8 +67,8 @@ public sealed class FailureClassificationReader
     /// Reads the saved state of many failed attempts in bounded batches with bounded concurrency,
     /// never one failure per round trip. It applies no per-endpoint authorization: the caller must
     /// already hold a role that covers every listed failure (Insights requires site Reader).
-    /// Storage errors return <see cref="ClassificationBulkReadStatus.Unavailable"/> with no snapshots;
-    /// cancellation propagates.
+    /// Storage errors are logged and return <see cref="ClassificationBulkReadStatus.Unavailable"/>
+    /// with no snapshots; cancellation propagates.
     /// </summary>
     public async Task<ClassificationBulkReadResult> ReadLatestInBulkAsync(
         IReadOnlyCollection<string> failureMessageIds, ClassificationBulkReadOptions options, CancellationToken cancellationToken)
@@ -85,8 +100,11 @@ public sealed class FailureClassificationReader
             })).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch (Exception)
+        catch (Exception exception)
         {
+            // The caller only learns "unavailable". The reason (a missing table or container, a
+            // refused login, a timeout) is recorded here for whoever has to fix it.
+            if (_logger is not null) BulkReadUnavailableLog(_logger, ids.Length, exception);
             NimBusIntelligenceTelemetry.RecordBulkRead("unavailable", ids.Length, Stopwatch.GetElapsedTime(started));
             return new ClassificationBulkReadResult(ClassificationBulkReadStatus.Unavailable, Empty);
         }

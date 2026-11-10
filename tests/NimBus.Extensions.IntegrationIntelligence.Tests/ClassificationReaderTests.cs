@@ -1,5 +1,6 @@
 #pragma warning disable CA1707, CA2007
 using System.Reflection;
+using Microsoft.Extensions.Logging;
 using NimBus.Extensions.IntegrationIntelligence.Storage;
 using NimBus.MessageStore.Abstractions;
 
@@ -82,12 +83,86 @@ public sealed class ClassificationReaderTests
     }
 
     [TestMethod]
+    public async Task Bulk_Read_Storage_Failure_Is_Logged_With_Its_Exception_And_Cancellation_Is_Not()
+    {
+        var store = new RecordingBulkStore { Throw = true };
+        var logger = new RecordingLogger();
+        var reader = new FailureClassificationReader(new TestIntelligenceHost(), store, Messages(), logger);
+
+        await reader.ReadLatestInBulkAsync(["failure-1", "failure-2"], new ClassificationBulkReadOptions(), default);
+
+        var (level, message, exception) = logger.Entries.Single();
+        Assert.AreEqual(LogLevel.Warning, level);
+        Assert.Contains("2 failures", message);
+        Assert.IsInstanceOfType<InvalidOperationException>(exception);
+        Assert.AreEqual("storage down", exception!.Message);
+
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            reader.ReadLatestInBulkAsync(["failure"], new ClassificationBulkReadOptions(), cancelled.Token));
+        Assert.HasCount(1, logger.Entries, "A caller that left is not a storage failure.");
+    }
+
+    [TestMethod]
     [DataRow(0, 4)]
     [DataRow(500, 0)]
     public void Bulk_Read_Options_Reject_Non_Positive_Limits(int batchSize, int concurrency)
         => Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new ClassificationBulkReadOptions(batchSize, concurrency));
 
+    [TestMethod]
+    public async Task Container_Check_Is_Shared_By_Concurrent_Batches_And_Reused_Within_Its_Lifetime()
+    {
+        var clock = new ManualClock();
+        var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var checks = 0;
+        var check = new RecentCheck(() => { checks++; return pending.Task; }, TimeSpan.FromSeconds(30), clock);
+
+        // The batches of one bulk read find missing items at the same time.
+        var batches = Enumerable.Range(0, 4).Select(_ => check.EnsureAsync()).ToArray();
+        pending.SetResult();
+        await Task.WhenAll(batches);
+        clock.Advance(TimeSpan.FromSeconds(29));
+        await check.EnsureAsync();
+        Assert.AreEqual(1, checks);
+
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await check.EnsureAsync();
+        Assert.AreEqual(2, checks, "After its lifetime the container is checked again.");
+    }
+
+    [TestMethod]
+    public async Task A_Failed_Container_Check_Fails_Its_Batches_And_Is_Not_Reused()
+    {
+        var checks = 0;
+        var check = new RecentCheck(
+            () => ++checks == 1 ? Task.FromException(new InvalidOperationException("container missing")) : Task.CompletedTask,
+            TimeSpan.FromSeconds(30), new ManualClock());
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => check.EnsureAsync());
+        await check.EnsureAsync();
+
+        Assert.AreEqual(2, checks, "A missing container must be noticed again on the next read, and a recovered one must stop failing.");
+    }
+
     private static IMessageTrackingStore Messages() => DispatchProxy.Create<IMessageTrackingStore, MessageSource>();
+
+    private sealed class RecordingLogger : ILogger<FailureClassificationReader>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception), exception));
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        private long _ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _ticks;
+        public void Advance(TimeSpan by) => _ticks += by.Ticks;
+    }
 
     private sealed class RecordingBulkStore : IFailureClassificationStore, IFailureClassificationBulkReader
     {

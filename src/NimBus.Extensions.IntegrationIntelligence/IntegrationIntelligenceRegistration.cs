@@ -95,7 +95,8 @@ public static class IntegrationIntelligenceRegistration
         services.AddScoped(sp => new FailureClassificationReader(
             sp.GetRequiredService<IIntegrationIntelligenceHost>(),
             sp.GetRequiredService<IFailureClassificationStore>(),
-            sp.GetRequiredService<NimBus.MessageStore.Abstractions.IMessageTrackingStore>()));
+            sp.GetRequiredService<NimBus.MessageStore.Abstractions.IMessageTrackingStore>(),
+            sp.GetService<ILogger<FailureClassificationReader>>()));
         if (!ready)
         {
             return services;
