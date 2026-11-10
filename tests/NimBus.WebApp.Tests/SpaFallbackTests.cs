@@ -134,6 +134,14 @@ public class SpaFallbackTests
                             },
                         };
 
+                        var monitorShellOptions = new StaticFileOptions
+                        {
+                            FileProvider = new PhysicalFileProvider(_spaRoot),
+                            OnPrepareResponse = ctx => ctx.Context.Response.GetTypedHeaders().CacheControl =
+                                new CacheControlHeaderValue { NoCache = true, NoStore = true, MustRevalidate = true },
+                        };
+
+                        endpoints.MapFallbackToFile("Monitor", "index.html", monitorShellOptions);
                         endpoints.MapFallbackToFile("index.html", fallbackOptions);
                     });
                 });
@@ -203,6 +211,37 @@ public class SpaFallbackTests
         Assert.AreEqual(LoginPath, response.Headers.Location?.OriginalString);
     }
 
+    /// <summary>The Monitor wall's shell loads without a session (a dashboard token travels in
+    /// the URL fragment, which the server never sees), in any letter case, and is never cached.</summary>
+    [TestMethod]
+    [DataRow("/Monitor")]
+    [DataRow("/monitor")]
+    public async Task Monitor_Anonymous_GetsTheShell(string path)
+    {
+        using var host = BuildTestHost();
+        using var response = await GetAsync(host, path, authenticated: false);
+
+        response.EnsureSuccessStatusCode();
+        Assert.AreEqual(IndexSentinel, await response.Content.ReadAsStringAsync());
+        var cacheControl = response.Headers.CacheControl;
+        Assert.IsTrue(cacheControl!.NoCache && cacheControl.NoStore, "the shell must never be cached.");
+    }
+
+    /// <summary>Only the exact Monitor route is open: anything below it, and every other route,
+    /// still redirects an anonymous browser to the login page.</summary>
+    [TestMethod]
+    [DataRow("/Monitor/x")]
+    [DataRow("/Endpoints")]
+    [DataRow("/")]
+    public async Task Other_routes_Anonymous_StillRedirectToLogin(string path)
+    {
+        using var host = BuildTestHost();
+        using var response = await GetAsync(host, path, authenticated: false);
+
+        Assert.AreEqual(HttpStatusCode.Redirect, response.StatusCode, path);
+        Assert.AreEqual(LoginPath, response.Headers.Location?.OriginalString);
+    }
+
     /// <summary>
     /// Pins the real `Startup.cs` to the wiring this fixture mirrors: SPA serving goes
     /// through plain `app.UseStaticFiles` plus `MapFallbackToFile("index.html", ...)`,
@@ -226,6 +265,9 @@ public class SpaFallbackTests
         Assert.IsTrue(
             source.Contains("endpoints.MapFallbackToFile(\"index.html\"", StringComparison.Ordinal),
             "Startup.cs must keep the deep-link fallback to index.html.");
+        Assert.IsTrue(
+            source.Contains("endpoints.MapFallbackToFile(\"Monitor\", \"index.html\", monitorShellOptions)", StringComparison.Ordinal),
+            "Startup.cs must keep the Monitor shell's own fallback, which serves it without a session.");
         Assert.IsFalse(
             source.Contains("SpaStaticFiles", StringComparison.Ordinal),
             "Startup.cs must not use the deprecated SpaServices.Extensions surface (AddSpaStaticFiles/UseSpaStaticFiles) — GH#89.");

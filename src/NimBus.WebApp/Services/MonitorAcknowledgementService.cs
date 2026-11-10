@@ -16,6 +16,12 @@ public sealed partial class MonitorAcknowledgementService : IMonitorAcknowledgem
     /// <summary>Longest accepted reason, in characters.</summary>
     public const int MaxReasonLength = 500;
 
+    /// <summary>
+    /// The <see cref="IStoreResultCache"/> key under which the Monitor feed keeps a short-lived
+    /// snapshot of <see cref="GetActiveAsync"/>. Every write here drops it.
+    /// </summary>
+    public const string ActiveSnapshotCacheKey = "monitor-feed:acknowledgements";
+
     private readonly IEndpointAcknowledgementStore _store;
     private readonly IMessageTrackingStore _trackingStore;
     private readonly IStoreResultCache _storeResultCache;
@@ -75,10 +81,15 @@ public sealed partial class MonitorAcknowledgementService : IMonitorAcknowledgem
             FailedCountAtAcknowledgement = FailedTotal(counts),
         };
         await _store.SetEndpointAcknowledgement(acknowledgement);
+        _storeResultCache.Remove(ActiveSnapshotCacheKey);
         return acknowledgement;
     }
 
-    public Task ClearAsync(string endpointId) => _store.RemoveEndpointAcknowledgement(endpointId);
+    public async Task ClearAsync(string endpointId)
+    {
+        await _store.RemoveEndpointAcknowledgement(endpointId);
+        _storeResultCache.Remove(ActiveSnapshotCacheKey);
+    }
 
     /// <summary>
     /// Recovered = acknowledged while failing, and a status count taken after the

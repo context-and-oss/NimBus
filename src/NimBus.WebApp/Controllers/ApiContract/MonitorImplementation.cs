@@ -106,7 +106,8 @@ public sealed class MonitorImplementation : IMonitorApiController
             : _platform.Endpoints?
                 .FirstOrDefault(e => string.Equals(e.Id, endpointId, StringComparison.OrdinalIgnoreCase))?.Id;
 
-    private static MonitorAcknowledgement ToApi(EndpointAcknowledgement acknowledgement, string endpointId) => new()
+    /// <summary>The API shape of an acknowledgement, under the platform's spelling of the endpoint id.</summary>
+    internal static MonitorAcknowledgement ToApi(EndpointAcknowledgement acknowledgement, string endpointId) => new()
     {
         EndpointId = endpointId,
         AcknowledgementId = acknowledgement.AcknowledgementId,

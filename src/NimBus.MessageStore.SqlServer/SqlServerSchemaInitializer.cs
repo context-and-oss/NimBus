@@ -49,6 +49,8 @@ internal sealed partial class SqlServerSchemaInitializer : IHostedService
         "McpAccessSettings",
         "AgentApiKeys",
         "AgentApiKeyUsage",
+        "DashboardTokens",
+        "DashboardTokenUsage",
     };
 
     private static readonly string[] RequiredViews =

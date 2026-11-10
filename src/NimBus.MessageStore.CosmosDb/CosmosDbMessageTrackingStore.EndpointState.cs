@@ -58,6 +58,44 @@ internal sealed partial class CosmosDbMessageTrackingStore
         };
     }
 
+    /// <summary>
+    /// Distinct non-empty sessions held by a failed, dead-lettered or pending hand-off event
+    /// (<c>IMonitorMetricsStore.GetBlockedSessionCount</c>). One row per session comes back and
+    /// is counted here: a COUNT over a DISTINCT subquery is not relied on across partitions, and
+    /// a cross-partition GROUP BY can repeat a key, hence the set.
+    /// </summary>
+    public async Task<int> GetBlockedSessionCount(string endpointId)
+    {
+        var container = await _getEndpointContainer(endpointId);
+        var queryDefinition = new QueryDefinition(
+                "SELECT c.sessionId FROM c WHERE (NOT IS_DEFINED(c.deleted) or c.deleted != true) " +
+                "AND IS_STRING(c.sessionId) AND c.sessionId != '' " +
+                "AND (c.status IN (@failedStatus, @deadletterStatus) " +
+                "OR (c.status = @pendingStatus AND c.event.PendingSubStatus = 'Handoff')) " +
+                "GROUP BY c.sessionId")
+            .WithParameter("@failedStatus", FailedStatus)
+            .WithParameter("@deadletterStatus", DLQStatus)
+            .WithParameter("@pendingStatus", PendingStatus);
+
+        var sessions = new HashSet<string>(StringComparer.Ordinal);
+        var iterator = container.GetItemQueryIterator<SessionIdRow>(queryDefinition);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var row in await iterator.ReadNextAsync())
+            {
+                if (!string.IsNullOrEmpty(row.SessionId))
+                    sessions.Add(row.SessionId);
+            }
+        }
+
+        return sessions.Count;
+    }
+
+    private sealed class SessionIdRow
+    {
+        [Newtonsoft.Json.JsonProperty("sessionId")] public string? SessionId { get; set; }
+    }
+
     // Reads the failures up to the widened end of the second that holds inOldestSecond and
     // takes their minimum as instants. None are older than that second, so this is exact.
     private static async Task<DateTime> ExactOldestFailureAt(ICosmosContainerAdapter container, DateTime inOldestSecond)

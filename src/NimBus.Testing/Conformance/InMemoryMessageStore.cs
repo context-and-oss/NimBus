@@ -22,7 +22,7 @@ namespace NimBus.Testing.Conformance;
 /// transitions, message persistence, and basic queries the conformance suite cares
 /// about. Search/pagination methods return empty results.
 /// </summary>
-public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore
+public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore
 {
     private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _events = new();
     // Rows archived by TryArchiveUnresolvedEvent, kept so TryRestoreArchivedEvent can put them back.
@@ -53,6 +53,9 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
     private readonly object _agentApiKeysLock = new();
     private AgentApiKeySettings? _agentApiKeySettings;
     private readonly ConcurrentDictionary<string, DateTime> _agentApiKeyUsage = new(StringComparer.Ordinal);
+    private readonly object _dashboardTokensLock = new();
+    private DashboardTokenSettings? _dashboardTokenSettings;
+    private readonly ConcurrentDictionary<string, DateTime> _dashboardTokenUsage = new(StringComparer.Ordinal);
 
     private static (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -1000,6 +1003,43 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
         return Task.CompletedTask;
     }
 
+    public virtual Task<DashboardTokenSettings> GetDashboardTokenSettings()
+    {
+        lock (_dashboardTokensLock)
+        {
+            return Task.FromResult(_dashboardTokenSettings?.Clone() ?? new DashboardTokenSettings());
+        }
+    }
+
+    public virtual Task<bool> TrySetDashboardTokenSettings(DashboardTokenSettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The tokens must carry their new revision.", nameof(settings));
+        lock (_dashboardTokensLock)
+        {
+            if (!string.Equals(_dashboardTokenSettings?.Revision, expectedRevision, StringComparison.Ordinal))
+                return Task.FromResult(false);
+
+            var stored = settings.Clone();
+            stored.Id = DashboardTokenSettings.SingletonId;
+            _dashboardTokenSettings = stored;
+            return Task.FromResult(true);
+        }
+    }
+
+    public virtual Task<List<DashboardTokenUsage>> GetDashboardTokenUsage()
+        => Task.FromResult(_dashboardTokenUsage
+            .Select(u => new DashboardTokenUsage { TokenId = u.Key, LastUsedAtUtc = u.Value })
+            .ToList());
+
+    public virtual Task RecordDashboardTokenUse(string tokenId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tokenId);
+        _dashboardTokenUsage[tokenId] = usedAtUtc;
+        return Task.CompletedTask;
+    }
+
     public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         lock (_heartbeatLock)
@@ -1297,19 +1337,20 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
     public virtual Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
         => GetEndpointLatencyMetrics(from, DateTime.UtcNow);
 
+    // The outcome messages that carry queue and processing timings.
+    private static readonly HashSet<MessageType> LatencyOutcomeTypes =
+    [
+        MessageType.ResolutionResponse,
+        MessageType.ErrorResponse,
+        MessageType.SkipResponse,
+        MessageType.DeferralResponse,
+        MessageType.UnsupportedResponse,
+    ];
+
     public virtual Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from, DateTime to)
     {
-        var outcomeTypes = new HashSet<MessageType>
-        {
-            MessageType.ResolutionResponse,
-            MessageType.ErrorResponse,
-            MessageType.SkipResponse,
-            MessageType.DeferralResponse,
-            MessageType.UnsupportedResponse,
-        };
-
         var latencies = _messages.Values
-            .Where(m => m.EnqueuedTimeUtc >= from && m.EnqueuedTimeUtc < to && outcomeTypes.Contains(m.MessageType))
+            .Where(m => m.EnqueuedTimeUtc >= from && m.EnqueuedTimeUtc < to && LatencyOutcomeTypes.Contains(m.MessageType))
             .GroupBy(m => (EndpointId: m.EndpointId ?? string.Empty, EventTypeId: m.EventTypeId ?? string.Empty))
             .Select(g => new EndpointLatencyAggregate
             {
@@ -1413,6 +1454,40 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
             .ToList();
 
         return Task.FromResult(new EventTypeTimeSeriesResult { BucketSize = bucketLabel, Series = series });
+    }
+
+    public virtual Task<LatencyTimeSeriesResult> GetLatencyTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel)
+    {
+        var dataPoints = _messages.Values
+            .Where(m => m.EnqueuedTimeUtc >= from
+                && m.EnqueuedTimeUtc < to
+                && LatencyOutcomeTypes.Contains(m.MessageType)
+                && (m.QueueTimeMs.HasValue || m.ProcessingTimeMs.HasValue))
+            .GroupBy(m => m.EnqueuedTimeUtc.ToUniversalTime().ToString("o")[..substringLength])
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => new LatencyTimeSeriesBucket
+            {
+                Timestamp = g.Key,
+                Queue = Aggregate(g.Select(m => m.QueueTimeMs)),
+                Processing = Aggregate(g.Select(m => m.ProcessingTimeMs)),
+            })
+            .ToList();
+
+        return Task.FromResult(new LatencyTimeSeriesResult { BucketSize = bucketLabel, DataPoints = dataPoints });
+    }
+
+    public virtual Task<int> GetBlockedSessionCount(string endpointId)
+    {
+        var count = _events.Values
+            .Where(e => e.EndpointId == endpointId
+                && !string.IsNullOrEmpty(e.SessionId)
+                && (e.ResolutionStatus is ResolutionStatus.Failed or ResolutionStatus.DeadLettered
+                    || (e.ResolutionStatus == ResolutionStatus.Pending && e.PendingSubStatus == "Handoff")))
+            .Select(e => e.SessionId)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+
+        return Task.FromResult(count);
     }
 
     private static List<EndpointEventTypeCount> CountByEndpointAndEventType(IEnumerable<MessageEntity> messages, bool published)

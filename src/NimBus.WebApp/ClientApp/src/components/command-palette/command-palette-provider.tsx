@@ -4,6 +4,11 @@ import { CommandPalette } from "./command-palette";
 
 interface CommandPaletteProviderProps {
   children: ReactNode;
+  /**
+   * Keeps the context but mounts no palette and no shortcut. The palette loads the caller's
+   * access when it mounts, which a dashboard-token wall must not call.
+   */
+  disabled?: boolean;
 }
 
 /**
@@ -18,6 +23,7 @@ interface CommandPaletteProviderProps {
  */
 export const CommandPaletteProvider: React.FC<CommandPaletteProviderProps> = ({
   children,
+  disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -26,6 +32,7 @@ export const CommandPaletteProvider: React.FC<CommandPaletteProviderProps> = ({
   const toggle = useCallback(() => setIsOpen((v) => !v), []);
 
   useEffect(() => {
+    if (disabled) return;
     const handler = (e: KeyboardEvent) => {
       // Letter "k" only; ignore Shift+K and other modifiers.
       if (e.key !== "k" && e.key !== "K") return;
@@ -45,7 +52,7 @@ export const CommandPaletteProvider: React.FC<CommandPaletteProviderProps> = ({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [toggle]);
+  }, [toggle, disabled]);
 
   const value = useMemo(
     () => ({ isOpen, open, close, toggle }),
@@ -55,7 +62,7 @@ export const CommandPaletteProvider: React.FC<CommandPaletteProviderProps> = ({
   return (
     <CommandPaletteContext.Provider value={value}>
       {children}
-      <CommandPalette isOpen={isOpen} onClose={close} />
+      {!disabled && <CommandPalette isOpen={isOpen} onClose={close} />}
     </CommandPaletteContext.Provider>
   );
 };

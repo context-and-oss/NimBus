@@ -91,6 +91,32 @@ public class EndpointLatencyAggregate
     public LatencyAggregate Processing { get; set; } = new();
 }
 
+/// <summary>
+/// Queue and processing time per time bucket across all endpoints
+/// (<see cref="Abstractions.IMonitorMetricsStore.GetLatencyTimeSeriesMetrics"/>).
+/// </summary>
+public class LatencyTimeSeriesResult
+{
+    /// <summary>The bucket label the caller passed: minute, hour or day.</summary>
+    public string BucketSize { get; set; } = null!;
+
+    /// <summary>The buckets with at least one timed outcome, ascending. Empty buckets are absent.</summary>
+    public List<LatencyTimeSeriesBucket> DataPoints { get; set; } = new();
+}
+
+/// <summary>One bucket of <see cref="LatencyTimeSeriesResult"/>.</summary>
+public class LatencyTimeSeriesBucket
+{
+    /// <summary>The bucket start as ISO-8601 UTC, truncated to the bucket size.</summary>
+    public string Timestamp { get; set; } = null!;
+
+    /// <summary>Time spent waiting to be picked up. Count is 0 when no message in the bucket carries it.</summary>
+    public LatencyAggregate Queue { get; set; } = new();
+
+    /// <summary>Time spent in the handler. Count is 0 when no message in the bucket carries it.</summary>
+    public LatencyAggregate Processing { get; set; } = new();
+}
+
 public class LatencyAggregate
 {
     public int Count { get; set; }

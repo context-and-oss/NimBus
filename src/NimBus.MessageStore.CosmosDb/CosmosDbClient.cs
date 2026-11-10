@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
 
-public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore
+public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore
 {
     /// <inheritdoc />
     public bool PrunesHeartbeatHistoryAutomatically => _heartbeatHistory.PrunesHeartbeatHistoryAutomatically;
@@ -358,6 +358,13 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         => _endpointMetadata.TrySetAgentApiKeySettings(settings, expectedRevision);
     public Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage() => _endpointMetadata.GetAgentApiKeyUsage();
     public Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc) => _endpointMetadata.RecordAgentApiKeyUse(keyId, usedAtUtc);
+
+    // ── IDashboardTokenStore — implementation in CosmosDbEndpointMetadataStore ──
+    public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();
+    public Task<bool> TrySetDashboardTokenSettings(DashboardTokenSettings settings, string? expectedRevision)
+        => _endpointMetadata.TrySetDashboardTokenSettings(settings, expectedRevision);
+    public Task<List<DashboardTokenUsage>> GetDashboardTokenUsage() => _endpointMetadata.GetDashboardTokenUsage();
+    public Task RecordDashboardTokenUse(string tokenId, DateTime usedAtUtc) => _endpointMetadata.RecordDashboardTokenUse(tokenId, usedAtUtc);
     // ── Durable endpoint heartbeat history — implementation in CosmosDbHeartbeatHistoryStore ──
     public Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
         => _heartbeatHistory.GetHeartbeatUptimeDays(fromDayUtc);
@@ -422,4 +429,9 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetEventTypeTimeSeriesMetrics(from, to, substringLength, bucketLabel);
 
+    // ── IMonitorMetricsStore — implementation in CosmosDbMetricsStore and CosmosDbMessageTrackingStore ──
+
+    public Task<LatencyTimeSeriesResult> GetLatencyTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetLatencyTimeSeriesMetrics(from, to, substringLength, bucketLabel);
+
+    public Task<int> GetBlockedSessionCount(string endpointId) => _messageTracking.GetBlockedSessionCount(endpointId);
 }

@@ -3627,6 +3627,258 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * List the dashboard tokens
+     * @return OK
+     */
+    getAdminDashboardTokens(): Promise<DashboardTokenState> {
+        let url_ = this.baseUrl + "/api/admin/dashboard-tokens";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminDashboardTokens(_response);
+        });
+    }
+
+    protected processGetAdminDashboardTokens(response: Response): Promise<DashboardTokenState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DashboardTokenState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DashboardTokenState>(null as any);
+    }
+
+    /**
+     * Issue a dashboard token
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminDashboardTokens(body?: DashboardTokenCreate | undefined): Promise<DashboardTokenIssued> {
+        let url_ = this.baseUrl + "/api/admin/dashboard-tokens";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminDashboardTokens(_response);
+        });
+    }
+
+    protected processPostAdminDashboardTokens(response: Response): Promise<DashboardTokenIssued> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DashboardTokenIssued.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = DashboardTokenProblem.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = DashboardTokenProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DashboardTokenIssued>(null as any);
+    }
+
+    /**
+     * Revoke a dashboard token
+     * @return OK
+     */
+    postAdminDashboardTokenRevoke(tokenId: string): Promise<DashboardTokenState> {
+        let url_ = this.baseUrl + "/api/admin/dashboard-tokens/{tokenId}/revoke";
+        if (tokenId === undefined || tokenId === null)
+            throw new globalThis.Error("The parameter 'tokenId' must be defined.");
+        url_ = url_.replace("{tokenId}", encodeURIComponent("" + tokenId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminDashboardTokenRevoke(_response);
+        });
+    }
+
+    protected processPostAdminDashboardTokenRevoke(response: Response): Promise<DashboardTokenState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DashboardTokenState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = DashboardTokenProblem.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = DashboardTokenProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DashboardTokenState>(null as any);
+    }
+
+    /**
+     * Remove a revoked or expired dashboard token
+     * @return OK
+     */
+    deleteAdminDashboardToken(tokenId: string): Promise<DashboardTokenState> {
+        let url_ = this.baseUrl + "/api/admin/dashboard-tokens/{tokenId}";
+        if (tokenId === undefined || tokenId === null)
+            throw new globalThis.Error("The parameter 'tokenId' must be defined.");
+        url_ = url_.replace("{tokenId}", encodeURIComponent("" + tokenId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteAdminDashboardToken(_response);
+        });
+    }
+
+    protected processDeleteAdminDashboardToken(response: Response): Promise<DashboardTokenState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DashboardTokenState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = DashboardTokenProblem.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = DashboardTokenProblem.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = DashboardTokenProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DashboardTokenState>(null as any);
+    }
+
+    /**
      * Send a heartbeat to every monitored endpoint now
      * @return OK
      */
@@ -6749,6 +7001,162 @@ export class Client extends ApiClientBase {
             });
         }
         return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * The Monitor's current state, polled every few seconds
+     * @return OK
+     */
+    getMonitorFeedStatus(): Promise<MonitorFeedStatus> {
+        let url_ = this.baseUrl + "/api/monitor/feed/status";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMonitorFeedStatus(_response);
+        });
+    }
+
+    protected processGetMonitorFeedStatus(response: Response): Promise<MonitorFeedStatus> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = MonitorFeedStatus.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            return throwException("No session and no valid dashboard token", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Signed in without the site Reader role", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<MonitorFeedStatus>(null as any);
+    }
+
+    /**
+     * The Monitor's last-hour throughput and timings, polled every 30 seconds
+     * @return OK
+     */
+    getMonitorFeedMetrics(): Promise<MonitorFeedMetrics> {
+        let url_ = this.baseUrl + "/api/monitor/feed/metrics";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMonitorFeedMetrics(_response);
+        });
+    }
+
+    protected processGetMonitorFeedMetrics(response: Response): Promise<MonitorFeedMetrics> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = MonitorFeedMetrics.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            return throwException("No session and no valid dashboard token", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Signed in without the site Reader role", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<MonitorFeedMetrics>(null as any);
+    }
+
+    /**
+     * The Monitor's longer history, polled every 5 minutes
+     * @return OK
+     */
+    getMonitorFeedHistory(): Promise<MonitorFeedHistory> {
+        let url_ = this.baseUrl + "/api/monitor/feed/history";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMonitorFeedHistory(_response);
+        });
+    }
+
+    protected processGetMonitorFeedHistory(response: Response): Promise<MonitorFeedHistory> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = MonitorFeedHistory.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            return throwException("No session and no valid dashboard token", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Signed in without the site Reader role", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<MonitorFeedHistory>(null as any);
     }
 
     /**
@@ -20170,6 +20578,1044 @@ export interface IAgentApiKeyProblem {
     [key: string]: any;
 }
 
+export enum DashboardTokenStatus {
+    Active = "active",
+    Revoked = "revoked",
+    Expired = "expired",
+}
+
+/** An issued Monitor dashboard token. Never carries the secret. */
+export class DashboardTokenInfo implements IDashboardTokenInfo {
+    tokenId?: string;
+    /** The non-secret start of the token, nbdt_<tokenId>, to recognise it. */
+    prefix?: string;
+    name?: string;
+    status?: DashboardTokenStatus;
+    createdAtUtc?: moment.Moment;
+    createdBy?: string | undefined;
+    expiresAtUtc?: moment.Moment | undefined;
+    revokedAtUtc?: moment.Moment | undefined;
+    revokedBy?: string | undefined;
+    /** Recorded at most every 5 minutes per instance; null when never used. */
+    lastUsedAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IDashboardTokenInfo) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.tokenId = _data["tokenId"];
+            this.prefix = _data["prefix"];
+            this.name = _data["name"];
+            this.status = _data["status"];
+            this.createdAtUtc = _data["createdAtUtc"] ? moment(_data["createdAtUtc"].toString()) : undefined as any;
+            this.createdBy = _data["createdBy"];
+            this.expiresAtUtc = _data["expiresAtUtc"] ? moment(_data["expiresAtUtc"].toString()) : undefined as any;
+            this.revokedAtUtc = _data["revokedAtUtc"] ? moment(_data["revokedAtUtc"].toString()) : undefined as any;
+            this.revokedBy = _data["revokedBy"];
+            this.lastUsedAtUtc = _data["lastUsedAtUtc"] ? moment(_data["lastUsedAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): DashboardTokenInfo {
+        data = typeof data === 'object' ? data : {};
+        let result = new DashboardTokenInfo();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["tokenId"] = this.tokenId;
+        data["prefix"] = this.prefix;
+        data["name"] = this.name;
+        data["status"] = this.status;
+        data["createdAtUtc"] = this.createdAtUtc ? this.createdAtUtc.toISOString() : undefined as any;
+        data["createdBy"] = this.createdBy;
+        data["expiresAtUtc"] = this.expiresAtUtc ? this.expiresAtUtc.toISOString() : undefined as any;
+        data["revokedAtUtc"] = this.revokedAtUtc ? this.revokedAtUtc.toISOString() : undefined as any;
+        data["revokedBy"] = this.revokedBy;
+        data["lastUsedAtUtc"] = this.lastUsedAtUtc ? this.lastUsedAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): DashboardTokenInfo {
+        const json = this.toJSON();
+        let result = new DashboardTokenInfo();
+        result.init(json);
+        return result;
+    }
+}
+
+/** An issued Monitor dashboard token. Never carries the secret. */
+export interface IDashboardTokenInfo {
+    tokenId?: string;
+    /** The non-secret start of the token, nbdt_<tokenId>, to recognise it. */
+    prefix?: string;
+    name?: string;
+    status?: DashboardTokenStatus;
+    createdAtUtc?: moment.Moment;
+    createdBy?: string | undefined;
+    expiresAtUtc?: moment.Moment | undefined;
+    revokedAtUtc?: moment.Moment | undefined;
+    revokedBy?: string | undefined;
+    /** Recorded at most every 5 minutes per instance; null when never used. */
+    lastUsedAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class DashboardTokenState implements IDashboardTokenState {
+    tokens?: DashboardTokenInfo[];
+    /** Send as the X-NimBus-CSRF header on writes. */
+    csrfToken?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IDashboardTokenState) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["tokens"])) {
+                this.tokens = [] as any;
+                for (let item of _data["tokens"])
+                    this.tokens!.push(DashboardTokenInfo.fromJS(item));
+            }
+            this.csrfToken = _data["csrfToken"];
+        }
+    }
+
+    static fromJS(data: any): DashboardTokenState {
+        data = typeof data === 'object' ? data : {};
+        let result = new DashboardTokenState();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.tokens)) {
+            data["tokens"] = [];
+            for (let item of this.tokens)
+                data["tokens"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["csrfToken"] = this.csrfToken;
+        return data;
+    }
+
+    clone(): DashboardTokenState {
+        const json = this.toJSON();
+        let result = new DashboardTokenState();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDashboardTokenState {
+    tokens?: DashboardTokenInfo[];
+    /** Send as the X-NimBus-CSRF header on writes. */
+    csrfToken?: string;
+
+    [key: string]: any;
+}
+
+export class DashboardTokenCreate implements IDashboardTokenCreate {
+    /** A label, for example the wall the token is for. Required, up to 100 characters. */
+    name?: string;
+    /** When the token stops working; null for no expiry. Must be in the future. */
+    expiresAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IDashboardTokenCreate) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+            this.expiresAtUtc = _data["expiresAtUtc"] ? moment(_data["expiresAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): DashboardTokenCreate {
+        data = typeof data === 'object' ? data : {};
+        let result = new DashboardTokenCreate();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        data["expiresAtUtc"] = this.expiresAtUtc ? this.expiresAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): DashboardTokenCreate {
+        const json = this.toJSON();
+        let result = new DashboardTokenCreate();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDashboardTokenCreate {
+    /** A label, for example the wall the token is for. Required, up to 100 characters. */
+    name?: string;
+    /** When the token stops working; null for no expiry. Must be in the future. */
+    expiresAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class DashboardTokenIssued implements IDashboardTokenIssued {
+    /** The full token. Shown once; it cannot be retrieved again. */
+    token?: string;
+    issued?: DashboardTokenInfo;
+    state?: DashboardTokenState;
+
+    [key: string]: any;
+
+    constructor(data?: IDashboardTokenIssued) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.token = _data["token"];
+            this.issued = _data["issued"] ? DashboardTokenInfo.fromJS(_data["issued"]) : undefined as any;
+            this.state = _data["state"] ? DashboardTokenState.fromJS(_data["state"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): DashboardTokenIssued {
+        data = typeof data === 'object' ? data : {};
+        let result = new DashboardTokenIssued();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["token"] = this.token;
+        data["issued"] = this.issued ? this.issued.toJSON() : undefined as any;
+        data["state"] = this.state ? this.state.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): DashboardTokenIssued {
+        const json = this.toJSON();
+        let result = new DashboardTokenIssued();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDashboardTokenIssued {
+    /** The full token. Shown once; it cannot be retrieved again. */
+    token?: string;
+    issued?: DashboardTokenInfo;
+    state?: DashboardTokenState;
+
+    [key: string]: any;
+}
+
+export class DashboardTokenProblem implements IDashboardTokenProblem {
+    /** Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken. */
+    code?: string;
+    errors?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: IDashboardTokenProblem) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.code = _data["code"];
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): DashboardTokenProblem {
+        data = typeof data === 'object' ? data : {};
+        let result = new DashboardTokenProblem();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["code"] = this.code;
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        return data;
+    }
+
+    clone(): DashboardTokenProblem {
+        const json = this.toJSON();
+        let result = new DashboardTokenProblem();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDashboardTokenProblem {
+    /** Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken. */
+    code?: string;
+    errors?: string[];
+
+    [key: string]: any;
+}
+
+export class MonitorFeedStatus implements IMonitorFeedStatus {
+    environment?: string | undefined;
+    platformName?: string | undefined;
+    serverTimeUtc?: moment.Moment;
+    /** When the endpoint data was read from the store. */
+    generatedAtUtc?: moment.Moment;
+    /** True when the latest read failed and this is an earlier result. */
+    stale?: boolean;
+    /** True when the caller authenticated with a dashboard token. */
+    tokenAccess?: boolean;
+    endpoints?: MonitorFeedEndpoint[];
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedStatus) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.environment = _data["environment"];
+            this.platformName = _data["platformName"];
+            this.serverTimeUtc = _data["serverTimeUtc"] ? moment(_data["serverTimeUtc"].toString()) : undefined as any;
+            this.generatedAtUtc = _data["generatedAtUtc"] ? moment(_data["generatedAtUtc"].toString()) : undefined as any;
+            this.stale = _data["stale"];
+            this.tokenAccess = _data["tokenAccess"];
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(MonitorFeedEndpoint.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedStatus {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedStatus();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["environment"] = this.environment;
+        data["platformName"] = this.platformName;
+        data["serverTimeUtc"] = this.serverTimeUtc ? this.serverTimeUtc.toISOString() : undefined as any;
+        data["generatedAtUtc"] = this.generatedAtUtc ? this.generatedAtUtc.toISOString() : undefined as any;
+        data["stale"] = this.stale;
+        data["tokenAccess"] = this.tokenAccess;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): MonitorFeedStatus {
+        const json = this.toJSON();
+        let result = new MonitorFeedStatus();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedStatus {
+    environment?: string | undefined;
+    platformName?: string | undefined;
+    serverTimeUtc?: moment.Moment;
+    /** When the endpoint data was read from the store. */
+    generatedAtUtc?: moment.Moment;
+    /** True when the latest read failed and this is an earlier result. */
+    stale?: boolean;
+    /** True when the caller authenticated with a dashboard token. */
+    tokenAccess?: boolean;
+    endpoints?: MonitorFeedEndpoint[];
+
+    [key: string]: any;
+}
+
+export class MonitorFeedEndpoint implements IMonitorFeedEndpoint {
+    status?: EndpointStatusCount;
+    /** Estimated sessions blocked by a failed, dead-lettered or pending hand-off message. Null when the store cannot tell. */
+    blockedSessionCount?: number | undefined;
+    heartbeat?: MonitorFeedHeartbeat;
+    acknowledgement?: MonitorAcknowledgement;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedEndpoint) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.status = _data["status"] ? EndpointStatusCount.fromJS(_data["status"]) : undefined as any;
+            this.blockedSessionCount = _data["blockedSessionCount"];
+            this.heartbeat = _data["heartbeat"] ? MonitorFeedHeartbeat.fromJS(_data["heartbeat"]) : undefined as any;
+            this.acknowledgement = _data["acknowledgement"] ? MonitorAcknowledgement.fromJS(_data["acknowledgement"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedEndpoint {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedEndpoint();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["status"] = this.status ? this.status.toJSON() : undefined as any;
+        data["blockedSessionCount"] = this.blockedSessionCount;
+        data["heartbeat"] = this.heartbeat ? this.heartbeat.toJSON() : undefined as any;
+        data["acknowledgement"] = this.acknowledgement ? this.acknowledgement.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedEndpoint {
+        const json = this.toJSON();
+        let result = new MonitorFeedEndpoint();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedEndpoint {
+    status?: EndpointStatusCount;
+    /** Estimated sessions blocked by a failed, dead-lettered or pending hand-off message. Null when the store cannot tell. */
+    blockedSessionCount?: number | undefined;
+    heartbeat?: MonitorFeedHeartbeat;
+    acknowledgement?: MonitorAcknowledgement;
+
+    [key: string]: any;
+}
+
+/** Absent when the endpoint does not take part in heartbeats. */
+export class MonitorFeedHeartbeat implements IMonitorFeedHeartbeat {
+    /** alive, late, missing or notDeployed. */
+    liveness?: string;
+    /** When the endpoint last answered a heartbeat probe. */
+    lastAnsweredUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedHeartbeat) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.liveness = _data["liveness"];
+            this.lastAnsweredUtc = _data["lastAnsweredUtc"] ? moment(_data["lastAnsweredUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedHeartbeat {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedHeartbeat();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["liveness"] = this.liveness;
+        data["lastAnsweredUtc"] = this.lastAnsweredUtc ? this.lastAnsweredUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedHeartbeat {
+        const json = this.toJSON();
+        let result = new MonitorFeedHeartbeat();
+        result.init(json);
+        return result;
+    }
+}
+
+/** Absent when the endpoint does not take part in heartbeats. */
+export interface IMonitorFeedHeartbeat {
+    /** alive, late, missing or notDeployed. */
+    liveness?: string;
+    /** When the endpoint last answered a heartbeat probe. */
+    lastAnsweredUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedCounts implements IMonitorFeedCounts {
+    published?: number;
+    handled?: number;
+    /** Failed attempts (error responses), not the unresolved state. */
+    failed?: number;
+    queue?: LatencyStats;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedCounts) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.published = _data["published"];
+            this.handled = _data["handled"];
+            this.failed = _data["failed"];
+            this.queue = _data["queue"] ? LatencyStats.fromJS(_data["queue"]) : undefined as any;
+            this.processing = _data["processing"] ? LatencyStats.fromJS(_data["processing"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedCounts {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedCounts();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["published"] = this.published;
+        data["handled"] = this.handled;
+        data["failed"] = this.failed;
+        data["queue"] = this.queue ? this.queue.toJSON() : undefined as any;
+        data["processing"] = this.processing ? this.processing.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedCounts {
+        const json = this.toJSON();
+        let result = new MonitorFeedCounts();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedCounts {
+    published?: number;
+    handled?: number;
+    /** Failed attempts (error responses), not the unresolved state. */
+    failed?: number;
+    queue?: LatencyStats;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedEndpointMetrics implements IMonitorFeedEndpointMetrics {
+    endpointId?: string;
+    counts?: MonitorFeedCounts;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedEndpointMetrics) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.counts = _data["counts"] ? MonitorFeedCounts.fromJS(_data["counts"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedEndpointMetrics {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedEndpointMetrics();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["counts"] = this.counts ? this.counts.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedEndpointMetrics {
+        const json = this.toJSON();
+        let result = new MonitorFeedEndpointMetrics();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedEndpointMetrics {
+    endpointId?: string;
+    counts?: MonitorFeedCounts;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedMetrics implements IMonitorFeedMetrics {
+    generatedAtUtc?: moment.Moment;
+    stale?: boolean;
+    /** Per-minute buckets, ascending; the last one is the current, partial minute. */
+    lastHour?: TimeSeriesDataPoint[];
+    fleet?: MonitorFeedCounts;
+    endpoints?: MonitorFeedEndpointMetrics[];
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedMetrics) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.generatedAtUtc = _data["generatedAtUtc"] ? moment(_data["generatedAtUtc"].toString()) : undefined as any;
+            this.stale = _data["stale"];
+            if (Array.isArray(_data["lastHour"])) {
+                this.lastHour = [] as any;
+                for (let item of _data["lastHour"])
+                    this.lastHour!.push(TimeSeriesDataPoint.fromJS(item));
+            }
+            this.fleet = _data["fleet"] ? MonitorFeedCounts.fromJS(_data["fleet"]) : undefined as any;
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(MonitorFeedEndpointMetrics.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedMetrics {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedMetrics();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["generatedAtUtc"] = this.generatedAtUtc ? this.generatedAtUtc.toISOString() : undefined as any;
+        data["stale"] = this.stale;
+        if (Array.isArray(this.lastHour)) {
+            data["lastHour"] = [];
+            for (let item of this.lastHour)
+                data["lastHour"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["fleet"] = this.fleet ? this.fleet.toJSON() : undefined as any;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): MonitorFeedMetrics {
+        const json = this.toJSON();
+        let result = new MonitorFeedMetrics();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedMetrics {
+    generatedAtUtc?: moment.Moment;
+    stale?: boolean;
+    /** Per-minute buckets, ascending; the last one is the current, partial minute. */
+    lastHour?: TimeSeriesDataPoint[];
+    fleet?: MonitorFeedCounts;
+    endpoints?: MonitorFeedEndpointMetrics[];
+
+    [key: string]: any;
+}
+
+export class MonitorFeedLatencyPoint implements IMonitorFeedLatencyPoint {
+    timestamp?: string;
+    queue?: LatencyStats;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedLatencyPoint) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.timestamp = _data["timestamp"];
+            this.queue = _data["queue"] ? LatencyStats.fromJS(_data["queue"]) : undefined as any;
+            this.processing = _data["processing"] ? LatencyStats.fromJS(_data["processing"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedLatencyPoint {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedLatencyPoint();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["timestamp"] = this.timestamp;
+        data["queue"] = this.queue ? this.queue.toJSON() : undefined as any;
+        data["processing"] = this.processing ? this.processing.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedLatencyPoint {
+        const json = this.toJSON();
+        let result = new MonitorFeedLatencyPoint();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedLatencyPoint {
+    timestamp?: string;
+    queue?: LatencyStats;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedEndpointHistory implements IMonitorFeedEndpointHistory {
+    endpointId?: string;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedEndpointHistory) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.processing = _data["processing"] ? LatencyStats.fromJS(_data["processing"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedEndpointHistory {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedEndpointHistory();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["processing"] = this.processing ? this.processing.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedEndpointHistory {
+        const json = this.toJSON();
+        let result = new MonitorFeedEndpointHistory();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedEndpointHistory {
+    endpointId?: string;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedHistory implements IMonitorFeedHistory {
+    generatedAtUtc?: moment.Moment;
+    stale?: boolean;
+    /** Per-hour buckets, ascending; the last one is the current, partial hour. */
+    lastThreeDays?: TimeSeriesDataPoint[];
+    /** Sparse per-hour queue and processing time; null when the store cannot tell. */
+    latencyLastDay?: MonitorFeedLatencyPoint[] | undefined;
+    endpoints?: MonitorFeedEndpointHistory[];
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedHistory) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.generatedAtUtc = _data["generatedAtUtc"] ? moment(_data["generatedAtUtc"].toString()) : undefined as any;
+            this.stale = _data["stale"];
+            if (Array.isArray(_data["lastThreeDays"])) {
+                this.lastThreeDays = [] as any;
+                for (let item of _data["lastThreeDays"])
+                    this.lastThreeDays!.push(TimeSeriesDataPoint.fromJS(item));
+            }
+            if (Array.isArray(_data["latencyLastDay"])) {
+                this.latencyLastDay = [] as any;
+                for (let item of _data["latencyLastDay"])
+                    this.latencyLastDay!.push(MonitorFeedLatencyPoint.fromJS(item));
+            }
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(MonitorFeedEndpointHistory.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedHistory {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedHistory();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["generatedAtUtc"] = this.generatedAtUtc ? this.generatedAtUtc.toISOString() : undefined as any;
+        data["stale"] = this.stale;
+        if (Array.isArray(this.lastThreeDays)) {
+            data["lastThreeDays"] = [];
+            for (let item of this.lastThreeDays)
+                data["lastThreeDays"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.latencyLastDay)) {
+            data["latencyLastDay"] = [];
+            for (let item of this.latencyLastDay)
+                data["latencyLastDay"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): MonitorFeedHistory {
+        const json = this.toJSON();
+        let result = new MonitorFeedHistory();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedHistory {
+    generatedAtUtc?: moment.Moment;
+    stale?: boolean;
+    /** Per-hour buckets, ascending; the last one is the current, partial hour. */
+    lastThreeDays?: TimeSeriesDataPoint[];
+    /** Sparse per-hour queue and processing time; null when the store cannot tell. */
+    latencyLastDay?: MonitorFeedLatencyPoint[] | undefined;
+    endpoints?: MonitorFeedEndpointHistory[];
+
+    [key: string]: any;
+}
+
 export class McpActivityCount implements IMcpActivityCount {
     name?: string;
     count?: number;
@@ -21963,6 +23409,9 @@ export enum MessageAuditAuditType {
     AgentApiKeyRemoved = "agentApiKeyRemoved",
     CopyEndpointData = "copyEndpointData",
     ChangeSessionState = "changeSessionState",
+    DashboardTokenCreated = "dashboardTokenCreated",
+    DashboardTokenRevoked = "dashboardTokenRevoked",
+    DashboardTokenRemoved = "dashboardTokenRemoved",
 }
 
 export class MessageContent implements IMessageContent {
@@ -22124,6 +23573,9 @@ export enum AuditSearchFilterAuditType {
     AgentApiKeyRemoved = "agentApiKeyRemoved",
     CopyEndpointData = "copyEndpointData",
     ChangeSessionState = "changeSessionState",
+    DashboardTokenCreated = "dashboardTokenCreated",
+    DashboardTokenRevoked = "dashboardTokenRevoked",
+    DashboardTokenRemoved = "dashboardTokenRemoved",
 }
 
 export enum StalePendingRowVerdict {
@@ -22208,6 +23660,9 @@ export enum AuditEntryAuditType {
     AgentApiKeyRemoved = "agentApiKeyRemoved",
     CopyEndpointData = "copyEndpointData",
     ChangeSessionState = "changeSessionState",
+    DashboardTokenCreated = "dashboardTokenCreated",
+    DashboardTokenRevoked = "dashboardTokenRevoked",
+    DashboardTokenRemoved = "dashboardTokenRemoved",
 }
 
 export enum AgentSettleRequestOutcome {

@@ -430,6 +430,96 @@ internal sealed partial class CosmosDbEndpointMetadataStore : IEndpointMetadataS
         public DateTime LastUsedAtUtc { get; set; }
     }
 
+    public async Task<DashboardTokenSettings> GetDashboardTokenSettings()
+    {
+        var container = await _getSettingsContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<DashboardTokenSettings>(
+                DashboardTokenSettings.SingletonId,
+                new PartitionKey(DashboardTokenSettings.SingletonId));
+            return response.Resource ?? new DashboardTokenSettings();
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new DashboardTokenSettings();
+        }
+    }
+
+    public async Task<bool> TrySetDashboardTokenSettings(DashboardTokenSettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The tokens must carry their new revision.", nameof(settings));
+        settings.Id = DashboardTokenSettings.SingletonId;
+        var partitionKey = new PartitionKey(DashboardTokenSettings.SingletonId);
+
+        // Same compare-and-set shape as TrySetAgentApiKeySettings.
+        var container = await _getSettingsContainer();
+        try
+        {
+            if (expectedRevision is null)
+            {
+                await container.CreateItemAsync(settings, partitionKey);
+                return true;
+            }
+
+            var current = await container.ReadItemAsync<DashboardTokenSettings>(DashboardTokenSettings.SingletonId, partitionKey);
+            if (!string.Equals(current.Resource?.Revision, expectedRevision, StringComparison.Ordinal))
+                return false;
+
+            await container.UpsertItemAsync(settings, partitionKey, new ItemRequestOptions { IfMatchEtag = current.ETag });
+            return true;
+        }
+        catch (CosmosException e) when (e.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
+    public async Task<List<DashboardTokenUsage>> GetDashboardTokenUsage()
+    {
+        var container = await _getSettingsContainer();
+        var query = new QueryDefinition("SELECT * FROM c WHERE STARTSWITH(c.id, @prefix)")
+            .WithParameter("@prefix", DashboardTokenUsageDocument.IdPrefix);
+        var usage = new List<DashboardTokenUsage>();
+        using var iterator = container.GetItemQueryIterator<DashboardTokenUsageDocument>(query);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var document in await iterator.ReadNextAsync())
+            {
+                usage.Add(new DashboardTokenUsage { TokenId = document.TokenId, LastUsedAtUtc = document.LastUsedAtUtc });
+            }
+        }
+        return usage;
+    }
+
+    public async Task RecordDashboardTokenUse(string tokenId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tokenId);
+        // One small document per token in the settings container (partitioned on /id).
+        var document = new DashboardTokenUsageDocument
+        {
+            Id = DashboardTokenUsageDocument.IdPrefix + tokenId,
+            TokenId = tokenId,
+            LastUsedAtUtc = usedAtUtc,
+        };
+        var container = await _getSettingsContainer();
+        await container.UpsertItemAsync(document, new PartitionKey(document.Id));
+    }
+
+    private sealed class DashboardTokenUsageDocument
+    {
+        public const string IdPrefix = "DashboardTokenUsage-";
+
+        [Newtonsoft.Json.JsonProperty("id")]
+        public string Id { get; set; } = string.Empty;
+
+        public string TokenId { get; set; } = string.Empty;
+
+        public DateTime LastUsedAtUtc { get; set; }
+    }
+
     public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         // The ETag precondition is what makes at most one scaled-out instance send

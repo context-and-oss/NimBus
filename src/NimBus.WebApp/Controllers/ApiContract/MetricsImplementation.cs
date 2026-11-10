@@ -120,7 +120,8 @@ public class MetricsImplementation : IMetricsApiController
         };
     }
 
-    private static LatencyStats ToDto(LatencyAggregate source)
+    /// <summary>The API shape of a latency aggregate, rounded to 0.1 ms.</summary>
+    internal static LatencyStats ToDto(LatencyAggregate source)
     {
         if (source is null) return new LatencyStats();
         return new LatencyStats

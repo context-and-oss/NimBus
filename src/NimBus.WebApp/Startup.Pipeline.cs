@@ -157,11 +157,26 @@ public partial class Startup
             // wwwroot holds no copy, so the fallback must use the SPA file provider
             // rather than the default WebRoot one. The Directory.Exists guard keeps
             // hosts without a built SPA (unit tests) constructible.
+            // The Monitor wall's shell loads without a session: a wall display authenticates its API
+            // calls with a dashboard token carried in the URL fragment, which the server never
+            // sees, so it cannot tell here whether one is coming. The shell is static and holds no
+            // data. A separate endpoint, because MapFallbackToFile rewrites the request path to the
+            // file before OnPrepareResponse runs. Routing is case-insensitive; /Monitor/x is not
+            // matched and keeps redirecting.
+            var monitorShellOptions = new StaticFileOptions
+            {
+                OnPrepareResponse = ctx => ctx.Context.Response.GetTypedHeaders().CacheControl =
+                    new CacheControlHeaderValue { NoCache = true, NoStore = true, MustRevalidate = true },
+            };
+
             if (System.IO.Directory.Exists(spaAssetRoot))
             {
-                fallbackOptions.FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(spaAssetRoot);
+                var spaFiles = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(spaAssetRoot);
+                fallbackOptions.FileProvider = spaFiles;
+                monitorShellOptions.FileProvider = spaFiles;
             }
 
+            endpoints.MapFallbackToFile("Monitor", "index.html", monitorShellOptions);
             endpoints.MapFallbackToFile("index.html", fallbackOptions);
         });
     }
