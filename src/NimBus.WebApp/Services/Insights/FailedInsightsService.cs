@@ -115,6 +115,9 @@ public interface IInsightsEnrichmentSource
     /// <summary>True when saved classifications can be read (read-only or ready mode).</summary>
     bool IsEnabled { get; }
 
+    /// <summary>True when new analysis can be requested (ready mode); false in read-only mode or when intelligence is off.</summary>
+    bool CanAnalyze { get; }
+
     /// <summary>False when the endpoint is outside the configured analysis allow-list.</summary>
     bool IsEligible(string endpointId);
 
@@ -127,16 +130,22 @@ public sealed class InsightsEnrichmentSource : IInsightsEnrichmentSource
 {
     private readonly FailureClassificationReader? _reader;
     private readonly string[] _allowedEndpoints;
+    private readonly bool _canAnalyze;
 
-    /// <summary>Creates the source; both sequences are empty when intelligence is off.</summary>
-    public InsightsEnrichmentSource(IEnumerable<FailureClassificationReader> readers, IEnumerable<FailureClassificationOptions> options)
+    /// <summary>Creates the source; every sequence is empty when intelligence is not registered.</summary>
+    public InsightsEnrichmentSource(IEnumerable<FailureClassificationReader> readers, IEnumerable<FailureClassificationOptions> options,
+        IEnumerable<IntegrationIntelligenceActivation> activations)
     {
         _reader = readers.FirstOrDefault();
         _allowedEndpoints = options.FirstOrDefault()?.AllowedEndpoints ?? [];
+        _canAnalyze = activations.FirstOrDefault()?.Ready == true;
     }
 
     /// <inheritdoc />
     public bool IsEnabled => _reader is not null;
+
+    /// <inheritdoc />
+    public bool CanAnalyze => _canAnalyze;
 
     /// <inheritdoc />
     public bool IsEligible(string endpointId)
@@ -217,6 +226,9 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
         var (status, scope) = await LoadScopeAsync(request.Period, request.From, request.To, request.EndpointId,
             request.Enrich, request.Refresh, cancellationToken).ConfigureAwait(false);
         if (scope is null) return new FailedInsightsQueryResult(status, null);
+        // Counted per overview load; drill-down pages reuse its scope and are not counted again.
+        if (request.Enrich)
+            NimBusIntelligenceTelemetry.InsightsEnrichment.Add(1, new TagList { { "nimbus.insights.enrichment", scope.Enrichment.ToString() } });
 
         var (rows, assessed) = (scope.Rows, scope.Assessed);
         return new FailedInsightsQueryResult(FailedInsightsQueryStatus.Ok, new FailedInsightsOverview
@@ -231,6 +243,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             ClassificationsReadAt = scope.Read?.ReadAt.UtcDateTime,
             Enrichment = scope.Enrichment,
             EnrichmentLimit = _options.EnrichmentCeiling,
+            AnalysisAvailable = _enrichment.IsEnabled && _enrichment.CanAnalyze,
             Coverage = assessed is null ? null : Coverage(assessed.Values),
             CauseGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.CauseKey, CauseLabels),
             GuidanceGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.GuidanceKey, GuidanceLabels),
@@ -344,6 +357,8 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             if (!(cause ? IsCauseKey(request.GroupKey) : IsGuidanceKey(request.GroupKey)))
                 return (BadRequest<T>("Unknown groupKey for this perspective."), null);
             members = scope.Rows.Where(r => (cause ? scope.Assessed[r].CauseKey : scope.Assessed[r].GuidanceKey) == request.GroupKey).ToList();
+            // A known key with no occurrences is not a group of this scope (spec 043 §8.2).
+            if (members.Count == 0) return (BadRequest<T>("Unknown groupKey for this window and endpoint."), null);
         }
 
         var scopeHash = Key("s", $"{scope.Window.From.Ticks}|{scope.Window.To.Ticks}|{scope.EndpointId?.ToUpperInvariant()}|{request.Perspective}|{request.GroupKey}");
@@ -439,8 +454,6 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
         var (status, read) = enrich
             ? await EnrichAsync(window, endpointId, rows, refresh, cancellationToken).ConfigureAwait(false)
             : (InsightsEnrichmentStatus.Disabled, null);
-        if (enrich)
-            NimBusIntelligenceTelemetry.InsightsEnrichment.Add(1, new TagList { { "nimbus.insights.enrichment", status.ToString() } });
 
         var assessed = read is null ? null : Assess(rows, read.Result.Snapshots);
         return (FailedInsightsQueryStatus.Ok, new Scope(window, occurrences, endpointId, rows, status, read, assessed));

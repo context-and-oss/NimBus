@@ -30,12 +30,18 @@ The page only reads. It never starts an AI analysis and never resubmits or skips
   error patterns. **and N more** lists the rest.
 - **View failures** opens a paged list of the group's failed attempts with their analysis,
   saved cause and guidance, and the event's status now. A marker shows when a newer analysis is
-  running, its outcome is unknown or it failed. Each row links to the event's details.
+  running, its outcome is unknown or it failed. Each row links to the event's details with that
+  failed attempt's failure intelligence card outlined and scrolled into view; the card names the
+  provider and model and notes that threshold settings were not recorded with the result.
 
 Likely causes, recovery guidance and coverage need saved classifications. When they aren't
 available the page keeps error patterns and says why: intelligence is off, its storage can't be
 read, the message store can't identify failed attempts, or the selection has more failures
-than the enrichment limit (10,000 by default; narrow the range or pick an endpoint).
+than the enrichment limit (10,000 by default; narrow the range or pick an endpoint). A link that
+asks for causes or guidance in such a selection opens on error patterns. When saved
+classifications can be read but no provider is configured (read-only mode), the page says that
+new analysis is unavailable, so **Not analyzed** failures stay that way until a provider is
+configured.
 
 Saved classifications are read again when the page opens and on **Refresh**. New failures can
 take up to 30 seconds to appear. The range, endpoint, grouping and open group live in the URL,

@@ -4,11 +4,15 @@ import { Button } from "components/ui/button";
 import { FAILURE_CATEGORIES, GUIDANCE_BADGE, GUIDANCE_MEANING, isFailureGuidance } from "lib/failure-classification";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "components/ui/card";
 
-type IntelligenceCardProps = { endpointId: string; eventId: string; messageId: string; resolutionStatus?: string; occurrenceLabel?: string };
+type IntelligenceCardProps = {
+  endpointId: string; eventId: string; messageId: string; resolutionStatus?: string; occurrenceLabel?: string;
+  /** The occurrence a link (for example from Insights) asked for: outlined and scrolled into view once. */
+  highlighted?: boolean;
+};
 type IntelligenceStatus = { status: string; canAnalyze: boolean; contractVersion: number };
 type Classification = {
   category: string; categoryConfidence: number; retryLikelihood: number; changeRequiredLikelihood: number;
-  externalDependencyLikelihood: number; guidance: string; revision: number; model: string; createdAtUtc: string; requestedBy?: string;
+  externalDependencyLikelihood: number; guidance: string; revision: number; provider?: string; model: string; createdAtUtc: string; requestedBy?: string;
   categoryProbabilities?: Record<string, number>; questionSetVersion?: number;
 };
 const headers = { "api-version": "2" };
@@ -30,6 +34,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
   const pending = useRef<{ key: string; force: boolean } | undefined>(undefined);
   const pollAttempt = useRef(0);
   const alive = useRef(true);
+  const scrolled = useRef(false);
   const eligible = ["failed", "deadlettered"].includes((props.resolutionStatus ?? "").toLowerCase());
   const baseUrl = `/api/integration-intelligence/failures/${encodeURIComponent(props.eventId)}/${encodeURIComponent(props.messageId)}/classification`;
 
@@ -117,8 +122,14 @@ function OccurrenceCard(props: IntelligenceCardProps) {
   const historical = Boolean(classification && (analysisActive || unknownOutcome));
   const guidanceMeaning = classification && isFailureGuidance(classification.guidance) ? GUIDANCE_MEANING[classification.guidance] : undefined;
   const categoryMeaning = FAILURE_CATEGORIES.find(item => item.id === classification?.category)?.meaning;
+  const scrollOnce = (node: HTMLDivElement | null) => {
+    if (!node || !props.highlighted || scrolled.current) return;
+    scrolled.current = true;
+    node.scrollIntoView?.({ block: "center" });
+  };
   return (
-    <Card className="mb-4 border-primary/30">
+    <div ref={scrollOnce} aria-current={props.highlighted ? "true" : undefined}>
+    <Card className={`mb-4 ${props.highlighted ? "border-primary ring-2 ring-primary/40" : "border-primary/30"}`}>
       <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
         <div>
           <CardTitle className="text-base">Failure intelligence{props.occurrenceLabel ? ` · ${props.occurrenceLabel}` : ""}</CardTitle>
@@ -151,17 +162,20 @@ function OccurrenceCard(props: IntelligenceCardProps) {
             {guidanceMeaning && <p>{guidanceMeaning}</p>}
             {categoryMeaning && <p className="text-muted-foreground"><span className="font-mono">{classification.category}</span>: {categoryMeaning}</p>}
           </div>}
-          <p className="text-muted-foreground">Revision {classification.revision} · {classification.model} · {classification.createdAtUtc} · {classification.requestedBy}</p>
+          <p className="text-muted-foreground">Revision {classification.revision} · {classification.provider ? `${classification.provider} · ` : ""}{classification.model} · {classification.createdAtUtc} · {classification.requestedBy}</p>
           <details>
             <summary className="cursor-pointer">Classification details</summary>
             <div className="mt-2 space-y-1 text-muted-foreground">
               {probabilities.map(([category, probability]) => <div key={category}>{category}: {percent(probability)}</div>)}
               <div>Question set v{classification.questionSetVersion ?? "unknown"}</div>
+              {/* No saved result records the guidance thresholds it was made with (spec 043 §7). */}
+              <div>Threshold settings not recorded</div>
             </div>
           </details>
         </>}
         <p className="text-muted-foreground">AI-assisted assessment. Advisory only. NimBus processing and recovery decisions are unchanged.</p>
       </CardContent>
     </Card>
+    </div>
   );
 }

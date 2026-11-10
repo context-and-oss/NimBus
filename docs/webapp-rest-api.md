@@ -348,6 +348,8 @@ never starts an analysis.
 - `enrichment` is `available`, `disabled`, `unavailable`, `unsupported` or `limitExceeded`.
   Every value except `available` leaves `coverage`, `causeGroups` and `guidanceGroups` null; it
   is never reported as zero coverage.
+- `analysisAvailable` is false when new analysis can't be requested: intelligence is off, or
+  only saved classifications can be read because no provider is configured.
 - `totalFailed` stays for existing clients and always equals `totalOccurrences`.
 
 Two read-only routes page one group of the overview. Both take the overview's `from` and `to`,
@@ -362,8 +364,9 @@ that perspective, `pageSize` (1–100, default 50) and `continuationToken`:
 - `GET /api/metrics/failed-insights/patterns`: a cause or guidance group's error patterns, most
   frequent first.
 
-Group keys are valid only for the scope that issued them and are not durable across releases. A
-continuation token is bound to its window, endpoint and group; reusing it elsewhere is a `400`.
+Group keys are valid only for the scope that issued them and are not durable across releases; a
+key with no occurrences in the requested scope is a `400`, in every perspective. A continuation
+token is bound to its window, endpoint and group; reusing it elsewhere is a `400`.
 Pages are live reads, not a snapshot: new classifications can move occurrences between groups.
 
 Limits, under `NimBus:Insights`:

@@ -308,6 +308,54 @@ public sealed partial class FailedInsightsServiceTests
     }
 
     [TestMethod]
+    [DataRow(true, true, true)]
+    [DataRow(true, false, false)]
+    [DataRow(false, true, false)]
+    public async Task The_overview_says_whether_new_analysis_can_be_requested(bool enabled, bool canAnalyze, bool expected)
+    {
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "m1", "x");
+
+        var overview = await Build(store, new FakeEnrichment { IsEnabled = enabled, CanAnalyze = canAnalyze });
+
+        Assert.AreEqual(expected, overview.AnalysisAvailable);
+    }
+
+    [TestMethod]
+    [DataRow(true, true)]
+    [DataRow(false, false)]
+    public void The_enrichment_source_can_analyze_only_in_ready_mode(bool ready, bool expected)
+    {
+        var source = new InsightsEnrichmentSource([], [], [new IntegrationIntelligenceActivation(true, ready, [])]);
+
+        Assert.AreEqual(expected, source.CanAnalyze);
+        Assert.IsFalse(new InsightsEnrichmentSource([], [], []).CanAnalyze, "Intelligence off: nothing can be analyzed.");
+    }
+
+    [TestMethod]
+    public async Task Enrichment_telemetry_counts_overview_loads_not_drill_down_pages()
+    {
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "m1", "x");
+        var service = Service(store, new FakeEnrichment());
+        var recorded = 0;
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter == NimBusIntelligenceTelemetry.Meter && instrument.Name == "nimbus.intelligence.insights.enrichment")
+                l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, _, _) => Interlocked.Add(ref recorded, (int)value));
+        listener.Start();
+
+        await service.GetOverviewAsync(new FailedInsightsRequest(Period._1d, From, To, null, true, false));
+        await service.GetOccurrencesAsync(new FailedInsightsPageRequest(From, To, null, InsightsPerspective.Cause, FailedInsightsService.NotAnalyzed, 10, null));
+        await service.GetPatternsAsync(new FailedInsightsPageRequest(From, To, null, InsightsPerspective.Cause, FailedInsightsService.NotAnalyzed, 10, null));
+
+        Assert.AreEqual(1, recorded);
+    }
+
+    [TestMethod]
     public async Task Concurrent_loads_share_one_bulk_read()
     {
         var store = new CountingStore();
@@ -523,6 +571,7 @@ public sealed partial class FailedInsightsServiceTests
     {
         private int _reads;
         public bool IsEnabled { get; set; } = true;
+        public bool CanAnalyze { get; set; } = true;
         public HashSet<string> Disallowed { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, ClassificationSnapshot> Snapshots { get; } = new(StringComparer.Ordinal);
         public ClassificationBulkReadStatus Status { get; set; } = ClassificationBulkReadStatus.Available;

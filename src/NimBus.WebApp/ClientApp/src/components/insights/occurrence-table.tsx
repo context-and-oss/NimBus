@@ -100,7 +100,10 @@ export function OccurrenceTable({ scope, perspective, groupKey, title, onClose }
                   return (
                     <tr key={`${row.eventId}/${row.messageId}`} className="border-b align-top">
                       <td className="py-2 px-3 whitespace-nowrap">
-                        <Link className="text-primary hover:underline" to={`/Message/Index/${row.endpointId}/${row.eventId}/0`}>
+                        <Link
+                          className="text-primary hover:underline"
+                          to={`/Message/Index/${row.endpointId}/${row.eventId}/0${row.messageId ? `?message=${encodeURIComponent(row.messageId)}` : ""}`}
+                        >
                           {row.failedAt ? formatMoment(row.failedAt, true) : "-"}
                         </Link>
                       </td>

@@ -193,6 +193,8 @@ describe("Insights page", () => {
     fireEvent.click(within(row).getByRole("button", { name: "View failures" }));
 
     expect(await screen.findByText("Newer analysis running")).toBeTruthy();
+    // Each row opens the exact failed attempt on the details page.
+    expect(document.querySelector('a[href^="/Message/Index/crm/e1/0"]')?.getAttribute("href")).toBe("/Message/Index/crm/e1/0?message=m1");
     expect(mocks.occurrences).toHaveBeenLastCalledWith(from, to, api.InsightsPerspective.Cause, "transient_dependency", undefined, 50, undefined);
     expect(screen.getByText("Completed")).toBeTruthy();
     expect(screen.getByText("Retry may help", { selector: "td" })).toBeTruthy();
@@ -243,6 +245,22 @@ describe("Insights page", () => {
 
     await waitFor(() => expect(screen.queryByText("OlderScope")).toBeNull());
     expect(screen.getByText("NewerScope")).toBeTruthy();
+  });
+
+  it("notes that Not analyzed includes failures that can no longer be analyzed", async () => {
+    mocks.insights.mockResolvedValue(overview({ analysisAvailable: true }));
+    renderAt("/Insights?by=cause");
+
+    const row = (await screen.findByText("Not analyzed")).closest("tr")!;
+    expect(within(row).getByText("Includes failures that can no longer be analyzed")).toBeTruthy();
+    expect(screen.queryByText(/no provider is configured/)).toBeNull();
+  });
+
+  it("says when new analysis is unavailable because only saved results can be read", async () => {
+    mocks.insights.mockResolvedValue(overview({ analysisAvailable: false }));
+    renderAt();
+
+    expect(await screen.findByText(/New analysis is unavailable because no provider is configured/)).toBeTruthy();
   });
 
   it("says so when the period has no failures", async () => {
