@@ -11,7 +11,7 @@ to `master`.
 | Ecosystem | Scanner | Scope |
 | --- | --- | --- |
 | NuGet | `dotnet list package --vulnerable --include-transitive` | Every tracked solution, plus any tracked `.csproj` no solution covers (today `src/NimBus.Manager`). Top-level and transitive packages. |
-| npm | `npm audit --package-lock-only` | Every tracked `package-lock.json`: `src/NimBus.WebApp/ClientApp`, `samples/CrmErpDemo/{Crm.Web,Erp.Web,e2e}`, `samples/DynamicsBcDemo/{D365Sales.Web,BusinessCentral.Web}`. |
+| npm | `npm audit --package-lock-only` | Every tracked `package-lock.json`: `src/NimBus.WebApp/ClientApp`, `samples/CrmErpDemo/{Crm.Web,Erp.Web,e2e}`, `samples/DynamicsBcDemo/{D365Sales.Web,BusinessCentral.Web}`, `website`. |
 
 Targets are discovered from `git ls-files` on every run, so a new project or SPA is picked up
 without editing the workflow.
