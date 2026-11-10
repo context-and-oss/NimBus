@@ -1743,6 +1743,146 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentApiKeyProblem'
+  /api/admin/dashboard-tokens:
+    get:
+      summary: List the dashboard tokens
+      description: >-
+        Site Owner only. Every issued Monitor dashboard token with its status and last use,
+        never the secret, plus an antiforgery token for the write operations.
+      operationId: get-admin-dashboard-tokens
+      tags:
+        - DashboardTokens
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenState'
+        '403':
+          description: Forbidden
+        '501':
+          description: The storage provider cannot store dashboard tokens
+    post:
+      summary: Issue a dashboard token
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full token
+        once; only its hash is stored. The token gives read-only access to the Monitor feed
+        (/api/monitor/feed/*) and nothing else.
+      operationId: post-admin-dashboard-tokens
+      tags:
+        - DashboardTokens
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardTokenCreate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenIssued'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '403':
+          description: Forbidden
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '501':
+          description: The storage provider cannot store dashboard tokens
+  /api/admin/dashboard-tokens/{tokenId}/revoke:
+    post:
+      summary: Revoke a dashboard token
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. The token stops working
+        on this instance at once and on every other instance within 30 seconds (2 minutes while
+        the store is unreachable). It stays listed until it is removed.
+      operationId: post-admin-dashboard-token-revoke
+      tags:
+        - DashboardTokens
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenState'
+        '403':
+          description: Forbidden
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '501':
+          description: The storage provider cannot store dashboard tokens
+  /api/admin/dashboard-tokens/{tokenId}:
+    delete:
+      summary: Remove a revoked or expired dashboard token
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active token must be
+        revoked first (400 StillActive).
+      operationId: delete-admin-dashboard-token
+      tags:
+        - DashboardTokens
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenState'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '403':
+          description: Forbidden
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '501':
+          description: The storage provider cannot store dashboard tokens
   /api/admin/heartbeat/send:
     post:
       summary: Send a heartbeat to every monitored endpoint now
@@ -3361,6 +3501,76 @@ paths:
           description: Forbidden
         '404':
           description: Endpoint not found
+  /api/monitor/feed/status:
+    get:
+      summary: The Monitor's current state, polled every few seconds
+      description: >-
+        Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header).
+        Every endpoint, unfiltered: status counts, blocked sessions, heartbeat and acknowledgement.
+        stale is true when the store could not be read and an earlier result is returned.
+      operationId: get-monitor-feed-status
+      tags:
+        - MonitorFeed
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorFeedStatus'
+        '401':
+          description: No session and no valid dashboard token
+        '403':
+          description: Signed in without the site Reader role
+        '503':
+          description: The store could not be read and nothing earlier is cached
+  /api/monitor/feed/metrics:
+    get:
+      summary: The Monitor's last-hour throughput and timings, polled every 30 seconds
+      description: >-
+        Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header).
+        A per-minute series for the last hour (60 buckets, the last partial) and per-endpoint
+        counts and average timings over the 60 minutes up to now.
+      operationId: get-monitor-feed-metrics
+      tags:
+        - MonitorFeed
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorFeedMetrics'
+        '401':
+          description: No session and no valid dashboard token
+        '403':
+          description: Signed in without the site Reader role
+        '503':
+          description: The store could not be read and nothing earlier is cached
+  /api/monitor/feed/history:
+    get:
+      summary: The Monitor's longer history, polled every 5 minutes
+      description: >-
+        Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header).
+        A per-hour series for the last 3 days (72 buckets, the last partial), queue and
+        processing time per hour for the last 24 hours, and each endpoint's 24-hour average
+        processing time.
+      operationId: get-monitor-feed-history
+      tags:
+        - MonitorFeed
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorFeedHistory'
+        '401':
+          description: No session and no valid dashboard token
+        '403':
+          description: Signed in without the site Reader role
+        '503':
+          description: The store could not be read and nothing earlier is cached
   /api/agent/catalog:
     get:
       summary: Get agent catalog
@@ -4513,6 +4723,9 @@ components:
             - agentApiKeyRemoved
             - copyEndpointData
             - changeSessionState
+            - dashboardTokenCreated
+            - dashboardTokenRevoked
+            - dashboardTokenRemoved
         comment:
           type: string
           nullable: true
@@ -6276,6 +6489,9 @@ components:
             - agentApiKeyRemoved
             - copyEndpointData
             - changeSessionState
+            - dashboardTokenCreated
+            - dashboardTokenRevoked
+            - dashboardTokenRemoved
         createdAtFrom:
           type: string
           format: date-time
@@ -7034,6 +7250,235 @@ components:
           type: array
           items:
             type: string
+    DashboardTokenStatus:
+      title: DashboardTokenStatus
+      type: string
+      enum:
+        - active
+        - revoked
+        - expired
+    DashboardTokenInfo:
+      title: DashboardTokenInfo
+      type: object
+      description: An issued Monitor dashboard token. Never carries the secret.
+      properties:
+        tokenId:
+          type: string
+        prefix:
+          type: string
+          description: The non-secret start of the token, nbdt_<tokenId>, to recognise it.
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/DashboardTokenStatus'
+        createdAtUtc:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          nullable: true
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedBy:
+          type: string
+          nullable: true
+        lastUsedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: Recorded at most every 5 minutes per instance; null when never used.
+    DashboardTokenState:
+      title: DashboardTokenState
+      type: object
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardTokenInfo'
+        csrfToken:
+          type: string
+          description: Send as the X-NimBus-CSRF header on writes.
+    DashboardTokenCreate:
+      title: DashboardTokenCreate
+      type: object
+      properties:
+        name:
+          type: string
+          description: A label, for example the wall the token is for. Required, up to 100 characters.
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the token stops working; null for no expiry. Must be in the future.
+    DashboardTokenIssued:
+      title: DashboardTokenIssued
+      type: object
+      properties:
+        token:
+          type: string
+          description: The full token. Shown once; it cannot be retrieved again.
+        issued:
+          $ref: '#/components/schemas/DashboardTokenInfo'
+        state:
+          $ref: '#/components/schemas/DashboardTokenState'
+    DashboardTokenProblem:
+      title: DashboardTokenProblem
+      type: object
+      properties:
+        code:
+          type: string
+          description: Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken.
+        errors:
+          type: array
+          items:
+            type: string
+    MonitorFeedStatus:
+      title: MonitorFeedStatus
+      type: object
+      properties:
+        environment:
+          type: string
+          nullable: true
+        platformName:
+          type: string
+          nullable: true
+        serverTimeUtc:
+          type: string
+          format: date-time
+        generatedAtUtc:
+          type: string
+          format: date-time
+          description: When the endpoint data was read from the store.
+        stale:
+          type: boolean
+          description: True when the latest read failed and this is an earlier result.
+        tokenAccess:
+          type: boolean
+          description: True when the caller authenticated with a dashboard token.
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitorFeedEndpoint'
+    MonitorFeedEndpoint:
+      title: MonitorFeedEndpoint
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/EndpointStatusCount'
+        blockedSessionCount:
+          type: integer
+          nullable: true
+          description: >-
+            Estimated sessions blocked by a failed, dead-lettered or pending hand-off message.
+            Null when the store cannot tell.
+        heartbeat:
+          $ref: '#/components/schemas/MonitorFeedHeartbeat'
+        acknowledgement:
+          $ref: '#/components/schemas/MonitorAcknowledgement'
+    MonitorFeedHeartbeat:
+      title: MonitorFeedHeartbeat
+      type: object
+      description: Absent when the endpoint does not take part in heartbeats.
+      properties:
+        liveness:
+          type: string
+          description: 'alive, late, missing or notDeployed.'
+        lastAnsweredUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the endpoint last answered a heartbeat probe.
+    MonitorFeedCounts:
+      title: MonitorFeedCounts
+      type: object
+      properties:
+        published:
+          type: integer
+        handled:
+          type: integer
+        failed:
+          type: integer
+          description: Failed attempts (error responses), not the unresolved state.
+        queue:
+          $ref: '#/components/schemas/LatencyStats'
+        processing:
+          $ref: '#/components/schemas/LatencyStats'
+    MonitorFeedEndpointMetrics:
+      title: MonitorFeedEndpointMetrics
+      type: object
+      properties:
+        endpointId:
+          type: string
+        counts:
+          $ref: '#/components/schemas/MonitorFeedCounts'
+    MonitorFeedMetrics:
+      title: MonitorFeedMetrics
+      type: object
+      properties:
+        generatedAtUtc:
+          type: string
+          format: date-time
+        stale:
+          type: boolean
+        lastHour:
+          type: array
+          description: Per-minute buckets, ascending; the last one is the current, partial minute.
+          items:
+            $ref: '#/components/schemas/TimeSeriesDataPoint'
+        fleet:
+          $ref: '#/components/schemas/MonitorFeedCounts'
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitorFeedEndpointMetrics'
+    MonitorFeedLatencyPoint:
+      title: MonitorFeedLatencyPoint
+      type: object
+      properties:
+        timestamp:
+          type: string
+        queue:
+          $ref: '#/components/schemas/LatencyStats'
+        processing:
+          $ref: '#/components/schemas/LatencyStats'
+    MonitorFeedEndpointHistory:
+      title: MonitorFeedEndpointHistory
+      type: object
+      properties:
+        endpointId:
+          type: string
+        processing:
+          $ref: '#/components/schemas/LatencyStats'
+    MonitorFeedHistory:
+      title: MonitorFeedHistory
+      type: object
+      properties:
+        generatedAtUtc:
+          type: string
+          format: date-time
+        stale:
+          type: boolean
+        lastThreeDays:
+          type: array
+          description: Per-hour buckets, ascending; the last one is the current, partial hour.
+          items:
+            $ref: '#/components/schemas/TimeSeriesDataPoint'
+        latencyLastDay:
+          type: array
+          nullable: true
+          description: Sparse per-hour queue and processing time; null when the store cannot tell.
+          items:
+            $ref: '#/components/schemas/MonitorFeedLatencyPoint'
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitorFeedEndpointHistory'
     McpActivityCount:
       title: McpActivityCount
       type: object
@@ -7351,6 +7796,9 @@ components:
             - agentApiKeyRemoved
             - copyEndpointData
             - changeSessionState
+            - dashboardTokenCreated
+            - dashboardTokenRevoked
+            - dashboardTokenRemoved
         comment:
           type: string
           nullable: true

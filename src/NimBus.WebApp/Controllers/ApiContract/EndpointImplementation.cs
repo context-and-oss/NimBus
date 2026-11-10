@@ -47,7 +47,6 @@ public partial class EndpointImplementation : IEndpointApiController
     private readonly PayloadRedaction _payloadRedaction;
     private const int InitialEvents = 40;
     private const int PagingEvents = 40;
-    private const int SqlInvalidObjectNameErrorNumber = 208;
 
     public EndpointImplementation(
         IHttpContextAccessor contextAccessor,
@@ -284,40 +283,9 @@ public partial class EndpointImplementation : IEndpointApiController
         return new OkObjectResult(counts);
     }
 
-    private async Task<EndpointStatusCount> DownloadStatusOrStubAsync(string endpointId)
-    {
-        try
-        {
-            // Cached below the per-user role filtering (which
-            // happens at the call sites above): the cached value is the
-            // endpoint-scoped raw count, identical for every authorized user.
-            // Failures propagate uncached, so the stub branches below stay live.
-            var endpointStateCount = await _storeResultCache.GetEndpointStateCountAsync(messageStore, endpointId);
-            return Mapper.EndpointStatusCountFromEndpointStateCount(endpointStateCount);
-        }
-        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-        {
-            LogStorageContainerMissingForEndpoint(_logger, ex, endpointId);
-            return StorageUnavailableStub(endpointId);
-        }
-        catch (EndpointNotFoundException ex)
-        {
-            LogStorageContainerMissingForEndpointEndpointNotFoundException(_logger, ex, endpointId);
-            return StorageUnavailableStub(endpointId);
-        }
-        catch (SqlException ex) when (ex.Number == SqlInvalidObjectNameErrorNumber)
-        {
-            LogStorageTableMissingForEndpoint(_logger, ex, endpointId);
-            return StorageUnavailableStub(endpointId);
-        }
-    }
-
-    private static EndpointStatusCount StorageUnavailableStub(string endpointId)
-        => new EndpointStatusCount
-        {
-            EndpointId = endpointId,
-            StorageStatus = "unavailable",
-        };
+    // Cached below the per-user role filtering, which happens at the call sites above.
+    private Task<EndpointStatusCount> DownloadStatusOrStubAsync(string endpointId)
+        => EndpointStatusProjection.ReadOrStubAsync(_storeResultCache, messageStore, _logger, endpointId);
 
     public async Task<ActionResult<IEnumerable<Event>>> GetEndpointStatusIdAsync(string endpointName)
     {
@@ -957,24 +925,11 @@ public partial class EndpointImplementation : IEndpointApiController
             return;
         }
 
+        // Only a status the metadata actually knows is reported. A null flag means "unknown", not
+        // "missing": the emulator has no reachable admin REST port and real Azure has outages,
+        // and claiming "not-found" would label a healthy endpoint as Subscription Missing.
         var metadataList = await ResolveMetadataWithSubscriptionStatusAsync(endpointIds);
-        foreach (var count in counts)
-        {
-            var metadata = metadataList.Find(m =>
-                m.EndpointId != null && m.EndpointId.Equals(count.EndpointId, StringComparison.OrdinalIgnoreCase));
-
-            // Only report a status the metadata actually knows. A null flag means
-            // "unknown", not "missing": SetSubscriptionStatusMetadata leaves it null
-            // both when the admin probe fails (the emulator has no reachable admin
-            // REST port, and real Azure has outages) and when the subscription is
-            // genuinely absent, so the two are indistinguishable here. Claiming
-            // "not-found" would label a healthy endpoint as Subscription Missing and
-            // dead its enable/disable switch on the strength of one failed probe.
-            if (metadata?.SubscriptionStatus != null)
-            {
-                count.SubscriptionStatus = Mapper.SubscriptionStatusFromMetadata(metadata);
-            }
-        }
+        EndpointStatusProjection.ApplySubscriptionStatus(counts, metadataList);
     }
 
 
@@ -1045,13 +1000,4 @@ public partial class EndpointImplementation : IEndpointApiController
             await _metadataStore.SetEndpointMetadata(metadata);
         }
     }
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Storage container missing for endpoint {EndpointId} (Cosmos 404)")]
-    private static partial void LogStorageContainerMissingForEndpoint(ILogger logger, Exception exception, string endpointId);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Storage container missing for endpoint {EndpointId} (EndpointNotFoundException)")]
-    private static partial void LogStorageContainerMissingForEndpointEndpointNotFoundException(ILogger logger, Exception exception, string endpointId);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Storage table missing for endpoint {EndpointId} (SQL 208)")]
-    private static partial void LogStorageTableMissingForEndpoint(ILogger logger, Exception exception, string endpointId);
 }

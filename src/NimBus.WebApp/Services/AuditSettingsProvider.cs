@@ -65,6 +65,9 @@ public sealed partial class AuditSettingsProvider : IAuditSettingsProvider
         MessageAuditType.AgentApiKeyRevoked,
         MessageAuditType.AgentApiKeyRemoved,
         MessageAuditType.ChangeSessionState,
+        MessageAuditType.DashboardTokenCreated,
+        MessageAuditType.DashboardTokenRevoked,
+        MessageAuditType.DashboardTokenRemoved,
     };
 
     /// <summary>

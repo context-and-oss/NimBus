@@ -205,4 +205,16 @@ public enum MessageAuditType
     /// after. Always recorded: the change is refused when the record can't be written.
     /// </summary>
     ChangeSessionState,
+
+    /// <summary>
+    /// A site Owner issued a Monitor dashboard token. The token id, name and expiry are recorded
+    /// as Data, never the token. Always recorded.
+    /// </summary>
+    DashboardTokenCreated,
+
+    /// <summary>A site Owner revoked a Monitor dashboard token. Always recorded.</summary>
+    DashboardTokenRevoked,
+
+    /// <summary>A site Owner removed a revoked or expired Monitor dashboard token. Always recorded.</summary>
+    DashboardTokenRemoved,
 }

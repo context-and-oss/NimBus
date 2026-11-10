@@ -280,7 +280,10 @@ public sealed class AdminCleanupAuditTests
         Assert.AreEqual(40, (int)MessageAuditType.CopyEndpointData);
         // Session state changes (Operations → Session state) were appended after it.
         Assert.AreEqual(41, (int)MessageAuditType.ChangeSessionState);
-        Assert.AreEqual(MessageAuditType.ChangeSessionState, Enum.GetValues<MessageAuditType>().Max());
+        // Dashboard token changes were appended after that.
+        Assert.AreEqual(42, (int)MessageAuditType.DashboardTokenCreated);
+        Assert.AreEqual(44, (int)MessageAuditType.DashboardTokenRemoved);
+        Assert.AreEqual(MessageAuditType.DashboardTokenRemoved, Enum.GetValues<MessageAuditType>().Max());
     }
 
     [TestMethod]

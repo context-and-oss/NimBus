@@ -126,6 +126,10 @@ public partial class Startup
         services.AddTransient<IHeartbeatApiController, HeartbeatImplementation>();
         services.AddTransient<IMonitorApiController, MonitorImplementation>();
         services.AddScoped<IMonitorAcknowledgementService, MonitorAcknowledgementService>();
+        // The Monitor wall's feed: site Reader or a dashboard token (scheme registered with the
+        // sign-in stack in Startup.Security).
+        services.AddTransient<IMonitorFeedApiController, MonitorFeedImplementation>();
+        services.AddSingleton<Services.MonitorFeed.IMonitorFeedCache, Services.MonitorFeed.MonitorFeedCache>();
         services.AddTransient<IAuditApiController, AuditImplementation>();
         services.AddTransient<IAccessControlApiController, AccessControlImplementation>();
         services.AddTransient<IAgentApiController, AgentImplementation>();
@@ -140,6 +144,8 @@ public partial class Startup
         // stack (Startup.Security).
         services.AddScoped<NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyService>();
         services.AddTransient<IAgentKeysApiController, AgentKeysImplementation>();
+        // Settings → Dashboard tokens; DashboardTokenService comes with AddNimBusDashboardTokens.
+        services.AddTransient<IDashboardTokensApiController, DashboardTokensImplementation>();
         services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();
         services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
 
