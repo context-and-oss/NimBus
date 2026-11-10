@@ -28,6 +28,17 @@ public class ServiceBusSession : IServiceBusSession
     private readonly ServiceBusClient? _serviceBusClient;
     private readonly string? _entityPath;
 
+    /// <summary>
+    /// Creates a session backed only by <see cref="ServiceBusSessionMessageActions"/>. A session built
+    /// this way supports session state and scheduled sends, but <see cref="CompleteAsync"/> and
+    /// <see cref="DeadLetterAsync"/> throw <see cref="InvalidOperationException"/> because session
+    /// actions cannot settle messages. For settlement, use
+    /// <see cref="ServiceBusSession(ServiceBusMessageActions, ServiceBusSessionMessageActions, ServiceBusClient?, string?, string?)"/>.
+    /// </summary>
+    /// <param name="sessionActions">The session actions used for session state.</param>
+    /// <param name="serviceBusClient">Optional client used to send scheduled messages.</param>
+    /// <param name="entityPath">Optional entity path that scheduled messages are sent to.</param>
+    /// <param name="sessionId">The session id (currently unused).</param>
     public ServiceBusSession(ServiceBusSessionMessageActions sessionActions, ServiceBusClient? serviceBusClient = null, string? entityPath = null, string? sessionId = null)
     {
         _sessionActions = sessionActions ?? throw new ArgumentNullException(nameof(sessionActions));

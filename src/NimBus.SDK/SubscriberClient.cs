@@ -66,6 +66,8 @@ public class SubscriberClient : ISubscriberClient
         return Task.FromResult(new SubscriberClient(serviceBusAdapter, eventHandlerProvider));
     }
 
+    /// <inheritdoc />
+    [Obsolete("ServiceBusSessionMessageActions cannot complete or dead-letter messages. Bind ServiceBusMessageActions in the trigger and call Handle(message, messageActions, sessionActions, cancellationToken). This overload will be removed in v5.")]
     public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) =>
         _serviceBusAdapter.Handle(message, sessionActions, cancellationToken);
 
