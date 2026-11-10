@@ -410,7 +410,8 @@ export function useMonitorData(
     setTelemetry((prev) => [...prev, fleet].slice(-TELEMETRY_LEN));
 
     setEndpoints(decorated);
-    setLastRefreshAt(t);
+    // A successful HTTP poll can still carry an old snapshot during a store outage.
+    setLastRefreshAt(status.stale ? status.generatedAtUtc?.valueOf() : t);
     setError(undefined);
     setLoading(false);
   }, [getClient, mergeServerAcks, pushTicker]);
@@ -462,8 +463,9 @@ export function useMonitorData(
   }, []);
 
   const isStale =
-    lastRefreshAt !== undefined &&
-    now - Math.max(lastRefreshAt, resumedAt) > STALE_AFTER_MS;
+    feed?.serverStale === true ||
+    (lastRefreshAt !== undefined &&
+      now - Math.max(lastRefreshAt, resumedAt) > STALE_AFTER_MS);
 
   const decoratedEndpoints: MonitorEndpoint[] = endpoints.map((e) => ({
     ...e,
