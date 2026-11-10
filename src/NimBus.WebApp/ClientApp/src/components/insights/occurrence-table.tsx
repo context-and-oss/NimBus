@@ -90,6 +90,7 @@ export function OccurrenceTable({ scope, perspective, groupKey, title, onClose }
                   <th className="py-2 px-3">Analysis</th>
                   <th className="py-2 px-3">Likely cause</th>
                   <th className="py-2 px-3">Guidance</th>
+                  <th className="py-2 px-3">Analyzed at</th>
                   <th className="py-2 px-3">Status now</th>
                 </tr>
               </thead>
@@ -125,6 +126,7 @@ export function OccurrenceTable({ scope, perspective, groupKey, title, onClose }
                         )}
                       </td>
                       <td className="py-2 px-3">{guidanceLabel(row.guidance) ?? "-"}</td>
+                      <td className="py-2 px-3 whitespace-nowrap">{row.classifiedAt ? formatMoment(row.classifiedAt, true) : "-"}</td>
                       <td className="py-2 px-3">{row.currentStatus ?? <span className="text-muted-foreground">Unavailable</span>}</td>
                     </tr>
                   );
@@ -134,7 +136,9 @@ export function OccurrenceTable({ scope, perspective, groupKey, title, onClose }
           </div>
         )}
         <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
-          <span>Saved results describe the failure when it was analyzed. Status now is the event's current state.</span>
+          <span>
+            Saved results describe the failure when it was analyzed (Analyzed at). Status now is the event's current state.
+          </span>
           <span className="flex gap-2">
             <Button size="sm" variant="outline" disabled={tokens.length === 1 || loading} onClick={() => setTokens((t) => t.slice(0, -1))}>
               Previous page

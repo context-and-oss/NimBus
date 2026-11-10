@@ -180,7 +180,15 @@ describe("Insights page", () => {
               category: "transient_dependency",
               categoryConfidence: 0.82,
               guidance: "RetryMayHelp",
+              classifiedAt: moment.utc("2026-11-07T10:05:30Z"),
               currentStatus: "Completed",
+            }),
+            new api.InsightOccurrence({
+              messageId: "m2",
+              eventId: "e2",
+              endpointId: "crm",
+              failedAt: moment.utc("2026-11-07T09:00:00Z"),
+              analysisState: api.InsightAnalysisState.NotAnalyzed,
             }),
           ],
           continuationToken: "t2",
@@ -198,6 +206,18 @@ describe("Insights page", () => {
     expect(mocks.occurrences).toHaveBeenLastCalledWith(from, to, api.InsightsPerspective.Cause, "transient_dependency", undefined, 50, undefined);
     expect(screen.getByText("Completed")).toBeTruthy();
     expect(screen.getByText("Retry may help", { selector: "td" })).toBeTruthy();
+    // When the saved result was made, apart from when the attempt failed and its status now.
+    const local = (utc: string) => moment.utc(utc).local().format("DD/MM/YY HH:mm:ss");
+    const table = document.querySelector('a[href$="message=m1"]')!.closest("table")!;
+    const headers = within(table).getAllByRole("columnheader").map((h) => h.textContent);
+    const analyzed = headers.indexOf("Analyzed at");
+    expect(analyzed).toBeGreaterThan(headers.indexOf("Failed"));
+    expect(analyzed).toBeLessThan(headers.indexOf("Status now"));
+    const cells = (messageId: string) =>
+      within(document.querySelector(`a[href$="message=${messageId}"]`)!.closest("tr")!).getAllByRole("cell");
+    expect(cells("m1")[analyzed].textContent).toBe(local("2026-11-07T10:05:30Z"));
+    expect(cells("m1")[headers.indexOf("Failed")].textContent).toBe(local("2026-11-07T10:00:00Z"));
+    expect(cells("m2")[analyzed].textContent).toBe("-");
 
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     await waitFor(() => expect(mocks.occurrences).toHaveBeenCalledTimes(2));
