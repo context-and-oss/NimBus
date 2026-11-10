@@ -135,7 +135,7 @@ Required when the task enters at `implementation`:
 1. A regression test named in **Proof** is added first and fails on the base commit. For performance, the measurement is recorded before and after.
 2. **If the test cannot be made to fail on the base commit, stop.** Submit "not reproduced" with what was tried. Do not change product code.
 3. The fix makes the test pass without weakening any existing test.
-4. `dotnet build src/NimBus.slnx -c Release` and `dotnet test src/NimBus.slnx -c Release --no-build` pass, plus `npm run test:ci` and `npm run build` for `webapp-ui`. Skipped integration tests are reported per test project, with the count and the reason they were skipped.
+4. `dotnet build src/NimBus.slnx -c Release` and `dotnet test src/NimBus.slnx -c Release --no-build` pass, plus `npm run test:ci` and `npm run build` for `webapp-ui`. The submission summary states these build and test results, and reports skipped integration tests per test project with the count and the reason they were skipped.
 5. The change stays inside the files listed in **Fix direction**, or explains why it could not.
 
 ### Stage selection
