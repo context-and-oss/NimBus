@@ -71,6 +71,8 @@ public static class SqlServerMessageStoreBuilderExtensions
             (IHeartbeatHistoryStore)sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<ISubscriptionNotificationStore>(sp =>
             (ISubscriptionNotificationStore)sp.GetRequiredService<INimBusMessageStore>());
+        services.AddSingleton<IMonitorMetricsStore>(sp =>
+            (IMonitorMetricsStore)sp.GetRequiredService<INimBusMessageStore>());
 
         services.AddSingleton<IStorageProviderRegistration>(_ => new SqlServerStorageProviderRegistration());
         services.AddSingleton<IStorageProviderCapabilities>(_ => new SqlServerStorageProviderCapabilities());

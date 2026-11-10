@@ -37,6 +37,13 @@ public sealed class CosmosDbMetricsStoreTests : MetricsStoreConformanceTests
 }
 
 [TestClass]
+public sealed class CosmosDbMonitorMetricsStoreTests : MonitorMetricsStoreConformanceTests
+{
+    protected override INimBusMessageStore CreateStore()
+        => CosmosDbStoreTestHarness.CreateStore();
+}
+
+[TestClass]
 public sealed class CosmosDbEventSchemaStoreConformanceTests : EventSchemaStoreConformanceTests
 {
     protected override IEventSchemaStore CreateStore()

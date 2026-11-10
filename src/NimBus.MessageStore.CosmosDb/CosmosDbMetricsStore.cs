@@ -79,12 +79,7 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         var container = await _getMessagesContainer();
         var fromIso = from.ToString("o");
         var toIso = to.ToString("o");
-        var outcomeFilter =
-            "(c.message.MessageType = 'ResolutionResponse' OR " +
-            " c.message.MessageType = 'ErrorResponse' OR " +
-            " c.message.MessageType = 'SkipResponse' OR " +
-            " c.message.MessageType = 'DeferralResponse' OR " +
-            " c.message.MessageType = 'UnsupportedResponse')";
+        var outcomeFilter = LatencyOutcomeFilter;
 
         // Queue-time and processing-time aggregates are independent — run them
         // concurrently and stitch the results below.
@@ -301,6 +296,116 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
             .ToList();
 
         return new EventTypeTimeSeriesResult { BucketSize = bucketLabel, Series = series };
+    }
+
+    // The outcome messages that carry queue and processing timings.
+    private const string LatencyOutcomeFilter =
+        "(c.message.MessageType = 'ResolutionResponse' OR " +
+        " c.message.MessageType = 'ErrorResponse' OR " +
+        " c.message.MessageType = 'SkipResponse' OR " +
+        " c.message.MessageType = 'DeferralResponse' OR " +
+        " c.message.MessageType = 'UnsupportedResponse')";
+
+    /// <summary>
+    /// Queue and processing time per bucket over outcome messages (<c>IMonitorMetricsStore</c>).
+    /// One query per timing, each filtered to documents that carry it, as in
+    /// <see cref="GetEndpointLatencyMetrics(DateTime, DateTime)"/>. The queries return SUM rather
+    /// than AVG so rows for the same bucket from different partitions merge exactly.
+    /// </summary>
+    public async Task<LatencyTimeSeriesResult> GetLatencyTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel)
+    {
+        var container = await _getMessagesContainer();
+        var fromIso = from.ToString("o");
+        var toIso = to.ToString("o");
+
+        string Sql(string field) =>
+            $"SELECT SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket, " +
+            $"       COUNT(1) AS count, SUM(c.message.{field}) AS sum, " +
+            $"       MIN(c.message.{field}) AS min, MAX(c.message.{field}) AS max " +
+            "FROM c " +
+            $"WHERE {LatencyOutcomeFilter} " +
+            "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to " +
+            $"AND IS_DEFINED(c.message.{field}) AND c.message.{field} != null " +
+            $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})";
+
+        var queueTask = RunLatencyBucketQuery(container, Sql("QueueTimeMs"), fromIso, toIso);
+        var processingTask = RunLatencyBucketQuery(container, Sql("ProcessingTimeMs"), fromIso, toIso);
+        await Task.WhenAll(queueTask, processingTask);
+        var queue = await queueTask;
+        var processing = await processingTask;
+
+        var dataPoints = queue.Keys
+            .Union(processing.Keys)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .Select(key => new LatencyTimeSeriesBucket
+            {
+                Timestamp = key,
+                Queue = queue.TryGetValue(key, out var q) ? q.ToAggregate() : new LatencyAggregate(),
+                Processing = processing.TryGetValue(key, out var p) ? p.ToAggregate() : new LatencyAggregate(),
+            })
+            .ToList();
+
+        return new LatencyTimeSeriesResult { BucketSize = bucketLabel, DataPoints = dataPoints };
+    }
+
+    private static async Task<Dictionary<string, LatencyAccumulator>> RunLatencyBucketQuery(ICosmosContainerAdapter container, string sql, string fromIso, string toIso)
+    {
+        var query = new QueryDefinition(sql).WithParameter("@from", fromIso).WithParameter("@to", toIso);
+        var iterator = container.GetItemQueryIterator<LatencyBucketRow>(query);
+        var results = new Dictionary<string, LatencyAccumulator>(StringComparer.Ordinal);
+
+        // Cross-partition GROUP BY can surface partial aggregates per physical partition, so rows
+        // for one bucket are merged rather than assigned.
+        while (iterator.HasMoreResults)
+        {
+            foreach (var row in await iterator.ReadNextAsync())
+            {
+                if (string.IsNullOrEmpty(row.Bucket) || row.Count == 0)
+                    continue;
+                if (!results.TryGetValue(row.Bucket, out var accumulator))
+                {
+                    accumulator = new LatencyAccumulator();
+                    results[row.Bucket] = accumulator;
+                }
+
+                accumulator.Add(row.Count, row.Sum, row.Min, row.Max);
+            }
+        }
+
+        return results;
+    }
+
+    private sealed class LatencyAccumulator
+    {
+        private int _count;
+        private double _sum;
+        private double _min = double.MaxValue;
+        private double _max = double.MinValue;
+
+        public void Add(int count, double sum, double min, double max)
+        {
+            _count += count;
+            _sum += sum;
+            _min = Math.Min(_min, min);
+            _max = Math.Max(_max, max);
+        }
+
+        public LatencyAggregate ToAggregate() => new()
+        {
+            Count = _count,
+            AvgMs = _sum / _count,
+            MinMs = _min,
+            MaxMs = _max,
+        };
+    }
+
+    private sealed class LatencyBucketRow
+    {
+        [JsonProperty("bucket")] public string? Bucket { get; set; }
+        [JsonProperty("count")] public int Count { get; set; }
+        [JsonProperty("sum")] public double Sum { get; set; }
+        [JsonProperty("min")] public double Min { get; set; }
+        [JsonProperty("max")] public double Max { get; set; }
     }
 
     private static async Task<List<LatencyAggregateRow>> RunLatencyAggregateQuery(ICosmosContainerAdapter container, string sql, string fromIso, string toIso)

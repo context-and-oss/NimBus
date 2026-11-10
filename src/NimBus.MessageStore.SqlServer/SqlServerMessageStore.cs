@@ -29,7 +29,7 @@ namespace NimBus.MessageStore.SqlServer;
 /// Concurrency: ROWVERSION on UnresolvedEvents enables optimistic conflict
 /// detection if needed by future writers.
 /// </summary>
-public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore
+public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore
 {
     private readonly SqlServerMessageStoreOptions _options;
     private readonly string _schema;
@@ -244,6 +244,12 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => _metrics.GetEventTypeTimeSeriesMetrics(from, substringLength, bucketLabel);
 
     public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetEventTypeTimeSeriesMetrics(from, to, substringLength, bucketLabel);
+
+    // ───────── Monitor metrics — implementation in SqlServerMetricsStore and SqlServerMessageTrackingStore ─────────
+
+    public Task<LatencyTimeSeriesResult> GetLatencyTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetLatencyTimeSeriesMetrics(from, to, substringLength, bucketLabel);
+
+    public Task<int> GetBlockedSessionCount(string endpointId) => _messageTracking.GetBlockedSessionCount(endpointId);
 
     // ───────── Event schema store — implementation in SqlServerEventSchemaStore ─────────
 
