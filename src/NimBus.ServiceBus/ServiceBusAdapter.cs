@@ -12,7 +12,34 @@ namespace NimBus.ServiceBus;
 
 public interface IServiceBusAdapter
 {
+    /// <summary>
+    /// Handles a session message using only <see cref="ServiceBusSessionMessageActions"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ServiceBusSessionMessageActions"/> can read and write session state but cannot
+    /// settle messages. After the handler runs, completing the message throws; the failure is
+    /// reported to the Resolver as a dead-letter ErrorResponse, the dead-letter call also fails and
+    /// is swallowed, and the message stays unsettled (and is redelivered) unless the host
+    /// auto-completes it. Bind <see cref="ServiceBusMessageActions"/> in the trigger and call
+    /// <see cref="Handle(ServiceBusReceivedMessage, ServiceBusMessageActions, ServiceBusSessionMessageActions, CancellationToken)"/>
+    /// instead.
+    /// </remarks>
+    /// <param name="message">The received message.</param>
+    /// <param name="sessionActions">The session actions used for session state.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    [Obsolete("ServiceBusSessionMessageActions cannot complete or dead-letter messages. Bind ServiceBusMessageActions in the trigger and call Handle(message, messageActions, sessionActions, cancellationToken). This overload will be removed in v5.")]
     Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Handles a session message from an Azure Functions isolated-worker Service Bus trigger. This is
+    /// the overload to use from the isolated worker: the message is settled (completed or
+    /// dead-lettered) through <paramref name="messageActions"/>, while session state is read and
+    /// written through <paramref name="sessionActions"/>.
+    /// </summary>
+    /// <param name="message">The received message.</param>
+    /// <param name="messageActions">The message actions used to complete or dead-letter the message.</param>
+    /// <param name="sessionActions">The session actions used for session state.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default);
     Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionReceiver sessionReceiver, CancellationToken cancellationToken = default);
     Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default);
@@ -42,6 +69,8 @@ public class ServiceBusAdapter : IServiceBusAdapter
         _cloudEventReadOptions = cloudEventReadOptions;
     }
 
+    /// <inheritdoc />
+    [Obsolete("ServiceBusSessionMessageActions cannot complete or dead-letter messages. Bind ServiceBusMessageActions in the trigger and call Handle(message, messageActions, sessionActions, cancellationToken). This overload will be removed in v5.")]
     public async Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default)
     {
         var messageWrapper = new ServiceBusMessage(message);
@@ -51,6 +80,7 @@ public class ServiceBusAdapter : IServiceBusAdapter
         await HandleWithLatencyTracking(message, messageContext, cancellationToken);
     }
 
+    /// <inheritdoc />
     public async Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default)
     {
         var messageWrapper = new ServiceBusMessage(message);
