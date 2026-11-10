@@ -518,6 +518,27 @@ public class ResolverServiceTests
     }
 
     [TestMethod]
+    public async Task Handle_ErrorResponse_RecordsRetryCountOnHistoryAndAuditRow()
+    {
+        // The SDK stamps RetryCount on every response; the Resolver must persist it on
+        // both the per-message history row and the per-event audit row.
+        var cosmos = new FakeCosmosDbClient();
+        var errorResponse = CreateMessageContext(
+            messageType: MessageType.ErrorResponse,
+            to: "Resolver",
+            from: "BillingEndpoint");
+        errorResponse.RetryCount = 2;
+
+        var service = CreateService(cosmos);
+        await service.Handle(errorResponse);
+
+        Assert.AreEqual(1, cosmos.StoredMessages.Count);
+        Assert.AreEqual(2, cosmos.StoredMessages[0].RetryCount);
+        Assert.AreEqual(1, cosmos.FailedUploads.Count);
+        Assert.AreEqual(2, cosmos.FailedUploads[0].Content.RetryCount);
+    }
+
+    [TestMethod]
     public async Task Handle_UnexpectedException_DeadLettersMessage()
     {
         var cosmos = new FakeCosmosDbClient
