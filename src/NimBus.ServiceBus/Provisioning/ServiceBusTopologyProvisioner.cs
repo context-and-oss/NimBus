@@ -10,7 +10,8 @@ namespace NimBus.ServiceBus.Provisioning;
 /// Provisions the Service Bus topology (topics, session-enabled subscriptions, forwarding
 /// subscriptions, and SQL routing rules) for every endpoint declared by an <see cref="IPlatform"/>.
 /// Idempotent: existing entities are left untouched when they already match the desired shape;
-/// subscriptions whose session flag or forward target differ are deleted and recreated.
+/// subscriptions whose session flag differs are deleted and recreated, a wrong forward target is
+/// corrected in place, and a forwarding subscription paused from the WebApp keeps its backlog.
 /// </summary>
 /// <remarks>
 /// The <c>nb topology apply</c> command wraps this class for the built-in platform configuration.
@@ -143,8 +144,10 @@ public sealed class ServiceBusTopologyProvisioner
 
     /// <summary>
     /// Creates <paramref name="expected"/> on <paramref name="topicName"/>, or brings an
-    /// existing subscription up to it. A subscription whose session flag or forward target
-    /// differs is deleted and recreated — neither can be changed in place.
+    /// existing subscription up to it. A subscription whose session flag differs is deleted
+    /// and recreated, because that cannot change in place. A wrong or missing forward target
+    /// and a too-short message expiry are corrected in place. A paused forwarder (not Active,
+    /// forward target detached) is left alone with its messages; only its rules are ensured.
     /// </summary>
     /// <remarks>
     /// Also the rebuild path behind <see cref="ITopologyRebuilder"/>: the WebApp's
@@ -159,28 +162,50 @@ public sealed class ServiceBusTopologyProvisioner
         CancellationToken cancellationToken)
     {
         var existing = await TryGetSubscriptionAsync(client, topicName, expected.Name, cancellationToken).ConfigureAwait(false);
-        var mismatched = existing is not null
-            && (existing.RequiresSession != expected.RequiresSession
-                || !ForwardToMatches(existing.ForwardTo, expected.ForwardTo));
+        var sessionMismatched = existing is not null && existing.RequiresSession != expected.RequiresSession;
 
-        if (existing is null || mismatched)
+        if (existing is null || sessionMismatched)
         {
-            if (mismatched)
+            if (sessionMismatched)
             {
                 await client.DeleteSubscriptionAsync(topicName, expected.Name, cancellationToken).ConfigureAwait(false);
             }
 
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, expected), cancellationToken).ConfigureAwait(false);
-            log($"{(mismatched ? "Recreated" : "Created")} {DescribeKind(expected)}subscription '{expected.Name}' on topic '{topicName}'{DescribeForwarding(expected)}.");
+            log($"{(sessionMismatched ? "Recreated" : "Created")} {DescribeKind(expected)}subscription '{expected.Name}' on topic '{topicName}'{DescribeForwarding(expected)}.");
         }
-        else if (NeedsExpiryUpdate(existing, expected))
+        else if (IsPausedForwarder(existing, expected))
         {
-            // TTL and dead-lettering on expiry can change in place. Recreating would delete
-            // whatever the subscription holds — for Deferred, every parked message.
-            existing.DefaultMessageTimeToLive = expected.DefaultMessageTimeToLive ?? existing.DefaultMessageTimeToLive;
-            existing.DeadLetteringOnMessageExpiration |= expected.DeadLetterOnMessageExpiration;
-            await client.UpdateSubscriptionAsync(existing, cancellationToken).ConfigureAwait(false);
-            log($"Updated message expiry on subscription '{expected.Name}' on topic '{topicName}'.");
+            // The WebApp's Pause detaches ForwardTo and disables receive so messages collect
+            // here. Touching it would undo the pause, and recreating it would discard the
+            // backlog it was paused to hold. Resume puts the forward target back.
+            log($"Skipped paused forward subscription '{expected.Name}' on topic '{topicName}': left as is with its messages until it is resumed.");
+        }
+        else
+        {
+            // Forward target, TTL and dead-lettering on expiry all change in place.
+            // Recreating would delete whatever the subscription holds — for Deferred, every
+            // parked message; for a forwarder, anything not yet forwarded.
+            var updates = new List<string>();
+
+            if (!ForwardToMatches(existing.ForwardTo, expected.ForwardTo))
+            {
+                existing.ForwardTo = expected.ForwardTo ?? string.Empty;
+                updates.Add($"forward target{DescribeForwarding(expected)}");
+            }
+
+            if (NeedsExpiryUpdate(existing, expected))
+            {
+                existing.DefaultMessageTimeToLive = expected.DefaultMessageTimeToLive ?? existing.DefaultMessageTimeToLive;
+                existing.DeadLetteringOnMessageExpiration |= expected.DeadLetterOnMessageExpiration;
+                updates.Add("message expiry");
+            }
+
+            if (updates.Count > 0)
+            {
+                await client.UpdateSubscriptionAsync(existing, cancellationToken).ConfigureAwait(false);
+                log($"Updated {string.Join(" and ", updates)} on subscription '{expected.Name}' on topic '{topicName}'.");
+            }
         }
 
         // Service Bus auto-creates a $Default true-filter on every new subscription. Left
@@ -205,6 +230,15 @@ public sealed class ServiceBusTopologyProvisioner
     private static bool NeedsExpiryUpdate(SubscriptionProperties existing, ExpectedSubscription expected) =>
         (expected.DefaultMessageTimeToLive is { } timeToLive && existing.DefaultMessageTimeToLive < timeToLive)
         || (expected.DeadLetterOnMessageExpiration && !existing.DeadLetteringOnMessageExpiration);
+
+    /// <summary>
+    /// True when <paramref name="existing"/> is a forwarder the WebApp has paused: it should
+    /// forward, but its forward target is detached and it is not Active.
+    /// </summary>
+    private static bool IsPausedForwarder(SubscriptionProperties existing, ExpectedSubscription expected) =>
+        !string.IsNullOrEmpty(expected.ForwardTo)
+        && string.IsNullOrEmpty(existing.ForwardTo)
+        && existing.Status != EntityStatus.Active;
 
     private static string DescribeKind(ExpectedSubscription expected) =>
         expected.ForwardTo is not null ? "forward " : expected.RequiresSession ? "session " : string.Empty;

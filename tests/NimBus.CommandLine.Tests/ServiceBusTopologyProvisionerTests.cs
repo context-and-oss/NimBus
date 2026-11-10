@@ -371,10 +371,65 @@ public sealed class ServiceBusTopologyProvisionerTests
         Assert.Empty(client.UpdatedSubscriptions);
     }
 
+    [Fact]
+    public async Task ApplyAsync_LeavesAPausedForwardingSubscriptionAndItsBacklogInPlace()
+    {
+        // The WebApp's Pause on a forwarding subscription sets ReceiveDisabled and detaches
+        // ForwardTo so messages collect in it. Deleting and recreating it over the missing
+        // forward target would discard that backlog and silently undo the pause.
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("CrmEndpoint");
+        client.SeedTopic("ErpEndpoint");
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "ErpEndpoint",
+            requiresSession: false, forwardTo: string.Empty, status: EntityStatus.ReceiveDisabled));
+
+        var crm = new EventEndpoint("CrmEndpoint", produces: new[] { "ContactCreated" }, consumes: Array.Empty<string>());
+        var erp = new EventEndpoint("ErpEndpoint", produces: Array.Empty<string>(), consumes: new[] { "ContactCreated" });
+        var sut = CreateProvisioner(client, new TestPlatform(crm, erp));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.DoesNotContain(client.DeletedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.DoesNotContain(client.CreatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.DoesNotContain(client.UpdatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+
+        var stillPaused = client.GetSeeded("CrmEndpoint", "ErpEndpoint");
+        Assert.Equal(EntityStatus.ReceiveDisabled, stillPaused.Status);
+        Assert.True(string.IsNullOrEmpty(stillPaused.ForwardTo));
+
+        // Rules are still ensured, so resuming forwards exactly what the topology describes.
+        Assert.Contains(client.CreatedRules, r => r.TopicName == "CrmEndpoint" && r.SubscriptionName == "ErpEndpoint" && r.Rule.Name == "ContactCreated");
+    }
+
+    [Fact]
+    public async Task ApplyAsync_CorrectsTheForwardTargetOfAnActiveSubscriptionInPlace()
+    {
+        // A forward target that is missing or wrong on an Active subscription can change in
+        // place; recreating would delete whatever the subscription holds.
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("CrmEndpoint");
+        client.SeedTopic("ErpEndpoint");
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "ErpEndpoint",
+            requiresSession: false, forwardTo: "SomewhereElse"));
+
+        var crm = new EventEndpoint("CrmEndpoint", produces: new[] { "ContactCreated" }, consumes: Array.Empty<string>());
+        var erp = new EventEndpoint("ErpEndpoint", produces: Array.Empty<string>(), consumes: new[] { "ContactCreated" });
+        var sut = CreateProvisioner(client, new TestPlatform(crm, erp));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.DoesNotContain(client.DeletedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.DoesNotContain(client.CreatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        var updated = Assert.Single(client.UpdatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.Equal("ErpEndpoint", updated.ForwardTo);
+        Assert.Equal(EntityStatus.Active, updated.Status);
+    }
+
     private static SubscriptionProperties MakeSubscriptionProperties(
         string topicName, string subscriptionName,
         bool requiresSession = false, string? forwardTo = null,
-        TimeSpan? defaultMessageTimeToLive = null, bool deadLetteringOnMessageExpiration = false) =>
+        TimeSpan? defaultMessageTimeToLive = null, bool deadLetteringOnMessageExpiration = false,
+        EntityStatus? status = null) =>
         ServiceBusModelFactory.SubscriptionProperties(
             topicName, subscriptionName,
             lockDuration: TimeSpan.FromMinutes(1),
@@ -384,7 +439,7 @@ public sealed class ServiceBusTopologyProvisionerTests
             deadLetteringOnMessageExpiration: deadLetteringOnMessageExpiration,
             maxDeliveryCount: 10,
             enableBatchedOperations: true,
-            status: EntityStatus.Active,
+            status: status ?? EntityStatus.Active,
             forwardTo: forwardTo,
             forwardDeadLetteredMessagesTo: string.Empty,
             userMetadata: string.Empty);
@@ -419,6 +474,9 @@ public sealed class ServiceBusTopologyProvisionerTests
         public List<string> CreatedTopics { get; } = new();
 
         public void SeedTopic(string topicName) => _topics.Add(topicName);
+
+        public SubscriptionProperties GetSeeded(string topicName, string subscriptionName) =>
+            _subscriptions[(topicName, subscriptionName)];
 
         public void SeedSubscription(string topicName, SubscriptionProperties properties) =>
             _subscriptions[(topicName, properties.SubscriptionName)] = properties;
