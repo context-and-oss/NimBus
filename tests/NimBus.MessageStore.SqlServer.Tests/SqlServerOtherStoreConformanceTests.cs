@@ -85,6 +85,21 @@ public sealed class SqlServerMonitorMetricsStoreTests : MonitorMetricsStoreConfo
 }
 
 [TestClass]
+public sealed class SqlServerDashboardTokenStoreTests : DashboardTokenStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerDashboardTokenStoreTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerDashboardTokenStoreTests));
+
+    protected override IDashboardTokenStore CreateStore()
+        => (IDashboardTokenStore)SqlServerStoreTestHarness.CreateStore(typeof(SqlServerDashboardTokenStoreTests));
+}
+
+[TestClass]
 public sealed class SqlServerEventSchemaStoreConformanceTests : EventSchemaStoreConformanceTests
 {
     [ClassInitialize]

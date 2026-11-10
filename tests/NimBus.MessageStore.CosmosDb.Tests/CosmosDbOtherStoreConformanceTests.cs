@@ -44,6 +44,13 @@ public sealed class CosmosDbMonitorMetricsStoreTests : MonitorMetricsStoreConfor
 }
 
 [TestClass]
+public sealed class CosmosDbDashboardTokenStoreTests : DashboardTokenStoreConformanceTests
+{
+    protected override IDashboardTokenStore CreateStore()
+        => (IDashboardTokenStore)CosmosDbStoreTestHarness.CreateStore();
+}
+
+[TestClass]
 public sealed class CosmosDbEventSchemaStoreConformanceTests : EventSchemaStoreConformanceTests
 {
     protected override IEventSchemaStore CreateStore()

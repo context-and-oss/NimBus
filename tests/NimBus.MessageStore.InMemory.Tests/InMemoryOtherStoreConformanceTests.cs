@@ -39,6 +39,12 @@ public sealed class InMemoryMonitorMetricsStoreTests : MonitorMetricsStoreConfor
 }
 
 [TestClass]
+public sealed class InMemoryDashboardTokenStoreTests : DashboardTokenStoreConformanceTests
+{
+    protected override IDashboardTokenStore CreateStore() => new InMemoryMessageStore();
+}
+
+[TestClass]
 public sealed class InMemoryEventSchemaStoreConformanceTests : EventSchemaStoreConformanceTests
 {
     protected override IEventSchemaStore CreateStore() => new InMemoryMessageStore();
