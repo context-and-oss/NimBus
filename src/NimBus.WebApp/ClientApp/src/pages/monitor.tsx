@@ -567,7 +567,7 @@ const LatencyChart = ({
   buckets: { timestamp: string; values: Record<string, number | null> }[];
   ariaLabel: string;
 }) => (
-  <div className="flex flex-col gap-[0.3em]">
+  <div className="flex flex-col gap-[0.9em]">
     <div className="flex items-baseline justify-between gap-[1em]">
       <ChartLegend lines={series} />
       <span className="font-mono text-[0.85em]">
@@ -756,7 +756,10 @@ const EndpointRow = ({
       </th>
       <td className="px-[0.8em] py-[0.55em] text-left whitespace-nowrap">
         <span className="inline-flex items-center gap-[0.5em]">
-          <StateBadge state={state} fresh={endpoint.isFreshFailure && state === "nogo"} />
+          {/* An operator's "✓ acked" button already says the state. */}
+          {!(state === "acked" && !readOnly) && (
+            <StateBadge state={state} fresh={endpoint.isFreshFailure && state === "nogo"} />
+          )}
           {failing && !readOnly && (
             <AckButton acked={state === "acked"} disabled={!canAck} onAck={onAck} onUnack={onUnack} />
           )}

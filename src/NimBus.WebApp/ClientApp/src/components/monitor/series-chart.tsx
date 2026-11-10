@@ -62,7 +62,7 @@ export function SeriesChart({
   return (
     <div className="flex gap-[0.6em] min-w-0">
       <div
-        className="flex flex-col justify-between w-[3.4em] shrink-0 text-right font-mono text-[0.75em] text-muted-foreground"
+        className="flex flex-col justify-between w-[4.6em] shrink-0 text-right whitespace-nowrap font-mono text-[0.75em] text-muted-foreground"
         style={{ height: `${heightEm / 0.75}em` }}
         aria-hidden="true"
       >
