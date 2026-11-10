@@ -71,7 +71,9 @@ export default function Insights() {
   const group = searchParams.get("group") || undefined;
   const panel = searchParams.get("panel") === "patterns" ? "patterns" : "failures";
 
-  const [data, setData] = useState<api.FailedInsightsOverview | null>(null);
+  // The overview is kept with the scope it was loaded for, so another scope's numbers are never
+  // shown under the current selection: not while that selection loads, and not if it fails.
+  const [loaded, setLoaded] = useState<{ scopeKey: string; overview: api.FailedInsightsOverview }>();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>();
   const [endpoints, setEndpoints] = useState<string[]>([]);
@@ -106,11 +108,14 @@ export default function Insights() {
 
   const rangeFrom = range?.from.toISOString();
   const rangeTo = range?.to.toISOString();
+  const scopeKey = `${rangeFrom && rangeTo ? `${rangeFrom}|${rangeTo}` : period}|${endpointId ?? ""}`;
+  const data = loaded?.scopeKey === scopeKey ? loaded.overview : null;
   useEffect(() => {
     const mine = ++ticket.current;
     const refresh = freshRead.current;
     freshRead.current = false;
     setLoading(true);
+    setLoadError(undefined);
     new api.Client(api.CookieAuth())
       .getMetricsFailedInsights(
         period,
@@ -120,9 +125,7 @@ export default function Insights() {
         refresh ? true : undefined,
       )
       .then((result) => {
-        if (mine !== ticket.current) return;
-        setData(result);
-        setLoadError(undefined);
+        if (mine === ticket.current) setLoaded({ scopeKey, overview: result });
       })
       .catch(() => {
         if (mine === ticket.current) setLoadError("Failure insights couldn't be loaded. Try again.");
@@ -130,7 +133,7 @@ export default function Insights() {
       .finally(() => {
         if (mine === ticket.current) setLoading(false);
       });
-  }, [period, rangeFrom, rangeTo, endpointId, refreshCount]);
+  }, [period, rangeFrom, rangeTo, endpointId, scopeKey, refreshCount]);
 
   const refresh = () => {
     freshRead.current = true;
@@ -142,7 +145,9 @@ export default function Insights() {
   // shows error patterns and the banner. The URL keeps the request, so a later refresh restores it.
   const by: InsightsGroupBy = data && !enriched && requestedBy !== "patterns" ? "patterns" : requestedBy;
   const openPanel = group && by === requestedBy ? group : undefined;
-  const scope: InsightsScope | undefined = data?.from && data?.to ? { from: data.from, to: data.to, endpointId } : undefined;
+  // The drill-down asks for exactly the scope the overview was built for, endpoint included.
+  const scope: InsightsScope | undefined =
+    data?.from && data?.to ? { from: data.from, to: data.to, endpointId: data.endpointId ?? undefined } : undefined;
   const insightGroups = by === "cause" ? data?.causeGroups : by === "guidance" ? data?.guidanceGroups : undefined;
   const total = data?.totalOccurrences ?? data?.totalFailed ?? 0;
 
@@ -266,9 +271,14 @@ export default function Insights() {
           </p>
         )}
         {loadError && (
-          <p role="alert" className="text-sm text-status-danger">
-            {loadError}
-          </p>
+          <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-status-danger">
+            <span>{loadError}</span>
+            {!data && (
+              <Button size="sm" variant="outline" onClick={refresh}>
+                Try again
+              </Button>
+            )}
+          </div>
         )}
 
         {!data && loading ? (
@@ -276,7 +286,8 @@ export default function Insights() {
             <Spinner size="lg" />
           </div>
         ) : data ? (
-          <>
+          // Refresh re-reads the same scope: its content stays, dimmed, until the new read lands.
+          <div aria-busy={loading} className={`flex flex-col gap-6 transition-opacity ${loading ? "opacity-60" : ""}`}>
             <Card>
               <CardHeader>
                 <CardTitle>{GROUP_BY_OPTIONS.find((o) => o.value === by)?.label}</CardTitle>
@@ -314,7 +325,7 @@ export default function Insights() {
             {openPanel && scope && (
               panel === "patterns" && by !== "patterns" ? (
                 <GroupPatterns
-                  key={`patterns|${by}|${openPanel}|${scope.from.toISOString()}|${scope.to.toISOString()}|${endpointId ?? ""}`}
+                  key={`patterns|${by}|${openPanel}|${scope.from.toISOString()}|${scope.to.toISOString()}|${scope.endpointId ?? ""}`}
                   scope={scope}
                   perspective={PERSPECTIVE[by]}
                   groupKey={openPanel}
@@ -323,7 +334,7 @@ export default function Insights() {
                 />
               ) : (
                 <OccurrenceTable
-                  key={`failures|${by}|${openPanel}|${scope.from.toISOString()}|${scope.to.toISOString()}|${endpointId ?? ""}`}
+                  key={`failures|${by}|${openPanel}|${scope.from.toISOString()}|${scope.to.toISOString()}|${scope.endpointId ?? ""}`}
                   scope={scope}
                   perspective={PERSPECTIVE[by]}
                   groupKey={openPanel}
@@ -332,7 +343,7 @@ export default function Insights() {
                 />
               )
             )}
-          </>
+          </div>
         ) : null}
       </div>
     </Page>

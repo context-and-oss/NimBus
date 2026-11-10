@@ -44,7 +44,9 @@ new analysis is unavailable, so **Not analyzed** failures stay that way until a 
 configured.
 
 Saved classifications are read again when the page opens and on **Refresh**. New failures can
-take up to 30 seconds to appear. The range, endpoint, grouping and open group live in the URL,
+take up to 30 seconds to appear. Changing the range or endpoint clears the page until that
+selection has loaded; **Refresh** keeps the current content, dimmed, until the new read arrives.
+If a selection can't be loaded, the page says so and offers **Try again**. The range, endpoint, grouping and open group live in the URL,
 so a view can be shared and coming back from event details returns to it.
 
 ## Access
