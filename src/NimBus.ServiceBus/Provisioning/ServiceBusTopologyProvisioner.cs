@@ -104,7 +104,7 @@ public sealed class ServiceBusTopologyProvisioner
         // same descriptor, and that rebuild is only safe while the two cannot drift.
         foreach (var expected in TopologyDescriptor.ForSystemTopic(Constants.ResolverId))
         {
-            await EnsureSubscriptionAsync(client, Constants.ResolverId, expected, log, cancellationToken).ConfigureAwait(false);
+            await EnsureSubscriptionAsync(client, Constants.ResolverId, expected, isEmulator, log, cancellationToken).ConfigureAwait(false);
         }
 
         var endpointIds = new HashSet<string>(
@@ -115,7 +115,7 @@ public sealed class ServiceBusTopologyProvisioner
         {
             foreach (var expected in TopologyDescriptor.ForEndpointTopic(endpoint, platform, isEmulator))
             {
-                await EnsureSubscriptionAsync(client, endpoint.Id, expected, log, cancellationToken).ConfigureAwait(false);
+                await EnsureSubscriptionAsync(client, endpoint.Id, expected, isEmulator, log, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -137,7 +137,7 @@ public sealed class ServiceBusTopologyProvisioner
                     target.Key,
                     target.Select(forward => forward.EventTypeId).OrderBy(id => id, StringComparer.Ordinal).Distinct(StringComparer.Ordinal));
 
-                await EnsureSubscriptionAsync(client, group.Key, expected, log, cancellationToken).ConfigureAwait(false);
+                await EnsureSubscriptionAsync(client, group.Key, expected, isEmulator, log, cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -153,11 +153,14 @@ public sealed class ServiceBusTopologyProvisioner
     /// Also the rebuild path behind <see cref="ITopologyRebuilder"/>: the WebApp's
     /// subscription admin deletes a subscription to discard a backlog and calls this to put
     /// back something identical to what provisioning would have created.
+    /// <paramref name="isEmulator"/> selects how a mismatched rule is reconciled: updated in
+    /// place on a real namespace, deleted and recreated on an emulator.
     /// </remarks>
     internal static async Task EnsureSubscriptionAsync(
         ServiceBusAdministrationClient client,
         string topicName,
         ExpectedSubscription expected,
+        bool isEmulator,
         Action<string> log,
         CancellationToken cancellationToken)
     {
@@ -218,7 +221,7 @@ public sealed class ServiceBusTopologyProvisioner
 
         foreach (var rule in expected.Rules)
         {
-            await EnsureRuleAsync(client, topicName, expected.Name, rule.Name, rule.Filter, rule.Action, log, cancellationToken).ConfigureAwait(false);
+            await EnsureRuleAsync(client, topicName, expected.Name, rule.Name, rule.Filter, rule.Action, isEmulator, log, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -304,6 +307,19 @@ public sealed class ServiceBusTopologyProvisioner
         return lastSlash < 0 ? path : path.Substring(lastSlash + 1);
     }
 
+    /// <summary>
+    /// Creates a missing rule, leaves a matching one untouched, and reconciles a rule whose
+    /// filter or action differs.
+    /// </summary>
+    /// <remarks>
+    /// On a real namespace a mismatched rule is replaced in place with one
+    /// <c>UpdateRuleAsync</c> call, so there is no window between a delete and a create in
+    /// which publishes go unrouted. Creating the new rule beside the old one is not an
+    /// option: every matching rule with an action produces its own copy, so an overlap
+    /// would duplicate forwards with fresh EventIds. The emulators keep delete-then-create:
+    /// the in-repo emulator's admin PUT rejects an existing rule, and the official
+    /// emulator's support for rule updates is not guaranteed.
+    /// </remarks>
     private static async Task EnsureRuleAsync(
         ServiceBusAdministrationClient client,
         string topicName,
@@ -311,12 +327,22 @@ public sealed class ServiceBusTopologyProvisioner
         string ruleName,
         string filter,
         string? action,
+        bool isEmulator,
         Action<string> log,
         CancellationToken cancellationToken)
     {
         var existing = await TryGetRuleAsync(client, topicName, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false);
         if (existing is not null && RuleMatches(existing, filter, action))
         {
+            return;
+        }
+
+        if (existing is not null && !isEmulator)
+        {
+            existing.Filter = new SqlRuleFilter(filter);
+            existing.Action = string.IsNullOrWhiteSpace(action) ? null : new SqlRuleAction(action);
+            await client.UpdateRuleAsync(topicName, subscriptionName, existing, cancellationToken).ConfigureAwait(false);
+            log($"Updated rule '{ruleName}' on '{topicName}/{subscriptionName}'.");
             return;
         }
 

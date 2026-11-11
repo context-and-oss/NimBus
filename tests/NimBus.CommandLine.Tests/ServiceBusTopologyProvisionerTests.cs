@@ -74,9 +74,11 @@ public sealed class ServiceBusTopologyProvisionerTests
         //   same EventTypeId -> forwarded back to CRM -> ...
         // Service Bus's MaxHopCount eventually dead-letters the message
         // ("Maximum transfer hop count is exceeded").
-        // The fix: filter must include "AND user.From IS NULL" so the rule only fires
-        // on original publishes (where the publisher never sets From), not on
-        // already-forwarded copies (where the action SETs From=<endpoint>).
+        // "user.From IS NULL" keeps the rule off already-forwarded copies (where the
+        // action SETs From=<endpoint>). "user.MessageType = 'EventRequest'" keeps it off
+        // the endpoint's own control traffic about the event (responses to the Resolver,
+        // RetryRequest, ProcessDeferredRequest, resubmissions), which carries the same
+        // EventTypeId and no From and would otherwise ping-pong between the endpoints.
         var client = new RecordingAdministrationClient();
 
         var crm = new EventEndpoint(
@@ -99,10 +101,143 @@ public sealed class ServiceBusTopologyProvisionerTests
         var crmFilter = ((SqlRuleFilter)crmToErpRule.Rule.Filter).SqlExpression;
         var erpFilter = ((SqlRuleFilter)erpToCrmRule.Rule.Filter).SqlExpression;
 
-        Assert.Contains("user.From IS NULL", crmFilter, StringComparison.Ordinal);
-        Assert.Contains("user.From IS NULL", erpFilter, StringComparison.Ordinal);
-        Assert.Contains("user.EventTypeId = 'ContactCreated'", crmFilter, StringComparison.Ordinal);
-        Assert.Contains("user.EventTypeId = 'ContactCreated'", erpFilter, StringComparison.Ordinal);
+        Assert.Equal(NewContactCreatedFilter, crmFilter, StringComparer.Ordinal);
+        Assert.Equal(NewContactCreatedFilter, erpFilter, StringComparer.Ordinal);
+    }
+
+    private const string NewContactCreatedFilter =
+        "user.EventTypeId = 'ContactCreated' AND user.MessageType = 'EventRequest' AND user.From IS NULL";
+
+    // The forwarder filter provisioned before the MessageType guard: a migration fixture.
+    private const string PreviousContactCreatedFilter =
+        "user.EventTypeId = 'ContactCreated' AND user.From IS NULL";
+
+    private static TestPlatform CrmErpPlatform() => new(
+        new[] { new DynamicForward("CrmEndpoint", "LegacyOrderPlaced", "ErpEndpoint") },
+        new EventEndpoint("CrmEndpoint", produces: new[] { "ContactCreated" }, consumes: new[] { "ContactCreated" }),
+        new EventEndpoint("ErpEndpoint", produces: new[] { "ContactCreated" }, consumes: new[] { "ContactCreated" }));
+
+    /// <summary>
+    /// Provisions the CRM/ERP topology, then puts the CrmEndpoint→ErpEndpoint forwarder rule
+    /// back to the filter older releases laid down, as an existing namespace would have it.
+    /// </summary>
+    private static async Task<(RecordingAdministrationClient Client, ServiceBusTopologyProvisioner Sut, string Action)> SeedPreviousForwarderRuleAsync(string connectionString)
+    {
+        var client = new RecordingAdministrationClient();
+        var sut = CreateProvisioner(client, CrmErpPlatform(), connectionString);
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        var action = TopologyDescriptor.ForwardAction("CrmEndpoint", "ErpEndpoint");
+        client.SeedRule("CrmEndpoint", "ErpEndpoint", ServiceBusModelFactory.RuleProperties(
+            "ContactCreated", new SqlRuleFilter(PreviousContactCreatedFilter), new SqlRuleAction(action)));
+        client.ResetRecords();
+        return (client, sut, action);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_RealNamespace_UpdatesMismatchedForwarderRuleInPlace()
+    {
+        // Deleting and recreating the rule would leave a window in which publishes of the
+        // type are not forwarded; a real namespace replaces the rule in one call.
+        var (client, sut, action) = await SeedPreviousForwarderRuleAsync(RealNamespaceConnectionString);
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        var updated = Assert.Single(client.UpdatedRules);
+        Assert.Equal(("CrmEndpoint", "ErpEndpoint", "ContactCreated"), (updated.TopicName, updated.SubscriptionName, updated.RuleName));
+        Assert.Equal(NewContactCreatedFilter, updated.Filter, StringComparer.Ordinal);
+        Assert.Equal(action, updated.Action, StringComparer.Ordinal);
+        Assert.DoesNotContain(client.DeletedRules, rule => rule.RuleName == "ContactCreated");
+        Assert.DoesNotContain(client.CreatedRules, rule => rule.Rule.Name == "ContactCreated");
+    }
+
+    [Fact]
+    public async Task ApplyAsync_Emulator_RecreatesMismatchedRule()
+    {
+        // The emulator's admin endpoint rejects a PUT for a rule that exists, so it keeps
+        // delete-then-create.
+        var (client, sut, action) = await SeedPreviousForwarderRuleAsync(EmulatorConnectionString);
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.Empty(client.UpdatedRules);
+        Assert.Equal(
+            new[] { "delete CrmEndpoint/ErpEndpoint/ContactCreated", "create CrmEndpoint/ErpEndpoint/ContactCreated" },
+            client.Operations);
+        var created = Assert.Single(client.CreatedRules).Rule;
+        Assert.Equal(NewContactCreatedFilter, ((SqlRuleFilter)created.Filter).SqlExpression, StringComparer.Ordinal);
+        Assert.Equal(action, ((SqlRuleAction)created.Action).SqlExpression, StringComparer.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(RealNamespaceConnectionString)]
+    [InlineData(EmulatorConnectionString)]
+    public async Task ApplyAsync_WhenEveryRuleMatches_WritesNoRule(string connectionString)
+    {
+        var client = new RecordingAdministrationClient();
+        var sut = CreateProvisioner(client, CrmErpPlatform(), connectionString);
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+        // The first apply removes every $Default it should; nothing is left to clean up.
+        Assert.All(client.DeletedRules, rule => Assert.Equal(TopologyDescriptor.DefaultRuleName, rule.RuleName));
+        client.ResetRecords();
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.Empty(client.UpdatedRules);
+        Assert.Empty(client.CreatedRules);
+        Assert.Empty(client.DeletedRules);
+    }
+
+    [Fact]
+    public async Task Rebuilder_LegacyConstructor_UpdatesMismatchedForwarderRuleInPlace()
+    {
+        var (client, expected) = SeedSubscriptionWithPreviousForwarderRule();
+        var sut = new ServiceBusTopologyRebuilder(client);
+
+        await sut.EnsureSubscriptionAsync("CrmEndpoint", expected);
+
+        Assert.False(sut.IsEmulator);
+        var updated = Assert.Single(client.UpdatedRules);
+        Assert.Equal("ContactCreated", updated.RuleName);
+        Assert.Equal(NewContactCreatedFilter, updated.Filter, StringComparer.Ordinal);
+        Assert.Equal(expected.Rules.Single().Action, updated.Action, StringComparer.Ordinal);
+        Assert.Empty(client.CreatedRules);
+        Assert.DoesNotContain(client.DeletedRules, rule => rule.RuleName == "ContactCreated");
+    }
+
+    [Fact]
+    public async Task Rebuilder_OnEmulator_RecreatesMismatchedForwarderRule()
+    {
+        var (client, expected) = SeedSubscriptionWithPreviousForwarderRule();
+        var sut = new ServiceBusTopologyRebuilder(client, isEmulator: true);
+
+        await sut.EnsureSubscriptionAsync("CrmEndpoint", expected);
+
+        Assert.True(sut.IsEmulator);
+        Assert.Empty(client.UpdatedRules);
+        Assert.Equal(
+            new[] { "delete CrmEndpoint/ErpEndpoint/ContactCreated", "create CrmEndpoint/ErpEndpoint/ContactCreated" },
+            client.Operations);
+        var created = Assert.Single(client.CreatedRules).Rule;
+        Assert.Equal(NewContactCreatedFilter, ((SqlRuleFilter)created.Filter).SqlExpression, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// An existing, Active CrmEndpoint→ErpEndpoint forwarder whose ContactCreated rule still
+    /// carries the previous filter — a mismatch that survives into a WebApp rebuild.
+    /// </summary>
+    private static (RecordingAdministrationClient Client, ExpectedSubscription Expected) SeedSubscriptionWithPreviousForwarderRule()
+    {
+        var expected = TopologyDescriptor.ConsumerForwarderSubscription("CrmEndpoint", "ErpEndpoint", new[] { "ContactCreated" });
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("CrmEndpoint");
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "ErpEndpoint",
+            requiresSession: false, forwardTo: "ErpEndpoint"));
+        client.SeedRule("CrmEndpoint", "ErpEndpoint", ServiceBusModelFactory.RuleProperties(
+            "ContactCreated",
+            new SqlRuleFilter(PreviousContactCreatedFilter),
+            new SqlRuleAction(TopologyDescriptor.ForwardAction("CrmEndpoint", "ErpEndpoint"))));
+        return (client, expected);
     }
 
     [Fact]
@@ -444,10 +579,20 @@ public sealed class ServiceBusTopologyProvisionerTests
             forwardDeadLetteredMessagesTo: string.Empty,
             userMetadata: string.Empty);
 
-    private static ServiceBusTopologyProvisioner CreateProvisioner(RecordingAdministrationClient client, IPlatform platform) =>
+    private const string RealNamespaceConnectionString =
+        "Endpoint=sb://example/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=test";
+
+    private const string EmulatorConnectionString =
+        "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;";
+
+    // The CLI wrapper derives isEmulator from the connection string, exactly as `nb topology apply` does.
+    private static ServiceBusTopologyProvisioner CreateProvisioner(
+        RecordingAdministrationClient client,
+        IPlatform platform,
+        string connectionString = RealNamespaceConnectionString) =>
         new(
             new AzureCliRunner(),
-            static (options, cancellationToken, runner) => Task.FromResult("Endpoint=sb://example/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=test"),
+            (options, cancellationToken, runner) => Task.FromResult(connectionString),
             _ => client,
             () => platform);
 
@@ -472,6 +617,19 @@ public sealed class ServiceBusTopologyProvisionerTests
         public List<(string TopicName, string SubscriptionName, CreateRuleOptions Rule)> CreatedRules { get; } = new();
         public List<(string TopicName, string SubscriptionName, string RuleName)> DeletedRules { get; } = new();
         public List<string> CreatedTopics { get; } = new();
+
+        /// <summary>Forgets what was recorded so far, keeping the entities in place.</summary>
+        public void ResetRecords()
+        {
+            CreatedSubscriptions.Clear();
+            DeletedSubscriptions.Clear();
+            UpdatedSubscriptions.Clear();
+            CreatedRules.Clear();
+            DeletedRules.Clear();
+            UpdatedRules.Clear();
+            CreatedTopics.Clear();
+            Operations.Clear();
+        }
 
         public void SeedTopic(string topicName) => _topics.Add(topicName);
 
@@ -555,6 +713,7 @@ public sealed class ServiceBusTopologyProvisionerTests
         public override Task<Response<RuleProperties>> CreateRuleAsync(string topicName, string subscriptionName, CreateRuleOptions ruleOptions, CancellationToken cancellationToken = default)
         {
             CreatedRules.Add((topicName, subscriptionName, ruleOptions));
+            Operations.Add($"create {topicName}/{subscriptionName}/{ruleOptions.Name}");
             var rule = ServiceBusModelFactory.RuleProperties(ruleOptions.Name, ruleOptions.Filter, ruleOptions.Action);
             _rules[(topicName, subscriptionName, ruleOptions.Name)] = rule;
             return Task.FromResult(Response.FromValue(rule, FakeResponse.Instance));
@@ -563,8 +722,28 @@ public sealed class ServiceBusTopologyProvisionerTests
         public override Task<Response> DeleteRuleAsync(string topicName, string subscriptionName, string ruleName, CancellationToken cancellationToken = default)
         {
             DeletedRules.Add((topicName, subscriptionName, ruleName));
+            Operations.Add($"delete {topicName}/{subscriptionName}/{ruleName}");
             _rules.Remove((topicName, subscriptionName, ruleName));
             return Task.FromResult<Response>(FakeResponse.Instance);
+        }
+
+        /// <summary>Rule updates, with the filter and action as they were sent.</summary>
+        public List<(string TopicName, string SubscriptionName, string RuleName, string Filter, string Action)> UpdatedRules { get; } = new();
+
+        /// <summary>Rule writes in the order they happened, for delete-then-create assertions.</summary>
+        public List<string> Operations { get; } = new();
+
+        public override Task<Response<RuleProperties>> UpdateRuleAsync(string topicName, string subscriptionName, RuleProperties rule, CancellationToken cancellationToken = default)
+        {
+            UpdatedRules.Add((
+                topicName,
+                subscriptionName,
+                rule.Name,
+                (rule.Filter as SqlRuleFilter)?.SqlExpression ?? string.Empty,
+                (rule.Action as SqlRuleAction)?.SqlExpression ?? string.Empty));
+            Operations.Add($"update {topicName}/{subscriptionName}/{rule.Name}");
+            _rules[(topicName, subscriptionName, rule.Name)] = rule;
+            return Task.FromResult(Response.FromValue(rule, FakeResponse.Instance));
         }
     }
 

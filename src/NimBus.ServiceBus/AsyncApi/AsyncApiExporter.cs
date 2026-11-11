@@ -2,6 +2,7 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
+using NimBus.ServiceBus.Provisioning;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -31,14 +32,6 @@ namespace NimBus.ServiceBus.AsyncApi;
 /// </summary>
 public static class AsyncApiExporter
 {
-    // Kept in lock-step with ServiceBusTopologyProvisioner so the documented rules match what
-    // provisioning actually creates. If those SQL expressions change, change them here too.
-    private static string ForwardFilter(string eventTypeId) =>
-        $"user.EventTypeId = '{eventTypeId}' AND user.From IS NULL";
-
-    private static string ForwardAction(string from, string to) =>
-        $"SET user.From = '{from}'; SET user.EventId = newid(); SET user.To = '{to}';";
-
     private static string DeliveryFilter(string endpointId) => $"user.To = '{endpointId}'";
 
     /// <summary>Exports an arbitrary platform (WebApp export endpoint, external integration repos, samples, tests).</summary>
@@ -322,8 +315,10 @@ public static class AsyncApiExporter
             ["subscription"] = subscriptionName,
             ["forwardTo"] = target,
             ["requiresSession"] = false,
-            ["filter"] = ForwardFilter(eventId),
-            ["action"] = ForwardAction(sourceTopic, target),
+            // The provisioner's own strings, so the documented rule is byte-identical to the
+            // one `nb topology apply` lays down.
+            ["filter"] = TopologyDescriptor.ForwardFilter(eventId),
+            ["action"] = TopologyDescriptor.ForwardAction(sourceTopic, target),
         };
 
     private static Map BuildComponents(

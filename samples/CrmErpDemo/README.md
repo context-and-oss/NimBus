@@ -86,7 +86,7 @@ graph TB
 
 ### Service Bus topology — how events cross between topics
 
-The provisioner (`CrmErpDemo.Provisioner`) creates one topic per endpoint and one **forwarding subscription** per cross-system consumer. Each forwarding rule is filtered on `EventTypeId AND user.From IS NULL` so the rule fires only on **original publishes**, never on already-forwarded copies — this is what prevents loops.
+The provisioner (`CrmErpDemo.Provisioner`) creates one topic per endpoint and one **forwarding subscription** per cross-system consumer. Each forwarding rule is filtered on `user.EventTypeId = '<type>' AND user.MessageType = 'EventRequest' AND user.From IS NULL` so the rule fires only on **original publishes**: `MessageType = 'EventRequest'` keeps the endpoint's own responses, retries and resubmissions off the forwarder, and `From IS NULL` keeps already-forwarded copies off it — this is what prevents loops.
 
 ```mermaid
 graph LR
@@ -95,14 +95,14 @@ graph LR
 
     subgraph crmSubs["crmendpoint subscriptions"]
         s1["<b>CrmEndpoint</b><br/>(session)<br/><i>filter: user.To = 'CrmEndpoint'</i>"]
-        s2["<b>ErpEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(CrmAccount*, CrmContact*)<br/>AND From IS NULL</i>"]
+        s2["<b>ErpEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(CrmAccount*, CrmContact*)<br/>AND MessageType = 'EventRequest'<br/>AND From IS NULL</i>"]
         s3["<b>Resolver</b>"]
         s4["<b>Deferred / DeferredProcessor</b>"]
     end
 
     subgraph erpSubs["erpendpoint subscriptions"]
         t1["<b>ErpEndpoint</b><br/>(session)<br/><i>filter: user.To = 'ErpEndpoint'</i>"]
-        t2["<b>CrmEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(ErpCustomerCreated, ErpContact*)<br/>AND From IS NULL</i>"]
+        t2["<b>CrmEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(ErpCustomerCreated, ErpContact*)<br/>AND MessageType = 'EventRequest'<br/>AND From IS NULL</i>"]
         t3["<b>Resolver</b>"]
         t4["<b>Deferred / DeferredProcessor</b>"]
     end
@@ -159,7 +159,7 @@ sequenceDiagram
     CrmApi->>SB: Send CrmAccountCreated<br/>topic = crmendpoint, session = AccountId
     CrmApi-->>Web: 201 Created
 
-    Note over SB: ErpEndpoint forward sub matches<br/>(EventTypeId='CrmAccountCreated' AND From IS NULL)<br/>action: SET To='ErpEndpoint' → forward to erpendpoint
+    Note over SB: ErpEndpoint forward sub matches<br/>(EventTypeId='CrmAccountCreated' AND MessageType='EventRequest'<br/>AND From IS NULL)<br/>action: SET To='ErpEndpoint' → forward to erpendpoint
 
     SB-->>ErpAd: deliver CrmAccountCreated
     ErpAd->>ErpApi: PUT /api/customers/by-crm/{AccountId}
