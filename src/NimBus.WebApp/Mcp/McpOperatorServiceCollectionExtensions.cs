@@ -93,7 +93,10 @@ public static class McpOperatorServiceCollectionExtensions
         services.AddScoped<OperatorEndpointCatalog>();
         services.AddScoped<OperatorQueries>();
         services.AddScoped<OperatorPayloadAccess>();
-        services.AddScoped<IOperatorClassificationSource, OperatorClassificationSource>();
+        services.AddScoped<IOperatorClassificationSource>(sp => new OperatorClassificationSource(
+            sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationReader>(),
+            sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationService>(),
+            sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationRecorder>()));
         services.AddScoped<OperatorActionAccess>();
         services.AddSingleton<OperatorActionTokens>();
         services.AddSingleton<OperatorMutationLimiter>();

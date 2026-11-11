@@ -20,12 +20,14 @@ public class McpOperatorEndpointTests
         "nimbus_get_capabilities", "nimbus_list_endpoints", "nimbus_get_overview", "nimbus_get_endpoint",
         "nimbus_find_messages", "nimbus_get_message", "nimbus_get_message_history", "nimbus_get_session",
         "nimbus_search_messages", "nimbus_get_metrics", "nimbus_get_classification", "nimbus_prepare_action",
+        "nimbus_get_failure_evidence",
     ];
 
-    // Spec 035 Phase 2a. Listed for every caller; each checks its own delegated scope and role.
+    // Spec 035 Phase 2a and Spec 044. Listed for every caller; each checks its own scope and role.
     private static readonly string[] WriteTools =
     [
         "nimbus_resubmit_message", "nimbus_skip_message", "nimbus_set_message_reported", "nimbus_classify_failure",
+        "nimbus_record_classification",
     ];
 
     private static readonly string[] OperatorTools = [.. ReadTools, .. WriteTools];
