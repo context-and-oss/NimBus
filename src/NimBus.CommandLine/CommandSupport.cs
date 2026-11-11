@@ -117,36 +117,61 @@ internal static class NamingConventions
         return normalized;
     }
 
-    public static DeploymentNames Build(string solutionId, string environment)
+    public static DeploymentNames Build(string solutionId, string environment) =>
+        Build(solutionId, environment, serviceBusNamespaceName: null);
+
+    /// <summary>
+    /// Same as <see cref="Build(string, string)"/>, with optional overrides:
+    /// <paramref name="serviceBusNamespaceName"/> replaces the derived namespace (a Premium
+    /// namespace deployed next to the Standard one it replaces, spec 034 §6, option A);
+    /// <paramref name="resourceNamePostfix"/> is appended the way the legacy pipeline scripts
+    /// appended it (see <see cref="ResourceNaming"/>); <paramref name="funcStorageAccountName"/>
+    /// replaces the derived function storage account.
+    /// </summary>
+    /// <remarks>
+    /// The legacy templates postfixed the Service Bus namespace, Cosmos DB account, function
+    /// apps and WebApp, but not App Insights or the App Service plans. Matching existing
+    /// resources needs exactly that split, so do not "fix" it by postfixing everything.
+    /// The SQL server did not exist then; it is postfixed because its name is globally
+    /// unique like the others. deploy.core.bicep and deploy.webapp.bicep mirror this rule.
+    /// </remarks>
+    public static DeploymentNames Build(
+        string solutionId,
+        string environment,
+        string? serviceBusNamespaceName,
+        string? resourceNamePostfix = null,
+        string? funcStorageAccountName = null)
     {
         var normalizedSolutionId = NormalizePart(solutionId);
         var normalizedEnvironment = NormalizePart(environment);
+        var postfix = ResourceNaming.NormalizePostfix(resourceNamePostfix);
+        var suffix = postfix is null ? string.Empty : $"-{postfix}";
 
-        return new DeploymentNames(
+        var names = new DeploymentNames(
             normalizedSolutionId,
             normalizedEnvironment,
-            $"sb-{normalizedSolutionId}-{normalizedEnvironment}",
+            $"sb-{normalizedSolutionId}-{normalizedEnvironment}{suffix}",
             $"ai-{normalizedSolutionId}-{normalizedEnvironment}-global-tracelog",
-            $"cosmos-{normalizedSolutionId}-{normalizedEnvironment}",
-            $"sql-{normalizedSolutionId}-{normalizedEnvironment}",
+            $"cosmos-{normalizedSolutionId}-{normalizedEnvironment}{suffix}",
+            $"sql-{normalizedSolutionId}-{normalizedEnvironment}{suffix}",
             $"st{normalizedSolutionId}{normalizedEnvironment}func",
             $"asp-{normalizedSolutionId}-{normalizedEnvironment}-management",
             $"asp-{normalizedSolutionId}-{normalizedEnvironment}-core",
-            $"func-{normalizedSolutionId}-{normalizedEnvironment}-resolver",
-            $"webapp-{normalizedSolutionId}-{normalizedEnvironment}-management");
-    }
+            $"func-{normalizedSolutionId}-{normalizedEnvironment}-resolver{suffix}",
+            $"webapp-{normalizedSolutionId}-{normalizedEnvironment}-management{suffix}",
+            postfix);
 
-    /// <summary>
-    /// Same as <see cref="Build(string, string)"/>, with an optional Service Bus namespace
-    /// name that replaces the derived one: a Premium namespace deployed next to the
-    /// Standard one it replaces (spec 034 §6, option A).
-    /// </summary>
-    public static DeploymentNames Build(string solutionId, string environment, string? serviceBusNamespaceName)
-    {
-        var names = Build(solutionId, environment);
-        return string.IsNullOrWhiteSpace(serviceBusNamespaceName)
-            ? names
-            : names with { ServiceBusNamespace = serviceBusNamespaceName.Trim() };
+        if (!string.IsNullOrWhiteSpace(serviceBusNamespaceName))
+        {
+            names = names with { ServiceBusNamespace = serviceBusNamespaceName.Trim() };
+        }
+
+        if (ResourceNaming.NormalizeFuncStorageAccountName(funcStorageAccountName) is { } storageAccount)
+        {
+            names = names with { FuncStorageAccountName = storageAccount };
+        }
+
+        return names;
     }
 }
 
@@ -161,7 +186,8 @@ internal sealed record DeploymentNames(
     string ManagementAppServicePlanName,
     string CoreAppServicePlanName,
     string ResolverFunctionAppName,
-    string WebAppName);
+    string WebAppName,
+    string? ResourceNamePostfix = null);
 
 internal sealed record InfrastructureOptions(
     string SolutionId,
@@ -186,7 +212,8 @@ internal sealed record InfrastructureOptions(
     int? ServiceBusCapacity = null,
     string? ServiceBusNamespaceName = null,
     TimeSpan? DnsWait = null,
-    AlertMailDeployment? AlertMail = null);
+    AlertMailDeployment? AlertMail = null,
+    string? FuncStorageAccountName = null);
 
 internal enum StorageProviderChoice
 {
@@ -211,7 +238,8 @@ internal sealed record TopologyOptions(
     string Environment,
     string ResourceGroupName,
     string? ServiceBusNamespaceName = null,
-    TimeSpan? DnsWait = null);
+    TimeSpan? DnsWait = null,
+    string? ResourceNamePostfix = null);
 
 internal sealed record AppDeploymentOptions(
     string SolutionId,
@@ -219,7 +247,8 @@ internal sealed record AppDeploymentOptions(
     string ResourceGroupName,
     string Configuration,
     AppDeploymentTarget Target = AppDeploymentTarget.All,
-    TimeSpan? DnsWait = null);
+    TimeSpan? DnsWait = null,
+    string? ResourceNamePostfix = null);
 
 /// <summary>Which application(s) `nb deploy apps` builds and deploys.</summary>
 internal enum AppDeploymentTarget

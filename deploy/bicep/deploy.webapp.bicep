@@ -82,6 +82,12 @@ param privateDnsZoneScope string = ''
 // Must match the value passed to deploy.core.bicep. Empty means sb-{solutionId}-{environment}.
 param serviceBusNamespaceName string = ''
 
+// Legacy pipeline compatibility; must match the value passed to deploy.core.bicep. Postfixes
+// the Service Bus, Cosmos DB and WebApp names; the App Service plan and App Insights keep
+// their names, as the legacy templates did.
+@description('Legacy resource-name postfix. Lowercase letters and digits; empty means none.')
+param resourceNamePostfix string = ''
+
 //##############################################
 // Define names Azure resource names
 //##############################################
@@ -89,7 +95,9 @@ var location = locationParam
 var effectivePlanLocation = empty(managementAppServicePlanLocation) ? location : managementAppServicePlanLocation
 var effectiveWebAppLocation = empty(webAppLocation) ? effectivePlanLocation : webAppLocation
 
-var sbNamespace = empty(serviceBusNamespaceName) ? 'sb-${toLower(solutionId)}-${toLower(environment)}' : serviceBusNamespaceName
+var nameSuffix = empty(resourceNamePostfix) ? '' : '-${toLower(resourceNamePostfix)}'
+
+var sbNamespace = empty(serviceBusNamespaceName) ? 'sb-${toLower(solutionId)}-${toLower(environment)}${nameSuffix}' : serviceBusNamespaceName
 
 var isPrivate = networkMode == 'private'
 var publicAccess = isPrivate && !allowPublicAccess ? 'Disabled' : 'Enabled'
@@ -113,9 +121,9 @@ var networkValidation = !isPrivate
 
 var appServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-management'
 
-var managementWebAppName = 'webapp-${toLower(solutionId)}-${toLower(environment)}-management'
+var managementWebAppName = 'webapp-${toLower(solutionId)}-${toLower(environment)}-management${nameSuffix}'
 
-var cosmosAccountName = 'cosmos-${toLower(solutionId)}-${toLower(environment)}'
+var cosmosAccountName = 'cosmos-${toLower(solutionId)}-${toLower(environment)}${nameSuffix}'
 
 var appInsightsName = 'ai-${toLower(solutionId)}-${toLower(environment)}-global-tracelog'
 
@@ -307,7 +315,7 @@ module peWebApp 'templates/privateEndpoint.bicep' = if (isPrivate) {
     groupId: 'sites'
     privateDnsZoneIds: privateDnsMode == 'external' ? [] : [sitesDnsZoneId]
     tags: {
-      'nimbus-deployment': '${toLower(solutionId)}-${toLower(environment)}'
+      'nimbus-deployment': '${toLower(solutionId)}-${toLower(environment)}${nameSuffix}'
     }
   }
 }

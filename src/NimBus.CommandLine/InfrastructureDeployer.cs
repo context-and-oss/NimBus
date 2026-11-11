@@ -39,6 +39,10 @@ internal sealed class InfrastructureDeployer
             NetworkSelection.ValidateServiceBusNamespaceName(options.ServiceBusNamespaceName.Trim());
         }
 
+        // Legacy naming options fail on malformed values before login too.
+        _ = ResourceNaming.NormalizePostfix(options.ResourceNamePostFix);
+        _ = ResourceNaming.NormalizeFuncStorageAccountName(options.FuncStorageAccountName);
+
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
 
         // Provider registration is subscription-scoped, so an RG-scoped pipeline
@@ -55,11 +59,6 @@ internal sealed class InfrastructureDeployer
                 $"{Environment.NewLine}{eventGridRegistration.StandardError}".TrimEnd());
         }
 
-        if (!string.IsNullOrWhiteSpace(options.ResourceNamePostFix))
-        {
-            CliOutput.WriteLine($"Ignoring --resource-name-postfix '{options.ResourceNamePostFix}' because the current bicep templates do not consume it.");
-        }
-
         // The recorded setup completes whatever the command line leaves out (spec 034 §5.13).
         var resourceGroup = await ResourceGroupTags.ReadAsync(_az, options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
         var stored = NetworkIntent.FromTags(resourceGroup.Tags);
@@ -69,7 +68,17 @@ internal sealed class InfrastructureDeployer
             CliOutput.WriteLine($"Using the network setup recorded on '{options.ResourceGroupName}' ({NetworkIntent.ToTagValue(stored.State)}).");
         }
 
-        var names = NamingConventions.Build(options.SolutionId, options.Environment, serviceBusNamespaceName);
+        // Legacy naming: a recorded postfix or storage account fills in a missing option, and a
+        // different one fails before anything deploys.
+        var resourceNamePostfix = ResourceNaming.ResolvePostfix(options.ResourceNamePostFix, resourceGroup.Tags, options.ResourceGroupName);
+        var funcStorageAccountName = ResourceNaming.ResolveFuncStorageAccountName(options.FuncStorageAccountName, resourceGroup.Tags, options.ResourceGroupName);
+
+        var names = NamingConventions.Build(options.SolutionId, options.Environment, serviceBusNamespaceName, resourceNamePostfix, funcStorageAccountName);
+        ResourceNaming.ValidateLengths(names, serviceBusNamespaceName, options.SqlServerName);
+        if (resourceNamePostfix is not null)
+        {
+            CliOutput.WriteLine(ResourceNaming.DescribePostfix(names, PostfixedNames(options, names)));
+        }
 
         var existingLocations = await DiscoverExistingLocationsAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
         var existingPlans = await DiscoverExistingPlansAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
@@ -150,6 +159,14 @@ internal sealed class InfrastructureDeployer
 
         var serviceBus = new ServiceBusDeployment(serviceBusSku, serviceBusCapacity, serviceBusNamespaceName);
 
+        // A reused storage account keeps its SKU and kind; an unusable kind fails here, before
+        // anything is recorded or deployed.
+        var funcStorage = funcStorageAccountName is null
+            ? null
+            : new FuncStorageDeployment(
+                funcStorageAccountName,
+                await DiscoverFuncStorageAccountAsync(options.ResourceGroupName, funcStorageAccountName, cancellationToken).ConfigureAwait(false));
+
         // Record the intent before deploying: an interrupted run then converges on the next
         // one, and a validation failure above never records a setup that cannot deploy. A
         // deployment that never used private mode or a namespace override gets no tags.
@@ -167,8 +184,10 @@ internal sealed class InfrastructureDeployer
             await RecordNetworkIntentAsync(resourceGroup, desired, cancellationToken).ConfigureAwait(false);
         }
 
+        await RecordResourceNamesAsync(resourceGroup, resourceNamePostfix, funcStorageAccountName, cancellationToken).ConfigureAwait(false);
+
         CliOutput.WriteLine("Deploying core infrastructure...");
-        await DeployCoreInfrastructureAsync(options, names, resolverPlan, managementPlanSku, existingLocations, serviceBus, privateNetwork, cancellationToken).ConfigureAwait(false);
+        await DeployCoreInfrastructureAsync(options, names, resolverPlan, managementPlanSku, existingLocations, serviceBus, privateNetwork, funcStorage, cancellationToken).ConfigureAwait(false);
 
         // The template stops declaring the allow-all-Azure rule once a server is private, but
         // an incremental deployment does not delete it (spec 034 §5.13).
@@ -403,6 +422,7 @@ internal sealed class InfrastructureDeployer
         Dictionary<string, string> existingLocations,
         ServiceBusDeployment serviceBus,
         ResolvedNetwork? privateNetwork,
+        FuncStorageDeployment? funcStorage,
         CancellationToken cancellationToken)
     {
         var storageProviderParam = options.StorageProvider == StorageProviderChoice.SqlServer ? "sqlserver" : "cosmos";
@@ -464,6 +484,20 @@ internal sealed class InfrastructureDeployer
 
         AddAlertMailParameters(arguments, options.AlertMail);
         AddServiceBusParameters(arguments, serviceBus);
+        AddResourceNamePostfixParameter(arguments, names);
+
+        // Nothing is passed without an override, so the template's derived name and its
+        // Standard_LRS / StorageV2 defaults apply exactly as before.
+        if (funcStorage is not null)
+        {
+            arguments.Add($"funcStorageAccountName={funcStorage.Name}");
+            if (funcStorage.Existing is { } existing)
+            {
+                arguments.Add($"funcStorageSkuName={existing.SkuName}");
+                arguments.Add($"funcStorageKind={existing.Kind}");
+            }
+        }
+
         if (privateNetwork is not null)
         {
             AddSharedNetworkParameters(arguments, privateNetwork);
@@ -594,6 +628,8 @@ internal sealed class InfrastructureDeployer
         {
             arguments.Add($"serviceBusNamespaceName={serviceBus.NamespaceName}");
         }
+
+        AddResourceNamePostfixParameter(arguments, names);
 
         if (privateNetwork is not null)
         {
@@ -877,6 +913,127 @@ internal sealed class InfrastructureDeployer
     }
 
     private sealed record ExistingAppServicePlan(string SkuName, string Tier);
+
+    private sealed record ExistingStorageAccount(string SkuName, string Kind);
+
+    private sealed record FuncStorageDeployment(string Name, ExistingStorageAccount? Existing);
+
+    // The names the legacy pipeline postfixed (see NamingConventions.Build), as deployed by
+    // this run's storage provider.
+    private static IEnumerable<string> PostfixedNames(InfrastructureOptions options, DeploymentNames names)
+    {
+        yield return names.ServiceBusNamespace;
+        if (options.StorageProvider == StorageProviderChoice.Cosmos)
+        {
+            yield return names.CosmosAccountName;
+        }
+        else if (options.SqlMode == SqlProvisioningMode.Provision)
+        {
+            yield return EffectiveSqlServerName(options, names);
+        }
+
+        yield return names.ResolverFunctionAppName;
+        yield return names.WebAppName;
+    }
+
+    private static void AddResourceNamePostfixParameter(List<string> arguments, DeploymentNames names)
+    {
+        // Nothing is passed without a postfix, so those deployments' parameters stay as before.
+        if (names.ResourceNamePostfix is { } postfix)
+        {
+            arguments.Add($"resourceNamePostfix={postfix}");
+        }
+    }
+
+    /// <summary>
+    /// Records the legacy naming options on the resource group so later runs and the other
+    /// commands use the same names. Only merged, never deleted: dropping a recorded value
+    /// would let the next run deploy a second set of resources.
+    /// </summary>
+    private async Task RecordResourceNamesAsync(ResourceGroupInfo resourceGroup, string? postfix, string? funcStorageAccountName, CancellationToken cancellationToken)
+    {
+        var merge = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        AddIfChanged(merge, resourceGroup.Tags, ResourceNaming.PostfixTag, postfix);
+        AddIfChanged(merge, resourceGroup.Tags, ResourceNaming.FuncStorageAccountTag, funcStorageAccountName);
+        if (merge.Count == 0)
+        {
+            return;
+        }
+
+        await _az.EnsureSuccessAsync(
+            TagUpdateArguments(resourceGroup.Id, "Merge", merge),
+            cancellationToken,
+            "Could not record the resource naming options as tags on the resource group; an Azure Policy may forbid tag changes there. " +
+            $"Allow the {ResourceNaming.PostfixTag} and {ResourceNaming.FuncStorageAccountTag} tags, or pass the same naming options to every command.").ConfigureAwait(false);
+
+        static void AddIfChanged(Dictionary<string, string> merge, IReadOnlyDictionary<string, string> current, string tag, string? value)
+        {
+            if (value is not null && !(current.TryGetValue(tag, out var existing) && string.Equals(existing, value, StringComparison.Ordinal)))
+            {
+                merge[tag] = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// SKU and kind of a reused function storage account, so the deployment keeps them instead
+    /// of applying the template defaults (a kind change to StorageV2 cannot be undone). Null when
+    /// the account does not exist yet.
+    /// </summary>
+    private async Task<ExistingStorageAccount?> DiscoverFuncStorageAccountAsync(string resourceGroupName, string accountName, CancellationToken cancellationToken)
+    {
+        var result = await _az.TryRunAsync(
+            new[]
+            {
+                "storage", "account", "show",
+                "--resource-group", resourceGroupName,
+                "--name", accountName,
+                "--query", "{sku:sku.name, kind:kind}",
+                "--output", "json",
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        // A missing account (it will be created) fails the show call.
+        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.StandardOutput))
+        {
+            return null;
+        }
+
+        string? sku = null;
+        string? kind = null;
+        try
+        {
+            using var document = JsonDocument.Parse(result.StandardOutput);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            sku = root.TryGetProperty("sku", out var skuElement) && skuElement.ValueKind == JsonValueKind.String ? skuElement.GetString() : null;
+            kind = root.TryGetProperty("kind", out var kindElement) && kindElement.ValueKind == JsonValueKind.String ? kindElement.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(sku) || string.IsNullOrWhiteSpace(kind))
+        {
+            return null;
+        }
+
+        if (string.Equals(kind, "BlobStorage", StringComparison.OrdinalIgnoreCase) || string.Equals(kind, "FileStorage", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(kind, "BlockBlobStorage", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new CommandException(
+                $"The storage account '{accountName}' is of kind '{kind}', which cannot host a function app (it needs blob, queue, table and file storage). " +
+                "Use a general-purpose account (StorageV2 or Storage) for --func-storage-account-name.");
+        }
+
+        CliOutput.WriteLine($"Keeping the existing storage account '{accountName}' ({sku}, {kind}) for the Resolver.");
+        return new ExistingStorageAccount(sku, kind);
+    }
 
     private sealed record ServiceBusDeployment(string? Sku, int? Capacity, string? NamespaceName);
 
