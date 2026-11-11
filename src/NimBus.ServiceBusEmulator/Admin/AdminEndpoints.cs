@@ -261,15 +261,18 @@ internal static class AdminEndpoints
         }
         else if (context.Request.Method == HttpMethods.Put)
         {
-            var definition = AdminXml.ParseSubscription(subscriptionName, await AdminXml.ReadAsync(context.Request.Body, context.RequestAborted).ConfigureAwait(false));
+            var document = await AdminXml.ReadAsync(context.Request.Body, context.RequestAborted).ConfigureAwait(false);
+            var definition = AdminXml.ParseSubscription(subscriptionName, document);
             if (context.Request.Headers.IfMatch.Count > 0)
             {
+                // Like Service Bus, an update ignores DefaultRuleDescription: rules are
+                // managed through the rule endpoints once the subscription exists.
                 prepareMutation(broker.PrepareUpdateSubscription(topicName, definition));
                 await WriteXmlAsync(context, AdminXml.SubscriptionEntry(topicName, definition)).ConfigureAwait(false);
             }
             else
             {
-                prepareMutation(broker.PrepareCreateSubscription(topicName, definition));
+                prepareMutation(broker.PrepareCreateSubscription(topicName, definition, AdminXml.ParseDefaultRule(document)));
                 context.Response.StatusCode = StatusCodes.Status201Created;
                 await WriteXmlAsync(context, AdminXml.SubscriptionEntry(topicName, definition)).ConfigureAwait(false);
             }
