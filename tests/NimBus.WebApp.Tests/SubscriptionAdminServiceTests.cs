@@ -174,6 +174,10 @@ public sealed class SubscriptionAdminServiceTests
     {
         // A provisioned subscription has no metadata, and null means "leave unchanged", so
         // restoring it verbatim would leave the marker set after a normal purge.
+        // The fake can't return a null read (the SDK model factory rejects null), so the
+        // service receives string.Empty here: this exercises the empty-original path that a
+        // null read reaches after ServiceBusManagement.GetSubscription normalises it. The
+        // null read itself is proven by ServiceBusManagementGetSubscriptionTests.
         var management = new FakeServiceBusManagement();
         management.SeedSubscription(Topic, DeferredProcessorSubscription, status: EntityStatus.ReceiveDisabled, userMetadata: null);
         Assert.IsNull(management.SeededUserMetadata(Topic, DeferredProcessorSubscription));
@@ -188,6 +192,7 @@ public sealed class SubscriptionAdminServiceTests
     [TestMethod]
     public async Task Purge_ClearsTheMarkerWhenTheOriginalMetadataWasNullAndTheDrainThrows()
     {
+        // As above: the service receives the normalised string.Empty, not a null read.
         var management = new FakeServiceBusManagement();
         management.SeedSubscription(Topic, DeferredProcessorSubscription, status: EntityStatus.ReceiveDisabled, userMetadata: null);
         var service = CreateService(management, sbClient: FailingBus());
@@ -263,6 +268,9 @@ public sealed class SubscriptionAdminServiceTests
     [DataRow(null)]
     public async Task Resume_LeavesOtherMetadataUnchanged(string? userMetadata)
     {
+        // The null row seeds null, but the fake reads it back as string.Empty (the SDK model
+        // factory rejects null), so it exercises the same path as the "" row: the read the
+        // service gets after ServiceBusManagement.GetSubscription normalises a null read.
         var management = new FakeServiceBusManagement();
         management.SeedSubscription(Topic, ResolverSubscription, forwardTo: null, status: EntityStatus.ReceiveDisabled, userMetadata: userMetadata);
         var service = CreateService(management);
@@ -295,6 +303,8 @@ public sealed class SubscriptionAdminServiceTests
     [DataRow(null)]
     public async Task Pause_LeavesOtherMetadataUnchanged(string? userMetadata)
     {
+        // As in Resume_LeavesOtherMetadataUnchanged, the null row reaches the service as
+        // string.Empty, the same as the "" row.
         var management = new FakeServiceBusManagement();
         management.SeedSubscription(Topic, ResolverSubscription, forwardTo: ResolverSubscription, userMetadata: userMetadata);
         var service = CreateService(management);

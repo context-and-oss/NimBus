@@ -49,7 +49,9 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
         string? forwardTo = null,
         // EntityStatus is a struct, not an enum, so it can't be a default parameter value.
         EntityStatus? status = null,
-        // Null by default, as a provisioned subscription nobody wrote metadata to reads back.
+        // Null by default, as a provisioned subscription nobody wrote metadata to reads back
+        // from Service Bus. GetSubscription still returns string.Empty for it (see below), so
+        // a null seed models the post-normalisation read, not a null read.
         string? userMetadata = null,
         params (string Name, string Filter, string? Action)[] rules)
     {
@@ -71,9 +73,12 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
             status: status ?? EntityStatus.Active,
             forwardTo: forwardTo,
             forwardDeadLetteredMessagesTo: string.Empty,
-            // The model factory rejects null, so the raw value is kept in _userMetadata and
-            // the read path hands out null as string.Empty, exactly as
-            // ServiceBusManagement.GetSubscription normalises it.
+            // ServiceBusModelFactory.SubscriptionProperties rejects null UserMetadata, so the
+            // raw seed is kept in _userMetadata and the SDK object carries string.Empty. The
+            // service therefore never sees a null read from this fake; it sees what
+            // ServiceBusManagement.GetSubscription hands out after normalising null to empty.
+            // The null read itself is covered by ServiceBusManagementGetSubscriptionTests in
+            // NimBus.ServiceBus.Tests.
             userMetadata: userMetadata ?? string.Empty);
         _userMetadata[(topicName, subscriptionName)] = userMetadata;
 
