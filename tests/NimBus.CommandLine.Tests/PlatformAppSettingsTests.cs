@@ -111,6 +111,12 @@ public sealed class PlatformAppSettingsTests
         public Task<JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage)
         {
             Calls.Add(string.Join(' ', arguments));
+            // The resource group read that resolves the recorded names: nothing recorded.
+            if (arguments.Contains("group"))
+            {
+                return Task.FromResult(JsonDocument.Parse("""{"id":"/subscriptions/0/resourceGroups/rg-acme-test","tags":null}"""));
+            }
+
             // `az version`: old enough to be irrelevant, new enough to clear the Flex gate.
             return Task.FromResult(JsonDocument.Parse("""{"azure-cli":"2.99.0"}"""));
         }

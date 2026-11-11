@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace NimBus.CommandLine;
 
@@ -74,12 +75,6 @@ internal sealed class InfrastructureDeployer
         var funcStorageAccountName = ResourceNaming.ResolveFuncStorageAccountName(options.FuncStorageAccountName, resourceGroup.Tags, options.ResourceGroupName);
 
         var names = NamingConventions.Build(options.SolutionId, options.Environment, serviceBusNamespaceName, resourceNamePostfix, funcStorageAccountName);
-        ResourceNaming.ValidateLengths(names, serviceBusNamespaceName, options.SqlServerName);
-        if (resourceNamePostfix is not null)
-        {
-            CliOutput.WriteLine(ResourceNaming.DescribePostfix(names, PostfixedNames(options, names, serviceBusNamespaceName)));
-        }
-
         var existingLocations = await DiscoverExistingLocationsAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
 
         // The first postfix decision on a resource group: a postfix (or its absence) that does
@@ -106,6 +101,21 @@ internal sealed class InfrastructureDeployer
         if (string.IsNullOrWhiteSpace(options.ManagementPlanSku) && existingManagementPlan is not null)
         {
             CliOutput.WriteLine($"Pinning management plan SKU to the existing '{names.ManagementAppServicePlanName}' SKU ({managementPlanSku}).");
+        }
+
+        // Checked once the plan is known: a new Elastic Premium Resolver derives its content
+        // share name from the app name. Still before anything is recorded or deployed.
+        ResourceNaming.ValidateDerivedNames(
+            names,
+            serviceBusNamespaceName,
+            options.SqlServerName,
+            new ResourceNaming.DerivedNameScope(
+                UsesCosmos: options.StorageProvider == StorageProviderChoice.Cosmos,
+                ProvisionsSqlServer: options.StorageProvider == StorageProviderChoice.SqlServer && options.SqlMode == SqlProvisioningMode.Provision,
+                CreatesResolverContentShare: resolverPlan == ResolverPlanChoice.ElasticPremium && !existingLocations.ContainsKey(names.ResolverFunctionAppName)));
+        if (resourceNamePostfix is not null)
+        {
+            CliOutput.WriteLine(ResourceNaming.DescribePostfix(names, PostfixedNames(options, names, serviceBusNamespaceName)));
         }
 
         // The existing namespace decides the Service Bus tier (Azure cannot convert Standard
@@ -173,6 +183,17 @@ internal sealed class InfrastructureDeployer
             : new FuncStorageDeployment(
                 funcStorageAccountName,
                 await DiscoverFuncStorageAccountAsync(options.ResourceGroupName, funcStorageAccountName, cancellationToken).ConfigureAwait(false));
+
+        // Private mode left a reused account at Deny with no bypass. Keeping that while the
+        // cleanup removes the private endpoints and VNet integration would cut the Resolver
+        // off from its storage, so leaving private reopens the firewall (its rules are kept).
+        var leavesPrivate = targetState != NetworkState.Private
+            && (currentState == NetworkState.Private || NetworkIntent.NeedsCleanup(stored, targetState));
+        if (leavesPrivate && funcStorage?.Existing is { NetworkAcls: { } lockedAcls } reused)
+        {
+            CliOutput.WriteLine($"Reopening the firewall of the storage account '{funcStorage.Name}' (default action Allow, Azure services bypass) as the deployment leaves private mode.");
+            funcStorage = funcStorage with { Existing = reused with { NetworkAcls = ReopenNetworkAcls(lockedAcls) } };
+        }
 
         // Record the intent before deploying: an interrupted run then converges on the next
         // one, and a validation failure above never records a setup that cannot deploy. A
@@ -928,6 +949,19 @@ internal sealed class InfrastructureDeployer
     private sealed record ExistingStorageAccount(string SkuName, string Kind, string? NetworkAcls);
 
     private sealed record FuncStorageDeployment(string Name, ExistingStorageAccount? Existing);
+
+    /// <summary>
+    /// The account's networkAcls with the default action and bypass of a public deployment;
+    /// IP, VNet and resource access rules stay as they are.
+    /// </summary>
+    internal static string ReopenNetworkAcls(string networkAclsJson)
+    {
+        var acls = JsonNode.Parse(networkAclsJson) as JsonObject
+            ?? throw new CommandException("Could not read the storage account's network rules.");
+        acls["defaultAction"] = "Allow";
+        acls["bypass"] = "AzureServices";
+        return acls.ToJsonString();
+    }
 
     // The names the legacy pipeline postfixed (see NamingConventions.Build), as deployed by
     // this run's storage provider.

@@ -91,8 +91,10 @@ public sealed class EndpointContainerProvisionerTests
     private sealed class FakeAzureCliRunner : IAzureCliRunner
     {
 
+        // The resource group read that resolves the recorded names; nothing is recorded.
         public Task<System.Text.Json.JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage) =>
-            Task.FromResult(System.Text.Json.JsonDocument.Parse("{}"));
+            Task.FromResult(System.Text.Json.JsonDocument.Parse(
+                arguments.Contains("group") ? """{"id":"/subscriptions/0/resourceGroups/rg-test","tags":null}""" : "{}"));
         public List<IReadOnlyList<string>> Commands { get; } = new();
 
         public string ListResponse { get; set; } = "[]";

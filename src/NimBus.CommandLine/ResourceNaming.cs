@@ -54,13 +54,6 @@ internal static partial class ResourceNaming
                 $"Invalid --resource-name-postfix '{value}'. Use letters and digits only; NimBus adds the '-' separator itself.");
         }
 
-        // Azure rejects a Service Bus namespace name ending in '-sb' or '-mgmt'.
-        if (normalized is "sb" or "mgmt")
-        {
-            throw new CommandException(
-                $"Invalid --resource-name-postfix '{value}'. Azure does not allow a Service Bus namespace name that ends in '-{normalized}'.");
-        }
-
         return normalized;
     }
 
@@ -161,7 +154,9 @@ internal static partial class ResourceNaming
         var namespaceName = string.IsNullOrWhiteSpace(explicitServiceBusNamespaceName) ? null : explicitServiceBusNamespaceName.Trim();
         var postfix = NormalizePostfix(explicitPostfix);
 
-        var tags = await ResourceGroupTags.TryReadTagsAsync(az, resourceGroupName, cancellationToken).ConfigureAwait(false);
+        // A failed read must stop the command: treating it as "no tags" would address the
+        // un-postfixed names, which may be a different, older deployment.
+        var tags = (await ResourceGroupTags.ReadAsync(az, resourceGroupName, cancellationToken).ConfigureAwait(false)).Tags;
         if (namespaceName is null
             && tags.TryGetValue(NetworkIntent.ServiceBusNamespaceTag, out var recordedNamespace)
             && !string.IsNullOrWhiteSpace(recordedNamespace))
@@ -179,8 +174,9 @@ internal static partial class ResourceNaming
     /// Guards the first postfix decision on a resource group that has none recorded (deployed
     /// before the option took effect, or by the legacy scripts): Azure cannot rename resources,
     /// so a postfix that does not match the existing names would deploy a second, parallel set.
-    /// Fails when none of the target names exist but the same deployment exists under the other
-    /// naming. Nothing is checked once a postfix is recorded; <see cref="Resolve"/> covers that.
+    /// Fails when none of the target names exist but the same deployment exists under another
+    /// naming: without a postfix, or with a different one. Nothing is checked once a postfix is
+    /// recorded; <see cref="Resolve"/> covers that.
     /// </summary>
     /// <param name="target">The names this run would deploy.</param>
     /// <param name="existingNames">Names of the resources already in the resource group.</param>
@@ -207,8 +203,6 @@ internal static partial class ResourceNaming
                     $"Deploying with --resource-name-postfix '{postfix}' would create a second, differently named set of resources next to it. " +
                     "Leave the option out to update the existing deployment.");
             }
-
-            return;
         }
 
         var resolverPrefix = $"func-{target.SolutionId}-{target.Environment}-resolver-";
@@ -219,23 +213,32 @@ internal static partial class ResourceNaming
                 : null)
             .Where(candidate => candidate is not null && PostfixPattern().IsMatch(candidate.ToLowerInvariant()))
             .Select(candidate => candidate!.ToLowerInvariant())
+            .Where(candidate => !string.Equals(candidate, target.ResourceNamePostfix, StringComparison.Ordinal))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(candidate => candidate, StringComparer.Ordinal)
             .ToList();
         if (detected.Count > 0)
         {
+            var requested = target.ResourceNamePostfix is { } requestedPostfix
+                ? $"with --resource-name-postfix '{requestedPostfix}'"
+                : "without --resource-name-postfix";
             throw new CommandException(
                 $"Resource group '{resourceGroupName}' already holds a NimBus deployment named with the resource-name postfix " +
-                $"{string.Join(" or ", detected.Select(candidate => $"'{candidate}'"))}. Deploying without --resource-name-postfix would create " +
+                $"{string.Join(" or ", detected.Select(candidate => $"'{candidate}'"))}. Deploying {requested} would create " +
                 $"a second, differently named set of resources next to it. Pass --resource-name-postfix {detected[0]} to update the existing deployment.");
         }
     }
 
     /// <summary>
-    /// Fails before anything is deployed when the postfix makes a derived name longer than
-    /// Azure allows. Explicit name overrides are validated by their own options.
+    /// Fails before anything is deployed when the postfix makes a derived name that Azure
+    /// rejects. Only names this run deploys are checked; explicit name overrides are validated
+    /// by their own options.
     /// </summary>
-    public static void ValidateLengths(DeploymentNames names, string? serviceBusNamespaceOverride, string? sqlServerOverride)
+    /// <param name="names">The names this run deploys.</param>
+    /// <param name="serviceBusNamespaceOverride">The effective namespace override, if any.</param>
+    /// <param name="sqlServerOverride">The <c>--sql-server-name</c> override, if any.</param>
+    /// <param name="scope">Which of the derived resources this run deploys.</param>
+    public static void ValidateDerivedNames(DeploymentNames names, string? serviceBusNamespaceOverride, string? sqlServerOverride, DerivedNameScope scope)
     {
         if (names.ResourceNamePostfix is null)
         {
@@ -245,15 +248,29 @@ internal static partial class ResourceNaming
         if (string.IsNullOrWhiteSpace(serviceBusNamespaceOverride))
         {
             CheckLength(names.ServiceBusNamespace, 50, "Service Bus namespace");
+
+            // Azure rejects a namespace name that ends in '-sb' or '-mgmt'.
+            if (names.ResourceNamePostfix is "sb" or "mgmt")
+            {
+                throw new CommandException(
+                    $"Invalid --resource-name-postfix '{names.ResourceNamePostfix}'. Azure does not allow the Service Bus namespace name " +
+                    $"'{names.ServiceBusNamespace}', which ends in '-{names.ResourceNamePostfix}'. Use another postfix or --service-bus-namespace-name.");
+            }
         }
 
-        if (string.IsNullOrWhiteSpace(sqlServerOverride))
+        if (scope.ProvisionsSqlServer && string.IsNullOrWhiteSpace(sqlServerOverride))
         {
             CheckLength(names.SqlServerName, 63, "SQL server");
         }
 
-        CheckLength(names.CosmosAccountName, 44, "Cosmos DB account");
-        CheckLength(names.ResolverFunctionAppName, 60, "Resolver function app");
+        if (scope.UsesCosmos)
+        {
+            CheckLength(names.CosmosAccountName, 44, "Cosmos DB account");
+        }
+
+        // A new Elastic Premium Resolver's content share is its name plus a 13-character
+        // uniqueString (deploy.core.bicep), and an Azure Files share name is at most 63.
+        CheckLength(names.ResolverFunctionAppName, scope.CreatesResolverContentShare ? 50 : 60, "Resolver function app");
         CheckLength(names.WebAppName, 60, "management WebApp");
     }
 
@@ -283,6 +300,12 @@ internal static partial class ResourceNaming
                 $"The {resource} name '{name}' is {name.Length} characters; Azure allows {maximum}. Use a shorter --resource-name-postfix.");
         }
     }
+
+    /// <summary>Which postfixed resources a deployment creates, for <see cref="ValidateDerivedNames"/>.</summary>
+    /// <param name="UsesCosmos">The Cosmos DB account is deployed.</param>
+    /// <param name="ProvisionsSqlServer">The SQL server is deployed.</param>
+    /// <param name="CreatesResolverContentShare">A new Elastic Premium Resolver gets a content share named after it.</param>
+    internal sealed record DerivedNameScope(bool UsesCosmos, bool ProvisionsSqlServer, bool CreatesResolverContentShare);
 
     [GeneratedRegex("^[a-z0-9]+$")]
     private static partial Regex PostfixPattern();
