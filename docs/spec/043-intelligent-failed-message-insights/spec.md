@@ -487,6 +487,10 @@ Resolve these decisions in the implementation plan under `docs/plan/`.
 
 ## 12. Follow-up increments
 
+[Spec 044](../044-agent-first/spec.md) withdraws the first three increments below (selective
+analysis, representative pattern hypotheses and resumable bulk execution): agents record
+classifications over MCP instead of NimBus requesting them. The other increments stand.
+
 ### Selective analysis
 
 Let authorized operators choose individual failures or select occurrences within an error
