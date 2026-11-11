@@ -88,6 +88,77 @@ public sealed class SdkSmokeTests
     [TestMethod]
     [TestCategory("CommonFidelity")]
     [Timeout(60_000)]
+    public async Task Stock_sdk_subscription_created_with_an_initial_rule_has_only_that_rule_and_receives_nothing()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var entityName = $"initial-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(entityName, timeout.Token);
+
+        await admin.CreateSubscriptionAsync(
+            new CreateSubscriptionOptions(entityName, "closed"),
+            new CreateRuleOptions("$Default", new FalseRuleFilter()),
+            timeout.Token);
+
+        var rules = new List<RuleProperties>();
+        await foreach (var rule in admin.GetRulesAsync(entityName, "closed", timeout.Token))
+        {
+            rules.Add(rule);
+        }
+
+        Assert.HasCount(1, rules);
+        Assert.AreEqual("$Default", rules[0].Name);
+        Assert.AreEqual("1=0", ((SqlRuleFilter)rules[0].Filter).SqlExpression);
+        Assert.IsFalse(rules.Any(rule => rule.Filter is SqlRuleFilter { SqlExpression: "1=1" }));
+
+        // A publish straight after creation lands in the provisioning window.
+        await using var client = new ServiceBusClient(emulator.ConnectionString);
+        await client.CreateSender(entityName).SendMessageAsync(new ServiceBusMessage("window"), timeout.Token);
+        await using var receiver = client.CreateReceiver(entityName, "closed");
+        var received = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token);
+
+        Assert.IsNull(received);
+        await admin.DeleteTopicAsync(entityName, timeout.Token);
+    }
+
+    [TestMethod]
+    [TestCategory("CommonFidelity")]
+    [Timeout(60_000)]
+    public async Task Stock_sdk_subscription_created_without_a_rule_gets_true_default_and_receives_messages()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var entityName = $"open-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(entityName, timeout.Token);
+
+        await admin.CreateSubscriptionAsync(new CreateSubscriptionOptions(entityName, "open"), timeout.Token);
+
+        var rules = new List<RuleProperties>();
+        await foreach (var rule in admin.GetRulesAsync(entityName, "open", timeout.Token))
+        {
+            rules.Add(rule);
+        }
+
+        Assert.HasCount(1, rules);
+        Assert.AreEqual("$Default", rules[0].Name);
+        Assert.AreEqual("1=1", ((SqlRuleFilter)rules[0].Filter).SqlExpression);
+
+        await using var client = new ServiceBusClient(emulator.ConnectionString);
+        await client.CreateSender(entityName).SendMessageAsync(new ServiceBusMessage("open") { MessageId = "m1" }, timeout.Token);
+        await using var receiver = client.CreateReceiver(entityName, "open");
+        var received = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(10), timeout.Token);
+
+        Assert.IsNotNull(received);
+        Assert.AreEqual("m1", received.MessageId);
+        await receiver.CompleteMessageAsync(received, timeout.Token);
+        await admin.DeleteTopicAsync(entityName, timeout.Token);
+    }
+
+    [TestMethod]
+    [TestCategory("CommonFidelity")]
+    [Timeout(60_000)]
     public async Task Stock_sdk_session_receiver_preserves_fifo_under_an_explicit_lock()
     {
         await using var emulator = await EmulatorProcess.StartAsync();
