@@ -35,6 +35,8 @@ var serviceBus = Environment.GetEnvironmentVariable("ConnectionStrings__serviceb
 
 var leadIntervalSeconds = int.TryParse(Environment.GetEnvironmentVariable("PARTNER_LEAD_INTERVAL_SECONDS"), out var s) && s > 0 ? s : 45;
 var sendInvalid = string.Equals(Environment.GetEnvironmentVariable("PARTNER_SEND_INVALID"), "true", StringComparison.OrdinalIgnoreCase);
+// PARTNER_PUBLISH_LEADS=false stops the recurring leads; the ERP listener keeps running.
+var publishLeads = Program.IsLeadPublishingEnabled(Environment.GetEnvironmentVariable("PARTNER_PUBLISH_LEADS"));
 
 await using var client = serviceBus.Contains("Endpoint=", StringComparison.OrdinalIgnoreCase)
     ? new ServiceBusClient(serviceBus)
@@ -48,11 +50,19 @@ ConsoleCancelEventHandler cancelHandler = (_, e) =>
 };
 Console.CancelKeyPress += cancelHandler;
 
-Console.WriteLine($"PartnerPortal started (no NimBus reference). Publishing a lead to '{partnerInboundTopic}' every {leadIntervalSeconds}s; listening on {erpTopic}/{captureSubscription}. Ctrl+C to stop.");
+var publishing = publishLeads
+    ? $"Publishing a lead to '{partnerInboundTopic}' every {leadIntervalSeconds}s"
+    : "Lead publishing is off (PARTNER_PUBLISH_LEADS=false)";
+Console.WriteLine($"PartnerPortal started (no NimBus reference). {publishing}; listening on {erpTopic}/{captureSubscription}. Ctrl+C to stop.");
 
 try
 {
-    await Program.RunSupervisedAsync(PublishLeadsAsync, ConsumeErpCloudEventsAsync, shutdown.Token);
+    if (sendInvalid)
+    {
+        await SendInvalidLeadAsync(shutdown.Token);
+    }
+
+    await Program.RunSupervisedAsync(publishLeads ? PublishLeadsAsync : null, ConsumeErpCloudEventsAsync, shutdown.Token);
 }
 catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
 {
@@ -63,6 +73,34 @@ finally
     Console.CancelKeyPress -= cancelHandler;
 }
 
+// Runs once at startup, whether or not the recurring leads are on.
+async Task SendInvalidLeadAsync(CancellationToken cancellationToken)
+{
+    await using var sender = client.CreateSender(partnerInboundTopic);
+
+    // Deliberately broken CloudEvent: no ce-source. NimBus's validating handler
+    // rejects it as a permanent failure, so it lands in the subscription's
+    // dead-letter queue with a clear InvalidCloudEventException reason.
+    var invalid = new ServiceBusMessage(BinaryData.FromString("{\"broken\":true}"))
+    {
+        MessageId = Guid.NewGuid().ToString(),
+        SessionId = Guid.NewGuid().ToString(),
+        ContentType = "application/json",
+    };
+    invalid.ApplicationProperties["ce-specversion"] = "1.0";
+    invalid.ApplicationProperties["ce-id"] = invalid.MessageId;
+    invalid.ApplicationProperties["ce-type"] = leadEventType;
+    try
+    {
+        await sender.SendMessageAsync(invalid, cancellationToken);
+        Console.WriteLine("[publish] Sent one INVALID CloudEvent (missing ce-source) to demo dead-lettering.");
+    }
+    catch (Exception ex) when (IsTransient(ex))
+    {
+        Console.WriteLine($"[publish] Could not send the invalid-CloudEvent demo message: {ex.Message}");
+    }
+}
+
 async Task PublishLeadsAsync(CancellationToken cancellationToken)
 {
     var firstNames = new[] { "Ada", "Grace", "Alan", "Edsger", "Barbara", "Donald" };
@@ -70,31 +108,6 @@ async Task PublishLeadsAsync(CancellationToken cancellationToken)
     var companies = new[] { "Contoso Ltd", "Fabrikam Inc", "Northwind Traders", "Adventure Works" };
 
     await using var sender = client.CreateSender(partnerInboundTopic);
-
-    if (sendInvalid)
-    {
-        // Deliberately broken CloudEvent: no ce-source. NimBus's validating handler
-        // rejects it as a permanent failure, so it lands in the subscription's
-        // dead-letter queue with a clear InvalidCloudEventException reason.
-        var invalid = new ServiceBusMessage(BinaryData.FromString("{\"broken\":true}"))
-        {
-            MessageId = Guid.NewGuid().ToString(),
-            SessionId = Guid.NewGuid().ToString(),
-            ContentType = "application/json",
-        };
-        invalid.ApplicationProperties["ce-specversion"] = "1.0";
-        invalid.ApplicationProperties["ce-id"] = invalid.MessageId;
-        invalid.ApplicationProperties["ce-type"] = leadEventType;
-        try
-        {
-            await sender.SendMessageAsync(invalid, cancellationToken);
-            Console.WriteLine("[publish] Sent one INVALID CloudEvent (missing ce-source) to demo dead-lettering.");
-        }
-        catch (Exception ex) when (IsTransient(ex))
-        {
-            Console.WriteLine($"[publish] Could not send the invalid-CloudEvent demo message: {ex.Message}");
-        }
-    }
 
     var iteration = 0;
     while (!cancellationToken.IsCancellationRequested)
@@ -203,13 +216,29 @@ static bool IsTransient(Exception ex) =>
 
 internal partial class Program
 {
+    /// <summary>
+    /// Lead publishing is on unless <c>PARTNER_PUBLISH_LEADS</c> is <c>false</c>; an unset or
+    /// unreadable value keeps the demo's default behaviour.
+    /// </summary>
+    internal static bool IsLeadPublishingEnabled(string? value) =>
+        !bool.TryParse(value, out var enabled) || enabled;
+
+    /// <summary>
+    /// Runs the loops side by side and stops both when either ends. A null
+    /// <paramref name="publisher"/> (lead publishing off) runs the consumer alone.
+    /// </summary>
     internal static async Task RunSupervisedAsync(
-        Func<CancellationToken, Task> publisher,
+        Func<CancellationToken, Task>? publisher,
         Func<CancellationToken, Task> consumer,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(publisher);
         ArgumentNullException.ThrowIfNull(consumer);
+
+        if (publisher is null)
+        {
+            await RunLoopAsync(consumer, cancellationToken);
+            return;
+        }
 
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var publisherTask = RunLoopAsync(publisher, linkedCancellation.Token);
