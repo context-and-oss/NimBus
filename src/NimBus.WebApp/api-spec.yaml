@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
-  title: EIP Management Web API
-  description: HTTP API for inspecting and interacting with EIP endpoints and events
+  title: NimBus Management API
+  description: HTTP API behind the NimBus WebApp for inspecting endpoints, events and sessions, and for recovering messages (resubmit, skip)
   version: 0.0.1
 servers:
   - url: 'https://localhost:5001'
