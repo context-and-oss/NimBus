@@ -207,7 +207,7 @@ export default function McpAccessSettings() {
               <ul className="divide-y divide-border rounded-md border border-border">
                 <li className="flex items-start justify-between gap-4 p-3">
                   <div><p className="text-sm font-semibold">Observe <Risk risk="low" text="read" /></p>
-                    <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics and stored classifications: {READ_TOOL_COUNT} read tools. Never stack traces.</p></div>
+                    <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics, failure evidence and stored classifications: {READ_TOOL_COUNT} read tools. Never stack traces.</p></div>
                   <span className="shrink-0 rounded-full border border-dashed border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">Always on</span>
                 </li>
                 {CAPABILITIES.map(cap => (
@@ -230,6 +230,10 @@ export default function McpAccessSettings() {
               </ul>
               <SettingRow label="Unattended workloads (app-only tokens)" description="Callers with the Nimbus.Observe app role may use the read tools. Workloads can't change messages or read payloads whatever this page says.">
                 <Toggle aria-label="Allow workload tokens" checked={draft.allowWorkloads} disabled={local} onChange={v => edit(s => { s.allowWorkloads = v; })} />
+              </SettingRow>
+              <SettingRow label="Workloads may record classifications" description="Workloads with the Nimbus.Classify app role may call nimbus_record_classification. They still need Contributor on the endpoint in Access Control, and Classify failures must be on. Recording is advisory and changes no message. Off by default.">
+                <Toggle aria-label="Allow workloads to record classifications" checked={Boolean(draft.allowWorkloadClassification)}
+                  disabled={local || !draft.allowWorkloads} onChange={v => edit(s => { s.allowWorkloadClassification = v; })} />
               </SettingRow>
               <p className="text-xs text-muted-foreground">Switched-off tools are removed from <code>tools/list</code> and from <code>permittedActions</code>; a direct call gets <code>[PermissionDenied]</code>.</p>
             </CardContent></Card>

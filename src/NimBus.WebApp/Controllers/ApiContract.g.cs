@@ -15333,6 +15333,8 @@ namespace NimBus.WebApp.ManagementApi
         private string _guidance;
         private int? _revision;
         private string _model;
+        private string _provider;
+        private string _faultOrigin;
         private System.DateTime? _classifiedAt;
         private string _currentStatus;
 
@@ -15523,6 +15525,38 @@ namespace NimBus.WebApp.ManagementApi
                 if (_model != value)
                 {
                     _model = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("provider", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Provider    {
+            get { return _provider; }
+            set
+            {
+                if (_provider != value)
+                {
+                    _provider = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The saved fault origin (question set version 2); null when not assessed.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("faultOrigin", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string FaultOrigin    {
+            get { return _faultOrigin; }
+            set
+            {
+                if (_faultOrigin != value)
+                {
+                    _faultOrigin = value;
                     RaisePropertyChanged();
                 }
             }

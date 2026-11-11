@@ -16296,6 +16296,10 @@ export class InsightOccurrence implements IInsightOccurrence {
     guidance?: string | undefined;
     revision?: number | undefined;
     model?: string | undefined;
+    /** Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider). */
+    provider?: string | undefined;
+    /** The saved fault origin (question set version 2); null when not assessed. */
+    faultOrigin?: string | undefined;
     classifiedAt?: moment.Moment | undefined;
     /** The event's current resolution status, or null when unavailable. Never implies unresolved. */
     currentStatus?: string | undefined;
@@ -16331,6 +16335,8 @@ export class InsightOccurrence implements IInsightOccurrence {
             this.guidance = _data["guidance"];
             this.revision = _data["revision"];
             this.model = _data["model"];
+            this.provider = _data["provider"];
+            this.faultOrigin = _data["faultOrigin"];
             this.classifiedAt = _data["classifiedAt"] ? moment(_data["classifiedAt"].toString()) : undefined as any;
             this.currentStatus = _data["currentStatus"];
         }
@@ -16363,6 +16369,8 @@ export class InsightOccurrence implements IInsightOccurrence {
         data["guidance"] = this.guidance;
         data["revision"] = this.revision;
         data["model"] = this.model;
+        data["provider"] = this.provider;
+        data["faultOrigin"] = this.faultOrigin;
         data["classifiedAt"] = this.classifiedAt ? this.classifiedAt.toISOString() : undefined as any;
         data["currentStatus"] = this.currentStatus;
         return data;
@@ -16395,6 +16403,10 @@ export interface IInsightOccurrence {
     guidance?: string | undefined;
     revision?: number | undefined;
     model?: string | undefined;
+    /** Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider). */
+    provider?: string | undefined;
+    /** The saved fault origin (question set version 2); null when not assessed. */
+    faultOrigin?: string | undefined;
     classifiedAt?: moment.Moment | undefined;
     /** The event's current resolution status, or null when unavailable. Never implies unresolved. */
     currentStatus?: string | undefined;

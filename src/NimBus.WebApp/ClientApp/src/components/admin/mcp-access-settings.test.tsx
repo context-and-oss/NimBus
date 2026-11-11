@@ -242,4 +242,27 @@ describe("MCP access model", () => {
     expect(reader.find(r => r.name === "nimbus_resubmit_message")?.why).toBe("needs Contributor");
     expect(previewAccess({ ...s, allowWorkloads: false }, deployment(), "workload", true)[0].why).toBe("workloads off");
   });
+
+  it("lets a workload record classifications only when the switch is on", () => {
+    // Spec 044 §6.6: the Nimbus.Classify app role admits recording, nothing else.
+    const s = { ...settings(), allowWorkloadClassification: true };
+    const on = previewAccess(s, deployment(), "workload", true);
+    const off = previewAccess({ ...s, allowWorkloadClassification: false }, deployment(), "workload", true);
+
+    expect(on.find(r => r.name === "nimbus_record_classification")).toEqual(
+      { name: "nimbus_record_classification", allowed: true, why: "Nimbus.Classify role + Contributor" });
+    expect(on.filter(r => r.allowed).map(r => r.name)).toEqual(["12 read tools", "nimbus_record_classification"]);
+    expect(off.find(r => r.name === "nimbus_record_classification")?.why).toBe("workload recording off");
+    expect(describeChanges(settings(), s)).toEqual([{ text: "Let workloads record failure classifications", widens: true }]);
+  });
+
+  it("disables the workload recording switch while workload tokens are refused", async () => {
+    const refused = { ...settings(), allowWorkloads: false };
+    mockFetch(Response.json(state({ saved: refused, effective: refused })), Response.json(activity));
+    render(<McpAccessSettings />);
+
+    const toggle = await screen.findByRole("switch", { name: "Allow workloads to record classifications" });
+
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+  });
 });
