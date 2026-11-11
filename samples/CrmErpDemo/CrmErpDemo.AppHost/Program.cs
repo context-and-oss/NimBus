@@ -414,6 +414,12 @@ var partnerPortal = builder.AddProject<Projects.PartnerPortal>("partner-portal")
     .WithReference(servicebus)
     .WaitFor(crmAdapter)
     .WaitForCompletion(provisioner);
+// PARTNER_PUBLISH_LEADS=false on the AppHost (or on `aspire deploy`) turns the recurring
+// leads off; the portal keeps listening for ERP events.
+if (builder.Configuration["PARTNER_PUBLISH_LEADS"] is { Length: > 0 } publishPartnerLeads)
+{
+    partnerPortal.WithEnvironment("PARTNER_PUBLISH_LEADS", publishPartnerLeads);
+}
 if (isPublish)
 {
     partnerPortal.PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
