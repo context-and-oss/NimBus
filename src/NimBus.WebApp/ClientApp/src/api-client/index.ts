@@ -19142,6 +19142,8 @@ export class McpAccessSettings implements IMcpAccessSettings {
     enabled?: boolean;
     capabilities?: McpCapabilities;
     allowWorkloads?: boolean;
+    /** Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
+    allowWorkloadClassification?: boolean;
     people?: McpPeople;
     clients?: McpClients;
     endpoints?: McpEndpointRules;
@@ -19170,6 +19172,7 @@ export class McpAccessSettings implements IMcpAccessSettings {
             this.enabled = _data["enabled"];
             this.capabilities = _data["capabilities"] ? McpCapabilities.fromJS(_data["capabilities"]) : undefined as any;
             this.allowWorkloads = _data["allowWorkloads"];
+            this.allowWorkloadClassification = _data["allowWorkloadClassification"];
             this.people = _data["people"] ? McpPeople.fromJS(_data["people"]) : undefined as any;
             this.clients = _data["clients"] ? McpClients.fromJS(_data["clients"]) : undefined as any;
             this.endpoints = _data["endpoints"] ? McpEndpointRules.fromJS(_data["endpoints"]) : undefined as any;
@@ -19196,6 +19199,7 @@ export class McpAccessSettings implements IMcpAccessSettings {
         data["enabled"] = this.enabled;
         data["capabilities"] = this.capabilities ? this.capabilities.toJSON() : undefined as any;
         data["allowWorkloads"] = this.allowWorkloads;
+        data["allowWorkloadClassification"] = this.allowWorkloadClassification;
         data["people"] = this.people ? this.people.toJSON() : undefined as any;
         data["clients"] = this.clients ? this.clients.toJSON() : undefined as any;
         data["endpoints"] = this.endpoints ? this.endpoints.toJSON() : undefined as any;
@@ -19222,6 +19226,8 @@ export interface IMcpAccessSettings {
     enabled?: boolean;
     capabilities?: McpCapabilities;
     allowWorkloads?: boolean;
+    /** Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
+    allowWorkloadClassification?: boolean;
     people?: McpPeople;
     clients?: McpClients;
     endpoints?: McpEndpointRules;

@@ -19005,6 +19005,7 @@ namespace NimBus.WebApp.ManagementApi
         private bool _enabled;
         private McpCapabilities _capabilities;
         private bool _allowWorkloads;
+        private bool _allowWorkloadClassification;
         private McpPeople _people;
         private McpClients _clients;
         private McpEndpointRules _endpoints;
@@ -19092,6 +19093,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_allowWorkloads != value)
                 {
                     _allowWorkloads = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("allowWorkloadClassification", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AllowWorkloadClassification    {
+            get { return _allowWorkloadClassification; }
+            set
+            {
+                if (_allowWorkloadClassification != value)
+                {
+                    _allowWorkloadClassification = value;
                     RaisePropertyChanged();
                 }
             }

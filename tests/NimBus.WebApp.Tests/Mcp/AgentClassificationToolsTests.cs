@@ -246,6 +246,82 @@ public class AgentClassificationToolsTests
         AssertError(record, "FeatureUnavailable");
     }
 
+    [TestMethod]
+    [DataRow("nimbus.observe nimbus.classify", null, true, true, DisplayName = "delegated scope")]
+    [DataRow(null, "Nimbus.Observe Nimbus.Classify", true, true, DisplayName = "workload role, switch on")]
+    [DataRow(null, "Nimbus.Observe Nimbus.Classify", false, false, DisplayName = "workload role, switch off")]
+    [DataRow(null, "Nimbus.Observe", true, false, DisplayName = "workload without the role")]
+    [DataRow("nimbus.observe", "Nimbus.Classify", true, false, DisplayName = "delegated caller with only the app role")]
+    public async Task Recording_needs_the_classify_scope_or_the_workload_role_with_the_switch_on(
+        string? scopes, string? roles, bool workloadSwitch, bool allowed)
+    {
+        var store = new MemoryStore();
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, store: store, entra: true,
+            policy: p => p.AllowWorkloadClassification = workloadSwitch);
+        await SeedFailureAsync(host);
+        await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: scopes, roles: roles));
+
+        var result = await client.CallToolAsync("nimbus_record_classification", Answers());
+
+        if (allowed)
+        {
+            Assert.IsFalse(result.IsError == true, ErrorText(result));
+            var stored = await store.GetLatestAsync(Attempt);
+            Assert.AreEqual(McpTestHost.AgentClientId, stored!.ClientId);
+        }
+        else
+        {
+            AssertError(result, "PermissionDenied");
+            Assert.IsNull(await store.GetLatestOperationAsync(Attempt));
+        }
+    }
+
+    [TestMethod]
+    public async Task A_workload_role_never_admits_the_deprecated_provider_analysis()
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
+            policy: p => p.AllowWorkloadClassification = true);
+        await SeedFailureAsync(host);
+        await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Observe Nimbus.Classify"));
+
+        var result = await client.CallToolAsync("nimbus_classify_failure", new Dictionary<string, object?>
+        {
+            ["endpointId"] = Endpoint, ["eventId"] = EventId, ["idempotencyKey"] = Guid.NewGuid().ToString(),
+        });
+
+        AssertError(result, "PermissionDenied");
+        StringAssert.Contains(ErrorText(result), "can only record classifications", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public async Task A_workload_with_the_role_sees_classify_in_its_permitted_actions_only_when_the_switch_is_on()
+    {
+        foreach (var on in new[] { true, false })
+        {
+            await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
+                policy: p => p.AllowWorkloadClassification = on);
+            await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Observe Nimbus.Classify"));
+
+            var capabilities = await CallAsync(client, "nimbus_get_capabilities", new());
+
+            var permitted = capabilities.GetProperty("permittedActions").EnumerateArray().Select(e => e.GetString()).ToList();
+            Assert.AreEqual(on, permitted.Contains("classify"));
+            CollectionAssert.DoesNotContain(permitted, "resubmit");
+        }
+    }
+
+    [TestMethod]
+    public void Turning_on_workload_recording_is_reviewed_as_a_widening_change()
+    {
+        var on = NimBus.WebApp.Mcp.Access.McpAccessRules.Changes(new McpAccessSettings(), new McpAccessSettings { AllowWorkloadClassification = true });
+        var off = NimBus.WebApp.Mcp.Access.McpAccessRules.Changes(new McpAccessSettings { AllowWorkloadClassification = true }, new McpAccessSettings());
+
+        Assert.AreEqual("Let workloads record failure classifications", on.Single().Text);
+        Assert.IsTrue(on.Single().Widens);
+        Assert.IsFalse(off.Single().Widens);
+        Assert.IsFalse(new McpAccessSettings().AllowWorkloadClassification);
+    }
+
     private static Dictionary<string, object?> Answers() => new()
     {
         ["endpointId"] = Endpoint,
@@ -265,7 +341,7 @@ public class AgentClassificationToolsTests
     };
 
     private static Task<McpTestHost> StartAsync(McpTestHost.StubAccess access, IFailureClassificationStore? store = null, bool recorder = true,
-        Action<McpAccessSettings>? policy = null)
+        Action<McpAccessSettings>? policy = null, bool entra = false)
     {
         var messages = new InMemoryMessageStore();
         var events = InterfaceFake<IEventApiController>.Create();
@@ -299,7 +375,7 @@ public class AgentClassificationToolsTests
             }
         }
 
-        return McpTestHost.StartLocalDevelopmentAsync(Configure);
+        return entra ? McpTestHost.StartEntraAsync(Configure) : McpTestHost.StartLocalDevelopmentAsync(Configure);
     }
 
     private static async Task<ActionResult<SearchResponse>> SearchAsync(InMemoryMessageStore store, string endpointId)

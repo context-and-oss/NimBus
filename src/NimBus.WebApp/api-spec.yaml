@@ -6932,6 +6932,9 @@ components:
           $ref: '#/components/schemas/McpCapabilities'
         allowWorkloads:
           type: boolean
+        allowWorkloadClassification:
+          type: boolean
+          description: Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false.
         people:
           $ref: '#/components/schemas/McpPeople'
         clients:

@@ -68,6 +68,12 @@ public sealed class McpAccessPolicy
     public bool AllowsPayloads => Settings.Capabilities.Payloads;
 
     /// <summary>
+    /// Whether workloads with the <c>Nimbus.Classify</c> app role may record classifications: the
+    /// Owner allowed it and workload tokens are accepted (Spec 044 §6.6).
+    /// </summary>
+    public bool AllowsWorkloadClassification => Settings.AllowWorkloads && Settings.AllowWorkloadClassification;
+
+    /// <summary>
     /// Builds the policy from <paramref name="settings"/>, with each limit lowered to the
     /// deployment's value. When rate limiting is off the saved limits are ignored.
     /// </summary>

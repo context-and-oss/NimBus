@@ -232,7 +232,8 @@ internal sealed class McpTestHost : IAsyncDisposable
             ["name"] = "Agent Operator",
         };
         if (scopes is not null) claims["scp"] = scopes;
-        if (roles is not null) claims["roles"] = new[] { roles };
+        // Space-separated, like scp: a workload can hold several app roles.
+        if (roles is not null) claims["roles"] = roles.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {

@@ -235,7 +235,8 @@ public sealed partial class OperatorActionTools
         [Description("Classify again even when a classification exists. Default false.")] bool force = false,
         CancellationToken cancellationToken = default)
     {
-        await _access.RequireScopeAsync(OperatorAction.Classify).ConfigureAwait(false);
+        // A workload's Nimbus.Classify role admits recording only, never a paid provider call.
+        await _access.RequireDelegatedScopeAsync(OperatorAction.Classify).ConfigureAwait(false);
         if (!_classifications.IsAvailable)
             throw OperatorToolErrors.FeatureUnavailable("AI failure classification is not enabled in this deployment.");
         if (!_classifications.CanAnalyze)
