@@ -146,8 +146,9 @@ public sealed class ServiceBusTopologyProvisioner
     /// Creates <paramref name="expected"/> on <paramref name="topicName"/>, or brings an
     /// existing subscription up to it. A subscription whose session flag differs is deleted
     /// and recreated, because that cannot change in place. A wrong or missing forward target
-    /// and a too-short message expiry are corrected in place. A paused forwarder (not Active,
-    /// forward target detached) is left alone with its messages; only its rules are ensured.
+    /// and a too-short message expiry are corrected in place. A paused forwarder (forward target
+    /// detached and either not Active or carrying <see cref="SubscriptionMarkers.PurgeInProgress"/>)
+    /// is left alone with its messages; only its rules are ensured.
     /// </summary>
     /// <remarks>
     /// Also the rebuild path behind <see cref="ITopologyRebuilder"/>: the WebApp's
@@ -185,6 +186,15 @@ public sealed class ServiceBusTopologyProvisioner
             }
 
             log($"{(sessionMismatched ? "Recreated" : "Created")} {DescribeKind(expected)}subscription '{expected.Name}' on topic '{topicName}'{DescribeForwarding(expected)}.");
+        }
+        else if (IsPurgingForwarder(existing, expected))
+        {
+            // A WebApp Purge of a paused forwarder makes it Active for the drain with ForwardTo
+            // still detached, and marks it. Re-attaching forwarding now would hand the backlog
+            // being discarded to the destination and break the drain.
+            log($"Skipped forward subscription '{expected.Name}' on topic '{topicName}': it carries the WebApp purge marker. " +
+                "A purge is draining it, or an interrupted purge left the marker behind; Pause in the WebApp clears it " +
+                "(then Resume, if forwarding should be re-attached).");
         }
         else if (IsPausedForwarder(existing, expected))
         {
@@ -253,6 +263,16 @@ public sealed class ServiceBusTopologyProvisioner
         !string.IsNullOrEmpty(expected.ForwardTo)
         && string.IsNullOrEmpty(existing.ForwardTo)
         && existing.Status != EntityStatus.Active;
+
+    /// <summary>
+    /// True when <paramref name="existing"/> is a forwarder with its forward target detached
+    /// that carries <see cref="SubscriptionMarkers.PurgeInProgress"/>: a WebApp purge is
+    /// draining it, or an interrupted purge left the marker behind.
+    /// </summary>
+    private static bool IsPurgingForwarder(SubscriptionProperties existing, ExpectedSubscription expected) =>
+        !string.IsNullOrEmpty(expected.ForwardTo)
+        && string.IsNullOrEmpty(existing.ForwardTo)
+        && string.Equals(existing.UserMetadata, SubscriptionMarkers.PurgeInProgress, StringComparison.Ordinal);
 
     private static string DescribeKind(ExpectedSubscription expected) =>
         expected.ForwardTo is not null ? "forward " : expected.RequiresSession ? "session " : string.Empty;

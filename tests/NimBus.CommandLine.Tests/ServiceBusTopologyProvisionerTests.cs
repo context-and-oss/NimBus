@@ -635,11 +635,97 @@ public sealed class ServiceBusTopologyProvisionerTests
         Assert.Equal(EntityStatus.Active, updated.Status);
     }
 
+    [Fact]
+    public async Task ApplyAsync_LeavesAForwarderTheWebAppIsPurgingUntouched()
+    {
+        // A WebApp Purge of a paused forwarder makes it Active for the drain, with ForwardTo
+        // still detached. Without the purge marker, apply would re-attach forwarding mid-drain
+        // and hand the backlog the operator chose to discard to the destination.
+        var client = new RecordingAdministrationClient();
+        SeedDetachedActiveForwarder(client, SubscriptionMarkers.PurgeInProgress);
+
+        await CreateProvisioner(client, ContactForwardPlatform()).ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.DoesNotContain(client.UpdatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.DoesNotContain(client.DeletedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.DoesNotContain(client.CreatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+
+        var stillDraining = client.GetSeeded("CrmEndpoint", "ErpEndpoint");
+        Assert.Equal(EntityStatus.Active, stillDraining.Status);
+        Assert.True(string.IsNullOrEmpty(stillDraining.ForwardTo));
+
+        Assert.Contains(client.CreatedRules, r => r.TopicName == "CrmEndpoint" && r.SubscriptionName == "ErpEndpoint" && r.Rule.Name == "ContactCreated");
+    }
+
+    [Fact]
+    public async Task ApplyAsync_SaysWhyItSkippedAMarkedForwarderAndHowToClearTheMarker()
+    {
+        var client = new RecordingAdministrationClient();
+        SeedDetachedActiveForwarder(client, SubscriptionMarkers.PurgeInProgress);
+        var log = new List<string>();
+        var platform = ContactForwardPlatform();
+        var sut = new NimBus.ServiceBus.Provisioning.ServiceBusTopologyProvisioner(client, () => platform, log.Add);
+
+        await sut.ApplyAsync(CancellationToken.None);
+
+        var line = Assert.Single(log, l => l.Contains("'ErpEndpoint' on topic 'CrmEndpoint'", StringComparison.Ordinal));
+        Assert.Contains("purge marker", line, StringComparison.Ordinal);
+        Assert.Contains("Pause", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("until the purge", line, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("owner: team-a")]
+    public async Task ApplyAsync_StillReattachesAnUnmarkedDetachedActiveForwarder(string userMetadata)
+    {
+        // The marker, not "Active and detached", is what makes apply hold back: an unmarked
+        // forwarder that lost its target is still corrected in place.
+        var client = new RecordingAdministrationClient();
+        SeedDetachedActiveForwarder(client, userMetadata);
+
+        await CreateProvisioner(client, ContactForwardPlatform()).ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.DoesNotContain(client.DeletedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        var updated = Assert.Single(client.UpdatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.Equal("ErpEndpoint", updated.ForwardTo);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_StillRecreatesAMarkedForwarderWhoseSessionFlagIsWrong()
+    {
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("CrmEndpoint");
+        client.SeedTopic("ErpEndpoint");
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "ErpEndpoint",
+            requiresSession: true, forwardTo: string.Empty, userMetadata: SubscriptionMarkers.PurgeInProgress));
+
+        await CreateProvisioner(client, ContactForwardPlatform()).ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.Contains(client.DeletedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.Contains(client.CreatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+    }
+
+    private static void SeedDetachedActiveForwarder(RecordingAdministrationClient client, string userMetadata)
+    {
+        client.SeedTopic("CrmEndpoint");
+        client.SeedTopic("ErpEndpoint");
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "ErpEndpoint",
+            requiresSession: false, forwardTo: string.Empty, status: EntityStatus.Active, userMetadata: userMetadata));
+    }
+
+    /// <summary>CrmEndpoint publishes ContactCreated, ErpEndpoint consumes it: one forwarder.</summary>
+    private static TestPlatform ContactForwardPlatform() => new(
+        new EventEndpoint("CrmEndpoint", produces: new[] { "ContactCreated" }, consumes: Array.Empty<string>()),
+        new EventEndpoint("ErpEndpoint", produces: Array.Empty<string>(), consumes: new[] { "ContactCreated" }));
+
     private static SubscriptionProperties MakeSubscriptionProperties(
         string topicName, string subscriptionName,
         bool requiresSession = false, string? forwardTo = null,
         TimeSpan? defaultMessageTimeToLive = null, bool deadLetteringOnMessageExpiration = false,
-        EntityStatus? status = null) =>
+        EntityStatus? status = null,
+        // The model factory rejects null UserMetadata, so "none" is string.Empty here.
+        string userMetadata = "") =>
         ServiceBusModelFactory.SubscriptionProperties(
             topicName, subscriptionName,
             lockDuration: TimeSpan.FromMinutes(1),
@@ -652,7 +738,7 @@ public sealed class ServiceBusTopologyProvisionerTests
             status: status ?? EntityStatus.Active,
             forwardTo: forwardTo,
             forwardDeadLetteredMessagesTo: string.Empty,
-            userMetadata: string.Empty);
+            userMetadata: userMetadata);
 
     private const string RealNamespaceConnectionString =
         "Endpoint=sb://example/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=test";
