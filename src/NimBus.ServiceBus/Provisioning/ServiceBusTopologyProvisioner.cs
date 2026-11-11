@@ -175,7 +175,16 @@ public sealed class ServiceBusTopologyProvisioner
                 await client.DeleteSubscriptionAsync(topicName, expected.Name, cancellationToken).ConfigureAwait(false);
             }
 
-            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, expected), cancellationToken).ConfigureAwait(false);
+            var options = CreateSubscriptionOptions(topicName, expected);
+            if (expected.KeepDefaultRule)
+            {
+                await client.CreateSubscriptionAsync(options, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await client.CreateSubscriptionAsync(options, ClosedDefaultRule(), cancellationToken).ConfigureAwait(false);
+            }
+
             log($"{(sessionMismatched ? "Recreated" : "Created")} {DescribeKind(expected)}subscription '{expected.Name}' on topic '{topicName}'{DescribeForwarding(expected)}.");
         }
         else if (IsPurgingForwarder(existing, expected))
@@ -221,9 +230,11 @@ public sealed class ServiceBusTopologyProvisioner
             }
         }
 
-        // Service Bus auto-creates a $Default true-filter on every new subscription. Left
-        // in place it hands the subscription everything published to the topic, which is
-        // only ever right for the Resolver's own subscription.
+        // A subscription created here carries the closed $Default placeholder, which this
+        // removes; the subscription then matches nothing until its real rules are in place.
+        // A subscription that predates that still has the true-filter $Default Service Bus
+        // seeds a rule-less create with, which hands it everything published to the topic
+        // and is only ever right for the Resolver's own subscription.
         if (!expected.KeepDefaultRule)
         {
             await DeleteRuleIfExistsAsync(client, topicName, expected.Name, TopologyDescriptor.DefaultRuleName, cancellationToken).ConfigureAwait(false);
@@ -393,6 +404,21 @@ public sealed class ServiceBusTopologyProvisioner
         return string.Equals(existingFilter, filter, StringComparison.Ordinal) &&
                string.Equals(existingAction, action ?? string.Empty, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The rule a subscription is created with when it must not keep $Default: a $Default
+    /// that matches nothing (<c>1=0</c>).
+    /// </summary>
+    /// <remarks>
+    /// Created without a rule, Service Bus seeds a true-filter $Default, and until the
+    /// provisioner deletes it the subscription receives everything published to its topic —
+    /// on a live topic, messages addressed elsewhere, and for a forwarder, unrelated traffic
+    /// auto-forwarded without the forward rule's action. Creating it closed keeps it from
+    /// ever existing with a true filter; the $Default delete and the rule loop that follow
+    /// then run exactly as for any other subscription.
+    /// </remarks>
+    private static CreateRuleOptions ClosedDefaultRule() =>
+        new(TopologyDescriptor.DefaultRuleName, new FalseRuleFilter());
 
     private static CreateSubscriptionOptions CreateSubscriptionOptions(string topicName, ExpectedSubscription expected)
     {

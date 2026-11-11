@@ -24,7 +24,8 @@ internal static class SetupCommand
             var repoRoot = setupCommand.Option("--repo-root <PATH>", "Repository root for a source build. Implies --from-source.", CommandOptionType.SingleValue);
             var setupFromSource = setupCommand.Option("--from-source", "Build the applications from a repository clone instead of deploying the published release artifacts.", CommandOptionType.NoValue);
             var location = setupCommand.Option("--location <AZURE-REGION>", "Azure region for new resources. Defaults to the resource group's region; existing resources keep theirs.", CommandOptionType.SingleValue);
-            var resourceNamePostfix = setupCommand.Option("--resource-name-postfix <VALUE>", "Reserved for compatibility with the legacy pipeline scripts.", CommandOptionType.SingleValue);
+            var resourceNamePostfix = setupCommand.Option(ResourceNaming.PostfixOptionTemplate, ResourceNaming.PostfixOptionDescription, CommandOptionType.SingleValue);
+            var setupFuncStorageAccountName = setupCommand.Option(ResourceNaming.FuncStorageAccountOptionTemplate, ResourceNaming.FuncStorageAccountOptionDescription, CommandOptionType.SingleValue);
             var webAppVersion = setupCommand.Option("--webapp-version <VALUE>", "Version string stored in the web app settings.", CommandOptionType.SingleValue);
             var configuration = setupCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish.", CommandOptionType.SingleValue);
             var setupResolverPlan = setupCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to the existing plan when one is deployed, otherwise 'FlexConsumption' (FC1, scale-to-zero Linux).", CommandOptionType.SingleValue);
@@ -120,15 +121,17 @@ internal static class SetupCommand
                     ServiceBusCapacity: setupServiceBusCapacity,
                     ServiceBusNamespaceName: setupNetworkOptions.ServiceBusNamespaceName,
                     DnsWait: setupDnsWait,
-                    AlertMail: setupAlertMail);
+                    AlertMail: setupAlertMail,
+                    FuncStorageAccountName: setupFuncStorageAccountName.Value());
 
-                var topologyOptions = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, setupNetworkOptions.ServiceBusNamespaceName, setupDnsWait);
+                var topologyOptions = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, setupNetworkOptions.ServiceBusNamespaceName, setupDnsWait, resourceNamePostfix.Value());
                 var appOptions = new AppDeploymentOptions(
                     solutionId.Value()!,
                     environment.Value()!,
                     resourceGroup.Value()!,
                     configuration.HasValue() ? configuration.Value()! : "Release",
-                    DnsWait: setupDnsWait);
+                    DnsWait: setupDnsWait,
+                    ResourceNamePostfix: resourceNamePostfix.Value());
 
                 await infra.ApplyAsync(infraOptions, cancellationToken).ConfigureAwait(false);
                 await topology.ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);

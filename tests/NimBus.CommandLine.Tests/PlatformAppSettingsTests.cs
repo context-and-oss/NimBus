@@ -48,6 +48,20 @@ public sealed class PlatformAppSettingsTests
         Assert.DoesNotContain(az.Calls, call => call.Contains("appsettings", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task DeployingWithAPostfix_TargetsThePostfixedApps()
+    {
+        var az = new RecordingAzureCli();
+        var service = new AppDeploymentService(az, new StubArtifacts(), platformPackage: null);
+
+        await service.DeployAsync(Options with { Target = AppDeploymentTarget.All, ResourceNamePostfix = "avk" }, CancellationToken.None);
+
+        Assert.Contains(az.Calls, call => call.StartsWith("webapp deploy", StringComparison.Ordinal) && call.Contains("--name webapp-acme-test-management-avk", StringComparison.Ordinal));
+        Assert.Contains(az.Calls, call => call.Contains("func-acme-test-resolver-avk", StringComparison.Ordinal));
+        // The App Service plan was never postfixed.
+        Assert.DoesNotContain(az.Calls, call => call.Contains("asp-acme-test-core-avk", StringComparison.Ordinal));
+    }
+
     private sealed class StubArtifacts : IDeploymentArtifactSource
     {
         private readonly string _zip = CreateEmptyFile();

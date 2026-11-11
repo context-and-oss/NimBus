@@ -34,7 +34,7 @@ internal sealed class AlertMailCommandOptions
             $"SMTP user name. The password is read from {DeploymentSecrets.AlertMailSmtpPasswordEnvironmentVariable}.",
             CommandOptionType.SingleValue);
         _webAppUrl = command.Option($"{AlertMailSelection.WebAppUrlOption} <URL>",
-            "Public URL of the management WebApp, linked from each alert mail. Defaults to https://webapp-{solution-id}-{environment}-management.azurewebsites.net.",
+            "Public URL of the management WebApp, linked from each alert mail. Defaults to https://webapp-{solution-id}-{environment}-management[-{resource-name-postfix}].azurewebsites.net.",
             CommandOptionType.SingleValue);
     }
 

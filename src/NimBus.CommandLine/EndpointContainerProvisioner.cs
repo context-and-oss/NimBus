@@ -33,7 +33,6 @@ internal sealed class EndpointContainerProvisioner
 
     internal async Task ApplyAsync(TopologyOptions options, CancellationToken cancellationToken)
     {
-        var names = NamingConventions.Build(options.SolutionId, options.Environment);
         var endpointIds = _platformFactory().Endpoints.Select(endpoint => endpoint.Id).ToList();
 
         // Validate the whole catalog before touching Azure so a reserved id fails
@@ -44,6 +43,15 @@ internal sealed class EndpointContainerProvisioner
         }
 
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
+
+        var names = await ResourceNaming.ResolveDeployedNamesAsync(
+            _az,
+            options.SolutionId,
+            options.Environment,
+            options.ResourceGroupName,
+            options.ServiceBusNamespaceName,
+            options.ResourceNamePostfix,
+            cancellationToken).ConfigureAwait(false);
 
         var existingJson = await _az.CaptureValueAsync(
             new[]

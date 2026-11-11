@@ -28,7 +28,8 @@ internal static class InfraCommands
                 var resourceGroup = applyCommand.Option("--resource-group <NAME>", "Azure resource group name.", CommandOptionType.SingleValue).IsRequired();
                 var repoRoot = applyCommand.Option("--repo-root <PATH>", "Repository root. Defaults to the current directory or a parent directory containing deploy/ and src/.", CommandOptionType.SingleValue);
                 var location = applyCommand.Option("--location <AZURE-REGION>", "Azure region for new resources. Defaults to the resource group's region; existing resources keep theirs.", CommandOptionType.SingleValue);
-                var resourceNamePostfix = applyCommand.Option("--resource-name-postfix <VALUE>", "Reserved for compatibility with the legacy pipeline scripts.", CommandOptionType.SingleValue);
+                var resourceNamePostfix = applyCommand.Option(ResourceNaming.PostfixOptionTemplate, ResourceNaming.PostfixOptionDescription, CommandOptionType.SingleValue);
+                var funcStorageAccountName = applyCommand.Option(ResourceNaming.FuncStorageAccountOptionTemplate, ResourceNaming.FuncStorageAccountOptionDescription, CommandOptionType.SingleValue);
                 var webAppVersion = applyCommand.Option("--webapp-version <VALUE>", "Version string stored in the web app settings.", CommandOptionType.SingleValue);
                 var storageProvider = applyCommand.Option("--storage-provider <PROVIDER>", "Storage provider for NimBus message persistence: cosmos | sqlserver. Defaults to 'cosmos' for backwards compatibility.", CommandOptionType.SingleValue);
                 var sqlMode = applyCommand.Option("--sql-mode <MODE>", $"When --storage-provider is sqlserver: 'provision' deploys a new Azure SQL resource; 'external' reads the connection string from {DeploymentSecrets.SqlConnectionStringEnvironmentVariable}.", CommandOptionType.SingleValue);
@@ -87,7 +88,8 @@ internal static class InfraCommands
                         ServiceBusCapacity: serviceBusCapacity,
                         ServiceBusNamespaceName: networkOptions.ServiceBusNamespaceName,
                         DnsWait: networkOptions.DnsWait,
-                        AlertMail: alertMail);
+                        AlertMail: alertMail,
+                        FuncStorageAccountName: funcStorageAccountName.Value());
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;

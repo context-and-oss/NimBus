@@ -395,6 +395,81 @@ public sealed class ServiceBusTopologyProvisionerTests
     }
 
     [Fact]
+    public async Task ApplyAsync_CreatesEverySubscriptionWithAClosedInitialRuleUnlessItKeepsDefault()
+    {
+        // Service Bus seeds a rule-less subscription with a true-filter $Default, so between
+        // the create call and the $Default delete it would match everything published to the
+        // topic. Creating it with a false-filter $Default keeps it closed until its real rules
+        // are in place.
+        var client = new RecordingAdministrationClient();
+
+        var crm = new EventEndpoint("CrmEndpoint", produces: new[] { "AccountCreated", "ContactCreated" }, consumes: new[] { "ContactCreated" });
+        var erp = new EventEndpoint("ErpEndpoint", produces: Array.Empty<string>(), consumes: new[] { "AccountCreated", "ContactCreated" });
+        var platform = new TestPlatform(new[] { new DynamicForward("CrmEndpoint", "LegacyOrderPlaced", "ErpEndpoint") }, crm, erp);
+
+        var sut = CreateProvisioner(client, platform);
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        var checkedClosed = 0;
+        foreach (var topicName in new[] { Constants.ResolverId, "CrmEndpoint", "ErpEndpoint" })
+        {
+            foreach (var expected in TopologyDescriptor.ForTopic(topicName, platform))
+            {
+                var initialRules = client.CreatedSubscriptionInitialRules
+                    .Where(created => created.TopicName == topicName && created.SubscriptionName == expected.Name)
+                    .ToList();
+
+                if (expected.KeepDefaultRule)
+                {
+                    Assert.Empty(initialRules);
+                    continue;
+                }
+
+                var initial = Assert.Single(initialRules).Rule;
+                Assert.Equal(TopologyDescriptor.DefaultRuleName, initial.Name);
+                Assert.IsNotType<TrueRuleFilter>(initial.Filter);
+                var filter = Assert.IsType<FalseRuleFilter>(initial.Filter);
+                Assert.Equal("1=0", filter.SqlExpression);
+                checkedClosed++;
+            }
+        }
+
+        Assert.True(checkedClosed > 0);
+        Assert.Contains(client.CreatedSubscriptions, created => created.TopicName == Constants.ResolverId && created.SubscriptionName == Constants.ResolverId);
+    }
+
+    [Fact]
+    public async Task Rebuilder_RecreatesASubscriptionWithAClosedInitialRule()
+    {
+        // The WebApp's "Delete & recreate" deletes the subscription and rebuilds it through
+        // the rebuilder on a live topic.
+        var platform = new TestPlatform(new TestEndpoint("orders"));
+        var expected = TopologyDescriptor.FindSubscription("orders", "orders", platform)!;
+        Assert.NotNull(expected);
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("orders");
+
+        await new ServiceBusTopologyRebuilder(client).EnsureSubscriptionAsync("orders", expected);
+
+        var initial = Assert.Single(client.CreatedSubscriptionInitialRules, created =>
+            created.TopicName == "orders" && created.SubscriptionName == "orders").Rule;
+        Assert.Equal(TopologyDescriptor.DefaultRuleName, initial.Name);
+        Assert.Equal("1=0", Assert.IsType<FalseRuleFilter>(initial.Filter).SqlExpression);
+
+        Assert.Contains(client.DeletedRules, rule =>
+            rule.TopicName == "orders" && rule.SubscriptionName == "orders" && rule.RuleName == TopologyDescriptor.DefaultRuleName);
+        Assert.Equal(
+            expected.Rules.Select(rule => rule.Name).OrderBy(name => name, StringComparer.Ordinal),
+            client.CreatedRules
+                .Where(rule => rule.TopicName == "orders" && rule.SubscriptionName == "orders")
+                .Select(rule => rule.Rule.Name)
+                .OrderBy(name => name, StringComparer.Ordinal));
+        Assert.Equal(
+            new[] { $"delete orders/orders/{TopologyDescriptor.DefaultRuleName}" },
+            client.Operations.Where(operation => operation.StartsWith("delete", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void Descriptor_DescribesTheEndpointsOwnReplySubscription()
     {
         // The reply subscription is the one an endpoint's request/reply traffic lands on.
@@ -708,6 +783,7 @@ public sealed class ServiceBusTopologyProvisionerTests
         public void ResetRecords()
         {
             CreatedSubscriptions.Clear();
+            CreatedSubscriptionInitialRules.Clear();
             DeletedSubscriptions.Clear();
             UpdatedSubscriptions.Clear();
             CreatedRules.Clear();
@@ -767,6 +843,27 @@ public sealed class ServiceBusTopologyProvisionerTests
             // Azure Service Bus auto-creates a $Default rule on new subscriptions
             _rules[(options.TopicName, options.SubscriptionName, "$Default")] =
                 ServiceBusModelFactory.RuleProperties("$Default", new TrueRuleFilter());
+            return Task.FromResult(Response.FromValue(subscription, FakeResponse.Instance));
+        }
+
+        /// <summary>Subscriptions created with an initial rule, and the rule they were created with.</summary>
+        public List<(string TopicName, string SubscriptionName, CreateRuleOptions Rule)> CreatedSubscriptionInitialRules { get; } = new();
+
+        public override Task<Response<SubscriptionProperties>> CreateSubscriptionAsync(CreateSubscriptionOptions options, CreateRuleOptions rule, CancellationToken cancellationToken = default)
+        {
+            CreatedSubscriptionInitialRules.Add((options.TopicName, options.SubscriptionName, rule));
+            CreatedSubscriptions.Add(options);
+            var subscription = MakeSubscriptionProperties(
+                options.TopicName,
+                options.SubscriptionName,
+                requiresSession: options.RequiresSession,
+                forwardTo: _forwardToNormalizer(options.ForwardTo),
+                defaultMessageTimeToLive: options.DefaultMessageTimeToLive,
+                deadLetteringOnMessageExpiration: options.DeadLetteringOnMessageExpiration);
+            _subscriptions[(options.TopicName, options.SubscriptionName)] = subscription;
+            // Created with an explicit rule, Service Bus seeds that rule instead of $Default.
+            _rules[(options.TopicName, options.SubscriptionName, rule.Name)] =
+                ServiceBusModelFactory.RuleProperties(rule.Name, rule.Filter, rule.Action);
             return Task.FromResult(Response.FromValue(subscription, FakeResponse.Instance));
         }
 

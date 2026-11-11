@@ -74,7 +74,9 @@ public class PrivateNetworkingTemplateTests
         var storage = Module("storageaccount.bicep");
 
         Assert.Contains("var isLocked = publicNetworkAccess == 'Disabled'", storage, StringComparison.Ordinal);
-        Assert.Contains("defaultAction: isLocked ? 'Deny' : 'Allow'", storage, StringComparison.Ordinal);
+        Assert.Contains("var networkAcls = isLocked", storage, StringComparison.Ordinal);
+        Assert.Contains("defaultAction: 'Deny'", storage, StringComparison.Ordinal);
+        Assert.Contains("defaultAction: 'Allow'", storage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -171,9 +173,58 @@ public class PrivateNetworkingTemplateTests
     [Fact]
     public void Network_resources_carry_the_ownership_tag()
     {
-        Assert.Contains("'nimbus-deployment': '${toLower(solutionId)}-${toLower(environment)}'", Core, StringComparison.Ordinal);
-        Assert.Contains("'nimbus-deployment': '${toLower(solutionId)}-${toLower(environment)}'", WebAppEntry, StringComparison.Ordinal);
+        // The postfix suffix keeps the tag equal to PrivateNetworkCleanup.OwnerValue.
+        Assert.Contains("'nimbus-deployment': '${toLower(solutionId)}-${toLower(environment)}${nameSuffix}'", Core, StringComparison.Ordinal);
+        Assert.Contains("'nimbus-deployment': '${toLower(solutionId)}-${toLower(environment)}${nameSuffix}'", WebAppEntry, StringComparison.Ordinal);
         Assert.Contains("tags: tags", Module("privateEndpoint.bicep"), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The templates postfix only what the legacy pipeline postfixed, the same split as
+    /// NamingConventions.Build: App Insights, the plans and the function storage account keep
+    /// their names.
+    /// </summary>
+    [Fact]
+    public void Resource_name_postfix_follows_the_legacy_layout()
+    {
+        Assert.Contains("var nameSuffix = empty(resourceNamePostfix) ? '' : '-${toLower(resourceNamePostfix)}'", Core, StringComparison.Ordinal);
+        Assert.Contains("var nameSuffix = empty(resourceNamePostfix) ? '' : '-${toLower(resourceNamePostfix)}'", WebAppEntry, StringComparison.Ordinal);
+
+        Assert.Contains("'sb-${toLower(solutionId)}-${toLower(environment)}${nameSuffix}'", Core, StringComparison.Ordinal);
+        Assert.Contains("var cosmosAccountName = 'cosmos-${toLower(solutionId)}-${toLower(environment)}${nameSuffix}'", Core, StringComparison.Ordinal);
+        Assert.Contains("var defaultSqlServerName = 'sql-${toLower(solutionId)}-${toLower(environment)}${nameSuffix}'", Core, StringComparison.Ordinal);
+        Assert.Contains("var resolverFunctionAppName = 'func-${toLower(solutionId)}-${toLower(environment)}-resolver${nameSuffix}'", Core, StringComparison.Ordinal);
+        Assert.Contains("var managementWebAppName = 'webapp-${toLower(solutionId)}-${toLower(environment)}-management${nameSuffix}'", WebAppEntry, StringComparison.Ordinal);
+
+        Assert.Contains("var appInsightsName = 'ai-${toLower(solutionId)}-${toLower(environment)}-global-tracelog'", Core, StringComparison.Ordinal);
+        Assert.Contains("var managementAppServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-management'", Core, StringComparison.Ordinal);
+        Assert.Contains("var coreAppServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-core'", Core, StringComparison.Ordinal);
+        Assert.Contains("var appServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-management'", WebAppEntry, StringComparison.Ordinal);
+        Assert.Contains("empty(funcStorageAccountName) ? 'st${toLower(solutionId)}${toLower(environment)}func' : funcStorageAccountName", Core, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_reused_storage_account_keeps_its_sku_and_kind()
+    {
+        var storage = Module("storageaccount.bicep");
+
+        Assert.Contains("kind: kind", storage, StringComparison.Ordinal);
+        Assert.Contains("name: skuName", storage, StringComparison.Ordinal);
+        Assert.Contains("skuName: funcStorageSkuName", Core, StringComparison.Ordinal);
+        Assert.Contains("kind: funcStorageKind", Core, StringComparison.Ordinal);
+    }
+
+    /// <summary>Regression: a reused account's firewall rules were replaced by the defaults on every deploy.</summary>
+    [Fact]
+    public void A_reused_storage_account_keeps_its_network_rules()
+    {
+        var storage = Module("storageaccount.bicep");
+
+        Assert.Contains("param existingNetworkAcls object = {}", storage, StringComparison.Ordinal);
+        Assert.Contains("union(existingNetworkAcls, {", storage, StringComparison.Ordinal);
+        Assert.Contains("(empty(existingNetworkAcls) ? defaultNetworkAcls : existingNetworkAcls)", storage, StringComparison.Ordinal);
+        Assert.Contains("networkAcls: networkAcls", storage, StringComparison.Ordinal);
+        Assert.Contains("existingNetworkAcls: funcStorageNetworkAcls", Core, StringComparison.Ordinal);
     }
 
     [Fact]

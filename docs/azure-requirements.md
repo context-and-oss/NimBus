@@ -25,6 +25,10 @@ With `--network-mode private` the Cosmos DB account, SQL server, storage account
 namespace and both apps are created with public network access disabled, and both apps are
 VNet-integrated. Subnets, DNS, egress and runners: [Private networking](private-networking.md).
 
+Legacy names: `--resource-name-postfix` appends `-{postfix}` to the Service Bus, Cosmos DB, SQL
+server, Function App and Web App names only, and `--func-storage-account-name` points the
+Resolver at an existing storage account ([details](cli.md#legacy-resource-names)).
+
 Naming constraint: the storage account name `st{solutionId}{environment}func` must be ≤ 24 lowercase alphanumeric characters — keep `solutionId` + `environment` within 17 characters combined.
 
 ## Resource provider registrations

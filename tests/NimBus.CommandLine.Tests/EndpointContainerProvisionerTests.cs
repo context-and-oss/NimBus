@@ -36,6 +36,19 @@ public sealed class EndpointContainerProvisionerTests
     }
 
     [Fact]
+    public async Task ApplyAsync_UsesThePostfixedCosmosAccount()
+    {
+        var az = new FakeAzureCliRunner();
+        var sut = new EndpointContainerProvisioner(az, () => new TestPlatform(new TestEndpoint("BillingEndpoint")));
+
+        await sut.ApplyAsync(new TopologyOptions("nbdemo", "dev", "rg-test", ResourceNamePostfix: "avk"), CancellationToken.None);
+
+        Assert.All(
+            az.Commands.Where(command => command.Contains("cosmosdb")),
+            command => Assert.Contains("cosmos-nbdemo-dev-avk", command));
+    }
+
+    [Fact]
     public async Task ApplyAsync_LeavesExistingContainersUntouched()
     {
         var az = new FakeAzureCliRunner { ListResponse = "[\"BillingEndpoint\", \"StorefrontEndpoint\"]" };

@@ -28,6 +28,17 @@ public sealed class SqlRuleEngineTests
     }
 
     [TestMethod]
+    [DataRow("1=0")]
+    [DataRow("1 = 0")]
+    public void False_filter_matches_nothing(string expression)
+    {
+        var rule = SqlRuleEngine.Compile(expression, null);
+
+        Assert.IsFalse(rule.IsMatch(new Dictionary<string, object?>()));
+        Assert.IsFalse(rule.IsMatch(new Dictionary<string, object?> { ["To"] = "anyone" }));
+    }
+
+    [TestMethod]
     public void Parser_rejects_unsupported_syntax_at_rule_creation()
     {
         Assert.ThrowsExactly<FormatException>(() => SqlRuleEngine.Compile("user.Value LIKE '%x%'", null));
