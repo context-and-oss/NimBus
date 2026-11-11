@@ -189,7 +189,7 @@ public sealed class FailureClassificationService
             SessionId = input.SessionId,
             Provider = _provider.Name,
             Model = providerResult.Model,
-            QuestionSetVersion = FailureClassificationQuestionSet.Version,
+            QuestionSetVersion = FailureClassificationQuestionSet.ProviderVersion,
             Category = providerResult.Category,
             CategoryConfidence = providerResult.CategoryConfidence,
             CategoryProbabilities = providerResult.CategoryProbabilities,

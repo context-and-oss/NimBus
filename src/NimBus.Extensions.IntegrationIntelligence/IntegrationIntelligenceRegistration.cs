@@ -55,15 +55,20 @@ public static class IntegrationIntelligenceRegistration
             options.IntelligenceEnabled = parentEnabled;
             bindingErrors.Add("Classification configuration could not be bound.");
         }
-        var validationErrors = bindingErrors.Concat(options.Validate()).ToArray();
+        var evidenceErrors = bindingErrors.Concat(options.ValidateEvidence()).ToArray();
+        var providerErrors = options.ValidateProvider();
+        var validationErrors = evidenceErrors.Concat(providerErrors).ToArray();
         var hasStorage = services.Any(d => d.ServiceType == typeof(IIntegrationIntelligenceStorageSettings) || d.ServiceType == typeof(IFailureClassificationStore));
         var hasHostAdapter = services.Any(d => d.ServiceType == typeof(IIntegrationIntelligenceHost));
         // Spec 043: saved classifications stay readable when only provider, threshold or evidence
         // settings are invalid (for example no API key). A binding failure still fails closed.
+        // Spec 044 §6.7: recording needs valid evidence and thresholds but no provider; provider
+        // analysis (Ready) additionally needs a valid TypeSafe configuration.
         var readable = options.Enabled && bindingErrors.Count == 0 && hasStorage && hasHostAdapter;
-        var ready = readable && validationErrors.Length == 0;
+        var recordable = readable && evidenceErrors.Length == 0;
+        var ready = recordable && !options.ProviderDisabled && providerErrors.Count == 0;
         services.AddSingleton(options);
-        services.AddSingleton(new IntegrationIntelligenceActivation(options.Enabled, ready, validationErrors) { Readable = readable });
+        services.AddSingleton(new IntegrationIntelligenceActivation(options.Enabled, ready, validationErrors) { Readable = readable, Recordable = recordable });
         services.AddControllers().ConfigureApplicationPartManager(manager =>
             manager.FeatureProviders.Add(new IntegrationIntelligenceFeatureProvider(options.Enabled, readable, ready, hasHostAdapter)));
 
@@ -97,17 +102,30 @@ public static class IntegrationIntelligenceRegistration
             sp.GetRequiredService<IFailureClassificationStore>(),
             sp.GetRequiredService<NimBus.MessageStore.Abstractions.IMessageTrackingStore>(),
             sp.GetService<ILogger<FailureClassificationReader>>()));
-        if (!ready)
+        if (!recordable)
         {
             return services;
         }
 
-        services.AddSingleton<IntelligenceDataRedactor>();
+        // Recordable mode and above: evidence for agents, and recording without a provider.
+        services.AddSingleton(_ => new IntelligenceDataRedactor(options));
         services.AddScoped(sp => new FailureEvidenceBuilder(
             sp.GetRequiredService<NimBus.MessageStore.Abstractions.IMessageTrackingStore>(),
             sp.GetRequiredService<NimBus.Core.Messages.PII.IEventJsonMasker>(),
             sp.GetService<NimBus.Core.Messages.PII.IEventJsonRedactor>(),
             sp.GetRequiredService<IntelligenceDataRedactor>(), options));
+        services.AddScoped(sp => new FailureClassificationRecorder(
+            options,
+            sp.GetRequiredService<IIntegrationIntelligenceHost>(),
+            sp.GetRequiredService<IFailureClassificationStore>(),
+            sp.GetRequiredService<FailureEvidenceBuilder>(),
+            sp.GetRequiredService<NimBus.MessageStore.Abstractions.IMessageTrackingStore>(),
+            sp.GetService<TimeProvider>()));
+        if (!ready)
+        {
+            return services;
+        }
+
         services.AddHttpClient("NimBus.TypeSafe", client =>
         {
             client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
@@ -212,16 +230,33 @@ public sealed record IntegrationIntelligenceActivation(bool Enabled, bool Ready,
     /// Ready implies readable; read-only mode is readable without being ready (spec 043).
     /// </summary>
     public bool Readable { get; init; }
+
+    /// <summary>
+    /// True when agents can read evidence and record classifications over MCP: readable, with
+    /// valid evidence and threshold settings. No provider is needed. Ready implies recordable
+    /// (Spec 044 §6.7).
+    /// </summary>
+    public bool Recordable { get => _recordable || Ready; init => _recordable = value; }
+
+    private readonly bool _recordable;
 }
 
-/// <summary>Stable status response data.</summary>
+/// <summary>
+/// Stable status response data. <paramref name="Status"/> is <c>Ready</c> (provider analysis
+/// available), <c>Recordable</c> (agents record over MCP; no provider) or
+/// <c>ProviderNotConfigured</c> (saved results only).
+/// </summary>
 public sealed record IntegrationIntelligenceStatus(
     string Status,
     string? Provider,
     string? Model,
     int ContractVersion,
     string EndpointId,
-    bool CanAnalyze);
+    bool CanAnalyze)
+{
+    /// <summary>Whether agents can record classifications for this endpoint over MCP.</summary>
+    public bool CanRecord { get; init; }
+}
 
 /// <summary>Returns feature status without resolving execution dependencies.</summary>
 public sealed class IntegrationIntelligenceStatusService
@@ -247,12 +282,18 @@ public sealed class IntegrationIntelligenceStatusService
         var allowed = _options.AllowedEndpoints.Length == 0
             || _options.AllowedEndpoints.Contains(endpointId, StringComparer.OrdinalIgnoreCase);
         var canAnalyze = _activation.Ready && allowed && await _host.HasContributorAsync(endpointId, cancellationToken).ConfigureAwait(false);
+#pragma warning disable CS0618 // The deprecated provider's model is reported while it is Ready (Spec 044 §6.10).
+        var model = _activation.Ready ? _options.Model : null;
+#pragma warning restore CS0618
         return new IntegrationIntelligenceStatus(
-            _activation.Ready ? "Ready" : "ProviderNotConfigured",
+            _activation.Ready ? "Ready" : _activation.Recordable ? "Recordable" : "ProviderNotConfigured",
             _activation.Ready ? _options.Provider : null,
-            _activation.Ready ? _options.Model : null,
+            model,
             1,
             endpointId,
-            canAnalyze);
+            canAnalyze)
+        {
+            CanRecord = _activation.Recordable && allowed,
+        };
     }
 }

@@ -66,6 +66,8 @@ public sealed class FailureEvidenceBuilder
                 ScrubSourceText(target, error?.ErrorText),
                 CleanSource(error?.ExceptionSource)),
             DeadLetterReason = ScrubSourceText(target, target.DeadLetterReason),
+            SourceEndpoint = Blank(current.From) ?? Blank(target.From),
+            OriginatingEndpoint = OriginatingEndpoint(current.OriginatingFrom ?? target.OriginatingFrom, current.From ?? target.From),
         };
 
         var history = _options.Data.IncludeRecentFailureHistory
@@ -120,6 +122,33 @@ public sealed class FailureEvidenceBuilder
             scrubbed = _secrets.ScrubJson(scrubbed) ?? string.Empty;
         return IntelligenceDataRedactor.ScrubText(scrubbed, maximumLength ?? _options.MaximumErrorTextLength);
     }
+
+    /// <summary>
+    /// Scrubs free text an agent wrote about <paramref name="row"/> the way error text is scrubbed
+    /// for the provider (Spec 044 §6.4): every value the event's metadata marks sensitive is
+    /// replaced, then credential-shaped values are redacted. Returns null when the text cannot be
+    /// verified (the payload's sensitive values could not be read) or holds an exception dump.
+    /// </summary>
+    public string? ScrubAgentText(MessageEntity row, string text, int maximumLength)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentNullException.ThrowIfNull(text);
+        var payload = row.MessageContent?.EventContent?.EventJson;
+        var scrubbed = text;
+        if (!string.IsNullOrWhiteSpace(payload))
+        {
+            // Fail closed: text about a payload whose sensitive values can't be read is not stored.
+            if (!_masker.TryCollectSensitiveValues(row.EventTypeId, payload, out var values)) return null;
+            foreach (var value in values.Where(value => !string.IsNullOrWhiteSpace(value)).OrderByDescending(value => value.Length))
+                scrubbed = scrubbed.Replace(value, EventJsonMasker.DefaultRedactToken, StringComparison.Ordinal);
+        }
+        return IntelligenceDataRedactor.ScrubText(scrubbed, maximumLength);
+    }
+
+    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static string? OriginatingEndpoint(string? originating, string? from)
+        => string.IsNullOrWhiteSpace(originating) || string.Equals(originating, from, StringComparison.OrdinalIgnoreCase) ? null : originating;
 
     private static string? CleanSource(string? source)
         => string.IsNullOrWhiteSpace(source) ? null : source.Split([',', '\n', '\r'], 2)[0].Trim();

@@ -60,7 +60,7 @@ public sealed class TypeSafeFailureIntelligenceProvider : IFailureIntelligencePr
         {
             model = _options.Model,
             state,
-            questions = FailureClassificationQuestionSet.Items.ToDictionary(
+            questions = FailureClassificationQuestionSet.ProviderItems.ToDictionary(
                 pair => pair.Key,
                 pair => new { type = pair.Value.Type, instructions = pair.Value.Instructions, criteria = pair.Value.Criteria }),
         };
@@ -131,7 +131,7 @@ public sealed class TypeSafeFailureIntelligenceProvider : IFailureIntelligencePr
         var answers = root.GetProperty("answers");
         var category = answers.GetProperty("failure_category");
         var categoryId = RequiredString(category, "choice");
-        var pinnedCategories = FailureClassificationQuestionSet.Items["failure_category"].Criteria!.Keys
+        var pinnedCategories = FailureClassificationQuestionSet.ProviderItems["failure_category"].Criteria!.Keys
             .ToHashSet(StringComparer.Ordinal);
         if (!pinnedCategories.Contains(categoryId))
         {
