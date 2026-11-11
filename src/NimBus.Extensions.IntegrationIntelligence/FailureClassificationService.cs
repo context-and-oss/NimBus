@@ -1,3 +1,5 @@
+// The provider analysis path is deprecated as a whole and stays working until v5.0.0 (Spec 044 §6.10).
+#pragma warning disable CS0618
 using System.Diagnostics;
 using System.Text.Json;
 using NimBus.Extensions.IntegrationIntelligence.Evidence;
@@ -47,7 +49,8 @@ public sealed class FailureClassificationService
     public Task<IReadOnlyList<FailureClassification>> GetHistoryAsync(string eventId, string messageId, CancellationToken cancellationToken)
         => _reader.GetHistoryAsync(eventId, messageId, cancellationToken);
 
-    /// <summary>Runs one idempotent analysis request.</summary>
+    /// <summary>Runs one idempotent analysis request with the deprecated provider. Removed in v5.0.0; use <see cref="FailureClassificationRecorder.RecordAsync"/>.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public async Task<(FailureClassification Result, bool Cached)> AnalyzeAsync(
         string eventId, string messageId, string idempotencyKey, bool force, CancellationToken cancellationToken)
     {

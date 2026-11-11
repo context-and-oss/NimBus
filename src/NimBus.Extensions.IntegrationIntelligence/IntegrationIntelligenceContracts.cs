@@ -4,6 +4,14 @@ using NimBus.MessageStore;
 
 namespace NimBus.Extensions.IntegrationIntelligence;
 
+/// <summary>Deprecation notices of the built-in provider (Spec 044 §6.10).</summary>
+public static class IntegrationIntelligenceDeprecation
+{
+    /// <summary>The <see cref="ObsoleteAttribute"/> message on the provider surface.</summary>
+    public const string Provider =
+        "The built-in failure-intelligence provider is deprecated (Spec 044): agents record classifications over MCP with nimbus_record_classification (FailureClassificationRecorder). Removed in v5.0.0.";
+}
+
 /// <summary>Configuration for the optional, advisory failure-classification feature.</summary>
 public sealed class FailureClassificationOptions
 {
@@ -32,16 +40,20 @@ public sealed class FailureClassificationOptions
     /// <summary>Whether <see cref="Provider"/> is <c>None</c>.</summary>
     public bool ProviderDisabled => string.Equals(Provider, NoProvider, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>TypeSafe API key supplied by the operator.</summary>
+    /// <summary>TypeSafe API key supplied by the operator. Deprecated; removed in v5.0.0.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public string ApiKey { get; set; } = string.Empty;
 
-    /// <summary>Provider base URL. Defaults to the official TypeSafe endpoint.</summary>
+    /// <summary>Provider base URL. Defaults to the official TypeSafe endpoint. Deprecated; removed in v5.0.0.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public string BaseUrl { get; set; } = "https://api.typesafe.ai";
 
-    /// <summary>Stable model alias sent to the provider.</summary>
+    /// <summary>Stable model alias sent to the provider. Deprecated; removed in v5.0.0.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public string Model { get; set; } = "jev-1.13.0";
 
-    /// <summary>Total provider budget, including permitted retries.</summary>
+    /// <summary>Total provider budget, including permitted retries. Deprecated; removed in v5.0.0.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public int TimeoutSeconds { get; set; } = 20;
 
     /// <summary>Minimum category confidence for deterministic guidance.</summary>
@@ -110,7 +122,8 @@ public sealed class FailureClassificationOptions
         return errors;
     }
 
-    /// <summary>Nested provider settings used by the documented configuration shape.</summary>
+    /// <summary>Nested provider settings used by the documented configuration shape. Deprecated; removed in v5.0.0.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public TypeSafeProviderOptions TypeSafe { get; set; } = new();
 
     /// <summary>Nested evidence settings used by the documented configuration shape.</summary>
@@ -122,10 +135,12 @@ public sealed class FailureClassificationOptions
     /// <summary>Copies nested settings into the execution snapshot.</summary>
     public void ApplyNestedSettings()
     {
+#pragma warning disable CS0618 // The deprecated provider settings stay bindable until v5.0.0 (Spec 044 §6.10).
         if (!string.IsNullOrWhiteSpace(TypeSafe.ApiKey)) ApiKey = TypeSafe.ApiKey;
         if (!string.IsNullOrWhiteSpace(TypeSafe.Model)) Model = TypeSafe.Model;
         if (!string.IsNullOrWhiteSpace(TypeSafe.BaseUrl)) BaseUrl = TypeSafe.BaseUrl;
         if (TypeSafe.TimeoutSeconds != 20) TimeoutSeconds = TypeSafe.TimeoutSeconds;
+#pragma warning restore CS0618
         IncludeEventPayload = Data.IncludeEventPayload;
         MaximumHistoryItems = Data.MaximumHistoryItems;
         MaximumErrorTextLength = Data.MaximumErrorTextLength;
@@ -136,7 +151,8 @@ public sealed class FailureClassificationOptions
     }
 }
 
-/// <summary>Nested provider configuration.</summary>
+/// <summary>Nested provider configuration. Deprecated; removed in v5.0.0.</summary>
+[Obsolete(IntegrationIntelligenceDeprecation.Provider)]
 public sealed class TypeSafeProviderOptions
 {
     public string ApiKey { get; set; } = string.Empty;
@@ -221,7 +237,8 @@ public sealed record FailureIntelligenceProviderResult(
     int? InputTokens,
     int? OutputTokens);
 
-/// <summary>Provider abstraction. Implementations must have no recovery side effects.</summary>
+/// <summary>Provider abstraction. Implementations must have no recovery side effects. Deprecated; removed in v5.0.0.</summary>
+[Obsolete(IntegrationIntelligenceDeprecation.Provider)]
 public interface IFailureIntelligenceProvider
 {
     string Name { get; }

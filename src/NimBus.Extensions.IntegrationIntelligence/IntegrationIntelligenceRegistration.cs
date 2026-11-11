@@ -126,12 +126,15 @@ public static class IntegrationIntelligenceRegistration
             return services;
         }
 
+        // Ready mode: the deprecated provider, working until v5.0.0 (Spec 044 §6.10).
+#pragma warning disable CS0618
         services.AddHttpClient("NimBus.TypeSafe", client =>
         {
             client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
             client.Timeout = Timeout.InfiniteTimeSpan;
         });
         services.AddSingleton<IFailureIntelligenceProvider, TypeSafeFailureIntelligenceProvider>();
+#pragma warning restore CS0618
         services.AddScoped<FailureClassificationService>();
         return services;
     }
@@ -164,10 +167,12 @@ public static class IntegrationIntelligenceRegistration
             for (var index = feature.Controllers.Count - 1; index >= 0; index--)
             {
                 var type = feature.Controllers[index].AsType();
+#pragma warning disable CS0618 // The deprecated analyze route is served in Ready mode until v5.0.0.
                 var keep = type == typeof(IntegrationIntelligenceStatusController) ? enabled && hasHostAdapter
                     : type == typeof(IntegrationIntelligenceReadController) ? readable
                     : type == typeof(IntegrationIntelligenceController) ? ready
                     : true;
+#pragma warning restore CS0618
                 if (!keep) feature.Controllers.RemoveAt(index);
             }
         }

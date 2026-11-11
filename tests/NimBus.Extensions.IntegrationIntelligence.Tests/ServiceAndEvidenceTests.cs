@@ -1,4 +1,4 @@
-#pragma warning disable CA1707, CA2007
+#pragma warning disable CA1707, CA2007, CS0618 // CS0618: these tests cover the deprecated provider (Spec 044 §6.10).
 using System.Reflection;
 using Microsoft.AspNetCore.Mvc;
 using NimBus.Core.Messages;
