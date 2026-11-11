@@ -35,6 +35,17 @@ internal sealed class FakeDeadLetterBus : ServiceBusClient
 }
 
 /// <summary>
+/// A <see cref="ServiceBusClient"/> whose receivers are one non-session subscription's
+/// active queue, so a Purge can drain to the end without a namespace.
+/// </summary>
+internal sealed class FakeSubscriptionBus : ServiceBusClient
+{
+    public FakeDeadLetterQueue Messages { get; } = new();
+
+    public override ServiceBusReceiver CreateReceiver(string topicName, string subscriptionName) => Messages;
+}
+
+/// <summary>
 /// The parts of a dead-letter queue a drain relies on: peek by sequence number, receive skips
 /// messages another receive still holds, complete removes, abandon releases.
 /// </summary>

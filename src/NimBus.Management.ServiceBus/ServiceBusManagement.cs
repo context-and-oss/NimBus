@@ -58,8 +58,26 @@ public interface IServiceBusManagement
         bool changeForwardTo);
 
     /// <summary>
-    /// Fetches one subscription's settings (status, session flag, ForwardTo), or null when
-    /// it doesn't exist. Unlike the toggles above, nothing other than not-found is swallowed.
+    /// Sets status, auto-forward destination and <c>UserMetadata</c> in a single update, so a
+    /// marker written alongside a status change can never be seen without it. Forwarding
+    /// behaves as in <see cref="UpdateSubscription(string, string, EntityStatus, string?, bool)"/>.
+    /// A non-null <paramref name="userMetadata"/>, including <see cref="string.Empty"/>,
+    /// replaces the subscription's <c>UserMetadata</c>; null leaves it unchanged. To clear it,
+    /// pass <see cref="string.Empty"/>: Service Bus does not accept null for <c>UserMetadata</c>.
+    /// </summary>
+    Task UpdateSubscription(
+        string topicName,
+        string subscriptionName,
+        EntityStatus status,
+        string? forwardTo,
+        bool changeForwardTo,
+        string? userMetadata);
+
+    /// <summary>
+    /// Fetches one subscription's settings (status, session flag, ForwardTo, UserMetadata), or
+    /// null when it doesn't exist. A <c>UserMetadata</c> Service Bus returns as null reads back
+    /// as <see cref="string.Empty"/>, so callers can treat "none" one way. Unlike the toggles
+    /// above, nothing other than not-found is swallowed.
     /// </summary>
     Task<SubscriptionProperties?> GetSubscription(string topicName, string subscriptionName);
 
@@ -346,12 +364,21 @@ public partial class ServiceBusManagement : IServiceBusManagement
         }
     }
 
+    public Task UpdateSubscription(
+        string topicName,
+        string subscriptionName,
+        EntityStatus status,
+        string? forwardTo,
+        bool changeForwardTo) =>
+        UpdateSubscription(topicName, subscriptionName, status, forwardTo, changeForwardTo, userMetadata: null);
+
     public async Task UpdateSubscription(
         string topicName,
         string subscriptionName,
         EntityStatus status,
         string? forwardTo,
-        bool changeForwardTo)
+        bool changeForwardTo,
+        string? userMetadata)
     {
         ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
@@ -373,6 +400,12 @@ public partial class ServiceBusManagement : IServiceBusManagement
                 subscription.Value.ForwardTo = String.IsNullOrEmpty(forwardTo) ? String.Empty : forwardTo;
             }
 
+            // Null means "leave unchanged"; the SDK rejects null for UserMetadata anyway.
+            if (userMetadata is not null)
+            {
+                subscription.Value.UserMetadata = userMetadata;
+            }
+
             LogUpdatingSubscriptionStatusAndForwarding(_logger);
             await client.UpdateSubscriptionAsync(subscription);
             LogSubscriptionUpdatedSuccessfully(_logger);
@@ -391,7 +424,16 @@ public partial class ServiceBusManagement : IServiceBusManagement
         try
         {
             var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
-            return subscription?.Value;
+            var properties = subscription?.Value;
+
+            // A subscription nobody wrote metadata to can read back null. Normalise it so
+            // "no metadata" is always string.Empty, the value a later update can write back.
+            if (properties is not null && properties.UserMetadata is null)
+            {
+                properties.UserMetadata = String.Empty;
+            }
+
+            return properties;
         }
         catch (Azure.Messaging.ServiceBus.ServiceBusException ex)
             when (ex.Reason == Azure.Messaging.ServiceBus.ServiceBusFailureReason.MessagingEntityNotFound)

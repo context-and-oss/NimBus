@@ -25,16 +25,21 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
     private readonly Dictionary<string, SubscriptionRuntimeProperties> _runtime = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<TopicProperties> _topics = new();
     private readonly List<TopicRuntimeProperties> _topicRuntime = new();
+    private readonly Dictionary<(string Topic, string Subscription), string?> _userMetadata = new();
 
-    /// <summary>Every (status, forwardTo, changeForwardTo) update, in order.</summary>
-    public List<(string Topic, string Subscription, EntityStatus Status, string? ForwardTo, bool ChangeForwardTo)> Updates { get; } = new();
+    /// <summary>
+    /// Every (status, forwardTo, changeForwardTo, userMetadata) update, in order, from either
+    /// overload. UserMetadata keeps null ("leave unchanged") distinct from
+    /// <see cref="string.Empty"/> ("clear"); the five-parameter overload records null.
+    /// </summary>
+    public List<(string Topic, string Subscription, EntityStatus Status, string? ForwardTo, bool ChangeForwardTo, string? UserMetadata)> Updates { get; } = new();
 
     public List<(string Topic, string Subscription)> DeletedSubscriptions { get; } = new();
     public List<string> DeletedTopics { get; } = new();
     public List<(string Topic, string Subscription, string Rule)> DeletedRules { get; } = new();
     public List<(string Topic, string Subscription, string Rule, string Filter, string? Action)> CreatedRules { get; } = new();
 
-    /// <summary>Set to throw from the next <see cref="UpdateSubscription"/> whose status matches.</summary>
+    /// <summary>Set to throw from every update, through either overload, whose status matches.</summary>
     public EntityStatus? FailUpdateToStatus { get; set; }
 
     public void SeedSubscription(
@@ -44,6 +49,8 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
         string? forwardTo = null,
         // EntityStatus is a struct, not an enum, so it can't be a default parameter value.
         EntityStatus? status = null,
+        // Null by default, as a provisioned subscription nobody wrote metadata to reads back.
+        string? userMetadata = null,
         params (string Name, string Filter, string? Action)[] rules)
     {
         if (!_subscriptions.TryGetValue(topicName, out var byName))
@@ -64,7 +71,11 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
             status: status ?? EntityStatus.Active,
             forwardTo: forwardTo,
             forwardDeadLetteredMessagesTo: string.Empty,
-            userMetadata: string.Empty);
+            // The model factory rejects null, so the raw value is kept in _userMetadata and
+            // the read path hands out null as string.Empty, exactly as
+            // ServiceBusManagement.GetSubscription normalises it.
+            userMetadata: userMetadata ?? string.Empty);
+        _userMetadata[(topicName, subscriptionName)] = userMetadata;
 
         _rules[(topicName, subscriptionName)] = rules
             .Select(rule => ServiceBusModelFactory.RuleProperties(
@@ -143,10 +154,19 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
 
     // ───────────────────────── Writes ─────────────────────────
 
+    /// <summary>The UserMetadata a subscription was seeded with, null included.</summary>
+    public string? SeededUserMetadata(string topicName, string subscriptionName) =>
+        _userMetadata.TryGetValue((topicName, subscriptionName), out var userMetadata) ? userMetadata : null;
+
     public Task UpdateSubscription(
-        string topicName, string subscriptionName, EntityStatus status, string? forwardTo, bool changeForwardTo)
+        string topicName, string subscriptionName, EntityStatus status, string? forwardTo, bool changeForwardTo) =>
+        UpdateSubscription(topicName, subscriptionName, status, forwardTo, changeForwardTo, userMetadata: null);
+
+    public Task UpdateSubscription(
+        string topicName, string subscriptionName, EntityStatus status, string? forwardTo, bool changeForwardTo,
+        string? userMetadata)
     {
-        Updates.Add((topicName, subscriptionName, status, forwardTo, changeForwardTo));
+        Updates.Add((topicName, subscriptionName, status, forwardTo, changeForwardTo, userMetadata));
 
         if (FailUpdateToStatus == status)
         {
