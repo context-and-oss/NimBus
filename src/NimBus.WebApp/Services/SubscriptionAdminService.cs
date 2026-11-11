@@ -256,6 +256,10 @@ public partial class SubscriptionAdminService : ISubscriptionAdminService
 
             var expected = FindExpected(topicName, subscriptionName);
 
+            // A purge marker an interrupted purge left behind is cleared by either toggle, in
+            // the same update; any other metadata is the operator's and stays as it is.
+            var userMetadata = IsPurgeMarker(settings.UserMetadata) ? string.Empty : null;
+
             if (enable)
             {
                 // Restore forwarding only if the platform knows where it should point and
@@ -265,7 +269,7 @@ public partial class SubscriptionAdminService : ISubscriptionAdminService
 
                 await _sbManagement.UpdateSubscription(
                     topicName, subscriptionName, EntityStatus.Active,
-                    forwardTo: expected?.ForwardTo, changeForwardTo: restoreForwarding);
+                    forwardTo: expected?.ForwardTo, changeForwardTo: restoreForwarding, userMetadata);
 
                 result.Message = restoreForwarding
                     ? $"Delivery resumed and forwarding to '{expected!.ForwardTo}' restored."
@@ -289,7 +293,7 @@ public partial class SubscriptionAdminService : ISubscriptionAdminService
 
                 await _sbManagement.UpdateSubscription(
                     topicName, subscriptionName, EntityStatus.ReceiveDisabled,
-                    forwardTo: null, changeForwardTo: detachForwarding);
+                    forwardTo: null, changeForwardTo: detachForwarding, userMetadata);
 
                 result.Message = detachForwarding
                     ? $"Paused: delivery disabled and forwarding to '{settings.ForwardTo}' detached. Messages now " +
@@ -336,12 +340,21 @@ public partial class SubscriptionAdminService : ISubscriptionAdminService
         // Pause → Purge workflow would silently remove nothing. Make the subscription
         // receivable for the duration of the drain and put its status back afterwards,
         // whatever happens.
+        //
+        // While it drains, the subscription is Active with ForwardTo detached, which
+        // `nb topology apply` would read as a forwarder to re-attach, forwarding the backlog
+        // being discarded. So the same update that activates it also sets the purge marker,
+        // which apply leaves alone, and the restore puts the original metadata back. A null,
+        // empty or leftover-marker original restores as empty: null would mean "unchanged".
         var pausedStatus = settings.Status != EntityStatus.Active ? settings.Status : (EntityStatus?)null;
+        var originalUserMetadata = string.IsNullOrEmpty(settings.UserMetadata) || IsPurgeMarker(settings.UserMetadata)
+            ? string.Empty
+            : settings.UserMetadata;
         if (pausedStatus.HasValue)
         {
             await _sbManagement.UpdateSubscription(
                 topicName, subscriptionName, EntityStatus.Active,
-                forwardTo: null, changeForwardTo: false);
+                forwardTo: null, changeForwardTo: false, userMetadata: SubscriptionMarkers.PurgeInProgress);
         }
 
         try
@@ -372,16 +385,19 @@ public partial class SubscriptionAdminService : ISubscriptionAdminService
                 {
                     await _sbManagement.UpdateSubscription(
                         topicName, subscriptionName, pausedStatus.Value,
-                        forwardTo: null, changeForwardTo: false);
+                        forwardTo: null, changeForwardTo: false, userMetadata: originalUserMetadata);
                 }
                 catch (Exception exception)
                 {
                     // Leaving it Active is recoverable and visible in the table, but the
-                    // operator has to be told the pause didn't survive.
+                    // operator has to be told the pause didn't survive, and how to get the
+                    // marker off: apply skips a marked forwarder until it is cleared.
                     LogDrainedButCouldNotRestoreStatus(_logger, exception, topicName, subscriptionName, pausedStatus.Value);
                     errors.Add(
                         $"Messages were drained, but the subscription could not be returned to {pausedStatus.Value} " +
-                        $"and is now Active: {exception.Message}");
+                        $"and is now Active, and the purge marker may still be set: {exception.Message} " +
+                        "Pause clears the purge marker and restores the pause. Resume afterwards only if forwarding " +
+                        "should be re-attached.");
                 }
             }
         }
@@ -795,6 +811,9 @@ public partial class SubscriptionAdminService : ISubscriptionAdminService
     }
 
     // ───────────────────────── Helpers ─────────────────────────
+
+    private static bool IsPurgeMarker(string? userMetadata) =>
+        string.Equals(userMetadata, SubscriptionMarkers.PurgeInProgress, StringComparison.Ordinal);
 
     private ExpectedSubscription? FindExpected(string topicName, string subscriptionName) =>
         TopologyDescriptor.FindSubscription(topicName, subscriptionName, _platform, _isEmulator);
