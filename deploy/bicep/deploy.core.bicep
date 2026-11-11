@@ -172,6 +172,8 @@ param resourceNamePostfix string = ''
 param funcStorageAccountName string = ''
 param funcStorageSkuName string = 'Standard_LRS'
 param funcStorageKind string = 'StorageV2'
+// The reused account's networkAcls, kept on redeploy. Empty for an account NimBus creates.
+param funcStorageNetworkAcls object = {}
 
 // Endpoint alert mail: the Resolver mails the subscribers on an endpoint's Alerts tab over
 // SMTP (Azure Communication Services, Microsoft 365, a SendGrid relay). Off unless both
@@ -386,6 +388,7 @@ module funcstorageaccount 'templates/storageaccount.bicep' = {
     name: effectiveFuncStorageAccountName
     skuName: funcStorageSkuName
     kind: funcStorageKind
+    existingNetworkAcls: funcStorageNetworkAcls
     location: effectiveFuncStorageLocation
     // Flex Consumption needs a blob container holding the app package, referenced
     // from the Function App via SystemAssignedIdentity. Provision it inline so

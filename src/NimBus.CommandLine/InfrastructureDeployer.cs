@@ -77,10 +77,17 @@ internal sealed class InfrastructureDeployer
         ResourceNaming.ValidateLengths(names, serviceBusNamespaceName, options.SqlServerName);
         if (resourceNamePostfix is not null)
         {
-            CliOutput.WriteLine(ResourceNaming.DescribePostfix(names, PostfixedNames(options, names)));
+            CliOutput.WriteLine(ResourceNaming.DescribePostfix(names, PostfixedNames(options, names, serviceBusNamespaceName)));
         }
 
         var existingLocations = await DiscoverExistingLocationsAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
+
+        // The first postfix decision on a resource group: a postfix (or its absence) that does
+        // not match the existing deployment would create a second set next to it.
+        if (!resourceGroup.Tags.TryGetValue(ResourceNaming.PostfixTag, out var recordedPostfix) || string.IsNullOrWhiteSpace(recordedPostfix))
+        {
+            ResourceNaming.GuardAgainstParallelDeployment(names, existingLocations.Keys, options.ResourceGroupName);
+        }
         var existingPlans = await DiscoverExistingPlansAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
 
         // An existing deployment pins its plan choices (like the location pins):
@@ -495,6 +502,10 @@ internal sealed class InfrastructureDeployer
             {
                 arguments.Add($"funcStorageSkuName={existing.SkuName}");
                 arguments.Add($"funcStorageKind={existing.Kind}");
+                if (existing.NetworkAcls is { } networkAcls)
+                {
+                    arguments.Add($"funcStorageNetworkAcls={networkAcls}");
+                }
             }
         }
 
@@ -914,22 +925,27 @@ internal sealed class InfrastructureDeployer
 
     private sealed record ExistingAppServicePlan(string SkuName, string Tier);
 
-    private sealed record ExistingStorageAccount(string SkuName, string Kind);
+    private sealed record ExistingStorageAccount(string SkuName, string Kind, string? NetworkAcls);
 
     private sealed record FuncStorageDeployment(string Name, ExistingStorageAccount? Existing);
 
     // The names the legacy pipeline postfixed (see NamingConventions.Build), as deployed by
     // this run's storage provider.
-    private static IEnumerable<string> PostfixedNames(InfrastructureOptions options, DeploymentNames names)
+    // An explicit name override wins over the postfix, so an overridden name is not listed.
+    private static IEnumerable<string> PostfixedNames(InfrastructureOptions options, DeploymentNames names, string? serviceBusNamespaceOverride)
     {
-        yield return names.ServiceBusNamespace;
+        if (string.IsNullOrWhiteSpace(serviceBusNamespaceOverride))
+        {
+            yield return names.ServiceBusNamespace;
+        }
+
         if (options.StorageProvider == StorageProviderChoice.Cosmos)
         {
             yield return names.CosmosAccountName;
         }
-        else if (options.SqlMode == SqlProvisioningMode.Provision)
+        else if (options.SqlMode == SqlProvisioningMode.Provision && string.IsNullOrWhiteSpace(options.SqlServerName))
         {
-            yield return EffectiveSqlServerName(options, names);
+            yield return names.SqlServerName;
         }
 
         yield return names.ResolverFunctionAppName;
@@ -976,51 +992,59 @@ internal sealed class InfrastructureDeployer
     }
 
     /// <summary>
-    /// SKU and kind of a reused function storage account, so the deployment keeps them instead
-    /// of applying the template defaults (a kind change to StorageV2 cannot be undone). Null when
-    /// the account does not exist yet.
+    /// SKU, kind and firewall of a reused function storage account, so the deployment keeps
+    /// them instead of applying the template defaults (a kind change to StorageV2 cannot be
+    /// undone, and the defaults would replace the account's network rules). Null only when the
+    /// name is free, so the template creates the account. Any other failure to read it stops
+    /// the run: assuming "new" would redeploy an existing account with the defaults.
     /// </summary>
     private async Task<ExistingStorageAccount?> DiscoverFuncStorageAccountAsync(string resourceGroupName, string accountName, CancellationToken cancellationToken)
     {
+        // The generic resource view returns networkAcls in the ARM shape the template takes.
         var result = await _az.TryRunAsync(
             new[]
             {
-                "storage", "account", "show",
+                "resource", "show",
                 "--resource-group", resourceGroupName,
                 "--name", accountName,
-                "--query", "{sku:sku.name, kind:kind}",
+                "--resource-type", "Microsoft.Storage/storageAccounts",
+                "--query", "{sku:sku.name, kind:kind, networkAcls:properties.networkAcls}",
                 "--output", "json",
             },
             cancellationToken).ConfigureAwait(false);
 
-        // A missing account (it will be created) fails the show call.
-        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.StandardOutput))
+        if (!result.Succeeded)
         {
+            await EnsureFuncStorageAccountNameIsFreeAsync(resourceGroupName, accountName, result.StandardError, cancellationToken).ConfigureAwait(false);
             return null;
         }
 
         string? sku = null;
         string? kind = null;
+        string? networkAcls = null;
         try
         {
             using var document = JsonDocument.Parse(result.StandardOutput);
             var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
+            if (root.ValueKind == JsonValueKind.Object)
             {
-                return null;
+                sku = root.TryGetProperty("sku", out var skuElement) && skuElement.ValueKind == JsonValueKind.String ? skuElement.GetString() : null;
+                kind = root.TryGetProperty("kind", out var kindElement) && kindElement.ValueKind == JsonValueKind.String ? kindElement.GetString() : null;
+                networkAcls = root.TryGetProperty("networkAcls", out var aclElement) && aclElement.ValueKind == JsonValueKind.Object
+                    ? aclElement.GetRawText()
+                    : null;
             }
-
-            sku = root.TryGetProperty("sku", out var skuElement) && skuElement.ValueKind == JsonValueKind.String ? skuElement.GetString() : null;
-            kind = root.TryGetProperty("kind", out var kindElement) && kindElement.ValueKind == JsonValueKind.String ? kindElement.GetString() : null;
         }
         catch (JsonException)
         {
-            return null;
+            // Reported below as an unreadable account.
         }
 
         if (string.IsNullOrWhiteSpace(sku) || string.IsNullOrWhiteSpace(kind))
         {
-            return null;
+            throw new CommandException(
+                $"Could not read the SKU and kind of the storage account '{accountName}' in '{resourceGroupName}'. " +
+                "A reused account keeps them, so nothing was deployed.");
         }
 
         if (string.Equals(kind, "BlobStorage", StringComparison.OrdinalIgnoreCase) || string.Equals(kind, "FileStorage", StringComparison.OrdinalIgnoreCase)
@@ -1031,8 +1055,72 @@ internal sealed class InfrastructureDeployer
                 "Use a general-purpose account (StorageV2 or Storage) for --func-storage-account-name.");
         }
 
-        CliOutput.WriteLine($"Keeping the existing storage account '{accountName}' ({sku}, {kind}) for the Resolver.");
-        return new ExistingStorageAccount(sku, kind);
+        // A Premium general-purpose account holds page blobs only: no queues or tables.
+        if (sku.StartsWith("Premium_", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new CommandException(
+                $"The storage account '{accountName}' has the SKU '{sku}', which has no queue or table storage and cannot host a function app. " +
+                "Use a Standard general-purpose account for --func-storage-account-name.");
+        }
+
+        CliOutput.WriteLine($"Keeping the existing storage account '{accountName}' ({sku}, {kind}) and its network rules for the Resolver.");
+        return new ExistingStorageAccount(sku, kind, networkAcls);
+    }
+
+    /// <summary>
+    /// The account could not be read in the deployment resource group. Creating it is safe only
+    /// when the globally unique name is free; a taken name means the account is in another
+    /// resource group or subscription, or this identity cannot read it.
+    /// </summary>
+    private async Task EnsureFuncStorageAccountNameIsFreeAsync(string resourceGroupName, string accountName, string showError, CancellationToken cancellationToken)
+    {
+        var check = await _az.TryRunAsync(
+            new[]
+            {
+                "storage", "account", "check-name",
+                "--name", accountName,
+                "--query", "{available:nameAvailable, reason:reason}",
+                "--output", "json",
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        bool? available = null;
+        string? reason = null;
+        if (check.Succeeded)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(check.StandardOutput);
+                var root = document.RootElement;
+                if (root.ValueKind == JsonValueKind.Object)
+                {
+                    available = root.TryGetProperty("available", out var availableElement) && availableElement.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? availableElement.GetBoolean()
+                        : null;
+                    reason = root.TryGetProperty("reason", out var reasonElement) && reasonElement.ValueKind == JsonValueKind.String
+                        ? reasonElement.GetString()
+                        : null;
+                }
+            }
+            catch (JsonException)
+            {
+                // Reported below as an unknown outcome.
+            }
+        }
+
+        if (available == true)
+        {
+            return;
+        }
+
+        var detail = string.Join(
+            Environment.NewLine,
+            new[] { showError, check.StandardError }.Where(text => !string.IsNullOrWhiteSpace(text)).Select(text => text.Trim()));
+        var message = available == false
+            ? $"The storage account name '{accountName}' is taken ({reason ?? "no reason given"}), but the account could not be read in resource group '{resourceGroupName}'. " +
+                "It is in another resource group or subscription, or this identity cannot read it; --func-storage-account-name reuses an account in the deployment resource group only."
+            : $"Could not tell whether the storage account '{accountName}' exists, so nothing was deployed.";
+        throw new CommandException(detail.Length > 0 ? message + Environment.NewLine + detail : message);
     }
 
     private sealed record ServiceBusDeployment(string? Sku, int? Capacity, string? NamespaceName);

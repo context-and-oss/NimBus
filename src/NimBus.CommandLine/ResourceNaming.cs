@@ -20,7 +20,7 @@ internal static partial class ResourceNaming
 
     /// <summary>Shared by every command that takes the option, so they all say the same thing.</summary>
     public const string PostfixOptionDescription =
-        "Reserved for compatibility with the legacy pipeline scripts. Appended as '-<value>' to the Service Bus namespace, " +
+        "For compatibility with the legacy pipeline scripts: appended as '-<value>' to the Service Bus namespace, " +
         "Cosmos DB account, SQL server, Resolver function app and management WebApp names only. App Insights, the App Service " +
         "plans and the function storage account are not postfixed; use --func-storage-account-name to reuse an existing storage " +
         "account. Recorded on the resource group, so later runs pick it up.";
@@ -52,6 +52,13 @@ internal static partial class ResourceNaming
         {
             throw new CommandException(
                 $"Invalid --resource-name-postfix '{value}'. Use letters and digits only; NimBus adds the '-' separator itself.");
+        }
+
+        // Azure rejects a Service Bus namespace name ending in '-sb' or '-mgmt'.
+        if (normalized is "sb" or "mgmt")
+        {
+            throw new CommandException(
+                $"Invalid --resource-name-postfix '{value}'. Azure does not allow a Service Bus namespace name that ends in '-{normalized}'.");
         }
 
         return normalized;
@@ -139,7 +146,8 @@ internal static partial class ResourceNaming
     /// <summary>
     /// Names for commands that address an existing deployment (topology, apps, endpoint
     /// containers): explicit options win, otherwise what <c>nb infra apply</c> recorded on the
-    /// resource group. The tags are read only when an option is missing.
+    /// resource group. The tags are always read, so an explicit postfix that differs from the
+    /// recorded one fails here instead of addressing resources that do not exist.
     /// </summary>
     public static async Task<DeploymentNames> ResolveDeployedNamesAsync(
         IAzureCliRunner az,
@@ -153,21 +161,74 @@ internal static partial class ResourceNaming
         var namespaceName = string.IsNullOrWhiteSpace(explicitServiceBusNamespaceName) ? null : explicitServiceBusNamespaceName.Trim();
         var postfix = NormalizePostfix(explicitPostfix);
 
-        if (namespaceName is null || postfix is null)
+        var tags = await ResourceGroupTags.TryReadTagsAsync(az, resourceGroupName, cancellationToken).ConfigureAwait(false);
+        if (namespaceName is null
+            && tags.TryGetValue(NetworkIntent.ServiceBusNamespaceTag, out var recordedNamespace)
+            && !string.IsNullOrWhiteSpace(recordedNamespace))
         {
-            var tags = await ResourceGroupTags.TryReadTagsAsync(az, resourceGroupName, cancellationToken).ConfigureAwait(false);
-            if (namespaceName is null
-                && tags.TryGetValue(NetworkIntent.ServiceBusNamespaceTag, out var recordedNamespace)
-                && !string.IsNullOrWhiteSpace(recordedNamespace))
-            {
-                namespaceName = recordedNamespace.Trim();
-                CliOutput.WriteLine($"Using the Service Bus namespace '{namespaceName}' recorded on '{resourceGroupName}'.");
-            }
-
-            postfix = ResolvePostfix(postfix, tags, resourceGroupName);
+            namespaceName = recordedNamespace.Trim();
+            CliOutput.WriteLine($"Using the Service Bus namespace '{namespaceName}' recorded on '{resourceGroupName}'.");
         }
 
+        postfix = ResolvePostfix(postfix, tags, resourceGroupName);
+
         return NamingConventions.Build(solutionId, environment, namespaceName, postfix);
+    }
+
+    /// <summary>
+    /// Guards the first postfix decision on a resource group that has none recorded (deployed
+    /// before the option took effect, or by the legacy scripts): Azure cannot rename resources,
+    /// so a postfix that does not match the existing names would deploy a second, parallel set.
+    /// Fails when none of the target names exist but the same deployment exists under the other
+    /// naming. Nothing is checked once a postfix is recorded; <see cref="Resolve"/> covers that.
+    /// </summary>
+    /// <param name="target">The names this run would deploy.</param>
+    /// <param name="existingNames">Names of the resources already in the resource group.</param>
+    /// <param name="resourceGroupName">For the error message.</param>
+    public static void GuardAgainstParallelDeployment(DeploymentNames target, IReadOnlyCollection<string> existingNames, string resourceGroupName)
+    {
+        var existing = new HashSet<string>(existingNames, StringComparer.OrdinalIgnoreCase);
+        var targetMarkers = new[] { target.ResolverFunctionAppName, target.WebAppName, target.CosmosAccountName };
+        if (targetMarkers.Any(existing.Contains))
+        {
+            return;
+        }
+
+        if (target.ResourceNamePostfix is { } postfix)
+        {
+            var unpostfixed = NamingConventions.Build(target.SolutionId, target.Environment, serviceBusNamespaceName: null);
+            var found = new[] { unpostfixed.ResolverFunctionAppName, unpostfixed.WebAppName, unpostfixed.CosmosAccountName }
+                .Where(existing.Contains)
+                .ToList();
+            if (found.Count > 0)
+            {
+                throw new CommandException(
+                    $"Resource group '{resourceGroupName}' already holds a NimBus deployment without a resource-name postfix ({string.Join(", ", found)}). " +
+                    $"Deploying with --resource-name-postfix '{postfix}' would create a second, differently named set of resources next to it. " +
+                    "Leave the option out to update the existing deployment.");
+            }
+
+            return;
+        }
+
+        var resolverPrefix = $"func-{target.SolutionId}-{target.Environment}-resolver-";
+        var webAppPrefix = $"webapp-{target.SolutionId}-{target.Environment}-management-";
+        var detected = existing
+            .Select(name => name.StartsWith(resolverPrefix, StringComparison.OrdinalIgnoreCase) ? name[resolverPrefix.Length..]
+                : name.StartsWith(webAppPrefix, StringComparison.OrdinalIgnoreCase) ? name[webAppPrefix.Length..]
+                : null)
+            .Where(candidate => candidate is not null && PostfixPattern().IsMatch(candidate.ToLowerInvariant()))
+            .Select(candidate => candidate!.ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(candidate => candidate, StringComparer.Ordinal)
+            .ToList();
+        if (detected.Count > 0)
+        {
+            throw new CommandException(
+                $"Resource group '{resourceGroupName}' already holds a NimBus deployment named with the resource-name postfix " +
+                $"{string.Join(" or ", detected.Select(candidate => $"'{candidate}'"))}. Deploying without --resource-name-postfix would create " +
+                $"a second, differently named set of resources next to it. Pass --resource-name-postfix {detected[0]} to update the existing deployment.");
+        }
     }
 
     /// <summary>

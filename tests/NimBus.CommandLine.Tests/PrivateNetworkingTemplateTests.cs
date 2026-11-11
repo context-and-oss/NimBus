@@ -74,7 +74,9 @@ public class PrivateNetworkingTemplateTests
         var storage = Module("storageaccount.bicep");
 
         Assert.Contains("var isLocked = publicNetworkAccess == 'Disabled'", storage, StringComparison.Ordinal);
-        Assert.Contains("defaultAction: isLocked ? 'Deny' : 'Allow'", storage, StringComparison.Ordinal);
+        Assert.Contains("var networkAcls = isLocked", storage, StringComparison.Ordinal);
+        Assert.Contains("defaultAction: 'Deny'", storage, StringComparison.Ordinal);
+        Assert.Contains("defaultAction: 'Allow'", storage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -210,6 +212,19 @@ public class PrivateNetworkingTemplateTests
         Assert.Contains("name: skuName", storage, StringComparison.Ordinal);
         Assert.Contains("skuName: funcStorageSkuName", Core, StringComparison.Ordinal);
         Assert.Contains("kind: funcStorageKind", Core, StringComparison.Ordinal);
+    }
+
+    /// <summary>Regression: a reused account's firewall rules were replaced by the defaults on every deploy.</summary>
+    [Fact]
+    public void A_reused_storage_account_keeps_its_network_rules()
+    {
+        var storage = Module("storageaccount.bicep");
+
+        Assert.Contains("param existingNetworkAcls object = {}", storage, StringComparison.Ordinal);
+        Assert.Contains("union(existingNetworkAcls, {", storage, StringComparison.Ordinal);
+        Assert.Contains("(empty(existingNetworkAcls) ? defaultNetworkAcls : existingNetworkAcls)", storage, StringComparison.Ordinal);
+        Assert.Contains("networkAcls: networkAcls", storage, StringComparison.Ordinal);
+        Assert.Contains("existingNetworkAcls: funcStorageNetworkAcls", Core, StringComparison.Ordinal);
     }
 
     [Fact]

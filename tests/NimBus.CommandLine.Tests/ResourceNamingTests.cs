@@ -95,6 +95,52 @@ public sealed class ResourceNamingTests
         Assert.Throws<CommandException>(() => ResourceNaming.NormalizePostfix(input));
     }
 
+    /// <summary>Regression: these passed validation and produced a Service Bus name Azure rejects.</summary>
+    [Theory]
+    [InlineData("sb")]
+    [InlineData("-SB")]
+    [InlineData("mgmt")]
+    public void NormalizePostfix_RejectsSuffixesServiceBusForbids(string input)
+    {
+        var error = Assert.Throws<CommandException>(() => ResourceNaming.NormalizePostfix(input));
+
+        Assert.Contains("Service Bus", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GuardAgainstParallelDeployment_APostfixNextToAnUnpostfixedDeploymentFails()
+    {
+        var target = NamingConventions.Build("dis", "dev", serviceBusNamespaceName: null, resourceNamePostfix: "avk");
+
+        var error = Assert.Throws<CommandException>(() => ResourceNaming.GuardAgainstParallelDeployment(
+            target, new[] { "func-dis-dev-resolver", "webapp-dis-dev-management", "asp-dis-dev-core" }, "rg-dis-dev"));
+
+        Assert.Contains("func-dis-dev-resolver", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GuardAgainstParallelDeployment_NoPostfixNextToAPostfixedDeploymentNamesThePostfix()
+    {
+        var target = NamingConventions.Build("dis", "dev");
+
+        var error = Assert.Throws<CommandException>(() => ResourceNaming.GuardAgainstParallelDeployment(
+            target, new[] { "func-dis-dev-resolver-avk", "webapp-dis-dev-management-avk" }, "rg-dis-dev"));
+
+        Assert.Contains("--resource-name-postfix avk", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("avk", new[] { "func-dis-dev-resolver-avk", "func-dis-dev-resolver" })]
+    [InlineData(null, new[] { "webapp-dis-dev-management", "webapp-dis-dev-management-avk" })]
+    [InlineData("avk", new string[0])]
+    [InlineData(null, new[] { "asp-dis-dev-core", "stdisdevfunc" })]
+    public void GuardAgainstParallelDeployment_PassesForAMatchingOrFreshDeployment(string? postfix, string[] existing)
+    {
+        var target = NamingConventions.Build("dis", "dev", serviceBusNamespaceName: null, resourceNamePostfix: postfix);
+
+        ResourceNaming.GuardAgainstParallelDeployment(target, existing, "rg-dis-dev");
+    }
+
     [Theory]
     [InlineData("ab")]
     [InlineData("StDisDev")]

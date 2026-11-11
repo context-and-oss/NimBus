@@ -155,11 +155,17 @@ prints which names carry the postfix. Both values are recorded as resource group
 `nb deploy apps` and later `nb infra apply` runs use them without the options. A value that
 differs from the recorded one fails before anything deploys: Azure cannot rename resources, so
 it would create a second set next to the first. To start a new set on purpose, remove the tag.
+The first run on a resource group with no recorded postfix checks the same thing against the
+resources already there: a postfix next to an un-postfixed deployment, or no postfix next to a
+postfixed one, fails and names the postfix to pass.
 
-A reused storage account keeps its SKU and kind (a `Storage` account is not upgraded to
-`StorageV2`); `BlobStorage`, `FileStorage` and `BlockBlobStorage` accounts cannot host a
-function app and are refused. The deployment otherwise manages the account like its own: it
-sets HTTPS-only and the public-network-access and firewall settings of the network mode, and
+A reused storage account keeps its SKU, kind and firewall rules (a `Storage` account is not
+upgraded to `StorageV2`); `BlobStorage`, `FileStorage` and `BlockBlobStorage` accounts and
+Premium SKUs cannot host a function app and are refused. The account must be in the deployment
+resource group: when it cannot be read there, the run fails unless the name is still free, in
+which case the account is created. The deployment otherwise manages the account like its own: it
+sets HTTPS-only and the public-network-access setting of the network mode (private mode also sets
+the firewall to deny, keeping the existing rules), and
 adds the `app-package-resolver` container (Flex Consumption) or the content share (private
 Elastic Premium). Existing blobs, queues and tables are left alone.
 

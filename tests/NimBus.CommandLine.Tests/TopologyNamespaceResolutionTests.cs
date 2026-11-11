@@ -40,9 +40,9 @@ public sealed class TopologyNamespaceResolutionTests
     }
 
     [Fact]
-    public async Task ResolveNamesAsync_ExplicitNamespaceAndPostfixDoNotReadTags()
+    public async Task ResolveNamesAsync_ExplicitNamespaceAndPostfixWinOverTheRecordedNamespace()
     {
-        var azureCli = WithTags("""{"nimbus-service-bus-namespace":"sb-recorded"}""");
+        var azureCli = WithTags("""{"nimbus-service-bus-namespace":"sb-recorded","nimbus-resource-name-postfix":"avk"}""");
 
         var names = await ServiceBusTopologyProvisioner.ResolveNamesAsync(
             azureCli,
@@ -50,7 +50,21 @@ public sealed class TopologyNamespaceResolutionTests
             CancellationToken.None);
 
         Assert.Equal("sb-explicit-name", names.ServiceBusNamespace);
-        Assert.Empty(azureCli.Commands);
+        Assert.Equal("cosmos-nimbus-dev-avk", names.CosmosAccountName);
+    }
+
+    /// <summary>Regression: with both options explicit the tags were never read, so a mistyped postfix went unnoticed.</summary>
+    [Fact]
+    public async Task ResolveNamesAsync_ExplicitNamespaceDoesNotSkipThePostfixCheck()
+    {
+        var azureCli = WithTags("""{"nimbus-resource-name-postfix":"avk"}""");
+
+        var error = await Assert.ThrowsAsync<CommandException>(() => ServiceBusTopologyProvisioner.ResolveNamesAsync(
+            azureCli,
+            new TopologyOptions("nimbus", "dev", "rg-nimbus-dev", "sb-explicit-name", ResourceNamePostfix: "avx"),
+            CancellationToken.None));
+
+        Assert.Contains("'avk'", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
