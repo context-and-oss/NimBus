@@ -68,7 +68,14 @@ internal sealed class BrokerNamespace
         }
     }
 
-    public PreparedTopologyMutation PrepareCreateSubscription(string topicName, SubscriptionDefinition definition)
+    /// <summary>
+    /// Prepares creating a subscription seeded with <paramref name="initialRule"/>, or with
+    /// the true-filter <c>$Default</c> Service Bus seeds when none is given.
+    /// </summary>
+    public PreparedTopologyMutation PrepareCreateSubscription(
+        string topicName,
+        SubscriptionDefinition definition,
+        RuleDefinition? initialRule = null)
     {
         ArgumentNullException.ThrowIfNull(definition);
         lock (_gate)
@@ -79,7 +86,7 @@ internal sealed class BrokerNamespace
                 throw new InvalidOperationException($"Subscription '{topicName}/{definition.Name}' already exists.");
             }
 
-            var state = new SubscriptionState(definition, _options.TimeProvider.GetUtcNow());
+            var state = new SubscriptionState(definition, _options.TimeProvider.GetUtcNow(), initialRule);
             var candidate = ReplaceTopicSubscriptions(
                 GetTopologySnapshotCore(),
                 topicName,
@@ -251,13 +258,17 @@ internal sealed class BrokerNamespace
         }
     }
 
-    public void CreateSubscription(string topicName, SubscriptionDefinition definition)
+    /// <summary>
+    /// Creates a subscription seeded with <paramref name="initialRule"/>, or with the
+    /// true-filter <c>$Default</c> Service Bus seeds when none is given.
+    /// </summary>
+    public void CreateSubscription(string topicName, SubscriptionDefinition definition, RuleDefinition? initialRule = null)
     {
         ArgumentNullException.ThrowIfNull(definition);
         lock (_gate)
         {
             var topic = GetTopic(topicName);
-            if (!topic.Subscriptions.TryAdd(definition.Name, new SubscriptionState(definition, _options.TimeProvider.GetUtcNow())))
+            if (!topic.Subscriptions.TryAdd(definition.Name, new SubscriptionState(definition, _options.TimeProvider.GetUtcNow(), initialRule)))
             {
                 throw new InvalidOperationException($"Subscription '{topicName}/{definition.Name}' already exists.");
             }
@@ -1243,7 +1254,7 @@ internal sealed class BrokerNamespace
         public long NextSequence { get; set; }
     }
 
-    private sealed class SubscriptionState(SubscriptionDefinition definition, DateTimeOffset createdAt)
+    private sealed class SubscriptionState(SubscriptionDefinition definition, DateTimeOffset createdAt, RuleDefinition? initialRule = null)
     {
         public SubscriptionDefinition Definition { get; set; } = definition;
 
@@ -1253,7 +1264,7 @@ internal sealed class BrokerNamespace
 
         public DateTimeOffset AccessedAt { get; set; } = createdAt;
 
-        public List<RuleState> Rules { get; } = [new(new RuleDefinition("$Default", "1=1"))];
+        public List<RuleState> Rules { get; } = [new(initialRule ?? new RuleDefinition("$Default", "1=1"))];
 
         public List<StoredMessage> Messages { get; } = [];
 

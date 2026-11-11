@@ -83,6 +83,32 @@ public sealed class TopologyJournalTests
     }
 
     [TestMethod]
+    public async Task Journal_round_trips_a_subscription_created_closed()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "topology.json");
+        var source = new BrokerNamespace(new BrokerOptions());
+        source.CreateTopic(new TopicDefinition("events"));
+        var prepared = source.PrepareCreateSubscription("events", new SubscriptionDefinition("closed"), new RuleDefinition("$Default", "1=0"));
+
+        // The admin plane journals the prepared snapshot before applying it.
+        using (var journal = new TopologyJournal(path))
+        {
+            await journal.SaveAsync(prepared.Snapshot, CancellationToken.None);
+        }
+
+        var restored = new BrokerNamespace(new BrokerOptions());
+        using (var journal = new TopologyJournal(path))
+        {
+            await journal.ReplayAsync(restored, CancellationToken.None);
+        }
+
+        CollectionAssert.AreEqual(new[] { new RuleDefinition("$Default", "1=0") }, restored.GetRules("events", "closed").ToArray());
+        restored.Publish("events", new BrokerMessage { MessageId = "after-restart" });
+        Assert.AreEqual(0, restored.GetSubscriptionRuntimeProperties("events", "closed").TotalMessageCount);
+    }
+
+    [TestMethod]
     public async Task Corrupt_journal_is_renamed_and_broker_starts_empty()
     {
         using var directory = new TemporaryDirectory();

@@ -25,6 +25,59 @@ public sealed class BrokerNamespaceTests
     }
 
     [TestMethod]
+    public void CreateSubscription_with_an_initial_rule_seeds_exactly_that_rule()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+        var initial = new RuleDefinition("$Default", "1=0");
+
+        broker.CreateSubscription("events", new SubscriptionDefinition("closed"), initial);
+        broker.Publish("events", new BrokerMessage { MessageId = "window" });
+
+        CollectionAssert.AreEqual(new[] { initial }, broker.GetRules("events", "closed").ToArray());
+        Assert.AreEqual(0, broker.GetSubscriptionRuntimeProperties("events", "closed").TotalMessageCount);
+    }
+
+    [TestMethod]
+    public void CreateSubscription_without_an_initial_rule_seeds_a_true_Default()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+
+        broker.CreateSubscription("events", new SubscriptionDefinition("open"));
+
+        CollectionAssert.AreEqual(new[] { new RuleDefinition("$Default", "1=1") }, broker.GetRules("events", "open").ToArray());
+    }
+
+    [TestMethod]
+    public void PrepareCreateSubscription_snapshot_and_result_carry_the_initial_rule()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+        var initial = new RuleDefinition("$Default", "1=0");
+
+        var prepared = broker.PrepareCreateSubscription("events", new SubscriptionDefinition("closed"), initial);
+
+        var snapshotted = prepared.Snapshot.Topics.Single().Subscriptions.Single(subscription => subscription.Definition.Name == "closed");
+        CollectionAssert.AreEqual(new[] { initial }, snapshotted.Rules.ToArray());
+
+        prepared.Apply();
+        CollectionAssert.AreEqual(new[] { initial }, broker.GetRules("events", "closed").ToArray());
+    }
+
+    [TestMethod]
+    public void PrepareCreateSubscription_without_an_initial_rule_snapshots_a_true_Default()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+
+        var prepared = broker.PrepareCreateSubscription("events", new SubscriptionDefinition("open"));
+
+        var snapshotted = prepared.Snapshot.Topics.Single().Subscriptions.Single(subscription => subscription.Definition.Name == "open");
+        CollectionAssert.AreEqual(new[] { new RuleDefinition("$Default", "1=1") }, snapshotted.Rules.ToArray());
+    }
+
+    [TestMethod]
     public void Publish_rejects_before_exceeding_the_broker_memory_budget()
     {
         var broker = new BrokerNamespace(new BrokerOptions { MaxStoredBytes = 3 });

@@ -114,9 +114,10 @@ public sealed class SdkSmokeTests
 
         // A publish straight after creation lands in the provisioning window.
         await using var client = new ServiceBusClient(emulator.ConnectionString);
-        await client.CreateSender(entityName).SendMessageAsync(new ServiceBusMessage("window"), timeout.Token);
+        await using var sender = client.CreateSender(entityName);
+        await sender.SendMessageAsync(new ServiceBusMessage("window"), timeout.Token).WaitAsync(TimeSpan.FromSeconds(10));
         await using var receiver = client.CreateReceiver(entityName, "closed");
-        var received = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token);
+        var received = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token).WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.IsNull(received);
         await admin.DeleteTopicAsync(entityName, timeout.Token);
@@ -146,9 +147,10 @@ public sealed class SdkSmokeTests
         Assert.AreEqual("1=1", ((SqlRuleFilter)rules[0].Filter).SqlExpression);
 
         await using var client = new ServiceBusClient(emulator.ConnectionString);
-        await client.CreateSender(entityName).SendMessageAsync(new ServiceBusMessage("open") { MessageId = "m1" }, timeout.Token);
+        await using var sender = client.CreateSender(entityName);
+        await sender.SendMessageAsync(new ServiceBusMessage("open") { MessageId = "m1" }, timeout.Token).WaitAsync(TimeSpan.FromSeconds(10));
         await using var receiver = client.CreateReceiver(entityName, "open");
-        var received = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(10), timeout.Token);
+        var received = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(10), timeout.Token).WaitAsync(TimeSpan.FromSeconds(15));
 
         Assert.IsNotNull(received);
         Assert.AreEqual("m1", received.MessageId);

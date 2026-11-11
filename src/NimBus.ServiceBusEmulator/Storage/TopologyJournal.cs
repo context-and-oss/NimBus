@@ -49,13 +49,16 @@ internal sealed class TopologyJournal(string path) : IDisposable
             broker.CreateTopic(topic.Definition);
             foreach (var subscription in topic.Subscriptions)
             {
-                broker.CreateSubscription(topic.Definition.Name, subscription.Definition);
+                // A journaled $Default is the subscription's initial rule, so one with a
+                // non-true filter or an action comes back as saved, not as the seeded 1=1.
+                var defaultRule = subscription.Rules.FirstOrDefault(rule => string.Equals(rule.Name, "$Default", StringComparison.OrdinalIgnoreCase));
+                broker.CreateSubscription(topic.Definition.Name, subscription.Definition, defaultRule);
                 foreach (var rule in subscription.Rules.Where(rule => !string.Equals(rule.Name, "$Default", StringComparison.OrdinalIgnoreCase)))
                 {
                     broker.CreateRule(topic.Definition.Name, subscription.Definition.Name, rule);
                 }
 
-                if (!subscription.Rules.Any(rule => string.Equals(rule.Name, "$Default", StringComparison.OrdinalIgnoreCase)))
+                if (defaultRule is null)
                 {
                     broker.DeleteRule(topic.Definition.Name, subscription.Definition.Name, "$Default");
                 }
