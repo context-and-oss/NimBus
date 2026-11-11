@@ -97,30 +97,17 @@ internal sealed class ServiceBusTopologyProvisioner
     }
 
     /// <summary>
-    /// Without --service-bus-namespace-name, follows the override 'nb infra apply' recorded on
-    /// the resource group (spec 034 §5.13), so both commands address the same namespace.
+    /// Without --service-bus-namespace-name or --resource-name-postfix, follows the values
+    /// 'nb infra apply' recorded on the resource group (spec 034 §5.13), so both commands
+    /// address the same namespace.
     /// </summary>
-    internal static async Task<DeploymentNames> ResolveNamesAsync(IAzureCliRunner az, TopologyOptions options, CancellationToken cancellationToken)
-    {
-        var namespaceName = options.ServiceBusNamespaceName;
-        if (string.IsNullOrWhiteSpace(namespaceName))
-        {
-            var recorded = await az.TryRunAsync(
-                new[]
-                {
-                    "group", "show",
-                    "--name", options.ResourceGroupName,
-                    "--query", $"tags.\"{NetworkIntent.ServiceBusNamespaceTag}\"",
-                    "--output", "tsv",
-                },
-                cancellationToken).ConfigureAwait(false);
-            if (recorded.Succeeded && !string.IsNullOrWhiteSpace(recorded.StandardOutput))
-            {
-                namespaceName = recorded.StandardOutput.Trim();
-                CliOutput.WriteLine($"Using the Service Bus namespace '{namespaceName}' recorded on '{options.ResourceGroupName}'.");
-            }
-        }
-
-        return NamingConventions.Build(options.SolutionId, options.Environment, namespaceName);
-    }
+    internal static Task<DeploymentNames> ResolveNamesAsync(IAzureCliRunner az, TopologyOptions options, CancellationToken cancellationToken) =>
+        ResourceNaming.ResolveDeployedNamesAsync(
+            az,
+            options.SolutionId,
+            options.Environment,
+            options.ResourceGroupName,
+            options.ServiceBusNamespaceName,
+            options.ResourceNamePostfix,
+            cancellationToken);
 }
