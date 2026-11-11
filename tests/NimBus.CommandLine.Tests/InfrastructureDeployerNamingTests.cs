@@ -154,6 +154,41 @@ public sealed class InfrastructureDeployerNamingTests
         Assert.Contains($"funcStorageNetworkAcls={acls}", azureCli.Deployments[0].Arguments);
     }
 
+    /// <summary>
+    /// Regression: private mode leaves a reused account at Deny with no bypass. Keeping that on the
+    /// way back to public, while the cleanup removes the private endpoints and VNet integration,
+    /// cut the Resolver off from its storage.
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_LeavingPrivateModeReopensAReusedStorageAccountFirewall()
+    {
+        const string locked = """{"defaultAction":"Deny","bypass":"None","ipRules":[{"value":"203.0.113.10","action":"Allow"}]}""";
+        var tags = RecordedTags("""{"nimbus-network-mode":"private"}""");
+        var azureCli = new RecordingAzureCliRunner
+        {
+            Responder = arguments => IsStorageShow(arguments)
+                ? $$"""{"sku":"Standard_LRS","kind":"StorageV2","networkAcls":{{locked}}}"""
+                : tags(arguments),
+        };
+
+        await Deployer(azureCli).ApplyAsync(
+            Options(funcStorage: "stdisdevmsgstoreavk") with { Network = new NetworkOptions(Mode: NetworkModeChoice.Public) },
+            CancellationToken.None);
+
+        Assert.Contains(
+            """funcStorageNetworkAcls={"defaultAction":"Allow","bypass":"AzureServices","ipRules":[{"value":"203.0.113.10","action":"Allow"}]}""",
+            azureCli.Deployments[0].Arguments);
+    }
+
+    [Fact]
+    public void ReopenNetworkAcls_KeepsTheRulesAndOpensTheDefaults()
+    {
+        var reopened = InfrastructureDeployer.ReopenNetworkAcls(
+            """{"defaultAction":"Deny","bypass":"None","virtualNetworkRules":[{"id":"/subnets/a","action":"Allow"}]}""");
+
+        Assert.Equal("""{"defaultAction":"Allow","bypass":"AzureServices","virtualNetworkRules":[{"id":"/subnets/a","action":"Allow"}]}""", reopened);
+    }
+
     [Fact]
     public async Task ApplyAsync_ANewOverrideAccountGetsTheTemplateDefaults()
     {

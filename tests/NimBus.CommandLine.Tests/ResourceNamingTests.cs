@@ -95,16 +95,60 @@ public sealed class ResourceNamingTests
         Assert.Throws<CommandException>(() => ResourceNaming.NormalizePostfix(input));
     }
 
+    private static readonly ResourceNaming.DerivedNameScope CosmosOnFlex = new(UsesCosmos: true, ProvisionsSqlServer: false, CreatesResolverContentShare: false);
+
     /// <summary>Regression: these passed validation and produced a Service Bus name Azure rejects.</summary>
     [Theory]
     [InlineData("sb")]
     [InlineData("-SB")]
     [InlineData("mgmt")]
-    public void NormalizePostfix_RejectsSuffixesServiceBusForbids(string input)
+    public void ValidateDerivedNames_RejectsSuffixesServiceBusForbids(string input)
     {
-        var error = Assert.Throws<CommandException>(() => ResourceNaming.NormalizePostfix(input));
+        var names = NamingConventions.Build("dis", "dev", null, input);
+
+        var error = Assert.Throws<CommandException>(() => ResourceNaming.ValidateDerivedNames(names, null, null, CosmosOnFlex));
 
         Assert.Contains("Service Bus", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Regression: the reserved suffixes were rejected even when the namespace name was overridden.</summary>
+    [Theory]
+    [InlineData("sb")]
+    [InlineData("mgmt")]
+    public void ValidateDerivedNames_AcceptsReservedSuffixesWithANamespaceOverride(string postfix)
+    {
+        Assert.Equal(postfix, ResourceNaming.NormalizePostfix(postfix));
+        var names = NamingConventions.Build("dis", "dev", "sb-custom-name", postfix);
+
+        ResourceNaming.ValidateDerivedNames(names, "sb-custom-name", null, CosmosOnFlex);
+    }
+
+    /// <summary>Regression: the Cosmos limit rejected SQL deployments, which create no Cosmos account.</summary>
+    [Fact]
+    public void ValidateDerivedNames_ChecksTheCosmosNameOnlyForCosmosDeployments()
+    {
+        // cosmos-dis-dev-{30} is 45 characters; the SQL, Service Bus and app names fit.
+        var names = NamingConventions.Build("dis", "dev", null, new string('a', 30));
+
+        Assert.Throws<CommandException>(() => ResourceNaming.ValidateDerivedNames(names, null, null, CosmosOnFlex));
+        ResourceNaming.ValidateDerivedNames(names, null, null, new(UsesCosmos: false, ProvisionsSqlServer: true, CreatesResolverContentShare: false));
+    }
+
+    /// <summary>
+    /// Regression: a new Elastic Premium Resolver's content share is its name plus 13 characters,
+    /// so a 51-character app name made a 64-character share Azure Files rejects.
+    /// </summary>
+    [Fact]
+    public void ValidateDerivedNames_LeavesRoomForANewContentShare()
+    {
+        // func-dis-dev-resolver-{29} is 51 characters.
+        var names = NamingConventions.Build("dis", "dev", null, new string('a', 29));
+        Assert.Equal(51, names.ResolverFunctionAppName.Length);
+        var sqlScope = new ResourceNaming.DerivedNameScope(UsesCosmos: false, ProvisionsSqlServer: true, CreatesResolverContentShare: false);
+
+        var error = Assert.Throws<CommandException>(() => ResourceNaming.ValidateDerivedNames(names, null, null, sqlScope with { CreatesResolverContentShare = true }));
+        Assert.Contains("Resolver function app", error.Message, StringComparison.Ordinal);
+        ResourceNaming.ValidateDerivedNames(names, null, null, sqlScope);
     }
 
     [Fact]
@@ -127,6 +171,19 @@ public sealed class ResourceNamingTests
             target, new[] { "func-dis-dev-resolver-avk", "webapp-dis-dev-management-avk" }, "rg-dis-dev"));
 
         Assert.Contains("--resource-name-postfix avk", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Regression: only un-postfixed resources were checked, so 'avx' next to an untagged 'avk' deployment passed.</summary>
+    [Fact]
+    public void GuardAgainstParallelDeployment_ADifferentPostfixNextToAPostfixedDeploymentNamesTheExistingOne()
+    {
+        var target = NamingConventions.Build("dis", "dev", serviceBusNamespaceName: null, resourceNamePostfix: "avx");
+
+        var error = Assert.Throws<CommandException>(() => ResourceNaming.GuardAgainstParallelDeployment(
+            target, new[] { "func-dis-dev-resolver-avk", "webapp-dis-dev-management-avk" }, "rg-dis-dev"));
+
+        Assert.Contains("--resource-name-postfix avk", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'avx'", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -178,20 +235,20 @@ public sealed class ResourceNamingTests
     }
 
     [Fact]
-    public void ValidateLengths_FailsWhenThePostfixMakesANameTooLong()
+    public void ValidateDerivedNames_FailsWhenThePostfixMakesANameTooLong()
     {
         // cosmos-{s}-{e}-{p} must stay within 44 characters.
         var names = NamingConventions.Build("averylongsolutionid", "production", null, "postfixvalue12");
 
-        var error = Assert.Throws<CommandException>(() => ResourceNaming.ValidateLengths(names, null, null));
+        var error = Assert.Throws<CommandException>(() => ResourceNaming.ValidateDerivedNames(names, null, null, CosmosOnFlex));
 
         Assert.Contains("Cosmos DB account", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ValidateLengths_IgnoresNamesWithoutAPostfix()
+    public void ValidateDerivedNames_IgnoresNamesWithoutAPostfix()
     {
-        ResourceNaming.ValidateLengths(NamingConventions.Build("averylongsolutionidthatgoesonandon", "production"), null, null);
+        ResourceNaming.ValidateDerivedNames(NamingConventions.Build("averylongsolutionidthatgoesonandon", "production"), null, null, CosmosOnFlex);
     }
 
     [Fact]

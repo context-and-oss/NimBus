@@ -13,8 +13,23 @@ public sealed class TopologyNamespaceResolutionTests
 {
     private static RecordingAzureCliRunner WithTags(string tagsJson) => new()
     {
-        Responder = arguments => arguments.Contains("group") ? tagsJson : null,
+        Responder = arguments => arguments.Contains("group")
+            ? $$"""{"id":"{{RecordingAzureCliRunner.ResourceGroupIdPrefix}}rg-nimbus-dev","tags":{{tagsJson}}}"""
+            : null,
     };
+
+    /// <summary>
+    /// Regression: a failed tag read counted as "no tags", so a postfixed deployment's apps were
+    /// addressed by their un-postfixed names.
+    /// </summary>
+    [Fact]
+    public async Task ResolveNamesAsync_AFailedTagReadStopsTheCommand()
+    {
+        var azureCli = new RecordingAzureCliRunner { FailWhen = arguments => arguments.Contains("group") };
+
+        await Assert.ThrowsAsync<CommandException>(() => ServiceBusTopologyProvisioner.ResolveNamesAsync(
+            azureCli, new TopologyOptions("nimbus", "dev", "rg-nimbus-dev"), CancellationToken.None));
+    }
 
     [Fact]
     public async Task ResolveNamesAsync_FollowsTheRecordedOverride()
