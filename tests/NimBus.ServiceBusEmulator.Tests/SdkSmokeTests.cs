@@ -90,22 +90,31 @@ public sealed class SdkSmokeTests
     [Timeout(60_000)]
     public async Task Stock_sdk_subscription_created_with_an_initial_rule_has_only_that_rule_and_receives_nothing()
     {
+        var startup = Stopwatch.StartNew();
         await using var emulator = await EmulatorProcess.StartAsync();
+        Console.WriteLine($"[step] emulator startup: {startup.ElapsedMilliseconds} ms");
+        var steps = new TestSteps(emulator);
+        var step = TimeSpan.FromSeconds(10);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var entityName = $"initial-{Guid.NewGuid():N}";
         var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
-        await admin.CreateTopicAsync(entityName, timeout.Token);
+        await steps.RunAsync("create topic", step, () => admin.CreateTopicAsync(entityName, timeout.Token));
 
-        await admin.CreateSubscriptionAsync(
+        await steps.RunAsync("create subscription with initial rule", step, () => admin.CreateSubscriptionAsync(
             new CreateSubscriptionOptions(entityName, "closed"),
             new CreateRuleOptions("$Default", new FalseRuleFilter()),
-            timeout.Token);
+            timeout.Token));
 
-        var rules = new List<RuleProperties>();
-        await foreach (var rule in admin.GetRulesAsync(entityName, "closed", timeout.Token))
+        var rules = await steps.RunAsync("list rules", step, async () =>
         {
-            rules.Add(rule);
-        }
+            var list = new List<RuleProperties>();
+            await foreach (var rule in admin.GetRulesAsync(entityName, "closed", timeout.Token))
+            {
+                list.Add(rule);
+            }
+
+            return list;
+        });
 
         Assert.HasCount(1, rules);
         Assert.AreEqual("$Default", rules[0].Name);
@@ -113,15 +122,23 @@ public sealed class SdkSmokeTests
         Assert.IsFalse(rules.Any(rule => rule.Filter is SqlRuleFilter { SqlExpression: "1=1" }));
 
         // A publish straight after creation lands in the provisioning window.
-        await using var client = new ServiceBusClient(emulator.ConnectionString);
-        await using var sender = client.CreateSender(entityName);
-        await sender.SendMessageAsync(new ServiceBusMessage("window"), timeout.Token).WaitAsync(TimeSpan.FromSeconds(10));
-        await using var receiver = client.CreateReceiver(entityName, "closed");
-        var received = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token).WaitAsync(TimeSpan.FromSeconds(10));
+        var client = new ServiceBusClient(emulator.ConnectionString);
+        try
+        {
+            var sender = client.CreateSender(entityName);
+            await steps.RunAsync("send", step, () => sender.SendMessageAsync(new ServiceBusMessage("window"), timeout.Token));
+            await steps.DisposeAsync("sender", sender, step);
+            var receiver = client.CreateReceiver(entityName, "closed");
+            var received = await steps.RunAsync("receive", step, () => receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token));
+            Assert.IsNull(received);
+            await steps.DisposeAsync("receiver", receiver, step);
+        }
+        finally
+        {
+            await steps.DisposeAsync("client", client, step);
+        }
 
-        Assert.IsNull(received);
-        await admin.DeleteTopicAsync(entityName, timeout.Token);
-    }
+        await steps.RunAsync("delete topic", step, () => admin.DeleteTopicAsync(entityName, timeout.Token));    }
 
     [TestMethod]
     [TestCategory("CommonFidelity")]
