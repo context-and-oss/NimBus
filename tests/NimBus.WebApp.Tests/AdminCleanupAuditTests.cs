@@ -283,7 +283,9 @@ public sealed class AdminCleanupAuditTests
         // Dashboard token changes were appended after that.
         Assert.AreEqual(42, (int)MessageAuditType.DashboardTokenCreated);
         Assert.AreEqual(44, (int)MessageAuditType.DashboardTokenRemoved);
-        Assert.AreEqual(MessageAuditType.DashboardTokenRemoved, Enum.GetValues<MessageAuditType>().Max());
+        // Endpoint metadata changes were appended after that.
+        Assert.AreEqual(45, (int)MessageAuditType.UpdateEndpointMetadata);
+        Assert.AreEqual(MessageAuditType.UpdateEndpointMetadata, Enum.GetValues<MessageAuditType>().Max());
     }
 
     [TestMethod]
