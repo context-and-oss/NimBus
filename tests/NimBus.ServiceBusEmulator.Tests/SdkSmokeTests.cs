@@ -128,13 +128,13 @@ public sealed class SdkSmokeTests
     [Timeout(60_000)]
     public async Task Receiver_disposes_when_its_topic_is_deleted_while_a_drain_is_outstanding()
     {
-        // An empty receive ends with the SDK draining the link's credit, and the receiver's
-        // close waits for that drain. When the topic was deleted before the pump answered
+        // After an empty receive leaves credit on the link, the receiver's close drains that
+        // credit and waits for the drain. When the topic was deleted before the pump answered
         // it, the pump failed and detached without completing the drain, so DisposeAsync
-        // hung. The acquire delay holds the pump until the receive has timed out, the drain
-        // has arrived and the topic is gone.
+        // hung. The hook holds the pump until the drain arrives; the delete completes before
+        // the close sends it, so the pump always reads the deleted topic while draining.
         await using var emulator = await EmulatorProcess.StartAsync(
-            environment: new Dictionary<string, string> { ["NIMBUS_SBEMULATOR_TEST_ACQUIRE_DELAY_MS"] = "2000" });
+            environment: new Dictionary<string, string> { ["NIMBUS_SBEMULATOR_TEST_ACQUIRE_HOLD_UNTIL_DRAIN_MS"] = "15000" });
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var entityName = $"deleted-{Guid.NewGuid():N}";
         var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
@@ -147,7 +147,16 @@ public sealed class SdkSmokeTests
         await admin.DeleteTopicAsync(entityName, timeout.Token);
 
         await receiver.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10), timeout.Token);
-        StringAssert.Contains(emulator.DumpOutput(), "Pump failed: draining=True", StringComparison.Ordinal);
+
+        // The emulator's output reaches DumpOutput through asynchronous pipe callbacks.
+        const string drainPathDiagnostic = "Pump failed: draining=True";
+        var outputDeadline = DateTime.UtcNow.AddSeconds(5);
+        while (!emulator.DumpOutput().Contains(drainPathDiagnostic, StringComparison.Ordinal) && DateTime.UtcNow < outputDeadline)
+        {
+            await Task.Delay(50, timeout.Token);
+        }
+
+        StringAssert.Contains(emulator.DumpOutput(), drainPathDiagnostic, StringComparison.Ordinal);
     }
 
     [TestMethod]

@@ -316,11 +316,17 @@ internal sealed class BrokerLinkProcessor(
                 if (GetCredit(link) > 0)
                 {
                     // Test hook: hold the pump between seeing credit and reading the
-                    // subscription, so a test can drain the link and delete the entity
-                    // inside that window deterministically.
-                    if (AcquireDelay is { } acquireDelay)
+                    // subscription until the peer drains the link (bounded by the hook's
+                    // value), so a test can delete the entity and then close the receiver
+                    // and have the pump read the deleted entity while the drain is open.
+                    if (AcquireHoldUntilDrain is { } hold)
                     {
-                        await Task.Delay(acquireDelay).ConfigureAwait(false);
+                        var holdStarted = Environment.TickCount64;
+                        while (!link.IsDraining && !link.IsClosed &&
+                               Environment.TickCount64 - holdStarted < (long)hold.TotalMilliseconds)
+                        {
+                            await Task.Delay(10).ConfigureAwait(false);
+                        }
                     }
 
                     var delivery = isDeadLetter
@@ -721,8 +727,8 @@ internal sealed class BrokerLinkProcessor(
             ? TimeSpan.FromMilliseconds(ms)
             : null;
 
-    private static readonly TimeSpan? AcquireDelay =
-        int.TryParse(Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_ACQUIRE_DELAY_MS"), out var acquireMs) && acquireMs > 0
+    private static readonly TimeSpan? AcquireHoldUntilDrain =
+        int.TryParse(Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_ACQUIRE_HOLD_UNTIL_DRAIN_MS"), out var acquireMs) && acquireMs > 0
             ? TimeSpan.FromMilliseconds(acquireMs)
             : null;
 
@@ -834,9 +840,9 @@ internal sealed class BrokerLinkProcessor(
             try
             {
                 // Answer an outstanding drain before detaching. The SDK's receiver
-                // close waits for the drain it sent when a receive call timed out,
-                // and a detach does not complete it, so DisposeAsync hung forever
-                // when the entity was deleted while that drain was in flight.
+                // close drains the link's credit and waits for that drain, and a
+                // detach does not complete it, so DisposeAsync hung forever when the
+                // entity was deleted before the pump answered the drain.
                 if (link.IsDraining)
                 {
                     link.CompleteDrain();
