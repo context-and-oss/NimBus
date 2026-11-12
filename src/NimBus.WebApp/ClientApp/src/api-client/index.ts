@@ -1655,11 +1655,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Reader permission required", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Reader permission required", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or event not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1713,23 +1719,38 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Reason and inspected row version required", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Reason and inspected row version required", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Contributor permission required", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Contributor permission required", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or event not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("Row changed or broker inspection does not permit skipping", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Row changed or broker inspection does not permit skipping", status, _responseText, _headers, result409);
             });
         } else if (status === 501) {
             return response.text().then((_responseText) => {
-            return throwException("Storage provider does not support conditional recovery", status, _responseText, _headers);
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("Storage provider does not support conditional recovery", status, _responseText, _headers, result501);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {

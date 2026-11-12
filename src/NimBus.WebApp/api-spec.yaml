@@ -853,8 +853,18 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeferredInspection' }
-        '403': { description: Reader permission required }
-        '404': { description: Endpoint or event not found }
+        '403':
+          description: Reader permission required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Endpoint or event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   '/api/v1/event/deferred/{endpointId}/{eventId}/skip-tracking':
     post:
       summary: Skip a stale deferred tracking record without publishing or settling messages
@@ -874,11 +884,36 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeferredSkipResult' }
-        '400': { description: Reason and inspected row version required }
-        '403': { description: Contributor permission required }
-        '404': { description: Endpoint or event not found }
-        '409': { description: Row changed or broker inspection does not permit skipping }
-        '501': { description: Storage provider does not support conditional recovery }
+        '400':
+          description: Reason and inspected row version required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Contributor permission required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Endpoint or event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Row changed or broker inspection does not permit skipping
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: Storage provider does not support conditional recovery
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   '/api/v1/event/reprocess-deferred/{endpointId}/{sessionId}':
     post:
       summary: Reprocess deferred messages for a session

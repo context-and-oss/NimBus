@@ -119,8 +119,11 @@ public static partial class RateLimitingServiceCollectionExtensions
             QueueLimit = 0,
         });
 
+    // A verified agent key or dashboard token (RateLimitCallers) first: those authenticate only
+    // inside MVC, after the limiter picks a partition, so context.User is still anonymous here.
     private static string UserPartitionKey(HttpContext context, RateLimitOptions options)
-        => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+        => RateLimitCallers.Resolve(context)
+           ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier)
            ?? context.User.Identity?.Name
            ?? "ip:" + ClientIpPartitionKey.Resolve(context, options);
 

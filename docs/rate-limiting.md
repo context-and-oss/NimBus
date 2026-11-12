@@ -12,7 +12,7 @@ Exceeding a limit returns **HTTP 429**.
 
 | Policy | Endpoint(s) | Limiter | Default | Partitioned by |
 |---|---|---|---|---|
-| `nimbus-global` | every `/api/*` route, ahead of the policies below | Fixed window | 600 per 60 s | user id (agent key, dashboard token or client IP when anonymous) |
+| `nimbus-global` | every `/api/*` route, ahead of the policies below | Fixed window | 600 per 60 s | signed-in user, else the verified agent key or dashboard token, else client IP |
 | `nimbus-agent-receive` | `GET /api/v1/agent/receive` | Concurrency | 20 permits + 5 queued | nothing (global) |
 | `nimbus-admin` | every `/api/v1/admin/*` route | Fixed window | 60 per 60 s | user id |
 | `nimbus-search` | `POST /api/v1/messages/search`, `POST /api/v1/audits/search` | Fixed window | 120 per 60 s | user id |
@@ -120,6 +120,13 @@ a false 429 on `/account/login` locks the operations team out of the tool they
 use during an incident.
 
 ## How a client is identified
+
+Per-user policies key on the signed-in user. A caller with an agent key or a dashboard token
+has no signed-in user when the limiter runs (those credentials authenticate inside MVC), so the
+WebApp verifies the key or token just before the limiter and partitions on its id: each key and
+each wall display gets its own budget, and a forged id never draws on a real one. Only a request
+with neither falls back to its client address.
+
 
 The login partition key is the client's **full IP address**, canonicalised:
 

@@ -5,6 +5,7 @@ using NimBus.Extensions.IntegrationIntelligence;
 using NimBus.WebApp.Csrf;
 using NimBus.WebApp.Mcp;
 using NimBus.WebApp.Problems;
+using NimBus.WebApp.RateLimiting;
 using NimBus.WebApp.Versioning;
 using NimBus.WebApp.Cors;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -132,6 +133,8 @@ public partial class Startup
         // UseEndpoints(...) — which is what endpoint policy resolution needs.
         // Side benefit: unauthorized requests are rejected before they can
         // consume a permit.
+        // Agent keys and dashboard tokens authenticate inside MVC; name them for the limiter first.
+        app.UseNimBusRateLimitCallers();
         app.UseRateLimiter();
 
         app.UseEndpoints(endpoints =>
