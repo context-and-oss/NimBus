@@ -40,9 +40,9 @@ public sealed partial class IntegratorApiKeyAuthenticationHandler : Authenticati
         if (string.IsNullOrEmpty(presented))
             return AuthenticateResult.NoResult();
 
-        // MVC unions the global policy's schemes with a controller's own policy, so the agent API
-        // and the Monitor feed would otherwise accept a key. They have their own credentials and
-        // the agent API checks no role, so a key must not count there.
+        // The agent API and the Monitor feed have their own credentials, and the agent API checks
+        // no role, so a key must not count there. The Identity extension's /api/auth/* describes
+        // and ends a person's session, which a key does not have.
         if (IsExcludedSurface(Context))
             return AuthenticateResult.NoResult();
 
@@ -81,7 +81,8 @@ public sealed partial class IntegratorApiKeyAuthenticationHandler : Authenticati
         var controller = context.GetEndpoint()?.Metadata
             .GetMetadata<Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor>()?.ControllerTypeInfo.AsType();
         return controller == typeof(NimBus.WebApp.ManagementApi.AgentApiController)
-            || controller == typeof(NimBus.WebApp.ManagementApi.MonitorFeedApiController);
+            || controller == typeof(NimBus.WebApp.ManagementApi.MonitorFeedApiController)
+            || controller == typeof(NimBus.Extensions.Identity.Controllers.AuthApiController);
     }
 
     private AuthenticateResult Refuse(string reason, string? keyId)

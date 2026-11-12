@@ -201,6 +201,25 @@ public class IntegratorKeysApiTests
     }
 
     [TestMethod]
+    [DataRow("42")]
+    [DataRow("\"42\"")]
+    public async Task An_undefined_numeric_role_is_refused_not_issued_as_reader(string role)
+    {
+        await using var api = await Api.StartAsync(owner: true);
+        var state = await api.GetStateAsync();
+
+        var request = new HttpRequestMessage(HttpMethod.Post, Route)
+        {
+            Content = new StringContent("{\"name\":\"Sync\",\"role\":" + role + "}", System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("X-NimBus-CSRF", state.Token);
+        using var response = await api.Client.SendAsync(request);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, await response.Content.ReadAsStringAsync());
+        Assert.AreEqual(0, (await api.Store.GetIntegratorApiKeySettings()).Keys.Count);
+    }
+
+    [TestMethod]
     public async Task A_key_without_endpoints_is_site_wide()
     {
         await using var api = await Api.StartAsync(owner: true);

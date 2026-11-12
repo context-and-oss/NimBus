@@ -66,7 +66,7 @@ public class IntegratorKeysImplementation : Api.IIntegratorKeysApiController
 
         var request = new IntegratorApiKeyRequest(
             body?.Name,
-            body?.Role == Api.IntegratorKeyRole.Contributor ? IntegratorApiKeyRole.Contributor : IntegratorApiKeyRole.Reader,
+            ToRole(body?.Role),
             body?.Endpoints,
             body?.CanReadPii ?? false,
             body?.ExpiresAtUtc);
@@ -118,6 +118,15 @@ public class IntegratorKeysImplementation : Api.IIntegratorKeysApiController
         await AuditAsync(MessageAuditType.IntegratorApiKeyRemoved, change.Key!);
         return new OkObjectResult(await StateAsync());
     }
+
+    // Only the two defined contract values map to a role; anything else (a numeric value outside
+    // the enum, a missing role) becomes an undefined role the service refuses as Invalid.
+    private static IntegratorApiKeyRole ToRole(Api.IntegratorKeyRole? role) => role switch
+    {
+        Api.IntegratorKeyRole.Reader => IntegratorApiKeyRole.Reader,
+        Api.IntegratorKeyRole.Contributor => IntegratorApiKeyRole.Contributor,
+        _ => 0,
+    };
 
     private List<string> KnownEndpoints()
         => _platform.Endpoints.Select(e => e.Id).Order(StringComparer.OrdinalIgnoreCase).ToList();

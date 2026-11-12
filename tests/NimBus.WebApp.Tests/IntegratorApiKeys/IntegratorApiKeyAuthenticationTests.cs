@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Threading.Tasks;
@@ -203,6 +204,33 @@ public class IntegratorApiKeyAuthenticationTests
         using var response = await SendAsync(HttpMethod.Get, "/outside/keyprobe/whoami", "reader");
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode, "The hub, /mcp and the SPA never see a key.");
+    }
+
+    [TestMethod]
+    public async Task With_a_sign_in_and_a_key_the_key_is_the_caller()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/keyprobe/whoami");
+        request.Headers.Add(SignInHeader, "1");
+        request.Headers.Add(IntegratorApiKeyDefaults.HeaderName, Keys["reader"]);
+        using var response = await _client.SendAsync(request);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreEqual("integrator:" + KeyIds["reader"], await response.Content.ReadAsStringAsync(),
+            "Audit rows and the rate-limit partition must name the key, not the person.");
+    }
+
+    [TestMethod]
+    public void The_identity_api_never_accepts_a_key()
+    {
+        var context = new DefaultHttpContext();
+        var descriptor = new Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor
+        {
+            ControllerTypeInfo = typeof(NimBus.Extensions.Identity.Controllers.AuthApiController).GetTypeInfo(),
+        };
+        context.SetEndpoint(new Microsoft.AspNetCore.Http.Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(descriptor), "auth"));
+
+        Assert.IsTrue(IntegratorApiKeyAuthenticationHandler.IsExcludedSurface(context),
+            "/api/auth/* describes and ends a person's session; a key must not count there.");
     }
 
     [TestMethod]

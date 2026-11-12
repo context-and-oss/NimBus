@@ -75,7 +75,9 @@ IntegratorApiKeyUsage { KeyId, LastUsedAtUtc }
   - No header returns `NoResult`.
   - These are refused with 401, and logged without the key: malformed, store unavailable, unknown
     key, hash mismatch, revoked, expired.
-  - The provider caches the list for 30 s (5 s after a failed read) and fails closed.
+  - The provider caches the list for 30 s (5 s after a failed read) and fails closed: no
+    snapshot older than 30 s is trusted, even while the store is unreachable, and a read that
+    started before a local save never replaces it.
 - **Principal:**
   - `NameIdentifier` and `Name` are `integrator:<keyId>`, plus the claim
     `nimbus:integrator_key_id`.
@@ -85,11 +87,12 @@ IntegratorApiKeyUsage { KeyId, LastUsedAtUtc }
   - The scheme is added to the global `AuthorizeFilter` policy on the three sign-in branches
     (Identity, Entra ID, dual). It is never a default scheme.
   - So a key authenticates on the MVC API controllers, and nowhere that has its own policy:
-    `/api/v1/agent/*` (agent keys), the Monitor feed (dashboard tokens), `/hubs/*`, `/mcp` and the
-    sign-in pages.
+    `/api/v1/agent/*` (agent keys), the Monitor feed (dashboard tokens), the Identity extension's
+    `/api/v1/auth/*` (a person's session), `/hubs/*`, `/mcp` and the sign-in pages.
   - In local-dev mode no global filter exists, so the scheme is not added there.
 - **Key plus sign-in:** a request that carries a key and a sign-in cookie or bearer token is
-  evaluated as the key alone (see Authorization). Writes from a browser session still need the
+  evaluated as the key alone (see Authorization). The key's identity comes first, so the audit
+  actor and the rate-limit partition name the key. Writes from a browser session still need the
   CSRF token, because `CookieAntiforgeryFilter` enforces it whenever sign-in cookies are present.
 
 ### Authorization
@@ -108,8 +111,8 @@ builds `CurrentUserAccess` from the key's record and nothing else:
 - **Enforcement:** every existing `HasRoleAsync`, `HasRoleFreshAsync`, `CanReadPiiAsync` and
   `ForbidResult` check then enforces the scope. A refusal is the usual 403 problem.
 - **Re-reads:** `HasRoleFreshAsync` re-reads the key list (bypassing the cache), so a fresh
-  Contributor check sees a revocation at once on the local instance. Other instances see it
-  within 30 s.
+  Contributor check sees a revocation from any instance at once. When that read fails, the check
+  denies.
 - **Site-wide listings:** endpoint-scoped keys see only their endpoints. This works through the
   existing per-endpoint filters, the same way an ACL-scoped person sees only theirs.
 

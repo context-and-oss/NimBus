@@ -62,10 +62,14 @@ public static class IntegratorApiKeyServiceCollectionExtensions
                 return;
             }
 
+            // The key's identity goes first: ClaimsPrincipal.Identity and FindFirst read identities
+            // in order, so the audit actor, the current user name and the rate-limit partition all
+            // name the key. A sign-in identity stays behind it, so the cookie antiforgery check
+            // still applies to a browser session that also sends a key.
+            var identities = new List<System.Security.Claims.ClaimsIdentity> { keyIdentity };
             if (context.User.Identity?.IsAuthenticated == true)
-                context.User.AddIdentity(keyIdentity);
-            else
-                context.User = new System.Security.Claims.ClaimsPrincipal(keyIdentity);
+                identities.AddRange(context.User.Identities);
+            context.User = new System.Security.Claims.ClaimsPrincipal(identities);
 
             await next(context).ConfigureAwait(false);
         });

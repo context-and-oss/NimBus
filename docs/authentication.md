@@ -90,13 +90,15 @@ curl -H "X-NimBus-Api-Key: $NIMBUS_API_KEY" https://nimbus.example.com/api/v1/en
 - **Works in every sign-in mode**, Identity-only included. The key travels in the
   `X-NimBus-Api-Key` header to a scheme of its own, `IntegratorApiKey`, which is never a default and
   runs only on `/api/*`. The agent API and the Monitor feed refuse it (they have agent keys and
-  dashboard tokens), and so do the SignalR hub and `/mcp`.
+  dashboard tokens), and so do `/api/v1/auth/*`, the SignalR hub and `/mcp`.
 - **Shown once, stored hashed.** The full key (`nbik_<keyId>_<secret>`) appears once, when it is
   issued. NimBus stores only a SHA-256 of the secret. Issuing, revoking and removing are
   Owner-only and always audited, with the key id, role and scope but never the key. A key's own
   actions are audited as `integrator:<keyId>`.
 - **Revocation takes effect within 30 seconds** on every instance, at once on the instance that
-  saved it, and before any change a key makes (the fresh role check re-reads the keys). A key can
+  saved it, and before any change a key makes (the fresh role check re-reads the keys and denies
+  when it can't). While the key store is unreachable, every key stops working once its cached
+  list is 30 seconds old. A key can
   also carry an expiry. "Last used" is updated at most every 5 minutes per instance.
 - **Rate limits** count per key: every key has its own [global budget](rate-limiting.md).
 
