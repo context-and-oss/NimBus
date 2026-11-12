@@ -181,6 +181,15 @@ var nimbusOps = builder.AddProject<Projects.NimBus_WebApp>("nimbus-ops")
     .WithReference(servicebus)
     .WithEnvironment("NimBus__PlatformType", typeof(CrmErpDemo.Contracts.CrmErpPlatformConfiguration).FullName!)
     .WithEnvironment("NimBus__PlatformAssembly", isPublish ? Path.GetFileName(crmErpContractsPath) : crmErpContractsPath)
+    // Failure classification by agents (Spec 044): an agent connected to /mcp reads a
+    // failure's evidence and records its classification. No provider and no key: NimBus
+    // calls no model. Classifications are stored with the message store (SQL).
+    .WithEnvironment("NimBus__IntegrationIntelligence__Enabled", "true")
+    .WithEnvironment("NimBus__IntegrationIntelligence__FailureClassification__Enabled", "true")
+    .WithEnvironment("NimBus__IntegrationIntelligence__FailureClassification__Provider", "None")
+    // The operator MCP endpoint (/mcp). Mapped only while the local-dev sign-in bypass is on,
+    // so it is a no-op with NIMBUS_IDENTITY and in Azure.
+    .WithEnvironment("NimBus__Mcp__EnableForLocalDevelopment", "true")
     .WithExternalHttpEndpoints();
 
 if (isPublish)

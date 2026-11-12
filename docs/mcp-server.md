@@ -207,9 +207,8 @@ With the NimBus Aspire AppHost (`src/NimBus.AppHost`) no setup is needed: it set
 `NimBus__Mcp__EnableForLocalDevelopment=true`, and the
 WebApp serves `/mcp` whenever its local-dev bypass is on (Development and
 `EnableLocalDevAuthentication=true`, which the AppHost sets unless `NIMBUS_IDENTITY` is on). The
-CrmErpDemo AppHost does not set `NimBus__Mcp__EnableForLocalDevelopment`; to use `/mcp` there, set
-`NimBus:Mcp:EnableForLocalDevelopment` to `true` yourself, for example in
-`src/NimBus.WebApp/appsettings.Development.json`. No sign-in
+CrmErpDemo and DynamicsBcDemo AppHosts set it too; CrmErpDemo also turns on failure classification
+with `Provider: None`, so an agent can record classifications there. No sign-in
 is involved; every call runs as the "Local Developer" user, with the same role and PII checks as the
 Web UI. Scopes do not apply in this mode, so the tools that change messages need only the
 Contributor role. With the bypass off, `/mcp` is not served.
