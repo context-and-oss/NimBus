@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
-import { FAILURE_CATEGORIES, GUIDANCE_BADGE, GUIDANCE_MEANING, isFailureGuidance } from "lib/failure-classification";
+import {
+  AGENT_PROVIDER, FAILURE_CATEGORIES, GUIDANCE_BADGE, GUIDANCE_MEANING, faultOriginLabel, isFailureGuidance,
+} from "lib/failure-classification";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "components/ui/card";
 
 type IntelligenceCardProps = {
@@ -14,6 +16,8 @@ type Classification = {
   category: string; categoryConfidence: number; retryLikelihood: number; changeRequiredLikelihood: number;
   externalDependencyLikelihood: number; guidance: string; revision: number; provider?: string; model: string; createdAtUtc: string; requestedBy?: string;
   categoryProbabilities?: Record<string, number>; questionSetVersion?: number;
+  /** Spec 044: an agent's answers and provenance. Null on provider and version 1 results. */
+  faultOrigin?: string | null; faultOriginConfidence?: number | null; clientId?: string | null; rationale?: string | null;
 };
 const headers = { "api-version": "2" };
 const percent = (value: number) => `${Math.round(value * 100)}%`;
@@ -49,9 +53,11 @@ function OccurrenceCard(props: IntelligenceCardProps) {
         const capability = await response.json() as IntelligenceStatus;
         if (controller.signal.aborted) return;
         // Spec 043 read-only mode: with no provider configured, saved results stay readable, so the
-        // card appears only when one exists and never offers analysis.
+        // card appears only when one exists and never offers analysis. Spec 044 recordable mode:
+        // agents record over MCP, so the card shows for every eligible failure, without Analyze.
         const readOnly = capability.status === "ProviderNotConfigured";
-        if ((capability.status !== "Ready" && !readOnly) || capability.contractVersion !== 1) return;
+        const recordable = capability.status === "Recordable";
+        if ((capability.status !== "Ready" && !readOnly && !recordable) || capability.contractVersion !== 1) return;
         if (!readOnly) setStatus(capability);
         const latest = await fetch(baseUrl, { headers, signal: controller.signal });
         if (latest.status === 404) return;
@@ -122,6 +128,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
   const historical = Boolean(classification && (analysisActive || unknownOutcome));
   const guidanceMeaning = classification && isFailureGuidance(classification.guidance) ? GUIDANCE_MEANING[classification.guidance] : undefined;
   const categoryMeaning = FAILURE_CATEGORIES.find(item => item.id === classification?.category)?.meaning;
+  const byAgent = classification?.provider === AGENT_PROVIDER;
   const scrollOnce = (node: HTMLDivElement | null) => {
     if (!node || !props.highlighted || scrolled.current) return;
     scrolled.current = true;
@@ -143,11 +150,13 @@ function OccurrenceCard(props: IntelligenceCardProps) {
         {error && <p role="status" className="text-status-danger">{error}</p>}
         {status.status === "ProviderNotConfigured" &&
           <p className="text-muted-foreground">New analysis is unavailable because no provider is configured.</p>}
+        {status.status === "Recordable" &&
+          <p className="text-muted-foreground">Agents record classifications over MCP.</p>}
         {(unknownOutcome || classification) && status.canAnalyze && eligible &&
           <p>Re-analyzing makes a new provider request and may incur an additional charge.</p>}
         {analysisActive && <p role="status">Analyzing failure…</p>}
         {!classification && !analysisActive && !unknownOutcome && !error &&
-          <p>No analysis has been performed.</p>}
+          <p>{status.status === "Recordable" ? "No classification has been recorded." : "No analysis has been performed."}</p>}
         {classification && <>
           {historical && <p role="status" className="text-muted-foreground">Historical result{analysisActive ? "; a newer analysis is running." : "; the latest analysis outcome is unknown."}</p>}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -157,12 +166,21 @@ function OccurrenceCard(props: IntelligenceCardProps) {
             <div><div className="text-muted-foreground">Retry likely</div><strong>{percent(classification.retryLikelihood)}</strong></div>
             <div><div className="text-muted-foreground">Change required</div><strong>{percent(classification.changeRequiredLikelihood)}</strong></div>
             <div><div className="text-muted-foreground">External dependency</div><strong>{percent(classification.externalDependencyLikelihood)}</strong></div>
+            <div><div className="text-muted-foreground">Fault origin</div><strong>{faultOriginLabel(classification.faultOrigin)}
+              {classification.faultOrigin && classification.faultOriginConfidence != null ? ` (${percent(classification.faultOriginConfidence)})` : ""}</strong></div>
           </div>
           {(guidanceMeaning || categoryMeaning) && <div className="rounded-md bg-muted p-3">
             {guidanceMeaning && <p>{guidanceMeaning}</p>}
             {categoryMeaning && <p className="text-muted-foreground"><span className="font-mono">{classification.category}</span>: {categoryMeaning}</p>}
           </div>}
-          <p className="text-muted-foreground">Revision {classification.revision} · {classification.provider ? `${classification.provider} · ` : ""}{classification.model} · {classification.createdAtUtc} · {classification.requestedBy}</p>
+          {byAgent
+            ? <p className="text-muted-foreground">Recorded by an agent · Revision {classification.revision} · Model {classification.model} (as declared)
+              {classification.clientId ? ` · Client ${classification.clientId}` : ""} · {classification.createdAtUtc} · {classification.requestedBy}</p>
+            : <p className="text-muted-foreground">Revision {classification.revision} · {classification.provider ? `${classification.provider} · ` : ""}{classification.model} · {classification.createdAtUtc} · {classification.requestedBy}</p>}
+          {byAgent && classification.rationale && <div>
+            <div className="text-muted-foreground">Agent rationale (unverified)</div>
+            <p className="whitespace-pre-wrap break-words">{classification.rationale}</p>
+          </div>}
           <details>
             <summary className="cursor-pointer">Classification details</summary>
             <div className="mt-2 space-y-1 text-muted-foreground">
@@ -173,7 +191,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
             </div>
           </details>
         </>}
-        <p className="text-muted-foreground">AI-assisted assessment. Advisory only. NimBus processing and recovery decisions are unchanged.</p>
+        <p className="text-muted-foreground">{byAgent ? "Assessment recorded by an agent; NimBus composed the guidance." : "AI-assisted assessment."} Advisory only. NimBus processing and recovery decisions are unchanged.</p>
       </CardContent>
     </Card>
     </div>

@@ -72,6 +72,55 @@ describe("IntelligenceCard", () => {
     expect(screen.getByText("New analysis is unavailable because no provider is configured.")).toBeTruthy();
   });
 
+  it("shows an agent's recording with its provenance, fault origin and rationale as plain text", async () => {
+    // Spec 044 §6.8: an agent result names who recorded it; the rationale is untrusted text.
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Recordable", canAnalyze: false, canRecord: true, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        category: "missing_reference_data", categoryConfidence: 0.85, retryLikelihood: 0.1, changeRequiredLikelihood: 0.9,
+        externalDependencyLikelihood: 0.2, guidance: "ChangeLikelyRequired", revision: 1, provider: "Agent", model: "claude-opus-5-5",
+        createdAtUtc: "2026-11-11T09:00:00Z", requestedBy: "ops@example.com", questionSetVersion: 2,
+        faultOrigin: "source_data", faultOriginConfidence: 0.8, clientId: "44444444-4444-4444-4444-444444444444",
+        rationale: "Field customerId is empty. <script>alert(1)</script>",
+      }))) as typeof fetch;
+
+    render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+
+    await screen.findByText("missing_reference_data (85%)");
+    expect(screen.getByText(/Recorded by an agent/)).toBeTruthy();
+    expect(screen.getByText(/Model claude-opus-5-5 \(as declared\)/)).toBeTruthy();
+    expect(screen.getByText(/Client 44444444-4444-4444-4444-444444444444/)).toBeTruthy();
+    expect(screen.getByText("Source data (80%)")).toBeTruthy();
+    expect(screen.getByText("Field customerId is empty. <script>alert(1)</script>")).toBeTruthy();
+    expect(document.querySelector("script")).toBeNull();
+    expect(screen.getByText("Agents record classifications over MCP.")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("shows an empty recordable card for an eligible failure without offering analysis", async () => {
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Recordable", canAnalyze: false, canRecord: true, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(null, { status: 404 })) as typeof fetch;
+
+    render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+
+    expect(await screen.findByText("No classification has been recorded.")).toBeTruthy();
+    expect(screen.getByText("Agents record classifications over MCP.")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("marks a version 1 provider result's fault origin as not assessed", async () => {
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: false, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ category: "business_rule", categoryConfidence: 0.9, retryLikelihood: 0, changeRequiredLikelihood: 1, externalDependencyLikelihood: 0, revision: 2, provider: "TypeSafe", model: "jev-1.13.0", createdAtUtc: "2026-09-20T00:00:00Z", questionSetVersion: 1 }))) as typeof fetch;
+
+    render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+
+    await screen.findByText("business_rule (90%)");
+    expect(screen.getByText("Not assessed")).toBeTruthy();
+    expect(screen.queryByText(/Recorded by an agent/)).toBeNull();
+  });
+
   it("stays hidden in read-only mode when nothing was saved", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ProviderNotConfigured", canAnalyze: false, contractVersion: 1 })))

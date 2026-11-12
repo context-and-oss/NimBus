@@ -25,11 +25,11 @@ namespace NimBus.WebApp.Tests.Mcp;
 [TestClass]
 public partial class OperatorPromptsTests
 {
-    private static readonly string[] AllPrompts = ["triage", "investigate-message", "recover-message", "failure-report"];
+    private static readonly string[] AllPrompts = ["triage", "investigate-message", "recover-message", "failure-report", "handle-failures"];
     private static readonly string[] ReadOnlyPrompts = ["triage", "investigate-message", "failure-report"];
 
     [TestMethod]
-    public async Task All_four_prompts_are_listed_in_local_development()
+    public async Task All_prompts_are_listed_in_local_development()
     {
         await using var host = await McpTestHost.StartLocalDevelopmentAsync();
         await using var client = await host.CreateClientAsync();
@@ -51,6 +51,7 @@ public partial class OperatorPromptsTests
         AssertArguments(prompts["investigate-message"], ("endpointId", true), ("eventId", true));
         AssertArguments(prompts["recover-message"], ("endpointId", true), ("eventId", true), ("action", false));
         AssertArguments(prompts["failure-report"], ("period", false));
+        AssertArguments(prompts["handle-failures"], ("endpointId", false), ("period", false));
     }
 
     [TestMethod]
@@ -58,6 +59,7 @@ public partial class OperatorPromptsTests
     [DataRow("investigate-message")]
     [DataRow("recover-message")]
     [DataRow("failure-report")]
+    [DataRow("handle-failures")]
     public async Task Each_prompt_returns_one_user_message_with_the_untrusted_data_rule(string prompt)
     {
         await using var host = await McpTestHost.StartLocalDevelopmentAsync();
@@ -183,6 +185,35 @@ public partial class OperatorPromptsTests
     }
 
     [TestMethod]
+    public async Task Handle_failures_is_hidden_and_refused_when_classify_is_off()
+    {
+        await using var host = await StartWithPolicyAsync(p => p.Capabilities.Classify = false);
+        await using var client = await host.CreateClientAsync();
+
+        var prompts = (await client.ListPromptsAsync()).Select(p => p.Name).ToList();
+        var error = await Assert.ThrowsAsync<McpProtocolException>(() => client.GetPromptAsync("handle-failures", ValidArguments("handle-failures")).AsTask());
+
+        CollectionAssert.DoesNotContain(prompts, "handle-failures");
+        CollectionAssert.Contains(prompts, "recover-message");
+        StringAssert.Contains(error.Message, "[PermissionDenied] handle-failures is turned off by an administrator.", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void Handle_failures_maps_guidance_and_origin_to_the_four_outcomes()
+    {
+        var text = OperatorPrompts.Render("handle-failures", new Dictionary<string, string?>());
+
+        StringAssert.Contains(text, "guidance RetryMayHelp: Retry", StringComparison.Ordinal);
+        StringAssert.Contains(text, "origin source_data: Report data quality", StringComparison.Ordinal);
+        StringAssert.Contains(text, "origin adapter_code: Register a bug and draft a fix", StringComparison.Ordinal);
+        StringAssert.Contains(text, "anything else: Hand to a person", StringComparison.Ordinal);
+        StringAssert.Contains(text, "never the NimBus repository", StringComparison.Ordinal);
+        StringAssert.Contains(text, "Never skip", StringComparison.Ordinal);
+        StringAssert.Contains(text, "nimbus_record_classification", StringComparison.Ordinal);
+        StringAssert.Contains(text, "endpointId: (all readable endpoints)", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
     public void Every_tool_a_prompt_names_is_registered()
     {
         var registered = RegisteredToolNames();
@@ -237,6 +268,7 @@ public partial class OperatorPromptsTests
         "investigate-message" => new() { ["endpointId"] = "CrmEndpoint", ["eventId"] = "evt-1" },
         "recover-message" => new() { ["endpointId"] = "CrmEndpoint", ["eventId"] = "evt-1", ["action"] = "resubmit" },
         "failure-report" => new() { ["period"] = "3d" },
+        "handle-failures" => new() { ["endpointId"] = "CrmEndpoint", ["period"] = "1d" },
         _ => throw new ArgumentOutOfRangeException(nameof(prompt), prompt, null),
     };
 

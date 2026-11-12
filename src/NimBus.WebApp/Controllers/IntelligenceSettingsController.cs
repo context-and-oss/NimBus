@@ -120,6 +120,8 @@ public sealed class IntelligenceSettingsController(
 /// <summary>
 /// A complete conditional settings update and explicit payload-sharing consent. <see cref="ApiKey"/>
 /// replaces the saved provider key when present; <see cref="ClearApiKey"/> removes it. Neither is echoed.
+/// Both, and the sealed key they manage, are deprecated with the built-in provider (Spec 044 §6.10)
+/// and are removed in v5.0.0.
 /// </summary>
 [System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
 public sealed class SaveIntelligenceSettings

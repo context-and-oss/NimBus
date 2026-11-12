@@ -6252,6 +6252,14 @@ components:
         model:
           type: string
           nullable: true
+        provider:
+          type: string
+          nullable: true
+          description: Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider).
+        faultOrigin:
+          type: string
+          nullable: true
+          description: The saved fault origin (question set version 2); null when not assessed.
         classifiedAt:
           type: string
           format: date-time
@@ -6932,6 +6940,9 @@ components:
           $ref: '#/components/schemas/McpCapabilities'
         allowWorkloads:
           type: boolean
+        allowWorkloadClassification:
+          type: boolean
+          description: Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false.
         people:
           $ref: '#/components/schemas/McpPeople'
         clients:

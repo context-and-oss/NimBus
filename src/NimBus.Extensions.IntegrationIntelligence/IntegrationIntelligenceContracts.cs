@@ -4,6 +4,14 @@ using NimBus.MessageStore;
 
 namespace NimBus.Extensions.IntegrationIntelligence;
 
+/// <summary>Deprecation notices of the built-in provider (Spec 044 §6.10).</summary>
+public static class IntegrationIntelligenceDeprecation
+{
+    /// <summary>The <see cref="ObsoleteAttribute"/> message on the provider surface.</summary>
+    public const string Provider =
+        "The built-in failure-intelligence provider is deprecated (Spec 044): agents record classifications over MCP with nimbus_record_classification (FailureClassificationRecorder). Removed in v5.0.0.";
+}
+
 /// <summary>Configuration for the optional, advisory failure-classification feature.</summary>
 public sealed class FailureClassificationOptions
 {
@@ -16,19 +24,36 @@ public sealed class FailureClassificationOptions
     /// <summary>Enables the selected host integration. Defaults to false.</summary>
     public bool IntelligenceEnabled { get; set; }
 
-    /// <summary>Provider name. MVP supports TypeSafe.</summary>
-    public string Provider { get; set; } = "TypeSafe";
+    /// <summary>The provider value that turns provider analysis off (Spec 044 §6.7).</summary>
+    public const string NoProvider = "None";
 
-    /// <summary>TypeSafe API key supplied by the operator.</summary>
+    /// <summary>The deprecated built-in provider.</summary>
+    public const string TypeSafeProvider = "TypeSafe";
+
+    /// <summary>
+    /// Provider name: <c>None</c> (the documented value for new deployments: agents record
+    /// classifications over MCP) or the deprecated <c>TypeSafe</c>. The default stays
+    /// <c>TypeSafe</c> until v5.0.0.
+    /// </summary>
+    public string Provider { get; set; } = TypeSafeProvider;
+
+    /// <summary>Whether <see cref="Provider"/> is <c>None</c>.</summary>
+    public bool ProviderDisabled => string.Equals(Provider, NoProvider, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>TypeSafe API key supplied by the operator. Deprecated; removed in v5.0.0.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public string ApiKey { get; set; } = string.Empty;
 
-    /// <summary>Provider base URL. Defaults to the official TypeSafe endpoint.</summary>
+    /// <summary>Provider base URL. Defaults to the official TypeSafe endpoint. Deprecated; removed in v5.0.0.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public string BaseUrl { get; set; } = "https://api.typesafe.ai";
 
-    /// <summary>Stable model alias sent to the provider.</summary>
+    /// <summary>Stable model alias sent to the provider. Deprecated; removed in v5.0.0.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public string Model { get; set; } = "jev-1.13.0";
 
-    /// <summary>Total provider budget, including permitted retries.</summary>
+    /// <summary>Total provider budget, including permitted retries. Deprecated; removed in v5.0.0.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public int TimeoutSeconds { get; set; } = 20;
 
     /// <summary>Minimum category confidence for deterministic guidance.</summary>
@@ -55,15 +80,39 @@ public sealed class FailureClassificationOptions
     /// <summary>Optional exact endpoint allow-list. Empty means all endpoints.</summary>
     public string[] AllowedEndpoints { get; set; } = [];
 
-    /// <summary>Validates configuration without contacting a provider or store.</summary>
-    public IReadOnlyList<string> Validate()
+    /// <summary>Validates configuration without contacting a provider or store: <see cref="ValidateEvidence"/> and <see cref="ValidateProvider"/> together.</summary>
+    public IReadOnlyList<string> Validate() => [.. ValidateEvidence(), .. ValidateProvider()];
+
+    /// <summary>
+    /// Validates the provider settings. With <c>Provider: None</c> nothing is checked, so a missing
+    /// key is not an error (Spec 044 §6.7).
+    /// </summary>
+    public IReadOnlyList<string> ValidateProvider()
+    {
+        var errors = new List<string>();
+        if (!Enabled) return errors;
+        if (ProviderDisabled) return errors;
+        if (!string.Equals(Provider, TypeSafeProvider, StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add("Provider must be None or TypeSafe.");
+            return errors;
+        }
+#pragma warning disable CS0618 // The deprecated provider's own settings (Spec 044 §6.10).
+        if (string.IsNullOrWhiteSpace(ApiKey)) errors.Add("ApiKey is required when the feature is enabled.");
+        if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) errors.Add("BaseUrl must be an HTTPS absolute URI.");
+        if (TimeoutSeconds is < 1 or > 20) errors.Add("TimeoutSeconds must be between 1 and 20.");
+#pragma warning restore CS0618
+        return errors;
+    }
+
+    /// <summary>
+    /// Validates what recording and saved results need: the feature switches, the guidance
+    /// thresholds and the evidence limits. No provider setting is checked.
+    /// </summary>
+    public IReadOnlyList<string> ValidateEvidence()
     {
         var errors = new List<string>();
         if (Enabled && !IntelligenceEnabled) errors.Add($"{nameof(IntelligenceEnabled)} must be true when {nameof(Enabled)} is true.");
-        if (Enabled && !string.Equals(Provider, "TypeSafe", StringComparison.OrdinalIgnoreCase)) errors.Add("Provider must be TypeSafe.");
-        if (Enabled && string.IsNullOrWhiteSpace(ApiKey)) errors.Add("ApiKey is required when the feature is enabled.");
-        if (Enabled && (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)) errors.Add("BaseUrl must be an HTTPS absolute URI.");
-        if (Enabled && TimeoutSeconds is < 1 or > 20) errors.Add("TimeoutSeconds must be between 1 and 20.");
         if (!double.IsFinite(MinimumCategoryConfidence) || MinimumCategoryConfidence is < 0 or > 1) errors.Add("MinimumCategoryConfidence must be between 0 and 1.");
         if (!double.IsFinite(RetryLikely) || RetryLikely is < 0 or > 1) errors.Add("RetryLikely must be between 0 and 1.");
         if (!double.IsFinite(ChangeRequired) || ChangeRequired is < 0 or > 1) errors.Add("ChangeRequired must be between 0 and 1.");
@@ -73,7 +122,8 @@ public sealed class FailureClassificationOptions
         return errors;
     }
 
-    /// <summary>Nested provider settings used by the documented configuration shape.</summary>
+    /// <summary>Nested provider settings used by the documented configuration shape. Deprecated; removed in v5.0.0.</summary>
+    [Obsolete(IntegrationIntelligenceDeprecation.Provider)]
     public TypeSafeProviderOptions TypeSafe { get; set; } = new();
 
     /// <summary>Nested evidence settings used by the documented configuration shape.</summary>
@@ -85,10 +135,12 @@ public sealed class FailureClassificationOptions
     /// <summary>Copies nested settings into the execution snapshot.</summary>
     public void ApplyNestedSettings()
     {
+#pragma warning disable CS0618 // The deprecated provider settings stay bindable until v5.0.0 (Spec 044 §6.10).
         if (!string.IsNullOrWhiteSpace(TypeSafe.ApiKey)) ApiKey = TypeSafe.ApiKey;
         if (!string.IsNullOrWhiteSpace(TypeSafe.Model)) Model = TypeSafe.Model;
         if (!string.IsNullOrWhiteSpace(TypeSafe.BaseUrl)) BaseUrl = TypeSafe.BaseUrl;
         if (TypeSafe.TimeoutSeconds != 20) TimeoutSeconds = TypeSafe.TimeoutSeconds;
+#pragma warning restore CS0618
         IncludeEventPayload = Data.IncludeEventPayload;
         MaximumHistoryItems = Data.MaximumHistoryItems;
         MaximumErrorTextLength = Data.MaximumErrorTextLength;
@@ -99,7 +151,8 @@ public sealed class FailureClassificationOptions
     }
 }
 
-/// <summary>Nested provider configuration.</summary>
+/// <summary>Nested provider configuration. Deprecated; removed in v5.0.0.</summary>
+[Obsolete(IntegrationIntelligenceDeprecation.Provider)]
 public sealed class TypeSafeProviderOptions
 {
     public string ApiKey { get; set; } = string.Empty;
@@ -158,6 +211,12 @@ public sealed record FailureClassificationInput
     public string? DeadLetterReason { get; init; }
     public IReadOnlyList<FailureHistoryItem> RecentHistory { get; init; } = [];
     public string? EventPayloadJson { get; init; }
+
+    /// <summary>The endpoint that sent the event (<c>From</c>). Never sent to the provider.</summary>
+    public string? SourceEndpoint { get; init; }
+
+    /// <summary>The endpoint the event originated from, when it differs from <see cref="SourceEndpoint"/>. Never sent to the provider.</summary>
+    public string? OriginatingEndpoint { get; init; }
 }
 
 /// <summary>Safe exception fields exported as evidence.</summary>
@@ -178,7 +237,8 @@ public sealed record FailureIntelligenceProviderResult(
     int? InputTokens,
     int? OutputTokens);
 
-/// <summary>Provider abstraction. Implementations must have no recovery side effects.</summary>
+/// <summary>Provider abstraction. Implementations must have no recovery side effects. Deprecated; removed in v5.0.0.</summary>
+[Obsolete(IntegrationIntelligenceDeprecation.Provider)]
 public interface IFailureIntelligenceProvider
 {
     string Name { get; }
@@ -211,6 +271,28 @@ public sealed record FailureClassification
     public required string RequestedBy { get; init; }
     public required DateTimeOffset CreatedAtUtc { get; init; }
     public int SchemaVersion { get; init; } = 1;
+
+    /// <summary>The agent's answer to <c>fault_origin</c> (question set version 2); null on version 1 records.</summary>
+    public string? FaultOrigin { get; init; }
+
+    /// <summary>The agent's confidence in <see cref="FaultOrigin"/>, 0 to 1.</summary>
+    public double? FaultOriginConfidence { get; init; }
+
+    /// <summary>The client application that recorded it (<c>azp</c>, else <c>appid</c>), for an agent result.</summary>
+    public string? ClientId { get; init; }
+
+    /// <summary>The agent's scrubbed, plain-text rationale. Untrusted: return it to other agents marked as such.</summary>
+    public string? Rationale { get; init; }
+}
+
+/// <summary>The <see cref="FailureClassification.Provider"/> value of a result an agent recorded over MCP (Spec 044).</summary>
+public static class FailureClassificationProviders
+{
+    /// <summary>An agent recorded the result.</summary>
+    public const string Agent = "Agent";
+
+    /// <summary>The deprecated built-in provider made the result.</summary>
+    public const string TypeSafe = "TypeSafe";
 }
 
 /// <summary>Outcome of an atomic operation reservation.</summary>

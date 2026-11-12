@@ -16296,6 +16296,10 @@ export class InsightOccurrence implements IInsightOccurrence {
     guidance?: string | undefined;
     revision?: number | undefined;
     model?: string | undefined;
+    /** Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider). */
+    provider?: string | undefined;
+    /** The saved fault origin (question set version 2); null when not assessed. */
+    faultOrigin?: string | undefined;
     classifiedAt?: moment.Moment | undefined;
     /** The event's current resolution status, or null when unavailable. Never implies unresolved. */
     currentStatus?: string | undefined;
@@ -16331,6 +16335,8 @@ export class InsightOccurrence implements IInsightOccurrence {
             this.guidance = _data["guidance"];
             this.revision = _data["revision"];
             this.model = _data["model"];
+            this.provider = _data["provider"];
+            this.faultOrigin = _data["faultOrigin"];
             this.classifiedAt = _data["classifiedAt"] ? moment(_data["classifiedAt"].toString()) : undefined as any;
             this.currentStatus = _data["currentStatus"];
         }
@@ -16363,6 +16369,8 @@ export class InsightOccurrence implements IInsightOccurrence {
         data["guidance"] = this.guidance;
         data["revision"] = this.revision;
         data["model"] = this.model;
+        data["provider"] = this.provider;
+        data["faultOrigin"] = this.faultOrigin;
         data["classifiedAt"] = this.classifiedAt ? this.classifiedAt.toISOString() : undefined as any;
         data["currentStatus"] = this.currentStatus;
         return data;
@@ -16395,6 +16403,10 @@ export interface IInsightOccurrence {
     guidance?: string | undefined;
     revision?: number | undefined;
     model?: string | undefined;
+    /** Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider). */
+    provider?: string | undefined;
+    /** The saved fault origin (question set version 2); null when not assessed. */
+    faultOrigin?: string | undefined;
     classifiedAt?: moment.Moment | undefined;
     /** The event's current resolution status, or null when unavailable. Never implies unresolved. */
     currentStatus?: string | undefined;
@@ -19142,6 +19154,8 @@ export class McpAccessSettings implements IMcpAccessSettings {
     enabled?: boolean;
     capabilities?: McpCapabilities;
     allowWorkloads?: boolean;
+    /** Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
+    allowWorkloadClassification?: boolean;
     people?: McpPeople;
     clients?: McpClients;
     endpoints?: McpEndpointRules;
@@ -19170,6 +19184,7 @@ export class McpAccessSettings implements IMcpAccessSettings {
             this.enabled = _data["enabled"];
             this.capabilities = _data["capabilities"] ? McpCapabilities.fromJS(_data["capabilities"]) : undefined as any;
             this.allowWorkloads = _data["allowWorkloads"];
+            this.allowWorkloadClassification = _data["allowWorkloadClassification"];
             this.people = _data["people"] ? McpPeople.fromJS(_data["people"]) : undefined as any;
             this.clients = _data["clients"] ? McpClients.fromJS(_data["clients"]) : undefined as any;
             this.endpoints = _data["endpoints"] ? McpEndpointRules.fromJS(_data["endpoints"]) : undefined as any;
@@ -19196,6 +19211,7 @@ export class McpAccessSettings implements IMcpAccessSettings {
         data["enabled"] = this.enabled;
         data["capabilities"] = this.capabilities ? this.capabilities.toJSON() : undefined as any;
         data["allowWorkloads"] = this.allowWorkloads;
+        data["allowWorkloadClassification"] = this.allowWorkloadClassification;
         data["people"] = this.people ? this.people.toJSON() : undefined as any;
         data["clients"] = this.clients ? this.clients.toJSON() : undefined as any;
         data["endpoints"] = this.endpoints ? this.endpoints.toJSON() : undefined as any;
@@ -19222,6 +19238,8 @@ export interface IMcpAccessSettings {
     enabled?: boolean;
     capabilities?: McpCapabilities;
     allowWorkloads?: boolean;
+    /** Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
+    allowWorkloadClassification?: boolean;
     people?: McpPeople;
     clients?: McpClients;
     endpoints?: McpEndpointRules;

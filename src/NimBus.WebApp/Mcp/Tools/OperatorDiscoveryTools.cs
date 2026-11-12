@@ -27,6 +27,7 @@ public sealed class OperatorDiscoveryTools
     private readonly RateLimitOptions _rateLimits;
     private readonly IMcpAccessPolicyProvider _policies;
     private readonly bool _classificationEnabled;
+    private readonly IOperatorClassificationSource _classifications;
 
     /// <summary>Creates the tools for one request.</summary>
     public OperatorDiscoveryTools(
@@ -38,8 +39,10 @@ public sealed class OperatorDiscoveryTools
         OperatorActionAccess actionAccess,
         IOptions<RateLimitOptions> rateLimits,
         IMcpAccessPolicyProvider policies,
-        IEnumerable<IntegrationIntelligenceActivation> intelligence)
+        IEnumerable<IntegrationIntelligenceActivation> intelligence,
+        IOperatorClassificationSource classifications)
     {
+        _classifications = classifications;
         _policies = policies;
         _platform = platform;
         _authorization = authorization;
@@ -67,9 +70,9 @@ public sealed class OperatorDiscoveryTools
             new CallerInfo(_authorization.GetCurrentUserName(), access.ObjectId, access.SiteRole.ToString(), await _payloadAccess.CanReadPayloadsAsync().ConfigureAwait(false)),
             _runtime.Mode.ToString(),
             await _catalog.GetReadableEndpointIdsAsync().ConfigureAwait(false),
-            await _actionAccess.PermittedActionsAsync(_classificationEnabled).ConfigureAwait(false),
+            await _actionAccess.PermittedActionsAsync(_classifications.CanRecord || _classifications.CanAnalyze).ConfigureAwait(false),
             limits,
-            new FeatureInfo(_classificationEnabled));
+            new FeatureInfo(_classificationEnabled, _classifications.CanRecord, _classifications.CanAnalyze));
     }
 
     /// <summary>Lists the endpoints the caller can read, with the event types each produces and consumes.</summary>
@@ -100,7 +103,7 @@ public sealed class OperatorDiscoveryTools
 /// <param name="Caller">The authenticated caller.</param>
 /// <param name="AuthenticationMode"><c>Entra</c> or <c>LocalDevelopment</c>.</param>
 /// <param name="ReadableEndpoints">Endpoint ids the caller holds Reader on.</param>
-/// <param name="PermittedActions">Actions the caller may take through MCP on at least one endpoint: resubmit, skip, report, classify. nimbus_get_message lists what applies to one message.</param>
+/// <param name="PermittedActions">Actions the caller may take through MCP on at least one endpoint: resubmit, skip, report, classify (record a classification). nimbus_get_message lists what applies to one message.</param>
 /// <param name="Limits">The MCP request limit, or null when rate limiting is off.</param>
 /// <param name="Features">Optional features available in this deployment.</param>
 public sealed record CapabilitiesResult(
@@ -126,8 +129,10 @@ public sealed record CallerInfo(string? Name, string? ObjectId, string SiteRole,
 public sealed record RequestLimits(int RequestsPerWindow, int WindowSeconds);
 
 /// <summary>Optional features.</summary>
-/// <param name="FailureClassification">Whether AI failure classification is enabled.</param>
-public sealed record FeatureInfo(bool FailureClassification);
+/// <param name="FailureClassification">Whether failure classification is enabled.</param>
+/// <param name="CanRecordClassifications">Whether agents can read evidence with nimbus_get_failure_evidence and record classifications with nimbus_record_classification.</param>
+/// <param name="CanAnalyzeWithProvider">Whether the deprecated built-in provider can analyze a failure with nimbus_classify_failure.</param>
+public sealed record FeatureInfo(bool FailureClassification, bool CanRecordClassifications, bool CanAnalyzeWithProvider);
 
 /// <summary>Result of <c>nimbus_list_endpoints</c>.</summary>
 /// <param name="Environment">The configured NimBus environment name.</param>

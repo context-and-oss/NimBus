@@ -59,6 +59,36 @@ public sealed partial class FailedInsightsServiceTests
     }
 
     [TestMethod]
+    public async Task Agent_and_provider_results_count_alike_and_occurrences_show_who_made_them()
+    {
+        // Spec 044 §6.8: coverage, causes and guidance group agent recordings like provider results;
+        // group detail shows the provider and fault origin per occurrence.
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "by-agent", "Customer 4711 not found", minutesAgo: 30);
+        await Fail(store, "orders", "e2", "by-provider", "Customer 4712 not found", minutesAgo: 20);
+        var enrichment = new FakeEnrichment();
+        enrichment.Save(Result("by-agent", "e1", "orders", "missing_reference_data", FailureGuidance.ChangeLikelyRequired) with
+        {
+            Provider = FailureClassificationProviders.Agent, QuestionSetVersion = 2, FaultOrigin = "source_data", FaultOriginConfidence = 0.8,
+        });
+        enrichment.Save(Result("by-provider", "e2", "orders", "missing_reference_data", FailureGuidance.ChangeLikelyRequired));
+
+        var overview = await Build(store, enrichment);
+        var page = await Service(store, enrichment).GetOccurrencesAsync(new FailedInsightsPageRequest(From, To, null, InsightsPerspective.Cause,
+            "missing_reference_data", 10, null));
+
+        Assert.AreEqual(2, overview.Coverage!.Classified);
+        Assert.AreEqual(2, Group(overview.CauseGroups, "missing_reference_data").Count);
+        Assert.AreEqual(2, Group(overview.GuidanceGroups, nameof(FailureGuidance.ChangeLikelyRequired)).Count);
+        Assert.AreEqual(FailedInsightsQueryStatus.Ok, page.Status, page.Error);
+        var occurrences = page.Page!.Occurrences!.ToDictionary(o => o.MessageId!);
+        Assert.AreEqual("Agent", occurrences["by-agent"].Provider);
+        Assert.AreEqual("source_data", occurrences["by-agent"].FaultOrigin);
+        Assert.AreEqual("TypeSafe", occurrences["by-provider"].Provider);
+        Assert.IsNull(occurrences["by-provider"].FaultOrigin);
+    }
+
+    [TestMethod]
     public async Task Coverage_partitions_and_every_perspective_reconcile_for_a_mixed_scope()
     {
         var store = new CountingStore();
