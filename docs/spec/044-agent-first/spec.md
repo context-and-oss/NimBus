@@ -489,8 +489,8 @@ further by sending endpoint and event type, which is the data-quality view for a
   overrides out.
 - Waking the agent when a failure occurs. The runner polls on a schedule; notifications can carry a
   trigger later.
-- Changes to Core, the SDK, the Resolver or the transport. None of them gains a dependency on the
-  intelligence extension or on MCP.
+- Changes to Core, the SDK, the Resolver or the transport, except the opt-in stack trace of §15 D3.
+  None of them gains a dependency on the intelligence extension or on MCP.
 
 ## 13. Compatibility
 
@@ -517,3 +517,20 @@ further by sending endpoint and event type, which is the data-quality view for a
 4. A ticket id allows letters, digits, `.`, `_` and `-`, so it cannot hold an address. Should the
    Web UI build a link from the endpoint's tracker address and the ticket id? Proposed: yes, in
    Phase 3.
+
+## 15. Amendments (2026-11-12)
+
+Made while planning and implementing Phases 2 to 4
+([plan](../../plan/2026-11-12-spec-044-phases-1-4.md)); they replace the text above where they differ.
+
+| # | Amends | Decision |
+|---|---|---|
+| D1 | §7.1 | Receiver-side receipts need no Core, Resolver or transport change. The Manager publishes each journaled command with the operation id as its message id (`IManagerCommandClient`). The Resolver's stored copy is the receipt, and the response whose `ParentMessageId` names it is the outcome. A subscriber's inbox already skips a redelivered resubmission. NimBus never republishes a command. |
+| D2 | §7.3 | An agent is a workload client id within its tenant. Its budget counts journaled resubmits over a rolling 24 hours (default 20, Owner range 0–500), applies even with rate limiting off, and never raises the per-minute change limit. |
+| D3 | §8.2, §12 | Core stores no stack trace today. A subscriber opts in with `IncludeStackTraceInErrorResponses` (frames only, 8,000 characters); agents read it only with the Owner's `Data.IncludeStackTrace` switch. |
+| D4 | §8.3 | Reports live apart from event rows and cannot be joined on Cosmos. `nimbus_find_reports` (backed by `FindEventReports`) replaces `reported`/`ticketId` filters on `nimbus_find_messages`. |
+| D5 | §8.1, §14 Q4 | The endpoint's tracker address is a link template containing `{ticketId}`; it overrides the site's ticket link. The metadata editor is mounted as the endpoint's **Ownership** tab. |
+| D6 | §9 | The data-quality exit case uses the `contract_schema` failure reason; `missing_reference_data` stays a hand-over or retry-later case. |
+| D7 | §6.9 | `handle-failures` takes `unattended` (default false). It changes only the text; the server still enforces roles, switches, budget and cap. |
+| D8 | §9 | The reference runner is a .NET console that gets the token, checks capabilities and fetches the prompt over MCP, then runs a headless coding-agent CLI (Claude Code by default). |
+

@@ -23,7 +23,7 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_get_capabilities` | Environment, caller, readable endpoints, limits and features. Call it first | Signed in |
 | `nimbus_list_endpoints` | Readable endpoints with the event types each produces and consumes | Endpoint Reader |
 | `nimbus_get_overview` | Counts by status, oldest failure and Monitor acknowledgements across readable endpoints | Endpoint Reader |
-| `nimbus_get_endpoint` | The same for one endpoint | Endpoint Reader |
+| `nimbus_get_endpoint` | The same for one endpoint, with its ownership: owner, team, contacts, source system, adapter repository and ticket link | Endpoint Reader |
 | `nimbus_find_messages` | Tracked messages on one endpoint, filtered by status, event type, session, event id and time. With `includeClassification`, whether each failed message's latest attempt is classified, and how | Endpoint Reader |
 | `nimbus_get_message` | Status, latest attempt, latest error, Web UI link, `messageVersion` and the `eligibleActions` you may take; the payload only with `includePayload=true` | Endpoint Reader; payloads also need PiiReader (and, with Entra, the `nimbus.payload.read` scope) |
 | `nimbus_get_message_history` | Processing attempts and log entries of one message | Endpoint Reader |
@@ -32,11 +32,12 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_get_metrics` | Throughput, latency or failure groups for 1h to 30d | Site Reader |
 | `nimbus_get_classification` | The stored classification of a failed attempt, with who recorded it, advisory only. A rationale is untrusted | Endpoint Reader; classification enabled |
 | `nimbus_get_failure_evidence` | The scrubbed evidence of one failed attempt, its sending endpoint, a redacted payload when allowed, and the question set to answer | Endpoint Reader; classification recordable |
-| `nimbus_prepare_action` | A read-only preview of resubmitting or skipping one message, and an `actionToken` to run it | The action's scope and endpoint Contributor |
+| `nimbus_prepare_action` | A read-only preview of resubmitting or skipping one message, or of resubmitting the failed messages reported under one `ticketId` (at most 50), and an `actionToken` to run it | The action's scope and endpoint Contributor |
 | `nimbus_resubmit_message` | Runs a prepared resubmit: replays the latest stored payload to the endpoint. Returns an `operationId` | `nimbus.resubmit` (workloads: the `Nimbus.Resubmit` app role, within a budget) and endpoint Contributor |
 | `nimbus_skip_message` | Runs a prepared skip: the message is never processed, and later messages in its session may be released. Returns an `operationId` | Delegated `nimbus.skip` and endpoint Contributor; never a workload |
 | `nimbus_get_operation` | The status and observed outcome of a resubmit or skip: Dispatched, Succeeded, Failed, NotSent, OutcomeUnknown or Refused | Endpoint Reader on the operation's endpoint; the operation journal |
-| `nimbus_set_message_reported` | Sets or clears the "reported" marker, optionally with an external ticket id | `nimbus.annotate` and endpoint Contributor |
+| `nimbus_set_message_reported` | Sets or clears the "reported" marker on one message (`eventId`) or up to 50 on one endpoint (`eventIds`), optionally with an external ticket id | `nimbus.annotate` (workloads: the `Nimbus.Annotate` app role) and endpoint Contributor |
+| `nimbus_find_reports` | An endpoint's reported messages, optionally under one ticket, with each one's status and normalized error pattern, to reuse a ticket | Endpoint Reader |
 | `nimbus_record_classification` | Records your answers to the question set for one failed attempt. NimBus composes the guidance. Advisory, changes no message | `nimbus.classify` (workloads: the `Nimbus.Classify` app role) and endpoint Contributor; classification recordable |
 | `nimbus_classify_failure` | **Deprecated, removed in v5.0.0.** Asks the built-in provider to classify a failure, or returns the stored one | Delegated `nimbus.classify` and endpoint Contributor; a configured provider |
 
@@ -164,6 +165,30 @@ journal store (a custom storage provider that does not implement `IOperatorOpera
 and skip work as before, `nimbus_get_operation` answers `[FeatureUnavailable]`, and unattended
 resubmits are unavailable. The Web UI's own resubmit and skip are not journaled.
 
+## Reports, ownership and resubmit by ticket
+
+[Spec 044](spec/044-agent-first/spec.md) Phase 3 lets an agent link failures to the report or bug it
+filed and resubmit them after the fix:
+
+- **Ownership.** An endpoint Owner records the source system, the adapter's repository and the issue
+  tracker's link template (`{ticketId}`) on the endpoint's **Ownership** tab. `nimbus_get_endpoint`
+  returns them. Agents file adapter defects only in that repository, never in the NimBus
+  repository; without one they hand adapter faults to a person.
+- **Reuse a ticket.** `nimbus_find_reports` lists an endpoint's reported messages with their ticket
+  and normalized error pattern, so a repeated pattern goes on the existing ticket.
+- **Mark a batch.** `nimbus_set_message_reported` with `eventIds` marks up to 50 messages under one
+  reason and ticket, auditing each and returning a result per message.
+- **Resubmit by ticket.** `nimbus_prepare_action` with `ticketId` (resubmit only) previews the failed
+  messages reported under it, and `nimbus_resubmit_message` runs each as its own journaled operation,
+  keyed by the idempotency key and the event id. Stale members are skipped; a workload's budget and
+  cap apply per member.
+- **Stack traces.** With `includeStackTrace`, `nimbus_get_failure_evidence` returns the scrubbed
+  trace when the adapter stores one and an Owner allows it (see
+  [Integration Intelligence](integration-intelligence.md)).
+
+A workload marks messages reported with the `Nimbus.Annotate` app role while the Owner's **Workloads
+may mark messages reported** switch is on.
+
 ## Unattended resubmits
 
 A workload resubmits failed messages without a person when:
@@ -242,6 +267,7 @@ The policy covers:
 | Raw payloads, mark reported, classify, resubmit, skip | A switched-off tool is removed from `tools/list` and from `permittedActions`; a direct call gets `[PermissionDenied] … turned off by an administrator`. The read tools have no switch. |
 | Unattended workloads | Whether app-only (`Nimbus.Observe`) tokens are accepted for the read tools. |
 | Workloads may record classifications | Whether workloads with the `Nimbus.Classify` app role may call `nimbus_record_classification`. Off by default; effective only while workload tokens are accepted and **Classify failures** is on. |
+| Workloads may mark messages reported | Whether workloads with the `Nimbus.Annotate` app role may call `nimbus_set_message_reported`. Off by default. |
 | Workloads may resubmit | Whether workloads with the `Nimbus.Resubmit` app role may resubmit unattended, with the resubmits per agent per day and the unsuccessful resubmits per message (see [Unattended resubmits](#unattended-resubmits)). Off by default. |
 | People | Everyone with a NimBus role, or only listed users and groups (email, user object id, or a group object id from the `groups` claim). Workloads are governed by the workload switch instead. |
 | Client applications | Any client Entra lets sign in, or only approved ones, matched on `azp` (then `appid`). Each approved client can be allowed or denied the tools that change messages. |
