@@ -11,7 +11,7 @@ namespace NimBus.WebApp.Services.AgentApiKeys;
 /// <c>oid</c> claim, so it can never match the platform-admin marker or an ACL entry. Only
 /// the agent API's authorization policy names this scheme.
 /// </summary>
-public sealed class AgentApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+public sealed partial class AgentApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     private readonly IAgentApiKeyProvider _keys;
     private readonly IAgentApiKeyUsageRecorder _usage;
@@ -72,12 +72,11 @@ public sealed class AgentApiKeyAuthenticationHandler : AuthenticationHandler<Aut
     private AuthenticateResult Refuse(string reason, string? keyId)
     {
         // Never log the presented value: it may be a real key sent to the wrong place.
-        Logger.LogWarning(
-            "Agent API key refused ({Reason}); key id {KeyId}, client {ClientIp}",
-            reason,
-            keyId ?? "-",
-            Context.Connection.RemoteIpAddress?.ToString() ?? "-");
+        LogAgentApiKeyRefused(Logger, reason, keyId ?? "-", Context.Connection.RemoteIpAddress?.ToString() ?? "-");
         // The failure message stays server-side; the client only sees 401.
         return AuthenticateResult.Fail("Agent API key refused: " + reason + ".");
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Agent API key refused ({Reason}); key id {KeyId}, client {ClientIp}")]
+    private static partial void LogAgentApiKeyRefused(ILogger logger, string reason, string keyId, string clientIp);
 }

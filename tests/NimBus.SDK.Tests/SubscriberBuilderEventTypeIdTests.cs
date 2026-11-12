@@ -32,10 +32,10 @@ namespace NimBus.SDK.Tests
 
             // Error must call out both CLR types and the shared wire id so the
             // operator can rename one without spelunking through stack traces.
-            StringAssert.Contains(ex.Message, "EventTypeId");
-            StringAssert.Contains(ex.Message, "OrderPlaced");
-            StringAssert.Contains(ex.Message, typeof(NamespaceA.OrderPlaced).FullName ?? "");
-            StringAssert.Contains(ex.Message, typeof(NamespaceB.OrderPlaced).FullName ?? "");
+            StringAssert.Contains(ex.Message, "EventTypeId", StringComparison.Ordinal);
+            StringAssert.Contains(ex.Message, "OrderPlaced", StringComparison.Ordinal);
+            StringAssert.Contains(ex.Message, typeof(NamespaceA.OrderPlaced).FullName ?? "", StringComparison.Ordinal);
+            StringAssert.Contains(ex.Message, typeof(NamespaceB.OrderPlaced).FullName ?? "", StringComparison.Ordinal);
         }
 
         [TestMethod]

@@ -30,7 +30,7 @@ public interface IMcpAccessPolicyProvider
 }
 
 /// <summary>Singleton cache over <see cref="IEndpointMetadataStore.GetMcpAccessSettings"/>.</summary>
-public sealed class McpAccessPolicyProvider : IMcpAccessPolicyProvider, IDisposable
+public sealed partial class McpAccessPolicyProvider : IMcpAccessPolicyProvider, IDisposable
 {
     /// <summary>How long a successful read is reused.</summary>
     public static readonly TimeSpan SuccessTtl = TimeSpan.FromSeconds(30);
@@ -87,7 +87,7 @@ public sealed class McpAccessPolicyProvider : IMcpAccessPolicyProvider, IDisposa
             catch (Exception ex)
             {
                 // Fail closed: keep the last policy, or none at all. Never the defaults.
-                _logger.LogWarning(ex, "MCP access policy read failed; keeping the last loaded policy");
+                LogMcpAccessPolicyReadFailed(_logger, ex);
                 Volatile.Write(ref _entry, new Entry(entry?.Policy, _time.GetUtcNow() + FailureTtl));
                 return entry?.Policy;
             }
@@ -109,4 +109,7 @@ public sealed class McpAccessPolicyProvider : IMcpAccessPolicyProvider, IDisposa
     public void Dispose() => _refresh.Dispose();
 
     private sealed record Entry(McpAccessPolicy? Policy, DateTimeOffset ExpiresAt);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "MCP access policy read failed; keeping the last loaded policy")]
+    private static partial void LogMcpAccessPolicyReadFailed(ILogger logger, Exception exception);
 }

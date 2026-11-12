@@ -25,11 +25,11 @@ namespace NimBus.WebApp.Tests.Mcp;
 [TestClass]
 public partial class OperatorPromptsTests
 {
-    private static readonly string[] AllPrompts = ["triage", "investigate-message", "recover-message", "failure-report"];
+    private static readonly string[] AllPrompts = ["triage", "investigate-message", "recover-message", "failure-report", "handle-failures"];
     private static readonly string[] ReadOnlyPrompts = ["triage", "investigate-message", "failure-report"];
 
     [TestMethod]
-    public async Task All_four_prompts_are_listed_in_local_development()
+    public async Task All_prompts_are_listed_in_local_development()
     {
         await using var host = await McpTestHost.StartLocalDevelopmentAsync();
         await using var client = await host.CreateClientAsync();
@@ -51,6 +51,7 @@ public partial class OperatorPromptsTests
         AssertArguments(prompts["investigate-message"], ("endpointId", true), ("eventId", true));
         AssertArguments(prompts["recover-message"], ("endpointId", true), ("eventId", true), ("action", false));
         AssertArguments(prompts["failure-report"], ("period", false));
+        AssertArguments(prompts["handle-failures"], ("endpointId", false), ("period", false));
     }
 
     [TestMethod]
@@ -58,6 +59,7 @@ public partial class OperatorPromptsTests
     [DataRow("investigate-message")]
     [DataRow("recover-message")]
     [DataRow("failure-report")]
+    [DataRow("handle-failures")]
     public async Task Each_prompt_returns_one_user_message_with_the_untrusted_data_rule(string prompt)
     {
         await using var host = await McpTestHost.StartLocalDevelopmentAsync();
@@ -68,8 +70,8 @@ public partial class OperatorPromptsTests
         Assert.AreEqual(1, result.Messages.Count);
         Assert.AreEqual(Role.User, result.Messages[0].Role);
         var text = Text(result);
-        StringAssert.Contains(text, "nimbus_get_capabilities");
-        StringAssert.Contains(text, "untrusted");
+        StringAssert.Contains(text, "nimbus_get_capabilities", StringComparison.Ordinal);
+        StringAssert.Contains(text, "untrusted", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -84,9 +86,9 @@ public partial class OperatorPromptsTests
         });
 
         var inputs = Text(result)[Text(result).IndexOf("Inputs", StringComparison.Ordinal)..];
-        StringAssert.Contains(inputs, "endpointId: \"CrmEndpoint\"");
-        StringAssert.Contains(inputs, "eventId: \"evt \\\"42\\\"\"");
-        StringAssert.Contains(inputs, "action: \"skip\"");
+        StringAssert.Contains(inputs, "endpointId: \"CrmEndpoint\"", StringComparison.Ordinal);
+        StringAssert.Contains(inputs, "eventId: \"evt \\\"42\\\"\"", StringComparison.Ordinal);
+        StringAssert.Contains(inputs, "action: \"skip\"", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -97,8 +99,8 @@ public partial class OperatorPromptsTests
 
         var text = Text(await client.GetPromptAsync("triage"));
 
-        StringAssert.Contains(text, "period: \"1d\"");
-        StringAssert.Contains(text, "endpointId: (all readable endpoints)");
+        StringAssert.Contains(text, "period: \"1d\"", StringComparison.Ordinal);
+        StringAssert.Contains(text, "endpointId: (all readable endpoints)", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -117,7 +119,7 @@ public partial class OperatorPromptsTests
 
         var error = await Assert.ThrowsAsync<McpProtocolException>(() => client.GetPromptAsync(prompt, arguments).AsTask());
 
-        StringAssert.Contains(error.Message, "[InvalidArgument]");
+        StringAssert.Contains(error.Message, "[InvalidArgument]", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -131,7 +133,7 @@ public partial class OperatorPromptsTests
             ["endpointId"] = "CrmEndpoint", ["eventId"] = new string('e', 201),
         }).AsTask());
 
-        StringAssert.Contains(error.Message, "[InvalidArgument]");
+        StringAssert.Contains(error.Message, "[InvalidArgument]", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -149,10 +151,10 @@ public partial class OperatorPromptsTests
 
         CollectionAssert.DoesNotContain(prompts, "recover-message");
         CollectionAssert.IsSubsetOf(ReadOnlyPrompts, prompts);
-        StringAssert.Contains(error.Message, "[PermissionDenied] recover-message is turned off by an administrator.");
+        StringAssert.Contains(error.Message, "[PermissionDenied] recover-message is turned off by an administrator.", StringComparison.Ordinal);
         var refusal = host.Get<McpTestHost.RecordingAuditLog>().Rows.Single(r => r.Type == MessageAuditType.McpAccessRefused && r.Denied);
-        StringAssert.Contains(refusal.Data, "\"reason\":\"tool\"");
-        StringAssert.Contains(refusal.Data, "recover-message");
+        StringAssert.Contains(refusal.Data, "\"reason\":\"tool\"", StringComparison.Ordinal);
+        StringAssert.Contains(refusal.Data, "recover-message", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -180,6 +182,35 @@ public partial class OperatorPromptsTests
 
         CollectionAssert.DoesNotContain(prompts, "recover-message");
         CollectionAssert.Contains(prompts, "triage");
+    }
+
+    [TestMethod]
+    public async Task Handle_failures_is_hidden_and_refused_when_classify_is_off()
+    {
+        await using var host = await StartWithPolicyAsync(p => p.Capabilities.Classify = false);
+        await using var client = await host.CreateClientAsync();
+
+        var prompts = (await client.ListPromptsAsync()).Select(p => p.Name).ToList();
+        var error = await Assert.ThrowsAsync<McpProtocolException>(() => client.GetPromptAsync("handle-failures", ValidArguments("handle-failures")).AsTask());
+
+        CollectionAssert.DoesNotContain(prompts, "handle-failures");
+        CollectionAssert.Contains(prompts, "recover-message");
+        StringAssert.Contains(error.Message, "[PermissionDenied] handle-failures is turned off by an administrator.", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void Handle_failures_maps_guidance_and_origin_to_the_four_outcomes()
+    {
+        var text = OperatorPrompts.Render("handle-failures", new Dictionary<string, string?>());
+
+        StringAssert.Contains(text, "guidance RetryMayHelp: Retry", StringComparison.Ordinal);
+        StringAssert.Contains(text, "origin source_data: Report data quality", StringComparison.Ordinal);
+        StringAssert.Contains(text, "origin adapter_code: Register a bug and draft a fix", StringComparison.Ordinal);
+        StringAssert.Contains(text, "anything else: Hand to a person", StringComparison.Ordinal);
+        StringAssert.Contains(text, "never the NimBus repository", StringComparison.Ordinal);
+        StringAssert.Contains(text, "Never skip", StringComparison.Ordinal);
+        StringAssert.Contains(text, "nimbus_record_classification", StringComparison.Ordinal);
+        StringAssert.Contains(text, "endpointId: (all readable endpoints)", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -237,6 +268,7 @@ public partial class OperatorPromptsTests
         "investigate-message" => new() { ["endpointId"] = "CrmEndpoint", ["eventId"] = "evt-1" },
         "recover-message" => new() { ["endpointId"] = "CrmEndpoint", ["eventId"] = "evt-1", ["action"] = "resubmit" },
         "failure-report" => new() { ["period"] = "3d" },
+        "handle-failures" => new() { ["endpointId"] = "CrmEndpoint", ["period"] = "1d" },
         _ => throw new ArgumentOutOfRangeException(nameof(prompt), prompt, null),
     };
 

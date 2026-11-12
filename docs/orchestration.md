@@ -405,7 +405,7 @@ sequenceDiagram
     alt Payment captured
         Payments->>Bus: PaymentCaptured
         Bus->>PM: PaymentCaptured
-        PM->>DB: Tx: Completed; timeout becomes stale
+        PM->>DB: Tx: Completed, timeout becomes stale
     else Payment failed or deadline expires
         Payments->>Bus: PaymentFailed / PaymentDeadlineExpired
         Bus->>PM: Failure or timeout

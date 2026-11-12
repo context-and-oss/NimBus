@@ -23,6 +23,12 @@ public static class RateLimitPolicyNames
     /// <summary>Fixed-window limiter guarding provider-backed intelligence requests.</summary>
     public const string Intelligence = "nimbus-intelligence";
 
+    /// <summary>
+    /// Per-caller fixed window over every <c>/api</c> request, ahead of the named policies. Not
+    /// attachable to an endpoint; it names the limit in a rejection's problem and log line.
+    /// </summary>
+    public const string Global = "nimbus-global";
+
     /// <summary>Fixed-window limiter guarding the operator MCP endpoint, per tenant, client and user.</summary>
     public const string Mcp = "nimbus-mcp";
 }

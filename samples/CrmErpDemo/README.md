@@ -86,7 +86,7 @@ graph TB
 
 ### Service Bus topology — how events cross between topics
 
-The provisioner (`CrmErpDemo.Provisioner`) creates one topic per endpoint and one **forwarding subscription** per cross-system consumer. Each forwarding rule is filtered on `EventTypeId AND user.From IS NULL` so the rule fires only on **original publishes**, never on already-forwarded copies — this is what prevents loops.
+The provisioner (`CrmErpDemo.Provisioner`) creates one topic per endpoint and one **forwarding subscription** per cross-system consumer. Each forwarding rule is filtered on `user.EventTypeId = '<type>' AND user.MessageType = 'EventRequest' AND user.From IS NULL` so the rule fires only on **original publishes**: `MessageType = 'EventRequest'` keeps the endpoint's own responses, retries and resubmissions off the forwarder, and `From IS NULL` keeps already-forwarded copies off it — this is what prevents loops.
 
 ```mermaid
 graph LR
@@ -95,14 +95,14 @@ graph LR
 
     subgraph crmSubs["crmendpoint subscriptions"]
         s1["<b>CrmEndpoint</b><br/>(session)<br/><i>filter: user.To = 'CrmEndpoint'</i>"]
-        s2["<b>ErpEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(CrmAccount*, CrmContact*)<br/>AND From IS NULL</i>"]
+        s2["<b>ErpEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(CrmAccount*, CrmContact*)<br/>AND MessageType = 'EventRequest'<br/>AND From IS NULL</i>"]
         s3["<b>Resolver</b>"]
         s4["<b>Deferred / DeferredProcessor</b>"]
     end
 
     subgraph erpSubs["erpendpoint subscriptions"]
         t1["<b>ErpEndpoint</b><br/>(session)<br/><i>filter: user.To = 'ErpEndpoint'</i>"]
-        t2["<b>CrmEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(ErpCustomerCreated, ErpContact*)<br/>AND From IS NULL</i>"]
+        t2["<b>CrmEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(ErpCustomerCreated, ErpContact*)<br/>AND MessageType = 'EventRequest'<br/>AND From IS NULL</i>"]
         t3["<b>Resolver</b>"]
         t4["<b>Deferred / DeferredProcessor</b>"]
     end
@@ -159,7 +159,7 @@ sequenceDiagram
     CrmApi->>SB: Send CrmAccountCreated<br/>topic = crmendpoint, session = AccountId
     CrmApi-->>Web: 201 Created
 
-    Note over SB: ErpEndpoint forward sub matches<br/>(EventTypeId='CrmAccountCreated' AND From IS NULL)<br/>action: SET To='ErpEndpoint' → forward to erpendpoint
+    Note over SB: ErpEndpoint forward sub matches<br/>(EventTypeId='CrmAccountCreated' AND MessageType='EventRequest'<br/>AND From IS NULL)<br/>action: SET To='ErpEndpoint' → forward to erpendpoint
 
     SB-->>ErpAd: deliver CrmAccountCreated
     ErpAd->>ErpApi: PUT /api/customers/by-crm/{AccountId}
@@ -299,7 +299,7 @@ Quotes, Price Lists, Invoices, Payments, Purchase Orders are subsets of the abov
 
 ```
 samples/CrmErpDemo/
-  CrmErpDemo.AppHost/        Aspire host (SQL Server + DbGate + everything below)
+  CrmErpDemo.AppHost/        Aspire host (SQL Server + DbGate + Mailpit + everything below)
   CrmErpDemo.Contracts/      Shared events + endpoints + CrmErpPlatformConfiguration
   CrmErpDemo.Provisioner/    Code-first SB topology (CrmEndpoint, ErpEndpoint)
   Crm.Api/                   ASP.NET Core minimal API + EF Core SQL Server
@@ -373,6 +373,7 @@ In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver
 | SQL Server container + DbGate | Azure SQL (`crm`, `erp`, `nimbus`) on the Basic tier, Entra-only; each app's identity gets `db_owner` |
 | Vite dev servers for crm-web / erp-web | `crm-api` and `erp-api` serve the built UIs from `wwwroot` |
 | Local-dev auth bypass on nimbus-ops | NimBus Identity sign-in with a bootstrap admin |
+| Mailpit catches the Resolver's endpoint alert mail | No Mailpit; endpoint alert mail is off |
 | crm-web and erp-web are anonymous | crm-web and erp-web require sign-in with the nimbus-ops accounts; the adapters present a generated service key |
 | Provisioner runs before the subscribers | Provisioner is a manually started Container Apps job |
 | enrichment-agent signs in through the local-dev bypass | enrichment-agent signs in with an agent API key issued in nimbus-ops (Spec 039) |
@@ -551,6 +552,20 @@ erp-web (Error mode / Service mode toggle)
    them immediately: each produces an **Error** alert and a **Critical** **dead-lettered** alert.
 5. Turn the toggles OFF to stop new alerts; click **Clear** to empty the panel.
 
+### Endpoint alert mail (Alerts tab → Mailpit)
+
+The Resolver also mails the people who subscribe on an endpoint's **Alerts** tab in nimbus-ops
+([how it works](../../docs/notifications.md#endpoint-alerts-alerts-tab)). Locally it sends to the
+**mailpit** container, which catches every message, so any address works.
+
+1. In **nimbus-ops**, open **Endpoints → ErpEndpoint → Alerts** and subscribe an address
+   (type *Mail*, frequency *Hourly*).
+2. Flip **Error mode** ON in **erp-web** and create an account in **crm-web**.
+3. Open **mailpit** from the Aspire dashboard: one mail arrives, `[NimBus] ErpEndpoint: … failed`,
+   with links back to the event and the endpoint. Further failures within the hour send nothing.
+
+The Azure deployment has no Mailpit and leaves alert mail off.
+
 ### Failure reasons (Integration Intelligence showcase)
 
 Error mode throws a *selectable* failure so the NimBus WebApp's
@@ -674,7 +689,8 @@ Key mechanics on display:
 ### Manual smoke flow
 
 1. AppHost up → **partner-portal** logs a published lead every 45 s
-   (`PARTNER_LEAD_INTERVAL_SECONDS` to change).
+   (`PARTNER_LEAD_INTERVAL_SECONDS` to change; the **Partner leads** switch in crm-web turns
+   the leads off, see [below](#turning-the-partner-leads-off)).
 2. **crm-adapter** logs `PartnerLeadSubmittedHandler` with the CloudEvent id/source/type;
    open **crm-web** → Contacts → the lead appears with a violet **Partner** badge.
 3. Open **erp-web** → create a customer (or create an account in **crm-web** and let the
@@ -684,6 +700,26 @@ Key mechanics on display:
    it sends one CloudEvent missing `ce-source`; crm-adapter rejects it with
    `InvalidCloudEventException` and the message lands in the
    `PartnerInbound/CrmEndpoint` dead-letter queue.
+
+### Turning the partner leads off
+
+A lead every 45 seconds adds up in a demo that runs for days. The **Partner leads** switch in
+**crm-web** (below the circuit-breaker panel) turns the recurring `PartnerLeadSubmitted` leads
+off and on while the demo runs. crm-api holds the flag and partner-portal asks for it before
+each lead, so a flip takes effect within a few seconds. partner-portal keeps logging the ERP
+CloudEvents it receives, and `PARTNER_SEND_INVALID=true` still sends its one message.
+
+The flag lives in crm-api's memory, so a crm-api restart returns it to the startup setting:
+on, unless `PARTNER_PUBLISH_LEADS=false`. If partner-portal cannot reach crm-api it keeps the
+last answer it got, starting from its own `PARTNER_PUBLISH_LEADS`.
+
+- **Locally:** set `PARTNER_PUBLISH_LEADS=false` in the AppHost's environment before starting
+  it. The AppHost passes it to crm-api and partner-portal.
+- **Azure:** set `PARTNER_PUBLISH_LEADS=false` on the `aspire deploy` process. On a demo that
+  is already running, set it on both apps:
+  `az containerapp update -g rg-crmerp-demo -n crm-api --set-env-vars PARTNER_PUBLISH_LEADS=false`
+  and the same for `partner-portal`. A later `aspire deploy` without the variable starts the
+  leads on again.
 
 ## Showcase: Inbox deduplication (CrmEndpoint)
 

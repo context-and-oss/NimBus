@@ -9,7 +9,7 @@ namespace NimBus.WebApp.Services;
 /// one batched store lookup per endpoint. Fail-soft: an enrichment failure is logged and the
 /// rows are returned without it, because search must not break over a display nicety.
 /// </summary>
-public static class EventRowEnrichment
+public static partial class EventRowEnrichment
 {
     /// <summary>Attaches resubmit counts and report flags to <paramref name="events"/>, all on <paramref name="endpointId"/>.</summary>
     public static async Task AttachAsync(IMessageTrackingStore store, ILogger logger, string endpointId, List<Event> events)
@@ -38,7 +38,7 @@ public static class EventRowEnrichment
         }
         catch (Exception e)
         {
-            logger.LogWarning("AttachResubmitCounts failed for endpoint {EndpointId}: {Exception}", endpointId, e.Message);
+            LogAttachResubmitCountsFailedForEndpoint(logger, endpointId, e.Message);
         }
     }
 
@@ -64,7 +64,7 @@ public static class EventRowEnrichment
         }
         catch (Exception e)
         {
-            logger.LogWarning("AttachReportFlags failed for endpoint {EndpointId}: {Exception}", endpointId, e.Message);
+            LogAttachReportFlagsFailedForEndpoint(logger, endpointId, e.Message);
         }
     }
 
@@ -74,4 +74,10 @@ public static class EventRowEnrichment
             .Where(id => !string.IsNullOrEmpty(id))
             .Distinct()
             .ToList()!;
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "AttachResubmitCounts failed for endpoint {EndpointId}: {Exception}")]
+    private static partial void LogAttachResubmitCountsFailedForEndpoint(ILogger logger, string endpointId, string exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "AttachReportFlags failed for endpoint {EndpointId}: {Exception}")]
+    private static partial void LogAttachReportFlagsFailedForEndpoint(ILogger logger, string endpointId, string exception);
 }

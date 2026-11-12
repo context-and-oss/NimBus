@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System.Net;
 using System.Text;
 using NimBus.CommandLine;

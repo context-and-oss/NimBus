@@ -3,6 +3,7 @@ using Grpc.Core;
 using NimBus.Core.Messages;
 using Microsoft.Azure.Functions.Worker;
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,6 +28,17 @@ public class ServiceBusSession : IServiceBusSession
     private readonly ServiceBusClient? _serviceBusClient;
     private readonly string? _entityPath;
 
+    /// <summary>
+    /// Creates a session backed only by <see cref="ServiceBusSessionMessageActions"/>. A session built
+    /// this way supports session state and scheduled sends, but <see cref="CompleteAsync"/> and
+    /// <see cref="DeadLetterAsync"/> throw <see cref="InvalidOperationException"/> because session
+    /// actions cannot settle messages. For settlement, use
+    /// <see cref="ServiceBusSession(ServiceBusMessageActions, ServiceBusSessionMessageActions, ServiceBusClient?, string?, string?)"/>.
+    /// </summary>
+    /// <param name="sessionActions">The session actions used for session state.</param>
+    /// <param name="serviceBusClient">Optional client used to send scheduled messages.</param>
+    /// <param name="entityPath">Optional entity path that scheduled messages are sent to.</param>
+    /// <param name="sessionId">The session id (currently unused).</param>
     public ServiceBusSession(ServiceBusSessionMessageActions sessionActions, ServiceBusClient? serviceBusClient = null, string? entityPath = null, string? sessionId = null)
     {
         _sessionActions = sessionActions ?? throw new ArgumentNullException(nameof(sessionActions));
@@ -62,17 +74,18 @@ public class ServiceBusSession : IServiceBusSession
         }
         if (_sessionReceiver != null)
         {
-            return _sessionReceiver.CompleteMessageAsync(message.Message, cancellationToken);
+            return FromReceiver(() => _sessionReceiver.CompleteMessageAsync(message.Message, cancellationToken));
         }
         if (_processSessionArgs != null)
         {
-            return _processSessionArgs.CompleteMessageAsync(message.Message, cancellationToken);
+            return FromReceiver(() => _processSessionArgs.CompleteMessageAsync(message.Message, cancellationToken));
         }
 
         throw new InvalidOperationException(
             "Cannot complete message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
     }
 
+    [SuppressMessage("Naming", "CA1725:Parameter names should match base declaration", Justification = "Public API; renaming the interface or the implementation parameters would break callers that pass them by name.")]
     public Task DeadLetterAsync(IServiceBusMessage message, string deadLetterReason, string? deadLetterErrorDescription, CancellationToken cancellationToken = default)
     {
         if (_messageActions != null)
@@ -81,11 +94,11 @@ public class ServiceBusSession : IServiceBusSession
         }
         if (_sessionReceiver != null)
         {
-            return _sessionReceiver.DeadLetterMessageAsync(message.Message, deadLetterReason, deadLetterErrorDescription, cancellationToken);
+            return FromReceiver(() => _sessionReceiver.DeadLetterMessageAsync(message.Message, deadLetterReason, deadLetterErrorDescription, cancellationToken));
         }
         if (_processSessionArgs != null)
         {
-            return _processSessionArgs.DeadLetterMessageAsync(message.Message, new System.Collections.Generic.Dictionary<string, object>(), deadLetterReason, deadLetterErrorDescription, cancellationToken);
+            return FromReceiver(() => _processSessionArgs.DeadLetterMessageAsync(message.Message, new System.Collections.Generic.Dictionary<string, object>(), deadLetterReason, deadLetterErrorDescription, cancellationToken));
         }
 
         throw new InvalidOperationException(
@@ -101,11 +114,11 @@ public class ServiceBusSession : IServiceBusSession
         }
         else if (_processSessionArgs != null)
         {
-            sessionData = await _processSessionArgs.GetSessionStateAsync(cancellationToken);
+            sessionData = await FromReceiver(() => _processSessionArgs.GetSessionStateAsync(cancellationToken));
         }
         else
         {
-            sessionData = await _sessionReceiver!.GetSessionStateAsync(cancellationToken);
+            sessionData = await FromReceiver(() => _sessionReceiver!.GetSessionStateAsync(cancellationToken));
         }
 
         return SessionState.FromBinaryData(sessionData);
@@ -121,11 +134,11 @@ public class ServiceBusSession : IServiceBusSession
         }
         else if (_processSessionArgs != null)
         {
-            await _processSessionArgs.SetSessionStateAsync(sessionData, cancellationToken);
+            await FromReceiver(() => _processSessionArgs.SetSessionStateAsync(sessionData, cancellationToken));
         }
         else
         {
-            await _sessionReceiver!.SetSessionStateAsync(sessionData, cancellationToken);
+            await FromReceiver(() => _sessionReceiver!.SetSessionStateAsync(sessionData, cancellationToken));
         }
     }
 
@@ -172,6 +185,41 @@ public class ServiceBusSession : IServiceBusSession
         }
     }
 
+    // From Azure.Messaging.ServiceBus 7.21, a session receiver whose link was lost reports itself
+    // as closed, so settlement and session-state calls fail locally with ObjectDisposedException
+    // instead of the SessionLockLost ServiceBusException that earlier versions threw. Restore
+    // SessionLockLost so a lost lock is retried (see MessageContext) instead of dead-lettering a
+    // message that the broker redelivers to the next session owner.
+    private static async Task FromReceiver(Func<Task> call)
+    {
+        try
+        {
+            await call();
+        }
+        catch (ObjectDisposedException e) when (IsClosedReceiver(e))
+        {
+            throw SessionLockLost(e);
+        }
+    }
+
+    private static async Task<T> FromReceiver<T>(Func<Task<T>> call)
+    {
+        try
+        {
+            return await call();
+        }
+        catch (ObjectDisposedException e) when (IsClosedReceiver(e))
+        {
+            throw SessionLockLost(e);
+        }
+    }
+
+    private static bool IsClosedReceiver(ObjectDisposedException exception) =>
+        exception.ObjectName is nameof(ServiceBusReceiver) or nameof(ServiceBusSessionReceiver);
+
+    private static ServiceBusException SessionLockLost(ObjectDisposedException exception) =>
+        new("The session receiver is closed, so its session lock is lost.", ServiceBusFailureReason.SessionLockLost, innerException: exception);
+
     // The host formats the outermost exception first, as "<type>: <message> (<reason>). For
     // troubleshooting information, see ...", followed by any inner exceptions after " ---> ".
     private static readonly Regex HostServiceBusException = new(
@@ -200,7 +248,7 @@ public class ServiceBusSession : IServiceBusSession
 
     private (string topicName, string? subscriptionName) ParseEntityPath()
     {
-        var separatorIndex = _entityPath!.IndexOf('/');
+        var separatorIndex = _entityPath!.IndexOf('/', StringComparison.Ordinal);
         if (separatorIndex >= 0)
         {
             return (_entityPath.Substring(0, separatorIndex), _entityPath.Substring(separatorIndex + 1));

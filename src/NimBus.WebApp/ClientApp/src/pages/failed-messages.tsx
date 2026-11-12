@@ -35,6 +35,8 @@ import moment from "moment";
 import {
   EMPTY_FAILED_FILTER,
   SEARCH_FIELDS,
+  barEnd,
+  browserTimeZone,
   customRange,
   deferredCountsBySession,
   errorTextOf,
@@ -186,6 +188,7 @@ export default function FailedMessages() {
     const body = new api.FailedHistogramRequest();
     body.filter = toFailedSearchFilter(applied);
     body.period = periodOption(applied.period).value;
+    body.timeZone = browserTimeZone();
     const custom = customRange(applied);
     if (custom) {
       body.from = moment(custom.from);
@@ -623,6 +626,9 @@ export default function FailedMessages() {
       : 0;
     return total > bestTotal ? b : best;
   }, undefined);
+  const peakEnd = peak
+    ? barEnd(histogram, histogram?.buckets?.indexOf(peak) ?? -1)
+    : undefined;
   // The backlog counts every failure on every endpoint, so the hint is only honest unfiltered.
   const unfiltered = SEARCH_FIELDS.every((f) =>
     Array.isArray(applied[f]) ? applied[f].length === 0 : !applied[f],
@@ -758,7 +764,7 @@ export default function FailedMessages() {
             }}
             endpointsHint={
               peak
-                ? `peak ${formatBucket(peak.start, histogram?.bucketMinutes ?? 60, true)}`
+                ? `peak ${formatBucket(peak.start, histogram?.bucketMinutes ?? 60, peakEnd)}`
                 : "no failures"
             }
             isLoading={histogramLoading}

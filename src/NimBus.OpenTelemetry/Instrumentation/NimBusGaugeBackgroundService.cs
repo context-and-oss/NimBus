@@ -27,7 +27,7 @@ namespace NimBus.OpenTelemetry.Instrumentation;
 /// register the provider (<see cref="IOutboxMetricsQuery"/>,
 /// <see cref="IDeferredMessageMetricsQuery"/>); hosts that don't pay nothing.
 /// </summary>
-internal sealed class NimBusGaugeBackgroundService : BackgroundService
+internal sealed partial class NimBusGaugeBackgroundService : BackgroundService
 {
     private readonly IOutboxMetricsQuery? _outboxQuery;
     private readonly IDeferredMessageMetricsQuery? _deferredQuery;
@@ -190,8 +190,7 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
         {
             if (!_outboxSkipLogged)
             {
-                _logger.LogInformation(
-                    "nimbus.outbox.pending and nimbus.outbox.dispatch_lag will not be reported because no IOutboxMetricsQuery is registered.");
+                LogNimbusOutboxPendingAndNimbusOutbox(_logger);
                 _outboxSkipLogged = true;
             }
             return;
@@ -215,7 +214,7 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Outbox gauge poll failed; previous cached values retained.");
+            LogOutboxGaugePollFailed(_logger, ex);
         }
     }
 
@@ -225,8 +224,7 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
         {
             if (!_deferredSkipLogged)
             {
-                _logger.LogInformation(
-                    "nimbus.deferred.pending and nimbus.deferred.blocked_sessions will not be reported because no IDeferredMessageMetricsQuery is registered.");
+                LogNimbusDeferredPendingAndNimbusDeferred(_logger);
                 _deferredSkipLogged = true;
             }
             return;
@@ -242,7 +240,7 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
             // Endpoint discovery itself failed — retain previous cache and log.
             // Without this guard the exception faults ExecuteAsync, which (depending
             // on host settings) can stop the entire background service permanently.
-            _logger.LogWarning(ex, "Deferred gauge endpoint discovery failed; previous cached values retained.");
+            LogDeferredGaugeEndpointDiscoveryFailed(_logger, ex);
             return;
         }
 
@@ -274,7 +272,7 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
                 // if the endpoint had gone away.
                 observed.Add((endpoint, "pending"));
                 observed.Add((endpoint, "blocked_sessions"));
-                _logger.LogWarning(ex, "Deferred gauge poll failed for endpoint {Endpoint}; previous cached values retained.", endpoint);
+                LogDeferredGaugePollFailedForEndpoint(_logger, ex, endpoint);
             }
         }
 
@@ -290,4 +288,19 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
     /// <see cref="ExecuteAsync(CancellationToken)"/>.
     /// </summary>
     internal Task PollNowAsync(CancellationToken cancellationToken = default) => PollAsync(cancellationToken);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "nimbus.outbox.pending and nimbus.outbox.dispatch_lag will not be reported because no IOutboxMetricsQuery is registered.")]
+    private static partial void LogNimbusOutboxPendingAndNimbusOutbox(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Outbox gauge poll failed; previous cached values retained.")]
+    private static partial void LogOutboxGaugePollFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "nimbus.deferred.pending and nimbus.deferred.blocked_sessions will not be reported because no IDeferredMessageMetricsQuery is registered.")]
+    private static partial void LogNimbusDeferredPendingAndNimbusDeferred(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Deferred gauge endpoint discovery failed; previous cached values retained.")]
+    private static partial void LogDeferredGaugeEndpointDiscoveryFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Deferred gauge poll failed for endpoint {Endpoint}; previous cached values retained.")]
+    private static partial void LogDeferredGaugePollFailedForEndpoint(ILogger logger, Exception exception, string endpoint);
 }

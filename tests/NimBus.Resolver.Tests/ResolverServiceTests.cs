@@ -20,7 +20,7 @@ public class ResolverServiceTests
         var service = CreateService();
         var message = CreateMessageContext(messageType: MessageType.EventRequest, to: "BillingEndpoint", from: "StorefrontEndpoint");
 
-        var (endpointId, role) = service.DetermineEndpoint(message);
+        var (endpointId, role) = ResolverService.DetermineEndpoint(message);
 
         Assert.AreEqual("BillingEndpoint", endpointId);
         Assert.AreEqual(EndpointRole.Subscriber, role);
@@ -32,7 +32,7 @@ public class ResolverServiceTests
         var service = CreateService();
         var message = CreateMessageContext(messageType: MessageType.ResolutionResponse, to: "Resolver", from: "BillingEndpoint");
 
-        var (endpointId, role) = service.DetermineEndpoint(message);
+        var (endpointId, role) = ResolverService.DetermineEndpoint(message);
 
         Assert.AreEqual("BillingEndpoint", endpointId);
         Assert.AreEqual(EndpointRole.Subscriber, role);
@@ -518,6 +518,27 @@ public class ResolverServiceTests
     }
 
     [TestMethod]
+    public async Task Handle_ErrorResponse_RecordsRetryCountOnHistoryAndAuditRow()
+    {
+        // The SDK stamps RetryCount on every response; the Resolver must persist it on
+        // both the per-message history row and the per-event audit row.
+        var cosmos = new FakeCosmosDbClient();
+        var errorResponse = CreateMessageContext(
+            messageType: MessageType.ErrorResponse,
+            to: "Resolver",
+            from: "BillingEndpoint");
+        errorResponse.RetryCount = 2;
+
+        var service = CreateService(cosmos);
+        await service.Handle(errorResponse);
+
+        Assert.AreEqual(1, cosmos.StoredMessages.Count);
+        Assert.AreEqual(2, cosmos.StoredMessages[0].RetryCount);
+        Assert.AreEqual(1, cosmos.FailedUploads.Count);
+        Assert.AreEqual(2, cosmos.FailedUploads[0].Content.RetryCount);
+    }
+
+    [TestMethod]
     public async Task Handle_UnexpectedException_DeadLettersMessage()
     {
         var cosmos = new FakeCosmosDbClient
@@ -782,6 +803,10 @@ public class ResolverServiceTests
         /// for a write StaleWriteGuard refused because the row already holds a later outcome.</summary>
         public bool PendingUploadResult { get; set; } = true;
 
+        /// <summary>What <see cref="UploadFailedMessage"/> reports back: false stands for a
+        /// refused (stale) failure write.</summary>
+        public bool FailedUploadResult { get; set; } = true;
+
         public List<MessageEntity> StoredMessages { get; } = new();
         public List<(string EventId, MessageAuditEntity Audit)> StoredAudits { get; } = new();
         public List<UploadCall> PendingUploads { get; } = new();
@@ -812,7 +837,7 @@ public class ResolverServiceTests
         {
             if (UploadException is not null) return Task.FromException<bool>(UploadException);
             FailedUploads.Add(new UploadCall(eventId, sessionId, endpointId, content));
-            return Task.FromResult(true);
+            return Task.FromResult(FailedUploadResult);
         }
 
         public Task<bool> UploadDeadletteredMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)

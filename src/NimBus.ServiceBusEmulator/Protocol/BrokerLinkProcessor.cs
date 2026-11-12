@@ -274,7 +274,7 @@ internal sealed class BrokerLinkProcessor(
             }
         }
 
-        private void Complete(MessageContext context)
+        private static void Complete(MessageContext context)
         {
             if (context.DeliveryState is TransactionalState transaction)
             {
@@ -315,6 +315,20 @@ internal sealed class BrokerLinkProcessor(
                 // for session subscriptions, until the session lock itself lapses.
                 if (GetCredit(link) > 0)
                 {
+                    // Test hook: hold the pump between seeing credit and reading the
+                    // subscription until the peer drains the link (bounded by the hook's
+                    // value), so a test can delete the entity and then close the receiver
+                    // and have the pump read the deleted entity while the drain is open.
+                    if (AcquireHoldUntilDrain is { } hold)
+                    {
+                        var holdStarted = Environment.TickCount64;
+                        while (!link.IsDraining && !link.IsClosed &&
+                               Environment.TickCount64 - holdStarted < (long)hold.TotalMilliseconds)
+                        {
+                            await Task.Delay(10).ConfigureAwait(false);
+                        }
+                    }
+
                     var delivery = isDeadLetter
                         ? broker.TryAcquireDeadLetter(topicName, subscriptionName, owner)
                         : broker.TryAcquire(topicName, subscriptionName, sessionId, owner);
@@ -713,6 +727,11 @@ internal sealed class BrokerLinkProcessor(
             ? TimeSpan.FromMilliseconds(ms)
             : null;
 
+    private static readonly TimeSpan? AcquireHoldUntilDrain =
+        int.TryParse(Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_ACQUIRE_HOLD_UNTIL_DRAIN_MS"), out var acquireMs) && acquireMs > 0
+            ? TimeSpan.FromMilliseconds(acquireMs)
+            : null;
+
     /// <summary>
     /// Replacement for AMQPNetLite's <c>SourceLinkEndpoint</c>. The library's send
     /// pump has a terminal flaw: a transient send failure breaks the pump loop
@@ -744,7 +763,7 @@ internal sealed class BrokerLinkProcessor(
 
         public override void OnFlow(FlowContext flowContext)
         {
-            EmulatorDiagnostics.Write("Flow", $"messages={flowContext.Messages} credit={GetCredit(link)}");
+            EmulatorDiagnostics.Write("Flow", $"messages={flowContext.Messages} credit={GetCredit(link)} draining={link.IsDraining}");
             if (!_pumpGate.TryStart(GetCredit(link) > 0))
             {
                 return;
@@ -816,8 +835,23 @@ internal sealed class BrokerLinkProcessor(
         {
             // GetMessageAsync and drain completion can fail too. Leaving the gate
             // running would strand future flow/drain requests on a dead pump.
+            EmulatorDiagnostics.Write("Pump failed", $"draining={link.IsDraining} credit={GetCredit(link)}");
             _pumpGate.Complete(linkOpen: false, static () => false);
-            link.Close(TimeSpan.Zero, ErrorFromException(exception));
+            try
+            {
+                // Answer an outstanding drain before detaching. The SDK's receiver
+                // close drains the link's credit and waits for that drain, and a
+                // detach does not complete it, so DisposeAsync hung forever when the
+                // entity was deleted before the pump answered the drain.
+                if (link.IsDraining)
+                {
+                    link.CompleteDrain();
+                }
+            }
+            finally
+            {
+                link.Close(TimeSpan.Zero, ErrorFromException(exception));
+            }
         });
     }
 }

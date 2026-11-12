@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
-import { FAILURE_CATEGORIES, GUIDANCE_BADGE, GUIDANCE_MEANING, isFailureGuidance } from "lib/failure-classification";
+import {
+  AGENT_PROVIDER, FAILURE_CATEGORIES, GUIDANCE_BADGE, GUIDANCE_MEANING, faultOriginLabel, isFailureGuidance,
+} from "lib/failure-classification";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "components/ui/card";
 
-type IntelligenceCardProps = { endpointId: string; eventId: string; messageId: string; resolutionStatus?: string; occurrenceLabel?: string };
+type IntelligenceCardProps = {
+  endpointId: string; eventId: string; messageId: string; resolutionStatus?: string; occurrenceLabel?: string;
+  /** The occurrence a link (for example from Insights) asked for: outlined and scrolled into view once. */
+  highlighted?: boolean;
+};
 type IntelligenceStatus = { status: string; canAnalyze: boolean; contractVersion: number };
 type Classification = {
   category: string; categoryConfidence: number; retryLikelihood: number; changeRequiredLikelihood: number;
-  externalDependencyLikelihood: number; guidance: string; revision: number; model: string; createdAtUtc: string; requestedBy?: string;
+  externalDependencyLikelihood: number; guidance: string; revision: number; provider?: string; model: string; createdAtUtc: string; requestedBy?: string;
   categoryProbabilities?: Record<string, number>; questionSetVersion?: number;
+  /** Spec 044: an agent's answers and provenance. Null on provider and version 1 results. */
+  faultOrigin?: string | null; faultOriginConfidence?: number | null; clientId?: string | null; rationale?: string | null;
 };
 const headers = { "api-version": "2" };
 const percent = (value: number) => `${Math.round(value * 100)}%`;
@@ -30,8 +38,9 @@ function OccurrenceCard(props: IntelligenceCardProps) {
   const pending = useRef<{ key: string; force: boolean } | undefined>(undefined);
   const pollAttempt = useRef(0);
   const alive = useRef(true);
+  const scrolled = useRef(false);
   const eligible = ["failed", "deadlettered"].includes((props.resolutionStatus ?? "").toLowerCase());
-  const baseUrl = `/api/integration-intelligence/failures/${encodeURIComponent(props.eventId)}/${encodeURIComponent(props.messageId)}/classification`;
+  const baseUrl = `/api/v1/integration-intelligence/failures/${encodeURIComponent(props.eventId)}/${encodeURIComponent(props.messageId)}/classification`;
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
@@ -39,16 +48,23 @@ function OccurrenceCard(props: IntelligenceCardProps) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       try {
-        const response = await fetch(`/api/integration-intelligence/status?endpointId=${encodeURIComponent(props.endpointId)}`, { headers, signal: controller.signal });
+        const response = await fetch(`/api/v1/integration-intelligence/status?endpointId=${encodeURIComponent(props.endpointId)}`, { headers, signal: controller.signal });
         if (!response.ok) return;
         const capability = await response.json() as IntelligenceStatus;
         if (controller.signal.aborted) return;
-        if (capability.status !== "Ready" || capability.contractVersion !== 1) return;
-        setStatus(capability);
+        // Spec 043 read-only mode: with no provider configured, saved results stay readable, so the
+        // card appears only when one exists and never offers analysis. Spec 044 recordable mode:
+        // agents record over MCP, so the card shows for every eligible failure, without Analyze.
+        const readOnly = capability.status === "ProviderNotConfigured";
+        const recordable = capability.status === "Recordable";
+        if ((capability.status !== "Ready" && !readOnly && !recordable) || capability.contractVersion !== 1) return;
+        if (!readOnly) setStatus(capability);
         const latest = await fetch(baseUrl, { headers, signal: controller.signal });
         if (latest.status === 404) return;
+        if (readOnly && !latest.ok) return;
         const payload = await latest.json();
         if (controller.signal.aborted) return;
+        if (readOnly) setStatus({ ...capability, canAnalyze: false });
         if (latest.ok) { setClassification(payload); setError(undefined); setUnknownOutcome(false); setAnalysisActive(false); }
         else if (payload.code === "AnalysisInProgress") {
           setBusy(true);
@@ -112,8 +128,15 @@ function OccurrenceCard(props: IntelligenceCardProps) {
   const historical = Boolean(classification && (analysisActive || unknownOutcome));
   const guidanceMeaning = classification && isFailureGuidance(classification.guidance) ? GUIDANCE_MEANING[classification.guidance] : undefined;
   const categoryMeaning = FAILURE_CATEGORIES.find(item => item.id === classification?.category)?.meaning;
+  const byAgent = classification?.provider === AGENT_PROVIDER;
+  const scrollOnce = (node: HTMLDivElement | null) => {
+    if (!node || !props.highlighted || scrolled.current) return;
+    scrolled.current = true;
+    node.scrollIntoView?.({ block: "center" });
+  };
   return (
-    <Card className="mb-4 border-primary/30">
+    <div ref={scrollOnce} aria-current={props.highlighted ? "true" : undefined}>
+    <Card className={`mb-4 ${props.highlighted ? "border-primary ring-2 ring-primary/40" : "border-primary/30"}`}>
       <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
         <div>
           <CardTitle className="text-base">Failure intelligence{props.occurrenceLabel ? ` · ${props.occurrenceLabel}` : ""}</CardTitle>
@@ -125,11 +148,15 @@ function OccurrenceCard(props: IntelligenceCardProps) {
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         {error && <p role="status" className="text-status-danger">{error}</p>}
+        {status.status === "ProviderNotConfigured" &&
+          <p className="text-muted-foreground">New analysis is unavailable because no provider is configured.</p>}
+        {status.status === "Recordable" &&
+          <p className="text-muted-foreground">Agents record classifications over MCP.</p>}
         {(unknownOutcome || classification) && status.canAnalyze && eligible &&
           <p>Re-analyzing makes a new provider request and may incur an additional charge.</p>}
         {analysisActive && <p role="status">Analyzing failure…</p>}
         {!classification && !analysisActive && !unknownOutcome && !error &&
-          <p>No analysis has been performed.</p>}
+          <p>{status.status === "Recordable" ? "No classification has been recorded." : "No analysis has been performed."}</p>}
         {classification && <>
           {historical && <p role="status" className="text-muted-foreground">Historical result{analysisActive ? "; a newer analysis is running." : "; the latest analysis outcome is unknown."}</p>}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -139,22 +166,34 @@ function OccurrenceCard(props: IntelligenceCardProps) {
             <div><div className="text-muted-foreground">Retry likely</div><strong>{percent(classification.retryLikelihood)}</strong></div>
             <div><div className="text-muted-foreground">Change required</div><strong>{percent(classification.changeRequiredLikelihood)}</strong></div>
             <div><div className="text-muted-foreground">External dependency</div><strong>{percent(classification.externalDependencyLikelihood)}</strong></div>
+            <div><div className="text-muted-foreground">Fault origin</div><strong>{faultOriginLabel(classification.faultOrigin)}
+              {classification.faultOrigin && classification.faultOriginConfidence != null ? ` (${percent(classification.faultOriginConfidence)})` : ""}</strong></div>
           </div>
           {(guidanceMeaning || categoryMeaning) && <div className="rounded-md bg-muted p-3">
             {guidanceMeaning && <p>{guidanceMeaning}</p>}
             {categoryMeaning && <p className="text-muted-foreground"><span className="font-mono">{classification.category}</span>: {categoryMeaning}</p>}
           </div>}
-          <p className="text-muted-foreground">Revision {classification.revision} · {classification.model} · {classification.createdAtUtc} · {classification.requestedBy}</p>
+          {byAgent
+            ? <p className="text-muted-foreground">Recorded by an agent · Revision {classification.revision} · Model {classification.model} (as declared)
+              {classification.clientId ? ` · Client ${classification.clientId}` : ""} · {classification.createdAtUtc} · {classification.requestedBy}</p>
+            : <p className="text-muted-foreground">Revision {classification.revision} · {classification.provider ? `${classification.provider} · ` : ""}{classification.model} · {classification.createdAtUtc} · {classification.requestedBy}</p>}
+          {byAgent && classification.rationale && <div>
+            <div className="text-muted-foreground">Agent rationale (unverified)</div>
+            <p className="whitespace-pre-wrap break-words">{classification.rationale}</p>
+          </div>}
           <details>
             <summary className="cursor-pointer">Classification details</summary>
             <div className="mt-2 space-y-1 text-muted-foreground">
               {probabilities.map(([category, probability]) => <div key={category}>{category}: {percent(probability)}</div>)}
               <div>Question set v{classification.questionSetVersion ?? "unknown"}</div>
+              {/* No saved result records the guidance thresholds it was made with (spec 043 §7). */}
+              <div>Threshold settings not recorded</div>
             </div>
           </details>
         </>}
-        <p className="text-muted-foreground">AI-assisted assessment. Advisory only. NimBus processing and recovery decisions are unchanged.</p>
+        <p className="text-muted-foreground">{byAgent ? "Assessment recorded by an agent; NimBus composed the guidance." : "AI-assisted assessment."} Advisory only. NimBus processing and recovery decisions are unchanged.</p>
       </CardContent>
     </Card>
+    </div>
   );
 }

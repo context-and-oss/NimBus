@@ -170,15 +170,14 @@ export function EndpointControlsCard({
   }
 
   const countsById = new Map((counts ?? []).map((c) => [c.endpointId ?? "", c]));
-  // failedCount already includes dead-lettered and pendingCount includes
-  // unsupported, so pending leaves unsupported out.
+  // failedCount already includes dead-lettered and unsupported.
   const backlog = (id: string) => {
     const c = countsById.get(id);
     return c
       ? {
           failed: c.failedCount ?? 0,
           deadLettered: c.deadletterCount ?? 0,
-          pending: Math.max(0, (c.pendingCount ?? 0) - (c.unsupportedCount ?? 0)),
+          pending: c.pendingCount ?? 0,
         }
       : undefined;
   };

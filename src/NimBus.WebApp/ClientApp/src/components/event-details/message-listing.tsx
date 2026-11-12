@@ -1,3 +1,5 @@
+import { getResubmitPayload } from "functions/resubmit.functions";
+export { getResubmitPayload } from "functions/resubmit.functions";
 import * as React from "react";
 import * as api from "api-client";
 import IntelligenceCard from "components/event-details/intelligence-card";
@@ -9,7 +11,7 @@ import {
   ModalBody,
   ModalFooter,
 } from "components/ui/modal";
-import { Select } from "components/ui/select";
+import ResubmitEditor from "./resubmit-editor";
 import { Textarea } from "components/ui/textarea";
 import { CodeBlock } from "components/ui/code-block";
 import { CopyButton } from "components/common/copy-button";
@@ -27,7 +29,7 @@ import {
   formatMoment,
   formatResolutionStatus,
 } from "functions/endpoint.functions";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { notifyError, notifySuccess } from "functions/notifications.functions";
 import {
@@ -133,9 +135,10 @@ export function getHistoryQueueTimeMs(
     }
   }
   if (startAnchor === undefined) {
-    startAnchor = earliestOverall === Number.POSITIVE_INFINITY
-      ? undefined
-      : earliestOverall;
+    startAnchor =
+      earliestOverall === Number.POSITIVE_INFINITY
+        ? undefined
+        : earliestOverall;
   }
   if (startAnchor === undefined) return undefined;
 
@@ -198,7 +201,11 @@ export function getRoutingFromTo(
   event:
     | Pick<
         api.Event,
-        "from" | "to" | "originatingFrom" | "originatingMessageId" | "messageType"
+        | "from"
+        | "to"
+        | "originatingFrom"
+        | "originatingMessageId"
+        | "messageType"
       >
     | undefined,
   messages?: api.Message[],
@@ -221,60 +228,46 @@ export function getRoutingFromTo(
   return { from: publisher, to: from };
 }
 
-// Request message types that carry the original event payload — mirrors the
-// backend's resubmit source selection
-// (EventImplementation.LatestRequestMessageWithPayload). Handoff control
-// requests (HandoffCompleted/FailedRequest) and SkipRequest carry no payload;
-// terminal *Response messages may carry a stale/empty payload (notably a
-// failed hand-off's ErrorResponse). "processdeferredrequest" exists in Core
-// but is folded to Unknown by the current API contract — kept here so the
-// filter stays correct if the contract ever surfaces it.
-const PAYLOAD_REQUEST_TYPES = new Set([
-  "eventrequest",
-  "resubmissionrequest",
-  "retryrequest",
-  "continuationrequest",
-  "processdeferredrequest",
-]);
-
-// The payload that Resubmit replays: the latest request message that actually
-// carries event content — the same rule the backend uses. For a failed
-// hand-off the event's own payload is the empty terminal ErrorResponse, so
-// both the Payload section and the "Resubmit with changes" modal must use the
-// original request payload instead. Returns undefined when no such message is
-// in the loaded history (caller falls back to the event payload).
-export function getResubmitPayload(
-  messages?: api.Message[],
-): string | undefined {
-  if (!messages?.length) return undefined;
-  return messages
-    .filter(
-      (m) =>
-        PAYLOAD_REQUEST_TYPES.has(normalizeMessageType(m.messageType)) &&
-        !!m.eventContent,
-    )
-    .sort(
-      (a, b) =>
-        (b.enqueuedTimeUtc?.valueOf() ?? 0) -
-        (a.enqueuedTimeUtc?.valueOf() ?? 0),
-    )[0]?.eventContent;
-}
-
 /** Returns every stored failure occurrence represented by the event history. */
 export function getFailureOccurrences(
   event: api.Event | undefined,
   messages: api.Message[] | undefined,
 ): Array<{ eventId: string; messageId: string }> {
   const rows = (messages ?? []).filter((message) => {
-    const dynamic = message as api.Message & { deadLetterReason?: string; deadLetterErrorDescription?: string };
+    const dynamic = message as api.Message & {
+      deadLetterReason?: string;
+      deadLetterErrorDescription?: string;
+    };
     const type = String(message.messageType ?? "").toLowerCase();
-    return Boolean(message.messageId && message.eventId &&
-      (type.endsWith("errorresponse") || message.errorContent || dynamic.deadLetterReason || dynamic.deadLetterErrorDescription));
+    return Boolean(
+      message.messageId &&
+      message.eventId &&
+      (type.endsWith("errorresponse") ||
+        message.errorContent ||
+        dynamic.deadLetterReason ||
+        dynamic.deadLetterErrorDescription),
+    );
   });
-  const occurrences = rows.map((message) => ({ eventId: message.eventId!, messageId: message.messageId! }));
-  if (occurrences.length > 0) return occurrences.filter((entry, index) =>
-    occurrences.findIndex(candidate => candidate.eventId === entry.eventId && candidate.messageId === entry.messageId) === index);
-  if (event?.eventId && event.lastMessageId && ["failed", "deadlettered"].includes((event.resolutionStatus ?? "").toLowerCase()))
+  const occurrences = rows.map((message) => ({
+    eventId: message.eventId!,
+    messageId: message.messageId!,
+  }));
+  if (occurrences.length > 0)
+    return occurrences.filter(
+      (entry, index) =>
+        occurrences.findIndex(
+          (candidate) =>
+            candidate.eventId === entry.eventId &&
+            candidate.messageId === entry.messageId,
+        ) === index,
+    );
+  if (
+    event?.eventId &&
+    event.lastMessageId &&
+    ["failed", "deadlettered"].includes(
+      (event.resolutionStatus ?? "").toLowerCase(),
+    )
+  )
     return [{ eventId: event.eventId, messageId: event.lastMessageId }];
   return [];
 }
@@ -284,9 +277,7 @@ export function getFailureOccurrences(
 // payload lives elsewhere). Surface it as a separate "Handoff result" block.
 // Returns undefined when there is no completed hand-off or it carried no
 // details.
-export function getHandoffResult(
-  messages?: api.Message[],
-): string | undefined {
+export function getHandoffResult(messages?: api.Message[]): string | undefined {
   if (!messages?.length) return undefined;
   return messages
     .filter(
@@ -412,7 +403,13 @@ const RESUBMIT_WITH_CHANGES_IDLE: IButtonState = {
 const SKIP_IDLE: IButtonState = { isDisabled: false, text: "Skip" };
 
 export default function MessageListing(props: IMessageListingProps) {
-  const failureOccurrences = getFailureOccurrences(props.eventDetails, props.messages);
+  const failureOccurrences = getFailureOccurrences(
+    props.eventDetails,
+    props.messages,
+  );
+  // A link to one failed attempt (Insights drill-down, spec 043 §7) names it with ?message=.
+  const [searchParams] = useSearchParams();
+  const linkedMessageId = searchParams.get("message") ?? undefined;
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const handleErrorDetailsToggle = () => setShowErrorDetails(!showErrorDetails);
   const [isOpen, setIsOpen] = useState(false);
@@ -448,10 +445,6 @@ export default function MessageListing(props: IMessageListingProps) {
     () => getRoutingFromTo(props.eventDetails, props.messages),
     [props.eventDetails, props.messages],
   );
-  const [textAreaValue, setTextAreaValue] = useState(resubmitPayload);
-  const [eventTypeIdValue, setEventTypeIdValue] = useState(
-    props.eventDetails?.eventTypeId,
-  );
 
   const { addToast } = useToast();
 
@@ -471,13 +464,6 @@ export default function MessageListing(props: IMessageListingProps) {
   const [failReason, setFailReason] = useState("");
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [operatorName, setOperatorName] = useState<string>("operator");
-
-  // The textarea prefill tracks the resolved request payload — `messages`
-  // loads asynchronously after `eventDetails`, so keying on the payload (not
-  // the event object) picks up the request payload once the history arrives.
-  useEffect(() => {
-    setTextAreaValue(resubmitPayload);
-  }, [resubmitPayload]);
 
   useEffect(() => {
     setShowErrorDetails(false);
@@ -501,8 +487,9 @@ export default function MessageListing(props: IMessageListingProps) {
     };
   }, []);
 
-  const [resubmitWithChangesButton, setResubmitWithChangesButton] =
-    useState(RESUBMIT_WITH_CHANGES_IDLE);
+  const [resubmitWithChangesButton, setResubmitWithChangesButton] = useState(
+    RESUBMIT_WITH_CHANGES_IDLE,
+  );
   const [resubmitButton, setResubmitButton] = useState(RESUBMIT_IDLE);
   const [skipButton, setSkipButton] = useState(SKIP_IDLE);
 
@@ -517,16 +504,6 @@ export default function MessageListing(props: IMessageListingProps) {
     setResubmitButton(RESUBMIT_IDLE);
     setSkipButton(SKIP_IDLE);
   }, [props.eventDetails?.lastMessageId]);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const inputValue = e.target.value;
-    const sanitizedValue = inputValue.replace(/\n/g, "");
-    setTextAreaValue(sanitizedValue);
-  };
-
-  const handleEventTypeIdChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setEventTypeIdValue(e.target.value);
-  };
 
   const isFailedMessage = (status: string | undefined): boolean => {
     if (!status) return false;
@@ -569,7 +546,9 @@ export default function MessageListing(props: IMessageListingProps) {
 
   // Pending handoffs are driven by the Hero card's Complete/Fail actions, so the
   // Details-header resubmit/skip buttons are only for terminally failed events.
-  const showFailedActions = isFailedMessage(props.eventDetails?.resolutionStatus);
+  const showFailedActions = isFailedMessage(
+    props.eventDetails?.resolutionStatus,
+  );
   // A Failed event blocks its session, and the server refuses to delete it
   // (#288): Skip or Resubmit is the way out for it.
   const canDelete =
@@ -627,7 +606,8 @@ export default function MessageListing(props: IMessageListingProps) {
       setHeroOverride({ state: "failed", reason });
       addToast({
         title: "Handoff failed",
-        description: "Marked as failed — will surface under Blocked downstream.",
+        description:
+          "Marked as failed — will surface under Blocked downstream.",
         variant: "error",
       });
     } catch {
@@ -729,13 +709,10 @@ export default function MessageListing(props: IMessageListingProps) {
     }
   };
 
-  const resubmitEventWithChangesClick = async () => {
-    onClose();
+  const resubmitEventWithChangesClick = async (
+    body: api.ResubmitWithChanges,
+  ) => {
     setResubmitWithChangesButton({ text: "Resubmitting...", isDisabled: true });
-    const body: api.ResubmitWithChanges = api.ResubmitWithChanges.fromJS({
-      eventTypeId: eventTypeIdValue,
-      eventContent: textAreaValue,
-    });
     try {
       await props.resubmitEventWithChanges(
         props.eventDetails?.eventId!,
@@ -744,6 +721,7 @@ export default function MessageListing(props: IMessageListingProps) {
       );
       setResubmitWithChangesButton({ text: "Resubmitted", isDisabled: true });
       notifySuccess("Resubmitted.");
+      onClose();
     } catch (caught) {
       notifyError(describeCommandError(caught, "resubmit"));
       setResubmitWithChangesButton(
@@ -751,6 +729,7 @@ export default function MessageListing(props: IMessageListingProps) {
           ? { text: "Changed - refresh", isDisabled: true }
           : { text: "Resubmit failed", isDisabled: false },
       );
+      throw caught;
     }
   };
 
@@ -819,16 +798,17 @@ export default function MessageListing(props: IMessageListingProps) {
             )}
           </div>
         )}
-        {isDeferredMessage(props.eventDetails?.resolutionStatus) && props.reprocessDeferred && (
-          <Button
-            size="xs"
-            colorScheme="blue"
-            disabled={reprocessButton.isDisabled}
-            onClick={reprocessDeferredClick}
-          >
-            {reprocessButton.text}
-          </Button>
-        )}
+        {isDeferredMessage(props.eventDetails?.resolutionStatus) &&
+          props.reprocessDeferred && (
+            <Button
+              size="xs"
+              colorScheme="blue"
+              disabled={reprocessButton.isDisabled}
+              onClick={reprocessDeferredClick}
+            >
+              {reprocessButton.text}
+            </Button>
+          )}
       </h4>
       <br />
       {/* Timing bar — queue · processing · ack as a stacked horizontal bar.
@@ -845,70 +825,69 @@ export default function MessageListing(props: IMessageListingProps) {
           read; that regresses the spec. Processing time stays on the existing
           chain (FR-021). */}
       {(props.eventDetails?.queueTimeMs !== undefined ||
-        props.eventDetails?.processingTimeMs !== undefined) && (() => {
-        const queueMs =
-          getHistoryQueueTimeMs(props.messages) ??
-          props.eventDetails?.queueTimeMs ??
-          diffMs(
-            props.eventDetails?.updatedAt,
-            props.eventDetails?.enqueuedTimeUtc,
-          );
-        const processingMs = props.eventDetails?.processingTimeMs;
-        // FR-022: Total uses the displayed Queue + Processing — if Queue is
-        // overridden, the override participates in the total.
-        const totalMs = (queueMs ?? 0) + (processingMs ?? 0);
-        return (
-          <TimingBar
-            className="mb-4"
-            segments={[
-              {
-                label: "Queue",
-                display: formatDurationMs(queueMs),
-                weight: Math.max(queueMs ?? 0, 0),
-                colorClass: "bg-[#BFD8F2]",
-              },
-              {
-                label: "Processing",
-                display: formatDurationMs(processingMs),
-                weight: Math.max(processingMs ?? 0, 0),
-                colorClass: "bg-status-warning",
-              },
-              {
-                label: "Ack",
-                display: "< 1 ms",
-                weight:
-                  0.05 * ((queueMs ?? 0) + (processingMs ?? 0) || 1),
-                colorClass: "bg-status-success",
-              },
-            ]}
-            total={
-              <span>
-                {formatDurationMs(totalMs)}{" "}
-                ·{" "}
-                <span
-                  className={
-                    isFailedMessage(props.eventDetails?.resolutionStatus)
-                      ? "text-status-danger"
-                      : "text-status-success"
-                  }
-                >
-                  {formatResolutionStatus(
-                    props.eventDetails?.resolutionStatus,
-                    props.eventDetails?.reason,
-                  )}
+        props.eventDetails?.processingTimeMs !== undefined) &&
+        (() => {
+          const queueMs =
+            getHistoryQueueTimeMs(props.messages) ??
+            props.eventDetails?.queueTimeMs ??
+            diffMs(
+              props.eventDetails?.updatedAt,
+              props.eventDetails?.enqueuedTimeUtc,
+            );
+          const processingMs = props.eventDetails?.processingTimeMs;
+          // FR-022: Total uses the displayed Queue + Processing — if Queue is
+          // overridden, the override participates in the total.
+          const totalMs = (queueMs ?? 0) + (processingMs ?? 0);
+          return (
+            <TimingBar
+              className="mb-4"
+              segments={[
+                {
+                  label: "Queue",
+                  display: formatDurationMs(queueMs),
+                  weight: Math.max(queueMs ?? 0, 0),
+                  colorClass: "bg-[#BFD8F2]",
+                },
+                {
+                  label: "Processing",
+                  display: formatDurationMs(processingMs),
+                  weight: Math.max(processingMs ?? 0, 0),
+                  colorClass: "bg-status-warning",
+                },
+                {
+                  label: "Ack",
+                  display: "< 1 ms",
+                  weight: 0.05 * ((queueMs ?? 0) + (processingMs ?? 0) || 1),
+                  colorClass: "bg-status-success",
+                },
+              ]}
+              total={
+                <span>
+                  {formatDurationMs(totalMs)} ·{" "}
+                  <span
+                    className={
+                      isFailedMessage(props.eventDetails?.resolutionStatus)
+                        ? "text-status-danger"
+                        : "text-status-success"
+                    }
+                  >
+                    {formatResolutionStatus(
+                      props.eventDetails?.resolutionStatus,
+                      props.eventDetails?.reason,
+                    )}
+                  </span>
                 </span>
-              </span>
-            }
-            // FR-023: the slow-processing callout evaluates Processing only,
-            // never the overridden Queue value.
-            trailing={
-              (processingMs ?? 0) >= SLOW_PROCESSING_MS
-                ? `Above ${SLOW_PROCESSING_MS} ms — check downstream sink`
-                : undefined
-            }
-          />
-        );
-      })()}
+              }
+              // FR-023: the slow-processing callout evaluates Processing only,
+              // never the overridden Queue value.
+              trailing={
+                (processingMs ?? 0) >= SLOW_PROCESSING_MS
+                  ? `Above ${SLOW_PROCESSING_MS} ms — check downstream sink`
+                  : undefined
+              }
+            />
+          );
+        })()}
 
       <PropertyList>
         <PropertySection title="Identifiers">
@@ -1085,27 +1064,29 @@ export default function MessageListing(props: IMessageListingProps) {
         <>
           <h4 className="text-lg font-semibold mt-4">Error</h4>
           <br />
-          {props.eventDetails?.messageContent?.errorContent && (
-            !isDeadletteredMessage(props.eventDetails?.resolutionStatus) ? (
+          {props.eventDetails?.messageContent?.errorContent &&
+            (!isDeadletteredMessage(props.eventDetails?.resolutionStatus) ? (
               <>
                 <div className="bg-red-100 border border-red-400 text-red-800 dark:bg-red-950/40 dark:border-red-900/60 dark:text-red-200 p-4 rounded-sm text-sm">
                   {props.eventDetails?.messageContent?.errorContent?.errorText}
                 </div>
-                <table className="text-sm">
-                  <tbody>
-                    <tr className="hover:bg-accent">
-                      <td className="py-2 pr-4">
-                        <b>Exception</b>
-                      </td>
-                      <td className="py-2">
-                        {
-                          props.eventDetails?.messageContent?.errorContent
-                            ?.exceptionStackTrace
-                        }
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                {!!props.eventDetails?.messageContent?.errorContent?.exceptionStackTrace?.trim() && (
+                  <table className="text-sm">
+                    <tbody>
+                      <tr className="hover:bg-accent">
+                        <td className="py-2 pr-4">
+                          <b>Exception</b>
+                        </td>
+                        <td className="py-2">
+                          {
+                            props.eventDetails?.messageContent?.errorContent
+                              ?.exceptionStackTrace
+                          }
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                )}
               </>
             ) : (
               <table className="text-sm">
@@ -1128,8 +1109,7 @@ export default function MessageListing(props: IMessageListingProps) {
                   </tr>
                 </tbody>
               </table>
-            )
-          )}
+            ))}
           <br />
           {failureOccurrences.length > 0 && (
             <div className="space-y-3">
@@ -1141,6 +1121,7 @@ export default function MessageListing(props: IMessageListingProps) {
                   messageId={occurrence.messageId}
                   resolutionStatus={props.eventDetails?.resolutionStatus}
                   occurrenceLabel={`occurrence ${index + 1}`}
+                  highlighted={linkedMessageId === occurrence.messageId}
                 />
               ))}
             </div>
@@ -1154,9 +1135,25 @@ export default function MessageListing(props: IMessageListingProps) {
           no original payload. */}
       {resubmitPayload && isRedacted && (
         <div className="mt-4 flex items-center gap-2.5 bg-card border border-border rounded-nb-md px-4 py-3">
-          <svg className="w-4 h-4 shrink-0 text-muted-foreground" viewBox="0 0 16 16" fill="none">
-            <rect x="3" y="7" width="10" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
-            <path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" strokeWidth="1.4" />
+          <svg
+            className="w-4 h-4 shrink-0 text-muted-foreground"
+            viewBox="0 0 16 16"
+            fill="none"
+          >
+            <rect
+              x="3"
+              y="7"
+              width="10"
+              height="6"
+              rx="1.4"
+              stroke="currentColor"
+              strokeWidth="1.4"
+            />
+            <path
+              d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7"
+              stroke="currentColor"
+              strokeWidth="1.4"
+            />
           </svg>
           <span className="text-[13px] text-muted-foreground">
             The payload is hidden — viewing raw event payloads requires the PII
@@ -1201,60 +1198,34 @@ export default function MessageListing(props: IMessageListingProps) {
         </div>
       )}
 
-      <Modal isOpen={isOpen} onClose={onClose} size="2xl">
-        <ModalHeader onClose={onClose}>Resubmit with changes</ModalHeader>
-        <ModalBody>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Original event:
-            </label>
-            <pre className="bg-muted p-4 rounded-sm text-sm overflow-x-auto max-h-96">
-              {formattedPayload}
-            </pre>
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Event type:
-            </label>
-            <Select
-              onChange={handleEventTypeIdChange}
-              defaultValue={props.eventDetails?.eventTypeId}
-            >
-              {props.eventTypes.map((et) => (
-                <option key={et.id} value={et.id}>
-                  {et.id}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Modified event:
-            </label>
-            <Textarea
-              value={textAreaValue}
-              onChange={handleInputChange}
-              className="min-h-[300px]"
-            />
-          </div>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-          <Button onClick={resubmitEventWithChangesClick}>Resubmit</Button>
-        </ModalFooter>
-      </Modal>
+      {isOpen && (
+        <ResubmitEditor
+          key={`${props.eventDetails?.eventId}:${props.eventDetails?.lastMessageId}`}
+          payload={resubmitPayload}
+          eventTypeId={props.eventDetails?.eventTypeId}
+          eventTypes={props.eventTypes}
+          onClose={onClose}
+          onSubmit={resubmitEventWithChangesClick}
+        />
+      )}
 
       {/* Comment Section */}
-      <CommentSection eventId={props.eventDetails?.eventId} onCommentAdded={props.onCommentAdded} />
+      <CommentSection
+        eventId={props.eventDetails?.eventId}
+        onCommentAdded={props.onCommentAdded}
+      />
 
-      <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)}>
+      <Modal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+      >
         <ModalHeader>Delete Event</ModalHeader>
         <ModalBody>
           <p className="text-sm">
             This will permanently delete the event from storage.{" "}
-            <span className="font-semibold text-red-600 dark:text-red-400">This action cannot be undone.</span>
+            <span className="font-semibold text-red-600 dark:text-red-400">
+              This action cannot be undone.
+            </span>
           </p>
         </ModalBody>
         <ModalFooter>
@@ -1389,7 +1360,13 @@ export default function MessageListing(props: IMessageListingProps) {
   );
 }
 
-function CommentSection({ eventId, onCommentAdded }: { eventId?: string; onCommentAdded?: () => void }) {
+function CommentSection({
+  eventId,
+  onCommentAdded,
+}: {
+  eventId?: string;
+  onCommentAdded?: () => void;
+}) {
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1404,7 +1381,9 @@ function CommentSection({ eventId, onCommentAdded }: { eventId?: string; onComme
       try {
         const me = await client.getMe();
         if (me?.name) userName = me.name;
-      } catch { /* fallback */ }
+      } catch {
+        /* fallback */
+      }
 
       const audit = new api.MessageAudit();
       audit.auditorName = userName;
@@ -1428,15 +1407,27 @@ function CommentSection({ eventId, onCommentAdded }: { eventId?: string; onComme
       <h5 className="text-base font-semibold mb-2">Add Comment</h5>
       <Textarea
         value={comment}
-        onChange={(e) => { setComment(e.target.value); setSaved(false); }}
+        onChange={(e) => {
+          setComment(e.target.value);
+          setSaved(false);
+        }}
         placeholder="Enter a comment..."
         rows={3}
       />
       <div className="flex items-center gap-2 mt-2">
-        <Button size="sm" colorScheme="primary" onClick={submit} disabled={saving || !comment.trim()}>
+        <Button
+          size="sm"
+          colorScheme="primary"
+          onClick={submit}
+          disabled={saving || !comment.trim()}
+        >
           {saving ? "Saving..." : "Save"}
         </Button>
-        {saved && <span className="text-sm text-green-600 dark:text-green-400">Saved</span>}
+        {saved && (
+          <span className="text-sm text-green-600 dark:text-green-400">
+            Saved
+          </span>
+        )}
       </div>
     </div>
   );

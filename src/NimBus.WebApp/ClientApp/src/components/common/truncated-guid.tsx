@@ -2,6 +2,7 @@ import { Tooltip } from "components/ui/tooltip";
 import { useToast } from "components/ui/toast";
 import { copyToClipboard } from "lib/clipboard";
 import { cn } from "lib/utils";
+import { Link } from "react-router-dom";
 
 interface ITruncatedGuidProps {
   guid: string | undefined | null;
@@ -16,6 +17,8 @@ interface ITruncatedGuidProps {
    */
   onClick?: (guid: string) => void;
   className?: string;
+  /** Makes the value a details link; the copy button remains independent. */
+  linkTo?: string;
 }
 
 /**
@@ -31,6 +34,7 @@ export default function TruncatedGuid({
   withCopy = true,
   onClick,
   className,
+  linkTo,
 }: ITruncatedGuidProps) {
   const { addToast } = useToast();
 
@@ -39,9 +43,7 @@ export default function TruncatedGuid({
   }
 
   const truncated =
-    guid.length > displayLength
-      ? `${guid.substring(0, displayLength)}…`
-      : guid;
+    guid.length > displayLength ? `${guid.substring(0, displayLength)}…` : guid;
 
   const copy = async () => {
     try {
@@ -80,19 +82,37 @@ export default function TruncatedGuid({
 
   return (
     <Tooltip content={guid} position="top">
-      <span
-        className={cn(
-          "inline-flex items-center gap-1",
-          className,
+      <span className={cn("inline-flex items-center gap-1", className)}>
+        {linkTo ? (
+          <Link
+            to={linkTo}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (
+                onClick &&
+                !e.metaKey &&
+                !e.ctrlKey &&
+                !e.shiftKey &&
+                !e.altKey &&
+                e.button === 0
+              ) {
+                e.preventDefault();
+                onClick(guid);
+              }
+            }}
+            className="font-mono text-[12px] tabular-nums text-foreground hover:text-primary hover:underline"
+          >
+            {truncated}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={handleValueClick}
+            className="bg-transparent border-0 p-0 m-0 cursor-pointer font-mono text-[12px] tabular-nums text-foreground hover:text-primary"
+          >
+            {truncated}
+          </button>
         )}
-      >
-        <button
-          type="button"
-          onClick={handleValueClick}
-          className="bg-transparent border-0 p-0 m-0 cursor-pointer font-mono text-[12px] tabular-nums text-foreground hover:text-primary"
-        >
-          {truncated}
-        </button>
         {withCopy && (
           <button
             type="button"

@@ -93,7 +93,7 @@ describe("AsyncApiExport", () => {
     // Raw fetch to the admin endpoint with the yaml format and credentials.
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toContain("/api/admin/asyncapi");
+    expect(url).toContain("/api/v1/admin/asyncapi");
     expect(url).toContain("format=yaml");
     expect(init).toMatchObject({ credentials: "include" });
 

@@ -28,6 +28,20 @@ public static class AdminEndpoints
         group.MapGet("/circuit-state", (CircuitStateStore store) =>
             Results.Ok(store.Snapshot()));
 
+        // CloudEvents partner showcase: crm-web flips the recurring PartnerPortal leads on and
+        // off, and partner-portal reads the flag before each lead.
+        group.MapGet("/partner-leads", (PartnerLeadsState state) =>
+        {
+            var (enabled, changedAt) = state.Snapshot();
+            return Results.Ok(new ErrorModeResponse(enabled, changedAt));
+        });
+
+        group.MapPut("/partner-leads", (ErrorModeRequest request, PartnerLeadsState state) =>
+        {
+            var (enabled, changedAt) = state.Set(request.Enabled);
+            return Results.Ok(new ErrorModeResponse(enabled, changedAt));
+        });
+
         // Demo reset: wipes every CRM business row plus the NimBus inbox-dedup
         // rows living in this database. Publishes NO delete events — this is a
         // reset, not business activity; NimBus message history is untouched.

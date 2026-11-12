@@ -129,7 +129,7 @@ public class ServiceBusFilterValidatorTests
         var ex = Assert.ThrowsExactly<ArgumentException>(
             () => ServiceBusFilterValidator.ValidateName(value, "param"));
         Assert.AreEqual("param", ex.ParamName);
-        StringAssert.Contains(ex.Message, ServiceBusFilterValidator.MaxNameLength.ToString(CultureInfo.InvariantCulture));
+        StringAssert.Contains(ex.Message, ServiceBusFilterValidator.MaxNameLength.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
     [TestMethod]

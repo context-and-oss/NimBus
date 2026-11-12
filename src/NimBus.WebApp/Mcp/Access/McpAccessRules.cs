@@ -74,6 +74,10 @@ public static class McpAccessRules
         if (before.AllowWorkloads != after.AllowWorkloads)
             Add(after.AllowWorkloads ? "Accept workload (app-only) tokens" : "Refuse workload (app-only) tokens", after.AllowWorkloads);
 
+        if (before.AllowWorkloadClassification != after.AllowWorkloadClassification)
+            Add(after.AllowWorkloadClassification ? "Let workloads record failure classifications" : "Stop workloads recording failure classifications",
+                after.AllowWorkloadClassification);
+
         // People
         if (before.People.Mode != after.People.Mode)
         {

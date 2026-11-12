@@ -54,17 +54,39 @@ internal static class AdminXml
         };
     }
 
-    public static RuleDefinition ParseRule(string name, XDocument document)
+    public static RuleDefinition ParseRule(string name, XDocument document) =>
+        ParseRuleDescription(name, Description(document, "RuleDescription"));
+
+    /// <summary>
+    /// Reads the rule a subscription create asks to be seeded with instead of the
+    /// true-filter $Default (the SDK's <c>CreateSubscriptionAsync(options, rule)</c>), or
+    /// null when the request carries none.
+    /// </summary>
+    public static RuleDefinition? ParseDefaultRule(XDocument document)
     {
-        var description = Description(document, "RuleDescription");
+        var rule = Description(document, "SubscriptionDescription").Element(ServiceBus + "DefaultRuleDescription");
+        if (rule is null)
+        {
+            return null;
+        }
+
+        var name = Value(rule, "Name");
+        return ParseRuleDescription(string.IsNullOrWhiteSpace(name) ? "$Default" : name, rule);
+    }
+
+    private static RuleDefinition ParseRuleDescription(string name, XElement description)
+    {
         var filter = description.Element(ServiceBus + "Filter");
         var filterType = filter?.Attribute(SchemaInstance + "type")?.Value;
-        var expression = filterType?.EndsWith("TrueFilter", StringComparison.Ordinal) == true
-            ? "1=1"
-            : filter?.Element(ServiceBus + "SqlExpression")?.Value;
+        var expression = filterType switch
+        {
+            not null when filterType.EndsWith("TrueFilter", StringComparison.Ordinal) => "1=1",
+            not null when filterType.EndsWith("FalseFilter", StringComparison.Ordinal) => "1=0",
+            _ => filter?.Element(ServiceBus + "SqlExpression")?.Value,
+        };
         if (string.IsNullOrWhiteSpace(expression))
         {
-            throw new FormatException("Only SqlFilter and TrueFilter rules are supported by Spec 027.");
+            throw new FormatException("Only SqlFilter, TrueFilter and FalseFilter rules are supported by Spec 027.");
         }
 
         var action = description.Element(ServiceBus + "Action");
@@ -157,12 +179,17 @@ internal static class AdminXml
 
     private static XElement RuleDescription(RuleDefinition definition)
     {
-        var isTrue = string.Equals(definition.FilterExpression, "1=1", StringComparison.OrdinalIgnoreCase);
+        var filterType = definition.FilterExpression switch
+        {
+            "1=1" => "TrueFilter",
+            "1=0" => "FalseFilter",
+            _ => "SqlFilter",
+        };
         return new XElement(ServiceBus + "RuleDescription",
             new XElement(ServiceBus + "Filter",
-                new XAttribute(SchemaInstance + "type", isTrue ? "TrueFilter" : "SqlFilter"),
+                new XAttribute(SchemaInstance + "type", filterType),
                 new XElement(ServiceBus + "SqlExpression", definition.FilterExpression),
-                !isTrue ? new XElement(ServiceBus + "CompatibilityLevel", 20) : null),
+                filterType == "SqlFilter" ? new XElement(ServiceBus + "CompatibilityLevel", 20) : null),
             definition.ActionExpression is null
                 ? new XElement(ServiceBus + "Action", new XAttribute(SchemaInstance + "type", "EmptyRuleAction"))
                 : new XElement(ServiceBus + "Action",

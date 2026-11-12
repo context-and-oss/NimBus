@@ -69,11 +69,17 @@ public sealed class CookieAntiforgeryConventionTests
                      nameof(AdminApiController.PostAdminServicebusSubscriptionRecreate),
                      nameof(AdminApiController.PostAdminDeleteDeadlettered),
                      nameof(AdminApiController.PostAdminServicebusSubscriptionDeadlettersPurge),
+                     // Operations → Session state and Clean up session state.
+                     nameof(AdminApiController.PostAdminSessionState),
+                     nameof(AdminApiController.PostAdminSessionCleanupPreview),
+                     nameof(AdminApiController.PostAdminSessionCleanup),
                  })
         {
-            var action = actions.Single(candidate =>
-                candidate.ControllerTypeInfo.AsType() == typeof(AdminApiController) && candidate.ActionName == name);
-            Assert.IsTrue(CarriesFilter(action), name);
+            // One descriptor per route: /api/v1/… and its deprecated /api/… alias.
+            var routes = actions.Where(candidate =>
+                candidate.ControllerTypeInfo.AsType() == typeof(AdminApiController) && candidate.ActionName == name).ToList();
+            Assert.AreEqual(2, routes.Count, name);
+            Assert.IsTrue(routes.All(CarriesFilter), name);
         }
     }
 

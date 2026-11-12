@@ -214,8 +214,7 @@ public class AgentLoopIntegrationTests
             JsonSchema = schema,
             Name = "CRM Contact Enriched v1",
         });
-        Assert.IsInstanceOfType(defineResult.Result, typeof(OkObjectResult),
-            "Step 1 (Define): must return 200");
+        Assert.IsInstanceOfType<OkObjectResult>(defineResult.Result, "Step 1 (Define): must return 200");
 
         // ── Step 2a: Publish (valid) ──────────────────────────────────────────
         // Proves that the just-defined schema is immediately usable by Publish on
@@ -227,14 +226,13 @@ public class AgentLoopIntegrationTests
             EventTypeId = eventTypeId,
             Payload = validPayload,
         });
-        Assert.IsInstanceOfType(publishResult, typeof(OkResult),
-            "Step 2a (Publish valid): must return 200");
+        Assert.IsInstanceOfType<OkResult>(publishResult, "Step 2a (Publish valid): must return 200");
         Assert.AreEqual(1, publisher.CallCount,
             "Step 2a: publisher must be called exactly once");
         Assert.AreEqual(eventTypeId, publisher.Published?.EventTypeId,
             "Step 2a: published message EventTypeId must match");
         Assert.IsTrue(
-            publisher.Published?.MessageContent?.EventContent?.EventJson?.Contains("leadScore") == true,
+            publisher.Published?.MessageContent?.EventContent?.EventJson?.Contains("leadScore", StringComparison.Ordinal) == true,
             "Step 2a: published EventJson must contain 'leadScore'");
 
         // ── Step 2b: Publish (invalid — missing required 'industry') ─────────
@@ -246,8 +244,7 @@ public class AgentLoopIntegrationTests
             EventTypeId = eventTypeId,
             Payload = "{\"leadScore\":42}",   // missing required "industry"
         });
-        Assert.IsInstanceOfType(invalidPublishResult, typeof(BadRequestObjectResult),
-            "Step 2b (Publish invalid): must return 400 when required 'industry' is absent");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(invalidPublishResult, "Step 2b (Publish invalid): must return 400 when required 'industry' is absent");
         Assert.AreEqual(1, publisher.CallCount,
             "Step 2b: publisher must NOT be called again after a schema-violating payload");
 
@@ -306,8 +303,7 @@ public class AgentLoopIntegrationTests
             Coordinates = received.Coordinates,
             Outcome = AgentSettleRequestOutcome.Complete,
         });
-        Assert.IsInstanceOfType(settleResult, typeof(OkResult),
-            "Step 4 (Settle): must return 200");
+        Assert.IsInstanceOfType<OkResult>(settleResult, "Step 4 (Settle): must return 200");
         Assert.AreEqual(1, handoffs.CompleteCount,
             "Step 4: CompleteHandoff must be called exactly once");
         Assert.AreEqual(0, handoffs.FailCount,
@@ -342,8 +338,7 @@ public class AgentLoopIntegrationTests
         {
             EventTypeId = "type.beta.v1",
         });
-        Assert.IsInstanceOfType(subscribeResult, typeof(OkResult),
-            "Subscribe must succeed");
+        Assert.IsInstanceOfType<OkResult>(subscribeResult, "Subscribe must succeed");
         CollectionAssert.Contains(
             registry.GetSubscriptions("demo-agent").ToArray(),
             "type.beta.v1",

@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.Core.Messages;
 
-public class StrictMessageHandler : MessageHandler
+public partial class StrictMessageHandler : MessageHandler
 {
     // Once a delivery's outcome is decided, its settlement runs to the end on this token
     // instead of the caller's: every response, session-state change, park, completion and
@@ -168,7 +168,7 @@ public class StrictMessageHandler : MessageHandler
         }
         catch (SessionBlockedException exception)
         {
-            LogError(messageContext, "Failed to handle event", exception);
+            LogInfo(messageContext, exception.Message);
             await SendDeferralResponse(messageContext, exception);
             await DeferMessageToSubscription(messageContext);
             throw;
@@ -207,9 +207,10 @@ public class StrictMessageHandler : MessageHandler
                     await UnblockSession(messageContext);
                     await ContinueWithAnyDeferredMessages(messageContext);
                 }
-                else if (string.IsNullOrEmpty(await messageContext.GetBlockedByEventId(cancellationToken)))
+                else
                 {
-                    await ContinueWithAnyDeferredMessages(messageContext);
+                    await ResumeDrainIfSessionUnblocked(
+                        messageContext, await messageContext.GetBlockedByEventId(cancellationToken));
                 }
 
                 await SendDuplicateResponseAndComplete(messageContext, "RetryRequest DuplicateDetected");
@@ -245,10 +246,15 @@ public class StrictMessageHandler : MessageHandler
         }
         catch (SessionBlockedException exception)
         {
-            // The event no longer blocks its session (resubmitted or skipped meanwhile), so
-            // the retry is answered as resolved without running the handler.
+            // The event no longer blocks its session: it was resubmitted or skipped meanwhile, or
+            // this is a redelivery of a retry whose earlier delivery already handled it and
+            // unblocked the session. The retry is answered as resolved without running the
+            // handler. In the redelivery case that earlier delivery may have stopped before
+            // requesting the drain, and without an inbox nothing else would request it, so repair
+            // the gap here as HandleSkipRequest does.
             messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
-            LogError(messageContext, "Failed to handle event (RetryRequest)", exception);
+            LogInfo(messageContext, exception.Message);
+            await ResumeDrainIfSessionUnblocked(messageContext, exception.BlockedByEventId);
             await SendResolutionResponse(messageContext);
             await CompleteMessage(messageContext);
         }
@@ -362,14 +368,8 @@ public class StrictMessageHandler : MessageHandler
         catch (SessionBlockedException exception)
         {
             // As in HandleHandoffCompletedRequest: a previous delivery may have cleared the
-            // block and then stopped before requesting the drain, and nothing else would request
-            // it. Repair that gap on redelivery, but never resume work behind a newer event's
-            // block. A skip of an event that never blocked the session at most requests a drain
-            // that finds nothing to replay.
-            if (string.IsNullOrEmpty(exception.BlockedByEventId))
-            {
-                await ContinueWithAnyDeferredMessages(messageContext);
-            }
+            // block and then stopped before requesting the drain. Repair that gap on redelivery.
+            await ResumeDrainIfSessionUnblocked(messageContext, exception.BlockedByEventId);
             await SendSkipResponse(messageContext);
             await CompleteMessage(messageContext);
         }
@@ -403,12 +403,8 @@ public class StrictMessageHandler : MessageHandler
             // swallow it and silently dead-letter. Do NOT unblock.
             LogError(messageContext, "HandoffCompleted settlement does not match a blocked session — surfacing as resolved", exception);
             // A previous delivery may have cleared the block and then lost its
-            // lock before scheduling the drain. Repair that gap on redelivery,
-            // but never resume work behind a newer event's block.
-            if (string.IsNullOrEmpty(exception.BlockedByEventId))
-            {
-                await ContinueWithAnyDeferredMessages(messageContext);
-            }
+            // lock before scheduling the drain. Repair that gap on redelivery.
+            await ResumeDrainIfSessionUnblocked(messageContext, exception.BlockedByEventId);
             await SendResolutionResponse(messageContext);
             await CompleteMessage(messageContext);
         }
@@ -452,11 +448,7 @@ public class StrictMessageHandler : MessageHandler
     public override async Task HandleContinuationRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
         messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
-        _logger.LogWarning(
-            "Completing a legacy ContinuationRequest without processing it; the Service Bus defer drain was removed in v4. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            messageContext.GetEventIdOrDefault(),
-            messageContext.GetMessageIdOrDefault(),
-            messageContext.GetSessionIdOrDefault());
+        LogCompletingALegacyContinuationRequestWithoutProcessing(_logger, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
         await CompleteMessage(messageContext);
     }
 
@@ -509,12 +501,7 @@ public class StrictMessageHandler : MessageHandler
     private async Task CompleteRedeliveryOfBlockingEvent(IMessageContext messageContext)
     {
         messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
-        _logger.LogWarning(
-            "Completing a delivery of the event that blocks its session without running it again; the event's outcome is already recorded. EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            messageContext.EventTypeId,
-            messageContext.GetEventIdOrDefault(),
-            messageContext.GetMessageIdOrDefault(),
-            messageContext.GetSessionIdOrDefault());
+        LogCompletingADeliveryOfTheEvent(_logger, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
         await CompleteMessage(messageContext);
     }
 
@@ -626,13 +613,13 @@ public class StrictMessageHandler : MessageHandler
     private Task SendUnsupportedResponse(IMessageContext messageContext) =>
         _responseService.SendUnsupportedResponse(messageContext, SettlementToken);
 
-    private void AuthorizeManagerRequest(IMessageContext messageContext)
+    private static void AuthorizeManagerRequest(IMessageContext messageContext)
     {
         if (!messageContext.From!.Equals(Constants.ManagerId, StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException($"Only {Constants.ManagerId} is authorized to send {messageContext.MessageType} messages.");
     }
 
-    private async Task VerifySessionIsBlockedByThis(IMessageContext messageContext, CancellationToken cancellationToken = default)
+    private static async Task VerifySessionIsBlockedByThis(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
         if (!await messageContext.IsSessionBlockedByThis(cancellationToken))
         {
@@ -706,14 +693,7 @@ public class StrictMessageHandler : MessageHandler
 
     private async Task DiscardMessage(IMessageContext messageContext, DiscardedFailure discardedFailure)
     {
-        _logger.LogWarning(
-            discardedFailure.Exception,
-            "Discarding failed message without retry or dead-letter. Classifier:{ClassifierName}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            discardedFailure.ClassifierName,
-            messageContext.EventTypeId,
-            messageContext.GetEventIdOrDefault(),
-            messageContext.GetMessageIdOrDefault(),
-            messageContext.GetSessionIdOrDefault());
+        LogDiscardingFailedMessageWithoutRetry(_logger, discardedFailure.Exception, discardedFailure.ClassifierName, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
         await _responseService.SendDiscardResponse(
             messageContext,
             discardedFailure.Exception,
@@ -733,6 +713,21 @@ public class StrictMessageHandler : MessageHandler
             await _responseService.SendProcessDeferredRequest(messageContext, SettlementToken);
             LogInfo(messageContext, $"Send ProcessDeferredRequest ({deferredCount} deferred messages)");
         }
+    }
+
+    // Redelivery repair: an earlier delivery of a settlement may have unblocked the session and
+    // then stopped before requesting the drain, and nothing else would request it. Drains only
+    // when no event blocks the session (a newer blocker owns the drain) and a parked message
+    // still awaits its replay. The deferred count can't decide that: it only ever grows, so it
+    // says a session has parked messages at some point, not that any are parked now.
+    private async Task ResumeDrainIfSessionUnblocked(IMessageContext messageContext, string? blockedByEventId)
+    {
+        if (!string.IsNullOrEmpty(blockedByEventId)
+            || !await messageContext.HasUnreplayedDeferredMessages(SettlementToken))
+            return;
+
+        await _responseService.SendProcessDeferredRequest(messageContext, SettlementToken);
+        LogInfo(messageContext, "Send ProcessDeferredRequest (redelivered settlement on an unblocked session)");
     }
 
     private async Task CheckForRetry(IMessageContext messageContext, EventContextHandlerException exception)
@@ -793,15 +788,34 @@ public class StrictMessageHandler : MessageHandler
     // processing of such messages (e.g. the missing-MessageId inbox bypass path).
     private void LogInfo(IMessageContext messageContext, string prefixMessage)
     {
-        _logger.LogInformation("{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            prefixMessage, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            var eventId = messageContext.GetEventIdOrDefault();
+            var messageId = messageContext.GetMessageIdOrDefault();
+            var sessionId = messageContext.GetSessionIdOrDefault();
+            LogMessageInfo(_logger, prefixMessage, messageContext.EventTypeId, eventId, messageId, sessionId);
+        }
     }
 
     private void LogError(IMessageContext messageContext, string prefixMessage, Exception exception)
     {
-        _logger.LogError(exception, "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            prefixMessage, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
+        LogMessageError(_logger, exception, prefixMessage, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
     }
 
     private sealed record DiscardedFailure(Exception Exception, string ClassifierName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Completing a legacy ContinuationRequest without processing it; the Service Bus defer drain was removed in v4. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogCompletingALegacyContinuationRequestWithoutProcessing(ILogger logger, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Completing a delivery of the event that blocks its session without running it again; the event's outcome is already recorded. EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogCompletingADeliveryOfTheEvent(ILogger logger, string eventTypeId, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Discarding failed message without retry or dead-letter. Classifier:{ClassifierName}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogDiscardingFailedMessageWithoutRetry(ILogger logger, Exception exception, string classifierName, string eventTypeId, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogMessageInfo(ILogger logger, string prefix, string eventTypeId, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogMessageError(ILogger logger, Exception exception, string prefix, string eventTypeId, string? eventId, string? messageId, string? sessionId);
 }

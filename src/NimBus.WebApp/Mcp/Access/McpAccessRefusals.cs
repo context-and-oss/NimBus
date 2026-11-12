@@ -10,7 +10,7 @@ namespace NimBus.WebApp.Mcp.Access;
 /// not rate-limited, because the rate limiter runs after authorization, so each instance
 /// writes at most one row per tenant, caller, client, reason and tool in <see cref="Window"/>.
 /// </summary>
-public sealed class McpAccessRefusals
+public sealed partial class McpAccessRefusals
 {
     /// <summary>The deduplication window.</summary>
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(5);
@@ -62,7 +62,7 @@ public sealed class McpAccessRefusals
         catch (Exception ex)
         {
             // Auditing a refusal is best-effort; the call is refused either way.
-            _logger.LogWarning(ex, "Could not audit a refused MCP call ({Reason})", reason);
+            LogCouldNotAuditARefusedMcp(_logger, ex, reason);
         }
     }
 
@@ -77,4 +77,7 @@ public sealed class McpAccessRefusals
                 _lastWritten.TryRemove(key, out _);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not audit a refused MCP call ({Reason})")]
+    private static partial void LogCouldNotAuditARefusedMcp(ILogger logger, Exception exception, McpRefusalReason reason);
 }

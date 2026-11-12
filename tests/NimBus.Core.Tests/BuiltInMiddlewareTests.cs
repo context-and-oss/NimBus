@@ -97,8 +97,8 @@ public class LoggingMiddlewareTests
         await middleware.Handle(context, (ctx, ct) => { handlerCalled = true; return Task.CompletedTask; });
 
         Assert.IsTrue(handlerCalled);
-        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Processing")));
-        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Completed")));
+        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Processing", StringComparison.Ordinal)));
+        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Completed", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -111,8 +111,8 @@ public class LoggingMiddlewareTests
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             middleware.Handle(context, (ctx, ct) => throw new InvalidOperationException("boom")));
 
-        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Failed")));
-        Assert.IsFalse(logger.Entries.Any(e => e.Contains("Completed")));
+        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Failed", StringComparison.Ordinal)));
+        Assert.IsFalse(logger.Entries.Any(e => e.Contains("Completed", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -125,8 +125,8 @@ public class LoggingMiddlewareTests
         await middleware.Handle(context, (ctx, ct) => Task.CompletedTask);
 
         var allText = string.Join(" ", logger.Entries);
-        Assert.IsTrue(allText.Contains("OrderPlaced"));
-        Assert.IsTrue(allText.Contains("evt-42"));
+        Assert.IsTrue(allText.Contains("OrderPlaced", StringComparison.Ordinal));
+        Assert.IsTrue(allText.Contains("evt-42", StringComparison.Ordinal));
     }
 
     [TestMethod]

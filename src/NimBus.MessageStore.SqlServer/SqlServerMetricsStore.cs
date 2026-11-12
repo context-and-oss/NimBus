@@ -156,7 +156,9 @@ GROUP BY EndpointId, EventTypeId";
                    EventTypeId,
                    COALESCE(NULLIF(JSON_VALUE(MessageContentJson, '$.ErrorContent.ErrorText'), ''), DeadLetterErrorDescription, '') AS ErrorText,
                    EnqueuedTimeUtc,
-                   EventId
+                   EventId,
+                   MessageId,
+                   SessionId
                FROM {T("Messages")}
                WHERE MessageType = 'ErrorResponse'
                  AND EnqueuedTimeUtc >= @From
@@ -282,6 +284,59 @@ GROUP BY EndpointId, EventTypeId";
 
         return new EventTypeTimeSeriesResult { BucketSize = bucketLabel, Series = series };
     }
+
+    /// <summary>
+    /// Queue and processing time per bucket over outcome messages (<c>IMonitorMetricsStore</c>).
+    /// Same message types as <see cref="GetEndpointLatencyMetrics(DateTime, DateTime)"/>; buckets
+    /// stay sparse because a zero would read as "instant".
+    /// </summary>
+    public async Task<LatencyTimeSeriesResult> GetLatencyTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel)
+    {
+        var bucketExpr = $"DATEADD({BucketUnit(substringLength)}, DATEDIFF({BucketUnit(substringLength)}, 0, EnqueuedTimeUtc), 0)";
+
+        await using var conn = await _ctx.Open();
+        var rows = await conn.QueryAsync<(DateTime Bucket,
+            int QueueCount, double? QueueAvg, long? QueueMin, long? QueueMax,
+            int ProcessingCount, double? ProcessingAvg, long? ProcessingMin, long? ProcessingMax)>(
+            $@"SELECT {bucketExpr} AS Bucket,
+                      COUNT(QueueTimeMs) AS QueueCount,
+                      AVG(CAST(QueueTimeMs AS FLOAT)) AS QueueAvg,
+                      MIN(QueueTimeMs) AS QueueMin,
+                      MAX(QueueTimeMs) AS QueueMax,
+                      COUNT(ProcessingTimeMs) AS ProcessingCount,
+                      AVG(CAST(ProcessingTimeMs AS FLOAT)) AS ProcessingAvg,
+                      MIN(ProcessingTimeMs) AS ProcessingMin,
+                      MAX(ProcessingTimeMs) AS ProcessingMax
+               FROM {T("Messages")}
+               WHERE EnqueuedTimeUtc >= @From
+                 AND EnqueuedTimeUtc < @To
+                 AND MessageType IN ('ResolutionResponse', 'ErrorResponse', 'SkipResponse', 'DeferralResponse', 'UnsupportedResponse')
+                 AND (QueueTimeMs IS NOT NULL OR ProcessingTimeMs IS NOT NULL)
+               GROUP BY {bucketExpr}",
+            Window(from, to),
+            commandTimeout: _ctx.CommandTimeout);
+
+        var dataPoints = rows
+            .OrderBy(r => r.Bucket)
+            .Select(r => new LatencyTimeSeriesBucket
+            {
+                Timestamp = DateTime.SpecifyKind(r.Bucket, DateTimeKind.Utc).ToString("o")[..substringLength],
+                Queue = BuildLatency(r.QueueCount, r.QueueAvg, r.QueueMin, r.QueueMax),
+                Processing = BuildLatency(r.ProcessingCount, r.ProcessingAvg, r.ProcessingMin, r.ProcessingMax),
+            })
+            .ToList();
+
+        return new LatencyTimeSeriesResult { BucketSize = bucketLabel, DataPoints = dataPoints };
+    }
+
+    // A switch-constrained literal for DATEADD/DATEDIFF, never user input.
+    private static string BucketUnit(int substringLength) => substringLength switch
+    {
+        16 => "minute",
+        13 => "hour",
+        10 => "day",
+        _ => "hour",
+    };
 
     private static List<string> GenerateBucketKeys(DateTime from, DateTime to, int substringLength)
     {

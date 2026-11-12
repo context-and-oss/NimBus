@@ -1,0 +1,6 @@
+# Sample-only analyzer settings; inherits the repository root .editorconfig.
+[*.cs]
+# The samples teach the NimBus API, so they log with plain ILogger calls instead of
+# [LoggerMessage] source-generated methods (CA1848) and their IsEnabled guards (CA1873).
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none

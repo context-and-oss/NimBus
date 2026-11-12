@@ -39,7 +39,7 @@ audit row. Resubmit and Skip keep their own Contributor checks.
 
 ## API
 
-`POST /api/failed/search`, `POST /api/failed/histogram` and `POST /api/failed/error-groups` —
+`POST /api/v1/failed/search`, `POST /api/v1/failed/histogram` and `POST /api/v1/failed/error-groups` —
 see [WebApp REST API](webapp-rest-api.md#failed). They are backed by
 `IMessageTrackingStore.GetFailedEventsAcrossEndpoints` and `GetFailedEventHistogram`, which
 every storage provider implements (see [Storage providers](storage-providers.md)).

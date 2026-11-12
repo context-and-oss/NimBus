@@ -20,6 +20,19 @@ internal static class ServiceBusTestDoubles
         (ServiceBusSessionMessageActions)RuntimeHelpers.GetUninitializedObject(typeof(ServiceBusSessionMessageActions));
 }
 
+/// <summary>
+/// Session actions that support session-state reads and writes (empty state, writes ignored),
+/// unlike the uninitialized object from <see cref="ServiceBusTestDoubles.CreateSessionActions"/>.
+/// </summary>
+internal sealed class StateCapableSessionActions : ServiceBusSessionMessageActions
+{
+    public override Task<BinaryData> GetSessionStateAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(BinaryData.Empty);
+
+    public override Task SetSessionStateAsync(BinaryData sessionState, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+}
+
 internal sealed class RecordingServiceBusClient : ServiceBusClient
 {
     public RecordingServiceBusSessionReceiver SessionReceiver { get; } = new();

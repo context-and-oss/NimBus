@@ -2,7 +2,11 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { useTheme } from "hooks/use-theme";
 import { useCommandPalette } from "components/command-palette";
 import { cn } from "lib/utils";
-import { OPERATIONS, SETTINGS_FEATURES, TOPOLOGY_VIEWS } from "models/manage-pages";
+import {
+  OPERATIONS,
+  SETTINGS_FEATURES,
+  TOPOLOGY_VIEWS,
+} from "models/manage-pages";
 
 interface Crumb {
   label: string;
@@ -13,7 +17,7 @@ interface Crumb {
 // EventTypes/Details/X, Message/Index/...) get a parent-link crumb so deep-linked
 // URLs are self-explaining (design recommendation §10).
 function useBreadcrumbs(): Crumb[] {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const params = useParams();
   const segs = pathname.split("/").filter(Boolean);
 
@@ -24,10 +28,7 @@ function useBreadcrumbs(): Crumb[] {
   switch (top) {
     case "Endpoints":
       if (segs[1] === "Details" && params.id) {
-        return [
-          { label: "Endpoints", to: "/Endpoints" },
-          { label: params.id },
-        ];
+        return [{ label: "Endpoints", to: "/Endpoints" }, { label: params.id }];
       }
       return [{ label: "Endpoints" }];
     case "EventTypes":
@@ -41,8 +42,20 @@ function useBreadcrumbs(): Crumb[] {
     case "Message":
       // /Message/Index/:endpointId/:id[/:backindex]
       if (segs[1] === "Index" && params.endpointId) {
+        if (new URLSearchParams(search).get("from") === "failed")
+          return [
+            { label: "Failed", to: "/Failed" },
+            {
+              label: params.endpointId,
+              to: `/Endpoints/Details/${params.endpointId}`,
+            },
+            { label: params.id?.slice(0, 8) + "..." },
+          ];
         return [
-          { label: params.endpointId, to: `/Endpoints/Details/${params.endpointId}` },
+          {
+            label: params.endpointId,
+            to: `/Endpoints/Details/${params.endpointId}`,
+          },
           { label: "Messages" },
           { label: params.id?.slice(0, 8) + "…" || "" },
         ];
@@ -59,7 +72,10 @@ function useBreadcrumbs(): Crumb[] {
     case "Operations": {
       const operation = OPERATIONS.find((o) => o.id === segs[1]?.toLowerCase());
       return operation
-        ? [{ label: "Operations", to: "/Operations" }, { label: operation.label }]
+        ? [
+            { label: "Operations", to: "/Operations" },
+            { label: operation.label },
+          ]
         : [{ label: "Operations" }];
     }
     case "Topology": {
@@ -69,7 +85,9 @@ function useBreadcrumbs(): Crumb[] {
         : [{ label: "Topology" }];
     }
     case "Settings": {
-      const feature = SETTINGS_FEATURES.find((f) => f.id === segs[1]?.toLowerCase());
+      const feature = SETTINGS_FEATURES.find(
+        (f) => f.id === segs[1]?.toLowerCase(),
+      );
       return feature
         ? [{ label: "Settings", to: "/Settings" }, { label: feature.name }]
         : [{ label: "Settings" }];
@@ -114,9 +132,7 @@ const Topbar = () => {
                   {crumb.label}
                 </Link>
               ) : (
-                <span
-                  className={cn(isLast && "text-foreground font-semibold")}
-                >
+                <span className={cn(isLast && "text-foreground font-semibold")}>
                   {crumb.label}
                 </span>
               )}
@@ -126,6 +142,12 @@ const Topbar = () => {
       </nav>
 
       <div className="flex-1" />
+      <span
+        className="text-xs text-muted-foreground"
+        title="All timestamps use your local time zone unless labelled otherwise"
+      >
+        Local time ({Intl.DateTimeFormat().resolvedOptions().timeZone})
+      </span>
 
       {/* ⌘K command-palette trigger — recommendation §10 from the design
           handoff. Keyboard users invoke via Cmd+K / Ctrl+K from anywhere
@@ -144,7 +166,13 @@ const Topbar = () => {
         title={`Open command palette (${shortcutLabel})`}
       >
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
+          <circle
+            cx="7"
+            cy="7"
+            r="4.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
           <path
             d="M10.5 10.5L13 13"
             stroke="currentColor"
@@ -169,7 +197,13 @@ const Topbar = () => {
       >
         {resolvedTheme === "dark" ? (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="5" stroke="currentColor" strokeWidth="1.6" />
+            <circle
+              cx="12"
+              cy="12"
+              r="5"
+              stroke="currentColor"
+              strokeWidth="1.6"
+            />
             <path
               d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
               stroke="currentColor"

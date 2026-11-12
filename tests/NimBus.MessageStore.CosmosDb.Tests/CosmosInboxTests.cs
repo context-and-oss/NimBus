@@ -133,8 +133,8 @@ public sealed class CosmosInboxTests
         var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => store.HasProcessedAsync("billing", "m-1"));
 
-        StringAssert.Contains(exception.Message, "Strong");
-        StringAssert.Contains(exception.Message, nameof(CosmosInboxOptions.AllowRelaxedConsistency));
+        StringAssert.Contains(exception.Message, "Strong", StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, nameof(CosmosInboxOptions.AllowRelaxedConsistency), StringComparison.Ordinal);
         Assert.AreEqual(0, infrastructure.CreateContainerCalls, "Validation must fail before container access");
         Assert.AreEqual(0, infrastructure.Container.ReadIds.Count, "No duplicate check may run against an unvalidated account");
     }
@@ -151,8 +151,8 @@ public sealed class CosmosInboxTests
         var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => store.HasProcessedAsync("billing", "m-1"));
 
-        StringAssert.Contains(exception.Message, nameof(ICosmosClientAdapter.GetAccountConsistencyLevelAsync));
-        StringAssert.Contains(exception.Message, nameof(CosmosInboxOptions.AllowRelaxedConsistency));
+        StringAssert.Contains(exception.Message, nameof(ICosmosClientAdapter.GetAccountConsistencyLevelAsync), StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, nameof(CosmosInboxOptions.AllowRelaxedConsistency), StringComparison.Ordinal);
         Assert.IsInstanceOfType<NotSupportedException>(exception.InnerException);
     }
 

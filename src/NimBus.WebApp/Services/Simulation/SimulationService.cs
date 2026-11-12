@@ -83,7 +83,7 @@ public interface ISimulationService
 /// WebApp instance (plan Decision 3); a restart starts from configuration and stops any run.
 /// Every transition runs under one semaphore (plan Decision 10).
 /// </summary>
-public sealed class SimulationService : ISimulationService, ISimulationFeedSink, ISimulationPublishSink, IDisposable
+public sealed partial class SimulationService : ISimulationService, ISimulationFeedSink, ISimulationPublishSink, IDisposable
 {
     private const int DefaultRatePerMinute = 10;
     private static readonly TimeSpan LiveInstanceWindow = TimeSpan.FromMinutes(10);
@@ -244,7 +244,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
 
         if (stopRun)
         {
-            _logger.LogInformation("Simulation disabled while running; stopping the run.");
+            LogSimulationDisabledWhileRunning(_logger);
             await StopAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -305,7 +305,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Starting a simulated endpoint host failed; rolling back.");
+                LogStartingASimulatedEndpointHostFailed(_logger, ex);
                 await StopHostsAsync(hosts, TimeSpan.FromSeconds(_options.StopDeadlineSeconds), CancellationToken.None).ConfigureAwait(false);
                 return SimulationCommandResult.Failed($"Starting a simulated subscriber failed: {ex.Message}");
             }
@@ -338,9 +338,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
             _hosts = hosts;
             _publishers = publishers;
             SetState(SimulationState.Running);
-            _logger.LogInformation(
-                "Simulation {Action}: {Publishers} publisher(s), {Hosts} simulated subscriber(s).",
-                resuming ? "resumed" : "started", publishers.Count, hosts.Count);
+            LogSimulationPublisher(_logger, resuming ? "resumed" : "started", publishers.Count, hosts.Count);
             return SimulationCommandResult.Ok;
         }
         finally
@@ -397,7 +395,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
                 }
                 catch (TimeoutException)
                 {
-                    _logger.LogWarning("Simulation drain did not finish within {Drain}; stopping receivers.", drain);
+                    LogSimulationDrainDidNotFinishWithin(_logger, drain);
                 }
             }
 
@@ -419,7 +417,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
             && State is SimulationState.Running or SimulationState.Paused
             && _timeProvider.GetUtcNow() >= autoStopAt)
         {
-            _logger.LogInformation("Simulation auto-stop reached at {AutoStopAt}; stopping.", autoStopAt);
+            LogSimulationAutoStopReached(_logger, autoStopAt);
             await StopAsync(cancellationToken).ConfigureAwait(false);
         }
     }
@@ -433,7 +431,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
         }
         catch (OperationCanceledException)
         {
-            _logger.LogWarning("Host shutdown arrived during a simulation transition; leaving it to the process exit.");
+            LogHostShutdownArrivedDuringASimulation(_logger);
             return;
         }
 
@@ -653,7 +651,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
         return _platform.Endpoints.Where(e => owned.Contains(e.Id) && e.EventTypesConsumed.Any());
     }
 
-    private static IReadOnlyList<IEventType> PublishableTypes(IEnumerable<IEventType> produced)
+    private static List<IEventType> PublishableTypes(IEnumerable<IEventType> produced)
     {
         var result = new List<IEventType>();
         foreach (var eventType in produced.GroupBy(t => t.Id, StringComparer.Ordinal).Select(g => g.First()))
@@ -711,7 +709,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
         a with { EventTypeIds = Array.Empty<string>() } == b with { EventTypeIds = Array.Empty<string>() }
         && a.EventTypeIds.SequenceEqual(b.EventTypeIds, StringComparer.Ordinal);
 
-    private bool IsCapped(SimulationConfig config, SimulationSettings settings)
+    private static bool IsCapped(SimulationConfig config, SimulationSettings settings)
     {
         var total = (config.Publishers ?? Array.Empty<SimulationPublisherConfig>())
             .SelectMany(p => p.EventTypes ?? Array.Empty<SimulationEventTypeConfig>())
@@ -730,7 +728,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
         await Task.WhenAll(publishers.Select(p => p.StopAsync(deadline, cancellationToken))).ConfigureAwait(false);
     }
 
-    private async Task StopHostsAsync(IReadOnlyList<ISimulatedEndpointHost> hosts, TimeSpan deadline, CancellationToken cancellationToken)
+    private async Task StopHostsAsync(List<ISimulatedEndpointHost> hosts, TimeSpan deadline, CancellationToken cancellationToken)
     {
         if (hosts.Count == 0)
             return;
@@ -744,9 +742,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
         }
         catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
         {
-            _logger.LogWarning(
-                "{Count} simulated subscriber(s) did not stop within {Deadline}; abandoning them.",
-                stops.Count(s => !s.IsCompleted), deadline);
+            LogSimulatedSubscriber(_logger, stops.Count(s => !s.IsCompleted), deadline);
         }
     }
 
@@ -758,7 +754,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Stopping the simulated subscriber for {EndpointId} did not complete cleanly.", host.EndpointId);
+            LogStoppingTheSimulatedSubscriberForDid(_logger, ex, host.EndpointId);
         }
     }
 
@@ -770,7 +766,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            _logger.LogDebug(ex, "Drain of the simulated subscriber for {EndpointId} ended early.", host.EndpointId);
+            LogDrainOfTheSimulatedSubscriber(_logger, ex, host.EndpointId);
         }
     }
 
@@ -808,7 +804,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
             throughput);
     }
 
-    private IReadOnlyList<SimulatedDelivery> SnapshotFeed()
+    private List<SimulatedDelivery> SnapshotFeed()
     {
         lock (_feedLock)
         {
@@ -866,10 +862,40 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Advisory only: a heartbeat read failure must never break the status call.
-            _logger.LogDebug(ex, "Reading heartbeat data for the simulation's live-instance warning failed.");
+            LogReadingHeartbeatDataForTheSimulation(_logger, ex);
             return Array.Empty<HeartbeatOverviewItem>();
         }
     }
 
     private sealed record HeartbeatSnapshot(DateTimeOffset At, IReadOnlyList<HeartbeatOverviewItem> Items);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Simulation disabled while running; stopping the run.")]
+    private static partial void LogSimulationDisabledWhileRunning(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Starting a simulated endpoint host failed; rolling back.")]
+    private static partial void LogStartingASimulatedEndpointHostFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Simulation {Action}: {Publishers} publisher(s), {Hosts} simulated subscriber(s).")]
+    private static partial void LogSimulationPublisher(ILogger logger, string action, int publishers, int hosts);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Simulation drain did not finish within {Drain}; stopping receivers.")]
+    private static partial void LogSimulationDrainDidNotFinishWithin(ILogger logger, TimeSpan drain);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Simulation auto-stop reached at {AutoStopAt}; stopping.")]
+    private static partial void LogSimulationAutoStopReached(ILogger logger, DateTimeOffset autoStopAt);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Host shutdown arrived during a simulation transition; leaving it to the process exit.")]
+    private static partial void LogHostShutdownArrivedDuringASimulation(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{Count} simulated subscriber(s) did not stop within {Deadline}; abandoning them.")]
+    private static partial void LogSimulatedSubscriber(ILogger logger, int count, TimeSpan deadline);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Stopping the simulated subscriber for {EndpointId} did not complete cleanly.")]
+    private static partial void LogStoppingTheSimulatedSubscriberForDid(ILogger logger, Exception exception, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Drain of the simulated subscriber for {EndpointId} ended early.")]
+    private static partial void LogDrainOfTheSimulatedSubscriber(ILogger logger, Exception exception, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Reading heartbeat data for the simulation's live-instance warning failed.")]
+    private static partial void LogReadingHeartbeatDataForTheSimulation(ILogger logger, Exception exception);
 }

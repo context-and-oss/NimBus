@@ -58,7 +58,7 @@ public class OutboxMessage
 
     /// <summary>
     /// Absolute scheduled delivery time. Null for immediate delivery.
-    /// Used by <see cref="ISender.ScheduleMessage"/> via the outbox.
+    /// Used by <see cref="Messages.ISender.ScheduleMessage"/> via the outbox.
     /// </summary>
     public DateTime? ScheduledEnqueueTimeUtc { get; set; }
 

@@ -12,7 +12,7 @@ public class SubscriptionDto
         public int GetHashCode(SubscriptionDto co)
         {
             if (co == null) return 0;
-            return co.Name.GetHashCode();
+            return co.Name.GetHashCode(StringComparison.Ordinal);
         }
 
         public bool Equals(SubscriptionDto? x1, SubscriptionDto? x2)

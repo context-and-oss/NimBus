@@ -64,8 +64,8 @@ public class SessionBlockTriggerTests
         var notification = channel.Received.Single();
         Assert.AreEqual(NotificationSeverity.Critical, notification.Severity);
         Assert.AreEqual("evt-blocking", notification.EventId);
-        StringAssert.Contains(notification.Message, "evt-blocking");
-        StringAssert.Contains(notification.Message, "blocked");
+        StringAssert.Contains(notification.Message, "evt-blocking", StringComparison.Ordinal);
+        StringAssert.Contains(notification.Message, "blocked", StringComparison.Ordinal);
     }
 
     [TestMethod]

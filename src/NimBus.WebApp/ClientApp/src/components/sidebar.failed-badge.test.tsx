@@ -9,7 +9,7 @@ const stubFetch = (counts: unknown) => {
     Promise.resolve(
       new Response(
         JSON.stringify(
-          String(url).endsWith("/api/endpoint/status/count") ? counts : {},
+          String(url).endsWith("/api/v1/endpoint/status/count") ? counts : {},
         ),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -39,11 +39,11 @@ describe("Sidebar Failed badge", () => {
     vi.unstubAllGlobals();
   });
 
-  it("sums failed (which already includes dead-lettered) and unsupported counts across endpoints", async () => {
+  it("sums failed (which already includes dead-lettered and unsupported) across endpoints", async () => {
     stubFetch([
       {
         endpointId: "Crm",
-        failedCount: 20,
+        failedCount: 22,
         deadletterCount: 4,
         unsupportedCount: 2,
         deferredCount: 9,

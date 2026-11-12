@@ -1,6 +1,19 @@
 param name string
 param location string = resourceGroup().location
 
+// A reused account keeps its own SKU and kind: changing either on redeploy would alter its
+// replication or irreversibly upgrade a 'Storage' account to 'StorageV2'.
+param skuName string = 'Standard_LRS'
+@allowed([
+  'StorageV2'
+  'Storage'
+])
+param kind string = 'StorageV2'
+
+// A reused account's current networkAcls (ARM shape), so a redeployment does not replace its
+// firewall rules with the defaults below. Empty for an account NimBus owns.
+param existingNetworkAcls object = {}
+
 // When the resolver is hosted on Flex Consumption, it needs a blob container
 // that holds its zipped app package. We provision it here so the Function App
 // can reference it via SystemAssignedIdentity at create time.
@@ -22,20 +35,30 @@ param contentShareName string = ''
 
 var isLocked = publicNetworkAccess == 'Disabled'
 
+// Locking keeps a reused account's IP and VNet rules (public access is off, so they have no
+// effect) and only forces the default action; otherwise a reused account keeps its rules as-is.
+var defaultNetworkAcls = {
+  defaultAction: 'Allow'
+  bypass: 'AzureServices'
+}
+var networkAcls = isLocked
+  ? union(existingNetworkAcls, {
+      defaultAction: 'Deny'
+      bypass: 'None'
+    })
+  : (empty(existingNetworkAcls) ? defaultNetworkAcls : existingNetworkAcls)
+
 resource storageaccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: name
   location: location
-  kind: 'StorageV2'
+  kind: kind
   sku: {
-    name: 'Standard_LRS'
+    name: skuName
   }
   properties: union({
     supportsHttpsTrafficOnly: true
     publicNetworkAccess: publicNetworkAccess
-    networkAcls: {
-      defaultAction: isLocked ? 'Deny' : 'Allow'
-      bypass: isLocked ? 'None' : 'AzureServices'
-    }
+    networkAcls: networkAcls
   }, isLocked ? {
     allowBlobPublicAccess: false
     minimumTlsVersion: 'TLS1_2'

@@ -138,6 +138,7 @@ internal sealed class McpTestHost : IAsyncDisposable
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMonitorApiController>.Create().Instance);
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMessageApiController>.Create().Instance);
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMetricsApiController>.Create().Instance);
+                    services.AddSingleton(InterfaceFake<NimBus.WebApp.Services.Insights.IFailedInsightsQuery>.Create().Instance);
 
                     // Mirrors the local-dev branch of Startup.AddAuthenticationStack.
                     var authentication = services.AddAuthentication();
@@ -221,17 +222,20 @@ internal sealed class McpTestHost : IAsyncDisposable
         string? roles = null,
         string issuer = "",
         string oid = "33333333-3333-3333-3333-333333333333",
-        string azp = AgentClientId)
+        string azp = AgentClientId,
+        string? name = "Agent Operator")
     {
         var claims = new Dictionary<string, object>
         {
             ["oid"] = oid,
             ["tid"] = TenantId,
             ["azp"] = azp,
-            ["name"] = "Agent Operator",
         };
+        // Entra app-only tokens carry no name claim; pass null to model one.
+        if (name is not null) claims["name"] = name;
         if (scopes is not null) claims["scp"] = scopes;
-        if (roles is not null) claims["roles"] = new[] { roles };
+        // Space-separated, like scp: a workload can hold several app roles.
+        if (roles is not null) claims["roles"] = roles.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
@@ -273,7 +277,7 @@ internal sealed class McpTestHost : IAsyncDisposable
 
     private sealed class BillingEndpoint : CoreEndpoint { }
 
-    private sealed class StubAuthorization(StubAccess access) : IEndpointAuthorizationService
+    private sealed class StubAuthorization(StubAccess access, IHttpContextAccessor http) : IEndpointAuthorizationService
     {
         public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null)
             => Task.FromResult(Grants(required, endpointId, access.Contributor));
@@ -302,7 +306,8 @@ internal sealed class McpTestHost : IAsyncDisposable
                     id => id, _ => access.Contributor ? AccessRole.Contributor : AccessRole.Reader, StringComparer.OrdinalIgnoreCase),
             });
 
-        public string? GetCurrentUserName() => "Agent Operator";
+        // The real name resolution, so a token without a name claim is named as in production.
+        public string? GetCurrentUserName() => PrincipalNames.Resolve(http.HttpContext?.User) ?? "Agent Operator";
     }
 
     /// <summary>What the stub authorization grants beyond Reader on <see cref="ReadableEndpoints"/>.</summary>

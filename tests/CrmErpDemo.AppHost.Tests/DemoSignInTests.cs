@@ -49,8 +49,8 @@ public sealed class DemoSignInTests
 
         Assert.AreEqual(HttpStatusCode.Redirect, response.StatusCode);
         var location = response.Headers.Location!.ToString();
-        StringAssert.StartsWith(location, "http://localhost/account/login?ReturnUrl=");
-        StringAssert.Contains(location, Uri.EscapeDataString("/accounts/42"));
+        StringAssert.StartsWith(location, "http://localhost/account/login?ReturnUrl=", StringComparison.Ordinal);
+        StringAssert.Contains(location, Uri.EscapeDataString("/accounts/42"), StringComparison.Ordinal);
     }
 
     [TestMethod]

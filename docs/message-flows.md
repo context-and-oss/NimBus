@@ -45,7 +45,7 @@ Each endpoint topic has these subscriptions:
 | `Retry` | OFF | self topic | `user.To = 'Retry'` | `SET user.To = '{endpointId}'; SET user.From = 'Retry'` | (forwarded back to main sub) |
 | `Deferred` | ON | — | `user.To = 'Deferred'` | — | **DeferredMessageProcessor** (reads via AcceptSession) |
 | `DeferredProcessor` | OFF | — | `user.To = 'DeferredProcessor'` | — | **DeferredProcessorFunction** |
-| `{eventTypeId}` | OFF | consuming endpoint topic | `user.EventTypeId = '{eventTypeId}'` | `SET user.From = '{endpointId}'; SET user.EventId = newid(); SET user.To = '{consumerId}'` | (forwarded to consumer) |
+| `{eventTypeId}` | OFF | consuming endpoint topic | `user.EventTypeId = '{eventTypeId}' AND user.MessageType = 'EventRequest' AND user.From IS NULL` | `SET user.From = '{endpointId}'; SET user.EventId = newid(); SET user.To = '{consumerId}'` | (forwarded to consumer) |
 
 ### Key Design Points
 
@@ -53,6 +53,7 @@ Each endpoint topic has these subscriptions:
 - **Forward subscriptions** (`Continuation`, `Retry`): catch messages, rewrite properties, forward back to the same topic — the rewritten `To` then matches the main subscription
 - **DeferredProcessor**: NOT session-enabled — it can trigger independently of the main function's session lock
 - **Resolver subscription has two rules**: catches both responses (`To = 'Resolver'`) and original EventRequests (`To = '{endpointId}'`) so the Resolver sees the full message history
+- **Forwarder rules match only original publishes**: `MessageType = 'EventRequest'` keeps the endpoint's own control traffic about an event (responses, RetryRequest, ProcessDeferredRequest, resubmissions) off the forwarder, and `From IS NULL` keeps forwarded, parked and Manager copies off it
 
 ---
 
@@ -405,7 +406,7 @@ sequenceDiagram
 
 The Resolver projects the `HandoffCompletedRequest` itself as a plain Pending row (the handoff sub-status is cleared) so that the agent zone's non-claiming receive loop stops handing the event out and a second settlement is rejected; the subscriber's `ResolutionResponse` then flips the row to Completed. See the 2026-09-15 note in [ADR-012](adr/012-pending-handoff.md) for why the history-only alternative was not adopted.
 
-The failure path is symmetrical: `IHandoffClient.FailAsync(coords, errorText, errorType)` (which the WebApp's `POST /api/event/handoff/fail/{endpointId}/{eventId}/{messageId}` also calls) issues a `HandoffFailedRequest`, the subscriber's `HandleHandoffFailedRequest` synthesises an `EventContextHandlerException` that wraps a `HandoffFailedException(errorText, errorType)`, sends an `ErrorResponse` to the Resolver (status flips Pending to Failed with `errorText` preserved verbatim), and leaves the session blocked. The operator chooses Resubmit or Skip from the WebApp — both follow today's existing flows.
+The failure path is symmetrical: `IHandoffClient.FailAsync(coords, errorText, errorType)` (which the WebApp's `POST /api/v1/event/handoff/fail/{endpointId}/{eventId}/{messageId}` also calls) issues a `HandoffFailedRequest`, the subscriber's `HandleHandoffFailedRequest` synthesises an `EventContextHandlerException` that wraps a `HandoffFailedException(errorText, errorType)`, sends an `ErrorResponse` to the Resolver (status flips Pending to Failed with `errorText` preserved verbatim), and leaves the session blocked. The operator chooses Resubmit or Skip from the WebApp — both follow today's existing flows.
 
 `MarkPendingHandoff` is idempotent — calling it twice from the same handler invocation overwrites the metadata (last call wins). If the handler calls it AND then throws, the failure path takes precedence: an `ErrorResponse` is sent and the PendingHandoff metadata is discarded.
 

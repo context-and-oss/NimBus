@@ -906,7 +906,7 @@ public class MessageContextTests
         Assert.IsNotNull(session.LastDeadLetterDescription);
         Assert.IsTrue(session.LastDeadLetterDescription.Length <= 4096,
             $"Description should be at most 4096 chars, was {session.LastDeadLetterDescription.Length}");
-        Assert.IsTrue(session.LastDeadLetterDescription.EndsWith("...[TRUNCATED]..."));
+        Assert.IsTrue(session.LastDeadLetterDescription.EndsWith("...[TRUNCATED]...", StringComparison.Ordinal));
     }
 
     [TestMethod]

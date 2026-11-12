@@ -152,10 +152,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
         catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.PreconditionFailed)
         {
-            _logger?.LogInformation(
-                "COSMOS COMPLETE-IF-PENDING refused for {EventId}/{SessionId}: the row changed after it was read",
-                eventId,
-                sessionId);
+            LogCosmosCompleteIfPendingRefused(_logger, eventId, sessionId);
             return false;
         }
     }
@@ -169,14 +166,12 @@ internal sealed partial class CosmosDbMessageTrackingStore
         try
         {
             var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id), SuppressContentOnWrite);
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, CompletedStatus);
+            LogCosmosUpsertResponseEventIdSessionIdHttpStatusCode(_logger, eventId, sessionId, response.StatusCode, CompletedStatus);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}", eventId, sessionId, CompletedStatus);
+            LogCosmosUpsertErrorEventIdSessionIdStatus(_logger, e, eventId, sessionId, CompletedStatus);
             throw;
         }
     }
@@ -213,14 +208,12 @@ internal sealed partial class CosmosDbMessageTrackingStore
                 PatchOperation.Set("/deleted", true),
                 PatchOperation.Set("/ttl", 60) // 1 Minute
             });
-            _logger?.LogTrace(
-                "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}", eventId, sessionId, response.StatusCode);
+            LogCosmosRemoveMessage(_logger, eventId, sessionId, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}", eventId, sessionId, e.StatusCode);
+            LogCosmosRemoveMessageEventIdSessionIdHttpStatusCode2(_logger, e, eventId, sessionId, e.StatusCode);
 
             if (e.StatusCode == HttpStatusCode.NotFound)
             {
@@ -244,8 +237,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
                 .WithParameter("@sessionId", sessionId);
             var result = container.GetItemQueryIterator<IdProjection>(queryDefinition);
 
-            _logger?.LogInformation(
-                "COSMOS PURGE: Deleted all messages on endpoint {EndpointId} in session {SessionId}", endpointId, sessionId);
+            LogCosmosPurgeDeletedAllMessages(_logger, endpointId, sessionId);
             // The container is partitioned by /id, so each document lives in its own
             // logical partition and a TransactionalBatch (single-partition only) can't
             // apply. The deletes are independent — run them concurrently (bounded)
@@ -264,8 +256,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
         catch (Exception e)
         {
-            _logger?.LogError(e,
-                "COSMOS PURGE: Couldn't delete all messages on endpoint {EndpointId} in session {SessionId}", endpointId, sessionId);
+            LogCosmosPurgeCouldNotDeleteSession(_logger, e, endpointId, sessionId);
             return false;
         }
     }
@@ -281,13 +272,13 @@ internal sealed partial class CosmosDbMessageTrackingStore
             // and recreates the now-deleted container instead of reusing a stale
             // handle that would only throw NotFound.
             _removeEndpointContainerCache(endpointId);
-            _logger?.LogInformation("COSMOS PURGE: Deleted all messages on endpoint {EndpointId}", endpointId);
+            LogCosmosPurgeDeletedAllMessagesOn2(_logger, endpointId);
 
             return true;
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "COSMOS PURGE: Couldn't delete all messages on endpoint {EndpointId}", endpointId);
+            LogCosmosPurgeCouldNotDeleteEndpoint(_logger, e, endpointId);
             return false;
         }
     }
@@ -306,7 +297,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger?.LogTrace("COSMOS ARCHIVE-FAILED: Event not found. EventId: {EventId}, SessionId: {SessionId}, EndpointId: {EndpointId}", eventId, sessionId, endpointId);
+            LogCosmosArchiveFailed(_logger, eventId, sessionId, endpointId);
         }
     }
 
@@ -387,16 +378,13 @@ internal sealed partial class CosmosDbMessageTrackingStore
                 // dropped — deliberate (Spec 030 §5.1), because an unreadable row is the one
                 // state where applying the write could silently undo a recorded outcome. The
                 // warning plus the Resolver's Comment audit are the operator's signal.
-                _logger?.LogWarning(
-                    "COSMOS UPSERT-REFUSED: row {Id} has unparseable status {Status}", eventDbo.Id, current.Resource?.Status);
+                LogCosmosUpsertRefused(_logger, eventDbo.Id, current.Resource?.Status);
                 return false;
             }
 
             if (!StaleWriteGuard.Allows(incomingStatus, content, row))
             {
-                _logger?.LogInformation(
-                    "COSMOS UPSERT-REFUSED: stale {MessageType} {MessageId}; row {Id} already {Status} written by {RowMessageType} {RowMessageId}",
-                    content.MessageType, content.LastMessageId, eventDbo.Id, current.Resource.Status, row.MessageType, row.LastMessageId);
+                LogCosmosUpsertRefusedStaleRowAlready(_logger, content.MessageType, content.LastMessageId, eventDbo.Id, current.Resource.Status, row.MessageType, row.LastMessageId);
                 return false;
             }
 
@@ -438,15 +426,52 @@ internal sealed partial class CosmosDbMessageTrackingStore
         try
         {
             var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id), SuppressContentOnWrite);
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, status);
+            LogCosmosUpsertResponseEventIdSessionIdHttpStatusCode(_logger, eventId, sessionId, response.StatusCode, status);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}, HttpStatusCode: {StatusCode}", eventId, sessionId, status, e.StatusCode);
+            LogCosmosUpsertErrorEventIdSessionIdStatus2(_logger, e, eventId, sessionId, status, e.StatusCode);
             throw;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS COMPLETE-IF-PENDING refused for {EventId}/{SessionId}: the row changed after it was read")]
+    private static partial void LogCosmosCompleteIfPendingRefused(ILogger logger, string eventId, string sessionId);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}")]
+    private static partial void LogCosmosUpsertResponseEventIdSessionIdHttpStatusCode(ILogger logger, string eventId, string sessionId, HttpStatusCode statusCode, string status);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}")]
+    private static partial void LogCosmosUpsertErrorEventIdSessionIdStatus(ILogger logger, Exception exception, string eventId, string sessionId, string status);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosRemoveMessage(ILogger logger, string eventId, string sessionId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosRemoveMessageEventIdSessionIdHttpStatusCode2(ILogger logger, Exception exception, string eventId, string sessionId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS PURGE: Deleted all messages on endpoint {EndpointId} in session {SessionId}")]
+    private static partial void LogCosmosPurgeDeletedAllMessages(ILogger logger, string endpointId, string sessionId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS PURGE: Couldn't delete all messages on endpoint {EndpointId} in session {SessionId}")]
+    private static partial void LogCosmosPurgeCouldNotDeleteSession(ILogger logger, Exception exception, string endpointId, string sessionId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS PURGE: Deleted all messages on endpoint {EndpointId}")]
+    private static partial void LogCosmosPurgeDeletedAllMessagesOn2(ILogger logger, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS PURGE: Couldn't delete all messages on endpoint {EndpointId}")]
+    private static partial void LogCosmosPurgeCouldNotDeleteEndpoint(ILogger logger, Exception exception, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS ARCHIVE-FAILED: Event not found. EventId: {EventId}, SessionId: {SessionId}, EndpointId: {EndpointId}")]
+    private static partial void LogCosmosArchiveFailed(ILogger logger, string eventId, string sessionId, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "COSMOS UPSERT-REFUSED: row {Id} has unparseable status {Status}")]
+    private static partial void LogCosmosUpsertRefused(ILogger logger, string id, string? status);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS UPSERT-REFUSED: stale {MessageType} {MessageId}; row {Id} already {Status} written by {RowMessageType} {RowMessageId}")]
+    private static partial void LogCosmosUpsertRefusedStaleRowAlready(ILogger logger, Core.Messages.MessageType messageType, string? messageId, string id, string status, Core.Messages.MessageType rowMessageType, string? rowMessageId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertErrorEventIdSessionIdStatus2(ILogger logger, Exception exception, string eventId, string sessionId, string status, HttpStatusCode statusCode);
 }

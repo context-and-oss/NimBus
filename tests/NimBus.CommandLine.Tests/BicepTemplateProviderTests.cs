@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System.Text.RegularExpressions;
 using NimBus.CommandLine;
 using Xunit;

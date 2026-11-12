@@ -71,7 +71,7 @@ public class DynamicEventRoutingTests
 
     /// <summary>
     /// Builds an EventRequest for a dynamically-typed event, mirroring exactly the fields a real
-    /// publish sets (<see cref="PublisherClient"/>): To/EventTypeId/Session/Correlation/MessageId/
+    /// publish sets (<see cref="NimBus.SDK.PublisherClient"/>): To/EventTypeId/Session/Correlation/MessageId/
     /// RetryCount + EventContent. From and EventId are injected by the SB rule action, which the
     /// in-memory transport simulates on delivery.
     /// </summary>

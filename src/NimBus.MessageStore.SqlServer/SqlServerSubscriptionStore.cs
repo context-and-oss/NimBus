@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -9,7 +10,7 @@ using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore.SqlServer;
 
-internal sealed class SqlServerSubscriptionStore : ISubscriptionStore
+internal sealed class SqlServerSubscriptionStore : ISubscriptionStore, ISubscriptionNotificationStore
 {
     private readonly SqlServerStoreContext _context;
 
@@ -71,6 +72,28 @@ WHERE Id = @Id";
             subscription.Id, subscription.Mail, subscription.Type, subscription.Url,
             EventTypesJson = JsonConvert.SerializeObject(subscription.EventTypes),
             subscription.Payload, subscription.Frequency
+        }, commandTimeout: _context.CommandTimeout);
+        return rows > 0;
+    }
+
+    public async Task<bool> TrySetNotifiedAtAsync(string subscriptionId, string? expectedNotifiedAt, string? notifiedAt, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // One statement, so the compare and the write are atomic. NULL and '' both mean
+        // "never notified": rows written by older code may carry either.
+        var sql = $@"
+UPDATE {T("EndpointSubscriptions")}
+SET NotifiedAt = @NotifiedAt
+WHERE Id = @Id
+  AND ((@Expected IS NULL AND (NotifiedAt IS NULL OR NotifiedAt = N''))
+       OR NotifiedAt = @Expected)";
+        await using var conn = await OpenAsync();
+        var rows = await conn.ExecuteAsync(sql, new
+        {
+            Id = subscriptionId,
+            Expected = string.IsNullOrEmpty(expectedNotifiedAt) ? null : expectedNotifiedAt,
+            NotifiedAt = notifiedAt,
         }, commandTimeout: _context.CommandTimeout);
         return rows > 0;
     }

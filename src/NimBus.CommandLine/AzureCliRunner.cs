@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 
 namespace NimBus.CommandLine;
@@ -36,6 +37,8 @@ internal interface IAzureCliRunner
 
 internal sealed class AzureCliRunner : IAzureCliRunner
 {
+    private static readonly string[] AccountShowArguments = ["account", "show"];
+
     private readonly IProcessRunner _processRunner;
 
     public AzureCliRunner()
@@ -51,7 +54,7 @@ internal sealed class AzureCliRunner : IAzureCliRunner
     public async Task EnsureLoggedInAsync(CancellationToken cancellationToken)
     {
         var result = await RunAzAsync(
-            new[] { "account", "show" },
+            AccountShowArguments,
             cancellationToken,
             throwOnFailure: false,
             echoStandardOutput: false).ConfigureAwait(false);
@@ -86,6 +89,7 @@ internal sealed class AzureCliRunner : IAzureCliRunner
     public Task<string> CaptureValueAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage) =>
         CaptureValueAsync(arguments, workingDirectory: null, cancellationToken, failureMessage);
 
+    [SuppressMessage("Design", "CA1068:CancellationToken parameters must come last", Justification = "Every IAzureCliRunner method takes the cancellation token before the failure message; this overload keeps that order.")]
     public async Task<string> CaptureValueAsync(IReadOnlyList<string> arguments, string? workingDirectory, CancellationToken cancellationToken, string failureMessage)
     {
         var result = await RunAzAsync(
@@ -172,5 +176,5 @@ internal sealed class AzureCliRunner : IAzureCliRunner
     }
 
     private static bool RequiresWindowsCommandQuoting(string argument) =>
-        argument.Any(static ch => char.IsWhiteSpace(ch) || "\"&|<>^()%!".Contains(ch));
+        argument.Any(static ch => char.IsWhiteSpace(ch) || "\"&|<>^()%!".Contains(ch, StringComparison.Ordinal));
 }

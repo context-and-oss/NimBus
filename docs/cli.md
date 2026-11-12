@@ -102,6 +102,8 @@ before they are released.
 | `--repo-root` | No | Developer override: use the bicep templates in a repository clone instead of the ones shipped in the CLI |
 | `--location` | No | Azure region for new resources. Default: the resource group's region |
 | `--webapp-version` | No | Version string for web app settings |
+| `--resource-name-postfix` | No | For compatibility with the legacy pipeline scripts. Appended as `-<value>` to the Service Bus namespace, Cosmos DB account, SQL server, Resolver function app and management WebApp names **only**. App Insights, the App Service plans and the function storage account are not postfixed. Letters and digits. Recorded on the resource group. See [Legacy resource names](#legacy-resource-names). |
+| `--func-storage-account-name` | No | Use this storage account for the Resolver instead of `st{solution-id}{environment}func`, e.g. the legacy `st{solution-id}{environment}msgstore{postfix}` account. An existing account keeps its SKU and kind. Recorded on the resource group. |
 | `--storage-provider` | No | Storage backend: `cosmos` (default) or `sqlserver` |
 | `--sql-mode` | No | When `--storage-provider sqlserver`: `provision` (default, creates a new Azure SQL server + DB) or `external` (use an existing SQL Server) |
 | `--sql-admin-login` | Conditional | Required when `--sql-mode provision` |
@@ -123,6 +125,58 @@ before they are released.
 | `--service-bus-capacity` | No | Premium messaging units: `1`, `2`, `4`, `8` or `16`. Defaults to the existing namespace's capacity, otherwise 1. |
 | `--service-bus-namespace-name` | No | Override the namespace name (default `sb-{solution-id}-{environment}`), e.g. a new Premium namespace next to the Standard one it replaces. Recorded, so `nb topology apply` follows it. |
 | `--dns-wait` | No | Minutes to wait for this machine to resolve the private endpoints before locking at the end of a transition (default 10; `0` checks once). |
+| `--alert-mail-smtp-host` | No | SMTP server the Resolver mails [endpoint alert](notifications.md#endpoint-alerts-alerts-tab) subscribers through, e.g. `smtp.azurecomm.net`. Alert mail is on only with both this and `--alert-mail-from`. |
+| `--alert-mail-from` | With `--alert-mail-smtp-host` | Sender address of endpoint alert mail. |
+| `--alert-mail-smtp-port` | No | SMTP port (1–65535). Default 587. |
+| `--alert-mail-smtp-use-ssl` | No | `true` (default) or `false`. |
+| `--alert-mail-smtp-username` | No | SMTP user name; the password is read from `NIMBUS_ALERT_MAIL_SMTP_PASSWORD`. |
+| `--alert-mail-webapp-url` | No | Public WebApp URL for the links in each mail. Default `https://webapp-{solution-id}-{environment}-management.azurewebsites.net` (with the resource-name postfix, if any). |
+
+#### Legacy resource names
+
+`--resource-name-postfix` and `--func-storage-account-name` let
+`nb` deploy onto resources the legacy pipeline scripts created. The postfix goes exactly where
+those scripts put it, so with `--resource-name-postfix avk`:
+
+| Resource | Name |
+|---|---|
+| Service Bus namespace | `sb-{solution-id}-{environment}-avk` |
+| Cosmos DB account | `cosmos-{solution-id}-{environment}-avk` |
+| SQL server | `sql-{solution-id}-{environment}-avk` |
+| Resolver function app | `func-{solution-id}-{environment}-resolver-avk` |
+| Management WebApp | `webapp-{solution-id}-{environment}-management-avk` |
+| App Insights | `ai-{solution-id}-{environment}-global-tracelog` (not postfixed) |
+| App Service plans | `asp-{solution-id}-{environment}-management` / `-core` (not postfixed) |
+| Function storage account | `st{solution-id}{environment}func`, or `--func-storage-account-name` (not postfixed) |
+
+`--service-bus-namespace-name` and `--sql-server-name` still win over the postfix. The run
+prints which names carry the postfix. Both values are recorded as resource group tags
+(`nimbus-resource-name-postfix`, `nimbus-func-storage-account`), and `nb topology apply`,
+`nb deploy apps` and later `nb infra apply` runs use them without the options. A value that
+differs from the recorded one fails before anything deploys: Azure cannot rename resources, so
+it would create a second set next to the first. To start a new set on purpose, remove the tag.
+The first run on a resource group with no recorded postfix checks the same thing against the
+resources already there: a postfix next to an un-postfixed deployment or one with a different
+postfix, or no postfix next to a postfixed one, fails and names the postfix to pass. The other
+commands stop when they cannot read the resource group's tags, rather than fall back to the
+un-postfixed names. Names that the postfix makes too long fail before anything deploys; a new
+Elastic Premium Resolver name is limited to 50 characters, because its content share adds 13.
+
+A reused storage account keeps its SKU, kind and firewall rules (a `Storage` account is not
+upgraded to `StorageV2`); `BlobStorage`, `FileStorage` and `BlockBlobStorage` accounts and
+Premium SKUs cannot host a function app and are refused. The account must be in the deployment
+resource group: when it cannot be read there, the run fails unless the name is still free, in
+which case the account is created. The deployment otherwise manages the account like its own: it
+sets HTTPS-only and the public-network-access setting of the network mode (private mode also sets
+the firewall to deny, keeping the existing rules; leaving private mode sets it back to allow with
+the Azure services bypass, still keeping the rules, so the Resolver can reach the account once
+the private endpoints are gone), and
+adds the `app-package-resolver` container (Flex Consumption) or the content share (private
+Elastic Premium). Existing blobs, queues and tables are left alone.
+
+**Endpoint alert mail.** The alert mail options are not recorded. The Resolver's app settings are
+replaced on every run, so a run without `--alert-mail-smtp-host` and `--alert-mail-from` turns
+alert mail off; pass the same options on every `nb infra apply` and `nb setup`.
 
 **Private networking.** Private mode deploys Service Bus Premium and creates every data
 service and both apps with public network access disabled. `nb` checks the subnets'
@@ -142,6 +196,7 @@ Deployment secrets are intentionally not accepted as command-line options becaus
 | `NIMBUS_SQL_CONNECTION_STRING` | `--storage-provider sqlserver --sql-mode external` |
 | `NIMBUS_SQL_ADMIN_PASSWORD` | `--storage-provider sqlserver --sql-mode provision` |
 | `NIMBUS_IDENTITY_ADMIN_PASSWORD` | `nb setup` is given `--identity-admin-email` |
+| `NIMBUS_ALERT_MAIL_SMTP_PASSWORD` | The SMTP server for `--alert-mail-smtp-host` needs a password |
 
 Canceling `nb` terminates its local Azure CLI process tree before removing the
 ephemeral parameter file. An ARM deployment that Azure already accepted may
@@ -190,6 +245,7 @@ nb topology apply --solution-id nimbus --environment dev --resource-group rg-nim
 | `-a`, `--assembly` | No | Local assembly exposing a public parameterless `IPlatform` — the same thing from a build output instead of a feed |
 | `--platform` | No | `IPlatform` type name when the assembly or package exposes more than one |
 | `--service-bus-namespace-name` | No | Namespace name override. Defaults to the name `nb infra apply` recorded on the resource group, otherwise `sb-{solution-id}-{environment}`. |
+| `--resource-name-postfix` | No | The postfix passed to `nb infra apply`. Defaults to the one recorded on the resource group. |
 | `--dns-wait` | No | Private deployments: minutes to wait for this machine to resolve the Service Bus private endpoint (default 10; `0` checks once). |
 
 On a private deployment the command first checks that this machine resolves the Service Bus
@@ -247,6 +303,7 @@ nb deploy apps --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--platform` | No | `IPlatform` type name when the package exposes more than one |
 | `--from-source` | No | Build the applications from a repository clone instead of deploying the released artifacts |
 | `--repo-root` | No | Repository root for a source build. Implies `--from-source`. |
+| `--resource-name-postfix` | No | The postfix passed to `nb infra apply`. Defaults to the one recorded on the resource group. |
 | `--configuration` | No | Build configuration (default: `Release`). Source builds only. |
 | `--only` | No | Deploy a single application: `resolver` \| `webapp`. Defaults to both. |
 | `--dns-wait` | No | Private deployments: minutes to wait for this machine to resolve the apps' private endpoints before deploying (default 10; `0` checks once). The deployment goes through each app's Kudu/scm site, which private mode exposes only through its private endpoint. |
@@ -295,7 +352,7 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, `--resolver-max-sessions`, `--resolver-max-instances`, `--management-plan-sku`, the private networking options, `--assembly`, and `--from-source`. On a private deployment the topology and app steps each check first that this machine resolves the private endpoints, so the check runs after the infrastructure step has created them. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resource-name-postfix`, `--func-storage-account-name`, `--resolver-plan`, `--resolver-max-sessions`, `--resolver-max-instances`, `--management-plan-sku`, the private networking options, the `--alert-mail-*` options, `--assembly`, and `--from-source`. On a private deployment the topology and app steps each check first that this machine resolves the private endpoints, so the check runs after the infrastructure step has created them. SQL, bootstrap-admin and SMTP secrets use the environment variables documented under `nb infra apply`.
 
 Like the individual commands, this needs no repository clone. Deploying your own event
 catalog means passing `--platform-package`: the topology step provisions your endpoints and
@@ -524,7 +581,7 @@ nb catalog asyncapi --format json -o ./asyncapi.json
 Generates an AsyncAPI 3.0 specification with:
 - **Servers** — Azure Service Bus namespace (AMQP 1.0), with an `x-nimbus-topology` extension describing the topic-per-endpoint pattern, SQL-rule routing, and auto-forwarding.
 - **Channels** — one per endpoint **topic** (both producers and consumers, since a consumer's own topic carries the auto-forwarded copy), with `x-servicebus` topic bindings.
-- **Operations** — a `send` per producer and a `receive` per consumer. Each `receive` carries an `x-servicebus-delivery` extension documenting the **physical delivery path**: the consumer's own session subscription (`user.To = '<endpoint>'`) plus the forward subscription(s) on each producer topic (filter `user.EventTypeId = 'X' AND user.From IS NULL`, the rewrite action, and `forwardTo`).
+- **Operations** — a `send` per producer and a `receive` per consumer. Each `receive` carries an `x-servicebus-delivery` extension documenting the **physical delivery path**: the consumer's own session subscription (`user.To = '<endpoint>'`) plus the forward subscription(s) on each producer topic (filter `user.EventTypeId = 'X' AND user.MessageType = 'EventRequest' AND user.From IS NULL`, the rewrite action, and `forwardTo`). The `MessageType` guard keeps the producer's own control traffic off the forwarder and `From IS NULL` keeps forwarded copies off it; see [Upgrading forwarder rules](asyncapi-mapping.md#upgrading-forwarder-rules).
 - **Messages** — event types with a shared `NimBusMessageHeaders` header schema (the `user.*` application properties), `x-servicebus` message settings (session requirement, dead-letter, `MessageId`/`CorrelationId` conventions), an example payload, and `[Description]`/`[AsyncApiMessage]` enrichment.
 - **Schemas** — JSON Schema from C# types (formats, required from `[Required]`/non-nullable, `[Range]`, enums, collections, and nested objects). Dynamically-typed events (spec 022 `DynamicForward`) appear as messages flagged `x-nimbus-dynamic`.
 

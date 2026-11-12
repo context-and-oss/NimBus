@@ -117,7 +117,7 @@ public class NotificationRegistrationTests
         var sp = services.BuildServiceProvider();
 
         var channel = sp.GetServices<INotificationChannel>().Single();
-        Assert.IsInstanceOfType(channel, typeof(ConsoleNotificationChannel));
+        Assert.IsInstanceOfType<ConsoleNotificationChannel>(channel);
         Assert.IsNull(sp.GetService<INotificationRouter>(), "Legacy path does not register a router.");
     }
 
@@ -134,9 +134,8 @@ public class NotificationRegistrationTests
         var sp = services.BuildServiceProvider();
 
         var registration = sp.GetServices<ChannelRegistration>().Single();
-        Assert.IsInstanceOfType(registration.Channel, typeof(ConsoleNotificationChannel),
-            "A fluent registration with no channels must fall back to the console channel, not drop notifications.");
-        Assert.IsInstanceOfType(sp.GetServices<INotificationChannel>().Single(), typeof(ConsoleNotificationChannel));
+        Assert.IsInstanceOfType<ConsoleNotificationChannel>(registration.Channel, "A fluent registration with no channels must fall back to the console channel, not drop notifications.");
+        Assert.IsInstanceOfType<ConsoleNotificationChannel>(sp.GetServices<INotificationChannel>().Single());
         Assert.IsNotNull(sp.GetService<INotificationRouter>());
     }
 
@@ -148,7 +147,7 @@ public class NotificationRegistrationTests
 
         var sp = services.BuildServiceProvider();
 
-        Assert.IsInstanceOfType(sp.GetServices<ChannelRegistration>().Single().Channel, typeof(ConsoleNotificationChannel));
+        Assert.IsInstanceOfType<ConsoleNotificationChannel>(sp.GetServices<ChannelRegistration>().Single().Channel);
     }
 
     [TestMethod]
@@ -161,7 +160,7 @@ public class NotificationRegistrationTests
 
         var sp = services.BuildServiceProvider();
 
-        Assert.IsInstanceOfType(sp.GetServices<INotificationChannel>().Single(), typeof(FakeNotificationChannel));
+        Assert.IsInstanceOfType<FakeNotificationChannel>(sp.GetServices<INotificationChannel>().Single());
         Assert.IsTrue(sp.GetRequiredService<NotificationOptions>().NotifyOnReceived);
         Assert.IsTrue(sp.GetRequiredService<NotificationOptions>().NotifyOnCircuitOpen);
     }

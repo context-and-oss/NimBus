@@ -17,6 +17,8 @@ import {
   DeleteAllEventsCard,
 } from "./advanced-operations";
 import { SessionPurgeCard } from "./session-management";
+import { SessionStateCard } from "./session-state";
+import { SessionCleanupCard } from "./session-cleanup";
 import { StalePendingReconcileCard } from "./stale-pending-reconcile";
 import { EndpointControlsCard, type EndpointChannelStatus } from "./endpoint-controls";
 import OperationsStatus from "./operations-status";
@@ -37,6 +39,8 @@ const CARDS: Record<string, (props: CardProps) => ReactNode> = {
   resubmit: (p) => <BulkResubmitCard {...p} />,
   skip: (p) => <SkipMessagesCard {...p} />,
   session: (p) => <SessionPurgeCard {...p} />,
+  "session-state": (p) => <SessionStateCard {...p} />,
+  "session-cleanup": (p) => <SessionCleanupCard {...p} />,
   stale: (p) => <StalePendingReconcileCard {...p} />,
   dlq: (p) => <DeleteDeadLetteredCard {...p} />,
   status: (p) => <DeleteByStatusCard {...p} />,

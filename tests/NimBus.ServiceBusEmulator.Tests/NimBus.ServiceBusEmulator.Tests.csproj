@@ -8,16 +8,19 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.2" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
-    <PackageReference Include="MSTest.TestAdapter" Version="4.3.3" />
-    <PackageReference Include="MSTest.TestFramework" Version="4.3.3" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.5.2" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.5.2" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../src/NimBus.ServiceBusEmulator/NimBus.ServiceBusEmulator.csproj" />
     <ProjectReference Include="../../src/NimBus.ServiceBusEmulator.AspireHosting/NimBus.ServiceBusEmulator.AspireHosting.csproj" />
     <ProjectReference Include="../../src/NimBus.ServiceBus/NimBus.ServiceBus.csproj" />
+    <!-- Test-only: the forwarder-rule tests build their messages with the real senders. -->
+    <ProjectReference Include="../../src/NimBus.SDK/NimBus.SDK.csproj" />
+    <ProjectReference Include="../../src/NimBus.Testing/NimBus.Testing.csproj" />
   </ItemGroup>
 
 </Project>

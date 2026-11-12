@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -51,6 +52,7 @@ public interface ISimulatedEndpointHostFactory
 /// <see cref="DeferredMessageProcessorHostedService"/>, so resubmits and skips replay deferred
 /// messages. Nothing here is registered as a host service: the simulation starts and stops it.
 /// </summary>
+[SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "Lifetime ends at StopAsync, which cancels the token source. A stop that times out abandons loops that still observe the token, so it is deliberately never disposed.")]
 public sealed class SimulatedEndpointHost : ISimulatedEndpointHost
 {
     /// <summary>Trigger subscription of the deferred processor, as provisioned.</summary>

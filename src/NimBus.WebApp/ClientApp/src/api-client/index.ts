@@ -47,7 +47,6 @@ export class ApiClientBase {
     if (!options.headers) {
       options.headers = {};
     }
-    options.headers = { ...options.headers, "api-version": "2" };
     const csrfToken = SAFE_METHODS.has((options.method ?? "GET").toUpperCase())
       ? undefined
       : readCsrfToken();
@@ -89,7 +88,7 @@ export class Client extends ApiClientBase {
      * @return Successfully returned endpoint statuses
      */
     getEndpointStatusCountAll(): Promise<EndpointStatusCount[]> {
-        let url_ = this.baseUrl + "/api/endpoint/status/count";
+        let url_ = this.baseUrl + "/api/v1/endpoint/status/count";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -137,7 +136,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postApiEndpointStatusCount(body?: string[] | undefined): Promise<EndpointStatusCount[]> {
-        let url_ = this.baseUrl + "/api/endpoint/status/count";
+        let url_ = this.baseUrl + "/api/v1/endpoint/status/count";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -189,7 +188,7 @@ export class Client extends ApiClientBase {
      * @return Dictionary of all the Unresolved Events for the endpoint, or an empty object if no Unresolved Events.
      */
     getEndpointStatusId(endpointName: string): Promise<Event[]> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointName}/status/";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointName}/status/";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -230,8 +229,7 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result404: any = null;
             let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-                result404 = resultData404 !== undefined ? resultData404 : null as any;
-    
+            result404 = ProblemDetails.fromJS(resultData404);
             return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
@@ -247,7 +245,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventIds(eventId: string, messageId: string): Promise<Message> {
-        let url_ = this.baseUrl + "/api/event/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/{eventId}/{messageId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -293,7 +291,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getUnresolvedFailedEventId(endpointId: string, eventId: string, sessionId: string): Promise<Event> {
-        let url_ = this.baseUrl + "/api/event/unresolved/{endpointId}/{eventId}/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/event/unresolved/{endpointId}/{eventId}/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -342,7 +340,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventTypes(): Promise<EventType[]> {
-        let url_ = this.baseUrl + "/api/event-types";
+        let url_ = this.baseUrl + "/api/v1/event-types";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -389,7 +387,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventtypesEventtypeid(eventtypeid: string): Promise<EventTypeDetails> {
-        let url_ = this.baseUrl + "/api/event-types/{eventtypeid}";
+        let url_ = this.baseUrl + "/api/v1/event-types/{eventtypeid}";
         if (eventtypeid === undefined || eventtypeid === null)
             throw new globalThis.Error("The parameter 'eventtypeid' must be defined.");
         url_ = url_.replace("{eventtypeid}", encodeURIComponent("" + eventtypeid));
@@ -432,7 +430,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventtypesEventtypeidFake(eventtypeid: string): Promise<FakeEventPayload> {
-        let url_ = this.baseUrl + "/api/event-types/{eventtypeid}/fake";
+        let url_ = this.baseUrl + "/api/v1/event-types/{eventtypeid}/fake";
         if (eventtypeid === undefined || eventtypeid === null)
             throw new globalThis.Error("The parameter 'eventtypeid' must be defined.");
         url_ = url_.replace("{eventtypeid}", encodeURIComponent("" + eventtypeid));
@@ -464,7 +462,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event type not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event type not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -478,7 +479,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postResubmitEventIds(eventId: string, messageId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/resubmit/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/resubmit/{eventId}/{messageId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -509,15 +510,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers, result409);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -531,7 +541,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postSkipEventIds(eventId: string, messageId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/skip/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/skip/{eventId}/{messageId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -562,15 +572,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers, result409);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -586,7 +605,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postHandoffComplete(endpointId: string, eventId: string, messageId: string, body?: CompleteHandoffRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/handoff/complete/{endpointId}/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/handoff/complete/{endpointId}/{eventId}/{messageId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -624,11 +643,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Event is not a pending handoff", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Event is not a pending handoff", status, _responseText, _headers, result400);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or event not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -644,7 +669,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postHandoffFail(endpointId: string, eventId: string, messageId: string, body?: FailHandoffRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/handoff/fail/{endpointId}/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/handoff/fail/{endpointId}/{eventId}/{messageId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -682,11 +707,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Event is not a pending handoff, or reason is missing", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Event is not a pending handoff, or reason is missing", status, _responseText, _headers, result400);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or event not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -701,7 +732,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getApiEndpointstatusStatusEndpointName(endpointName: string): Promise<EndpointStatus> {
-        let url_ = this.baseUrl + "/api/endpoint/status/{endpointName}";
+        let url_ = this.baseUrl + "/api/v1/endpoint/status/{endpointName}";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -744,7 +775,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventDetailsId(id: string, endpoint: string): Promise<EventDetails> {
-        let url_ = this.baseUrl + "/api/event/details/{endpoint}/{id}";
+        let url_ = this.baseUrl + "/api/v1/event/details/{endpoint}/{id}";
         if (id === undefined || id === null)
             throw new globalThis.Error("The parameter 'id' must be defined.");
         url_ = url_.replace("{id}", encodeURIComponent("" + id));
@@ -790,7 +821,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventId(id: string, endpoint: string): Promise<Event> {
-        let url_ = this.baseUrl + "/api/event/data/{endpoint}/{id}";
+        let url_ = this.baseUrl + "/api/v1/event/data/{endpoint}/{id}";
         if (id === undefined || id === null)
             throw new globalThis.Error("The parameter 'id' must be defined.");
         url_ = url_.replace("{id}", encodeURIComponent("" + id));
@@ -825,7 +856,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or event not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -840,7 +874,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventtypesByEndpointId(endpointId: string): Promise<Anonymous> {
-        let url_ = this.baseUrl + "/api/event-types/endpoint/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/event-types/endpoint/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -883,7 +917,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postResubmitWithChangesEventIds(eventId: string, messageId: string, body?: ResubmitWithChanges | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/change/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/change/{eventId}/{messageId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -918,15 +952,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers, result409);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -941,7 +984,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getApiAppStats(): Promise<ApplicationStatus> {
-        let url_ = this.baseUrl + "/api/app/stats";
+        let url_ = this.baseUrl + "/api/v1/app/stats";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -981,7 +1024,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointsAll(): Promise<string[]> {
-        let url_ = this.baseUrl + "/api/endpoint/endpoints";
+        let url_ = this.baseUrl + "/api/v1/endpoint/endpoints";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -1028,7 +1071,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointStatusCountId(endpointName: string): Promise<EndpointStatusCount> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointName}/status/count";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointName}/status/count";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -1072,7 +1115,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointStatusIdToken(endpointName: string, body?: ContinuationToken | undefined): Promise<EndpointStatus> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointName}/status/continuationToken";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointName}/status/continuationToken";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -1119,7 +1162,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventDetailsLogsId(id: string, endpointId: string): Promise<EventLogEntry[]> {
-        let url_ = this.baseUrl + "/api/event/details/{endpointId}/{id}/logs";
+        let url_ = this.baseUrl + "/api/v1/event/details/{endpointId}/{id}/logs";
         if (id === undefined || id === null)
             throw new globalThis.Error("The parameter 'id' must be defined.");
         url_ = url_.replace("{id}", encodeURIComponent("" + id));
@@ -1172,7 +1215,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventDetailsHistoryId(id: string, endpointId: string): Promise<Message[]> {
-        let url_ = this.baseUrl + "/api/event/details/{endpointId}/{id}/history";
+        let url_ = this.baseUrl + "/api/v1/event/details/{endpointId}/{id}/history";
         if (id === undefined || id === null)
             throw new globalThis.Error("The parameter 'id' must be defined.");
         url_ = url_.replace("{id}", encodeURIComponent("" + id));
@@ -1225,7 +1268,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointSessionId(endpointId: string, sessionId: string): Promise<SessionStatus> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/session/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/session/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1272,7 +1315,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointSessionsBatch(endpointId: string, body?: string[] | undefined): Promise<SessionStatus[]> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/sessions/batch";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/sessions/batch";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1315,7 +1358,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1329,7 +1375,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     storagehookReceive(endpointId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/storagehook/cosmos/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/storagehook/cosmos/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1368,7 +1414,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postStoragehookHeartbeat(endpointId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/storagehook/heartbeat/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/storagehook/heartbeat/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1396,11 +1442,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Unknown endpoint", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Unknown endpoint", status, _responseText, _headers, result400);
             });
         } else if (status === 401) {
             return response.text().then((_responseText) => {
-            return throwException("Missing or invalid webhook key", status, _responseText, _headers);
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("Missing or invalid webhook key", status, _responseText, _headers, result401);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1415,7 +1467,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postStoragehookServicehealth(serviceId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/storagehook/servicehealth/{serviceId}";
+        let url_ = this.baseUrl + "/api/v1/storagehook/servicehealth/{serviceId}";
         if (serviceId === undefined || serviceId === null)
             throw new globalThis.Error("The parameter 'serviceId' must be defined.");
         url_ = url_.replace("{serviceId}", encodeURIComponent("" + serviceId));
@@ -1443,11 +1495,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Unknown service", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Unknown service", status, _responseText, _headers, result400);
             });
         } else if (status === 401) {
             return response.text().then((_responseText) => {
-            return throwException("Missing or invalid webhook key", status, _responseText, _headers);
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("Missing or invalid webhook key", status, _responseText, _headers, result401);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1462,7 +1520,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMessageAuditsEventId(eventId: string): Promise<MessageAudit[]> {
-        let url_ = this.baseUrl + "/api/event/audit/{eventId}";
+        let url_ = this.baseUrl + "/api/v1/event/audit/{eventId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -1501,7 +1559,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1516,7 +1577,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postMessageAudit(eventId: string, body?: MessageAudit | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/audit/{eventId}";
+        let url_ = this.baseUrl + "/api/v1/event/audit/{eventId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -1559,7 +1620,7 @@ export class Client extends ApiClientBase {
      * @return Point-in-time broker inspection and stored processing evidence
      */
     getDeferredInspection(endpointId: string, eventId: string): Promise<DeferredInspection> {
-        let url_ = this.baseUrl + "/api/event/deferred/{endpointId}/{eventId}";
+        let url_ = this.baseUrl + "/api/v1/event/deferred/{endpointId}/{eventId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1594,11 +1655,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Reader permission required", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Reader permission required", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or event not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1613,7 +1680,7 @@ export class Client extends ApiClientBase {
      * @return Tracking row skipped; audit persistence is reported separately
      */
     postSkipDeferredTracking(endpointId: string, eventId: string, body: DeferredSkipRequest): Promise<DeferredSkipResult> {
-        let url_ = this.baseUrl + "/api/event/deferred/{endpointId}/{eventId}/skip-tracking";
+        let url_ = this.baseUrl + "/api/v1/event/deferred/{endpointId}/{eventId}/skip-tracking";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1652,23 +1719,38 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Reason and inspected row version required", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Reason and inspected row version required", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Contributor permission required", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Contributor permission required", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or event not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("Row changed or broker inspection does not permit skipping", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Row changed or broker inspection does not permit skipping", status, _responseText, _headers, result409);
             });
         } else if (status === 501) {
             return response.text().then((_responseText) => {
-            return throwException("Storage provider does not support conditional recovery", status, _responseText, _headers);
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("Storage provider does not support conditional recovery", status, _responseText, _headers, result501);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1683,7 +1765,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postReprocessDeferred(endpointId: string, sessionId: string): Promise<DeferredReprocessResult> {
-        let url_ = this.baseUrl + "/api/event/reprocess-deferred/{endpointId}/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/event/reprocess-deferred/{endpointId}/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1718,7 +1800,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1733,7 +1818,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMe(): Promise<UserInfo> {
-        let url_ = this.baseUrl + "/api/me";
+        let url_ = this.baseUrl + "/api/v1/me";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -1773,8 +1858,8 @@ export class Client extends ApiClientBase {
      * @param body (optional) 
      * @return OK
      */
-    postComposeNewEvent(body?: ResubmitWithChanges | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/compose-new";
+    postComposeNewEvent(body?: ResubmitWithChanges | undefined): Promise<ComposeNewEventResult> {
+        let url_ = this.baseUrl + "/api/v1/event/compose-new";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -1784,6 +1869,7 @@ export class Client extends ApiClientBase {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                "Accept": "application/json"
             }
         };
 
@@ -1794,23 +1880,29 @@ export class Client extends ApiClientBase {
         });
     }
 
-    protected processPostComposeNewEvent(response: Response): Promise<void> {
+    protected processPostComposeNewEvent(response: Response): Promise<ComposeNewEventResult> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = ComposeNewEventResult.fromJS(resultData200);
+            return result200;
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<ComposeNewEventResult>(null as any);
     }
 
     /**
@@ -1820,7 +1912,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventBlockedId(endpointId: string, sessionId: string, skip?: number | undefined, take?: number | undefined): Promise<BlockedEventsPage> {
-        let url_ = this.baseUrl + "/api/event/blocked/{endpointId}/{sessionId}?";
+        let url_ = this.baseUrl + "/api/v1/event/blocked/{endpointId}/{sessionId}?";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1863,7 +1955,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1878,7 +1973,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventPendingId(endpointId: string): Promise<Event[]> {
-        let url_ = this.baseUrl + "/api/event/pending/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/event/pending/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1917,7 +2012,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1932,7 +2030,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointSubscribe(endpointId: string, body?: EndpointSubscription | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/subscribe";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscribe";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1964,7 +2062,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1978,7 +2079,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointSubscribe(endpointId: string): Promise<EndpointSubscription[]> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/subscribe";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscribe";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2017,7 +2118,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2032,7 +2136,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteEndpointSubscribe(endpointId: string, body?: SubscriptionAuthor | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/subscribe";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscribe";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2064,7 +2168,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2078,7 +2185,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointPurge(endpointName: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointName}/purge";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointName}/purge";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -2106,7 +2213,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2121,7 +2231,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointSubscriptionstatus(endpointId: string, body?: string | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/subscriptionstatus";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscriptionstatus";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2153,7 +2263,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2167,7 +2280,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointSubscriptionstatus(endpointId: string): Promise<string> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/subscriptionstatus";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscriptionstatus";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2200,7 +2313,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2215,7 +2331,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointSendstatus(endpointId: string, body?: string | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/sendstatus";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/sendstatus";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2247,7 +2363,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2261,7 +2380,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointSendstatus(endpointId: string): Promise<string> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/sendstatus";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/sendstatus";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2294,7 +2413,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2308,7 +2430,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteEventInvalidId(endpointId: string, eventId: string, sessionId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/invalid/{endpointId}/{eventId}/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/event/invalid/{endpointId}/{eventId}/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2342,11 +2464,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("The endpoint or the event was not found.", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("The endpoint or the event was not found.", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("The event blocks its session (it failed, or is a pending hand-off), so deleting it would leave the session blocked. Skip or resubmit it first. Nothing was deleted.", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The event blocks its session (it failed, or is a pending hand-off), so deleting it would leave the session blocked. Skip or resubmit it first. Nothing was deleted.", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2361,7 +2489,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointRoleAssignmentScript(endpointId: string): Promise<string> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/roleAssignmentScript";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/roleAssignmentScript";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2394,7 +2522,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2409,7 +2540,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventUnsupportedEndpointIdEventId(endpointId: string, eventId: string, sessionId: string): Promise<Event> {
-        let url_ = this.baseUrl + "/api/event/unsupported/{endpointId}/{eventId}/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/event/unsupported/{endpointId}/{eventId}/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2458,7 +2589,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventDeadletterEndpointIdEventId(endpointId: string, eventId: string, sessionId: string): Promise<Event> {
-        let url_ = this.baseUrl + "/api/event/deadletter/{endpointId}/{eventId}/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/event/deadletter/{endpointId}/{eventId}/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2507,7 +2638,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postApiEventEndpointIdGetByFilter(endpointId: string, body?: SearchRequest | undefined): Promise<SearchResponse> {
-        let url_ = this.baseUrl + "/api/event/{endpointId}/getByFilter";
+        let url_ = this.baseUrl + "/api/v1/event/{endpointId}/getByFilter";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2555,7 +2686,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postReportEvent(endpointId: string, eventId: string, body?: ReportEventRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/{endpointId}/{eventId}/report";
+        let url_ = this.baseUrl + "/api/v1/event/{endpointId}/{eventId}/report";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2590,15 +2721,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2613,7 +2753,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMetadataEndpoint(endpointId: string): Promise<Metadata> {
-        let url_ = this.baseUrl + "/api/metadata/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/metadata/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2645,7 +2785,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2661,7 +2804,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postMetadataEndpoint(endpointId: string, body?: Metadata | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/metadata/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/metadata/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2705,7 +2848,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postApiMetadatashort(body?: string[] | undefined): Promise<MetadataShort[]> {
-        let url_ = this.baseUrl + "/api/metadatashort";
+        let url_ = this.baseUrl + "/api/v1/metadatashort";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -2745,7 +2888,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2760,7 +2906,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminPlatformConfig(): Promise<PlatformConfig> {
-        let url_ = this.baseUrl + "/api/admin/platform-config";
+        let url_ = this.baseUrl + "/api/v1/admin/platform-config";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -2789,7 +2935,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2805,7 +2954,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminAsyncapi(format?: string | undefined): Promise<FileResponse> {
-        let url_ = this.baseUrl + "/api/admin/asyncapi?";
+        let url_ = this.baseUrl + "/api/v1/admin/asyncapi?";
         if (format === null)
             throw new globalThis.Error("The parameter 'format' cannot be null.");
         else if (format !== undefined)
@@ -2842,11 +2991,17 @@ export class Client extends ApiClientBase {
             return response.blob().then(blob => { return { fileName: fileName, data: blob, status: status, headers: _headers }; });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid format", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid format", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2861,7 +3016,7 @@ export class Client extends ApiClientBase {
      * @return Cosmos DB containers
      */
     getAdminCosmosContainers(): Promise<CosmosContainerInfo[]> {
-        let url_ = this.baseUrl + "/api/admin/storage/cosmos/containers";
+        let url_ = this.baseUrl + "/api/v1/admin/storage/cosmos/containers";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -2897,15 +3052,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Cosmos DB storage is not configured", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Cosmos DB storage is not configured", status, _responseText, _headers, result404);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("Cosmos DB operation unavailable", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("Cosmos DB operation unavailable", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2920,7 +3084,7 @@ export class Client extends ApiClientBase {
      * @return Container deleted
      */
     postAdminCosmosContainerDelete(body: CosmosContainerDeleteRequest, containerName: string): Promise<CosmosContainerDeleteResult> {
-        let url_ = this.baseUrl + "/api/admin/storage/cosmos/containers/{containerName}/delete";
+        let url_ = this.baseUrl + "/api/v1/admin/storage/cosmos/containers/{containerName}/delete";
         if (containerName === undefined || containerName === null)
             throw new globalThis.Error("The parameter 'containerName' must be defined.");
         url_ = url_.replace("{containerName}", encodeURIComponent("" + containerName));
@@ -2956,19 +3120,31 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid confirmation or protected container", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid confirmation or protected container", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Container or Cosmos DB provider not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Container or Cosmos DB provider not found", status, _responseText, _headers, result404);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("Cosmos DB operation unavailable", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("Cosmos DB operation unavailable", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2983,7 +3159,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminHeartbeatSettings(): Promise<HeartbeatSettings> {
-        let url_ = this.baseUrl + "/api/admin/heartbeat/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/heartbeat/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3012,7 +3188,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3028,7 +3207,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminHeartbeatSettings(body?: HeartbeatSettings | undefined): Promise<HeartbeatSettings> {
-        let url_ = this.baseUrl + "/api/admin/heartbeat/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/heartbeat/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -3061,11 +3240,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3080,7 +3265,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminAuditSettings(): Promise<AuditSettings> {
-        let url_ = this.baseUrl + "/api/admin/audit/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/audit/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3109,7 +3294,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3125,7 +3313,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminAuditSettings(body?: AuditSettings | undefined): Promise<AuditSettings> {
-        let url_ = this.baseUrl + "/api/admin/audit/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/audit/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -3158,11 +3346,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3177,7 +3371,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminMcpSettings(): Promise<McpAccessState> {
-        let url_ = this.baseUrl + "/api/admin/mcp/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/mcp/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3206,7 +3400,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3222,7 +3419,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminMcpSettings(body?: McpAccessUpdate | undefined): Promise<McpAccessState> {
-        let url_ = this.baseUrl + "/api/admin/mcp/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/mcp/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -3262,7 +3459,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
@@ -3284,7 +3484,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminMcpTurnOff(): Promise<McpAccessState> {
-        let url_ = this.baseUrl + "/api/admin/mcp/turn-off";
+        let url_ = this.baseUrl + "/api/v1/admin/mcp/turn-off";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3320,7 +3520,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
@@ -3343,7 +3546,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminMcpActivity(hours?: number | undefined): Promise<McpActivity> {
-        let url_ = this.baseUrl + "/api/admin/mcp/activity?";
+        let url_ = this.baseUrl + "/api/v1/admin/mcp/activity?";
         if (hours === null)
             throw new globalThis.Error("The parameter 'hours' cannot be null.");
         else if (hours !== undefined)
@@ -3376,7 +3579,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3391,7 +3597,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminAgentKeys(): Promise<AgentApiKeyState> {
-        let url_ = this.baseUrl + "/api/admin/agent-keys";
+        let url_ = this.baseUrl + "/api/v1/admin/agent-keys";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3420,7 +3626,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3436,7 +3645,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminAgentKeys(body?: AgentApiKeyCreate | undefined): Promise<AgentApiKeyIssued> {
-        let url_ = this.baseUrl + "/api/admin/agent-keys";
+        let url_ = this.baseUrl + "/api/v1/admin/agent-keys";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -3471,18 +3680,21 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result400: any = null;
             let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result400 = AgentApiKeyProblem.fromJS(resultData400);
+            result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = AgentApiKeyProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -3498,7 +3710,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminAgentKeyRevoke(keyId: string): Promise<AgentApiKeyState> {
-        let url_ = this.baseUrl + "/api/admin/agent-keys/{keyId}/revoke";
+        let url_ = this.baseUrl + "/api/v1/admin/agent-keys/{keyId}/revoke";
         if (keyId === undefined || keyId === null)
             throw new globalThis.Error("The parameter 'keyId' must be defined.");
         url_ = url_.replace("{keyId}", encodeURIComponent("" + keyId));
@@ -3530,20 +3742,23 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             let result404: any = null;
             let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result404 = AgentApiKeyProblem.fromJS(resultData404);
+            result404 = ProblemDetails.fromJS(resultData404);
             return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = AgentApiKeyProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -3559,7 +3774,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteAdminAgentKey(keyId: string): Promise<AgentApiKeyState> {
-        let url_ = this.baseUrl + "/api/admin/agent-keys/{keyId}";
+        let url_ = this.baseUrl + "/api/v1/admin/agent-keys/{keyId}";
         if (keyId === undefined || keyId === null)
             throw new globalThis.Error("The parameter 'keyId' must be defined.");
         url_ = url_.replace("{keyId}", encodeURIComponent("" + keyId));
@@ -3593,25 +3808,28 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result400: any = null;
             let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result400 = AgentApiKeyProblem.fromJS(resultData400);
+            result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             let result404: any = null;
             let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result404 = AgentApiKeyProblem.fromJS(resultData404);
+            result404 = ProblemDetails.fromJS(resultData404);
             return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = AgentApiKeyProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -3623,11 +3841,287 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * List the dashboard tokens
+     * @return OK
+     */
+    getAdminDashboardTokens(): Promise<DashboardTokenState> {
+        let url_ = this.baseUrl + "/api/v1/admin/dashboard-tokens";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminDashboardTokens(_response);
+        });
+    }
+
+    protected processGetAdminDashboardTokens(response: Response): Promise<DashboardTokenState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DashboardTokenState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DashboardTokenState>(null as any);
+    }
+
+    /**
+     * Issue a dashboard token
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminDashboardTokens(body?: DashboardTokenCreate | undefined): Promise<DashboardTokenIssued> {
+        let url_ = this.baseUrl + "/api/v1/admin/dashboard-tokens";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminDashboardTokens(_response);
+        });
+    }
+
+    protected processPostAdminDashboardTokens(response: Response): Promise<DashboardTokenIssued> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DashboardTokenIssued.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DashboardTokenIssued>(null as any);
+    }
+
+    /**
+     * Revoke a dashboard token
+     * @return OK
+     */
+    postAdminDashboardTokenRevoke(tokenId: string): Promise<DashboardTokenState> {
+        let url_ = this.baseUrl + "/api/v1/admin/dashboard-tokens/{tokenId}/revoke";
+        if (tokenId === undefined || tokenId === null)
+            throw new globalThis.Error("The parameter 'tokenId' must be defined.");
+        url_ = url_.replace("{tokenId}", encodeURIComponent("" + tokenId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminDashboardTokenRevoke(_response);
+        });
+    }
+
+    protected processPostAdminDashboardTokenRevoke(response: Response): Promise<DashboardTokenState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DashboardTokenState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DashboardTokenState>(null as any);
+    }
+
+    /**
+     * Remove a revoked or expired dashboard token
+     * @return OK
+     */
+    deleteAdminDashboardToken(tokenId: string): Promise<DashboardTokenState> {
+        let url_ = this.baseUrl + "/api/v1/admin/dashboard-tokens/{tokenId}";
+        if (tokenId === undefined || tokenId === null)
+            throw new globalThis.Error("The parameter 'tokenId' must be defined.");
+        url_ = url_.replace("{tokenId}", encodeURIComponent("" + tokenId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteAdminDashboardToken(_response);
+        });
+    }
+
+    protected processDeleteAdminDashboardToken(response: Response): Promise<DashboardTokenState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DashboardTokenState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DashboardTokenState>(null as any);
+    }
+
+    /**
      * Send a heartbeat to every monitored endpoint now
      * @return OK
      */
     postAdminHeartbeatSend(): Promise<CountResponse> {
-        let url_ = this.baseUrl + "/api/admin/heartbeat/send";
+        let url_ = this.baseUrl + "/api/v1/admin/heartbeat/send";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3656,7 +4150,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3671,7 +4168,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminHeartbeatOverview(): Promise<HeartbeatOverviewRow[]> {
-        let url_ = this.baseUrl + "/api/admin/heartbeat/overview";
+        let url_ = this.baseUrl + "/api/v1/admin/heartbeat/overview";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3707,7 +4204,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3723,7 +4223,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminHeartbeatEndpointEnabled(endpointId: string, body?: HeartbeatEndpointEnabledRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/admin/heartbeat/endpoint/{endpointId}/enabled";
+        let url_ = this.baseUrl + "/api/v1/admin/heartbeat/endpoint/{endpointId}/enabled";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -3755,15 +4255,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3778,7 +4287,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminHealthServices(): Promise<ServiceHealthRow[]> {
-        let url_ = this.baseUrl + "/api/admin/health/services";
+        let url_ = this.baseUrl + "/api/v1/admin/health/services";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3814,7 +4323,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3829,7 +4341,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminTopology(endpointName: string): Promise<TopologyAuditResult> {
-        let url_ = this.baseUrl + "/api/admin/topology/{endpointName}";
+        let url_ = this.baseUrl + "/api/v1/admin/topology/{endpointName}";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -3861,11 +4373,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3880,7 +4398,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminTopologyRemoveDeprecated(endpointName: string): Promise<TopologyCleanupResult> {
-        let url_ = this.baseUrl + "/api/admin/topology/{endpointName}/remove-deprecated";
+        let url_ = this.baseUrl + "/api/v1/admin/topology/{endpointName}/remove-deprecated";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -3912,11 +4430,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3931,7 +4455,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminServicebusTopics(): Promise<ServiceBusTopicOverview[]> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3967,7 +4491,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3982,7 +4509,7 @@ export class Client extends ApiClientBase {
      * @return Topic deleted
      */
     deleteAdminServicebusTopic(topicName: string): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4014,11 +4541,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Topic belongs to the platform topology", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Topic belongs to the platform topology", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4033,7 +4566,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminServicebusSubscriptions(topicName: string): Promise<ServiceBusSubscriptionInfo[]> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4072,11 +4605,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4091,7 +4630,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminServicebusResolverDeadletters(subscriptionName: string): Promise<DeadLetterOverview> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters";
         if (subscriptionName === undefined || subscriptionName === null)
             throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
         url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
@@ -4123,19 +4662,31 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Unsupported Resolver subscription target", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Unsupported Resolver subscription target", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("Service Bus operation unavailable", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("Service Bus operation unavailable", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4150,7 +4701,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusResolverDeadlettersResubmit(body: DeadLetterResubmitRequest, subscriptionName: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit";
         if (subscriptionName === undefined || subscriptionName === null)
             throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
         url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
@@ -4186,23 +4737,38 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid selection or unsupported Resolver subscription target", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid selection or unsupported Resolver subscription target", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("A replay is already running for this subscription", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("A replay is already running for this subscription", status, _responseText, _headers, result409);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("Service Bus operation unavailable", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("Service Bus operation unavailable", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4218,7 +4784,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusSubscriptionStatus(topicName: string, subscriptionName: string, body?: SubscriptionStatusRequest | undefined): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4257,15 +4823,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Action must be \'enable\' or \'disable\'", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Action must be \'enable\' or \'disable\'", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4280,7 +4855,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusSubscriptionPurge(topicName: string, subscriptionName: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4315,15 +4890,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Subscription auto-forwards and cannot be drained; recreate it instead", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Subscription auto-forwards and cannot be drained; recreate it instead", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4338,7 +4922,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusSubscriptionDeadlettersPurge(topicName: string, subscriptionName: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/deadletters/purge";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/deadletters/purge";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4373,11 +4957,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4392,7 +4982,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusSubscriptionRecreate(topicName: string, subscriptionName: string): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4427,15 +5017,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Platform has no recipe for this subscription; it cannot be recreated", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Platform has no recipe for this subscription; it cannot be recreated", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4450,7 +5049,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteAdminServicebusSubscription(topicName: string, subscriptionName: string): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4485,11 +5084,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4504,7 +5109,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteAdminServicebusSubscriptionRule(topicName: string, subscriptionName: string, ruleName: string): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4542,11 +5147,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic, subscription or rule not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic, subscription or rule not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4561,7 +5172,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusSubscriptionRestoreRules(topicName: string, subscriptionName: string): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4596,15 +5207,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Platform has no recipe for this subscription", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Platform has no recipe for this subscription", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4619,7 +5239,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminFailedPreview(endpointId: string): Promise<BulkResubmitPreview> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/failed-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/failed-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -4651,11 +5271,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4670,7 +5296,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminBulkResubmit(endpointId: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/bulk-resubmit";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/bulk-resubmit";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -4702,11 +5328,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4721,7 +5353,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminDeadletteredPreview(endpointId: string): Promise<Anonymous2> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/deadlettered-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/deadlettered-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -4753,11 +5385,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4772,7 +5410,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteDeadlettered(endpointId: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-deadlettered";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/delete-deadlettered";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -4804,11 +5442,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4823,7 +5467,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminSessionPreview(endpointId: string, sessionId: string): Promise<SessionPurgePreview> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session/{sessionId}/preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -4858,11 +5502,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or session not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or session not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4877,7 +5527,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSessionPurge(endpointId: string, sessionId: string): Promise<SessionPurgeResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session/{sessionId}/purge";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/purge";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -4912,11 +5562,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or session not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or session not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4927,11 +5583,306 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Look up a session's Service Bus session state
+     * @return OK
+     */
+    getAdminSessionState(endpointId: string, sessionId: string): Promise<SessionStateView> {
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/state";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (sessionId === undefined || sessionId === null)
+            throw new globalThis.Error("The parameter 'sessionId' must be defined.");
+        url_ = url_.replace("{sessionId}", encodeURIComponent("" + sessionId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminSessionState(_response);
+        });
+    }
+
+    protected processGetAdminSessionState(response: Response): Promise<SessionStateView> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SessionStateView.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid session id", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SessionStateView>(null as any);
+    }
+
+    /**
+     * Change a session's Service Bus session state
+     * @return The state after the change
+     */
+    postAdminSessionState(body: SessionStateChangeRequest, endpointId: string, sessionId: string): Promise<SessionStateView> {
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/state";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (sessionId === undefined || sessionId === null)
+            throw new globalThis.Error("The parameter 'sessionId' must be defined.");
+        url_ = url_.replace("{sessionId}", encodeURIComponent("" + sessionId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSessionState(_response);
+        });
+    }
+
+    protected processPostAdminSessionState(response: Response): Promise<SessionStateView> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SessionStateView.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid request or session state JSON", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = SessionStateView.fromJS(resultData409);
+            return throwException("The state changed since it was read, or the session is locked", status, _responseText, _headers, result409);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit record could not be written; nothing was changed", status, _responseText, _headers, result503);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SessionStateView>(null as any);
+    }
+
+    /**
+     * Preview which sessions hold idle session state
+     * @return OK
+     */
+    postAdminSessionCleanupPreview(body: SessionCleanupPreviewRequest, endpointId: string): Promise<SessionCleanupPreview> {
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session-cleanup/preview";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSessionCleanupPreview(_response);
+        });
+    }
+
+    protected processPostAdminSessionCleanupPreview(response: Response): Promise<SessionCleanupPreview> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SessionCleanupPreview.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SessionCleanupPreview>(null as any);
+    }
+
+    /**
+     * Reset the session state of previewed idle sessions
+     * @return OK
+     */
+    postAdminSessionCleanup(body: SessionCleanupRequest, endpointId: string): Promise<SessionCleanupResult> {
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session-cleanup";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSessionCleanup(_response);
+        });
+    }
+
+    protected processPostAdminSessionCleanup(response: Response): Promise<SessionCleanupResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SessionCleanupResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit record could not be written; nothing was changed", status, _responseText, _headers, result503);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SessionCleanupResult>(null as any);
+    }
+
+    /**
      * Delete a specific event from Cosmos DB
      * @return OK
      */
     deleteAdminEvent(endpointId: string, eventId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/event/{eventId}";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/event/{eventId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -4962,15 +5913,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("The event blocks its session (a Failed event, or Pending with a hand-off), so deleting it would leave the session blocked. Skip it first.", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The event blocks its session (a Failed event, or Pending with a hand-off), so deleting it would leave the session blocked. Skip it first.", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4985,7 +5945,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteAll(endpointId: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-all";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/delete-all";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5029,7 +5989,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminPurgePreview(endpointId: string, body?: PurgeRequest | undefined): Promise<PurgePreview> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/purge-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/purge-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5077,7 +6037,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminPurge(endpointId: string, body?: PurgeRequest | undefined): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/purge";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/purge";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5125,7 +6085,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminStalePendingPreview(endpointId: string, body?: StalePendingReconcileRequest | undefined): Promise<StalePendingPreview> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/stale-pending-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/stale-pending-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5161,11 +6121,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5180,7 +6146,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminStalePendingReconcile(endpointId: string, body: StalePendingReconcileRequest): Promise<StalePendingReconcileResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/stale-pending-reconcile";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/stale-pending-reconcile";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5216,15 +6182,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid or too-recent cutoff", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid or too-recent cutoff", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5240,7 +6215,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteByToPreview(body?: DeleteByToRequest | undefined): Promise<CountResponse> {
-        let url_ = this.baseUrl + "/api/admin/messages/delete-by-to-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/messages/delete-by-to-preview";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -5273,11 +6248,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5293,7 +6274,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteByTo(body?: DeleteByToRequest | undefined): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/messages/delete-by-to";
+        let url_ = this.baseUrl + "/api/v1/admin/messages/delete-by-to";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -5326,11 +6307,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5345,7 +6332,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteByStatusPreview(endpointId: string, body: DeleteByStatusRequest): Promise<CountResponse> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-by-status-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/delete-by-status-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5392,7 +6379,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteByStatus(endpointId: string, body: DeleteByStatusRequest): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-by-status";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/delete-by-status";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5439,7 +6426,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSkipPreview(endpointId: string, body: SkipRequest): Promise<CountResponse> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/skip-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/skip-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5486,7 +6473,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSkip(endpointId: string, body: SkipRequest): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/skip";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/skip";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5534,7 +6521,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminCopy(endpointId: string, body?: CopyRequest | undefined): Promise<CopyResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/copy";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/copy";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5570,15 +6557,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5594,7 +6590,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postMessagesSearch(body?: MessageSearchRequest | undefined): Promise<MessageSearchResponse> {
-        let url_ = this.baseUrl + "/api/messages/search";
+        let url_ = this.baseUrl + "/api/v1/messages/search";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -5639,7 +6635,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postFailedSearch(body?: FailedSearchRequest | undefined): Promise<SearchResponse> {
-        let url_ = this.baseUrl + "/api/failed/search";
+        let url_ = this.baseUrl + "/api/v1/failed/search";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -5672,11 +6668,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5692,7 +6694,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postFailedHistogram(body?: FailedHistogramRequest | undefined): Promise<FailedHistogram> {
-        let url_ = this.baseUrl + "/api/failed/histogram";
+        let url_ = this.baseUrl + "/api/v1/failed/histogram";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -5725,11 +6727,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5745,7 +6753,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postFailedErrorGroups(body?: FailedErrorGroupsRequest | undefined): Promise<FailedErrorGroups> {
-        let url_ = this.baseUrl + "/api/failed/error-groups";
+        let url_ = this.baseUrl + "/api/v1/failed/error-groups";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -5778,11 +6786,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5798,7 +6812,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAuditsSearch(body?: AuditSearchRequest | undefined): Promise<AuditSearchResponse> {
-        let url_ = this.baseUrl + "/api/audits/search";
+        let url_ = this.baseUrl + "/api/v1/audits/search";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -5844,7 +6858,7 @@ export class Client extends ApiClientBase {
      * @return Successfully returned metrics overview
      */
     getMetricsOverview(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<MetricsOverview> {
-        let url_ = this.baseUrl + "/api/metrics/overview?";
+        let url_ = this.baseUrl + "/api/v1/metrics/overview?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
@@ -5885,7 +6899,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5902,7 +6919,7 @@ export class Client extends ApiClientBase {
      * @return Latency percentiles per endpoint and event type
      */
     getMetricsLatency(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<LatencyOverview> {
-        let url_ = this.baseUrl + "/api/metrics/latency?";
+        let url_ = this.baseUrl + "/api/v1/metrics/latency?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
@@ -5943,7 +6960,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5957,10 +6977,12 @@ export class Client extends ApiClientBase {
      * Get failed message insights grouped by error pattern
      * @param from (optional) Custom window start (inclusive). Used with `to` instead of `period`.
      * @param to (optional) Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
-     * @return Failed message insights grouped by error pattern
+     * @param endpointId (optional) Exact endpoint id to narrow the failures to. Omitted selects every endpoint.
+     * @param refresh (optional) Re-read saved classifications instead of using the short-lived enrichment cache. New failures can still lag by the metrics cache lifetime.
+     * @return Failed message insights grouped by error pattern, and by likely cause and recovery guidance when saved classifications are available
      */
-    getMetricsFailedInsights(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<FailedInsightsOverview> {
-        let url_ = this.baseUrl + "/api/metrics/failed-insights?";
+    getMetricsFailedInsights(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined, endpointId?: string | undefined, refresh?: boolean | undefined): Promise<FailedInsightsOverview> {
+        let url_ = this.baseUrl + "/api/v1/metrics/failed-insights?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
@@ -5973,6 +6995,14 @@ export class Client extends ApiClientBase {
             throw new globalThis.Error("The parameter 'to' cannot be null.");
         else if (to !== undefined)
             url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
+        if (endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' cannot be null.");
+        else if (endpointId !== undefined)
+            url_ += "endpointId=" + encodeURIComponent("" + endpointId) + "&";
+        if (refresh === null)
+            throw new globalThis.Error("The parameter 'refresh' cannot be null.");
+        else if (refresh !== undefined)
+            url_ += "refresh=" + encodeURIComponent("" + refresh) + "&";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -6001,7 +7031,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6012,13 +7045,173 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Page the failure occurrences of one insights group
+     * @param from Window start (inclusive), as returned by the overview.
+     * @param to Window end (exclusive), as returned by the overview.
+     * @param groupKey A groupKey from the overview for the same perspective.
+     * @param endpointId (optional) 
+     * @param pageSize (optional) 1 to 100; default 50.
+     * @param continuationToken (optional) 
+     * @return One page of occurrences
+     */
+    getMetricsFailedInsightsOccurrences(from: moment.Moment, to: moment.Moment, perspective: InsightsPerspective, groupKey: string, endpointId?: string | undefined, pageSize?: number | undefined, continuationToken?: string | undefined): Promise<InsightOccurrencePage> {
+        let url_ = this.baseUrl + "/api/v1/metrics/failed-insights/occurrences?";
+        if (from === undefined || from === null)
+            throw new globalThis.Error("The parameter 'from' must be defined and cannot be null.");
+        else
+            url_ += "from=" + encodeURIComponent(from ? "" + from.toISOString() : "") + "&";
+        if (to === undefined || to === null)
+            throw new globalThis.Error("The parameter 'to' must be defined and cannot be null.");
+        else
+            url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
+        if (perspective === undefined || perspective === null)
+            throw new globalThis.Error("The parameter 'perspective' must be defined and cannot be null.");
+        else
+            url_ += "perspective=" + encodeURIComponent("" + perspective) + "&";
+        if (groupKey === undefined || groupKey === null)
+            throw new globalThis.Error("The parameter 'groupKey' must be defined and cannot be null.");
+        else
+            url_ += "groupKey=" + encodeURIComponent("" + groupKey) + "&";
+        if (endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' cannot be null.");
+        else if (endpointId !== undefined)
+            url_ += "endpointId=" + encodeURIComponent("" + endpointId) + "&";
+        if (pageSize === null)
+            throw new globalThis.Error("The parameter 'pageSize' cannot be null.");
+        else if (pageSize !== undefined)
+            url_ += "pageSize=" + encodeURIComponent("" + pageSize) + "&";
+        if (continuationToken === null)
+            throw new globalThis.Error("The parameter 'continuationToken' cannot be null.");
+        else if (continuationToken !== undefined)
+            url_ += "continuationToken=" + encodeURIComponent("" + continuationToken) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMetricsFailedInsightsOccurrences(_response);
+        });
+    }
+
+    protected processGetMetricsFailedInsightsOccurrences(response: Response): Promise<InsightOccurrencePage> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = InsightOccurrencePage.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid window, page size, group key or continuation token, or saved classifications unavailable for a cause or guidance group", status, _responseText, _headers, result400);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<InsightOccurrencePage>(null as any);
+    }
+
+    /**
+     * Page the error patterns of one likely-cause or recovery-guidance group
+     * @param perspective cause or guidance.
+     * @param endpointId (optional) 
+     * @param pageSize (optional) 1 to 100; default 50.
+     * @param continuationToken (optional) 
+     * @return One page of error patterns, most frequent first
+     */
+    getMetricsFailedInsightsPatterns(from: moment.Moment, to: moment.Moment, perspective: InsightsPerspective, groupKey: string, endpointId?: string | undefined, pageSize?: number | undefined, continuationToken?: string | undefined): Promise<InsightGroupPatternPage> {
+        let url_ = this.baseUrl + "/api/v1/metrics/failed-insights/patterns?";
+        if (from === undefined || from === null)
+            throw new globalThis.Error("The parameter 'from' must be defined and cannot be null.");
+        else
+            url_ += "from=" + encodeURIComponent(from ? "" + from.toISOString() : "") + "&";
+        if (to === undefined || to === null)
+            throw new globalThis.Error("The parameter 'to' must be defined and cannot be null.");
+        else
+            url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
+        if (perspective === undefined || perspective === null)
+            throw new globalThis.Error("The parameter 'perspective' must be defined and cannot be null.");
+        else
+            url_ += "perspective=" + encodeURIComponent("" + perspective) + "&";
+        if (groupKey === undefined || groupKey === null)
+            throw new globalThis.Error("The parameter 'groupKey' must be defined and cannot be null.");
+        else
+            url_ += "groupKey=" + encodeURIComponent("" + groupKey) + "&";
+        if (endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' cannot be null.");
+        else if (endpointId !== undefined)
+            url_ += "endpointId=" + encodeURIComponent("" + endpointId) + "&";
+        if (pageSize === null)
+            throw new globalThis.Error("The parameter 'pageSize' cannot be null.");
+        else if (pageSize !== undefined)
+            url_ += "pageSize=" + encodeURIComponent("" + pageSize) + "&";
+        if (continuationToken === null)
+            throw new globalThis.Error("The parameter 'continuationToken' cannot be null.");
+        else if (continuationToken !== undefined)
+            url_ += "continuationToken=" + encodeURIComponent("" + continuationToken) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMetricsFailedInsightsPatterns(_response);
+        });
+    }
+
+    protected processGetMetricsFailedInsightsPatterns(response: Response): Promise<InsightGroupPatternPage> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = InsightGroupPatternPage.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid window, perspective, page size, group key or continuation token, or saved classifications unavailable", status, _responseText, _headers, result400);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<InsightGroupPatternPage>(null as any);
+    }
+
+    /**
      * Get time-bucketed message counts
      * @param from (optional) Custom window start (inclusive). Used with `to` instead of `period`.
      * @param to (optional) Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
      * @return Time-bucketed message counts
      */
     getMetricsTimeseries(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<TimeSeriesOverview> {
-        let url_ = this.baseUrl + "/api/metrics/timeseries?";
+        let url_ = this.baseUrl + "/api/v1/metrics/timeseries?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
@@ -6059,7 +7252,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6076,7 +7272,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMetricsTimeseriesByEventtype(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<EventTypeTimeSeriesOverview> {
-        let url_ = this.baseUrl + "/api/metrics/timeseries-by-eventtype?";
+        let url_ = this.baseUrl + "/api/v1/metrics/timeseries-by-eventtype?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
@@ -6117,7 +7313,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6133,7 +7332,7 @@ export class Client extends ApiClientBase {
      * @return Fleet heartbeat page
      */
     getHeartbeatPage(windowDays?: number | undefined): Promise<HeartbeatPage> {
-        let url_ = this.baseUrl + "/api/heartbeat/page?";
+        let url_ = this.baseUrl + "/api/v1/heartbeat/page?";
         if (windowDays === null)
             throw new globalThis.Error("The parameter 'windowDays' cannot be null.");
         else if (windowDays !== undefined)
@@ -6166,7 +7365,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6181,7 +7383,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMonitorAcknowledgements(): Promise<MonitorAcknowledgement[]> {
-        let url_ = this.baseUrl + "/api/monitor/acknowledgements";
+        let url_ = this.baseUrl + "/api/v1/monitor/acknowledgements";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -6229,7 +7431,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putMonitorAcknowledgement(endpointId: string, body?: MonitorAcknowledgementRequest | undefined): Promise<MonitorAcknowledgement> {
-        let url_ = this.baseUrl + "/api/monitor/acknowledgements/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/monitor/acknowledgements/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6265,15 +7467,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6288,7 +7499,7 @@ export class Client extends ApiClientBase {
      * @return Cleared
      */
     deleteMonitorAcknowledgement(endpointId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/monitor/acknowledgements/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/monitor/acknowledgements/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6316,11 +7527,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6331,11 +7548,194 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * The Monitor's current state, polled every few seconds
+     * @return OK
+     */
+    getMonitorFeedStatus(): Promise<MonitorFeedStatus> {
+        let url_ = this.baseUrl + "/api/v1/monitor/feed/status";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMonitorFeedStatus(_response);
+        });
+    }
+
+    protected processGetMonitorFeedStatus(response: Response): Promise<MonitorFeedStatus> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = MonitorFeedStatus.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("No session and no valid dashboard token", status, _responseText, _headers, result401);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Signed in without the site Reader role", status, _responseText, _headers, result403);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers, result503);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<MonitorFeedStatus>(null as any);
+    }
+
+    /**
+     * The Monitor's last-hour throughput and timings, polled every 30 seconds
+     * @return OK
+     */
+    getMonitorFeedMetrics(): Promise<MonitorFeedMetrics> {
+        let url_ = this.baseUrl + "/api/v1/monitor/feed/metrics";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMonitorFeedMetrics(_response);
+        });
+    }
+
+    protected processGetMonitorFeedMetrics(response: Response): Promise<MonitorFeedMetrics> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = MonitorFeedMetrics.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("No session and no valid dashboard token", status, _responseText, _headers, result401);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Signed in without the site Reader role", status, _responseText, _headers, result403);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers, result503);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<MonitorFeedMetrics>(null as any);
+    }
+
+    /**
+     * The Monitor's longer history, polled every 5 minutes
+     * @return OK
+     */
+    getMonitorFeedHistory(): Promise<MonitorFeedHistory> {
+        let url_ = this.baseUrl + "/api/v1/monitor/feed/history";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMonitorFeedHistory(_response);
+        });
+    }
+
+    protected processGetMonitorFeedHistory(response: Response): Promise<MonitorFeedHistory> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = MonitorFeedHistory.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("No session and no valid dashboard token", status, _responseText, _headers, result401);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Signed in without the site Reader role", status, _responseText, _headers, result403);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers, result503);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<MonitorFeedHistory>(null as any);
+    }
+
+    /**
      * Get agent catalog
      * @return OK
      */
     getAgentCatalog(): Promise<AgentCatalog> {
-        let url_ = this.baseUrl + "/api/agent/catalog";
+        let url_ = this.baseUrl + "/api/v1/agent/catalog";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -6376,7 +7776,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAgentEventTypes(body?: DefineEventTypeRequest | undefined): Promise<EventTypeInfo> {
-        let url_ = this.baseUrl + "/api/agent/event-types";
+        let url_ = this.baseUrl + "/api/v1/agent/event-types";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6409,7 +7809,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("Event type already exists with a different schema", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Event type already exists with a different schema", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6425,7 +7828,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAgentSubscribe(body?: AgentSubscribeRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/agent/subscribe";
+        let url_ = this.baseUrl + "/api/v1/agent/subscribe";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6467,7 +7870,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAgentReceive(eventTypeId?: string | undefined, waitSeconds?: number | undefined): Promise<AgentReceivedMessage> {
-        let url_ = this.baseUrl + "/api/agent/receive?";
+        let url_ = this.baseUrl + "/api/v1/agent/receive?";
         if (eventTypeId === null)
             throw new globalThis.Error("The parameter 'eventTypeId' cannot be null.");
         else if (eventTypeId !== undefined)
@@ -6520,7 +7923,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAgentPublish(body?: AgentPublishRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/agent/publish";
+        let url_ = this.baseUrl + "/api/v1/agent/publish";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6549,11 +7952,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Payload failed schema validation", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Payload failed schema validation", status, _responseText, _headers, result400);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Unknown eventTypeId", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Unknown eventTypeId", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6569,7 +7978,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAgentSettle(body?: AgentSettleRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/agent/settle";
+        let url_ = this.baseUrl + "/api/v1/agent/settle";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6609,7 +8018,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAccessControl(): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control";
+        let url_ = this.baseUrl + "/api/v1/access-control";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -6638,7 +8047,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6654,7 +8066,7 @@ export class Client extends ApiClientBase {
      * @return OK — returns the updated access-control lists
      */
     postAccessControlRole(body?: RoleEntry | undefined): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control/roles";
+        let url_ = this.baseUrl + "/api/v1/access-control/roles";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6687,11 +8099,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6707,7 +8125,7 @@ export class Client extends ApiClientBase {
      * @return OK — returns the updated access-control lists
      */
     deleteAccessControlRole(body?: RoleEntry | undefined): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control/roles";
+        let url_ = this.baseUrl + "/api/v1/access-control/roles";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6740,11 +8158,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6759,7 +8183,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAccessControlMe(): Promise<CurrentUserAccessInfo> {
-        let url_ = this.baseUrl + "/api/access-control/me";
+        let url_ = this.baseUrl + "/api/v1/access-control/me";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -6799,7 +8223,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointAccessControl(endpointId: string): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control/endpoint/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/access-control/endpoint/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6831,11 +8255,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6851,7 +8281,7 @@ export class Client extends ApiClientBase {
      * @return OK — returns the updated access-control lists
      */
     postEndpointAccessControlRole(endpointId: string, body?: RoleEntry | undefined): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control/endpoint/{endpointId}/roles";
+        let url_ = this.baseUrl + "/api/v1/access-control/endpoint/{endpointId}/roles";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6887,15 +8317,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6911,7 +8350,7 @@ export class Client extends ApiClientBase {
      * @return OK — returns the updated access-control lists
      */
     deleteEndpointAccessControlRole(endpointId: string, body?: RoleEntry | undefined): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control/endpoint/{endpointId}/roles";
+        let url_ = this.baseUrl + "/api/v1/access-control/endpoint/{endpointId}/roles";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6947,15 +8386,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6970,7 +8418,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminSimulation(): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -6999,7 +8447,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7015,7 +8466,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminSimulationSettings(body?: SimulationSettings | undefined): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -7050,18 +8501,21 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result400: any = null;
             let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result400 = SimulationProblem.fromJS(resultData400);
+            result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = SimulationProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -7078,7 +8532,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminSimulationConfig(body?: SimulationConfig | undefined): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation/config";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation/config";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -7113,12 +8567,15 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result400: any = null;
             let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result400 = SimulationProblem.fromJS(resultData400);
+            result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7133,7 +8590,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSimulationStart(): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation/start";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation/start";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -7162,13 +8619,16 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = SimulationProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -7184,7 +8644,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSimulationPause(): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation/pause";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation/pause";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -7213,13 +8673,16 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = SimulationProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -7235,7 +8698,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSimulationStop(): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation/stop";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation/stop";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -7264,13 +8727,16 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = SimulationProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -7280,6 +8746,115 @@ export class Client extends ApiClientBase {
         }
         return Promise.resolve<SimulationStatus>(null as any);
     }
+}
+
+/** RFC 7807 problem returned by every error response (media type application/problem+json). Branch on status and, where an operation documents one, on code. Further members may appear; ignore the ones you don't know. */
+export class ProblemDetails implements IProblemDetails {
+    /** A URI reference that identifies the problem type (the RFC 9110 section for the status). */
+    type?: string | undefined;
+    /** A short summary of the problem type, usually the status's reason phrase. */
+    title?: string | undefined;
+    /** The HTTP status code. */
+    status?: number | undefined;
+    /** A human-readable explanation of this occurrence. */
+    detail?: string | undefined;
+    /** A URI reference that identifies this occurrence. */
+    instance?: string | undefined;
+    /** The request's trace id, for correlating with server logs. */
+    traceId?: string | undefined;
+    /** A stable machine-readable reason, on operations that document their codes. */
+    code?: string | undefined;
+    /** Validation or refusal messages, when there are several. */
+    errors?: string[] | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IProblemDetails) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.type = _data["type"];
+            this.title = _data["title"];
+            this.status = _data["status"];
+            this.detail = _data["detail"];
+            this.instance = _data["instance"];
+            this.traceId = _data["traceId"];
+            this.code = _data["code"];
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): ProblemDetails {
+        data = typeof data === 'object' ? data : {};
+        let result = new ProblemDetails();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["type"] = this.type;
+        data["title"] = this.title;
+        data["status"] = this.status;
+        data["detail"] = this.detail;
+        data["instance"] = this.instance;
+        data["traceId"] = this.traceId;
+        data["code"] = this.code;
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        return data;
+    }
+
+    clone(): ProblemDetails {
+        const json = this.toJSON();
+        let result = new ProblemDetails();
+        result.init(json);
+        return result;
+    }
+}
+
+/** RFC 7807 problem returned by every error response (media type application/problem+json). Branch on status and, where an operation documents one, on code. Further members may appear; ignore the ones you don't know. */
+export interface IProblemDetails {
+    /** A URI reference that identifies the problem type (the RFC 9110 section for the status). */
+    type?: string | undefined;
+    /** A short summary of the problem type, usually the status's reason phrase. */
+    title?: string | undefined;
+    /** The HTTP status code. */
+    status?: number | undefined;
+    /** A human-readable explanation of this occurrence. */
+    detail?: string | undefined;
+    /** A URI reference that identifies this occurrence. */
+    instance?: string | undefined;
+    /** The request's trace id, for correlating with server logs. */
+    traceId?: string | undefined;
+    /** A stable machine-readable reason, on operations that document their codes. */
+    code?: string | undefined;
+    /** Validation or refusal messages, when there are several. */
+    errors?: string[] | undefined;
+
+    [key: string]: any;
 }
 
 export enum SimulationRunState {
@@ -7310,69 +8885,6 @@ export enum SimulationDeliveryOutcome {
     Threw = "threw",
     Poisoned = "poisoned",
     Unsupported = "unsupported",
-}
-
-export class SimulationProblem implements ISimulationProblem {
-    errors?: string[];
-
-    [key: string]: any;
-
-    constructor(data?: ISimulationProblem) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (this as any)[property] = (data as any)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            for (var property in _data) {
-                if (_data.hasOwnProperty(property))
-                    this[property] = _data[property];
-            }
-            if (Array.isArray(_data["errors"])) {
-                this.errors = [] as any;
-                for (let item of _data["errors"])
-                    this.errors!.push(item);
-            }
-        }
-    }
-
-    static fromJS(data: any): SimulationProblem {
-        data = typeof data === 'object' ? data : {};
-        let result = new SimulationProblem();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        for (var property in this) {
-            if (this.hasOwnProperty(property))
-                data[property] = this[property];
-        }
-        if (Array.isArray(this.errors)) {
-            data["errors"] = [];
-            for (let item of this.errors)
-                data["errors"].push(item);
-        }
-        return data;
-    }
-
-    clone(): SimulationProblem {
-        const json = this.toJSON();
-        let result = new SimulationProblem();
-        result.init(json);
-        return result;
-    }
-}
-
-export interface ISimulationProblem {
-    errors?: string[];
-
-    [key: string]: any;
 }
 
 export class SimulationSettings implements ISimulationSettings {
@@ -9138,7 +10650,7 @@ export interface IEventTypeDetails {
     [key: string]: any;
 }
 
-/** Response shape for GET /api/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor). */
+/** Response shape for GET /api/v1/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor). */
 export class FakeEventPayload implements IFakeEventPayload {
     /** Indented JSON payload string, or null when the type cannot be constructed. */
     payload?: string | undefined;
@@ -9189,7 +10701,7 @@ export class FakeEventPayload implements IFakeEventPayload {
     }
 }
 
-/** Response shape for GET /api/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor). */
+/** Response shape for GET /api/v1/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor). */
 export interface IFakeEventPayload {
     /** Indented JSON payload string, or null when the type cannot be constructed. */
     payload?: string | undefined;
@@ -10341,6 +11853,83 @@ export interface IResubmitWithChanges {
     [key: string]: any;
 }
 
+/** Identity of the event a compose published, so the operator can follow it. */
+export class ComposeNewEventResult implements IComposeNewEventResult {
+    /** The composed event type. */
+    eventTypeId!: string;
+    /** The producing endpoint whose topic the event was published to. */
+    publishedBy!: string;
+    /** The published message id. Every subscriber's Event Request carries it, so it finds the event on each subscriber. */
+    messageId!: string;
+    /** The session the event was published on. */
+    sessionId!: string;
+
+    [key: string]: any;
+
+    constructor(data?: IComposeNewEventResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventTypeId = _data["eventTypeId"];
+            this.publishedBy = _data["publishedBy"];
+            this.messageId = _data["messageId"];
+            this.sessionId = _data["sessionId"];
+        }
+    }
+
+    static fromJS(data: any): ComposeNewEventResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new ComposeNewEventResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventTypeId"] = this.eventTypeId;
+        data["publishedBy"] = this.publishedBy;
+        data["messageId"] = this.messageId;
+        data["sessionId"] = this.sessionId;
+        return data;
+    }
+
+    clone(): ComposeNewEventResult {
+        const json = this.toJSON();
+        let result = new ComposeNewEventResult();
+        result.init(json);
+        return result;
+    }
+}
+
+/** Identity of the event a compose published, so the operator can follow it. */
+export interface IComposeNewEventResult {
+    /** The composed event type. */
+    eventTypeId: string;
+    /** The producing endpoint whose topic the event was published to. */
+    publishedBy: string;
+    /** The published message id. Every subscriber's Event Request carries it, so it finds the event on each subscriber. */
+    messageId: string;
+    /** The session the event was published on. */
+    sessionId: string;
+
+    [key: string]: any;
+}
+
 export class CompleteHandoffRequest implements ICompleteHandoffRequest {
     /** Optional operator note written to the audit log and carried on the completion payload. */
     note?: string | undefined;
@@ -11297,6 +12886,8 @@ export class FailedHistogramRequest implements IFailedHistogramRequest {
     from?: moment.Moment | undefined;
     /** Custom window end; used with `from` instead of `period`. */
     to?: moment.Moment | undefined;
+    /** IANA time zone (for example Europe/Berlin) the bars follow: they start at local midnight and step in whole buckets of local time. UTC when absent or unknown. */
+    timeZone?: string | undefined;
 
     [key: string]: any;
 
@@ -11319,6 +12910,7 @@ export class FailedHistogramRequest implements IFailedHistogramRequest {
             this.period = _data["period"];
             this.from = _data["from"] ? moment(_data["from"].toString()) : undefined as any;
             this.to = _data["to"] ? moment(_data["to"].toString()) : undefined as any;
+            this.timeZone = _data["timeZone"];
         }
     }
 
@@ -11339,6 +12931,7 @@ export class FailedHistogramRequest implements IFailedHistogramRequest {
         data["period"] = this.period;
         data["from"] = this.from ? this.from.toISOString() : undefined as any;
         data["to"] = this.to ? this.to.toISOString() : undefined as any;
+        data["timeZone"] = this.timeZone;
         return data;
     }
 
@@ -11357,12 +12950,14 @@ export interface IFailedHistogramRequest {
     from?: moment.Moment | undefined;
     /** Custom window end; used with `from` instead of `period`. */
     to?: moment.Moment | undefined;
+    /** IANA time zone (for example Europe/Berlin) the bars follow: they start at local midnight and step in whole buckets of local time. UTC when absent or unknown. */
+    timeZone?: string | undefined;
 
     [key: string]: any;
 }
 
 export class FailedHistogram implements IFailedHistogram {
-    /** Bucket size in minutes. */
+    /** Nominal bucket size in minutes. Each bucket ends where the next one starts, so a bar across a daylight-saving change is shorter or longer. */
     bucketMinutes?: number;
     /** Start of the first bucket (inclusive). */
     from?: moment.Moment;
@@ -11439,7 +13034,7 @@ export class FailedHistogram implements IFailedHistogram {
 }
 
 export interface IFailedHistogram {
-    /** Bucket size in minutes. */
+    /** Nominal bucket size in minutes. Each bucket ends where the next one starts, so a bar across a daylight-saving change is shorter or longer. */
     bucketMinutes?: number;
     /** Start of the first bucket (inclusive). */
     from?: moment.Moment;
@@ -13924,6 +15519,712 @@ export interface ISessionPurgeResult {
     [key: string]: any;
 }
 
+/** A session's Service Bus session state on the endpoint subscription, read under a session lock, with the session's queued messages and store counts. */
+export class SessionStateView implements ISessionStateView {
+    sessionId?: string;
+    /** A receiver holds the session, so its state could not be read. */
+    locked?: boolean;
+    /** The stored state parses as NimBus session state. */
+    readable?: boolean;
+    isEmpty?: boolean;
+    /** The stored state as text; null when nothing is stored. */
+    stateJson?: string | undefined;
+    /** SHA-256 of the stored bytes; send it back as expectedVersion. */
+    stateVersion?: string | undefined;
+    blockedByEventId?: string | undefined;
+    blockedByMessageId?: string | undefined;
+    deferredCount?: number;
+    nextDeferralSequence?: number;
+    replayedThroughSequence?: number | undefined;
+    drainRequestedForSequence?: number | undefined;
+    drainRequestedAtUtc?: moment.Moment | undefined;
+    legacyDeferredCount?: number;
+    blocked?: boolean;
+    hasUnreplayedMessages?: boolean;
+    /** Messages queued on the session (peeked, at most 100). */
+    activeMessageCount?: number;
+    /** Messages parked on the Deferred subscription (peeked, at most 100). */
+    deferredSubscriptionCount?: number;
+    storePendingCount?: number;
+    storeDeferredCount?: number;
+    /** Stored status of the blocking event; null when not blocked or not found. */
+    blockingEventStatus?: string | undefined;
+    message?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionStateView) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.sessionId = _data["sessionId"];
+            this.locked = _data["locked"];
+            this.readable = _data["readable"];
+            this.isEmpty = _data["isEmpty"];
+            this.stateJson = _data["stateJson"];
+            this.stateVersion = _data["stateVersion"];
+            this.blockedByEventId = _data["blockedByEventId"];
+            this.blockedByMessageId = _data["blockedByMessageId"];
+            this.deferredCount = _data["deferredCount"];
+            this.nextDeferralSequence = _data["nextDeferralSequence"];
+            this.replayedThroughSequence = _data["replayedThroughSequence"];
+            this.drainRequestedForSequence = _data["drainRequestedForSequence"];
+            this.drainRequestedAtUtc = _data["drainRequestedAtUtc"] ? moment(_data["drainRequestedAtUtc"].toString()) : undefined as any;
+            this.legacyDeferredCount = _data["legacyDeferredCount"];
+            this.blocked = _data["blocked"];
+            this.hasUnreplayedMessages = _data["hasUnreplayedMessages"];
+            this.activeMessageCount = _data["activeMessageCount"];
+            this.deferredSubscriptionCount = _data["deferredSubscriptionCount"];
+            this.storePendingCount = _data["storePendingCount"];
+            this.storeDeferredCount = _data["storeDeferredCount"];
+            this.blockingEventStatus = _data["blockingEventStatus"];
+            this.message = _data["message"];
+        }
+    }
+
+    static fromJS(data: any): SessionStateView {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionStateView();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["sessionId"] = this.sessionId;
+        data["locked"] = this.locked;
+        data["readable"] = this.readable;
+        data["isEmpty"] = this.isEmpty;
+        data["stateJson"] = this.stateJson;
+        data["stateVersion"] = this.stateVersion;
+        data["blockedByEventId"] = this.blockedByEventId;
+        data["blockedByMessageId"] = this.blockedByMessageId;
+        data["deferredCount"] = this.deferredCount;
+        data["nextDeferralSequence"] = this.nextDeferralSequence;
+        data["replayedThroughSequence"] = this.replayedThroughSequence;
+        data["drainRequestedForSequence"] = this.drainRequestedForSequence;
+        data["drainRequestedAtUtc"] = this.drainRequestedAtUtc ? this.drainRequestedAtUtc.toISOString() : undefined as any;
+        data["legacyDeferredCount"] = this.legacyDeferredCount;
+        data["blocked"] = this.blocked;
+        data["hasUnreplayedMessages"] = this.hasUnreplayedMessages;
+        data["activeMessageCount"] = this.activeMessageCount;
+        data["deferredSubscriptionCount"] = this.deferredSubscriptionCount;
+        data["storePendingCount"] = this.storePendingCount;
+        data["storeDeferredCount"] = this.storeDeferredCount;
+        data["blockingEventStatus"] = this.blockingEventStatus;
+        data["message"] = this.message;
+        return data;
+    }
+
+    clone(): SessionStateView {
+        const json = this.toJSON();
+        let result = new SessionStateView();
+        result.init(json);
+        return result;
+    }
+}
+
+/** A session's Service Bus session state on the endpoint subscription, read under a session lock, with the session's queued messages and store counts. */
+export interface ISessionStateView {
+    sessionId?: string;
+    /** A receiver holds the session, so its state could not be read. */
+    locked?: boolean;
+    /** The stored state parses as NimBus session state. */
+    readable?: boolean;
+    isEmpty?: boolean;
+    /** The stored state as text; null when nothing is stored. */
+    stateJson?: string | undefined;
+    /** SHA-256 of the stored bytes; send it back as expectedVersion. */
+    stateVersion?: string | undefined;
+    blockedByEventId?: string | undefined;
+    blockedByMessageId?: string | undefined;
+    deferredCount?: number;
+    nextDeferralSequence?: number;
+    replayedThroughSequence?: number | undefined;
+    drainRequestedForSequence?: number | undefined;
+    drainRequestedAtUtc?: moment.Moment | undefined;
+    legacyDeferredCount?: number;
+    blocked?: boolean;
+    hasUnreplayedMessages?: boolean;
+    /** Messages queued on the session (peeked, at most 100). */
+    activeMessageCount?: number;
+    /** Messages parked on the Deferred subscription (peeked, at most 100). */
+    deferredSubscriptionCount?: number;
+    storePendingCount?: number;
+    storeDeferredCount?: number;
+    /** Stored status of the blocking event; null when not blocked or not found. */
+    blockingEventStatus?: string | undefined;
+    message?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class SessionStateChangeRequest implements ISessionStateChangeRequest {
+    action!: SessionStateChangeRequestAction;
+    /** The stateVersion the change was based on. */
+    expectedVersion!: string;
+    /** The new state, for replace. */
+    stateJson?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionStateChangeRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.action = _data["action"];
+            this.expectedVersion = _data["expectedVersion"];
+            this.stateJson = _data["stateJson"];
+        }
+    }
+
+    static fromJS(data: any): SessionStateChangeRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionStateChangeRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["action"] = this.action;
+        data["expectedVersion"] = this.expectedVersion;
+        data["stateJson"] = this.stateJson;
+        return data;
+    }
+
+    clone(): SessionStateChangeRequest {
+        const json = this.toJSON();
+        let result = new SessionStateChangeRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionStateChangeRequest {
+    action: SessionStateChangeRequestAction;
+    /** The stateVersion the change was based on. */
+    expectedVersion: string;
+    /** The new state, for replace. */
+    stateJson?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class SessionCleanupPreviewRequest implements ISessionCleanupPreviewRequest {
+    /** Only sessions of events updated since; defaults to 30 days ago. */
+    updatedSince?: moment.Moment | undefined;
+    /** Most sessions to inspect, 1 to 1000; defaults to 200. */
+    maxSessions?: number | undefined;
+    includeStaleBlocks?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupPreviewRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.updatedSince = _data["updatedSince"] ? moment(_data["updatedSince"].toString()) : undefined as any;
+            this.maxSessions = _data["maxSessions"];
+            this.includeStaleBlocks = _data["includeStaleBlocks"];
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupPreviewRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupPreviewRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["updatedSince"] = this.updatedSince ? this.updatedSince.toISOString() : undefined as any;
+        data["maxSessions"] = this.maxSessions;
+        data["includeStaleBlocks"] = this.includeStaleBlocks;
+        return data;
+    }
+
+    clone(): SessionCleanupPreviewRequest {
+        const json = this.toJSON();
+        let result = new SessionCleanupPreviewRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupPreviewRequest {
+    /** Only sessions of events updated since; defaults to 30 days ago. */
+    updatedSince?: moment.Moment | undefined;
+    /** Most sessions to inspect, 1 to 1000; defaults to 200. */
+    maxSessions?: number | undefined;
+    includeStaleBlocks?: boolean;
+
+    [key: string]: any;
+}
+
+export class SessionCleanupPreview implements ISessionCleanupPreview {
+    inspectedCount?: number;
+    /** Inspected sessions that hold no state. */
+    emptyCount?: number;
+    /** More sessions matched than maxSessions. */
+    truncated?: boolean;
+    sessions?: SessionCleanupCandidate[];
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupPreview) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.inspectedCount = _data["inspectedCount"];
+            this.emptyCount = _data["emptyCount"];
+            this.truncated = _data["truncated"];
+            if (Array.isArray(_data["sessions"])) {
+                this.sessions = [] as any;
+                for (let item of _data["sessions"])
+                    this.sessions!.push(SessionCleanupCandidate.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupPreview {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupPreview();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["inspectedCount"] = this.inspectedCount;
+        data["emptyCount"] = this.emptyCount;
+        data["truncated"] = this.truncated;
+        if (Array.isArray(this.sessions)) {
+            data["sessions"] = [];
+            for (let item of this.sessions)
+                data["sessions"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): SessionCleanupPreview {
+        const json = this.toJSON();
+        let result = new SessionCleanupPreview();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupPreview {
+    inspectedCount?: number;
+    /** Inspected sessions that hold no state. */
+    emptyCount?: number;
+    /** More sessions matched than maxSessions. */
+    truncated?: boolean;
+    sessions?: SessionCleanupCandidate[];
+
+    [key: string]: any;
+}
+
+export class SessionCleanupCandidate implements ISessionCleanupCandidate {
+    sessionId?: string;
+    classification?: SessionCleanupCandidateClassification;
+    reason?: string | undefined;
+    stateVersion?: string | undefined;
+    stateJson?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupCandidate) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.sessionId = _data["sessionId"];
+            this.classification = _data["classification"];
+            this.reason = _data["reason"];
+            this.stateVersion = _data["stateVersion"];
+            this.stateJson = _data["stateJson"];
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupCandidate {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupCandidate();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["sessionId"] = this.sessionId;
+        data["classification"] = this.classification;
+        data["reason"] = this.reason;
+        data["stateVersion"] = this.stateVersion;
+        data["stateJson"] = this.stateJson;
+        return data;
+    }
+
+    clone(): SessionCleanupCandidate {
+        const json = this.toJSON();
+        let result = new SessionCleanupCandidate();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupCandidate {
+    sessionId?: string;
+    classification?: SessionCleanupCandidateClassification;
+    reason?: string | undefined;
+    stateVersion?: string | undefined;
+    stateJson?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class SessionCleanupRequest implements ISessionCleanupRequest {
+    includeStaleBlocks?: boolean;
+    sessions!: SessionCleanupSelection[];
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+        if (!data) {
+            this.sessions = [];
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.includeStaleBlocks = _data["includeStaleBlocks"];
+            if (Array.isArray(_data["sessions"])) {
+                this.sessions = [] as any;
+                for (let item of _data["sessions"])
+                    this.sessions!.push(SessionCleanupSelection.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["includeStaleBlocks"] = this.includeStaleBlocks;
+        if (Array.isArray(this.sessions)) {
+            data["sessions"] = [];
+            for (let item of this.sessions)
+                data["sessions"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): SessionCleanupRequest {
+        const json = this.toJSON();
+        let result = new SessionCleanupRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupRequest {
+    includeStaleBlocks?: boolean;
+    sessions: SessionCleanupSelection[];
+
+    [key: string]: any;
+}
+
+export class SessionCleanupSelection implements ISessionCleanupSelection {
+    sessionId!: string;
+    stateVersion!: string;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupSelection) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.sessionId = _data["sessionId"];
+            this.stateVersion = _data["stateVersion"];
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupSelection {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupSelection();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["sessionId"] = this.sessionId;
+        data["stateVersion"] = this.stateVersion;
+        return data;
+    }
+
+    clone(): SessionCleanupSelection {
+        const json = this.toJSON();
+        let result = new SessionCleanupSelection();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupSelection {
+    sessionId: string;
+    stateVersion: string;
+
+    [key: string]: any;
+}
+
+export class SessionCleanupResult implements ISessionCleanupResult {
+    resetCount?: number;
+    skipped?: SessionCleanupSkip[];
+    errors?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.resetCount = _data["resetCount"];
+            if (Array.isArray(_data["skipped"])) {
+                this.skipped = [] as any;
+                for (let item of _data["skipped"])
+                    this.skipped!.push(SessionCleanupSkip.fromJS(item));
+            }
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["resetCount"] = this.resetCount;
+        if (Array.isArray(this.skipped)) {
+            data["skipped"] = [];
+            for (let item of this.skipped)
+                data["skipped"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        return data;
+    }
+
+    clone(): SessionCleanupResult {
+        const json = this.toJSON();
+        let result = new SessionCleanupResult();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupResult {
+    resetCount?: number;
+    skipped?: SessionCleanupSkip[];
+    errors?: string[];
+
+    [key: string]: any;
+}
+
+export class SessionCleanupSkip implements ISessionCleanupSkip {
+    sessionId?: string;
+    reason?: string;
+
+    [key: string]: any;
+
+    constructor(data?: ISessionCleanupSkip) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.sessionId = _data["sessionId"];
+            this.reason = _data["reason"];
+        }
+    }
+
+    static fromJS(data: any): SessionCleanupSkip {
+        data = typeof data === 'object' ? data : {};
+        let result = new SessionCleanupSkip();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["sessionId"] = this.sessionId;
+        data["reason"] = this.reason;
+        return data;
+    }
+
+    clone(): SessionCleanupSkip {
+        const json = this.toJSON();
+        let result = new SessionCleanupSkip();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISessionCleanupSkip {
+    sessionId?: string;
+    reason?: string;
+
+    [key: string]: any;
+}
+
 export class MetricsOverview implements IMetricsOverview {
     published?: EndpointEventTypeMessageCount[];
     handled?: EndpointEventTypeMessageCount[];
@@ -14282,7 +16583,30 @@ export interface ILatencyStats {
 
 export class FailedInsightsOverview implements IFailedInsightsOverview {
     groups?: ErrorPatternGroup[];
+    /** Failure occurrences in the window. Always equal to totalOccurrences; kept for existing clients. */
     totalFailed?: number;
+    /** Resolved window start (inclusive, UTC). Send it back unchanged with to for drill-down. */
+    from?: moment.Moment;
+    /** Resolved window end (exclusive, UTC). */
+    to?: moment.Moment;
+    /** The endpoint filter applied, or null for every endpoint. */
+    endpointId?: string | undefined;
+    /** Failed attempts in the scope. An event that failed three times counts three. */
+    totalOccurrences?: number;
+    /** When the failure occurrences were read from the message store. */
+    occurrencesReadAt?: moment.Moment;
+    /** When saved classifications were read, or null when enrichment is not available. */
+    classificationsReadAt?: moment.Moment | undefined;
+    enrichment?: InsightsEnrichmentStatus;
+    /** The largest scope, in occurrences, that is enriched with saved classifications. */
+    enrichmentLimit?: number;
+    /** Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is. */
+    analysisAvailable?: boolean;
+    coverage?: InsightsCoverage | undefined;
+    /** Occurrences grouped by likely failure cause. Null unless enrichment is available. */
+    causeGroups?: InsightGroup[] | undefined;
+    /** Occurrences grouped by saved recovery guidance. Null unless enrichment is available. */
+    guidanceGroups?: InsightGroup[] | undefined;
 
     [key: string]: any;
 
@@ -14307,6 +16631,26 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
                     this.groups!.push(ErrorPatternGroup.fromJS(item));
             }
             this.totalFailed = _data["totalFailed"];
+            this.from = _data["from"] ? moment(_data["from"].toString()) : undefined as any;
+            this.to = _data["to"] ? moment(_data["to"].toString()) : undefined as any;
+            this.endpointId = _data["endpointId"];
+            this.totalOccurrences = _data["totalOccurrences"];
+            this.occurrencesReadAt = _data["occurrencesReadAt"] ? moment(_data["occurrencesReadAt"].toString()) : undefined as any;
+            this.classificationsReadAt = _data["classificationsReadAt"] ? moment(_data["classificationsReadAt"].toString()) : undefined as any;
+            this.enrichment = _data["enrichment"];
+            this.enrichmentLimit = _data["enrichmentLimit"];
+            this.analysisAvailable = _data["analysisAvailable"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
+            if (Array.isArray(_data["causeGroups"])) {
+                this.causeGroups = [] as any;
+                for (let item of _data["causeGroups"])
+                    this.causeGroups!.push(InsightGroup.fromJS(item));
+            }
+            if (Array.isArray(_data["guidanceGroups"])) {
+                this.guidanceGroups = [] as any;
+                for (let item of _data["guidanceGroups"])
+                    this.guidanceGroups!.push(InsightGroup.fromJS(item));
+            }
         }
     }
 
@@ -14329,6 +16673,26 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
                 data["groups"].push(item ? item.toJSON() : undefined as any);
         }
         data["totalFailed"] = this.totalFailed;
+        data["from"] = this.from ? this.from.toISOString() : undefined as any;
+        data["to"] = this.to ? this.to.toISOString() : undefined as any;
+        data["endpointId"] = this.endpointId;
+        data["totalOccurrences"] = this.totalOccurrences;
+        data["occurrencesReadAt"] = this.occurrencesReadAt ? this.occurrencesReadAt.toISOString() : undefined as any;
+        data["classificationsReadAt"] = this.classificationsReadAt ? this.classificationsReadAt.toISOString() : undefined as any;
+        data["enrichment"] = this.enrichment;
+        data["enrichmentLimit"] = this.enrichmentLimit;
+        data["analysisAvailable"] = this.analysisAvailable;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
+        if (Array.isArray(this.causeGroups)) {
+            data["causeGroups"] = [];
+            for (let item of this.causeGroups)
+                data["causeGroups"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.guidanceGroups)) {
+            data["guidanceGroups"] = [];
+            for (let item of this.guidanceGroups)
+                data["guidanceGroups"].push(item ? item.toJSON() : undefined as any);
+        }
         return data;
     }
 
@@ -14342,14 +16706,622 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
 
 export interface IFailedInsightsOverview {
     groups?: ErrorPatternGroup[];
+    /** Failure occurrences in the window. Always equal to totalOccurrences; kept for existing clients. */
     totalFailed?: number;
+    /** Resolved window start (inclusive, UTC). Send it back unchanged with to for drill-down. */
+    from?: moment.Moment;
+    /** Resolved window end (exclusive, UTC). */
+    to?: moment.Moment;
+    /** The endpoint filter applied, or null for every endpoint. */
+    endpointId?: string | undefined;
+    /** Failed attempts in the scope. An event that failed three times counts three. */
+    totalOccurrences?: number;
+    /** When the failure occurrences were read from the message store. */
+    occurrencesReadAt?: moment.Moment;
+    /** When saved classifications were read, or null when enrichment is not available. */
+    classificationsReadAt?: moment.Moment | undefined;
+    enrichment?: InsightsEnrichmentStatus;
+    /** The largest scope, in occurrences, that is enriched with saved classifications. */
+    enrichmentLimit?: number;
+    /** Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is. */
+    analysisAvailable?: boolean;
+    coverage?: InsightsCoverage | undefined;
+    /** Occurrences grouped by likely failure cause. Null unless enrichment is available. */
+    causeGroups?: InsightGroup[] | undefined;
+    /** Occurrences grouped by saved recovery guidance. Null unless enrichment is available. */
+    guidanceGroups?: InsightGroup[] | undefined;
+
+    [key: string]: any;
+}
+
+/** Whether saved classifications enrich this response. Every value except available leaves coverage and the cause and guidance groups null. disabled is listed first so an unset value never reads as available. */
+export enum InsightsEnrichmentStatus {
+    Disabled = "disabled",
+    Available = "available",
+    Unavailable = "unavailable",
+    Unsupported = "unsupported",
+    LimitExceeded = "limitExceeded",
+}
+
+/** How many occurrences have saved analysis. classified + uncertain + notAnalyzed + notEligible = total. */
+export class InsightsCoverage implements IInsightsCoverage {
+    total?: number;
+    /** classified + uncertain. */
+    analyzed?: number;
+    classified?: number;
+    uncertain?: number;
+    /** No completed result, and analysis could be requested. Includes failures that can no longer be analyzed because their event has since completed or been skipped. */
+    notAnalyzed?: number;
+    /** No completed result, and the endpoint is outside the configured analysis allow-list. */
+    notEligible?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightsCoverage) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.total = _data["total"];
+            this.analyzed = _data["analyzed"];
+            this.classified = _data["classified"];
+            this.uncertain = _data["uncertain"];
+            this.notAnalyzed = _data["notAnalyzed"];
+            this.notEligible = _data["notEligible"];
+        }
+    }
+
+    static fromJS(data: any): InsightsCoverage {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightsCoverage();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["total"] = this.total;
+        data["analyzed"] = this.analyzed;
+        data["classified"] = this.classified;
+        data["uncertain"] = this.uncertain;
+        data["notAnalyzed"] = this.notAnalyzed;
+        data["notEligible"] = this.notEligible;
+        return data;
+    }
+
+    clone(): InsightsCoverage {
+        const json = this.toJSON();
+        let result = new InsightsCoverage();
+        result.init(json);
+        return result;
+    }
+}
+
+/** How many occurrences have saved analysis. classified + uncertain + notAnalyzed + notEligible = total. */
+export interface IInsightsCoverage {
+    total?: number;
+    /** classified + uncertain. */
+    analyzed?: number;
+    classified?: number;
+    uncertain?: number;
+    /** No completed result, and analysis could be requested. Includes failures that can no longer be analyzed because their event has since completed or been skipped. */
+    notAnalyzed?: number;
+    /** No completed result, and the endpoint is outside the configured analysis allow-list. */
+    notEligible?: number;
+
+    [key: string]: any;
+}
+
+/** One likely-cause or recovery-guidance group. */
+export class InsightGroup implements IInsightGroup {
+    /** Stable within this response. A taxonomy or guidance name, or uncertain, notAnalyzed, notEligible. */
+    groupKey?: string;
+    label?: string;
+    count?: number;
+    coverage?: InsightsCoverage | undefined;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    /** The group's most frequent error patterns, at most the configured limit. */
+    topPatterns?: InsightGroupPattern[];
+    /** Distinct error patterns in the group beyond topPatterns. */
+    morePatterns?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightGroup) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.groupKey = _data["groupKey"];
+            this.label = _data["label"];
+            this.count = _data["count"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+            if (Array.isArray(_data["eventTypes"])) {
+                this.eventTypes = [] as any;
+                for (let item of _data["eventTypes"])
+                    this.eventTypes!.push(item);
+            }
+            this.latestOccurrence = _data["latestOccurrence"] ? moment(_data["latestOccurrence"].toString()) : undefined as any;
+            if (Array.isArray(_data["topPatterns"])) {
+                this.topPatterns = [] as any;
+                for (let item of _data["topPatterns"])
+                    this.topPatterns!.push(InsightGroupPattern.fromJS(item));
+            }
+            this.morePatterns = _data["morePatterns"];
+        }
+    }
+
+    static fromJS(data: any): InsightGroup {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightGroup();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["groupKey"] = this.groupKey;
+        data["label"] = this.label;
+        data["count"] = this.count;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        if (Array.isArray(this.eventTypes)) {
+            data["eventTypes"] = [];
+            for (let item of this.eventTypes)
+                data["eventTypes"].push(item);
+        }
+        data["latestOccurrence"] = this.latestOccurrence ? this.latestOccurrence.toISOString() : undefined as any;
+        if (Array.isArray(this.topPatterns)) {
+            data["topPatterns"] = [];
+            for (let item of this.topPatterns)
+                data["topPatterns"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["morePatterns"] = this.morePatterns;
+        return data;
+    }
+
+    clone(): InsightGroup {
+        const json = this.toJSON();
+        let result = new InsightGroup();
+        result.init(json);
+        return result;
+    }
+}
+
+/** One likely-cause or recovery-guidance group. */
+export interface IInsightGroup {
+    /** Stable within this response. A taxonomy or guidance name, or uncertain, notAnalyzed, notEligible. */
+    groupKey?: string;
+    label?: string;
+    count?: number;
+    coverage?: InsightsCoverage | undefined;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    /** The group's most frequent error patterns, at most the configured limit. */
+    topPatterns?: InsightGroupPattern[];
+    /** Distinct error patterns in the group beyond topPatterns. */
+    morePatterns?: number;
+
+    [key: string]: any;
+}
+
+export enum InsightsPerspective {
+    ErrorPattern = "errorPattern",
+    Cause = "cause",
+    Guidance = "guidance",
+}
+
+/** The occurrence's coverage state. unavailable (listed first so an unset value never claims analysis) means saved classifications could not be read for this scope. */
+export enum InsightAnalysisState {
+    Unavailable = "unavailable",
+    Classified = "classified",
+    Uncertain = "uncertain",
+    NotAnalyzed = "notAnalyzed",
+    NotEligible = "notEligible",
+}
+
+/** One failed attempt. */
+export class InsightOccurrence implements IInsightOccurrence {
+    messageId?: string;
+    eventId?: string;
+    endpointId?: string;
+    eventTypeId?: string;
+    failedAt?: moment.Moment;
+    errorPatternKey?: string;
+    normalizedPattern?: string;
+    analysisState?: InsightAnalysisState;
+    /** analysisRunning, outcomeUnknown, lastAnalysisFailed or identityMismatch; null when the latest operation is the completed result. */
+    operationMarker?: string | undefined;
+    /** The saved category; for an uncertain result, the provider's suggestion. */
+    category?: string | undefined;
+    categoryConfidence?: number | undefined;
+    /** The saved guidance name, or the raw stored value when unrecognized. */
+    guidance?: string | undefined;
+    revision?: number | undefined;
+    model?: string | undefined;
+    /** Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider). */
+    provider?: string | undefined;
+    /** The saved fault origin (question set version 2); null when not assessed. */
+    faultOrigin?: string | undefined;
+    classifiedAt?: moment.Moment | undefined;
+    /** The event's current resolution status, or null when unavailable. Never implies unresolved. */
+    currentStatus?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightOccurrence) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.messageId = _data["messageId"];
+            this.eventId = _data["eventId"];
+            this.endpointId = _data["endpointId"];
+            this.eventTypeId = _data["eventTypeId"];
+            this.failedAt = _data["failedAt"] ? moment(_data["failedAt"].toString()) : undefined as any;
+            this.errorPatternKey = _data["errorPatternKey"];
+            this.normalizedPattern = _data["normalizedPattern"];
+            this.analysisState = _data["analysisState"];
+            this.operationMarker = _data["operationMarker"];
+            this.category = _data["category"];
+            this.categoryConfidence = _data["categoryConfidence"];
+            this.guidance = _data["guidance"];
+            this.revision = _data["revision"];
+            this.model = _data["model"];
+            this.provider = _data["provider"];
+            this.faultOrigin = _data["faultOrigin"];
+            this.classifiedAt = _data["classifiedAt"] ? moment(_data["classifiedAt"].toString()) : undefined as any;
+            this.currentStatus = _data["currentStatus"];
+        }
+    }
+
+    static fromJS(data: any): InsightOccurrence {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightOccurrence();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["messageId"] = this.messageId;
+        data["eventId"] = this.eventId;
+        data["endpointId"] = this.endpointId;
+        data["eventTypeId"] = this.eventTypeId;
+        data["failedAt"] = this.failedAt ? this.failedAt.toISOString() : undefined as any;
+        data["errorPatternKey"] = this.errorPatternKey;
+        data["normalizedPattern"] = this.normalizedPattern;
+        data["analysisState"] = this.analysisState;
+        data["operationMarker"] = this.operationMarker;
+        data["category"] = this.category;
+        data["categoryConfidence"] = this.categoryConfidence;
+        data["guidance"] = this.guidance;
+        data["revision"] = this.revision;
+        data["model"] = this.model;
+        data["provider"] = this.provider;
+        data["faultOrigin"] = this.faultOrigin;
+        data["classifiedAt"] = this.classifiedAt ? this.classifiedAt.toISOString() : undefined as any;
+        data["currentStatus"] = this.currentStatus;
+        return data;
+    }
+
+    clone(): InsightOccurrence {
+        const json = this.toJSON();
+        let result = new InsightOccurrence();
+        result.init(json);
+        return result;
+    }
+}
+
+/** One failed attempt. */
+export interface IInsightOccurrence {
+    messageId?: string;
+    eventId?: string;
+    endpointId?: string;
+    eventTypeId?: string;
+    failedAt?: moment.Moment;
+    errorPatternKey?: string;
+    normalizedPattern?: string;
+    analysisState?: InsightAnalysisState;
+    /** analysisRunning, outcomeUnknown, lastAnalysisFailed or identityMismatch; null when the latest operation is the completed result. */
+    operationMarker?: string | undefined;
+    /** The saved category; for an uncertain result, the provider's suggestion. */
+    category?: string | undefined;
+    categoryConfidence?: number | undefined;
+    /** The saved guidance name, or the raw stored value when unrecognized. */
+    guidance?: string | undefined;
+    revision?: number | undefined;
+    model?: string | undefined;
+    /** Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider). */
+    provider?: string | undefined;
+    /** The saved fault origin (question set version 2); null when not assessed. */
+    faultOrigin?: string | undefined;
+    classifiedAt?: moment.Moment | undefined;
+    /** The event's current resolution status, or null when unavailable. Never implies unresolved. */
+    currentStatus?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class InsightOccurrencePage implements IInsightOccurrencePage {
+    occurrences?: InsightOccurrence[];
+    continuationToken?: string | undefined;
+    occurrencesReadAt?: moment.Moment;
+    classificationsReadAt?: moment.Moment | undefined;
+    enrichment?: InsightsEnrichmentStatus;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightOccurrencePage) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["occurrences"])) {
+                this.occurrences = [] as any;
+                for (let item of _data["occurrences"])
+                    this.occurrences!.push(InsightOccurrence.fromJS(item));
+            }
+            this.continuationToken = _data["continuationToken"];
+            this.occurrencesReadAt = _data["occurrencesReadAt"] ? moment(_data["occurrencesReadAt"].toString()) : undefined as any;
+            this.classificationsReadAt = _data["classificationsReadAt"] ? moment(_data["classificationsReadAt"].toString()) : undefined as any;
+            this.enrichment = _data["enrichment"];
+        }
+    }
+
+    static fromJS(data: any): InsightOccurrencePage {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightOccurrencePage();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.occurrences)) {
+            data["occurrences"] = [];
+            for (let item of this.occurrences)
+                data["occurrences"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["continuationToken"] = this.continuationToken;
+        data["occurrencesReadAt"] = this.occurrencesReadAt ? this.occurrencesReadAt.toISOString() : undefined as any;
+        data["classificationsReadAt"] = this.classificationsReadAt ? this.classificationsReadAt.toISOString() : undefined as any;
+        data["enrichment"] = this.enrichment;
+        return data;
+    }
+
+    clone(): InsightOccurrencePage {
+        const json = this.toJSON();
+        let result = new InsightOccurrencePage();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IInsightOccurrencePage {
+    occurrences?: InsightOccurrence[];
+    continuationToken?: string | undefined;
+    occurrencesReadAt?: moment.Moment;
+    classificationsReadAt?: moment.Moment | undefined;
+    enrichment?: InsightsEnrichmentStatus;
+
+    [key: string]: any;
+}
+
+export class InsightGroupPatternPage implements IInsightGroupPatternPage {
+    patterns?: InsightGroupPattern[];
+    continuationToken?: string | undefined;
+    occurrencesReadAt?: moment.Moment;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightGroupPatternPage) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["patterns"])) {
+                this.patterns = [] as any;
+                for (let item of _data["patterns"])
+                    this.patterns!.push(InsightGroupPattern.fromJS(item));
+            }
+            this.continuationToken = _data["continuationToken"];
+            this.occurrencesReadAt = _data["occurrencesReadAt"] ? moment(_data["occurrencesReadAt"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): InsightGroupPatternPage {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightGroupPatternPage();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.patterns)) {
+            data["patterns"] = [];
+            for (let item of this.patterns)
+                data["patterns"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["continuationToken"] = this.continuationToken;
+        data["occurrencesReadAt"] = this.occurrencesReadAt ? this.occurrencesReadAt.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): InsightGroupPatternPage {
+        const json = this.toJSON();
+        let result = new InsightGroupPatternPage();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IInsightGroupPatternPage {
+    patterns?: InsightGroupPattern[];
+    continuationToken?: string | undefined;
+    occurrencesReadAt?: moment.Moment;
+
+    [key: string]: any;
+}
+
+export class InsightGroupPattern implements IInsightGroupPattern {
+    /** The error pattern's key, as on ErrorSubGroup. */
+    groupKey?: string;
+    normalizedPattern?: string;
+    count?: number;
+    exampleErrorText?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightGroupPattern) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.groupKey = _data["groupKey"];
+            this.normalizedPattern = _data["normalizedPattern"];
+            this.count = _data["count"];
+            this.exampleErrorText = _data["exampleErrorText"];
+        }
+    }
+
+    static fromJS(data: any): InsightGroupPattern {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightGroupPattern();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["groupKey"] = this.groupKey;
+        data["normalizedPattern"] = this.normalizedPattern;
+        data["count"] = this.count;
+        data["exampleErrorText"] = this.exampleErrorText;
+        return data;
+    }
+
+    clone(): InsightGroupPattern {
+        const json = this.toJSON();
+        let result = new InsightGroupPattern();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IInsightGroupPattern {
+    /** The error pattern's key, as on ErrorSubGroup. */
+    groupKey?: string;
+    normalizedPattern?: string;
+    count?: number;
+    exampleErrorText?: string;
 
     [key: string]: any;
 }
 
 export class ErrorPatternGroup implements IErrorPatternGroup {
+    /** Stable within this response; not durable across releases. */
+    groupKey?: string;
     errorCategory?: string;
     count?: number;
+    coverage?: InsightsCoverage | undefined;
     endpoints?: string[];
     eventTypes?: string[];
     latestOccurrence?: moment.Moment;
@@ -14373,8 +17345,10 @@ export class ErrorPatternGroup implements IErrorPatternGroup {
                 if (_data.hasOwnProperty(property))
                     this[property] = _data[property];
             }
+            this.groupKey = _data["groupKey"];
             this.errorCategory = _data["errorCategory"];
             this.count = _data["count"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
             if (Array.isArray(_data["endpoints"])) {
                 this.endpoints = [] as any;
                 for (let item of _data["endpoints"])
@@ -14408,8 +17382,10 @@ export class ErrorPatternGroup implements IErrorPatternGroup {
             if (this.hasOwnProperty(property))
                 data[property] = this[property];
         }
+        data["groupKey"] = this.groupKey;
         data["errorCategory"] = this.errorCategory;
         data["count"] = this.count;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
         if (Array.isArray(this.endpoints)) {
             data["endpoints"] = [];
             for (let item of this.endpoints)
@@ -14439,8 +17415,11 @@ export class ErrorPatternGroup implements IErrorPatternGroup {
 }
 
 export interface IErrorPatternGroup {
+    /** Stable within this response; not durable across releases. */
+    groupKey?: string;
     errorCategory?: string;
     count?: number;
+    coverage?: InsightsCoverage | undefined;
     endpoints?: string[];
     eventTypes?: string[];
     latestOccurrence?: moment.Moment;
@@ -14451,8 +17430,11 @@ export interface IErrorPatternGroup {
 }
 
 export class ErrorSubGroup implements IErrorSubGroup {
+    /** Stable within this response; not durable across releases. */
+    groupKey?: string;
     normalizedPattern?: string;
     count?: number;
+    coverage?: InsightsCoverage | undefined;
     endpoints?: string[];
     eventTypes?: string[];
     latestOccurrence?: moment.Moment;
@@ -14475,8 +17457,10 @@ export class ErrorSubGroup implements IErrorSubGroup {
                 if (_data.hasOwnProperty(property))
                     this[property] = _data[property];
             }
+            this.groupKey = _data["groupKey"];
             this.normalizedPattern = _data["normalizedPattern"];
             this.count = _data["count"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
             if (Array.isArray(_data["endpoints"])) {
                 this.endpoints = [] as any;
                 for (let item of _data["endpoints"])
@@ -14505,8 +17489,10 @@ export class ErrorSubGroup implements IErrorSubGroup {
             if (this.hasOwnProperty(property))
                 data[property] = this[property];
         }
+        data["groupKey"] = this.groupKey;
         data["normalizedPattern"] = this.normalizedPattern;
         data["count"] = this.count;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
         if (Array.isArray(this.endpoints)) {
             data["endpoints"] = [];
             for (let item of this.endpoints)
@@ -14531,8 +17517,11 @@ export class ErrorSubGroup implements IErrorSubGroup {
 }
 
 export interface IErrorSubGroup {
+    /** Stable within this response; not durable across releases. */
+    groupKey?: string;
     normalizedPattern?: string;
     count?: number;
+    coverage?: InsightsCoverage | undefined;
     endpoints?: string[];
     eventTypes?: string[];
     latestOccurrence?: moment.Moment;
@@ -16848,6 +19837,8 @@ export class McpAccessSettings implements IMcpAccessSettings {
     enabled?: boolean;
     capabilities?: McpCapabilities;
     allowWorkloads?: boolean;
+    /** Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
+    allowWorkloadClassification?: boolean;
     people?: McpPeople;
     clients?: McpClients;
     endpoints?: McpEndpointRules;
@@ -16876,6 +19867,7 @@ export class McpAccessSettings implements IMcpAccessSettings {
             this.enabled = _data["enabled"];
             this.capabilities = _data["capabilities"] ? McpCapabilities.fromJS(_data["capabilities"]) : undefined as any;
             this.allowWorkloads = _data["allowWorkloads"];
+            this.allowWorkloadClassification = _data["allowWorkloadClassification"];
             this.people = _data["people"] ? McpPeople.fromJS(_data["people"]) : undefined as any;
             this.clients = _data["clients"] ? McpClients.fromJS(_data["clients"]) : undefined as any;
             this.endpoints = _data["endpoints"] ? McpEndpointRules.fromJS(_data["endpoints"]) : undefined as any;
@@ -16902,6 +19894,7 @@ export class McpAccessSettings implements IMcpAccessSettings {
         data["enabled"] = this.enabled;
         data["capabilities"] = this.capabilities ? this.capabilities.toJSON() : undefined as any;
         data["allowWorkloads"] = this.allowWorkloads;
+        data["allowWorkloadClassification"] = this.allowWorkloadClassification;
         data["people"] = this.people ? this.people.toJSON() : undefined as any;
         data["clients"] = this.clients ? this.clients.toJSON() : undefined as any;
         data["endpoints"] = this.endpoints ? this.endpoints.toJSON() : undefined as any;
@@ -16928,6 +19921,8 @@ export interface IMcpAccessSettings {
     enabled?: boolean;
     capabilities?: McpCapabilities;
     allowWorkloads?: boolean;
+    /** Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
+    allowWorkloadClassification?: boolean;
     people?: McpPeople;
     clients?: McpClients;
     endpoints?: McpEndpointRules;
@@ -17824,34 +20819,22 @@ export interface IMcpAccessChange {
     [key: string]: any;
 }
 
-export class McpAccessProblem implements IMcpAccessProblem {
-    /** Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken. */
-    code?: string;
-    errors?: string[];
+/** A refused MCP access change. code is Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken. */
+export class McpAccessProblem extends ProblemDetails implements IMcpAccessProblem {
     changes?: McpAccessChange[];
 
     [key: string]: any;
 
     constructor(data?: IMcpAccessProblem) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (this as any)[property] = (data as any)[property];
-            }
-        }
+        super(data);
     }
 
-    init(_data?: any) {
+    override init(_data?: any) {
+        super.init(_data);
         if (_data) {
             for (var property in _data) {
                 if (_data.hasOwnProperty(property))
                     this[property] = _data[property];
-            }
-            this.code = _data["code"];
-            if (Array.isArray(_data["errors"])) {
-                this.errors = [] as any;
-                for (let item of _data["errors"])
-                    this.errors!.push(item);
             }
             if (Array.isArray(_data["changes"])) {
                 this.changes = [] as any;
@@ -17861,30 +20844,25 @@ export class McpAccessProblem implements IMcpAccessProblem {
         }
     }
 
-    static fromJS(data: any): McpAccessProblem {
+    static override fromJS(data: any): McpAccessProblem {
         data = typeof data === 'object' ? data : {};
         let result = new McpAccessProblem();
         result.init(data);
         return result;
     }
 
-    toJSON(data?: any) {
+    override toJSON(data?: any) {
         data = typeof data === 'object' ? data : {};
         for (var property in this) {
             if (this.hasOwnProperty(property))
                 data[property] = this[property];
-        }
-        data["code"] = this.code;
-        if (Array.isArray(this.errors)) {
-            data["errors"] = [];
-            for (let item of this.errors)
-                data["errors"].push(item);
         }
         if (Array.isArray(this.changes)) {
             data["changes"] = [];
             for (let item of this.changes)
                 data["changes"].push(item ? item.toJSON() : undefined as any);
         }
+        super.toJSON(data);
         return data;
     }
 
@@ -17896,10 +20874,8 @@ export class McpAccessProblem implements IMcpAccessProblem {
     }
 }
 
-export interface IMcpAccessProblem {
-    /** Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken. */
-    code?: string;
-    errors?: string[];
+/** A refused MCP access change. code is Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken. */
+export interface IMcpAccessProblem extends IProblemDetails {
     changes?: McpAccessChange[];
 
     [key: string]: any;
@@ -18215,14 +21191,30 @@ export interface IAgentApiKeyIssued {
     [key: string]: any;
 }
 
-export class AgentApiKeyProblem implements IAgentApiKeyProblem {
-    /** Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken. */
-    code?: string;
-    errors?: string[];
+export enum DashboardTokenStatus {
+    Active = "active",
+    Revoked = "revoked",
+    Expired = "expired",
+}
+
+/** An issued Monitor dashboard token. Never carries the secret. */
+export class DashboardTokenInfo implements IDashboardTokenInfo {
+    tokenId?: string;
+    /** The non-secret start of the token, nbdt_<tokenId>, to recognise it. */
+    prefix?: string;
+    name?: string;
+    status?: DashboardTokenStatus;
+    createdAtUtc?: moment.Moment;
+    createdBy?: string | undefined;
+    expiresAtUtc?: moment.Moment | undefined;
+    revokedAtUtc?: moment.Moment | undefined;
+    revokedBy?: string | undefined;
+    /** Recorded at most every 5 minutes per instance; null when never used. */
+    lastUsedAtUtc?: moment.Moment | undefined;
 
     [key: string]: any;
 
-    constructor(data?: IAgentApiKeyProblem) {
+    constructor(data?: IDashboardTokenInfo) {
         if (data) {
             for (var property in data) {
                 if (data.hasOwnProperty(property))
@@ -18237,18 +21229,22 @@ export class AgentApiKeyProblem implements IAgentApiKeyProblem {
                 if (_data.hasOwnProperty(property))
                     this[property] = _data[property];
             }
-            this.code = _data["code"];
-            if (Array.isArray(_data["errors"])) {
-                this.errors = [] as any;
-                for (let item of _data["errors"])
-                    this.errors!.push(item);
-            }
+            this.tokenId = _data["tokenId"];
+            this.prefix = _data["prefix"];
+            this.name = _data["name"];
+            this.status = _data["status"];
+            this.createdAtUtc = _data["createdAtUtc"] ? moment(_data["createdAtUtc"].toString()) : undefined as any;
+            this.createdBy = _data["createdBy"];
+            this.expiresAtUtc = _data["expiresAtUtc"] ? moment(_data["expiresAtUtc"].toString()) : undefined as any;
+            this.revokedAtUtc = _data["revokedAtUtc"] ? moment(_data["revokedAtUtc"].toString()) : undefined as any;
+            this.revokedBy = _data["revokedBy"];
+            this.lastUsedAtUtc = _data["lastUsedAtUtc"] ? moment(_data["lastUsedAtUtc"].toString()) : undefined as any;
         }
     }
 
-    static fromJS(data: any): AgentApiKeyProblem {
+    static fromJS(data: any): DashboardTokenInfo {
         data = typeof data === 'object' ? data : {};
-        let result = new AgentApiKeyProblem();
+        let result = new DashboardTokenInfo();
         result.init(data);
         return result;
     }
@@ -18259,27 +21255,907 @@ export class AgentApiKeyProblem implements IAgentApiKeyProblem {
             if (this.hasOwnProperty(property))
                 data[property] = this[property];
         }
-        data["code"] = this.code;
-        if (Array.isArray(this.errors)) {
-            data["errors"] = [];
-            for (let item of this.errors)
-                data["errors"].push(item);
-        }
+        data["tokenId"] = this.tokenId;
+        data["prefix"] = this.prefix;
+        data["name"] = this.name;
+        data["status"] = this.status;
+        data["createdAtUtc"] = this.createdAtUtc ? this.createdAtUtc.toISOString() : undefined as any;
+        data["createdBy"] = this.createdBy;
+        data["expiresAtUtc"] = this.expiresAtUtc ? this.expiresAtUtc.toISOString() : undefined as any;
+        data["revokedAtUtc"] = this.revokedAtUtc ? this.revokedAtUtc.toISOString() : undefined as any;
+        data["revokedBy"] = this.revokedBy;
+        data["lastUsedAtUtc"] = this.lastUsedAtUtc ? this.lastUsedAtUtc.toISOString() : undefined as any;
         return data;
     }
 
-    clone(): AgentApiKeyProblem {
+    clone(): DashboardTokenInfo {
         const json = this.toJSON();
-        let result = new AgentApiKeyProblem();
+        let result = new DashboardTokenInfo();
         result.init(json);
         return result;
     }
 }
 
-export interface IAgentApiKeyProblem {
-    /** Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken. */
-    code?: string;
-    errors?: string[];
+/** An issued Monitor dashboard token. Never carries the secret. */
+export interface IDashboardTokenInfo {
+    tokenId?: string;
+    /** The non-secret start of the token, nbdt_<tokenId>, to recognise it. */
+    prefix?: string;
+    name?: string;
+    status?: DashboardTokenStatus;
+    createdAtUtc?: moment.Moment;
+    createdBy?: string | undefined;
+    expiresAtUtc?: moment.Moment | undefined;
+    revokedAtUtc?: moment.Moment | undefined;
+    revokedBy?: string | undefined;
+    /** Recorded at most every 5 minutes per instance; null when never used. */
+    lastUsedAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class DashboardTokenState implements IDashboardTokenState {
+    tokens?: DashboardTokenInfo[];
+    /** Send as the X-NimBus-CSRF header on writes. */
+    csrfToken?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IDashboardTokenState) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["tokens"])) {
+                this.tokens = [] as any;
+                for (let item of _data["tokens"])
+                    this.tokens!.push(DashboardTokenInfo.fromJS(item));
+            }
+            this.csrfToken = _data["csrfToken"];
+        }
+    }
+
+    static fromJS(data: any): DashboardTokenState {
+        data = typeof data === 'object' ? data : {};
+        let result = new DashboardTokenState();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.tokens)) {
+            data["tokens"] = [];
+            for (let item of this.tokens)
+                data["tokens"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["csrfToken"] = this.csrfToken;
+        return data;
+    }
+
+    clone(): DashboardTokenState {
+        const json = this.toJSON();
+        let result = new DashboardTokenState();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDashboardTokenState {
+    tokens?: DashboardTokenInfo[];
+    /** Send as the X-NimBus-CSRF header on writes. */
+    csrfToken?: string;
+
+    [key: string]: any;
+}
+
+export class DashboardTokenCreate implements IDashboardTokenCreate {
+    /** A label, for example the wall the token is for. Required, up to 100 characters. */
+    name?: string;
+    /** When the token stops working; null for no expiry. Must be in the future. */
+    expiresAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IDashboardTokenCreate) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+            this.expiresAtUtc = _data["expiresAtUtc"] ? moment(_data["expiresAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): DashboardTokenCreate {
+        data = typeof data === 'object' ? data : {};
+        let result = new DashboardTokenCreate();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        data["expiresAtUtc"] = this.expiresAtUtc ? this.expiresAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): DashboardTokenCreate {
+        const json = this.toJSON();
+        let result = new DashboardTokenCreate();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDashboardTokenCreate {
+    /** A label, for example the wall the token is for. Required, up to 100 characters. */
+    name?: string;
+    /** When the token stops working; null for no expiry. Must be in the future. */
+    expiresAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class DashboardTokenIssued implements IDashboardTokenIssued {
+    /** The full token. Shown once; it cannot be retrieved again. */
+    token?: string;
+    issued?: DashboardTokenInfo;
+    state?: DashboardTokenState;
+
+    [key: string]: any;
+
+    constructor(data?: IDashboardTokenIssued) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.token = _data["token"];
+            this.issued = _data["issued"] ? DashboardTokenInfo.fromJS(_data["issued"]) : undefined as any;
+            this.state = _data["state"] ? DashboardTokenState.fromJS(_data["state"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): DashboardTokenIssued {
+        data = typeof data === 'object' ? data : {};
+        let result = new DashboardTokenIssued();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["token"] = this.token;
+        data["issued"] = this.issued ? this.issued.toJSON() : undefined as any;
+        data["state"] = this.state ? this.state.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): DashboardTokenIssued {
+        const json = this.toJSON();
+        let result = new DashboardTokenIssued();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDashboardTokenIssued {
+    /** The full token. Shown once; it cannot be retrieved again. */
+    token?: string;
+    issued?: DashboardTokenInfo;
+    state?: DashboardTokenState;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedStatus implements IMonitorFeedStatus {
+    environment?: string | undefined;
+    platformName?: string | undefined;
+    serverTimeUtc?: moment.Moment;
+    /** When the endpoint data was read from the store. */
+    generatedAtUtc?: moment.Moment;
+    /** True when the latest read failed and this is an earlier result. */
+    stale?: boolean;
+    /** True when the caller authenticated with a dashboard token. */
+    tokenAccess?: boolean;
+    endpoints?: MonitorFeedEndpoint[];
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedStatus) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.environment = _data["environment"];
+            this.platformName = _data["platformName"];
+            this.serverTimeUtc = _data["serverTimeUtc"] ? moment(_data["serverTimeUtc"].toString()) : undefined as any;
+            this.generatedAtUtc = _data["generatedAtUtc"] ? moment(_data["generatedAtUtc"].toString()) : undefined as any;
+            this.stale = _data["stale"];
+            this.tokenAccess = _data["tokenAccess"];
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(MonitorFeedEndpoint.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedStatus {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedStatus();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["environment"] = this.environment;
+        data["platformName"] = this.platformName;
+        data["serverTimeUtc"] = this.serverTimeUtc ? this.serverTimeUtc.toISOString() : undefined as any;
+        data["generatedAtUtc"] = this.generatedAtUtc ? this.generatedAtUtc.toISOString() : undefined as any;
+        data["stale"] = this.stale;
+        data["tokenAccess"] = this.tokenAccess;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): MonitorFeedStatus {
+        const json = this.toJSON();
+        let result = new MonitorFeedStatus();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedStatus {
+    environment?: string | undefined;
+    platformName?: string | undefined;
+    serverTimeUtc?: moment.Moment;
+    /** When the endpoint data was read from the store. */
+    generatedAtUtc?: moment.Moment;
+    /** True when the latest read failed and this is an earlier result. */
+    stale?: boolean;
+    /** True when the caller authenticated with a dashboard token. */
+    tokenAccess?: boolean;
+    endpoints?: MonitorFeedEndpoint[];
+
+    [key: string]: any;
+}
+
+export class MonitorFeedEndpoint implements IMonitorFeedEndpoint {
+    status?: EndpointStatusCount;
+    /** Estimated sessions blocked by a failed, dead-lettered or pending hand-off message. Null when the store cannot tell. */
+    blockedSessionCount?: number | undefined;
+    heartbeat?: MonitorFeedHeartbeat;
+    acknowledgement?: MonitorAcknowledgement;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedEndpoint) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.status = _data["status"] ? EndpointStatusCount.fromJS(_data["status"]) : undefined as any;
+            this.blockedSessionCount = _data["blockedSessionCount"];
+            this.heartbeat = _data["heartbeat"] ? MonitorFeedHeartbeat.fromJS(_data["heartbeat"]) : undefined as any;
+            this.acknowledgement = _data["acknowledgement"] ? MonitorAcknowledgement.fromJS(_data["acknowledgement"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedEndpoint {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedEndpoint();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["status"] = this.status ? this.status.toJSON() : undefined as any;
+        data["blockedSessionCount"] = this.blockedSessionCount;
+        data["heartbeat"] = this.heartbeat ? this.heartbeat.toJSON() : undefined as any;
+        data["acknowledgement"] = this.acknowledgement ? this.acknowledgement.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedEndpoint {
+        const json = this.toJSON();
+        let result = new MonitorFeedEndpoint();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedEndpoint {
+    status?: EndpointStatusCount;
+    /** Estimated sessions blocked by a failed, dead-lettered or pending hand-off message. Null when the store cannot tell. */
+    blockedSessionCount?: number | undefined;
+    heartbeat?: MonitorFeedHeartbeat;
+    acknowledgement?: MonitorAcknowledgement;
+
+    [key: string]: any;
+}
+
+/** Absent when the endpoint does not take part in heartbeats. */
+export class MonitorFeedHeartbeat implements IMonitorFeedHeartbeat {
+    /** alive, late, missing or notDeployed. */
+    liveness?: string;
+    /** When the endpoint last answered a heartbeat probe. */
+    lastAnsweredUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedHeartbeat) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.liveness = _data["liveness"];
+            this.lastAnsweredUtc = _data["lastAnsweredUtc"] ? moment(_data["lastAnsweredUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedHeartbeat {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedHeartbeat();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["liveness"] = this.liveness;
+        data["lastAnsweredUtc"] = this.lastAnsweredUtc ? this.lastAnsweredUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedHeartbeat {
+        const json = this.toJSON();
+        let result = new MonitorFeedHeartbeat();
+        result.init(json);
+        return result;
+    }
+}
+
+/** Absent when the endpoint does not take part in heartbeats. */
+export interface IMonitorFeedHeartbeat {
+    /** alive, late, missing or notDeployed. */
+    liveness?: string;
+    /** When the endpoint last answered a heartbeat probe. */
+    lastAnsweredUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedCounts implements IMonitorFeedCounts {
+    published?: number;
+    handled?: number;
+    /** Failed attempts (error responses), not the unresolved state. */
+    failed?: number;
+    queue?: LatencyStats;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedCounts) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.published = _data["published"];
+            this.handled = _data["handled"];
+            this.failed = _data["failed"];
+            this.queue = _data["queue"] ? LatencyStats.fromJS(_data["queue"]) : undefined as any;
+            this.processing = _data["processing"] ? LatencyStats.fromJS(_data["processing"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedCounts {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedCounts();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["published"] = this.published;
+        data["handled"] = this.handled;
+        data["failed"] = this.failed;
+        data["queue"] = this.queue ? this.queue.toJSON() : undefined as any;
+        data["processing"] = this.processing ? this.processing.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedCounts {
+        const json = this.toJSON();
+        let result = new MonitorFeedCounts();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedCounts {
+    published?: number;
+    handled?: number;
+    /** Failed attempts (error responses), not the unresolved state. */
+    failed?: number;
+    queue?: LatencyStats;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedEndpointMetrics implements IMonitorFeedEndpointMetrics {
+    endpointId?: string;
+    counts?: MonitorFeedCounts;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedEndpointMetrics) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.counts = _data["counts"] ? MonitorFeedCounts.fromJS(_data["counts"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedEndpointMetrics {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedEndpointMetrics();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["counts"] = this.counts ? this.counts.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedEndpointMetrics {
+        const json = this.toJSON();
+        let result = new MonitorFeedEndpointMetrics();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedEndpointMetrics {
+    endpointId?: string;
+    counts?: MonitorFeedCounts;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedMetrics implements IMonitorFeedMetrics {
+    generatedAtUtc?: moment.Moment;
+    stale?: boolean;
+    /** Per-minute buckets, ascending; the last one is the current, partial minute. */
+    lastHour?: TimeSeriesDataPoint[];
+    fleet?: MonitorFeedCounts;
+    endpoints?: MonitorFeedEndpointMetrics[];
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedMetrics) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.generatedAtUtc = _data["generatedAtUtc"] ? moment(_data["generatedAtUtc"].toString()) : undefined as any;
+            this.stale = _data["stale"];
+            if (Array.isArray(_data["lastHour"])) {
+                this.lastHour = [] as any;
+                for (let item of _data["lastHour"])
+                    this.lastHour!.push(TimeSeriesDataPoint.fromJS(item));
+            }
+            this.fleet = _data["fleet"] ? MonitorFeedCounts.fromJS(_data["fleet"]) : undefined as any;
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(MonitorFeedEndpointMetrics.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedMetrics {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedMetrics();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["generatedAtUtc"] = this.generatedAtUtc ? this.generatedAtUtc.toISOString() : undefined as any;
+        data["stale"] = this.stale;
+        if (Array.isArray(this.lastHour)) {
+            data["lastHour"] = [];
+            for (let item of this.lastHour)
+                data["lastHour"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["fleet"] = this.fleet ? this.fleet.toJSON() : undefined as any;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): MonitorFeedMetrics {
+        const json = this.toJSON();
+        let result = new MonitorFeedMetrics();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedMetrics {
+    generatedAtUtc?: moment.Moment;
+    stale?: boolean;
+    /** Per-minute buckets, ascending; the last one is the current, partial minute. */
+    lastHour?: TimeSeriesDataPoint[];
+    fleet?: MonitorFeedCounts;
+    endpoints?: MonitorFeedEndpointMetrics[];
+
+    [key: string]: any;
+}
+
+export class MonitorFeedLatencyPoint implements IMonitorFeedLatencyPoint {
+    timestamp?: string;
+    queue?: LatencyStats;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedLatencyPoint) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.timestamp = _data["timestamp"];
+            this.queue = _data["queue"] ? LatencyStats.fromJS(_data["queue"]) : undefined as any;
+            this.processing = _data["processing"] ? LatencyStats.fromJS(_data["processing"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedLatencyPoint {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedLatencyPoint();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["timestamp"] = this.timestamp;
+        data["queue"] = this.queue ? this.queue.toJSON() : undefined as any;
+        data["processing"] = this.processing ? this.processing.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedLatencyPoint {
+        const json = this.toJSON();
+        let result = new MonitorFeedLatencyPoint();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedLatencyPoint {
+    timestamp?: string;
+    queue?: LatencyStats;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedEndpointHistory implements IMonitorFeedEndpointHistory {
+    endpointId?: string;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedEndpointHistory) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.processing = _data["processing"] ? LatencyStats.fromJS(_data["processing"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedEndpointHistory {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedEndpointHistory();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["processing"] = this.processing ? this.processing.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): MonitorFeedEndpointHistory {
+        const json = this.toJSON();
+        let result = new MonitorFeedEndpointHistory();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedEndpointHistory {
+    endpointId?: string;
+    processing?: LatencyStats;
+
+    [key: string]: any;
+}
+
+export class MonitorFeedHistory implements IMonitorFeedHistory {
+    generatedAtUtc?: moment.Moment;
+    stale?: boolean;
+    /** Per-hour buckets, ascending; the last one is the current, partial hour. */
+    lastThreeDays?: TimeSeriesDataPoint[];
+    /** Sparse per-hour queue and processing time; null when the store cannot tell. */
+    latencyLastDay?: MonitorFeedLatencyPoint[] | undefined;
+    endpoints?: MonitorFeedEndpointHistory[];
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorFeedHistory) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.generatedAtUtc = _data["generatedAtUtc"] ? moment(_data["generatedAtUtc"].toString()) : undefined as any;
+            this.stale = _data["stale"];
+            if (Array.isArray(_data["lastThreeDays"])) {
+                this.lastThreeDays = [] as any;
+                for (let item of _data["lastThreeDays"])
+                    this.lastThreeDays!.push(TimeSeriesDataPoint.fromJS(item));
+            }
+            if (Array.isArray(_data["latencyLastDay"])) {
+                this.latencyLastDay = [] as any;
+                for (let item of _data["latencyLastDay"])
+                    this.latencyLastDay!.push(MonitorFeedLatencyPoint.fromJS(item));
+            }
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(MonitorFeedEndpointHistory.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): MonitorFeedHistory {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorFeedHistory();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["generatedAtUtc"] = this.generatedAtUtc ? this.generatedAtUtc.toISOString() : undefined as any;
+        data["stale"] = this.stale;
+        if (Array.isArray(this.lastThreeDays)) {
+            data["lastThreeDays"] = [];
+            for (let item of this.lastThreeDays)
+                data["lastThreeDays"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.latencyLastDay)) {
+            data["latencyLastDay"] = [];
+            for (let item of this.latencyLastDay)
+                data["latencyLastDay"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): MonitorFeedHistory {
+        const json = this.toJSON();
+        let result = new MonitorFeedHistory();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorFeedHistory {
+    generatedAtUtc?: moment.Moment;
+    stale?: boolean;
+    /** Per-hour buckets, ascending; the last one is the current, partial hour. */
+    lastThreeDays?: TimeSeriesDataPoint[];
+    /** Sparse per-hour queue and processing time; null when the store cannot tell. */
+    latencyLastDay?: MonitorFeedLatencyPoint[] | undefined;
+    endpoints?: MonitorFeedEndpointHistory[];
 
     [key: string]: any;
 }
@@ -20076,6 +23952,10 @@ export enum MessageAuditAuditType {
     AgentApiKeyRevoked = "agentApiKeyRevoked",
     AgentApiKeyRemoved = "agentApiKeyRemoved",
     CopyEndpointData = "copyEndpointData",
+    ChangeSessionState = "changeSessionState",
+    DashboardTokenCreated = "dashboardTokenCreated",
+    DashboardTokenRevoked = "dashboardTokenRevoked",
+    DashboardTokenRemoved = "dashboardTokenRemoved",
 }
 
 export class MessageContent implements IMessageContent {
@@ -20181,6 +24061,19 @@ export enum DeadLetterResubmitRequestScope {
     Reason = "reason",
 }
 
+export enum SessionStateChangeRequestAction {
+    ClearBlock = "clearBlock",
+    MarkReplayed = "markReplayed",
+    Reset = "reset",
+    Replace = "replace",
+}
+
+export enum SessionCleanupCandidateClassification {
+    Idle = "idle",
+    StaleBlock = "staleBlock",
+    InUse = "inUse",
+}
+
 export enum AuditSearchFilterAuditType {
     Resubmit = "resubmit",
     ResubmitWithChanges = "resubmitWithChanges",
@@ -20223,6 +24116,10 @@ export enum AuditSearchFilterAuditType {
     AgentApiKeyRevoked = "agentApiKeyRevoked",
     AgentApiKeyRemoved = "agentApiKeyRemoved",
     CopyEndpointData = "copyEndpointData",
+    ChangeSessionState = "changeSessionState",
+    DashboardTokenCreated = "dashboardTokenCreated",
+    DashboardTokenRevoked = "dashboardTokenRevoked",
+    DashboardTokenRemoved = "dashboardTokenRemoved",
 }
 
 export enum StalePendingRowVerdict {
@@ -20306,6 +24203,10 @@ export enum AuditEntryAuditType {
     AgentApiKeyRevoked = "agentApiKeyRevoked",
     AgentApiKeyRemoved = "agentApiKeyRemoved",
     CopyEndpointData = "copyEndpointData",
+    ChangeSessionState = "changeSessionState",
+    DashboardTokenCreated = "dashboardTokenCreated",
+    DashboardTokenRevoked = "dashboardTokenRevoked",
+    DashboardTokenRemoved = "dashboardTokenRemoved",
 }
 
 export enum AgentSettleRequestOutcome {
@@ -20471,10 +24372,7 @@ export class SwaggerException extends Error {
 }
 
 function throwException(message: string, status: number, response: string, headers: { [key: string]: any; }, result?: any): any {
-    if (result !== null && result !== undefined)
-        throw result;
-    else
-        throw new SwaggerException(message, status, response, headers, null);
+    throw new SwaggerException(message, status, response, headers, result);
 }
 
 export const CookieAuth = () =>

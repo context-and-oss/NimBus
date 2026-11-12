@@ -222,6 +222,32 @@ describe("featureStatus", () => {
     });
   });
 
+  describe("Dashboard tokens", () => {
+    const tokens = (...statuses: ("active" | "revoked" | "expired")[]) => ({
+      csrfToken: "csrf",
+      tokens: statuses.map((status, i) => ({ tokenId: `t${i}`, status }) as never),
+    });
+
+    it("counts active tokens", () => {
+      expect(status("dashboard-tokens", { dashboardTokens: tokens("active", "revoked") })).toMatchObject({
+        tone: "ok",
+        label: "1 active",
+        on: true,
+      });
+    });
+
+    it("offers to issue a token from the panel, never from the row", () => {
+      const s = status("dashboard-tokens", { dashboardTokens: tokens() });
+      expect(s).toMatchObject({ tone: "off", label: "No active tokens", on: false });
+      expect(s?.cta).toEqual({ label: "Issue token", tab: "tokens" });
+      expect(s?.quick).toBeUndefined();
+    });
+
+    it("is unavailable when the tokens could not be read", () => {
+      expect(status("dashboard-tokens", { dashboardTokens: "error" })).toMatchObject({ label: "Unavailable" });
+    });
+  });
+
   describe("Audit logging", () => {
     it("counts recorded action types", () => {
       const s = status("audit", {

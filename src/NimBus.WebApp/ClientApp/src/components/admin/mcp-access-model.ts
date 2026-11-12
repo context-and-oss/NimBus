@@ -17,6 +17,8 @@ export interface McpSettings {
   enabled: boolean;
   capabilities: { payloads: boolean; report: boolean; classify: boolean; resubmit: boolean; skip: boolean };
   allowWorkloads: boolean;
+  /** Spec 044: workloads with the Nimbus.Classify app role may record classifications. Effective only with allowWorkloads. */
+  allowWorkloadClassification?: boolean;
   people: { mode: PeopleMode; principals: Principal[] };
   clients: { mode: ClientMode; approved: ApprovedClient[] };
   endpoints: { visibility: Visibility; hidden: string[]; changes: ChangeScope; changeOn: string[] };
@@ -82,8 +84,8 @@ export interface CapabilityInfo {
   tools: string[]; scope: string; role: string; description: string; note?: string;
 }
 
-export const READ_TOOL_COUNT = 11;
-export const TOTAL_TOOL_COUNT = 16;
+export const READ_TOOL_COUNT = 12;
+export const TOTAL_TOOL_COUNT = 18;
 
 export const CAPABILITIES: CapabilityInfo[] = [
   { key: "payloads", label: "Raw payloads", risk: "data", riskText: "data", tools: ["nimbus_get_message · includePayload"],
@@ -93,9 +95,9 @@ export const CAPABILITIES: CapabilityInfo[] = [
   { key: "report", label: "Mark reported", risk: "low", riskText: "low", tools: ["nimbus_set_message_reported"],
     scope: "nimbus.annotate", role: "Contributor",
     description: "Set or clear the \"reported\" marker, optionally with an external ticket ID." },
-  { key: "classify", label: "Classify failures", risk: "low", riskText: "low · cost", tools: ["nimbus_classify_failure"],
+  { key: "classify", label: "Classify failures", risk: "low", riskText: "low", tools: ["nimbus_record_classification", "nimbus_classify_failure (deprecated)"],
     scope: "nimbus.classify", role: "Contributor",
-    description: "Request an AI classification of a failure, using the Failure intelligence provider and its evidence settings." },
+    description: "Let agents record their classification of a failure. It is advisory, changes no message, and NimBus composes the guidance. The deprecated nimbus_classify_failure also asks the built-in provider, at a cost." },
   { key: "resubmit", label: "Resubmit messages", risk: "medium", riskText: "medium", tools: ["nimbus_prepare_action", "nimbus_resubmit_message"],
     scope: "nimbus.resubmit", role: "Contributor",
     description: "Replay the latest stored payload to the endpoint after a preview, with a state guard and an audit row written first." },
@@ -133,6 +135,8 @@ export function describeChanges(a: McpSettings, b: McpSettings): McpChange[] {
     if (a.capabilities[key] !== b.capabilities[key]) add(`${b.capabilities[key] ? "Allow" : "Stop"} ${names[key]}`, b.capabilities[key]);
   }
   if (a.allowWorkloads !== b.allowWorkloads) add(b.allowWorkloads ? "Accept workload (app-only) tokens" : "Refuse workload (app-only) tokens", b.allowWorkloads);
+  if (Boolean(a.allowWorkloadClassification) !== Boolean(b.allowWorkloadClassification))
+    add(b.allowWorkloadClassification ? "Let workloads record failure classifications" : "Stop workloads recording failure classifications", Boolean(b.allowWorkloadClassification));
 
   const before = (p: Principal[]) => p.map(x => x.principal);
   if (a.people.mode !== b.people.mode) {
@@ -208,13 +212,18 @@ export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona
   const cap = (name: string, key: CapabilityKey): PreviewRow => {
     if (gate) return { name, allowed: false, why: gate };
     if (!s.capabilities[key]) return { name, allowed: false, why: "switched off here" };
+    if (key === "classify" && !classifyAvailable) return { name, allowed: false, why: "Failure intelligence off" };
+    // Spec 044 §6.6: a workload may record classifications with the Nimbus.Classify role, when allowed here.
+    if (!p.delegated && key === "classify")
+      return s.allowWorkloadClassification
+        ? { name, allowed: true, why: "Nimbus.Classify role + Contributor" }
+        : { name, allowed: false, why: "workload recording off" };
     if (!p.delegated) return { name, allowed: false, why: key === "payloads" ? "no app role for payloads" : "workloads can't change" };
     if (key === "payloads") return p.pii ? { name, allowed: true, why: local ? "PiiReader" : "scope + PiiReader" } : { name, allowed: false, why: "needs PiiReader" };
-    if (key === "classify" && !classifyAvailable) return { name, allowed: false, why: "Failure intelligence off" };
     return p.contributor ? { name, allowed: true, why: local ? "Contributor" : "scope + Contributor" } : { name, allowed: false, why: "needs Contributor" };
   };
   rows.push(cap("payloads (includePayload)", "payloads"), cap("nimbus_set_message_reported", "report"),
-    cap("nimbus_classify_failure", "classify"), cap("nimbus_resubmit_message", "resubmit"), cap("nimbus_skip_message", "skip"));
+    cap("nimbus_record_classification", "classify"), cap("nimbus_resubmit_message", "resubmit"), cap("nimbus_skip_message", "skip"));
   const prepare = rows[4].allowed || rows[5].allowed;
   rows.push({ name: "nimbus_prepare_action", allowed: prepare, why: gate ?? (prepare ? "resubmit or skip allowed" : "needs resubmit or skip") });
   return rows;
@@ -224,5 +233,6 @@ export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona
 export function listedToolCount(s: McpSettings, d: McpDeployment): number {
   if (d.mode === "disabled" || !s.enabled) return 0;
   const c = s.capabilities;
-  return READ_TOOL_COUNT + [c.report, c.classify, c.resubmit, c.skip].filter(Boolean).length + (c.resubmit || c.skip ? 1 : 0);
+  // Classify lists nimbus_record_classification and the deprecated nimbus_classify_failure.
+  return READ_TOOL_COUNT + [c.report, c.resubmit, c.skip].filter(Boolean).length + (c.classify ? 2 : 0) + (c.resubmit || c.skip ? 1 : 0);
 }

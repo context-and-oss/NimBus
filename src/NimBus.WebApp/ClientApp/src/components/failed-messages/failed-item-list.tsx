@@ -1,7 +1,7 @@
 import * as React from "react";
 import * as api from "api-client";
 import { Link } from "react-router-dom";
-import moment from "moment";
+import { formatMoment } from "functions/endpoint.functions";
 import TruncatedGuid from "components/common/truncated-guid";
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
@@ -17,7 +17,7 @@ export const failureIdOf = (e: api.Event) => `${e.endpointId}/${e.eventId}`;
 
 /** The Event Details route of a failure. */
 export const failureRouteOf = (e: api.Event) =>
-  `/Message/Index/${e.endpointId}/${e.eventId}/0`;
+  `/Message/Index/${e.endpointId}/${e.eventId}/0?from=failed`;
 
 export type FailureAction = "Resubmit" | "Skip";
 
@@ -139,7 +139,9 @@ export default function FailedItemList({
               <span
                 aria-hidden="true"
                 className="w-[5px] shrink-0 self-stretch rounded-[1px]"
-                style={{ background: STATUS_COLORS[status] ?? STATUS_COLORS.Failed }}
+                style={{
+                  background: STATUS_COLORS[status] ?? STATUS_COLORS.Failed,
+                }}
               />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -147,7 +149,12 @@ export default function FailedItemList({
                     to={failureRouteOf(e)}
                     onClick={(ev) => {
                       // Keep new-tab and new-window clicks as plain links.
-                      if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0)
+                      if (
+                        ev.metaKey ||
+                        ev.ctrlKey ||
+                        ev.shiftKey ||
+                        ev.button !== 0
+                      )
                         return;
                       ev.preventDefault();
                       onOpen(e);
@@ -155,7 +162,7 @@ export default function FailedItemList({
                     className="text-[15px] font-bold text-foreground hover:underline"
                   >
                     {e.updatedAt
-                      ? moment(e.updatedAt).format("DD/MM/YYYY, HH:mm:ss")
+                      ? formatMoment(e.updatedAt, true)
                       : "—"}{" "}
                     - {status.toUpperCase()}
                   </Link>
@@ -179,7 +186,9 @@ export default function FailedItemList({
                       variant="info"
                       size="sm"
                       withDot={false}
-                      title={e.reportedBy ? `Reported by ${e.reportedBy}` : undefined}
+                      title={
+                        e.reportedBy ? `Reported by ${e.reportedBy}` : undefined
+                      }
                     >
                       {e.ticketId || "Reported"}
                     </Badge>
@@ -219,7 +228,8 @@ export default function FailedItemList({
                     Event ID:
                     <TruncatedGuid
                       guid={e.eventId}
-                      onClick={(g) => onNarrow("eventId", g)}
+                      linkTo={failureRouteOf(e)}
+                      onClick={() => onOpen(e)}
                     />
                   </span>
                 </div>

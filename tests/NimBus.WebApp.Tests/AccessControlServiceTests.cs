@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
+using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
@@ -46,7 +48,8 @@ public class AccessControlServiceTests
         ClaimsPrincipal principal,
         IAccessControlSnapshotProvider? snapshotProvider = null,
         Dictionary<string, string?>? config = null,
-        string[]? roleAssignmentEndpoints = null)
+        string[]? roleAssignmentEndpoints = null,
+        ILogger<EndpointAuthorizationService>? logger = null)
     {
         var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = principal } };
         var configuration = new ConfigurationBuilder()
@@ -60,7 +63,7 @@ public class AccessControlServiceTests
         return new EndpointAuthorizationService(
             accessor,
             platform,
-            NullLogger<EndpointAuthorizationService>.Instance,
+            logger ?? NullLogger<EndpointAuthorizationService>.Instance,
             configuration,
             snapshotProvider ?? _snapshotProvider);
     }
@@ -219,11 +222,14 @@ public class AccessControlServiceTests
     [TestMethod]
     public async Task Bypass_config_grants_site_owner()
     {
+        var logger = new BypassLogger();
         var sut = CreateService(
             EmailPrincipal(),
-            config: new Dictionary<string, string?> { ["BypassEndpointAuthorization"] = "true" });
+            config: new Dictionary<string, string?> { ["BypassEndpointAuthorization"] = "true" }, logger: logger);
 
         Assert.IsTrue(await sut.HasRoleAsync(AccessRole.Owner));
+        Assert.IsFalse(logger.Levels.Any(l => l >= LogLevel.Warning));
+        Assert.IsTrue(logger.Levels.Contains(LogLevel.Debug));
     }
 
     // ───────── PiiReader ─────────
@@ -484,6 +490,14 @@ public class AccessControlServiceTests
 
         public Task SetEndpointAccessControl(string endpointId, AccessControlList accessControl)
             => _inner.SetEndpointAccessControl(endpointId, accessControl);
+    }
+
+    private sealed class BypassLogger : ILogger<EndpointAuthorizationService>
+    {
+        public List<LogLevel> Levels { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) => Levels.Add(logLevel);
     }
 
     private sealed class FakePlatform : IPlatform

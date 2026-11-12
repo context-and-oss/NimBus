@@ -68,6 +68,12 @@ internal static partial class SqlRuleEngine
             return static _ => true;
         }
 
+        // The SDK's FalseRuleFilter: a subscription is created closed with $Default = 1=0.
+        if (Regex.IsMatch(expression, "^1\\s*=\\s*0$", RegexOptions.CultureInvariant, RegexTimeout))
+        {
+            return static _ => false;
+        }
+
         var nullMatch = Regex.Match(
             expression,
             "^user\\.([A-Za-z_][A-Za-z0-9_]*)\\s+IS\\s+(NOT\\s+)?NULL$",

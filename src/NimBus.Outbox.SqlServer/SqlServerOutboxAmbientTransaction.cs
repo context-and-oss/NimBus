@@ -34,8 +34,8 @@ public static class SqlServerOutboxAmbientTransaction
     /// </summary>
     public static IDisposable Begin(SqlConnection connection, SqlTransaction transaction)
     {
-        if (connection is null) throw new ArgumentNullException(nameof(connection));
-        if (transaction is null) throw new ArgumentNullException(nameof(transaction));
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
         if (_current.Value is not null)
             throw new InvalidOperationException("A SqlServerOutbox ambient transaction is already active on this async flow.");
 

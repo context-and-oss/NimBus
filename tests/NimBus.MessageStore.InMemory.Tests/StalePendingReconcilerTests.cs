@@ -97,7 +97,7 @@ public class StalePendingReconcilerTests
         Assert.AreEqual(StalePendingVerdict.Repairable, result.Verdict);
         Assert.IsTrue(result.IsRepairable);
         Assert.AreEqual("906c2b00", result.Response!.MessageId);
-        StringAssert.Contains(result.Detail, "9ada4185");
+        StringAssert.Contains(result.Detail, "9ada4185", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -180,7 +180,7 @@ public class StalePendingReconcilerTests
         var result = StalePendingReconciler.Classify(row, new[] { response, staleCopy }, Endpoint);
 
         Assert.AreEqual(StalePendingVerdict.LatestTerminalIsDeadLettered, result.Verdict);
-        StringAssert.Contains(result.Detail, "MaxDeliveryCountExceeded");
+        StringAssert.Contains(result.Detail, "MaxDeliveryCountExceeded", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -227,7 +227,7 @@ public class StalePendingReconcilerTests
         var result = StalePendingReconciler.Classify(row, new[] { response, resubmit }, Endpoint);
 
         Assert.AreEqual(StalePendingVerdict.LaterControlMessage, result.Verdict);
-        StringAssert.Contains(result.Detail, "ResubmissionRequest rs-1");
+        StringAssert.Contains(result.Detail, "ResubmissionRequest rs-1", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -260,7 +260,7 @@ public class StalePendingReconcilerTests
         var result = StalePendingReconciler.Classify(row, new[] { response, staleCopy, newerCopy }, Endpoint);
 
         Assert.AreEqual(StalePendingVerdict.LaterRequestCopy, result.Verdict);
-        StringAssert.Contains(result.Detail, "copy-2");
+        StringAssert.Contains(result.Detail, "copy-2", StringComparison.Ordinal);
     }
 
     [TestMethod]

@@ -130,6 +130,15 @@ export const api = {
     }).then(json<ModeState>),
   getCircuitState: () => apiFetch('/api/admin/circuit-state').then(json<CircuitStateSnapshot>),
 
+  // CloudEvents partner showcase: turns partner-portal's recurring leads on and off.
+  getPartnerLeads: () => apiFetch('/api/admin/partner-leads').then(json<ModeState>),
+  setPartnerLeads: (enabled: boolean) =>
+    apiFetch('/api/admin/partner-leads', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }).then(json<ModeState>),
+
   // Demo reset: wipes all CRM business data (no delete events published).
   deleteAllData: () =>
     apiFetch('/api/admin/data', { method: 'DELETE' }).then(json<DataResetResult>),

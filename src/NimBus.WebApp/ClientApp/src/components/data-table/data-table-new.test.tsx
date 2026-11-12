@@ -1,5 +1,11 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  cleanup,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import DataTable from "./data-table-new";
 import type { ITableHeadCell, ITableRow } from "./types";
@@ -223,5 +229,132 @@ describe("DataTable row actions menu", () => {
 
     expect(screen.queryByRole("button", { name: "Actions" })).toBeNull();
     expect(screen.getByRole("button", { name: "Resubmit" })).toBeDefined();
+  });
+});
+
+// Characterizes the @tanstack/react-table behaviors the table relies on, so a
+// library upgrade that changes sorting, filtering, paging or selection fails here.
+describe("DataTable (table behavior)", () => {
+  const rows = (): ITableRow[] => [
+    makeRow("a", "item 10", 3),
+    makeRow("b", "item 2", 1),
+    makeRow("c", "other", 2),
+  ];
+
+  const bodyRows = () => screen.getAllByRole("row").slice(1);
+  const firstCellText = (cellIndex = 0) =>
+    bodyRows().map((r) => within(r).getAllByRole("cell")[cellIndex].textContent);
+
+  it("sorts text columns ascending first, then descending", () => {
+    const words = [
+      makeRow("a", "beta", 1),
+      makeRow("b", "alpha", 2),
+      makeRow("c", "gamma", 3),
+    ];
+    renderTable(<DataTable headCells={headCells} rows={words} />);
+
+    fireEvent.click(screen.getByRole("columnheader", { name: /Name/ }));
+    expect(firstCellText()).toEqual(["alpha", "beta", "gamma"]);
+
+    fireEvent.click(screen.getByRole("columnheader", { name: /Name/ }));
+    expect(firstCellText()).toEqual(["gamma", "beta", "alpha"]);
+  });
+
+  // react-table 8 chose the automatic sort function from the rows after the
+  // tenth (a slice(10) bug), so tables of up to ten rows compared text with `<`
+  // and put "item 10" before "item 2". From 9 it samples the first ten rows.
+  it("sorts text with numbers in natural order, even in short tables", () => {
+    renderTable(<DataTable headCells={headCells} rows={rows()} />);
+
+    fireEvent.click(screen.getByRole("columnheader", { name: /Name/ }));
+    expect(firstCellText()).toEqual(["item 2", "item 10", "other"]);
+  });
+
+  it("sorts number columns descending first", () => {
+    renderTable(<DataTable headCells={headCells} rows={rows()} />);
+
+    fireEvent.click(screen.getByRole("columnheader", { name: /Count/ }));
+    expect(firstCellText()).toEqual(["item 10", "other", "item 2"]);
+  });
+
+  it("filters rows from the search box across cells", () => {
+    renderTable(<DataTable headCells={headCells} rows={rows()} />);
+
+    fireEvent.change(screen.getByPlaceholderText("Search..."), {
+      target: { value: "OTH" },
+    });
+    expect(firstCellText()).toEqual(["other"]);
+  });
+
+  it("pages rows and reports the visible range", () => {
+    renderTable(
+      <DataTable headCells={headCells} rows={rows()} dataRowsPerPage={2} />,
+    );
+
+    expect(bodyRows()).toHaveLength(2);
+    expect(screen.getByText(/Showing 1 to 2 of 3 results/)).toBeDefined();
+    expect(screen.getByText(/Page 1 of 2/)).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(bodyRows()).toHaveLength(1);
+    expect(screen.getByText(/Showing 3 to 3 of 3 results/)).toBeDefined();
+    expect(
+      (screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("shows select-all as indeterminate only while some, not all, rows are selected", () => {
+    renderTable(<DataTable headCells={headCells} rows={rows()} withCheckboxes />);
+    const selectAll = () =>
+      screen.getByRole("checkbox", { name: "Select all" }) as HTMLInputElement;
+    const rowBoxes = () =>
+      screen.getAllByRole("checkbox", { name: "Select row" }) as HTMLInputElement[];
+
+    fireEvent.click(rowBoxes()[0]);
+    expect(selectAll().checked).toBe(false);
+    expect(selectAll().indeterminate).toBe(true);
+
+    fireEvent.click(selectAll());
+    expect(rowBoxes().every((b) => b.checked)).toBe(true);
+    expect(selectAll().checked).toBe(true);
+    expect(selectAll().indeterminate).toBe(false);
+  });
+
+  it("selects only the clicked row on Shift+click, not a range", () => {
+    renderTable(<DataTable headCells={headCells} rows={rows()} withCheckboxes />);
+    const rowBoxes = () =>
+      screen.getAllByRole("checkbox", { name: "Select row" }) as HTMLInputElement[];
+
+    fireEvent.click(rowBoxes()[0]);
+    fireEvent.click(rowBoxes()[2], { shiftKey: true });
+
+    expect(rowBoxes().map((b) => b.checked)).toEqual([true, false, true]);
+  });
+
+  it("passes the selected rows to a head action and clears the selection", () => {
+    const onBulk = vi.fn((_selected: ITableRow[]) => true);
+    const withActions = rows().map((r) => ({
+      ...r,
+      bodyActions: [{ name: "Skip", onClick: () => false }],
+    }));
+    renderTable(
+      <DataTable
+        headCells={headCells}
+        rows={withActions}
+        withCheckboxes
+        headActions={[{ name: "Skip selected", onClick: onBulk }]}
+      />,
+    );
+    const rowBoxes = () =>
+      screen.getAllByRole("checkbox", { name: "Select row" }) as HTMLInputElement[];
+
+    fireEvent.click(rowBoxes()[0]);
+    fireEvent.click(rowBoxes()[2]);
+    fireEvent.click(screen.getByRole("button", { name: "Skip selected" }));
+
+    expect(onBulk).toHaveBeenCalledTimes(1);
+    expect(onBulk.mock.calls[0][0].map((r) => r.id)).toEqual(["a", "c"]);
+    expect(rowBoxes().some((b) => b.checked)).toBe(false);
   });
 });

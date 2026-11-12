@@ -87,8 +87,8 @@ public class CloudEventsValidationTests
         var context = ContextFor(ce);
 
         var ex = await Assert.ThrowsExactlyAsync<PermanentFailureException>(() => decorator.Handle(context));
-        Assert.IsInstanceOfType(ex.InnerException, typeof(InvalidCloudEventException));
-        StringAssert.Contains(ex.InnerException.Message, missing);
+        Assert.IsInstanceOfType<InvalidCloudEventException>(ex.InnerException);
+        StringAssert.Contains(ex.InnerException.Message, missing, StringComparison.Ordinal);
         Assert.IsFalse(inner.WasCalled, "An invalid CloudEvent must be rejected before dispatch.");
     }
 
@@ -100,8 +100,8 @@ public class CloudEventsValidationTests
         var decorator = new CloudEventValidatingContextHandler(inner);
 
         var ex = await Assert.ThrowsExactlyAsync<PermanentFailureException>(() => decorator.Handle(ContextFor(ce)));
-        Assert.IsInstanceOfType(ex.InnerException, typeof(InvalidCloudEventException)); // AC13
-        StringAssert.Contains(ex.InnerException.Message, "NoSuchType");
+        Assert.IsInstanceOfType<InvalidCloudEventException>(ex.InnerException); // AC13
+        StringAssert.Contains(ex.InnerException.Message, "NoSuchType", StringComparison.Ordinal);
     }
 
     [TestMethod]

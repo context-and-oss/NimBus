@@ -1,13 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Insights;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
@@ -16,6 +19,8 @@ public class MetricsImplementation : IMetricsApiController
     private readonly IMetricsStore _metricsStore;
     private readonly IStoreResultCache _storeResultCache;
     private readonly IEndpointAuthorizationService _authorizationService;
+    private readonly IFailedInsightsQuery _failedInsights;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     // Metrics aggregates are period-keyed and carry no per-user data, so a 30s
     // TTL bounds the (RU-expensive) cross-partition aggregate queries to at
@@ -31,12 +36,19 @@ public class MetricsImplementation : IMetricsApiController
     public MetricsImplementation(
         IMetricsStore metricsStore,
         IStoreResultCache storeResultCache,
-        IEndpointAuthorizationService authorizationService)
+        IEndpointAuthorizationService authorizationService,
+        IFailedInsightsQuery failedInsights,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _metricsStore = metricsStore;
         _storeResultCache = storeResultCache;
         _authorizationService = authorizationService;
+        _failedInsights = failedInsights;
+        _httpContextAccessor = httpContextAccessor;
     }
+
+    /// <summary>The request's abort token, so a client that leaves stops the insights reads it waits on.</summary>
+    private CancellationToken RequestAborted => _httpContextAccessor?.HttpContext?.RequestAborted ?? CancellationToken.None;
 
     // Metrics are cross-endpoint aggregates, so the read floor is a site role
     // (spec 026 phase D).
@@ -108,7 +120,8 @@ public class MetricsImplementation : IMetricsApiController
         };
     }
 
-    private static LatencyStats ToDto(LatencyAggregate source)
+    /// <summary>The API shape of a latency aggregate, rounded to 0.1 ms.</summary>
+    internal static LatencyStats ToDto(LatencyAggregate source)
     {
         if (source is null) return new LatencyStats();
         return new LatencyStats
@@ -120,63 +133,35 @@ public class MetricsImplementation : IMetricsApiController
         };
     }
 
-    public async Task<ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period, DateTime? from = null, DateTime? to = null)
+    public async Task<ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period, DateTime? from = null, DateTime? to = null,
+        string? endpointId = null, bool? refresh = null)
     {
-        if (!await IsSiteReaderAsync())
-            return new ForbidResult();
-        if (ResolveWindow(period, from, to, DateTime.UtcNow) is not { } window)
-            return InvalidWindow();
-
-        // Keep authorization outside the shared cache. Cache the finished aggregate
-        // so repeated dashboards avoid both store reads and error normalization.
-        return await _storeResultCache.GetOrCreateAsync(
-            $"metrics:failed-insights:{window.CacheKey}",
-            MetricsTtl,
-            () => BuildFailedInsightsAsync(window));
-    }
-
-    private async Task<FailedInsightsOverview> BuildFailedInsightsAsync(MetricsWindow window)
-    {
-        var messages = await _metricsStore.GetFailedMessageInsights(window.From, window.To);
-
-        var groups = messages
-            .GroupBy(m => ExtractErrorCategory(m.ErrorText))
-            .Select(g =>
-            {
-                var subGroups = g
-                    .GroupBy(m => NormalizeErrorPattern(m.ErrorText))
-                    .Select(sg => new ErrorSubGroup
-                    {
-                        NormalizedPattern = sg.Key,
-                        Count = sg.Count(),
-                        Endpoints = sg.Select(m => m.EndpointId).Where(e => e != null).Distinct().ToList(),
-                        EventTypes = sg.Select(m => m.EventTypeId).Where(e => e != null).Distinct().ToList(),
-                        LatestOccurrence = sg.Max(m => m.EnqueuedTimeUtc),
-                        ExampleErrorText = sg.First().ErrorText
-                    })
-                    .OrderByDescending(sg => sg.Count)
-                    .ToList();
-
-                return new ErrorPatternGroup
-                {
-                    ErrorCategory = g.Key,
-                    Count = g.Count(),
-                    Endpoints = g.Select(m => m.EndpointId).Where(e => e != null).Distinct().ToList(),
-                    EventTypes = g.Select(m => m.EventTypeId).Where(e => e != null).Distinct().ToList(),
-                    LatestOccurrence = g.Max(m => m.EnqueuedTimeUtc),
-                    ExampleErrorText = g.First().ErrorText,
-                    SubGroups = subGroups
-                };
-            })
-            .OrderByDescending(g => g.Count)
-            .ToList();
-
-        return new FailedInsightsOverview
+        // Spec 043: the service authorizes outside its caches, resolves and caches the window, and
+        // enriches error patterns with saved classifications.
+        var result = await _failedInsights.GetOverviewAsync(new FailedInsightsRequest(period, from, to, endpointId, Enrich: true, Refresh: refresh == true), RequestAborted);
+        return result.Status switch
         {
-            Groups = groups,
-            TotalFailed = messages.Count
+            FailedInsightsQueryStatus.Forbidden => new ForbidResult(),
+            FailedInsightsQueryStatus.InvalidWindow => InvalidWindow(),
+            _ => result.Overview!,
         };
     }
+
+    public async Task<ActionResult<InsightOccurrencePage>> GetMetricsFailedInsightsOccurrencesAsync(DateTime from, DateTime to, string? endpointId,
+        InsightsPerspective perspective, string groupKey, int? pageSize, string? continuationToken)
+        => Page(await _failedInsights.GetOccurrencesAsync(new FailedInsightsPageRequest(from, to, endpointId, perspective, groupKey, pageSize, continuationToken), RequestAborted));
+
+    public async Task<ActionResult<InsightGroupPatternPage>> GetMetricsFailedInsightsPatternsAsync(DateTime from, DateTime to, string? endpointId,
+        InsightsPerspective perspective, string groupKey, int? pageSize, string? continuationToken)
+        => Page(await _failedInsights.GetPatternsAsync(new FailedInsightsPageRequest(from, to, endpointId, perspective, groupKey, pageSize, continuationToken), RequestAborted));
+
+    private static ActionResult<T> Page<T>(FailedInsightsPageResult<T> result) where T : class => result.Status switch
+    {
+        FailedInsightsQueryStatus.Forbidden => new ForbidResult(),
+        FailedInsightsQueryStatus.InvalidWindow => InvalidWindow(),
+        FailedInsightsQueryStatus.BadRequest => new BadRequestObjectResult(result.Error),
+        _ => result.Page!,
+    };
 
     public async Task<ActionResult<TimeSeriesOverview>> GetMetricsTimeseriesAsync(Period period, DateTime? from = null, DateTime? to = null)
     {

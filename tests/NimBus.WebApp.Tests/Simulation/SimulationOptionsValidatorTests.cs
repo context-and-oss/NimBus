@@ -41,8 +41,8 @@ public sealed class SimulationOptionsValidatorTests
         var result = Validate(o => o.AllowedEnvironments.Add(name));
 
         Assert.IsTrue(result.Failed);
-        StringAssert.Contains(result.FailureMessage, name);
-        StringAssert.Contains(result.FailureMessage, "production");
+        StringAssert.Contains(result.FailureMessage, name, StringComparison.Ordinal);
+        StringAssert.Contains(result.FailureMessage, "production", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -51,7 +51,7 @@ public sealed class SimulationOptionsValidatorTests
         var result = Validate(o => o.OwnedEndpoints = new() { "NoSuchEndpoint" });
 
         Assert.IsTrue(result.Failed);
-        StringAssert.Contains(result.FailureMessage, "NoSuchEndpoint");
+        StringAssert.Contains(result.FailureMessage, "NoSuchEndpoint", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -81,7 +81,7 @@ public sealed class SimulationOptionsValidatorTests
         var result = Validate(o => typeof(SimulationOptions).GetProperty(property)!.SetValue(o, value));
 
         Assert.IsTrue(result.Failed, $"{property}={value} must fail validation.");
-        StringAssert.Contains(result.FailureMessage, property);
+        StringAssert.Contains(result.FailureMessage, property, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -131,6 +131,6 @@ public sealed class SimulationOptionsValidatorTests
         using var provider = services.BuildServiceProvider();
 
         var error = Assert.ThrowsExactly<OptionsValidationException>(() => provider.GetRequiredService<IOptions<SimulationOptions>>().Value);
-        StringAssert.Contains(error.Message, "prod");
+        StringAssert.Contains(error.Message, "prod", StringComparison.Ordinal);
     }
 }

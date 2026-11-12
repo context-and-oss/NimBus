@@ -25,6 +25,7 @@ import HeartbeatCard from "components/admin/heartbeat-card";
 import SimulationSettings from "components/admin/simulation-settings";
 import AuditSettings from "components/admin/audit-settings";
 import AgentKeysSettings from "components/admin/agent-keys-settings";
+import DashboardTokensSettings from "components/admin/dashboard-tokens-settings";
 import { useSettingsStatus } from "hooks/use-settings-status";
 import { notifyError, notifySuccess } from "functions/notifications.functions";
 import { SETTINGS_FEATURES, type SettingsFeature } from "models/manage-pages";
@@ -36,6 +37,7 @@ const PANELS: Record<string, () => ReactNode> = {
   "failure-intelligence": () => <FailureIntelligenceSettings />,
   "agent-keys": () => <AgentKeysSettings />,
   heartbeat: () => <HeartbeatCard />,
+  "dashboard-tokens": () => <DashboardTokensSettings />,
   simulation: () => <SimulationSettings />,
   audit: () => <AuditSettings />,
 };

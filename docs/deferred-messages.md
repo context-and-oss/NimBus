@@ -187,6 +187,15 @@ When the failed event is resolved (resubmit, retry, or skip succeeds):
 2. `ContinueWithAnyDeferredMessages()` checks whether `DeferredCount > 0` and, if so,
    sends a `ProcessDeferredRequest`
 
+A delivery can stop between these two steps, for example after a process crash or a lost
+session lock. The session is then unblocked, but nothing has requested the drain. When the
+retry, skip or handoff-completion settlement is redelivered, it no longer blocks its session.
+It is answered as resolved (or skipped) without running the handler, and it requests the drain
+itself, but only when no event blocks the session and a parked message still awaits its replay.
+A newer blocking event owns the drain. A stale settlement on a session whose parked messages
+were all replayed sends nothing. With an [inbox](inbox-pattern.md), a redelivered retry is
+recognised as a duplicate first and follows the same rule.
+
 ### 4. Deferred Messages Are Re-Published
 
 `DeferredMessageProcessor.ProcessDeferredMessagesAsync()` (`src/NimBus.ServiceBus/DeferredMessageProcessor.cs`):
@@ -213,6 +222,20 @@ replay them several times a second until the block cleared.
 Nothing resets `DeferredCount`, so every later unblock of the session sends another
 `ProcessDeferredRequest`, and the next drain picks up whatever is still parked. A drain
 that finds nothing parked does nothing.
+
+## How long a parked message is kept
+
+A parked message waits until the event blocking its session is resolved, however long an
+operator takes. On a real namespace the Deferred subscription therefore has no message TTL
+(the Service Bus default), and dead-letters any message that does expire, for example one
+whose own `TimeToLive` was set by the publisher. An expired parked message lands in
+`Deferred/DeadLetter`, where the recovery panel below finds it, instead of vanishing.
+
+Namespaces provisioned before this change had a 14-day TTL and dropped expired messages.
+The provisioner (`nb setup` / topology apply) updates an existing Deferred subscription in
+place; it never recreates it, which would delete every parked message. A message keeps the
+expiry it was enqueued with, so copies parked before the update still expire on the old
+schedule, but are then dead-lettered rather than lost. The emulator keeps its one-hour TTL.
 
 ## A tracking row is Deferred but the broker message is missing
 
@@ -284,5 +307,6 @@ The deferred message flow is covered by dedicated tests:
 | Deferred drain | `ProcessDeferredMessagesAsync_PartialBatches_DrainsRemainingMessages` |
 | Drain stops when the session blocks again | `ProcessDeferredMessagesAsync_FirstReplayBlocksSessionAgain_StopsAtTheReplayParkedAgain` |
 | Recovery triggers | `HandleResubmissionRequest_WhenSucceedsAndDeferredCountGtZero_SendsProcessDeferredRequest` |
+| Drain requested again when a settlement is redelivered after its unblock | `HandleRetryRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock`, `HandleSkipRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock`, `HandleHandoffCompletedRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock` |
 
 Additional tests exist in `tests/NimBus.ServiceBus.Tests/` for session state serialization and deferred message operations. End-to-end tests in `tests/NimBus.EndToEnd.Tests/` verify the complete deferral workflow including retry backoff, resubmission, and metadata integrity.

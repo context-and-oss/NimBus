@@ -89,7 +89,13 @@ const EventTypeDetails: React.FC = () => {
         {eventType && (
           <section>
             <SectionTitle>Example Payload</SectionTitle>
-            <EventTypeExamplePayload eventType={eventType} />
+            {/* Keyed so a send still pending for the previous event type reports in a
+                toast, not in this type's dialog, and cannot seed its payload. */}
+            <EventTypeExamplePayload
+              key={eventType.id}
+              eventType={eventType}
+              consumers={consumers}
+            />
           </section>
         )}
       </div>

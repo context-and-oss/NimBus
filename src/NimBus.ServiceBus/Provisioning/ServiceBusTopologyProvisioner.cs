@@ -10,7 +10,8 @@ namespace NimBus.ServiceBus.Provisioning;
 /// Provisions the Service Bus topology (topics, session-enabled subscriptions, forwarding
 /// subscriptions, and SQL routing rules) for every endpoint declared by an <see cref="IPlatform"/>.
 /// Idempotent: existing entities are left untouched when they already match the desired shape;
-/// subscriptions whose session flag or forward target differ are deleted and recreated.
+/// subscriptions whose session flag differs are deleted and recreated, a wrong forward target is
+/// corrected in place, and a forwarding subscription paused from the WebApp keeps its backlog.
 /// </summary>
 /// <remarks>
 /// The <c>nb topology apply</c> command wraps this class for the built-in platform configuration.
@@ -78,7 +79,7 @@ public sealed class ServiceBusTopologyProvisioner
     public static bool IsEmulator(string? connectionString)
     {
         if (string.IsNullOrWhiteSpace(connectionString)) return false;
-        return connectionString.IndexOf("UseDevelopmentEmulator=true", StringComparison.OrdinalIgnoreCase) >= 0;
+        return connectionString.Contains("UseDevelopmentEmulator=true", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Applies the platform's topology to the target namespace.</summary>
@@ -103,7 +104,7 @@ public sealed class ServiceBusTopologyProvisioner
         // same descriptor, and that rebuild is only safe while the two cannot drift.
         foreach (var expected in TopologyDescriptor.ForSystemTopic(Constants.ResolverId))
         {
-            await EnsureSubscriptionAsync(client, Constants.ResolverId, expected, log, cancellationToken).ConfigureAwait(false);
+            await EnsureSubscriptionAsync(client, Constants.ResolverId, expected, isEmulator, log, cancellationToken).ConfigureAwait(false);
         }
 
         var endpointIds = new HashSet<string>(
@@ -114,7 +115,7 @@ public sealed class ServiceBusTopologyProvisioner
         {
             foreach (var expected in TopologyDescriptor.ForEndpointTopic(endpoint, platform, isEmulator))
             {
-                await EnsureSubscriptionAsync(client, endpoint.Id, expected, log, cancellationToken).ConfigureAwait(false);
+                await EnsureSubscriptionAsync(client, endpoint.Id, expected, isEmulator, log, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -136,47 +137,104 @@ public sealed class ServiceBusTopologyProvisioner
                     target.Key,
                     target.Select(forward => forward.EventTypeId).OrderBy(id => id, StringComparer.Ordinal).Distinct(StringComparer.Ordinal));
 
-                await EnsureSubscriptionAsync(client, group.Key, expected, log, cancellationToken).ConfigureAwait(false);
+                await EnsureSubscriptionAsync(client, group.Key, expected, isEmulator, log, cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
     /// <summary>
     /// Creates <paramref name="expected"/> on <paramref name="topicName"/>, or brings an
-    /// existing subscription up to it. A subscription whose session flag or forward target
-    /// differs is deleted and recreated — neither can be changed in place.
+    /// existing subscription up to it. A subscription whose session flag differs is deleted
+    /// and recreated, because that cannot change in place. A wrong or missing forward target
+    /// and a too-short message expiry are corrected in place. A paused forwarder (forward target
+    /// detached and either not Active or carrying <see cref="SubscriptionMarkers.PurgeInProgress"/>)
+    /// is left alone with its messages; only its rules are ensured.
     /// </summary>
     /// <remarks>
     /// Also the rebuild path behind <see cref="ITopologyRebuilder"/>: the WebApp's
     /// subscription admin deletes a subscription to discard a backlog and calls this to put
     /// back something identical to what provisioning would have created.
+    /// <paramref name="isEmulator"/> selects how a mismatched rule is reconciled: updated in
+    /// place on a real namespace, deleted and recreated on an emulator.
     /// </remarks>
     internal static async Task EnsureSubscriptionAsync(
         ServiceBusAdministrationClient client,
         string topicName,
         ExpectedSubscription expected,
+        bool isEmulator,
         Action<string> log,
         CancellationToken cancellationToken)
     {
         var existing = await TryGetSubscriptionAsync(client, topicName, expected.Name, cancellationToken).ConfigureAwait(false);
-        var mismatched = existing is not null
-            && (existing.RequiresSession != expected.RequiresSession
-                || !ForwardToMatches(existing.ForwardTo, expected.ForwardTo));
+        var sessionMismatched = existing is not null && existing.RequiresSession != expected.RequiresSession;
 
-        if (existing is null || mismatched)
+        if (existing is null || sessionMismatched)
         {
-            if (mismatched)
+            if (sessionMismatched)
             {
                 await client.DeleteSubscriptionAsync(topicName, expected.Name, cancellationToken).ConfigureAwait(false);
             }
 
-            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, expected), cancellationToken).ConfigureAwait(false);
-            log($"{(mismatched ? "Recreated" : "Created")} {DescribeKind(expected)}subscription '{expected.Name}' on topic '{topicName}'{DescribeForwarding(expected)}.");
+            var options = CreateSubscriptionOptions(topicName, expected);
+            if (expected.KeepDefaultRule)
+            {
+                await client.CreateSubscriptionAsync(options, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await client.CreateSubscriptionAsync(options, ClosedDefaultRule(), cancellationToken).ConfigureAwait(false);
+            }
+
+            log($"{(sessionMismatched ? "Recreated" : "Created")} {DescribeKind(expected)}subscription '{expected.Name}' on topic '{topicName}'{DescribeForwarding(expected)}.");
+        }
+        else if (IsPurgingForwarder(existing, expected))
+        {
+            // A WebApp Purge of a paused forwarder makes it Active for the drain with ForwardTo
+            // still detached, and marks it. Re-attaching forwarding now would hand the backlog
+            // being discarded to the destination and break the drain.
+            log($"Skipped forward subscription '{expected.Name}' on topic '{topicName}': it carries the WebApp purge marker. " +
+                "A purge is draining it, or an interrupted purge left the marker behind; Pause in the WebApp clears it " +
+                "(then Resume, if forwarding should be re-attached).");
+        }
+        else if (IsPausedForwarder(existing, expected))
+        {
+            // The WebApp's Pause detaches ForwardTo and disables receive so messages collect
+            // here. Touching it would undo the pause, and recreating it would discard the
+            // backlog it was paused to hold. Resume puts the forward target back.
+            log($"Skipped paused forward subscription '{expected.Name}' on topic '{topicName}': left as is with its messages until it is resumed.");
+        }
+        else
+        {
+            // Forward target, TTL and dead-lettering on expiry all change in place.
+            // Recreating would delete whatever the subscription holds — for Deferred, every
+            // parked message; for a forwarder, anything not yet forwarded.
+            var updates = new List<string>();
+
+            if (!ForwardToMatches(existing.ForwardTo, expected.ForwardTo))
+            {
+                existing.ForwardTo = expected.ForwardTo ?? string.Empty;
+                updates.Add($"forward target{DescribeForwarding(expected)}");
+            }
+
+            if (NeedsExpiryUpdate(existing, expected))
+            {
+                existing.DefaultMessageTimeToLive = expected.DefaultMessageTimeToLive ?? existing.DefaultMessageTimeToLive;
+                existing.DeadLetteringOnMessageExpiration |= expected.DeadLetterOnMessageExpiration;
+                updates.Add("message expiry");
+            }
+
+            if (updates.Count > 0)
+            {
+                await client.UpdateSubscriptionAsync(existing, cancellationToken).ConfigureAwait(false);
+                log($"Updated {string.Join(" and ", updates)} on subscription '{expected.Name}' on topic '{topicName}'.");
+            }
         }
 
-        // Service Bus auto-creates a $Default true-filter on every new subscription. Left
-        // in place it hands the subscription everything published to the topic, which is
-        // only ever right for the Resolver's own subscription.
+        // A subscription created here carries the closed $Default placeholder, which this
+        // removes; the subscription then matches nothing until its real rules are in place.
+        // A subscription that predates that still has the true-filter $Default Service Bus
+        // seeds a rule-less create with, which hands it everything published to the topic
+        // and is only ever right for the Resolver's own subscription.
         if (!expected.KeepDefaultRule)
         {
             await DeleteRuleIfExistsAsync(client, topicName, expected.Name, TopologyDescriptor.DefaultRuleName, cancellationToken).ConfigureAwait(false);
@@ -184,9 +242,37 @@ public sealed class ServiceBusTopologyProvisioner
 
         foreach (var rule in expected.Rules)
         {
-            await EnsureRuleAsync(client, topicName, expected.Name, rule.Name, rule.Filter, rule.Action, log, cancellationToken).ConfigureAwait(false);
+            await EnsureRuleAsync(client, topicName, expected.Name, rule.Name, rule.Filter, rule.Action, isEmulator, log, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// True when an existing subscription expires messages sooner than expected, or drops
+    /// them on expiry where they should be dead-lettered. Never shortens a longer TTL or
+    /// turns dead-lettering off that an operator turned on.
+    /// </summary>
+    private static bool NeedsExpiryUpdate(SubscriptionProperties existing, ExpectedSubscription expected) =>
+        (expected.DefaultMessageTimeToLive is { } timeToLive && existing.DefaultMessageTimeToLive < timeToLive)
+        || (expected.DeadLetterOnMessageExpiration && !existing.DeadLetteringOnMessageExpiration);
+
+    /// <summary>
+    /// True when <paramref name="existing"/> is a forwarder the WebApp has paused: it should
+    /// forward, but its forward target is detached and it is not Active.
+    /// </summary>
+    private static bool IsPausedForwarder(SubscriptionProperties existing, ExpectedSubscription expected) =>
+        !string.IsNullOrEmpty(expected.ForwardTo)
+        && string.IsNullOrEmpty(existing.ForwardTo)
+        && existing.Status != EntityStatus.Active;
+
+    /// <summary>
+    /// True when <paramref name="existing"/> is a forwarder with its forward target detached
+    /// that carries <see cref="SubscriptionMarkers.PurgeInProgress"/>: a WebApp purge is
+    /// draining it, or an interrupted purge left the marker behind.
+    /// </summary>
+    private static bool IsPurgingForwarder(SubscriptionProperties existing, ExpectedSubscription expected) =>
+        !string.IsNullOrEmpty(expected.ForwardTo)
+        && string.IsNullOrEmpty(existing.ForwardTo)
+        && string.Equals(existing.UserMetadata, SubscriptionMarkers.PurgeInProgress, StringComparison.Ordinal);
 
     private static string DescribeKind(ExpectedSubscription expected) =>
         expected.ForwardTo is not null ? "forward " : expected.RequiresSession ? "session " : string.Empty;
@@ -252,6 +338,19 @@ public sealed class ServiceBusTopologyProvisioner
         return lastSlash < 0 ? path : path.Substring(lastSlash + 1);
     }
 
+    /// <summary>
+    /// Creates a missing rule, leaves a matching one untouched, and reconciles a rule whose
+    /// filter or action differs.
+    /// </summary>
+    /// <remarks>
+    /// On a real namespace a mismatched rule is replaced in place with one
+    /// <c>UpdateRuleAsync</c> call, so there is no window between a delete and a create in
+    /// which publishes go unrouted. Creating the new rule beside the old one is not an
+    /// option: every matching rule with an action produces its own copy, so an overlap
+    /// would duplicate forwards with fresh EventIds. The emulators keep delete-then-create:
+    /// the in-repo emulator's admin PUT rejects an existing rule, and the official
+    /// emulator's support for rule updates is not guaranteed.
+    /// </remarks>
     private static async Task EnsureRuleAsync(
         ServiceBusAdministrationClient client,
         string topicName,
@@ -259,12 +358,22 @@ public sealed class ServiceBusTopologyProvisioner
         string ruleName,
         string filter,
         string? action,
+        bool isEmulator,
         Action<string> log,
         CancellationToken cancellationToken)
     {
         var existing = await TryGetRuleAsync(client, topicName, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false);
         if (existing is not null && RuleMatches(existing, filter, action))
         {
+            return;
+        }
+
+        if (existing is not null && !isEmulator)
+        {
+            existing.Filter = new SqlRuleFilter(filter);
+            existing.Action = string.IsNullOrWhiteSpace(action) ? null : new SqlRuleAction(action);
+            await client.UpdateRuleAsync(topicName, subscriptionName, existing, cancellationToken).ConfigureAwait(false);
+            log($"Updated rule '{ruleName}' on '{topicName}/{subscriptionName}'.");
             return;
         }
 
@@ -296,6 +405,21 @@ public sealed class ServiceBusTopologyProvisioner
                string.Equals(existingAction, action ?? string.Empty, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The rule a subscription is created with when it must not keep $Default: a $Default
+    /// that matches nothing (<c>1=0</c>).
+    /// </summary>
+    /// <remarks>
+    /// Created without a rule, Service Bus seeds a true-filter $Default, and until the
+    /// provisioner deletes it the subscription receives everything published to its topic —
+    /// on a live topic, messages addressed elsewhere, and for a forwarder, unrelated traffic
+    /// auto-forwarded without the forward rule's action. Creating it closed keeps it from
+    /// ever existing with a true filter; the $Default delete and the rule loop that follow
+    /// then run exactly as for any other subscription.
+    /// </remarks>
+    private static CreateRuleOptions ClosedDefaultRule() =>
+        new(TopologyDescriptor.DefaultRuleName, new FalseRuleFilter());
+
     private static CreateSubscriptionOptions CreateSubscriptionOptions(string topicName, ExpectedSubscription expected)
     {
         var options = new CreateSubscriptionOptions(topicName, expected.Name)
@@ -305,6 +429,7 @@ public sealed class ServiceBusTopologyProvisioner
             EnableBatchedOperations = true,
             EnableDeadLetteringOnFilterEvaluationExceptions = true,
             RequiresSession = expected.RequiresSession,
+            DeadLetteringOnMessageExpiration = expected.DeadLetterOnMessageExpiration,
         };
 
         if (!string.IsNullOrWhiteSpace(expected.ForwardTo))

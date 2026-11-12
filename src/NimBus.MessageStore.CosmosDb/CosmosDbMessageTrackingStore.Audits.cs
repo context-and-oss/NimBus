@@ -26,7 +26,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e, "COSMOS STORE-AUDIT-ERROR: EventId: {EventId}", eventId);
+            LogCosmosStoreAuditError(_logger, e, eventId);
             throw;
         }
     }
@@ -128,7 +128,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
 
         var sql = "SELECT * FROM c";
-        if (conditions.Any())
+        if (conditions.Count != 0)
             sql += " WHERE " + string.Join(" AND ", conditions);
         sql += " ORDER BY c.createdAt DESC";
 
@@ -230,4 +230,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
 
         public int Count { get; set; }
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS STORE-AUDIT-ERROR: EventId: {EventId}")]
+    private static partial void LogCosmosStoreAuditError(ILogger logger, Exception exception, string eventId);
 }

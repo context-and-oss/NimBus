@@ -9,27 +9,27 @@ using System.Threading.Tasks;
 namespace NimBus.SDK.EventHandlers;
 
 
-public class EventJsonHandler<T_Event> : IEventJsonHandler
-    where T_Event : IEvent
+public class EventJsonHandler<TEvent> : IEventJsonHandler
+    where TEvent : IEvent
 {
-    public EventJsonHandler(IEventHandler<T_Event> eventHandler)
+    public EventJsonHandler(IEventHandler<TEvent> eventHandler)
     {
         _eventHandler = eventHandler;
     }
 
-    private readonly IEventHandler<T_Event> _eventHandler;
+    private readonly IEventHandler<TEvent> _eventHandler;
 
     public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
     {
-        if (context == null) throw new ArgumentNullException(nameof(context));
+        ArgumentNullException.ThrowIfNull(context);
 
-        T_Event @event;
+        TEvent @event;
         try
         {
             var eventJson = context.MessageContent?.EventContent?.EventJson
                 ?? throw new JsonSerializationException(
                     $"Event payload for '{context.EventTypeId}' is missing.");
-            @event = JsonConvert.DeserializeObject<T_Event>(
+            @event = JsonConvert.DeserializeObject<TEvent>(
                     eventJson,
                     Constants.CreateSafeJsonSettings())
                 ?? throw new JsonSerializationException(

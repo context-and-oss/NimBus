@@ -166,7 +166,8 @@ public sealed class HeartbeatImplementation : IHeartbeatApiController
         };
     }
 
-    private static string ToLiveness(HeartbeatStatus status) => status switch
+    /// <summary>The liveness the heartbeat page and the Monitor feed report for a settled status.</summary>
+    internal static string ToLiveness(HeartbeatStatus status) => status switch
     {
         HeartbeatStatus.On or HeartbeatStatus.Unsupported => "alive",
         HeartbeatStatus.Pending => "late",

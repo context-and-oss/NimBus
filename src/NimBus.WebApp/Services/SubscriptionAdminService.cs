@@ -14,7 +14,7 @@ using NimBus.WebApp.ManagementApi;
 namespace NimBus.WebApp.Services;
 
 /// <inheritdoc cref="ISubscriptionAdminService"/>
-public class SubscriptionAdminService : ISubscriptionAdminService
+public partial class SubscriptionAdminService : ISubscriptionAdminService
 {
     private readonly IPlatform _platform;
     private readonly IServiceBusManagement _sbManagement;
@@ -112,11 +112,12 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             await _sbManagement.DeleteTopic(topicName);
             result.Succeeded = true;
             result.Message = $"Topic '{topicName}' deleted along with its subscriptions and messages.";
-            _logger.LogWarning("Topic {Topic} deleted by operator", topicName);
+            LogTopicDeletedByOperator(_logger, topicName);
         }
         catch (Exception exception)
         {
-            Fail(result, exception, "Failed to delete topic {Topic}", topicName);
+            LogFailedToDeleteTopic(_logger, exception, topicName);
+            Fail(result, exception);
         }
         return result;
     }
@@ -255,6 +256,10 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
             var expected = FindExpected(topicName, subscriptionName);
 
+            // A purge marker an interrupted purge left behind is cleared by either toggle, in
+            // the same update; any other metadata is the operator's and stays as it is.
+            var userMetadata = IsPurgeMarker(settings.UserMetadata) ? string.Empty : null;
+
             if (enable)
             {
                 // Restore forwarding only if the platform knows where it should point and
@@ -264,7 +269,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
                 await _sbManagement.UpdateSubscription(
                     topicName, subscriptionName, EntityStatus.Active,
-                    forwardTo: expected?.ForwardTo, changeForwardTo: restoreForwarding);
+                    forwardTo: expected?.ForwardTo, changeForwardTo: restoreForwarding, userMetadata);
 
                 result.Message = restoreForwarding
                     ? $"Delivery resumed and forwarding to '{expected!.ForwardTo}' restored."
@@ -288,7 +293,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
                 await _sbManagement.UpdateSubscription(
                     topicName, subscriptionName, EntityStatus.ReceiveDisabled,
-                    forwardTo: null, changeForwardTo: detachForwarding);
+                    forwardTo: null, changeForwardTo: detachForwarding, userMetadata);
 
                 result.Message = detachForwarding
                     ? $"Paused: delivery disabled and forwarding to '{settings.ForwardTo}' detached. Messages now " +
@@ -297,8 +302,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             }
 
             result.Succeeded = true;
-            _logger.LogInformation("Subscription {Topic}/{Subscription} delivery {Action}",
-                topicName, subscriptionName, enable ? "resumed" : "paused");
+            LogSubscriptionDelivery(_logger, topicName, subscriptionName, enable ? "resumed" : "paused");
         }
         catch (SubscriptionNotFoundException)
         {
@@ -306,7 +310,8 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         }
         catch (Exception exception)
         {
-            Fail(result, exception, "Failed to change delivery on {Topic}/{Subscription}", topicName, subscriptionName);
+            LogFailedToChangeDelivery(_logger, exception, topicName, subscriptionName);
+            Fail(result, exception);
         }
 
         return result;
@@ -335,12 +340,21 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         // Pause → Purge workflow would silently remove nothing. Make the subscription
         // receivable for the duration of the drain and put its status back afterwards,
         // whatever happens.
+        //
+        // While it drains, the subscription is Active with ForwardTo detached, which
+        // `nb topology apply` would read as a forwarder to re-attach, forwarding the backlog
+        // being discarded. So the same update that activates it also sets the purge marker,
+        // which apply leaves alone, and the restore puts the original metadata back. A null,
+        // empty or leftover-marker original restores as empty: null would mean "unchanged".
         var pausedStatus = settings.Status != EntityStatus.Active ? settings.Status : (EntityStatus?)null;
+        var originalUserMetadata = string.IsNullOrEmpty(settings.UserMetadata) || IsPurgeMarker(settings.UserMetadata)
+            ? string.Empty
+            : settings.UserMetadata;
         if (pausedStatus.HasValue)
         {
             await _sbManagement.UpdateSubscription(
                 topicName, subscriptionName, EntityStatus.Active,
-                forwardTo: null, changeForwardTo: false);
+                forwardTo: null, changeForwardTo: false, userMetadata: SubscriptionMarkers.PurgeInProgress);
         }
 
         try
@@ -360,7 +374,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         }
         catch (Exception exception)
         {
-            _logger.LogWarning(exception, "Error draining {Topic}/{Subscription}", topicName, subscriptionName);
+            LogErrorDraining(_logger, exception, topicName, subscriptionName);
             errors.Add(exception.Message);
         }
         finally
@@ -371,23 +385,24 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 {
                     await _sbManagement.UpdateSubscription(
                         topicName, subscriptionName, pausedStatus.Value,
-                        forwardTo: null, changeForwardTo: false);
+                        forwardTo: null, changeForwardTo: false, userMetadata: originalUserMetadata);
                 }
                 catch (Exception exception)
                 {
                     // Leaving it Active is recoverable and visible in the table, but the
-                    // operator has to be told the pause didn't survive.
-                    _logger.LogError(exception, "Drained {Topic}/{Subscription} but could not restore status {Status}",
-                        topicName, subscriptionName, pausedStatus.Value);
+                    // operator has to be told the pause didn't survive, and how to get the
+                    // marker off: apply skips a marked forwarder until it is cleared.
+                    LogDrainedButCouldNotRestoreStatus(_logger, exception, topicName, subscriptionName, pausedStatus.Value);
                     errors.Add(
                         $"Messages were drained, but the subscription could not be returned to {pausedStatus.Value} " +
-                        $"and is now Active: {exception.Message}");
+                        $"and is now Active, and the purge marker may still be set: {exception.Message} " +
+                        "Pause clears the purge marker and restores the pause. Resume afterwards only if forwarding " +
+                        "should be re-attached.");
                 }
             }
         }
 
-        _logger.LogInformation("Purged {Count} message(s) from {Topic}/{Subscription}",
-            removed, topicName, subscriptionName);
+        LogPurgedMessage(_logger, removed, topicName, subscriptionName);
 
         return new BulkOperationResult
         {
@@ -482,8 +497,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 }
                 catch (Exception exception)
                 {
-                    _logger.LogWarning(exception, "Error draining the {Queue} of {Topic}/{Subscription}",
-                        queueName, ForLog(topicName), ForLog(subscriptionName));
+                    LogErrorDrainingTheOf(_logger, exception, queueName, ForLog(topicName), ForLog(subscriptionName));
                     errors.Add($"The {queueName} of {subscriptionName}: {exception.Message}");
                 }
             }
@@ -657,11 +671,12 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             await _sbManagement.DeleteSubscription(topicName, subscriptionName);
             result.Succeeded = true;
             result.Message = "Subscription deleted along with every message it held.";
-            _logger.LogWarning("Subscription {Topic}/{Subscription} deleted by operator", topicName, subscriptionName);
+            LogSubscriptionDeletedByOperator(_logger, topicName, subscriptionName);
         }
         catch (Exception exception)
         {
-            Fail(result, exception, "Failed to delete {Topic}/{Subscription}", topicName, subscriptionName);
+            LogFailedToDeleteSubscription(_logger, exception, topicName, subscriptionName);
+            Fail(result, exception);
         }
 
         return result;
@@ -686,7 +701,8 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         }
         catch (Exception exception)
         {
-            Fail(result, exception, "Failed to delete {Topic}/{Subscription} while recreating it", topicName, subscriptionName);
+            LogFailedToDeleteWhileRecreating(_logger, exception, topicName, subscriptionName);
+            Fail(result, exception);
             return result;
         }
 
@@ -699,14 +715,14 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 ? "Subscription recreated empty with its expected rules."
                 : $"Subscription recreated empty, forwarding to '{expected.ForwardTo}' again.";
 
-            _logger.LogWarning("Subscription {Topic}/{Subscription} recreated by operator (backlog discarded)",
-                topicName, subscriptionName);
+            LogSubscriptionRecreatedByOperator(_logger, topicName, subscriptionName);
         }
         catch (Exception exception)
         {
             // The subscription is gone at this point, so make the failure loud: an operator
             // has to know the entity is missing, not just that a button failed.
-            Fail(result, exception, "Deleted {Topic}/{Subscription} but failed to recreate it", topicName, subscriptionName);
+            LogFailedToRecreateSubscription(_logger, exception, topicName, subscriptionName);
+            Fail(result, exception);
             result.Message = "Subscription was deleted but could not be recreated — re-run 'nb topology apply'.";
         }
 
@@ -743,12 +759,12 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             result.Succeeded = true;
             result.Message = $"Rule '{ruleName}' detached. No new messages will enter this subscription through it; " +
                              "whatever is already queued still drains.";
-            _logger.LogWarning("Rule {Rule} detached from {Topic}/{Subscription} by operator",
-                ruleName, topicName, subscriptionName);
+            LogRuleDetachedFromByOperator(_logger, ruleName, topicName, subscriptionName);
         }
         catch (Exception exception)
         {
-            Fail(result, exception, "Failed to detach a rule from {Topic}/{Subscription}", topicName, subscriptionName);
+            LogFailedToDetachRule(_logger, exception, topicName, subscriptionName);
+            Fail(result, exception);
         }
 
         return result;
@@ -781,8 +797,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             }
             catch (Exception exception)
             {
-                _logger.LogWarning(exception, "Failed to restore a rule on {Topic}/{Subscription}",
-                    topicName, subscriptionName);
+                LogFailedToRestoreARule(_logger, exception, topicName, subscriptionName);
                 result.Errors.Add($"{rule.Name}: {exception.Message}");
             }
         }
@@ -796,6 +811,9 @@ public class SubscriptionAdminService : ISubscriptionAdminService
     }
 
     // ───────────────────────── Helpers ─────────────────────────
+
+    private static bool IsPurgeMarker(string? userMetadata) =>
+        string.Equals(userMetadata, SubscriptionMarkers.PurgeInProgress, StringComparison.Ordinal);
 
     private ExpectedSubscription? FindExpected(string topicName, string subscriptionName) =>
         TopologyDescriptor.FindSubscription(topicName, subscriptionName, _platform, _isEmulator);
@@ -812,13 +830,60 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             Errors = new List<string>(),
         };
 
-    private void Fail(SubscriptionActionResult result, Exception exception, string message, params object[] args)
+    private static void Fail(SubscriptionActionResult result, Exception exception)
     {
-        _logger.LogWarning(exception, message, args);
         result.Succeeded = false;
         result.Message = exception.Message;
         result.Errors.Add(exception.Message);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Topic {Topic} deleted by operator")]
+    private static partial void LogTopicDeletedByOperator(ILogger logger, string topic);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Subscription {Topic}/{Subscription} delivery {Action}")]
+    private static partial void LogSubscriptionDelivery(ILogger logger, string topic, string subscription, string action);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Error draining {Topic}/{Subscription}")]
+    private static partial void LogErrorDraining(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Drained {Topic}/{Subscription} but could not restore status {Status}")]
+    private static partial void LogDrainedButCouldNotRestoreStatus(ILogger logger, Exception exception, string topic, string subscription, EntityStatus status);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Purged {Count} message(s) from {Topic}/{Subscription}")]
+    private static partial void LogPurgedMessage(ILogger logger, int count, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Error draining the {Queue} of {Topic}/{Subscription}")]
+    private static partial void LogErrorDrainingTheOf(ILogger logger, Exception exception, string queue, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Subscription {Topic}/{Subscription} deleted by operator")]
+    private static partial void LogSubscriptionDeletedByOperator(ILogger logger, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Subscription {Topic}/{Subscription} recreated by operator (backlog discarded)")]
+    private static partial void LogSubscriptionRecreatedByOperator(ILogger logger, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rule {Rule} detached from {Topic}/{Subscription} by operator")]
+    private static partial void LogRuleDetachedFromByOperator(ILogger logger, string rule, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to restore a rule on {Topic}/{Subscription}")]
+    private static partial void LogFailedToRestoreARule(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to delete topic {Topic}")]
+    private static partial void LogFailedToDeleteTopic(ILogger logger, Exception exception, string topic);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to change delivery on {Topic}/{Subscription}")]
+    private static partial void LogFailedToChangeDelivery(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to delete {Topic}/{Subscription}")]
+    private static partial void LogFailedToDeleteSubscription(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to delete {Topic}/{Subscription} while recreating it")]
+    private static partial void LogFailedToDeleteWhileRecreating(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Deleted {Topic}/{Subscription} but failed to recreate it")]
+    private static partial void LogFailedToRecreateSubscription(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to detach a rule from {Topic}/{Subscription}")]
+    private static partial void LogFailedToDetachRule(ILogger logger, Exception exception, string topic, string subscription);
 }
 
 /// <summary>Thrown when the named subscription doesn't exist on the topic.</summary>

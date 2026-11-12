@@ -17,7 +17,11 @@ public static class McpToolAccess
         ["nimbus_skip_message"] = OperatorAction.Skip,
         ["nimbus_set_message_reported"] = OperatorAction.Report,
         ["nimbus_classify_failure"] = OperatorAction.Classify,
+        ["nimbus_record_classification"] = OperatorAction.Classify,
     };
+
+    /// <summary>Records a classification; the <c>handle-failures</c> prompt follows it.</summary>
+    public const string RecordTool = "nimbus_record_classification";
 
     /// <summary>Previews resubmit or skip; listed while either is allowed.</summary>
     public const string PrepareTool = "nimbus_prepare_action";

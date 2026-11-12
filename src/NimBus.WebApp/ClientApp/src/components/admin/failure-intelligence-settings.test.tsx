@@ -19,7 +19,7 @@ describe("Failure intelligence settings", () => {
     }));
     globalThis.fetch = fetchMock as typeof fetch;
     render(<FailureIntelligenceSettings />);
-    await userEvent.click(await screen.findByRole("switch", { name: "Include redacted event payload" }));
+    await userEvent.click(await screen.findByRole("switch", { name: "Agents may see redacted payloads" }));
     expect(screen.getByText(/Event data will leave NimBus/)).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Review changes" }));
     expect((screen.getByRole("button", { name: "Save settings" }) as HTMLButtonElement).disabled).toBe(true);
@@ -30,6 +30,17 @@ describe("Failure intelligence settings", () => {
     expect(request.headers["X-NimBus-CSRF"]).toBe("csrf-test");
     expect(JSON.parse(request.body)).toMatchObject({ revision: "none", payloadSharingAcknowledged: true, apiKey: null, clearApiKey: false, settings: { includeEventPayload: true } });
     expect(screen.getByText(/Active on this instance: enabled · payload excluded · API key configured by deployment/)).toBeTruthy();
+  });
+
+  it("marks the provider fields deprecated with the removal version", async () => {
+    // Spec 044 §6.8: agents record over MCP; the built-in provider goes in v5.0.0.
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(Response.json(state)) as typeof fetch;
+    render(<FailureIntelligenceSettings />);
+    const note = await screen.findByRole("note");
+    expect(note.textContent).toMatch(/Deprecated/);
+    expect(note.textContent).toMatch(/removed in NimBus 5\.0\.0/);
+    expect((screen.getByLabelText("Provider") as HTMLInputElement).value).toBe("TypeSafe (deprecated)");
+    expect(screen.getByLabelText(/Provider timeout \(seconds, deprecated\)/)).toBeTruthy();
   });
 
   it("sends a new API key as a masked write-only field and clears it after saving", async () => {
@@ -114,7 +125,7 @@ describe("Failure intelligence settings", () => {
       globalThis.fetch = vi.fn().mockResolvedValue(Response.json(state)) as typeof fetch;
       renderInPanel(<FailureIntelligenceSettings />, "failure-intelligence", "evidence");
 
-      expect(await screen.findByRole("switch", { name: "Include redacted event payload" })).toBeTruthy();
+      expect(await screen.findByRole("switch", { name: "Agents may see redacted payloads" })).toBeTruthy();
       expect(screen.queryByLabelText("Model")).toBeNull();
       expect(screen.getByText("What leaves NimBus")).toBeTruthy();
     });

@@ -11,6 +11,8 @@ namespace NimBus.CommandLine.Commands;
 /// <summary>Registers the <c>nb endpoint</c> command group.</summary>
 internal static class EndpointCommands
 {
+    private static readonly string[] ValidPurgeStates = ["active", "deferred"];
+
     internal static void Register(CommandLineApplication app, CommandOption sbConnectionString, CommandOption dbConnectionString)
     {
         app.Command("endpoint", endpointCommand =>
@@ -87,7 +89,7 @@ internal static class EndpointCommands
 
                 purgeCommand.OnExecuteAsync(async ct =>
                 {
-                    var validStates = new[] { "active", "deferred" };
+                    var validStates = ValidPurgeStates;
                     var stateFilters = new List<string>();
 
                     if (stateOption.HasValue())
@@ -99,7 +101,7 @@ internal static class EndpointCommands
                                 Console.Error.WriteLine($"Invalid state '{raw}'. Valid values: Active, Deferred");
                                 return 1;
                             }
-                            stateFilters.Add(raw.ToLower());
+                            stateFilters.Add(raw.ToLowerInvariant());
                         }
                     }
 

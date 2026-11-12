@@ -11,7 +11,9 @@ import {
 const statusCountCalls = vi.fn();
 const putAckCalls = vi.fn();
 const deleteAckCalls = vi.fn();
+const clientHttp = vi.fn();
 let failRequests = false;
+let failStatusCode: number | undefined;
 let failAckWrites = false;
 let failedCount = 0;
 let oldestFailureAt: moment.Moment | undefined;
@@ -48,26 +50,37 @@ vi.mock("api-client", () => {
     }
   }
   class Client {
-    getEndpointsAll() {
-      return Promise.resolve(["ep-1"]);
+    constructor(_auth?: unknown, _baseUrl?: string, http?: unknown) {
+      clientHttp(http);
     }
-    postApiEndpointStatusCount(ids: string[]) {
-      statusCountCalls(ids);
+    getMonitorFeedStatus() {
+      statusCountCalls();
       if (failRequests) {
         return Promise.reject(new Error("api down"));
       }
-      return Promise.resolve(
-        ids.map((id) => ({
-          endpointId: id,
-          failedCount,
-          pendingCount: 7,
-          deferredCount: 3,
-          oldestFailureAt,
-        })),
-      );
-    }
-    getMonitorAcknowledgements() {
-      return Promise.resolve([...serverAcks]);
+      if (failStatusCode !== undefined) {
+        return Promise.reject(Object.assign(new Error("refused"), { status: failStatusCode }));
+      }
+      return Promise.resolve({
+        environment: "prod",
+        platformName: "Test.Platform",
+        tokenAccess: false,
+        stale: false,
+        endpoints: [
+          {
+            status: {
+              endpointId: "ep-1",
+              failedCount,
+              pendingCount: 7,
+              deferredCount: 3,
+              oldestFailureAt,
+            },
+            acknowledgement: serverAcks.find((a) => a.endpointId === "ep-1"),
+            blockedSessionCount: 2,
+            heartbeat: { liveness: "alive" },
+          },
+        ],
+      });
     }
     putMonitorAcknowledgement(
       endpointId: string,
@@ -100,7 +113,9 @@ function resetMockState() {
   statusCountCalls.mockClear();
   putAckCalls.mockClear();
   deleteAckCalls.mockClear();
+  clientHttp.mockClear();
   failRequests = false;
+  failStatusCode = undefined;
   failAckWrites = false;
   failedCount = 0;
   oldestFailureAt = undefined;
@@ -333,6 +348,73 @@ describe("useMonitorData failing-since time", () => {
     await flushAsync();
 
     expect(result.current.endpoints[0].firstFailureAt).toBe(Date.now());
+    unmount();
+  });
+});
+
+describe("useMonitorData status feed", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetMockState();
+    setDocumentHidden(false);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads counts, blocked sessions, heartbeat and the deployment from one feed call", async () => {
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    expect(statusCountCalls).toHaveBeenCalledTimes(1);
+    expect(result.current.endpoints[0]).toMatchObject({
+      id: "ep-1",
+      blockedSessionCount: 2,
+      heartbeat: { liveness: "alive" },
+    });
+    expect(result.current.feed).toMatchObject({
+      environment: "prod",
+      platformName: "Test.Platform",
+      tokenAccess: false,
+    });
+    unmount();
+  });
+
+  it("uses the cookie session without a token", async () => {
+    const { unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    expect(clientHttp).toHaveBeenLastCalledWith(undefined);
+    unmount();
+  });
+
+  it("sends the token in its header, without cookies, when it has one", async () => {
+    const fetchSpy = vi.spyOn(window, "fetch").mockResolvedValue(new Response("{}"));
+    const { unmount } = renderHook(() => useMonitorData({ token: "nbdt_abc" }));
+    await flushAsync();
+
+    const http = clientHttp.mock.calls.at(-1)![0] as {
+      fetch: (url: string, init?: RequestInit) => Promise<Response>;
+    };
+    await http.fetch("/api/v1/monitor/feed/status", { headers: { Accept: "application/json" } });
+    const init = fetchSpy.mock.calls.at(-1)![1] as RequestInit;
+    expect(new Headers(init.headers).get("X-NimBus-Dashboard-Token")).toBe("nbdt_abc");
+    expect(new Headers(init.headers).get("Accept")).toBe("application/json");
+    expect(init.credentials).toBe("omit");
+    fetchSpy.mockRestore();
+    unmount();
+  });
+
+  it.each([
+    [401, "unauthorized"],
+    [403, "forbidden"],
+  ])("reports a %i from the feed as %s", async (status, expected) => {
+    failStatusCode = status;
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    expect(result.current.accessError).toBe(expected);
     unmount();
   });
 });

@@ -1,4 +1,4 @@
-#pragma warning disable CA1707, CA2007
+#pragma warning disable CA1707, CA2007, CS0618 // CS0618: these tests cover the deprecated provider (Spec 044 §6.10).
 using System.Reflection;
 using Microsoft.AspNetCore.Mvc;
 using NimBus.Core.Messages;
@@ -118,7 +118,7 @@ public sealed class ServiceAndEvidenceTests
         Assert.AreEqual(403, error.StatusCode);
         fixture.Host.Reader = true;
         fixture.Source.Throw = true;
-        var response = await new IntegrationIntelligenceController(fixture.Service).GetClassification("event", "failure", default);
+        var response = await new IntegrationIntelligenceReadController(fixture.Reader).GetClassification("event", "failure", default);
         Assert.AreEqual(503, ((ObjectResult)response).StatusCode);
         Assert.DoesNotContain("credential", System.Text.Json.JsonSerializer.Serialize(((ObjectResult)response).Value));
     }
@@ -199,11 +199,14 @@ internal sealed class ServiceFixture
     public MessageSource Source => (MessageSource)(object)Messages;
     public FailureEvidenceBuilder Evidence { get; }
     public FailureClassificationService Service { get; }
+    public FailureClassificationReader Reader { get; }
     public ServiceFixture(IFailureClassificationStore? store = null)
     {
+        store ??= new InMemoryClassificationStore();
         Messages = DispatchProxy.Create<IMessageTrackingStore, MessageSource>();
         Evidence = new(Messages, new TestMasker(), null, new IntelligenceDataRedactor(), Options);
-        Service = new(Options, Host, store ?? new InMemoryClassificationStore(), Evidence, Provider, Messages);
+        Service = new(Options, Host, store, Evidence, Provider, Messages);
+        Reader = new(Host, store, Messages);
     }
 }
 
@@ -218,12 +221,13 @@ public class MessageSource : DispatchProxy
     public bool Throw { get; set; }
     public bool Deleted { get; set; }
     public int HistoryReads { get; private set; }
+    public List<MessageEntity> History { get; } = [];
     protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
     {
         if (Throw) throw new InvalidOperationException("credential must never leak");
         if (targetMethod!.Name == "GetMessage") return Task.FromResult(Message);
         if (targetMethod.Name == "GetEvent") return Task.FromResult(Deleted ? null! : Current);
-        if (targetMethod.Name == "GetEventHistory") { HistoryReads++; return Task.FromResult<IEnumerable<MessageEntity>>([]); }
+        if (targetMethod.Name == "GetEventHistory") { HistoryReads++; return Task.FromResult<IEnumerable<MessageEntity>>(History.ToList()); }
         throw new NotSupportedException(targetMethod.Name);
     }
 }

@@ -69,6 +69,33 @@ public sealed class AuditLogServiceTests
     }
 
     [TestMethod]
+    [DataRow("azp", DisplayName = "v2 token (azp)")]
+    [DataRow("appid", DisplayName = "v1 token (appid)")]
+    public async Task LogAuditAsync_names_an_app_only_token_after_its_client(string clientClaim)
+    {
+        // Entra app-only tokens carry no name claim; "anonymous" would hide which agent acted.
+        var store = new CapturingStore();
+        var sut = new AuditLogService(NullLogger(), store);
+        var ctx = MakeContextWithClaims(("oid", "33333333-3333-3333-3333-333333333333"), (clientClaim, "agent-client"), ("roles", "Nimbus.Classify"));
+
+        await sut.LogAuditAsync(MessageAuditType.Resubmit, ctx);
+
+        Assert.AreEqual("app:agent-client", store.Entries.Single().Entity.AuditorName);
+    }
+
+    [TestMethod]
+    public async Task LogAuditAsync_prefers_a_name_claim_over_the_client_id()
+    {
+        var store = new CapturingStore();
+        var sut = new AuditLogService(NullLogger(), store);
+        var ctx = MakeContextWithClaims(("azp", "agent-client"), ("name", "Alice Name"));
+
+        await sut.LogAuditAsync(MessageAuditType.Resubmit, ctx);
+
+        Assert.AreEqual("Alice Name", store.Entries.Single().Entity.AuditorName);
+    }
+
+    [TestMethod]
     public async Task LogAuditAsync_falls_back_to_anonymous_when_no_principal()
     {
         var store = new CapturingStore();
@@ -109,6 +136,38 @@ public sealed class AuditLogServiceTests
         Assert.IsTrue(scope.ContainsKey(nameof(MessageAuditEntity.Data)));
         Assert.IsTrue(scope.ContainsKey(nameof(MessageAuditEntity.EventId)));
         Assert.IsTrue(scope.ContainsKey(nameof(MessageAuditEntity.EndpointId)));
+    }
+
+    [TestMethod]
+    public async Task LogAuditAsync_escapes_line_breaks_in_the_structured_log_but_stores_the_original()
+    {
+        // Caller-supplied values reach the log sink; a raw line break there could forge a log entry.
+        var store = new CapturingStore();
+        var logger = new RecordingLogger<AuditLogService>();
+        var sut = new AuditLogService(logger, store);
+        var ctx = MakeContextWithClaims(("name", "Auditor\r\nAuditType=Forged"));
+
+        await sut.LogAuditAsync(MessageAuditType.SearchEvents, ctx,
+            eventId: "evt-1\nforged", endpointId: "ep-1\rforged", data: "{\"a\":1}\n{\"b\":2}");
+
+        var scope = (IReadOnlyDictionary<string, object?>)logger.Records
+            .Single(r => r.Message == AuditLogService.StructuredLogMessage).Scope!;
+        foreach (var key in new[]
+        {
+            nameof(MessageAuditEntity.AuditorName), nameof(MessageAuditEntity.EventId),
+            nameof(MessageAuditEntity.EndpointId), nameof(MessageAuditEntity.Data),
+        })
+        {
+            var value = (string)scope[key]!;
+            Assert.IsFalse(value.Contains('\r', StringComparison.Ordinal) || value.Contains('\n', StringComparison.Ordinal),
+                $"{key} must not carry a raw line break into the log: {value}");
+        }
+
+        Assert.AreEqual("Auditor\\r\\nAuditType=Forged", scope[nameof(MessageAuditEntity.AuditorName)]);
+
+        var entity = store.Entries.Single().Entity;
+        Assert.AreEqual("Auditor\r\nAuditType=Forged", entity.AuditorName, "the durable audit row keeps the original value");
+        Assert.AreEqual("{\"a\":1}\n{\"b\":2}", entity.Data);
     }
 
     // ───────── FR-050 case 3: store write failure is absorbed ─────────

@@ -79,7 +79,7 @@ public class NimBusTestFixture
         where TRequest : IEvent
         where TResponse : class
     {
-        if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+        ArgumentNullException.ThrowIfNull(handlerFactory);
 
         var eventTypeId = new EventType(typeof(TRequest)).Id;
         _eventHandlerProvider.RegisterHandler(

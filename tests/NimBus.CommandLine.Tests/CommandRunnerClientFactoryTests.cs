@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using Xunit;
 
 namespace NimBus.CommandLine.Tests;
@@ -33,7 +34,7 @@ public class CommandRunnerClientFactoryTests
     public void CreateServiceBusClient_WithoutValue_ThrowsWithGuidance(string? value)
     {
         var ex = Assert.Throws<InvalidOperationException>(() => CommandRunner.CreateServiceBusClient(value));
-        Assert.Contains(CommandRunner.SbConnectionStringEnvName, ex.Message);
+        Assert.Contains(CommandRunner.SbConnectionStringEnvName, ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -56,7 +57,7 @@ public class CommandRunnerClientFactoryTests
     public void CreateServiceBusAdministrationClient_WithoutValue_ThrowsWithGuidance(string? value)
     {
         var ex = Assert.Throws<InvalidOperationException>(() => CommandRunner.CreateServiceBusAdministrationClient(value));
-        Assert.Contains(CommandRunner.SbConnectionStringEnvName, ex.Message);
+        Assert.Contains(CommandRunner.SbConnectionStringEnvName, ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -79,6 +80,6 @@ public class CommandRunnerClientFactoryTests
     public void CreateCosmosClient_WithoutValue_ThrowsWithGuidance(string? value)
     {
         var ex = Assert.Throws<InvalidOperationException>(() => CommandRunner.CreateCosmosClient(value));
-        Assert.Contains(CommandRunner.DbConnectionStringEnvName, ex.Message);
+        Assert.Contains(CommandRunner.DbConnectionStringEnvName, ex.Message, StringComparison.Ordinal);
     }
 }

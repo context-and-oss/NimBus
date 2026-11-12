@@ -33,7 +33,7 @@ public static class EventCatalogExporter
     internal static IReadOnlyDictionary<string, string> Build(
         IPlatform platform, AsyncApiEnrichmentRegistry? enrichment = null)
     {
-        if (platform is null) throw new ArgumentNullException(nameof(platform));
+        ArgumentNullException.ThrowIfNull(platform);
 
         var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
 

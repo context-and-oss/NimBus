@@ -26,5 +26,5 @@ public class EndpointMetadata
     /// <summary>Recent heartbeat probes for this endpoint, newest last, pruned by the store.</summary>
     public List<Heartbeat>? Heartbeats { get; set; }
 
-    public bool? SubscriptionStatus { get; set; } = null;
+    public bool? SubscriptionStatus { get; set; }
 }

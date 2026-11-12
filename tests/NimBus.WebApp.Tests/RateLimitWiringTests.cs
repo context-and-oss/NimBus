@@ -103,15 +103,17 @@ public class RateLimitWiringTests
     }
 
     [TestMethod]
-    public void No_global_limiter_is_registered()
+    public void A_global_limiter_is_registered_unless_rate_limiting_is_off()
     {
-        // AC-10 is satisfied structurally: with GlobalLimiter null, an endpoint
-        // that carries no policy metadata — the hub, health probes, static files,
-        // every other /api route — is not throttled at all.
+        // The global limiter covers /api only; RateLimitEnforcementTests shows the hub and
+        // health probes stay unthrottled under it (AC-10).
         var provider = BuildProvider(new Dictionary<string, string?>());
         var options = provider.GetRequiredService<IOptions<RateLimiterOptions>>().Value;
 
-        Assert.IsNull(options.GlobalLimiter, "A global limiter would throttle surfaces AC-10 requires to stay unthrottled.");
+        Assert.IsNotNull(options.GlobalLimiter, "Every /api route needs a ceiling.");
+        var disabled = BuildProvider(new Dictionary<string, string?> { ["RateLimiting:Enabled"] = "false" })
+            .GetRequiredService<IOptions<RateLimiterOptions>>().Value;
+        Assert.IsNull(disabled.GlobalLimiter, "The kill switch turns the global limit off too.");
         Assert.AreEqual(
             (int)HttpStatusCode.TooManyRequests,
             options.RejectionStatusCode,
@@ -135,6 +137,8 @@ public class RateLimitWiringTests
         Assert.AreEqual(50, options.Login.PermitLimit);
         Assert.AreEqual(300, options.Login.WindowSeconds);
         Assert.AreEqual(128, options.Login.IPv6PrefixBits, "128 = the full address, i.e. per-client-IP as AC-2 requires.");
+        Assert.AreEqual(600, options.Global.PermitLimit);
+        Assert.AreEqual(60, options.Global.WindowSeconds);
     }
 
     [TestMethod]

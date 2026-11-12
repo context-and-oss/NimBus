@@ -60,9 +60,10 @@ flowchart TD
 | `MessageAlreadyDeadLetteredException` | Middleware (e.g. `ValidationMiddleware`) | already DeadLettered by middleware → notify Resolver only | `DeadLettered` | Validation failures, missing critical fields |
 | Any other `Exception` from middleware | Middleware | **DeadLetter** + notify Resolver | `DeadLettered` | Includes raw user-middleware throws (e.g. demo's `ServiceModeMiddleware`) |
 
-`DeadLettered` and `Failed` records both fall under the **Failed** column on the
-endpoint dashboard (`Mapper.cs` aggregates `state.FailedCount + state.DeadletterCount`).
-`Pending` and `Unsupported` both fall under **Pending** in the same view.
+`Failed`, `DeadLettered` and `Unsupported` records all fall under the **Failed** column on
+the endpoint dashboard and the Monitor (`Mapper.cs` aggregates
+`state.FailedCount + state.DeadletterCount + state.UnsupportedCount`): none of them drains
+without an operator. **Pending** counts only `Pending` records, including Pending+Handoff.
 
 ## Failure disposition matrix
 

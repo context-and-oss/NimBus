@@ -142,10 +142,43 @@ public sealed class AmqpLifecycleTests
         broker.DeleteSubscription("events", "consumer");
         // The SDK completes an outstanding receive with no message on remote detach.
         Assert.IsNull(await receive.WaitAsync(TimeSpan.FromSeconds(4)));
-        var exception = await Assert.ThrowsAsync<ServiceBusException>(async () =>
+        // From SDK 7.21 the lost session link closes the receiver itself, so later calls fail
+        // locally with ObjectDisposedException rather than SessionLockLost.
+        Assert.IsTrue(receiver.IsClosed);
+        await Assert.ThrowsExactlyAsync<ObjectDisposedException>(async () =>
             await receiver.RenewSessionLockAsync());
-        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, exception.Reason);
         Assert.IsInstanceOfType<KeyNotFoundException>(await failures.Failure.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    [TestMethod]
+    [Timeout(30_000)]
+    public async Task Lost_session_settlement_through_NimBus_reports_session_lock_lost()
+    {
+        var broker = CreateBroker();
+        var port = GetPort();
+        using var frontend = new AmqpFrontend(port, broker);
+        frontend.Start();
+        await using var client = CreateClient(port);
+        await using var receiver = await client.AcceptSessionAsync("events", "consumer", "S");
+        await using var sender = client.CreateSender("events");
+        await sender.SendMessageAsync(new ServiceBusMessage("held") { SessionId = "S" });
+        var held = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2));
+        Assert.IsNotNull(held);
+
+        var receive = receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(10));
+        broker.DeleteSubscription("events", "consumer");
+        Assert.IsNull(await receive.WaitAsync(TimeSpan.FromSeconds(4)));
+
+        // MessageContext retries a lost session lock; any other failure dead-letters the message
+        // and reports it to the Resolver, although the broker redelivers it to the next session owner.
+        var session = new NimBus.ServiceBus.ServiceBusSession(receiver);
+        var message = new NimBus.ServiceBus.ServiceBusMessage(held);
+        await AssertSessionLockLost(() => session.CompleteAsync(message));
+        await AssertSessionLockLost(() => session.DeadLetterAsync(message, "reason", null));
+        await AssertSessionLockLost(() => session.GetStateAsync());
+        await AssertSessionLockLost(() => session.SetStateAsync(new NimBus.Core.Messages.SessionState()));
+        await Assert.ThrowsExactlyAsync<NimBus.Core.Messages.Exceptions.TransientException>(() =>
+            new NimBus.ServiceBus.MessageContext(message, session).Complete());
     }
 
     [TestMethod]
@@ -193,6 +226,12 @@ public sealed class AmqpLifecycleTests
         Assert.IsNotNull(message);
         Assert.AreEqual("after drain", message.Body.ToString());
         await receiver.CompleteMessageAsync(message);
+    }
+
+    private static async Task AssertSessionLockLost(Func<Task> operation)
+    {
+        var exception = await Assert.ThrowsExactlyAsync<ServiceBusException>(operation);
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, exception.Reason);
     }
 
     private static BrokerNamespace CreateBroker()

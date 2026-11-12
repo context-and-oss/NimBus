@@ -12,11 +12,11 @@ are still on the roadmap.
 
 ## At a glance
 
-- **Title** in the spec: *EIP Management Web API* — `api-spec.yaml:3`.
-- **Spec version:** `0.0.1` (pre-1.0; see [Versioning + stability](#versioning--stability) below).
-- **Route prefix:** every operation lives under `/api/…`.
-- **Surface size:** 115 operations across 12 tags (Admin, Event, Endpoint, AccessControl, Agent, Metrics, EventType, StorageHook, Application, Message, Audit, Heartbeat).
-- **Auth:** ASP.NET Identity cookie *and/or* Microsoft Entra ID (interactive browser flow + bearer-token flow). Effectively all `/api/…` endpoints require an authenticated principal. Two are reachable anonymously by design: `GET /api/app/stats` (a liveness shape that discloses nothing to an anonymous caller — see [Application](#application)) and `POST /api/storagehook/cosmos/{endpointId}` (gated by a shared webhook key rather than a principal). The agent API (`/api/agent/*`) also accepts an agent API key in `X-NimBus-Agent-Key`, which admits nothing else — see [Agent API keys](authentication.md#agent-api-keys). Beyond `/api/…`, `/health`, `/alive` and `/ready` are anonymous.
+- **Title** in the spec: *NimBus Management API*.
+- **Spec version:** `1.0.0` — see [Versioning + stability](#versioning--stability) below.
+- **Route prefix:** every operation lives under `/api/v1/…`. The unversioned `/api/…` routes still work but are deprecated.
+- **Surface size:** 153 operations across 19 tags (Admin, Event, Endpoint, AccessControl, Agent, AgentKeys, DashboardTokens, McpAccess, Metrics, Monitor, MonitorFeed, EventType, Failed, Simulation, StorageHook, Application, Message, Audit, Heartbeat).
+- **Auth:** ASP.NET Identity cookie *and/or* Microsoft Entra ID (interactive browser flow + bearer-token flow). Effectively all `/api/…` endpoints require an authenticated principal. Two are reachable anonymously by design: `GET /api/v1/app/stats` (a liveness shape that discloses nothing to an anonymous caller — see [Application](#application)) and `POST /api/v1/storagehook/cosmos/{endpointId}` (gated by a shared webhook key rather than a principal). The agent API (`/api/v1/agent/*`) also accepts an agent API key in `X-NimBus-Agent-Key`, which admits nothing else — see [Agent API keys](authentication.md#agent-api-keys). Beyond `/api/…`, `/health`, `/alive` and `/ready` are anonymous.
 - **Schema generation:** NSwag reads `api-spec.yaml` pre-build and emits server contracts (`Controllers/ApiContract.g.cs`) plus a TypeScript client (`ClientApp/src/api-client/index.ts`) — see [Code generation](#code-generation).
 
 ## Audience
@@ -36,13 +36,13 @@ Two distinct audiences share the same surface:
 ## Authentication
 
 Authentication is configured in
-[`src/NimBus.WebApp/Startup.cs:60-189`](../src/NimBus.WebApp/Startup.cs). Which
+[`src/NimBus.WebApp/Startup.Security.cs`](../src/NimBus.WebApp/Startup.Security.cs). Which
 branch runs depends on configuration; the four supported shapes are:
 
 ### 1. Operator — Identity cookie
 
 When `NimBusIdentity:ConnectionString` is configured and `AzureAd:ClientId` is
-not (`Startup.cs:110-120`), the WebApp runs in *Identity-only* mode: users
+not, the WebApp runs in *Identity-only* mode: users
 sign in with email + password, the server issues a cookie named
 `NimBus.Identity` with an 8-hour sliding expiry, and every `/api/…` request
 must carry that cookie.
@@ -52,13 +52,13 @@ for password-policy, email-confirmation, and bootstrap-admin details.
 
 ### 2. Operator — Entra ID (interactive)
 
-When `AzureAd:ClientId` is set (`Startup.cs:121-188`), the WebApp uses
+When `AzureAd:ClientId` is set, the WebApp uses
 Microsoft Identity Web. Browser sign-in goes through OpenID Connect;
 authenticated browsers carry the standard ASP.NET cookie.
 
 ### 3. Dual — Identity *and* Entra ID
 
-Both schemes registered concurrently (`Startup.cs:121-157`). A policy scheme
+Both schemes registered concurrently. A policy scheme
 named `"Az"` inspects each request and forwards to the right handler:
 
 - Request carries `Authorization: Bearer …` → JWT bearer.
@@ -72,7 +72,7 @@ ID access token via the OAuth 2.0 client-credentials flow (or on-behalf-of for
 delegated automation), then attach it to every request:
 
 ```http
-GET /api/endpoint/status/count HTTP/1.1
+GET /api/v1/endpoint/status/count HTTP/1.1
 Host: nimbus.example.com
 Authorization: Bearer <access-token>
 ```
@@ -80,14 +80,14 @@ Authorization: Bearer <access-token>
 Audience and scope come from the WebApp's `AzureAd` registration — see
 [`docs/authentication.md`](authentication.md) for the app-registration setup.
 The bearer arm is `JwtBearerDefaults.AuthenticationScheme`, validated by
-`Microsoft.Identity.Web` (`Startup.cs:145, 176`).
+`Microsoft.Identity.Web`.
 
 ### Local dev shortcut
 
 For local development *only*, setting `EnableLocalDevAuthentication=true`
-(`Startup.cs:101-109`) installs a `"LocalDev"` scheme that authenticates every
+installs a `"LocalDev"` scheme that authenticates every
 request as a fixed test user. Startup fails fast if this flag is enabled
-outside the Development environment (`Startup.cs:64-71`). Never use it in
+outside the Development environment. Never use it in
 production.
 
 ## Calling from outside the SPA
@@ -120,23 +120,39 @@ If you need a TypeScript / Python / Go client, point an OpenAPI generator at
 
 ## Versioning + stability
 
-Today, **no compatibility commitment is in place.** Concretely:
+The REST API is versioned in its path. Version 1 is the contract:
 
-- The spec lists `version: 0.0.1` (`api-spec.yaml:5`).
-- Routes do not carry a `/api/v1/` prefix; every endpoint is `/api/…`
-  unversioned.
-- The generated TS client injects an `api-version: 2` header on every request
-  ([`ClientApp/src/api-client/index.extensions.ts:45`](../src/NimBus.WebApp/ClientApp/src/api-client/index.extensions.ts))
-  — this is current internal plumbing, not a versioning contract you can rely
-  on.
-- Individual operations may be marked `[Obsolete]` in code (e.g.
-  `Controllers/ApiContract/StorageHookImplementation.cs` for the renamed
-  storage hook); these signal deprecation but not removal timelines.
+- Every operation is served at **`/api/v1/…`**, the paths in `api-spec.yaml`,
+  whose `info.version` is `1.0.0`.
+- The unversioned **`/api/…`** routes that existed before 1.0.0 still answer
+  with identical behaviour, but are **deprecated**. Each response from one
+  carries `Deprecation: @1794441600` (RFC 9745: deprecated since 2026-11-12)
+  and `Link: </api/v1/…>; rel="successor-version"` naming the route to move
+  to. They are removed in the next major release of NimBus (deprecated in a
+  minor, removed in the next major, as for every other public API — see
+  [Versioning](versioning.md)).
 
-Practically: expect endpoints to move and rename until a `v1` cut happens.
-Treat the spec as authoritative for the *shape* of each operation, the route
-table as best-effort for *naming*, and pin your client against a known spec
-hash rather than tracking `main`.
+What may change within v1, without notice beyond the release notes:
+
+- **Additive changes only.** New operations, new optional request members, new
+  response members, new `code` values on an operation's errors, and new
+  members on a problem body. Clients must ignore members they don't know.
+- **Never in v1:** removing or renaming an operation, a path or a member;
+  making an optional request member required; changing a member's type or
+  meaning; changing an operation's success status code; tightening which role
+  an operation requires, except to fix a security defect (called out in the
+  release notes' Compatibility section).
+- Enum values are added only where an operation documents that its enum is
+  open; treat an unknown value as "other".
+
+A breaking change ships as **`/api/v2/…`**, with `/api/v1/…` kept, deprecated
+the same way, for at least one major release. The `info.version` of the spec
+follows SemVer: the minor rises with additive changes, the major with a new
+path version. Pin your client to a released spec version rather than to
+`master`.
+
+The `/hubs/*` SignalR hub, `/mcp`, the health probes and the sign-in pages
+(`/account/*`, `/login`) are not part of the versioned REST API.
 
 ## Conventions
 
@@ -145,17 +161,51 @@ hash rather than tracking `main`.
   `System.Text.Json` with camelCase property names.
 - **Content-Type:** `application/json` on every body-bearing request.
 - **Pagination:** several endpoints use a cursor-style `continuationToken` +
-  `maxItemCount` pair (e.g. `/api/messages/search`,
-  `/api/audits/search`). Pass the value from the previous response back in to
+  `maxItemCount` pair (e.g. `/api/v1/messages/search`,
+  `/api/v1/audits/search`). Pass the value from the previous response back in to
   fetch the next page; an empty/null token means "no more pages."
-- **Errors:** *currently inconsistent.* Implementations return ad-hoc shapes
-  via `ForbidResult()`, `NotFoundObjectResult()`, and similar (see
-  `Controllers/ApiContract/AdminImplementation.cs:33-50`). There is no
-  global `ProblemDetails` mapping yet — callers should branch on HTTP
-  status code and treat the body as best-effort context. Standardising to
-  `ProblemDetails` is on [the gap list](#whats-not-external-ready-yet).
+- **Errors:** every `/api/…` error response is an
+  [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) problem with media type
+  `application/problem+json` — see [Errors](#errors).
 - **HTTPS only:** redirected by `app.UseHttpsRedirection()`
-  (`Startup.cs:404`).
+  (`Startup.Pipeline.cs`).
+
+## Errors
+
+Every error from `/api/…` (any 4xx or 5xx status) carries the same body, the
+`ProblemDetails` schema in `api-spec.yaml`:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.10",
+  "title": "Conflict",
+  "status": 409,
+  "detail": "Revoke the key before removing it.",
+  "traceId": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  "code": "StillActive",
+  "errors": ["Revoke the key before removing it."]
+}
+```
+
+- **Branch on `status`**, then on `code` where the operation documents its codes
+  (agent keys, dashboard tokens, MCP access, intelligence settings, antiforgery).
+  `title` is the status's reason phrase and `detail` is text for a person; don't
+  parse either.
+- **`errors`** lists the reasons when there are several (validation, simulator
+  refusals). `detail` then holds the same messages joined.
+- **`traceId`** matches the server's logs and traces; quote it in a support request.
+- **Other members** can appear: a contract body that some operations return on an
+  error keeps its members at the top level of the problem (the session-state 409
+  carries the current `SessionStateView`, a 429 carries `policy` and
+  `retryAfterSeconds`). Ignore members you don't know.
+- **Where the body comes from:** an operation's own error, the sign-in handlers
+  (401, 403), the antiforgery check (400, `code: InvalidAntiforgeryToken`), the
+  rate limiter (429, plus a `Retry-After` header), an unknown `/api/…` route (404)
+  and unhandled exceptions (500; the message is shown only in the Development
+  environment). Paths outside `/api/…` keep their own bodies.
+
+The generated TypeScript client throws `SwaggerException` for every error, with
+the parsed problem on `.result` and the raw body on `.response`.
 
 ## Domain reference
 
@@ -207,7 +257,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 #### Server-side schema-valid fake payloads
 
-`GET /api/event-types/{eventtypeid}/fake` (operation id
+`GET /api/v1/event-types/{eventtypeid}/fake` (operation id
 `get-eventtypes-eventtypeid-fake`) reflects over the registered CLR type and
 returns a randomized JSON payload that is guaranteed to deserialize as the
 type and pass the type's own `IEvent.TryValidate` rules (the same gate the
@@ -246,7 +296,7 @@ registration is in `Startup.cs`.
 
 Process-wide platform stats and metadata about the running installation.
 
-`GET /api/app/stats` is reachable without credentials so liveness probes and
+`GET /api/v1/app/stats` is reachable without credentials so liveness probes and
 status monitors keep working, but its **payload is authenticated-only** (GH#93):
 environment name, exact platform version and backend topology would otherwise let
 an unauthenticated scanner fingerprint the deployment.
@@ -289,15 +339,41 @@ privileges.
 
 ### McpAccess
 
-Settings → MCP access (Spec 037): `GET`/`PUT /api/admin/mcp/settings`,
-`POST /api/admin/mcp/turn-off` and `GET /api/admin/mcp/activity`. Site Owner only, under the
+Settings → MCP access (Spec 037): `GET`/`PUT /api/v1/admin/mcp/settings`,
+`POST /api/v1/admin/mcp/turn-off` and `GET /api/v1/admin/mcp/activity`. Site Owner only, under the
 `nimbus-admin` rate limit. The writes require the `X-NimBus-CSRF` antiforgery token that `GET`
 returns, and `PUT` is fenced by the policy revision (409 when stale). See
 [docs/mcp-server.md](mcp-server.md#managing-access-in-the-webapp).
 
+### DashboardTokens
+
+Settings → Dashboard tokens: `GET`/`POST /api/v1/admin/dashboard-tokens`,
+`POST /api/v1/admin/dashboard-tokens/{tokenId}/revoke` and `DELETE /api/v1/admin/dashboard-tokens/{tokenId}`.
+Site Owner only, under the `nimbus-admin` rate limit; the writes require the `X-NimBus-CSRF` token
+that `GET` returns. 501 when the storage provider cannot store tokens. See
+[Authentication → Dashboard tokens](authentication.md#dashboard-tokens).
+
+### MonitorFeed
+
+The Monitor wall's read API, for a site Reader or a dashboard token (`X-NimBus-Dashboard-Token`).
+Every caller gets the same fleet-wide payload, unfiltered, composed once per cache window:
+
+| Operation | Refresh | Holds |
+|---|---|---|
+| `GET /api/v1/monitor/feed/status` | 5 s | Every endpoint's status counts, estimated blocked sessions, heartbeat and acknowledgement; the environment and platform name; `tokenAccess` |
+| `GET /api/v1/monitor/feed/metrics` | 30 s | 60 minute buckets of published, handled and failed; per endpoint and fleet-wide counts and average queue and processing time over the last 60 minutes |
+| `GET /api/v1/monitor/feed/history` | 5 min | 72 hour buckets of the same counts; queue and processing time per hour for 24 hours; each endpoint's 24-hour average processing time |
+
+Each response carries `generatedAtUtc` and `stale`: when the store cannot be read, the previous
+result is returned with `stale: true` and the store is tried again once per refresh interval. With
+nothing earlier to return the answer is 503. Responses are `Cache-Control: no-store`. A signed-in
+caller without the site Reader role gets 403. The Monitor's existing ACK operations
+(`/api/v1/monitor/acknowledgements`) are unchanged and do not admit a token. See
+[The Monitor wall](webapp-monitor.md).
+
 ### Message
 
-Search the message history (`/api/messages/search`). Cursor-paginated.
+Search the message history (`/api/v1/messages/search`). Cursor-paginated.
 
 ### Failed
 
@@ -305,12 +381,12 @@ Unresolved failures (`Failed`, `DeadLettered`, `Unsupported`) across the endpoin
 holds Reader on. Three operations, each taking a `FailedSearchFilter` (endpoints, statuses,
 event types, IDs, From/To, error text, UpdatedAt range):
 
-- `POST /api/failed/search` — newest first, cursor-paginated (`maxSearchItemsCount` clamped
+- `POST /api/v1/failed/search` — newest first, cursor-paginated (`maxSearchItemsCount` clamped
   to 500).
-- `POST /api/failed/histogram` — counts per time bucket by status and endpoint, zero-filled.
+- `POST /api/v1/failed/histogram` — counts per time bucket by status and endpoint, zero-filled.
   The bucket follows `period` (5 minutes for `1h` … one day for `30d`), or a custom
   `from`/`to` of up to 90 days with at most 60 buckets.
-- `POST /api/failed/error-groups` — the Insights grouping (category, then normalized
+- `POST /api/v1/failed/error-groups` — the Insights grouping (category, then normalized
   pattern) with each pattern's failures; up to 5,000 failures, `truncated` beyond that.
 
 Naming an endpoint the caller cannot read returns 403. See
@@ -318,7 +394,7 @@ Naming an endpoint the caller cannot read returns 403. See
 
 ### Audit
 
-Search the per-event audit trail (`/api/audits/search`). Same pagination
+Search the per-event audit trail (`/api/v1/audits/search`). Same pagination
 shape as Message.
 
 ### Metrics
@@ -332,6 +408,58 @@ curl -H "Authorization: Bearer $TOKEN" \
      "https://nimbus.example.com/api/metrics/overview?period=1d"
 ```
 
+#### Failed insights
+
+`GET /api/v1/metrics/failed-insights` groups failure occurrences (one per failed attempt) by error
+pattern. When saved failure classifications are readable it also groups them by likely cause
+and by recovery guidance, and reports coverage: `classified`, `uncertain`, `notAnalyzed` and
+`notEligible` ([Spec 043](spec/043-intelligent-failed-message-insights/spec.md)). Reading it
+never starts an analysis.
+
+- `endpointId` narrows the scope to one endpoint. `refresh=true` re-reads saved
+  classifications; new failures can still lag by the 30 s metrics cache. The answer comes from a
+  read that began after the request. Requests that refresh the same scope at the same time
+  share that read, so they cost at most one read beyond the one already running.
+- The response returns the resolved `from` and `to`, in whole milliseconds (a custom window's
+  bounds are truncated to the millisecond too). Send them back unchanged to page through the same
+  occurrences.
+- `enrichment` is `available`, `disabled`, `unavailable`, `unsupported` or `limitExceeded`.
+  Every value except `available` leaves `coverage`, `causeGroups` and `guidanceGroups` null; it
+  is never reported as zero coverage. When it is `unavailable`, the WebApp log has a warning
+  from `FailureClassificationReader` with the storage exception.
+- `analysisAvailable` is false when new analysis can't be requested: intelligence is off, or
+  only saved classifications can be read because no provider is configured.
+- `totalFailed` stays for existing clients and always equals `totalOccurrences`.
+
+Two read-only routes page one group of the overview. Both take the overview's `from` and `to`,
+the same `endpointId`, a `perspective` (`errorPattern`, `cause` or `guidance`), a `groupKey` from
+that perspective, `pageSize` (1–100, default 50) and `continuationToken`:
+
+- `GET /api/v1/metrics/failed-insights/occurrences`: the group's failed attempts, newest first, each
+  with its analysis state, saved cause and guidance when there are any, an `operationMarker`
+  (`analysisRunning`, `outcomeUnknown`, `lastAnalysisFailed` or `identityMismatch`) and the event's
+  `currentStatus`, which is null when unavailable. Cause and guidance groups need saved
+  classifications; error-pattern groups page without them.
+- `GET /api/v1/metrics/failed-insights/patterns`: a cause or guidance group's error patterns, most
+  frequent first.
+
+Group keys are valid only for the scope that issued them and are not durable across releases; a
+key with no occurrences in the requested scope is a `400`, in every perspective. A continuation
+token is bound to its window, endpoint and group; reusing it elsewhere is a `400`.
+Pages are live reads, not a snapshot: new classifications can move occurrences between groups.
+
+Limits, under `NimBus:Insights`:
+
+| Setting | Default | Range | Meaning |
+|---|---|---|---|
+| `EnrichmentCeiling` | 10000 | 100–100000 | Largest scope, after the endpoint filter, that is enriched; above it the response is `limitExceeded` |
+| `EnrichmentCacheSeconds` | 15 | 0–30 | Lifetime of a cached classification read. 0 turns the cache off: every request, including each drill-down page, reads classifications again |
+| `BulkReadBatchSize` | 500 | 50–1000 | Failures per classification-store call |
+| `BulkReadConcurrency` | 4 | 1–8 | Classification-store calls in flight |
+| `TopPatternsPerGroup` | 10 | 1–50 | Error patterns embedded in each cause or guidance group |
+
+Out-of-range values stop the WebApp at startup.
+
 ### Dev
 
 Seed-data helpers used during local development. Not intended for production
@@ -340,7 +468,7 @@ calls. Gated by operator authentication today; expect tightening.
 ### StorageHook
 
 A Cosmos DB change-feed receiver
-(`POST /api/storagehook/cosmos/{endpointId}`) used to project storage events
+(`POST /api/v1/storagehook/cosmos/{endpointId}`) used to project storage events
 into the resolver. Internal infrastructure surface; not for external callers.
 
 ## Code generation
@@ -348,7 +476,7 @@ into the resolver. Internal infrastructure surface; not for external callers.
 The spec is authoritative; both sides of the wire are generated from it.
 
 - **Server contracts:** NSwag emits `Controllers/ApiContract.g.cs` pre-build
-  via the MSBuild target in `NimBus.WebApp.csproj:102-104`. The generated
+  via the `NSwag` MSBuild target in `NimBus.WebApp.csproj`. The generated
   interfaces are implemented by hand under
   `Controllers/ApiContract/*Implementation.cs`.
 - **Reference TypeScript client:** the same NSwag run emits
@@ -356,61 +484,75 @@ The spec is authoritative; both sides of the wire are generated from it.
   Manual overrides for auth/headers live in
   [`ClientApp/src/api-client/index.extensions.ts`](../src/NimBus.WebApp/ClientApp/src/api-client/index.extensions.ts).
 - **External clients:** point any OpenAPI generator at
-  `src/NimBus.WebApp/api-spec.yaml` (or the runtime copy served from the
-  WebApp's `wwwroot/api-spec.yaml` in dev) to produce a client in your
-  preferred language. The TS client in this repo is a usable reference.
+  `src/NimBus.WebApp/api-spec.yaml` to produce a client in your preferred
+  language. The TS client in this repo is a usable reference. The spec's
+  first `servers` entry is `https://{host}` with a `host` variable: set it to
+  your WebApp's host name (generators that support server variables expose it
+  as a setting; others take the default `nimbus.example.com`, which you then
+  override with the client's base-URL option). The second entry is the local
+  development URL, `https://localhost:18443`. The build copies the spec to
+  `wwwroot/`, but the WebApp does not serve that copy.
 
 Swagger UI is exposed only in the Development environment
-(`Startup.cs:416-420`), via `app.UseOpenApi(); app.UseSwaggerUi();`. Production
-hosts do not expose `/swagger` anonymously.
+(`Startup.Pipeline.cs`), via `app.UseOpenApi(); app.UseSwaggerUi();`, and shows
+a document NSwag builds from the controllers rather than `api-spec.yaml`.
+Production hosts do not expose `/swagger` anonymously.
 
 ## CORS
 
-The current CORS policy (`Startup.cs:399-402`) allows credentials but
-restricts origins to `login.microsoftonline.com` only. Browser-based external
-callers from any other origin will be blocked by the browser; that's the
-intended posture for now.
+By default the WebApp answers no cross-origin requests, so browser code on
+another origin cannot call the API. Server-to-server callers are not affected
+by CORS at all: call `https://<your-nimbus-host>/api/v1/…` with a bearer token.
 
-External integration today should be **server-to-server**: your service makes
-the HTTPS call directly to `https://<your-nimbus-host>/api/…` with the bearer
-token, bypassing browser CORS entirely. If your scenario requires browser
-access from a third-party origin, see
-[the gap list](#whats-not-external-ready-yet).
+To let browser code on approved origins call the REST API, list the origins
+in `Cors:AllowedOrigins` (app settings `Cors__AllowedOrigins__0`,
+`Cors__AllowedOrigins__1`, …):
+
+```json
+{
+  "Cors": {
+    "AllowedOrigins": [ "https://portal.example.com", "https://ops.example.com:8443" ]
+  }
+}
+```
+
+- **Scope:** only `/api/…`. The SPA, the SignalR hub, `/mcp` and the sign-in
+  pages never answer cross-origin requests.
+- **No credentials:** responses never carry
+  `Access-Control-Allow-Credentials`, so the browser does not send the
+  WebApp's sign-in cookies. A cross-origin caller authenticates with a header:
+  an Entra ID bearer token (`Authorization`) or an agent key
+  (`X-NimBus-Agent-Key`). Cross-site request forgery therefore stays out of
+  reach.
+- **What is allowed:** methods `GET`, `POST`, `PUT`, `PATCH` and `DELETE`;
+  request headers `Authorization`, `Content-Type`, `Accept`,
+  `Idempotency-Key`, `X-NimBus-Agent-Key` and `X-Agent-Id`. The browser may
+  read `Retry-After`, `Deprecation`, `Link`, `Location` and
+  `Content-Disposition`. Preflights are cached for 10 minutes and answered
+  before sign-in is checked.
+- **Validation:** startup fails on an empty entry, `*`, a value that is not
+  a bare origin (`scheme://host[:port]`, no path or trailing slash), or an
+  `http://` origin outside the Development environment.
+- **Redeploys:** `nb infra apply` and the Bicep template carry `Cors__*`
+  settings forward (see [Deployment](deployment.md)).
 
 ## What's not external-ready yet
 
-Honest list of work needed before this API can be claimed as fully
-external-grade. Each item is its own focused workstream:
+One gap remains before this API can be offered to external integrators
+without caveats:
 
-1. **API-key / service-principal auth — agents only.** Agents have Owner-issued,
-   revocable API keys for `/api/agent/*` ([Spec 039](spec/039-agent-api-keys/spec.md)).
-   The rest of the API still needs a signed-in person or an Entra ID token; a
-   general integrator key path with per-caller scopes is not implemented.
-2. **`ProblemDetails` error envelope (RFC 7807).** Standardise error
-   responses so callers can branch on a stable schema instead of per-endpoint
-   shapes. Touches every `*Implementation.cs` under
-   `Controllers/ApiContract/`.
-3. **Rate limiting — partial.** Four policies now protect the highest-cost
-   surfaces: a concurrency limiter on `GET /api/agent/receive` and fixed
-   windows on `/api/admin/*`, the two search endpoints, and
-   `POST /account/login`. See [Rate Limiting](rate-limiting.md) for values,
-   bounds and tuning. Every other `/api/*` route is still unthrottled — there
-   is no global limiter — and enforcement is per process, so a scaled-out
-   deployment multiplies effective limits by instance count.
-4. **Public base URL in the spec.** `api-spec.yaml:7` lists only
-   `https://localhost:5001`. A production server entry should be added so
-   external generators produce clients pointing at the right host out of the
-   box.
-5. **SemVer cut to `v1` + route versioning.** Add `/api/v1/…` prefix (or
-   document the chosen versioning strategy) and commit to a non-breaking
-   change policy.
-6. **External CORS allow-list.** Move from the single
-   `login.microsoftonline.com` origin to a configuration-driven allow-list
-   so browser-based external callers from approved origins can work.
+1. **API-key / service-principal auth — agents only.** Agents have
+   Owner-issued, revocable API keys for `/api/v1/agent/*`
+   ([Spec 039](spec/039-agent-api-keys/spec.md)). The rest of the API still
+   needs a signed-in person or an Entra ID token; a general integrator key
+   with a role and endpoint scope is planned (Spec 045).
 
-Order in this list is roughly priority for shipping an "external" promise; the
-audit that produced it lives in the planning notes for the documentation
-work.
+Closed since the first version of this list: the
+[problem error envelope](#errors), a [global rate limit](rate-limiting.md) on
+every `/api/…` route, a production `servers` entry in the spec,
+[`/api/v1` versioning with a compatibility policy](#versioning--stability), and
+a [configuration-driven CORS allow-list](#cors). Rate limits are still
+enforced per process; see [Rate Limiting](rate-limiting.md#scope).
 
 ## Audit
 
@@ -435,7 +577,7 @@ before the command runs and refuses the command (503) if it cannot.
 ### Choosing which actions are recorded
 
 A site Owner can switch individual audit types off in **Settings → Audit logging**
-(`GET`/`PUT /api/admin/audit/settings`) — for example `SearchEvents`, which
+(`GET`/`PUT /api/v1/admin/audit/settings`) — for example `SearchEvents`, which
 fires on every list refresh. A disabled type is skipped by both sinks. Some
 rows are always written regardless: access-denied attempts;
 `UpdateAuditSettings`, which records every change to the selection; and the
@@ -472,6 +614,7 @@ controller method that fires each one:
 | `CommandNotSent`      | `OperatorCommandCoordinator` — a resubmit or skip was audited but publishing it failed, so the event was restored; always recorded |
 | `UpdateMcpSettings`   | `McpAccessImplementation.PutAdminMcpSettingsAsync` / `PostAdminMcpTurnOffAsync` — the revisions and the list of changes as `Data`; always recorded |
 | `McpAccessRefused`    | The operator MCP endpoint — a call refused by the MCP access policy or for a missing scope, with `AccessDenied` set; deduplicated per caller, client, reason and tool for 5 minutes per instance |
+| `DashboardTokenCreated` / `DashboardTokenRevoked` / `DashboardTokenRemoved` | `DashboardTokensImplementation` — the token id, name and expiry as `Data`, never the token; always recorded |
 
 Resubmit, skip and resubmit-with-changes run through `OperatorCommandCoordinator`, shared with the
 operator MCP tools. Their `Data` records the channel (`WebApp` or `Mcp`), the reason and idempotency

@@ -13,6 +13,16 @@ public sealed class CosmosDbSubscriptionStoreTests : SubscriptionStoreConformanc
 }
 
 [TestClass]
+public sealed class CosmosDbSubscriptionNotificationStoreTests : SubscriptionNotificationStoreConformanceTests
+{
+    protected override ISubscriptionStore CreateStore()
+        => CosmosDbStoreTestHarness.CreateStore();
+
+    protected override ISubscriptionNotificationStore NotificationStoreFor(ISubscriptionStore store)
+        => (ISubscriptionNotificationStore)store;
+}
+
+[TestClass]
 public sealed class CosmosDbEndpointMetadataStoreTests : EndpointMetadataStoreConformanceTests
 {
     protected override IEndpointMetadataStore CreateStore()
@@ -24,6 +34,20 @@ public sealed class CosmosDbMetricsStoreTests : MetricsStoreConformanceTests
 {
     protected override INimBusMessageStore CreateStore()
         => CosmosDbStoreTestHarness.CreateStore();
+}
+
+[TestClass]
+public sealed class CosmosDbMonitorMetricsStoreTests : MonitorMetricsStoreConformanceTests
+{
+    protected override INimBusMessageStore CreateStore()
+        => CosmosDbStoreTestHarness.CreateStore();
+}
+
+[TestClass]
+public sealed class CosmosDbDashboardTokenStoreTests : DashboardTokenStoreConformanceTests
+{
+    protected override IDashboardTokenStore CreateStore()
+        => (IDashboardTokenStore)CosmosDbStoreTestHarness.CreateStore();
 }
 
 [TestClass]

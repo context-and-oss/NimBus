@@ -141,7 +141,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         try
         {
             var root = JObject.Parse(eventJson);
-            var prop = root.Property(PiiMaskedMarker);
+            var prop = root.Property(PiiMaskedMarker, StringComparison.Ordinal);
             if (prop == null) return eventJson;
             prop.Remove();
             return root.ToString(Formatting.None);
@@ -604,7 +604,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
             case MaskMode.PartialReveal:
                 if (attr.Reveal > 0 && value.Length > attr.Reveal)
                 {
-                    return new string('*', value.Length - attr.Reveal) + value.Substring(value.Length - attr.Reveal);
+                    return string.Concat(new string('*', value.Length - attr.Reveal), value.AsSpan(value.Length - attr.Reveal));
                 }
                 return DefaultRedactToken;
 
@@ -624,17 +624,14 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
     /// </summary>
     private string HashWithSalt(string value)
     {
-        using (var sha = SHA256.Create())
+        var bytes = Encoding.UTF8.GetBytes(_hashSalt + value);
+        var hash = SHA256.HashData(bytes);
+        var sb = new StringBuilder(hash.Length * 2);
+        for (int i = 0; i < hash.Length; i++)
         {
-            var bytes = Encoding.UTF8.GetBytes(_hashSalt + value);
-            var hash = sha.ComputeHash(bytes);
-            var sb = new StringBuilder(hash.Length * 2);
-            for (int i = 0; i < hash.Length; i++)
-            {
-                sb.Append(hash[i].ToString("x2", CultureInfo.InvariantCulture));
-            }
-            return sb.ToString();
+            sb.Append(hash[i].ToString("x2", CultureInfo.InvariantCulture));
         }
+        return sb.ToString();
     }
 
     private static Type? GetEnumerableElementType(Type type)

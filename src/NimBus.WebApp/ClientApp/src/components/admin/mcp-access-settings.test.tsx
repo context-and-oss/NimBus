@@ -132,7 +132,7 @@ describe("MCP access settings", () => {
 
     await screen.findByText(/Saved revision 99999999/);
     const [url, request] = fetchMock.mock.calls[2];
-    expect(url).toBe("/api/admin/mcp/settings");
+    expect(url).toBe("/api/v1/admin/mcp/settings");
     expect(request.method).toBe("PUT");
     expect(request.headers["X-NimBus-CSRF"]).toBe("csrf-test");
     expect(JSON.parse(request.body)).toMatchObject({
@@ -167,7 +167,7 @@ describe("MCP access settings", () => {
   });
 
   it("explains an expired security token", async () => {
-    mockFetch(Response.json(state()), Response.json(activity), new Response(null, { status: 400 }));
+    mockFetch(Response.json(state()), Response.json(activity), Response.json({ status: 400, title: "Bad Request", code: "InvalidAntiforgeryToken" }, { status: 400 }));
     render(<McpAccessSettings />);
 
     await userEvent.click(await screen.findByRole("switch", { name: "Mark reported" }));
@@ -186,7 +186,7 @@ describe("MCP access settings", () => {
     await userEvent.click(screen.getByRole("button", { name: "Turn off MCP access" }));
 
     await screen.findByText(/MCP access is off. Agents get 503/);
-    expect(fetchMock.mock.calls[2][0]).toBe("/api/admin/mcp/turn-off");
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/v1/admin/mcp/turn-off");
     expect(fetchMock.mock.calls[2][1].headers["X-NimBus-CSRF"]).toBe("csrf-test");
     expect(screen.queryByRole("button", { name: "Turn off now" })).toBeNull();
   });
@@ -241,5 +241,28 @@ describe("MCP access model", () => {
     expect(workload.slice(1).every(r => !r.allowed)).toBe(true);
     expect(reader.find(r => r.name === "nimbus_resubmit_message")?.why).toBe("needs Contributor");
     expect(previewAccess({ ...s, allowWorkloads: false }, deployment(), "workload", true)[0].why).toBe("workloads off");
+  });
+
+  it("lets a workload record classifications only when the switch is on", () => {
+    // Spec 044 §6.6: the Nimbus.Classify app role admits recording, nothing else.
+    const s = { ...settings(), allowWorkloadClassification: true };
+    const on = previewAccess(s, deployment(), "workload", true);
+    const off = previewAccess({ ...s, allowWorkloadClassification: false }, deployment(), "workload", true);
+
+    expect(on.find(r => r.name === "nimbus_record_classification")).toEqual(
+      { name: "nimbus_record_classification", allowed: true, why: "Nimbus.Classify role + Contributor" });
+    expect(on.filter(r => r.allowed).map(r => r.name)).toEqual(["12 read tools", "nimbus_record_classification"]);
+    expect(off.find(r => r.name === "nimbus_record_classification")?.why).toBe("workload recording off");
+    expect(describeChanges(settings(), s)).toEqual([{ text: "Let workloads record failure classifications", widens: true }]);
+  });
+
+  it("disables the workload recording switch while workload tokens are refused", async () => {
+    const refused = { ...settings(), allowWorkloads: false };
+    mockFetch(Response.json(state({ saved: refused, effective: refused })), Response.json(activity));
+    render(<McpAccessSettings />);
+
+    const toggle = await screen.findByRole("switch", { name: "Allow workloads to record classifications" });
+
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
   });
 });

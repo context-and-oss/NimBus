@@ -69,6 +69,6 @@ public class TeamsChannelTests
         var error = facts.First(f => (string?)f["title"] == "Error");
         var value = (string)error["value"]!;
         Assert.IsTrue(value.Length < huge.Length, "Error detail should be truncated.");
-        StringAssert.Contains(value, "truncated");
+        StringAssert.Contains(value, "truncated", StringComparison.Ordinal);
     }
 }

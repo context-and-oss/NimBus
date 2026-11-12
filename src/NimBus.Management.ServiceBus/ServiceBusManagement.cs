@@ -1,5 +1,6 @@
 using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Messages;
 using System;
 using System.Collections.Generic;
@@ -57,8 +58,26 @@ public interface IServiceBusManagement
         bool changeForwardTo);
 
     /// <summary>
-    /// Fetches one subscription's settings (status, session flag, ForwardTo), or null when
-    /// it doesn't exist. Unlike the toggles above, nothing other than not-found is swallowed.
+    /// Sets status, auto-forward destination and <c>UserMetadata</c> in a single update, so a
+    /// marker written alongside a status change can never be seen without it. Forwarding
+    /// behaves as in <see cref="UpdateSubscription(string, string, EntityStatus, string?, bool)"/>.
+    /// A non-null <paramref name="userMetadata"/>, including <see cref="string.Empty"/>,
+    /// replaces the subscription's <c>UserMetadata</c>; null leaves it unchanged. To clear it,
+    /// pass <see cref="string.Empty"/>: Service Bus does not accept null for <c>UserMetadata</c>.
+    /// </summary>
+    Task UpdateSubscription(
+        string topicName,
+        string subscriptionName,
+        EntityStatus status,
+        string? forwardTo,
+        bool changeForwardTo,
+        string? userMetadata);
+
+    /// <summary>
+    /// Fetches one subscription's settings (status, session flag, ForwardTo, UserMetadata), or
+    /// null when it doesn't exist. A <c>UserMetadata</c> Service Bus returns as null reads back
+    /// as <see cref="string.Empty"/>, so callers can treat "none" one way. Unlike the toggles
+    /// above, nothing other than not-found is swallowed.
     /// </summary>
     Task<SubscriptionProperties?> GetSubscription(string topicName, string subscriptionName);
 
@@ -84,15 +103,15 @@ public interface IServiceBusManagement
     IAsyncEnumerable<SubscriptionRuntimeProperties> ListSubscriptionRuntimePropertiesAsync(string topicName);
 }
 
-public class ServiceBusManagement : IServiceBusManagement
+public partial class ServiceBusManagement : IServiceBusManagement
 {
     private readonly ServiceBusAdministrationClient client;
-    private readonly ILogger? _logger;
+    private readonly ILogger _logger;
 
     public ServiceBusManagement(ServiceBusAdministrationClient client, ILogger<ServiceBusManagement>? logger = null)
     {
         this.client = client;
-        _logger = logger;
+        _logger = logger ?? NullLogger<ServiceBusManagement>.Instance;
     }
 
     public async Task CreateSubscription(string topicName, string subscriptionName)
@@ -110,13 +129,13 @@ public class ServiceBusManagement : IServiceBusManagement
                 RequiresSession = true
             };
 
-            _logger?.LogTrace("Creating subscription...");
+            LogCreatingSubscription(_logger);
             await client.CreateSubscriptionAsync(subscriptionProperties);
-            _logger?.LogTrace("Created subscription successfully.");
+            LogCreatedSubscriptionSuccessfully(_logger);
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not create subscription");
+            LogCouldNotCreateSubscription(_logger, e);
             throw;
         }
     }
@@ -127,13 +146,13 @@ public class ServiceBusManagement : IServiceBusManagement
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
-            _logger?.LogTrace("Deleting subscription...");
+            LogDeletingSubscription(_logger);
             var result = await client.DeleteSubscriptionAsync(topicName, subscriptionName);
-            _logger?.LogTrace("Deleted subscription successfully.");
+            LogDeletedSubscriptionSuccessfully(_logger);
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not delete subscription");
+            LogCouldNotDeleteSubscription(_logger, e);
             throw;
         }
     }
@@ -147,7 +166,7 @@ public class ServiceBusManagement : IServiceBusManagement
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not delete topic");
+            LogCouldNotDeleteTopic(_logger, e);
             throw;
         }
     }
@@ -173,13 +192,13 @@ public class ServiceBusManagement : IServiceBusManagement
                 ruleOptions.Action = new SqlRuleAction(action);
             }
 
-            _logger?.LogTrace("Creating rule...");
+            LogCreatingRule(_logger);
             var result = await client.CreateRuleAsync(topicName, subscriptionName, ruleOptions);
-            _logger?.LogTrace("Created rule successfully.");
+            LogCreatedRuleSuccessfully(_logger);
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not create rule");
+            LogCouldNotCreateRule(_logger, e);
             throw;
         }
     }
@@ -191,13 +210,13 @@ public class ServiceBusManagement : IServiceBusManagement
         ServiceBusFilterValidator.ValidateName(ruleName, nameof(ruleName));
         try
         {
-            _logger?.LogTrace("Deleting rule...");
+            LogDeletingRule(_logger);
             var response = await client.DeleteRuleAsync(topicName, subscriptionName, ruleName);
-            _logger?.LogTrace("Deleted rule successfully.");
+            LogDeletedRuleSuccessfully(_logger);
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not delete rule");
+            LogCouldNotDeleteRule(_logger, e);
             throw;
         }
     }
@@ -210,17 +229,17 @@ public class ServiceBusManagement : IServiceBusManagement
             var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
             if (subscription != null)
             {
-                _logger?.LogTrace("Updating status for subscription...");
+                LogUpdatingStatusForSubscription(_logger);
 
                 subscription.Value.Status = EntityStatus.ReceiveDisabled;
                 await client.UpdateSubscriptionAsync(subscription);
 
-                _logger?.LogTrace("Status updated on subscription successfully.");
+                LogStatusUpdatedOnSubscriptionSuccessfully(_logger);
             }
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not update status for subscription");
+            LogCouldNotUpdateStatusForSubscription(_logger, e);
             throw;
         }
     }
@@ -234,17 +253,17 @@ public class ServiceBusManagement : IServiceBusManagement
             var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
             if (subscription != null)
             {
-                _logger?.LogTrace("Updating status for subscription...");
+                LogUpdatingStatusForSubscription(_logger);
 
                 subscription.Value.Status = EntityStatus.Active;
                 await client.UpdateSubscriptionAsync(subscription);
 
-                _logger?.LogTrace("Status updated on subscription successfully.");
+                LogStatusUpdatedOnSubscriptionSuccessfully(_logger);
             }
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not update status for subscription");
+            LogCouldNotUpdateStatusForSubscription(_logger, e);
             throw;
         }
     }
@@ -257,17 +276,17 @@ public class ServiceBusManagement : IServiceBusManagement
             var topic = await client.GetTopicAsync(topicName);
             if (topic != null)
             {
-                _logger?.LogTrace("Updating send status for topic...");
+                LogUpdatingSendStatusForTopic(_logger);
 
                 topic.Value.Status = EntityStatus.SendDisabled;
                 await client.UpdateTopicAsync(topic);
 
-                _logger?.LogTrace("Send status updated on topic successfully.");
+                LogSendStatusUpdatedOnTopicSuccessfully(_logger);
             }
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not update send status for topic");
+            LogCouldNotUpdateSendStatus(_logger, e);
             throw;
         }
     }
@@ -280,17 +299,17 @@ public class ServiceBusManagement : IServiceBusManagement
             var topic = await client.GetTopicAsync(topicName);
             if (topic != null)
             {
-                _logger?.LogTrace("Updating send status for topic...");
+                LogUpdatingSendStatusForTopic(_logger);
 
                 topic.Value.Status = EntityStatus.Active;
                 await client.UpdateTopicAsync(topic);
 
-                _logger?.LogTrace("Send status updated on topic successfully.");
+                LogSendStatusUpdatedOnTopicSuccessfully(_logger);
             }
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not update send status for topic");
+            LogCouldNotUpdateSendStatus(_logger, e);
             throw;
         }
     }
@@ -310,12 +329,12 @@ public class ServiceBusManagement : IServiceBusManagement
         catch (Azure.Messaging.ServiceBus.ServiceBusException ex)
             when (ex.Reason == Azure.Messaging.ServiceBus.ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger?.LogInformation("Topic '{TopicName}' was not found.", topicName);
+            LogTopicWasNotFound(_logger, topicName);
             return TopicSendState.NotFound;
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 404)
         {
-            _logger?.LogInformation("Topic '{TopicName}' was not found.", topicName);
+            LogTopicWasNotFound(_logger, topicName);
             return TopicSendState.NotFound;
         }
     }
@@ -330,27 +349,36 @@ public class ServiceBusManagement : IServiceBusManagement
             var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
             if (subscription != null)
             {
-                _logger?.LogTrace("Updating forward to for subscription...");
+                LogUpdatingForwardToForSubscription(_logger);
 
                 subscription.Value.ForwardTo = forwardTo;
                 await client.UpdateSubscriptionAsync(subscription);
 
-                _logger?.LogTrace("Forward to updated on subscription successfully.");
+                LogForwardToUpdatedOnSubscriptionSuccessfully(_logger);
             }
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not update forward to for subscription");
+            LogCouldNotUpdateForward(_logger, e);
             throw;
         }
     }
+
+    public Task UpdateSubscription(
+        string topicName,
+        string subscriptionName,
+        EntityStatus status,
+        string? forwardTo,
+        bool changeForwardTo) =>
+        UpdateSubscription(topicName, subscriptionName, status, forwardTo, changeForwardTo, userMetadata: null);
 
     public async Task UpdateSubscription(
         string topicName,
         string subscriptionName,
         EntityStatus status,
         string? forwardTo,
-        bool changeForwardTo)
+        bool changeForwardTo,
+        string? userMetadata)
     {
         ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
@@ -372,13 +400,19 @@ public class ServiceBusManagement : IServiceBusManagement
                 subscription.Value.ForwardTo = String.IsNullOrEmpty(forwardTo) ? String.Empty : forwardTo;
             }
 
-            _logger?.LogTrace("Updating subscription status and forwarding...");
+            // Null means "leave unchanged"; the SDK rejects null for UserMetadata anyway.
+            if (userMetadata is not null)
+            {
+                subscription.Value.UserMetadata = userMetadata;
+            }
+
+            LogUpdatingSubscriptionStatusAndForwarding(_logger);
             await client.UpdateSubscriptionAsync(subscription);
-            _logger?.LogTrace("Subscription updated successfully.");
+            LogSubscriptionUpdatedSuccessfully(_logger);
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "Could not update subscription");
+            LogCouldNotUpdateSubscription(_logger, e);
             throw;
         }
     }
@@ -390,7 +424,16 @@ public class ServiceBusManagement : IServiceBusManagement
         try
         {
             var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
-            return subscription?.Value;
+            var properties = subscription?.Value;
+
+            // A subscription nobody wrote metadata to can read back null. Normalise it so
+            // "no metadata" is always string.Empty, the value a later update can write back.
+            if (properties is not null && properties.UserMetadata is null)
+            {
+                properties.UserMetadata = String.Empty;
+            }
+
+            return properties;
         }
         catch (Azure.Messaging.ServiceBus.ServiceBusException ex)
             when (ex.Reason == Azure.Messaging.ServiceBus.ServiceBusFailureReason.MessagingEntityNotFound)
@@ -481,14 +524,95 @@ public class ServiceBusManagement : IServiceBusManagement
         catch (Azure.Messaging.ServiceBus.ServiceBusException ex)
             when (ex.Reason == Azure.Messaging.ServiceBus.ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger?.LogInformation("Subscription '{SubscriptionName}' on topic '{TopicName}' was not found.", subscriptionName, topicName);
+            LogSubscriptionOnTopicWasNotFound(_logger, subscriptionName, topicName);
             return SubscriptionState.NotFound;
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 404)
         {
-            _logger?.LogInformation("Subscription '{SubscriptionName}' on topic '{TopicName}' was not found.", subscriptionName, topicName);
+            LogSubscriptionOnTopicWasNotFound(_logger, subscriptionName, topicName);
             return SubscriptionState.NotFound;
         }
     }
 
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Creating subscription...")]
+    private static partial void LogCreatingSubscription(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Created subscription successfully.")]
+    private static partial void LogCreatedSubscriptionSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not create subscription")]
+    private static partial void LogCouldNotCreateSubscription(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Deleting subscription...")]
+    private static partial void LogDeletingSubscription(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Deleted subscription successfully.")]
+    private static partial void LogDeletedSubscriptionSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not delete subscription")]
+    private static partial void LogCouldNotDeleteSubscription(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not delete topic")]
+    private static partial void LogCouldNotDeleteTopic(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Creating rule...")]
+    private static partial void LogCreatingRule(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Created rule successfully.")]
+    private static partial void LogCreatedRuleSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not create rule")]
+    private static partial void LogCouldNotCreateRule(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Deleting rule...")]
+    private static partial void LogDeletingRule(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Deleted rule successfully.")]
+    private static partial void LogDeletedRuleSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not delete rule")]
+    private static partial void LogCouldNotDeleteRule(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Updating status for subscription...")]
+    private static partial void LogUpdatingStatusForSubscription(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Status updated on subscription successfully.")]
+    private static partial void LogStatusUpdatedOnSubscriptionSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not update status for subscription")]
+    private static partial void LogCouldNotUpdateStatusForSubscription(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Updating send status for topic...")]
+    private static partial void LogUpdatingSendStatusForTopic(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Send status updated on topic successfully.")]
+    private static partial void LogSendStatusUpdatedOnTopicSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not update send status for topic")]
+    private static partial void LogCouldNotUpdateSendStatus(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Topic '{TopicName}' was not found.")]
+    private static partial void LogTopicWasNotFound(ILogger logger, string topicName);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Updating forward to for subscription...")]
+    private static partial void LogUpdatingForwardToForSubscription(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Forward to updated on subscription successfully.")]
+    private static partial void LogForwardToUpdatedOnSubscriptionSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not update forward to for subscription")]
+    private static partial void LogCouldNotUpdateForward(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Updating subscription status and forwarding...")]
+    private static partial void LogUpdatingSubscriptionStatusAndForwarding(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Subscription updated successfully.")]
+    private static partial void LogSubscriptionUpdatedSuccessfully(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not update subscription")]
+    private static partial void LogCouldNotUpdateSubscription(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Subscription '{SubscriptionName}' on topic '{TopicName}' was not found.")]
+    private static partial void LogSubscriptionOnTopicWasNotFound(ILogger logger, string subscriptionName, string topicName);
 }

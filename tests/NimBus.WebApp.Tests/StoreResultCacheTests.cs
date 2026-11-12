@@ -102,6 +102,90 @@ public sealed class StoreResultCacheTests
     }
 
     [TestMethod]
+    public async Task A_zero_ttl_caches_nothing_and_runs_the_factory_for_every_call()
+    {
+        var cache = NewCache();
+        var calls = 0;
+
+        var first = await cache.GetOrCreateAsync("k", TimeSpan.Zero, () => Task.FromResult(++calls));
+        var second = await cache.GetOrCreateAsync("k", TimeSpan.Zero, () => Task.FromResult(++calls));
+        var refreshed = await cache.RefreshAsync("k", TimeSpan.Zero, () => Task.FromResult(++calls));
+
+        Assert.AreEqual(1, first);
+        Assert.AreEqual(2, second);
+        Assert.AreEqual(3, refreshed);
+    }
+
+    [TestMethod]
+    public async Task Refresh_replaces_a_completed_value_and_later_callers_get_the_new_one()
+    {
+        var cache = NewCache();
+        var calls = 0;
+
+        await cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), () => Task.FromResult(++calls));
+        var refreshed = await cache.RefreshAsync("k", TimeSpan.FromMinutes(1), () => Task.FromResult(++calls));
+        var after = await cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), () => Task.FromResult(++calls));
+
+        Assert.AreEqual(2, refreshed);
+        Assert.AreEqual(2, after, "The refreshed value is the cached one.");
+        Assert.AreEqual(2, calls);
+    }
+
+    [TestMethod]
+    public async Task Refreshes_during_a_running_read_share_one_follow_up_that_starts_after_them()
+    {
+        var cache = NewCache();
+        var calls = 0;
+        var firstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async Task<int> Factory()
+        {
+            var call = Interlocked.Increment(ref calls);
+            if (call == 1) await firstRead.Task;
+            return call;
+        }
+
+        var running = cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), Factory);
+        var refreshes = Enumerable.Range(0, 8).Select(_ => cache.RefreshAsync("k", TimeSpan.FromMinutes(1), Factory)).ToList();
+        Assert.AreEqual(1, calls, "The follow-up waits for the running read instead of piling a second one onto the store.");
+        firstRead.SetResult();
+
+        Assert.AreEqual(1, await running, "The caller of the running read still gets its result.");
+        var results = await Task.WhenAll(refreshes);
+        Assert.IsTrue(results.All(r => r == 2), "A refresh never returns a read that began before it.");
+        Assert.AreEqual(2, calls, "Every refresh shares the one follow-up read.");
+        Assert.AreEqual(2, await cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), Factory));
+    }
+
+    [TestMethod]
+    public async Task A_running_read_that_fails_neither_fails_nor_evicts_the_follow_up_refresh()
+    {
+        var cache = NewCache();
+        var calls = 0;
+        var firstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async Task<int> Factory()
+        {
+            var call = Interlocked.Increment(ref calls);
+            if (call == 1)
+            {
+                await firstRead.Task;
+                throw new InvalidOperationException("store down");
+            }
+            return call;
+        }
+
+        var running = cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), Factory);
+        var refresh = cache.RefreshAsync("k", TimeSpan.FromMinutes(1), Factory);
+        firstRead.SetResult();
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => running);
+        Assert.AreEqual(2, await refresh);
+        Assert.AreEqual(2, await cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), Factory), "The follow-up stays cached.");
+        Assert.AreEqual(2, calls);
+    }
+
+    [TestMethod]
     public async Task Endpoint_status_counts_hit_the_store_once_per_ttl_window()
     {
         var store = new CountingStore();
@@ -120,7 +204,7 @@ public sealed class StoreResultCacheTests
     {
         var store = new CountingStore();
         var cache = NewCache();
-        var sut = new MetricsImplementation(store, cache, new AllowAllAuthorizationService());
+        var sut = FailedInsightsServiceTests.Metrics(store, cache, new AllowAllAuthorizationService());
 
         await sut.GetMetricsOverviewAsync(Period._1d);
         await sut.GetMetricsOverviewAsync(Period._1d);
@@ -131,19 +215,21 @@ public sealed class StoreResultCacheTests
     }
 
     [TestMethod]
-    public async Task Failed_insights_cache_the_aggregate_per_period_across_controllers()
+    public async Task Failed_insights_read_the_store_once_per_period_across_controllers()
     {
         var store = new FailedInsightsStore();
         var cache = NewCache();
-        var first = new MetricsImplementation(store, cache, new AllowAllAuthorizationService());
-        var second = new MetricsImplementation(store, cache, new AllowAllAuthorizationService());
+        var first = FailedInsightsServiceTests.Metrics(store, cache, new AllowAllAuthorizationService());
+        var second = FailedInsightsServiceTests.Metrics(store, cache, new AllowAllAuthorizationService());
 
         var a = await first.GetMetricsFailedInsightsAsync(Period._1d);
         var b = await second.GetMetricsFailedInsightsAsync(Period._1d);
         await first.GetMetricsFailedInsightsAsync(Period._7d);
 
+        // Spec 043 §8.3: the normalized occurrences are cached per window, and the aggregate is
+        // rebuilt per request because its enrichment can differ (refresh, endpoint filter).
         Assert.AreEqual(2, store.Calls);
-        Assert.AreSame(a.Value, b.Value, "Cache the aggregate, not just the raw error rows.");
+        Assert.AreEqual(a.Value!.TotalFailed, b.Value!.TotalFailed);
         Assert.AreEqual(2, a.Value!.TotalFailed);
         Assert.AreEqual(2, a.Value.Groups.Single().Count);
         Assert.AreEqual(2, a.Value.Groups.Single().SubGroups.Single().Count);
@@ -154,7 +240,7 @@ public sealed class StoreResultCacheTests
     {
         var release = new TaskCompletionSource<List<FailedMessageInfo>>(TaskCreationOptions.RunContinuationsAsynchronously);
         var store = new FailedInsightsStore { Read = () => release.Task };
-        var sut = new MetricsImplementation(store, NewCache(), new AllowAllAuthorizationService());
+        var sut = FailedInsightsServiceTests.Metrics(store, NewCache(), new AllowAllAuthorizationService());
         var requests = Enumerable.Range(0, 10).Select(_ => sut.GetMetricsFailedInsightsAsync(Period._1d)).ToArray();
         release.SetResult([]);
         await Task.WhenAll(requests);
@@ -165,7 +251,7 @@ public sealed class StoreResultCacheTests
     public async Task Failed_insights_retry_after_store_failure()
     {
         var store = new FailedInsightsStore { Read = () => Task.FromException<List<FailedMessageInfo>>(new InvalidOperationException("store down")) };
-        var sut = new MetricsImplementation(store, NewCache(), new AllowAllAuthorizationService());
+        var sut = FailedInsightsServiceTests.Metrics(store, NewCache(), new AllowAllAuthorizationService());
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => sut.GetMetricsFailedInsightsAsync(Period._1d));
         store.Read = () => Task.FromResult(new List<FailedMessageInfo>());
         var result = await sut.GetMetricsFailedInsightsAsync(Period._1d);
@@ -178,7 +264,7 @@ public sealed class StoreResultCacheTests
     {
         var store = new FailedInsightsStore();
         var authorization = new AllowAllAuthorizationService();
-        var sut = new MetricsImplementation(store, NewCache(), authorization);
+        var sut = FailedInsightsServiceTests.Metrics(store, NewCache(), authorization);
         await sut.GetMetricsFailedInsightsAsync(Period._1d);
         authorization.Allowed = false;
         var denied = await sut.GetMetricsFailedInsightsAsync(Period._1d);

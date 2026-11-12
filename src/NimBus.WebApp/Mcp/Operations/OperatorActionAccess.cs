@@ -24,7 +24,9 @@ public enum OperatorAction
 /// <summary>
 /// Decides whether the current MCP caller may take an <see cref="OperatorAction"/>. An Entra
 /// caller needs the action's delegated scope; a workload token, which carries app roles and no
-/// <c>scp</c>, never qualifies in Phase 2a. Local development has no scopes. The site Owner's
+/// <c>scp</c>, qualifies only for <see cref="OperatorAction.Classify"/> (recording), with the
+/// <c>Nimbus.Classify</c> role and the Owner's workload-recording switch (Spec 044 §6.6). Local
+/// development has no scopes. The site Owner's
 /// MCP access policy (Spec 037) must also allow the action, the caller's client and the
 /// endpoint. The endpoint role (Contributor) is checked separately, and again against fresh
 /// access-control lists when a command runs.
@@ -86,9 +88,26 @@ public sealed class OperatorActionAccess
         if (!HoldsScope(action))
         {
             await RecordAsync(McpRefusalReason.Scope, action, endpointId: null).ConfigureAwait(false);
-            throw OperatorToolErrors.PermissionDenied(
-                $"{NameOf(action)} requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens cannot change messages.");
+            throw OperatorToolErrors.PermissionDenied(action == OperatorAction.Classify
+                ? $"classify requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.ClassifyRole} app role with workload recording allowed by an administrator."
+                : $"{NameOf(action)} requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens cannot change messages.");
         }
+    }
+
+    /// <summary>
+    /// Throws <c>[PermissionDenied]</c>, and audits the refusal, unless the caller holds the
+    /// delegated scope itself. A workload app role never qualifies: it admits recording only, not
+    /// a paid provider analysis (Spec 044 §6.6).
+    /// </summary>
+    public async Task RequireDelegatedScopeAsync(OperatorAction action)
+    {
+        await RequireScopeAsync(action).ConfigureAwait(false);
+        if (HoldsDelegatedScope(action))
+            return;
+
+        await RecordAsync(McpRefusalReason.Scope, action, endpointId: null).ConfigureAwait(false);
+        throw OperatorToolErrors.PermissionDenied(
+            $"{NameOf(action)} through this tool requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens can only record classifications.");
     }
 
     /// <summary>True when the access policy allows changes on <paramref name="endpointId"/>.</summary>
@@ -173,12 +192,30 @@ public sealed class OperatorActionAccess
 
     private bool HoldsScope(OperatorAction action)
     {
+        if (HoldsDelegatedScope(action))
+            return true;
+
+        // Spec 044 §6.6: an unattended workload may record classifications when it holds the
+        // Nimbus.Classify app role and the Owner allows workload recording. It changes no message.
+        var user = _httpContextAccessor.HttpContext?.User;
+        return action == OperatorAction.Classify
+            && user is not null
+            && _policies.Current?.AllowsWorkloadClassification == true
+            && McpOperatorPermissions.IsWorkloadWithRole(user, McpOperatorPermissions.ClassifyRole);
+    }
+
+    private bool HoldsDelegatedScope(OperatorAction action)
+    {
         if (_runtime.Mode == McpAuthenticationMode.LocalDevelopment)
             return true;
 
         var user = _httpContextAccessor.HttpContext?.User;
         return user is not null && McpOperatorPermissions.HasDelegatedScope(user, ScopeOf(action));
     }
+
+    /// <summary>Audits a refusal of <paramref name="action"/> as <c>McpAccessRefused</c>, deduplicated per window.</summary>
+    public Task RecordRefusalAsync(McpRefusalReason reason, OperatorAction action, string? endpointId)
+        => RecordAsync(reason, action, endpointId);
 
     private Task RecordAsync(McpRefusalReason reason, OperatorAction action, string? endpointId)
     {

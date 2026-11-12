@@ -170,7 +170,7 @@ public sealed class AuditSettingsTests
         var entry = audit.Entries.Single();
         Assert.AreEqual(MessageAuditType.UpdateAuditSettings, entry.Type);
         Assert.IsFalse(entry.AccessDenied);
-        StringAssert.Contains(entry.Data, "searchEvents");
+        StringAssert.Contains(entry.Data, "searchEvents", StringComparison.Ordinal);
     }
 
     [TestMethod]

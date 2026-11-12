@@ -1,5 +1,6 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
@@ -28,20 +29,20 @@ public interface IManagerClient
 
 }
 
-public class ManagerClient : IManagerClient
+public partial class ManagerClient : IManagerClient
 {
     private readonly ServiceBusClient _serviceBusClient;
-    private readonly ILogger? _logger;
+    private readonly ILogger _logger;
 
     public ManagerClient(ServiceBusClient serviceBusClient, ILogger<ManagerClient>? logger = null)
     {
         _serviceBusClient = serviceBusClient;
-        _logger = logger;
+        _logger = logger ?? NullLogger<ManagerClient>.Instance;
     }
 
     public async Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
     {
-        _logger?.LogTrace("MANAGER RESUBMIT EVENT: EventId: {EventId} EventTypeId: {EventTypeId}", errorResponse.EventId, eventTypeId);
+        LogManagerResubmitEventEventId(_logger, errorResponse.EventId, eventTypeId);
         var message = new Message
         {
             CorrelationId = errorResponse.CorrelationId,
@@ -69,7 +70,7 @@ public class ManagerClient : IManagerClient
 
     public async Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId)
     {
-        _logger?.LogTrace("MANAGER SKIP EVENT: SessionId: {SessionId} EventId: {EventId} From: {From}", errorResponse.SessionId, errorResponse.EventId, errorResponse.To);
+        LogManagerSkipEventSessionId(_logger, errorResponse.SessionId, errorResponse.EventId, errorResponse.To);
         var message = new Message()
         {
             CorrelationId = errorResponse.MessageId,
@@ -88,4 +89,10 @@ public class ManagerClient : IManagerClient
         await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
     }
 
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "MANAGER RESUBMIT EVENT: EventId: {EventId} EventTypeId: {EventTypeId}")]
+    private static partial void LogManagerResubmitEventEventId(ILogger logger, string eventId, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "MANAGER SKIP EVENT: SessionId: {SessionId} EventId: {EventId} From: {From}")]
+    private static partial void LogManagerSkipEventSessionId(ILogger logger, string sessionId, string eventId, string from);
 }

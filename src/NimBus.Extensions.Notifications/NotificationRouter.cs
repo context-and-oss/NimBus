@@ -16,7 +16,7 @@ namespace NimBus.Extensions.Notifications;
 /// notification emitted on the next available token; and (4) delivers to each eligible channel,
 /// isolating channel failures so they never affect message processing.
 /// </summary>
-public class NotificationRouter : INotificationRouter
+public partial class NotificationRouter : INotificationRouter
 {
     private readonly List<ChannelRegistration> _registrations;
     private readonly NotificationRouterOptions _options;
@@ -200,10 +200,11 @@ public class NotificationRouter : INotificationRouter
             {
                 // Isolate channel failures: a failing channel must not affect sibling channels
                 // or message processing.
-                _logger.LogWarning(ex,
-                    "Notification channel {Channel} failed to deliver a {Severity} notification.",
-                    registration.Channel.GetType().Name, notification.Severity);
+                LogNotificationChannelFailedToDeliver(_logger, ex, registration.Channel.GetType().Name, notification.Severity);
             }
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Notification channel {Channel} failed to deliver a {Severity} notification.")]
+    private static partial void LogNotificationChannelFailedToDeliver(ILogger logger, Exception exception, string channel, NotificationSeverity severity);
 }

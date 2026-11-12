@@ -8,7 +8,7 @@ namespace NimBus.SDK.EventHandlers;
 /// <summary>
 /// An <see cref="IEventJsonHandler"/> for a <em>dynamically-typed</em> event — one
 /// identified only by its <c>EventTypeId</c> string with a JSON body and no compiled
-/// <see cref="NimBus.Core.Events.IEvent"/> class. Unlike <see cref="EventJsonHandler{T_Event}"/>,
+/// <see cref="NimBus.Core.Events.IEvent"/> class. Unlike <see cref="EventJsonHandler{TEvent}"/>,
 /// it does not deserialize into a CLR type; the raw event JSON is available to the
 /// callback via <c>context.MessageContent.EventContent.EventJson</c> (and the authoritative
 /// type id via <c>context.EventTypeId</c>).

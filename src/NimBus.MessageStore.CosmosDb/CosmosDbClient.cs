@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
 
-public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore
+public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore
 {
     /// <inheritdoc />
     public bool PrunesHeartbeatHistoryAutomatically => _heartbeatHistory.PrunesHeartbeatHistoryAutomatically;
@@ -150,6 +150,10 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     public Task<bool> DeleteSubscription(string subscriptionId)
         => _subscriptions.DeleteSubscription(subscriptionId);
+
+    /// <inheritdoc />
+    public Task<bool> TrySetNotifiedAtAsync(string subscriptionId, string? expectedNotifiedAt, string? notifiedAt, CancellationToken cancellationToken = default)
+        => _subscriptions.TrySetNotifiedAtAsync(subscriptionId, expectedNotifiedAt, notifiedAt, cancellationToken);
     // Resolves a container handle through _containerCache, running "ensure
     // exists" exactly once per container id and caching the resulting handle.
     // A faulted creation is never left cached: the faulted entry is evicted
@@ -354,6 +358,13 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         => _endpointMetadata.TrySetAgentApiKeySettings(settings, expectedRevision);
     public Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage() => _endpointMetadata.GetAgentApiKeyUsage();
     public Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc) => _endpointMetadata.RecordAgentApiKeyUse(keyId, usedAtUtc);
+
+    // ── IDashboardTokenStore — implementation in CosmosDbEndpointMetadataStore ──
+    public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();
+    public Task<bool> TrySetDashboardTokenSettings(DashboardTokenSettings settings, string? expectedRevision)
+        => _endpointMetadata.TrySetDashboardTokenSettings(settings, expectedRevision);
+    public Task<List<DashboardTokenUsage>> GetDashboardTokenUsage() => _endpointMetadata.GetDashboardTokenUsage();
+    public Task RecordDashboardTokenUse(string tokenId, DateTime usedAtUtc) => _endpointMetadata.RecordDashboardTokenUse(tokenId, usedAtUtc);
     // ── Durable endpoint heartbeat history — implementation in CosmosDbHeartbeatHistoryStore ──
     public Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
         => _heartbeatHistory.GetHeartbeatUptimeDays(fromDayUtc);
@@ -418,4 +429,9 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetEventTypeTimeSeriesMetrics(from, to, substringLength, bucketLabel);
 
+    // ── IMonitorMetricsStore — implementation in CosmosDbMetricsStore and CosmosDbMessageTrackingStore ──
+
+    public Task<LatencyTimeSeriesResult> GetLatencyTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetLatencyTimeSeriesMetrics(from, to, substringLength, bucketLabel);
+
+    public Task<int> GetBlockedSessionCount(string endpointId) => _messageTracking.GetBlockedSessionCount(endpointId);
 }

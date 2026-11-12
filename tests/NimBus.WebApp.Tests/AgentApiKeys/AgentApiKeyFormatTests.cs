@@ -14,9 +14,9 @@ public class AgentApiKeyFormatTests
     {
         var generated = AgentApiKeyFormat.Generate();
 
-        StringAssert.StartsWith(generated.Key, "nbak_");
+        StringAssert.StartsWith(generated.Key, "nbak_", StringComparison.Ordinal);
         Assert.AreEqual(12, generated.KeyId.Length);
-        Assert.IsTrue(generated.KeyId.All(c => "abcdefghijklmnopqrstuvwxyz234567".Contains(c)));
+        Assert.IsTrue(generated.KeyId.All(c => "abcdefghijklmnopqrstuvwxyz234567".Contains(c, StringComparison.Ordinal)));
 
         Assert.IsTrue(AgentApiKeyFormat.TryParse(generated.Key, out var keyId, out var secret));
         Assert.AreEqual(generated.KeyId, keyId);

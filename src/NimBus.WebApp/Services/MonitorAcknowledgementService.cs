@@ -8,13 +8,19 @@ using NimBus.MessageStore.States;
 namespace NimBus.WebApp.Services;
 
 /// <inheritdoc />
-public sealed class MonitorAcknowledgementService : IMonitorAcknowledgementService
+public sealed partial class MonitorAcknowledgementService : IMonitorAcknowledgementService
 {
     /// <summary>How long an acknowledgement silences an endpoint.</summary>
     public static readonly TimeSpan AcknowledgementTtl = TimeSpan.FromHours(4);
 
     /// <summary>Longest accepted reason, in characters.</summary>
     public const int MaxReasonLength = 500;
+
+    /// <summary>
+    /// The <see cref="IStoreResultCache"/> key under which the Monitor feed keeps a short-lived
+    /// snapshot of <see cref="GetActiveAsync"/>. Every write here drops it.
+    /// </summary>
+    public const string ActiveSnapshotCacheKey = "monitor-feed:acknowledgements";
 
     private readonly IEndpointAcknowledgementStore _store;
     private readonly IMessageTrackingStore _trackingStore;
@@ -72,17 +78,22 @@ public sealed class MonitorAcknowledgementService : IMonitorAcknowledgementServi
             AcknowledgedBy = string.IsNullOrWhiteSpace(acknowledgedBy) ? null : acknowledgedBy,
             AcknowledgedAtUtc = now,
             ExpiresAtUtc = now + AcknowledgementTtl,
-            FailedCountAtAcknowledgement = counts.FailedCount + counts.DeadletterCount,
+            FailedCountAtAcknowledgement = FailedTotal(counts),
         };
         await _store.SetEndpointAcknowledgement(acknowledgement);
+        _storeResultCache.Remove(ActiveSnapshotCacheKey);
         return acknowledgement;
     }
 
-    public Task ClearAsync(string endpointId) => _store.RemoveEndpointAcknowledgement(endpointId);
+    public async Task ClearAsync(string endpointId)
+    {
+        await _store.RemoveEndpointAcknowledgement(endpointId);
+        _storeResultCache.Remove(ActiveSnapshotCacheKey);
+    }
 
     /// <summary>
     /// Recovered = acknowledged while failing, and a status count taken after the
-    /// acknowledgement shows no failed or dead-lettered messages. The count comes from
+    /// acknowledgement shows no failed, dead-lettered or unsupported messages. The count comes from
     /// the status API's short-lived cache; comparing its query time to the
     /// acknowledgement time keeps a pre-acknowledgement snapshot from clearing it.
     /// </summary>
@@ -94,14 +105,22 @@ public sealed class MonitorAcknowledgementService : IMonitorAcknowledgementServi
         {
             var counts = await _storeResultCache.GetEndpointStateCountAsync(_trackingStore, acknowledgement.EndpointId);
             return counts.EventTime > acknowledgement.AcknowledgedAtUtc
-                && counts.FailedCount + counts.DeadletterCount == 0;
+                && FailedTotal(counts) == 0;
         }
 #pragma warning disable CA1031 // One endpoint's unavailable storage must not fail the whole list.
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            _logger.LogWarning(ex, "Could not read status for acknowledged endpoint {EndpointId}; keeping its acknowledgement", acknowledgement.EndpointId);
+            LogCouldNotReadStatusForAcknowledged(_logger, ex, acknowledgement.EndpointId);
             return false;
         }
     }
+
+    // Matches the status API's failedCount (Mapper.EndpointStatusCountFromEndpointStateCount),
+    // which the Monitor compares this baseline with.
+    private static int FailedTotal(EndpointStateCount counts)
+        => counts.FailedCount + counts.DeadletterCount + counts.UnsupportedCount;
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not read status for acknowledged endpoint {EndpointId}; keeping its acknowledgement")]
+    private static partial void LogCouldNotReadStatusForAcknowledged(ILogger logger, Exception exception, string endpointId);
 }
