@@ -19156,6 +19156,12 @@ export class McpAccessSettings implements IMcpAccessSettings {
     allowWorkloads?: boolean;
     /** Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
     allowWorkloadClassification?: boolean;
+    /** Whether workloads with the Nimbus.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false. */
+    allowWorkloadResubmit?: boolean;
+    /** Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20). */
+    workloadResubmitsPerDay?: number | undefined;
+    /** Unsuccessful workload resubmits of one message, across agents, after which NimBus refuses another; 1-5. Null on a save keeps the default (2). */
+    workloadResubmitsPerMessage?: number | undefined;
     people?: McpPeople;
     clients?: McpClients;
     endpoints?: McpEndpointRules;
@@ -19185,6 +19191,9 @@ export class McpAccessSettings implements IMcpAccessSettings {
             this.capabilities = _data["capabilities"] ? McpCapabilities.fromJS(_data["capabilities"]) : undefined as any;
             this.allowWorkloads = _data["allowWorkloads"];
             this.allowWorkloadClassification = _data["allowWorkloadClassification"];
+            this.allowWorkloadResubmit = _data["allowWorkloadResubmit"];
+            this.workloadResubmitsPerDay = _data["workloadResubmitsPerDay"];
+            this.workloadResubmitsPerMessage = _data["workloadResubmitsPerMessage"];
             this.people = _data["people"] ? McpPeople.fromJS(_data["people"]) : undefined as any;
             this.clients = _data["clients"] ? McpClients.fromJS(_data["clients"]) : undefined as any;
             this.endpoints = _data["endpoints"] ? McpEndpointRules.fromJS(_data["endpoints"]) : undefined as any;
@@ -19212,6 +19221,9 @@ export class McpAccessSettings implements IMcpAccessSettings {
         data["capabilities"] = this.capabilities ? this.capabilities.toJSON() : undefined as any;
         data["allowWorkloads"] = this.allowWorkloads;
         data["allowWorkloadClassification"] = this.allowWorkloadClassification;
+        data["allowWorkloadResubmit"] = this.allowWorkloadResubmit;
+        data["workloadResubmitsPerDay"] = this.workloadResubmitsPerDay;
+        data["workloadResubmitsPerMessage"] = this.workloadResubmitsPerMessage;
         data["people"] = this.people ? this.people.toJSON() : undefined as any;
         data["clients"] = this.clients ? this.clients.toJSON() : undefined as any;
         data["endpoints"] = this.endpoints ? this.endpoints.toJSON() : undefined as any;
@@ -19240,6 +19252,12 @@ export interface IMcpAccessSettings {
     allowWorkloads?: boolean;
     /** Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
     allowWorkloadClassification?: boolean;
+    /** Whether workloads with the Nimbus.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false. */
+    allowWorkloadResubmit?: boolean;
+    /** Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20). */
+    workloadResubmitsPerDay?: number | undefined;
+    /** Unsuccessful workload resubmits of one message, across agents, after which NimBus refuses another; 1-5. Null on a save keeps the default (2). */
+    workloadResubmitsPerMessage?: number | undefined;
     people?: McpPeople;
     clients?: McpClients;
     endpoints?: McpEndpointRules;

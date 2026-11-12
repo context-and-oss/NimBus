@@ -100,6 +100,8 @@ public sealed class ManagerCommandClientTests
             return Task.CompletedTask;
         }
 
+#pragma warning disable CA2215 // The mocking constructor leaves the base sender without a connection to dispose.
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+#pragma warning restore CA2215
     }
 }

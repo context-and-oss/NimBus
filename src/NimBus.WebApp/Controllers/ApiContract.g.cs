@@ -19040,6 +19040,9 @@ namespace NimBus.WebApp.ManagementApi
         private McpCapabilities _capabilities;
         private bool _allowWorkloads;
         private bool _allowWorkloadClassification;
+        private bool _allowWorkloadResubmit;
+        private int? _workloadResubmitsPerDay;
+        private int? _workloadResubmitsPerMessage;
         private McpPeople _people;
         private McpClients _clients;
         private McpEndpointRules _endpoints;
@@ -19143,6 +19146,54 @@ namespace NimBus.WebApp.ManagementApi
                 if (_allowWorkloadClassification != value)
                 {
                     _allowWorkloadClassification = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether workloads with the Nimbus.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("allowWorkloadResubmit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AllowWorkloadResubmit    {
+            get { return _allowWorkloadResubmit; }
+            set
+            {
+                if (_allowWorkloadResubmit != value)
+                {
+                    _allowWorkloadResubmit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("workloadResubmitsPerDay", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? WorkloadResubmitsPerDay    {
+            get { return _workloadResubmitsPerDay; }
+            set
+            {
+                if (_workloadResubmitsPerDay != value)
+                {
+                    _workloadResubmitsPerDay = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Unsuccessful workload resubmits of one message, across agents, after which NimBus refuses another; 1-5. Null on a save keeps the default (2).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("workloadResubmitsPerMessage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? WorkloadResubmitsPerMessage    {
+            get { return _workloadResubmitsPerMessage; }
+            set
+            {
+                if (_workloadResubmitsPerMessage != value)
+                {
+                    _workloadResubmitsPerMessage = value;
                     RaisePropertyChanged();
                 }
             }

@@ -61,10 +61,18 @@ public static class McpOperatorPermissions
     public const string ClassifyRole = "Nimbus.Classify";
 
     /// <summary>
+    /// Application role for workloads that resubmit failed messages unattended (Spec 044 Phase 2).
+    /// It admits <c>nimbus_prepare_action</c> and <c>nimbus_resubmit_message</c> only, only while
+    /// the Owner allows it and the operation journal is available, and within the budget and
+    /// per-message cap. There is no role for skip.
+    /// </summary>
+    public const string ResubmitRole = "Nimbus.Resubmit";
+
+    /// <summary>
     /// Every delegated scope the endpoint understands, in the order the protected-resource
-    /// metadata advertises them. Only <see cref="ClassifyScope"/> has a workload app role
-    /// (<see cref="ClassifyRole"/>), for recording: only an interactive, delegated caller may
-    /// change a message.
+    /// metadata advertises them. <see cref="ClassifyScope"/> and <see cref="ResubmitScope"/> have
+    /// workload app roles (<see cref="ClassifyRole"/>, <see cref="ResubmitRole"/>); skip stays with
+    /// interactive, delegated callers.
     /// </summary>
     public static readonly IReadOnlyList<string> AllScopes =
         [ObserveScope, PayloadReadScope, ResubmitScope, SkipScope, AnnotateScope, ClassifyScope];

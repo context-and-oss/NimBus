@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "components/ui/card";
 import { Modal, ModalBody, ModalFooter, ModalHeader } from "components/ui/modal";
 import { cn } from "lib/utils";
 import {
-  CAPABILITIES, PERSONAS, READ_TOOL_COUNT, TOTAL_TOOL_COUNT, describeChanges, listedToolCount, mcpEndpointState, previewAccess, validate,
+  CAPABILITIES, PERSONAS, READ_TOOL_COUNT, TOTAL_TOOL_COUNT, WORKLOAD_RESUBMITS_PER_DAY, WORKLOAD_RESUBMITS_PER_MESSAGE, describeChanges, listedToolCount, mcpEndpointState, previewAccess, validate,
   type ApprovedClient, type CapabilityKey, type McpActivity, type McpChange, type McpProblem, type McpSettings, type McpState, type Persona,
 } from "./mcp-access-model";
 import { PanelFooter, PanelSection, useInPanel, usePanelDirty, usePanelReviewing } from "components/settings/panel-frame";
@@ -207,7 +207,7 @@ export default function McpAccessSettings() {
               <ul className="divide-y divide-border rounded-md border border-border">
                 <li className="flex items-start justify-between gap-4 p-3">
                   <div><p className="text-sm font-semibold">Observe <Risk risk="low" text="read" /></p>
-                    <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics, failure evidence and stored classifications: {READ_TOOL_COUNT} read tools. Never stack traces.</p></div>
+                    <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics, failure evidence, stored classifications and operation outcomes: {READ_TOOL_COUNT} read tools. Never stack traces.</p></div>
                   <span className="shrink-0 rounded-full border border-dashed border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">Always on</span>
                 </li>
                 {CAPABILITIES.map(cap => (
@@ -228,13 +228,27 @@ export default function McpAccessSettings() {
                   </li>
                 ))}
               </ul>
-              <SettingRow label="Unattended workloads (app-only tokens)" description="Callers with the Nimbus.Observe app role may use the read tools. Workloads can't change messages or read payloads whatever this page says.">
+              <SettingRow label="Unattended workloads (app-only tokens)" description="Callers with the Nimbus.Observe app role may use the read tools. Workloads never skip or read payloads, and change messages only as the switches below allow.">
                 <Toggle aria-label="Allow workload tokens" checked={draft.allowWorkloads} disabled={local} onChange={v => edit(s => { s.allowWorkloads = v; })} />
               </SettingRow>
               <SettingRow label="Workloads may record classifications" description="Workloads with the Nimbus.Classify app role may call nimbus_record_classification. They still need Contributor on the endpoint in Access Control, and Classify failures must be on. Recording is advisory and changes no message. Off by default.">
                 <Toggle aria-label="Allow workloads to record classifications" checked={Boolean(draft.allowWorkloadClassification)}
                   disabled={local || !draft.allowWorkloads} onChange={v => edit(s => { s.allowWorkloadClassification = v; })} />
               </SettingRow>
+              <SettingRow label="Workloads may resubmit" description="Workloads with the Nimbus.Resubmit app role may resubmit failed messages without a person, through the operation journal. They still need Contributor on the endpoint and Resubmit messages must be on. Skip always stays with a person. Off by default.">
+                <Toggle aria-label="Allow workloads to resubmit" checked={Boolean(draft.allowWorkloadResubmit)}
+                  disabled={local || !draft.allowWorkloads} onChange={v => edit(s => { s.allowWorkloadResubmit = v; })} />
+              </SettingRow>
+              {draft.allowWorkloadResubmit && (
+                <div className="space-y-3 rounded-md border p-3">
+                  <WorkloadLimitRow label="Resubmits per agent per day" min={0} max={500} fallback={WORKLOAD_RESUBMITS_PER_DAY}
+                    description="Each workload client application, over a rolling 24 hours. The per-minute change limit still applies."
+                    value={draft.workloadResubmitsPerDay} onChange={v => edit(s => { s.workloadResubmitsPerDay = v; })} />
+                  <WorkloadLimitRow label="Unsuccessful resubmits per message" min={1} max={5} fallback={WORKLOAD_RESUBMITS_PER_MESSAGE}
+                    description="Across all agents. After this many, NimBus refuses another unattended resubmit and the message stays with a person."
+                    value={draft.workloadResubmitsPerMessage} onChange={v => edit(s => { s.workloadResubmitsPerMessage = v; })} />
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">Switched-off tools are removed from <code>tools/list</code> and from <code>permittedActions</code>; a direct call gets <code>[PermissionDenied]</code>.</p>
             </CardContent></Card>
           </PanelSection>
@@ -499,6 +513,18 @@ function LimitRow({ label, description, value, max, disabled, onChange }: {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><p className="text-sm font-semibold">{label}</p><p className="text-xs text-muted-foreground">{description}</p></div>
       <Input aria-label={label} type="number" min={1} max={max} placeholder={String(max)} className="w-28" disabled={disabled}
+        value={value ?? ""} onChange={e => onChange(e.target.value === "" ? null : Number(e.target.value))} />
+    </div>
+  );
+}
+
+function WorkloadLimitRow({ label, description, value, min, max, fallback, onChange }: {
+  label: string; description: string; value?: number | null; min: number; max: number; fallback: number; onChange: (v: number | null) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><p className="text-sm font-semibold">{label}</p><p className="text-xs text-muted-foreground">{description}</p></div>
+      <Input aria-label={label} type="number" min={min} max={max} placeholder={String(fallback)} className="w-28"
         value={value ?? ""} onChange={e => onChange(e.target.value === "" ? null : Number(e.target.value))} />
     </div>
   );

@@ -1,18 +1,21 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using NimBus.MessageStore.Abstractions;
+using NimBus.MessageStore.States;
 using NimBus.WebApp.Mcp.Operations;
 using NimBus.WebApp.Services.Operations;
 
 namespace NimBus.WebApp.Mcp.Tools;
 
 /// <summary>
-/// Spec 035 Phase 2a tools that change a message, for interactive (delegated) callers only.
-/// Resubmit and skip take two steps: <c>nimbus_prepare_action</c> previews the action and
-/// returns a short-lived token bound to the caller and the message's version, and the execute
-/// tool runs it through the same guarded path as the Web UI. Every change re-checks the
-/// caller's role against fresh access-control lists and is audited before anything is sent.
-/// The agent verifies the outcome by reading the message again.
+/// Spec 035 Phase 2a tools that change a message. Resubmit and skip take two steps:
+/// <c>nimbus_prepare_action</c> previews the action and returns a short-lived token bound to the
+/// caller and the message's version, and the execute tool runs it through the same guarded path
+/// as the Web UI. Every change re-checks the caller's role against fresh access-control lists
+/// and is audited before anything is sent. With the operation journal (Spec 044 Phase 2) each
+/// command is an operation: a retry with the same idempotency key returns it without running
+/// again, <c>nimbus_get_operation</c> reports its outcome, and approved workloads may resubmit
+/// unattended within a budget and a per-message cap.
 /// </summary>
 [McpServerToolType]
 public sealed partial class OperatorActionTools
@@ -31,6 +34,8 @@ public sealed partial class OperatorActionTools
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<OperatorActionTools> _logger;
     private readonly NimBus.WebApp.Services.IAuditLogService _audit;
+    private readonly OperatorOperationJournal _journal;
+    private readonly NimBus.WebApp.Services.IEndpointAuthorizationService _authorization;
 
     /// <summary>Creates the tools for one request.</summary>
     public OperatorActionTools(
@@ -44,9 +49,13 @@ public sealed partial class OperatorActionTools
         IMessageTrackingStore store,
         IHttpContextAccessor httpContextAccessor,
         ILogger<OperatorActionTools> logger,
-        NimBus.WebApp.Services.IAuditLogService audit)
+        NimBus.WebApp.Services.IAuditLogService audit,
+        OperatorOperationJournal journal,
+        NimBus.WebApp.Services.IEndpointAuthorizationService authorization)
     {
         _audit = audit;
+        _journal = journal;
+        _authorization = authorization;
         _catalog = catalog;
         _commands = commands;
         _access = access;
@@ -116,8 +125,8 @@ public sealed partial class OperatorActionTools
     }
 
     /// <summary>Runs a prepared resubmit.</summary>
-    [McpServerTool(Name = "nimbus_resubmit_message", Title = "Resubmit a NimBus message", ReadOnly = false, Idempotent = false, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
-    [Description("Resubmits the message an actionToken from nimbus_prepare_action describes, replaying its latest stored payload to its endpoint. Runs only while the message is still in the state you previewed. Requires the nimbus.resubmit scope and the Contributor role. The result says the command was sent, not that it succeeded: read the message again to see the outcome.")]
+    [McpServerTool(Name = "nimbus_resubmit_message", Title = "Resubmit a NimBus message", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
+    [Description("Resubmits the message an actionToken from nimbus_prepare_action describes, replaying its latest stored payload to its endpoint. Runs only while the message is still in the state you previewed. Repeating the same idempotencyKey returns the same operation and sends nothing again. Requires the nimbus.resubmit scope (workloads: the Nimbus.Resubmit app role, within the budget and per-message cap in nimbus_get_capabilities) and the Contributor role. The result says the command was sent, not that it succeeded: poll nimbus_get_operation with the operationId to see the outcome.")]
     public Task<OperatorActionResult> ResubmitMessageAsync(
         [Description("actionToken from nimbus_prepare_action with action resubmit.")] string actionToken,
         [Description("A new GUID for this request, recorded in the audit log.")] string idempotencyKey,
@@ -125,13 +134,38 @@ public sealed partial class OperatorActionTools
         => ExecuteAsync(OperatorAction.Resubmit, actionToken, idempotencyKey, reason);
 
     /// <summary>Runs a prepared skip.</summary>
-    [McpServerTool(Name = "nimbus_skip_message", Title = "Skip a NimBus message", ReadOnly = false, Idempotent = false, Destructive = true, OpenWorld = true, UseStructuredContent = true)]
-    [Description("Skips the message an actionToken from nimbus_prepare_action describes: it is never processed, and later messages waiting in its session may be released. Runs only while the message is still in the state you previewed. Requires the nimbus.skip scope and the Contributor role. Confirm with the user first. Read the message again to see the outcome.")]
+    [McpServerTool(Name = "nimbus_skip_message", Title = "Skip a NimBus message", ReadOnly = false, Idempotent = true, Destructive = true, OpenWorld = true, UseStructuredContent = true)]
+    [Description("Skips the message an actionToken from nimbus_prepare_action describes: it is never processed, and later messages waiting in its session may be released. Runs only while the message is still in the state you previewed. Repeating the same idempotencyKey returns the same operation and sends nothing again. Requires the delegated nimbus.skip scope and the Contributor role; workloads can never skip. Confirm with the user first. Poll nimbus_get_operation with the operationId to see the outcome.")]
     public Task<OperatorActionResult> SkipMessageAsync(
         [Description("actionToken from nimbus_prepare_action with action skip.")] string actionToken,
         [Description("A new GUID for this request, recorded in the audit log.")] string idempotencyKey,
         [Description("Why you are skipping, 1-1000 characters. Recorded in the audit log.")] string reason)
         => ExecuteAsync(OperatorAction.Skip, actionToken, idempotencyKey, reason);
+
+    /// <summary>Reads a journaled resubmit or skip (Spec 044 Phase 2).</summary>
+    [McpServerTool(Name = "nimbus_get_operation", Title = "Get a NimBus operation", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
+    [Description("The status and observed outcome of a resubmit or skip you ran, by the operationId nimbus_resubmit_message or nimbus_skip_message returned: Dispatched (sent, outcome not seen yet), Succeeded or Failed (the endpoint's response), NotSent, OutcomeUnknown (a person decides; never resubmit it automatically) or Refused. Requires Reader on the operation's endpoint.")]
+    public async Task<OperationResult> GetOperationAsync(
+        [Description("operationId from nimbus_resubmit_message or nimbus_skip_message.")] string operationId)
+    {
+        if (!_journal.IsAvailable)
+            throw OperatorToolErrors.FeatureUnavailable("This deployment has no operation journal; read the message again with nimbus_get_message.");
+        if (string.IsNullOrWhiteSpace(operationId) || operationId.Trim().Length > 64)
+            throw OperatorToolErrors.InvalidArgument("operationId is required.");
+
+        var (_, tenant, _) = OperatorActionTokens.Identify(User());
+        var operation = await _journal.GetAsync(operationId.Trim()).ConfigureAwait(false);
+        // No lookup across tenants, and an unreadable endpoint answers like a missing operation.
+        if (operation is null || !string.Equals(operation.TenantId, tenant ?? string.Empty, StringComparison.Ordinal)
+            || _catalog.IsHidden(operation.EndpointId)
+            || !await _authorization.HasRoleAsync(NimBus.WebApp.Services.AccessRole.Reader, operation.EndpointId).ConfigureAwait(false))
+        {
+            throw OperatorToolErrors.InvalidArgument($"No operation '{operationId.Trim()}' that you can read.");
+        }
+
+        operation = await _journal.ReconcileAsync(operation, repair: false).ConfigureAwait(false);
+        return OperationResult.From(_catalog.Environment, operation);
+    }
 
     /// <summary>Sets or clears the "reported" marker.</summary>
     [McpServerTool(Name = "nimbus_set_message_reported", Title = "Mark a NimBus message reported", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
@@ -285,10 +319,18 @@ public sealed partial class OperatorActionTools
     {
         await _access.RequireScopeAsync(kind).ConfigureAwait(false);
         var context = Context(reason, idempotencyKey);
+        var (caller, tenant, client) = OperatorActionTokens.Identify(User());
+        var action = kind == OperatorAction.Skip ? OperatorOperationAction.Skip : OperatorOperationAction.Resubmit;
+        var operationId = OperatorOperationJournal.OperationIdFor(tenant, caller, context.IdempotencyKey!);
+
+        // Spec 035 Phase 2b: an exact retry is recognized before an expired preview or a changed
+        // message is refused. It returns the operation and runs nothing again.
+        if (_journal.IsAvailable && await _journal.GetAsync(operationId).ConfigureAwait(false) is { } earlier)
+            return await ReplayAsync(earlier, action).ConfigureAwait(false);
+
         if (!_tokens.TryRead(actionToken, out var grant) || grant is null)
             throw OperatorToolErrors.StaleMessage("The actionToken is expired or invalid.");
 
-        var (caller, tenant, client) = OperatorActionTokens.Identify(User());
         if (!string.Equals(grant.Action, OperatorActionAccess.NameOf(kind), StringComparison.Ordinal)
             || !string.Equals(grant.Caller, caller, StringComparison.Ordinal)
             || !string.Equals(grant.TenantId, tenant, StringComparison.Ordinal)
@@ -307,6 +349,38 @@ public sealed partial class OperatorActionTools
         if (lookup.Target is not { } target || target.Version != expected)
             throw OperatorToolErrors.StaleMessage($"Message '{grant.EventId}' changed since you prepared the action.");
 
+        OperatorOperation? operation = null;
+        if (_journal.IsAvailable)
+        {
+            var created = await _journal.CreateAsync(new OperatorOperation
+            {
+                OperationId = operationId,
+                TenantId = tenant ?? string.Empty,
+                Caller = caller,
+                ClientId = client,
+                IsWorkload = _access.IsWorkloadFor(kind),
+                ActorName = _authorization.GetCurrentUserName(),
+                IdempotencyKey = context.IdempotencyKey!,
+                ArgumentsHash = OperatorOperationJournal.ArgumentsHashFor(action, endpoint, grant.EventId, grant.MessageVersion, context.Reason!),
+                Action = action,
+                EndpointId = endpoint,
+                EventId = grant.EventId,
+                SessionId = target.Row.SessionId ?? string.Empty,
+                SourceMessageId = target.Version.LastMessageId ?? string.Empty,
+                MessageVersion = grant.MessageVersion,
+                Reason = context.Reason!,
+            }).ConfigureAwait(false);
+
+            // The same key raced in from a concurrent request.
+            if (!created.Created)
+                return await ReplayAsync(created.Operation, action).ConfigureAwait(false);
+
+            operation = created.Operation;
+            if (operation.IsWorkload)
+                await RequireWithinWorkloadLimitsAsync(operation).ConfigureAwait(false);
+            context = context with { Journal = _journal.Track(operation) };
+        }
+
         OperatorCommandResult result;
         try
         {
@@ -317,12 +391,79 @@ public sealed partial class OperatorActionTools
         catch (Exception ex) when (ex is not ModelContextProtocol.McpException)
         {
             LogMcpOfFailedWhileSending(_logger, ex, kind, endpoint, grant.EventId);
-            throw OperatorToolErrors.OutcomeUnknown("Sending the command failed and the message was restored, but the send may have reached Service Bus.");
+            throw OperatorToolErrors.OutcomeUnknown(operation is null
+                ? "Sending the command failed and the message was restored, but the send may have reached Service Bus."
+                : $"Sending the command failed and the message was restored, but the send may have reached Service Bus. Operation '{operation.OperationId}' records it; a person decides, so don't resubmit it again.");
         }
 
         ThrowUnlessAccepted(result, kind, endpoint, grant.EventId);
         LogMcpOfAccepted(_logger, kind, endpoint, grant.EventId, caller);
+        if (context.Journal is { } journal)
+        {
+            var current = OperatorOperationJournal.CurrentOf(journal);
+            return new OperatorActionResult(_catalog.Environment, DateTimeOffset.UtcNow, OperatorActionAccess.NameOf(kind), endpoint, grant.EventId,
+                "Accepted", true,
+                "The command was audited and sent. Poll nimbus_get_operation with the operationId until it is Succeeded or Failed.",
+                current.OperationId, current.Status.ToString(), Replayed: false);
+        }
+
         return Accepted(kind, endpoint, grant.EventId, commandSent: true);
+    }
+
+    /// <summary>
+    /// Refuses an unattended resubmit over the workload client's budget or the message's cap
+    /// (Spec 044 Phase 2). Counted after the operation was created, so two concurrent requests
+    /// at the boundary see each other and both refuse rather than both pass.
+    /// </summary>
+    private async Task RequireWithinWorkloadLimitsAsync(OperatorOperation operation)
+    {
+        var (perDay, perMessage) = _access.WorkloadResubmitLimits();
+        var used = await _journal.CountAsync(new OperatorOperationQuery
+        {
+            Action = OperatorOperationAction.Resubmit,
+            TenantId = operation.TenantId,
+            ClientId = operation.ClientId,
+            IsWorkload = true,
+            CreatedFromUtc = _journal.UtcNow - TimeSpan.FromDays(1),
+            ExcludedStatuses = [OperatorOperationStatus.NotSent, OperatorOperationStatus.Refused],
+        }).ConfigureAwait(false);
+        if (used > perDay)
+        {
+            var detail = $"This agent has used its budget of {perDay} unattended resubmits in 24 hours.";
+            await _journal.RefuseAsync(operation, detail).ConfigureAwait(false);
+            throw OperatorToolErrors.ActionNotAllowed(detail + " Hand the remaining failures to a person.");
+        }
+
+        var unsuccessful = await _journal.CountAsync(new OperatorOperationQuery
+        {
+            Action = OperatorOperationAction.Resubmit,
+            IsWorkload = true,
+            EndpointId = operation.EndpointId,
+            EventId = operation.EventId,
+            ExcludedStatuses = [OperatorOperationStatus.Succeeded, OperatorOperationStatus.NotSent, OperatorOperationStatus.Refused],
+            ExcludedOperationId = operation.OperationId,
+        }).ConfigureAwait(false);
+        if (unsuccessful >= perMessage)
+        {
+            var detail = $"Agents have resubmitted message '{operation.EventId}' {unsuccessful} times without success.";
+            await _journal.RefuseAsync(operation, detail).ConfigureAwait(false);
+            throw OperatorToolErrors.ActionNotAllowed(detail + " Hand it to a person.");
+        }
+    }
+
+    private async Task<OperatorActionResult> ReplayAsync(OperatorOperation operation, OperatorOperationAction action)
+    {
+        if (operation.Action != action)
+            throw OperatorToolErrors.InvalidArgument($"idempotencyKey was already used for a {operation.Action.ToString().ToLowerInvariant()}; use a new GUID.");
+
+        operation = await _journal.ReconcileAsync(operation, repair: false).ConfigureAwait(false);
+        if (operation.Status == OperatorOperationStatus.Refused)
+            throw OperatorToolErrors.ActionNotAllowed($"Operation '{operation.OperationId}' was refused: {operation.Detail}");
+
+        return new OperatorActionResult(_catalog.Environment, DateTimeOffset.UtcNow, operation.Action.ToString().ToLowerInvariant(),
+            operation.EndpointId, operation.EventId, "Accepted", operation.DispatchedAtUtc is not null,
+            "This idempotencyKey was used before: nothing was sent again. Poll nimbus_get_operation for the outcome.",
+            operation.OperationId, operation.Status.ToString(), Replayed: true);
     }
 
     /// <summary>
@@ -480,6 +621,54 @@ public sealed record RecordClassificationResult(
 /// <param name="Status">Always <c>Accepted</c>; refusals are tool errors.</param>
 /// <param name="CommandSent">Whether a command was published to Service Bus.</param>
 /// <param name="Next">What to do next.</param>
+/// <param name="OperationId">The journaled operation, for <c>nimbus_get_operation</c>; null without a journal.</param>
+/// <param name="OperationStatus">The operation's status when the result was produced.</param>
+/// <param name="Replayed">True when the idempotency key was used before and nothing ran again.</param>
 public sealed record OperatorActionResult(
     string? Environment, DateTimeOffset AsOfUtc, string Action, string EndpointId, string EventId, string Status,
-    bool CommandSent, string Next);
+    bool CommandSent, string Next, string? OperationId = null, string? OperationStatus = null, bool Replayed = false);
+
+/// <summary>Result of <c>nimbus_get_operation</c>.</summary>
+/// <param name="Environment">The configured NimBus environment name.</param>
+/// <param name="AsOfUtc">When the result was produced.</param>
+/// <param name="OperationId">The operation id.</param>
+/// <param name="Action">resubmit or skip.</param>
+/// <param name="EndpointId">The endpoint.</param>
+/// <param name="EventId">The message's event id.</param>
+/// <param name="Status">Accepted, Claimed, Publishing, Dispatched, Succeeded, Failed, NotSent, OutcomeUnknown or Refused.</param>
+/// <param name="Terminal">Whether the status can still change.</param>
+/// <param name="Unattended">Whether a workload ran it.</param>
+/// <param name="CreatedAtUtc">When the operation was created.</param>
+/// <param name="DispatchedAtUtc">When the command was published, once known.</param>
+/// <param name="ObservedResponse">The endpoint's response type, once seen: ResolutionResponse, ErrorResponse, SkipResponse, UnsupportedResponse or PendingHandoffResponse.</param>
+/// <param name="EvidenceMessageId">That response's message id.</param>
+/// <param name="Detail">Why it stopped, when it did. Untrusted text.</param>
+/// <param name="SafeToResubmitAutomatically">False unless the command was never sent or failed; never true for OutcomeUnknown.</param>
+/// <param name="Next">What to do next.</param>
+public sealed record OperationResult(
+    string? Environment, DateTimeOffset AsOfUtc, string OperationId, string Action, string EndpointId, string EventId,
+    string Status, bool Terminal, bool Unattended, DateTime CreatedAtUtc, DateTime? DispatchedAtUtc,
+    string? ObservedResponse, string? EvidenceMessageId, string? Detail, bool SafeToResubmitAutomatically, string Next)
+{
+    /// <summary>Projects <paramref name="operation"/>.</summary>
+    public static OperationResult From(string? environment, OperatorOperation operation)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        var next = operation.Status switch
+        {
+            OperatorOperationStatus.Succeeded => "Done: the endpoint handled the command.",
+            OperatorOperationStatus.Failed => "The endpoint failed again. Classify the new attempt before any further retry.",
+            OperatorOperationStatus.NotSent => "Nothing was sent and the message was restored. You may prepare the action again.",
+            OperatorOperationStatus.OutcomeUnknown => "It is not known whether the command reached the endpoint. Hand it to a person; do not resubmit it automatically.",
+            OperatorOperationStatus.Refused => "Refused before anything changed.",
+            OperatorOperationStatus.Dispatched when operation.ObservedStatus is not null => "The endpoint parked the message for external work; check again later.",
+            _ => "Not finished yet. Check again in about 15 seconds.",
+        };
+        return new OperationResult(environment, DateTimeOffset.UtcNow, operation.OperationId, operation.Action.ToString().ToLowerInvariant(),
+            operation.EndpointId, operation.EventId, operation.Status.ToString(), operation.IsTerminal, operation.IsWorkload,
+            operation.CreatedAtUtc, operation.DispatchedAtUtc, operation.ObservedStatus, operation.EvidenceMessageId,
+            OperatorProjection.Truncate(operation.Detail).Text,
+            operation.Status is OperatorOperationStatus.NotSent or OperatorOperationStatus.Failed,
+            next);
+    }
+}

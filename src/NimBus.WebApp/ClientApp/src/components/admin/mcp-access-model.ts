@@ -19,6 +19,12 @@ export interface McpSettings {
   allowWorkloads: boolean;
   /** Spec 044: workloads with the Nimbus.Classify app role may record classifications. Effective only with allowWorkloads. */
   allowWorkloadClassification?: boolean;
+  /** Spec 044 Phase 2: workloads with the Nimbus.Resubmit app role may resubmit unattended. Effective only with allowWorkloads. */
+  allowWorkloadResubmit?: boolean;
+  /** Resubmits per workload client in a rolling 24 hours (0-500, default 20). */
+  workloadResubmitsPerDay?: number | null;
+  /** Unsuccessful workload resubmits of one message before it stays with a person (1-5, default 2). */
+  workloadResubmitsPerMessage?: number | null;
   people: { mode: PeopleMode; principals: Principal[] };
   clients: { mode: ClientMode; approved: ApprovedClient[] };
   endpoints: { visibility: Visibility; hidden: string[]; changes: ChangeScope; changeOn: string[] };
@@ -84,8 +90,8 @@ export interface CapabilityInfo {
   tools: string[]; scope: string; role: string; description: string; note?: string;
 }
 
-export const READ_TOOL_COUNT = 12;
-export const TOTAL_TOOL_COUNT = 18;
+export const READ_TOOL_COUNT = 13;
+export const TOTAL_TOOL_COUNT = 19;
 
 export const CAPABILITIES: CapabilityInfo[] = [
   { key: "payloads", label: "Raw payloads", risk: "data", riskText: "data", tools: ["nimbus_get_message · includePayload"],
@@ -121,6 +127,10 @@ const listChanges = (before: string[], after: string[], added: (v: string) => Mc
   ];
 };
 
+/** Server defaults for the unattended-resubmit limits (McpAccessSettings). */
+export const WORKLOAD_RESUBMITS_PER_DAY = 20;
+export const WORKLOAD_RESUBMITS_PER_MESSAGE = 2;
+
 /** The differences from `a` to `b`, each marked as widening or narrowing access (Spec 037 §6.4). */
 export function describeChanges(a: McpSettings, b: McpSettings): McpChange[] {
   const out: McpChange[] = [];
@@ -137,6 +147,14 @@ export function describeChanges(a: McpSettings, b: McpSettings): McpChange[] {
   if (a.allowWorkloads !== b.allowWorkloads) add(b.allowWorkloads ? "Accept workload (app-only) tokens" : "Refuse workload (app-only) tokens", b.allowWorkloads);
   if (Boolean(a.allowWorkloadClassification) !== Boolean(b.allowWorkloadClassification))
     add(b.allowWorkloadClassification ? "Let workloads record failure classifications" : "Stop workloads recording failure classifications", Boolean(b.allowWorkloadClassification));
+  if (Boolean(a.allowWorkloadResubmit) !== Boolean(b.allowWorkloadResubmit))
+    add(b.allowWorkloadResubmit ? "Let workloads resubmit failed messages unattended" : "Stop workloads resubmitting messages", Boolean(b.allowWorkloadResubmit));
+  const perDay = (s: McpSettings) => s.workloadResubmitsPerDay ?? WORKLOAD_RESUBMITS_PER_DAY;
+  const perMessage = (s: McpSettings) => s.workloadResubmitsPerMessage ?? WORKLOAD_RESUBMITS_PER_MESSAGE;
+  if (perDay(a) !== perDay(b))
+    add(`Workload resubmits per day: ${perDay(a)} → ${perDay(b)}`, perDay(b) > perDay(a));
+  if (perMessage(a) !== perMessage(b))
+    add(`Unsuccessful workload resubmits per message: ${perMessage(a)} → ${perMessage(b)}`, perMessage(b) > perMessage(a));
 
   const before = (p: Principal[]) => p.map(x => x.principal);
   if (a.people.mode !== b.people.mode) {
@@ -186,6 +204,10 @@ export function validate(s: McpSettings, d: McpDeployment): string | undefined {
   if (s.people.mode === "listed" && s.people.principals.length === 0) return "Add at least one user or group, or let everyone with a NimBus role connect.";
   if (s.clients.mode === "approved" && s.clients.approved.length === 0) return "Approve at least one client, or accept any client pre-authorized in Entra.";
   if (s.endpoints.visibility === "allExcept" && s.endpoints.hidden.length === 0) return "Pick at least one endpoint to hide, or show all endpoints.";
+  const perDay = s.workloadResubmitsPerDay;
+  if (perDay != null && (!Number.isInteger(perDay) || perDay < 0 || perDay > 500)) return "Resubmits per agent per day must be between 0 and 500.";
+  const perMessage = s.workloadResubmitsPerMessage;
+  if (perMessage != null && (!Number.isInteger(perMessage) || perMessage < 1 || perMessage > 5)) return "Unsuccessful resubmits per message must be between 1 and 5.";
   if (s.endpoints.changes === "listed" && s.endpoints.changeOn.length === 0) return "Pick at least one endpoint where agents may change messages.";
   const inRange = (v: number | null | undefined, max: number) => v == null || (Number.isInteger(v) && v >= 1 && v <= max);
   if (!inRange(s.limits.requestsPerWindow, d.requestLimit.permit) || !inRange(s.limits.mutationsPerWindow, d.mutationLimit.permit))
@@ -218,7 +240,12 @@ export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona
       return s.allowWorkloadClassification
         ? { name, allowed: true, why: "Nimbus.Classify role + Contributor" }
         : { name, allowed: false, why: "workload recording off" };
-    if (!p.delegated) return { name, allowed: false, why: key === "payloads" ? "no app role for payloads" : "workloads can't change" };
+    // Spec 044 Phase 2: a workload may resubmit with the Nimbus.Resubmit role, within its budget, when allowed here. Never skip.
+    if (!p.delegated && key === "resubmit")
+      return s.allowWorkloadResubmit
+        ? { name, allowed: true, why: "Nimbus.Resubmit role + Contributor, within budget" }
+        : { name, allowed: false, why: "unattended resubmits off" };
+    if (!p.delegated) return { name, allowed: false, why: key === "payloads" ? "no app role for payloads" : key === "skip" ? "workloads never skip" : "workloads can't change" };
     if (key === "payloads") return p.pii ? { name, allowed: true, why: local ? "PiiReader" : "scope + PiiReader" } : { name, allowed: false, why: "needs PiiReader" };
     return p.contributor ? { name, allowed: true, why: local ? "Contributor" : "scope + Contributor" } : { name, allowed: false, why: "needs Contributor" };
   };

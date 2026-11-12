@@ -271,6 +271,9 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsTrue(defaults.Enabled);
         Assert.IsTrue(defaults.Capabilities.Skip);
         Assert.IsFalse(defaults.AllowWorkloadClassification, "Workload recording is off until an Owner turns it on (Spec 044 §6.6).");
+        Assert.IsFalse(defaults.AllowWorkloadResubmit, "Unattended resubmits are off until an Owner turns them on (Spec 044 Phase 2).");
+        Assert.AreEqual(McpAccessSettings.DefaultWorkloadResubmitsPerDay, defaults.WorkloadResubmitsPerDay);
+        Assert.AreEqual(McpAccessSettings.DefaultWorkloadResubmitsPerMessage, defaults.WorkloadResubmitsPerMessage);
     }
 
     [TestMethod]
@@ -293,6 +296,9 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsFalse(stored.Capabilities.Skip);
         Assert.IsFalse(stored.AllowWorkloads);
         Assert.IsTrue(stored.AllowWorkloadClassification);
+        Assert.IsTrue(stored.AllowWorkloadResubmit);
+        Assert.AreEqual(7, stored.WorkloadResubmitsPerDay);
+        Assert.AreEqual(3, stored.WorkloadResubmitsPerMessage);
         Assert.AreEqual(McpPeopleMode.Listed, stored.People.Mode);
         Assert.AreEqual("pilot@example.com", stored.People.Principals.Single().Principal);
         Assert.AreEqual("Pilot", stored.People.Principals.Single().Label);
@@ -364,6 +370,9 @@ public abstract class EndpointMetadataStoreConformanceTests
         Capabilities = new McpCapabilitySettings { Payloads = false, Report = true, Classify = false, Resubmit = true, Skip = false },
         AllowWorkloads = false,
         AllowWorkloadClassification = true,
+        AllowWorkloadResubmit = true,
+        WorkloadResubmitsPerDay = 7,
+        WorkloadResubmitsPerMessage = 3,
         People = new McpPeopleSettings
         {
             Mode = McpPeopleMode.Listed,

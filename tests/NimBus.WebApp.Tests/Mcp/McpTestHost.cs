@@ -125,6 +125,8 @@ internal sealed class McpTestHost : IAsyncDisposable
                     services.AddSingleton(store);
                     services.AddSingleton<IMessageTrackingStore>(store);
                     services.AddSingleton<IEndpointMetadataStore>(store);
+                    // Spec 044 Phase 2: the operation journal, so the write tools run journaled.
+                    services.AddSingleton<IOperatorOperationStore>(store);
                     services.AddSingleton<RecordingManagerClient>();
                     services.AddSingleton<IManagerClient>(sp => sp.GetRequiredService<RecordingManagerClient>());
                     services.AddSingleton<RecordingAuditLog>();
@@ -324,11 +326,41 @@ internal sealed class McpTestHost : IAsyncDisposable
     }
 
     /// <summary>Records the commands the coordinator publishes.</summary>
-    public sealed class RecordingManagerClient : IManagerClient
+    public sealed class RecordingManagerClient : IManagerClient, IManagerCommandClient
     {
         private readonly System.Collections.Concurrent.ConcurrentQueue<string> _sent = new();
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _commandIds = new();
 
         public IReadOnlyList<string> Sent => _sent.ToList();
+
+        /// <summary>The message ids journaled commands were published under, in order.</summary>
+        public IReadOnlyList<string> CommandIds => _commandIds.ToList();
+
+        /// <summary>When set, the next send throws it (once).</summary>
+        public Exception? FailNextSend { get; set; }
+
+        public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson, string commandMessageId)
+        {
+            ThrowIfFailing();
+            _commandIds.Enqueue(commandMessageId);
+            return Resubmit(errorResponse, endpoint, eventTypeId, eventJson);
+        }
+
+        public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId, string commandMessageId)
+        {
+            ThrowIfFailing();
+            _commandIds.Enqueue(commandMessageId);
+            return Skip(errorResponse, endpoint, eventTypeId);
+        }
+
+        private void ThrowIfFailing()
+        {
+            var failure = FailNextSend;
+            if (failure is null)
+                return;
+            FailNextSend = null;
+            throw failure;
+        }
 
         public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
         {
