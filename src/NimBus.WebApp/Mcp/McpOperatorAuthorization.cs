@@ -50,13 +50,21 @@ public static class McpOperatorPermissions
     /// <summary>Delegated scope for <c>nimbus_set_message_reported</c>.</summary>
     public const string AnnotateScope = "nimbus.annotate";
 
-    /// <summary>Delegated scope for <c>nimbus_classify_failure</c>.</summary>
+    /// <summary>Delegated scope for <c>nimbus_record_classification</c> and the deprecated <c>nimbus_classify_failure</c>.</summary>
     public const string ClassifyScope = "nimbus.classify";
 
     /// <summary>
+    /// Application role for workloads that record failure classifications (Spec 044 §6.6). It
+    /// admits <c>nimbus_record_classification</c> only, and only while the Owner allows it; it
+    /// changes no message.
+    /// </summary>
+    public const string ClassifyRole = "Nimbus.Classify";
+
+    /// <summary>
     /// Every delegated scope the endpoint understands, in the order the protected-resource
-    /// metadata advertises them. The write scopes have no workload app role: in Phase 2a only an
-    /// interactive, delegated caller may change a message.
+    /// metadata advertises them. Only <see cref="ClassifyScope"/> has a workload app role
+    /// (<see cref="ClassifyRole"/>), for recording: only an interactive, delegated caller may
+    /// change a message.
     /// </summary>
     public static readonly IReadOnlyList<string> AllScopes =
         [ObserveScope, PayloadReadScope, ResubmitScope, SkipScope, AnnotateScope, ClassifyScope];
@@ -75,6 +83,14 @@ public static class McpOperatorPermissions
 
         return HasScope(user, ObserveScope)
             || user.FindAll("roles").Any(claim => string.Equals(claim.Value, ObserveRole, StringComparison.Ordinal));
+    }
+
+    /// <summary>True when <paramref name="user"/> is a workload (no <c>scp</c>) holding <paramref name="role"/>.</summary>
+    public static bool IsWorkloadWithRole(ClaimsPrincipal user, string role)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+        return !user.HasClaim(claim => claim.Type == "scp")
+            && user.FindAll("roles").Any(claim => string.Equals(claim.Value, role, StringComparison.Ordinal));
     }
 
     /// <summary>True when <paramref name="user"/> holds the delegated payload scope.</summary>

@@ -38,6 +38,14 @@ var sendInvalid = string.Equals(Environment.GetEnvironmentVariable("PARTNER_SEND
 // PARTNER_PUBLISH_LEADS=false stops the recurring leads; the ERP listener keeps running.
 var publishLeads = Program.IsLeadPublishingEnabled(Environment.GetEnvironmentVariable("PARTNER_PUBLISH_LEADS"));
 
+// When the AppHost hands over crm-api's address, the "Partner leads" switch in crm-web turns
+// the leads on and off while this runs; PARTNER_PUBLISH_LEADS then only applies until crm-api
+// answers. Without an address the startup setting is final.
+using var crmApi = PartnerLeadSwitch.CreateClient(
+    Environment.GetEnvironmentVariable("services__crm-api__https__0") ?? Environment.GetEnvironmentVariable("services__crm-api__http__0"),
+    Environment.GetEnvironmentVariable("Demo__ServiceKey"));
+var leadSwitch = new PartnerLeadSwitch(crmApi, publishLeads);
+
 await using var client = serviceBus.Contains("Endpoint=", StringComparison.OrdinalIgnoreCase)
     ? new ServiceBusClient(serviceBus)
     : new ServiceBusClient(new Uri(serviceBus).Host, new DefaultAzureCredential());
@@ -50,9 +58,11 @@ ConsoleCancelEventHandler cancelHandler = (_, e) =>
 };
 Console.CancelKeyPress += cancelHandler;
 
-var publishing = publishLeads
-    ? $"Publishing a lead to '{partnerInboundTopic}' every {leadIntervalSeconds}s"
-    : "Lead publishing is off (PARTNER_PUBLISH_LEADS=false)";
+var publishing = leadSwitch.IsRemote
+    ? $"Publishing a lead to '{partnerInboundTopic}' every {leadIntervalSeconds}s while the Partner leads switch in crm-web is on"
+    : publishLeads
+        ? $"Publishing a lead to '{partnerInboundTopic}' every {leadIntervalSeconds}s"
+        : "Lead publishing is off (PARTNER_PUBLISH_LEADS=false)";
 Console.WriteLine($"PartnerPortal started (no NimBus reference). {publishing}; listening on {erpTopic}/{captureSubscription}. Ctrl+C to stop.");
 
 try
@@ -62,7 +72,8 @@ try
         await SendInvalidLeadAsync(shutdown.Token);
     }
 
-    await Program.RunSupervisedAsync(publishLeads ? PublishLeadsAsync : null, ConsumeErpCloudEventsAsync, shutdown.Token);
+    var publisher = leadSwitch.IsRemote || publishLeads ? PublishLeadsAsync : (Func<CancellationToken, Task>?)null;
+    await Program.RunSupervisedAsync(publisher, ConsumeErpCloudEventsAsync, shutdown.Token);
 }
 catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
 {
@@ -110,8 +121,23 @@ async Task PublishLeadsAsync(CancellationToken cancellationToken)
     await using var sender = client.CreateSender(partnerInboundTopic);
 
     var iteration = 0;
+    bool? wasEnabled = null;
     while (!cancellationToken.IsCancellationRequested)
     {
+        var enabled = await leadSwitch.IsEnabledAsync(cancellationToken);
+        if (enabled != wasEnabled)
+        {
+            Console.WriteLine($"[publish] Lead publishing is {(enabled ? "on" : "off")}.");
+            wasEnabled = enabled;
+        }
+
+        if (!enabled)
+        {
+            // Off: look again soon, so switching the leads on in crm-web takes effect within seconds.
+            await Task.Delay(TimeSpan.FromSeconds(Math.Min(leadIntervalSeconds, 5)), cancellationToken);
+            continue;
+        }
+
         try
         {
             var lead = new

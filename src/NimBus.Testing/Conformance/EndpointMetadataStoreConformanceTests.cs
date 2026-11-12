@@ -270,6 +270,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsNull(defaults.Revision);
         Assert.IsTrue(defaults.Enabled);
         Assert.IsTrue(defaults.Capabilities.Skip);
+        Assert.IsFalse(defaults.AllowWorkloadClassification, "Workload recording is off until an Owner turns it on (Spec 044 §6.6).");
     }
 
     [TestMethod]
@@ -291,6 +292,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsTrue(stored.Capabilities.Resubmit);
         Assert.IsFalse(stored.Capabilities.Skip);
         Assert.IsFalse(stored.AllowWorkloads);
+        Assert.IsTrue(stored.AllowWorkloadClassification);
         Assert.AreEqual(McpPeopleMode.Listed, stored.People.Mode);
         Assert.AreEqual("pilot@example.com", stored.People.Principals.Single().Principal);
         Assert.AreEqual("Pilot", stored.People.Principals.Single().Label);
@@ -361,6 +363,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         Enabled = false,
         Capabilities = new McpCapabilitySettings { Payloads = false, Report = true, Classify = false, Resubmit = true, Skip = false },
         AllowWorkloads = false,
+        AllowWorkloadClassification = true,
         People = new McpPeopleSettings
         {
             Mode = McpPeopleMode.Listed,

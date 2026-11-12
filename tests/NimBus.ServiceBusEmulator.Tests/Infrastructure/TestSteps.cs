@@ -91,29 +91,53 @@ internal sealed class TestSteps
     /// failure first and the cleanup's second. If only the cleanup fails, its exception is
     /// thrown as the step's own failure.
     /// </summary>
-    public static async Task RunWithCleanupAsync(Func<Task> body, Func<Task> cleanup)
+    public static Task RunWithCleanupAsync(Func<Task> body, Func<Task> cleanup)
+    {
+        ArgumentNullException.ThrowIfNull(cleanup);
+        return RunWithCleanupsAsync(body, cleanup);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="body"/>, then always runs every one of <paramref name="cleanups"/>
+    /// in the order given, even when the body or an earlier cleanup failed. A single failure is
+    /// rethrown unchanged. Several failures are thrown as one <see cref="AggregateException"/>
+    /// in the order they happened, so the body's failure (when there is one) comes first.
+    /// </summary>
+    public static async Task RunWithCleanupsAsync(Func<Task> body, params Func<Task>[] cleanups)
     {
         ArgumentNullException.ThrowIfNull(body);
-        ArgumentNullException.ThrowIfNull(cleanup);
+        ArgumentNullException.ThrowIfNull(cleanups);
+        var failures = new List<Exception>();
         try
         {
             await body();
         }
-        catch (Exception first)
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
+
+        foreach (var cleanup in cleanups)
         {
             try
             {
                 await cleanup();
             }
-            catch (Exception second)
+            catch (Exception exception)
             {
-                throw new AggregateException(first, second);
+                failures.Add(exception);
             }
-
-            throw;
         }
 
-        await cleanup();
+        if (failures.Count == 1)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+
+        if (failures.Count > 1)
+        {
+            throw new AggregateException(failures);
+        }
     }
 
     private TimeSpan Bound(TimeSpan budget)

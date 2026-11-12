@@ -94,62 +94,99 @@ public sealed class SdkSmokeTests
         // startup has a 20 s deadline, each later step 10 s, all capped by a 50 s overall
         // budget, and emulator disposal waits at most 5 s for the process to exit. A hang
         // therefore fails naming its step, with the emulator's protocol trace (AF-9).
-        // The emulator is disposed as a cleanup step: a failing dispose (an exit timeout or
-        // a journal delete error) is reported next to the body's first failure, never instead of it.
+        // The protocol order is the original one: send, receive, then delete the topic while
+        // the SDK links are still open, and only then dispose receiver, sender and client (the
+        // reverse `await using` order), then the emulator. The disposals run as cleanups that
+        // always run, even after an earlier failure; a failing cleanup is reported after the
+        // body's first failure, never instead of it.
         var clock = Stopwatch.StartNew();
         var emulator = await EmulatorProcess.StartAsync(startupDeadline: TimeSpan.FromSeconds(20));
-        await TestSteps.RunWithCleanupAsync(
-            () => RunInitialRuleScenarioAsync(emulator, clock),
-            () => emulator.DisposeAsync().AsTask());
-    }
-
-    private static async Task RunInitialRuleScenarioAsync(EmulatorProcess emulator, Stopwatch clock)
-    {
         var steps = new TestSteps(emulator, clock, TimeSpan.FromSeconds(50));
         var step = TimeSpan.FromSeconds(10);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var entityName = $"initial-{Guid.NewGuid():N}";
-        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
-        await steps.RunAsync("create topic", step, () => admin.CreateTopicAsync(entityName, timeout.Token));
-
-        await steps.RunAsync("create subscription with initial rule", step, () => admin.CreateSubscriptionAsync(
-            new CreateSubscriptionOptions(entityName, "closed"),
-            new CreateRuleOptions("$Default", new FalseRuleFilter()),
-            timeout.Token));
-
-        var rules = await steps.RunAsync("list rules", step, async () =>
-        {
-            var list = new List<RuleProperties>();
-            await foreach (var rule in admin.GetRulesAsync(entityName, "closed", timeout.Token))
-            {
-                list.Add(rule);
-            }
-
-            return list;
-        });
-
-        Assert.HasCount(1, rules);
-        Assert.AreEqual("$Default", rules[0].Name);
-        Assert.AreEqual("1=0", ((SqlRuleFilter)rules[0].Filter).SqlExpression);
-        Assert.IsFalse(rules.Any(rule => rule.Filter is SqlRuleFilter { SqlExpression: "1=1" }));
-
-        // A publish straight after creation lands in the provisioning window.
-        // The client is always disposed, but a failure there never hides an earlier step's.
-        var client = new ServiceBusClient(emulator.ConnectionString);
-        await TestSteps.RunWithCleanupAsync(
+        ServiceBusClient? client = null;
+        ServiceBusSender? sender = null;
+        ServiceBusReceiver? receiver = null;
+        await TestSteps.RunWithCleanupsAsync(
             async () =>
             {
-                var sender = client.CreateSender(entityName);
-                await steps.RunAsync("send", step, () => sender.SendMessageAsync(new ServiceBusMessage("window"), timeout.Token));
-                await steps.DisposeAsync("sender", sender, step);
-                var receiver = client.CreateReceiver(entityName, "closed");
-                var received = await steps.RunAsync("receive", step, () => receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token));
-                Assert.IsNull(received);
-                await steps.DisposeAsync("receiver", receiver, step);
-            },
-            () => steps.DisposeAsync("client", client, step));
+                var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+                await steps.RunAsync("create topic", step, () => admin.CreateTopicAsync(entityName, timeout.Token));
 
-        await steps.RunAsync("delete topic", step, () => admin.DeleteTopicAsync(entityName, timeout.Token));
+                await steps.RunAsync("create subscription with initial rule", step, () => admin.CreateSubscriptionAsync(
+                    new CreateSubscriptionOptions(entityName, "closed"),
+                    new CreateRuleOptions("$Default", new FalseRuleFilter()),
+                    timeout.Token));
+
+                var rules = await steps.RunAsync("list rules", step, async () =>
+                {
+                    var list = new List<RuleProperties>();
+                    await foreach (var rule in admin.GetRulesAsync(entityName, "closed", timeout.Token))
+                    {
+                        list.Add(rule);
+                    }
+
+                    return list;
+                });
+
+                Assert.HasCount(1, rules);
+                Assert.AreEqual("$Default", rules[0].Name);
+                Assert.AreEqual("1=0", ((SqlRuleFilter)rules[0].Filter).SqlExpression);
+                Assert.IsFalse(rules.Any(rule => rule.Filter is SqlRuleFilter { SqlExpression: "1=1" }));
+
+                // A publish straight after creation lands in the provisioning window.
+                client = new ServiceBusClient(emulator.ConnectionString);
+                var createdSender = sender = client.CreateSender(entityName);
+                await steps.RunAsync("send", step, () => createdSender.SendMessageAsync(new ServiceBusMessage("window"), timeout.Token));
+
+                var createdReceiver = receiver = client.CreateReceiver(entityName, "closed");
+                var received = await steps.RunAsync("receive", step, () => createdReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token));
+                Assert.IsNull(received);
+
+                // Deleted while the sender and receiver links are still open, as at 1821c42e.
+                await steps.RunAsync("delete topic", step, () => admin.DeleteTopicAsync(entityName, timeout.Token));
+            },
+            () => receiver is null ? Task.CompletedTask : steps.DisposeAsync("receiver", receiver, step),
+            () => sender is null ? Task.CompletedTask : steps.DisposeAsync("sender", sender, step),
+            () => client is null ? Task.CompletedTask : steps.DisposeAsync("client", client, step),
+            () => emulator.DisposeOrThrowAsync().AsTask());
+    }
+
+    [TestMethod]
+    [TestCategory("EmulatorOnly")]
+    [Timeout(60_000)]
+    public async Task Receiver_disposes_when_its_topic_is_deleted_while_a_drain_is_outstanding()
+    {
+        // After an empty receive leaves credit on the link, the receiver's close drains that
+        // credit and waits for the drain. When the topic was deleted before the pump answered
+        // it, the pump failed and detached without completing the drain, so DisposeAsync
+        // hung. The hook holds the pump until the drain arrives; the delete completes before
+        // the close sends it, so the pump always reads the deleted topic while draining.
+        await using var emulator = await EmulatorProcess.StartAsync(
+            environment: new Dictionary<string, string> { ["NIMBUS_SBEMULATOR_TEST_ACQUIRE_HOLD_UNTIL_DRAIN_MS"] = "15000" });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var entityName = $"deleted-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(entityName, timeout.Token);
+        await admin.CreateSubscriptionAsync(entityName, "consumer", timeout.Token);
+        await using var client = new ServiceBusClient(emulator.ConnectionString);
+        var receiver = client.CreateReceiver(entityName, "consumer");
+
+        Assert.IsNull(await receiver.ReceiveMessageAsync(TimeSpan.FromMilliseconds(500), timeout.Token));
+        await admin.DeleteTopicAsync(entityName, timeout.Token);
+
+        await receiver.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10), timeout.Token);
+
+        // The emulator's output reaches DumpOutput through asynchronous pipe callbacks.
+        const string drainPathDiagnostic = "Pump failed: draining=True";
+        var outputDeadline = DateTime.UtcNow.AddSeconds(5);
+        while (!emulator.DumpOutput().Contains(drainPathDiagnostic, StringComparison.Ordinal) && DateTime.UtcNow < outputDeadline)
+        {
+            await Task.Delay(50, timeout.Token);
+        }
+
+        StringAssert.Contains(emulator.DumpOutput(), drainPathDiagnostic, StringComparison.Ordinal);
     }
 
     [TestMethod]

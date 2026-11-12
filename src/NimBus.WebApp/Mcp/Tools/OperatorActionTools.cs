@@ -30,6 +30,7 @@ public sealed partial class OperatorActionTools
     private readonly IMessageTrackingStore _store;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<OperatorActionTools> _logger;
+    private readonly NimBus.WebApp.Services.IAuditLogService _audit;
 
     /// <summary>Creates the tools for one request.</summary>
     public OperatorActionTools(
@@ -42,8 +43,10 @@ public sealed partial class OperatorActionTools
         IOperatorClassificationSource classifications,
         IMessageTrackingStore store,
         IHttpContextAccessor httpContextAccessor,
-        ILogger<OperatorActionTools> logger)
+        ILogger<OperatorActionTools> logger,
+        NimBus.WebApp.Services.IAuditLogService audit)
     {
+        _audit = audit;
         _catalog = catalog;
         _commands = commands;
         _access = access;
@@ -153,9 +156,91 @@ public sealed partial class OperatorActionTools
         return Accepted(OperatorAction.Report, endpoint, id, commandSent: false);
     }
 
-    /// <summary>Requests an AI classification of a failure.</summary>
-    [McpServerTool(Name = "nimbus_classify_failure", Title = "Classify a NimBus failure", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
-    [Description("Requests an AI classification of a failed message's error, or returns the stored one. It costs a provider call unless a classification already exists, and it never resubmits or skips anything. The result is advisory only. Requires the nimbus.classify scope, the Contributor role and classification enabled in this deployment.")]
+    /// <summary>Records an agent's classification of a failure (Spec 044 §6.4).</summary>
+    [McpServerTool(Name = "nimbus_record_classification", Title = "Record a NimBus failure classification", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
+    [Description("Records your classification of one Failed or DeadLettered message: your answers to the question set from nimbus_get_failure_evidence. NimBus validates them, composes the guidance itself and stores the result as advisory, with you as its author. It changes no message. Pass the messageId and questionSetVersion the evidence returned. When a classification already exists it is returned unchanged unless supersede is true. Requires the nimbus.classify scope (workloads: the Nimbus.Classify app role) and the Contributor role.")]
+    public async Task<RecordClassificationResult> RecordClassificationAsync(
+        [Description("Endpoint id, as returned by nimbus_list_endpoints.")] string endpointId,
+        [Description("The message's event id.")] string eventId,
+        [Description("The failed attempt's message id, as nimbus_get_failure_evidence returned it.")] string messageId,
+        [Description("A new GUID for this recording. Repeating it returns the same stored result.")] string idempotencyKey,
+        [Description("questionSet.version from nimbus_get_failure_evidence.")] int questionSetVersion,
+        [Description("Your answer to failure_category: one of its choice ids.")] string category,
+        [Description("Your confidence in the category, from 0 to 1.")] double categoryConfidence,
+        [Description("Your answer to retry_likely_to_succeed_unchanged, from 0 to 1.")] double retryLikelihood,
+        [Description("Your answer to change_required_before_success, from 0 to 1.")] double changeRequiredLikelihood,
+        [Description("Your answer to external_dependency_involved, from 0 to 1.")] double externalDependencyLikelihood,
+        [Description("Your answer to fault_origin: source_data, adapter_code, target_system, configuration, platform or unknown.")] string faultOrigin,
+        [Description("Your confidence in the fault origin, from 0 to 1.")] double faultOriginConfidence,
+        [Description("The model you run on, at most 100 characters. Stored as stated.")] string? model = null,
+        [Description("Why, in plain text, at most 1000 characters. For source data, name the field and the rule it breaks. Never quote payload values.")] string? rationale = null,
+        [Description("Record a new revision even when a classification exists. Default false.")] bool supersede = false,
+        CancellationToken cancellationToken = default)
+    {
+        await _access.RequireScopeAsync(OperatorAction.Classify).ConfigureAwait(false);
+        if (!_classifications.CanRecord)
+            throw OperatorToolErrors.FeatureUnavailable(OperatorClassificationSource.NotRecordable);
+
+        // Spec 044 §6.12: a hidden endpoint and a missing Contributor role are refused and audited.
+        // The hidden endpoint still answers like a missing one (Spec 037).
+        if (_catalog.IsHidden(endpointId?.Trim()))
+        {
+            await _access.RecordRefusalAsync(NimBus.WebApp.Mcp.Access.McpRefusalReason.Endpoint, OperatorAction.Classify, endpointId!.Trim()).ConfigureAwait(false);
+            throw OperatorToolErrors.EndpointNotFound(endpointId);
+        }
+
+        var endpoint = await _catalog.RequireReadableAsync(endpointId!).ConfigureAwait(false);
+        await _access.RequireChangeAllowedOnAsync(OperatorAction.Classify, endpoint).ConfigureAwait(false);
+        if (!await _access.MayFreshAsync(OperatorAction.Classify, endpoint).ConfigureAwait(false))
+        {
+            await AuditRecordingDeniedAsync(endpoint, eventId, messageId).ConfigureAwait(false);
+            throw OperatorToolErrors.PermissionDenied($"Recording a classification requires the Contributor role on endpoint '{endpoint}'.");
+        }
+        var id = RequireEventId(eventId);
+        var key = RequireGuid(idempotencyKey);
+        if (string.IsNullOrWhiteSpace(messageId))
+            throw OperatorToolErrors.InvalidArgument("messageId is required: pass the one nimbus_get_failure_evidence returned.");
+        var attempt = messageId.Trim();
+
+        var failedMessage = await _store.GetMessage(id, attempt).ConfigureAwait(false);
+        if (!string.Equals(failedMessage?.EndpointId, endpoint, StringComparison.OrdinalIgnoreCase))
+            throw OperatorToolErrors.MessageNotFound(endpoint, id);
+
+        // Recording changes no message and costs no provider call, so it counts against the MCP
+        // request limit only, not the change limit (Spec 044 §6.4).
+        var (_, _, client) = OperatorActionTokens.Identify(User());
+        var (classification, existing) = await _classifications.RecordAsync(new NimBus.Extensions.IntegrationIntelligence.FailureClassificationRecording
+        {
+            EndpointId = endpoint,
+            EventId = id,
+            MessageId = attempt,
+            IdempotencyKey = key,
+            QuestionSetVersion = questionSetVersion,
+            Category = category?.Trim() ?? string.Empty,
+            CategoryConfidence = categoryConfidence,
+            RetryLikelihood = retryLikelihood,
+            ChangeRequiredLikelihood = changeRequiredLikelihood,
+            ExternalDependencyLikelihood = externalDependencyLikelihood,
+            FaultOrigin = faultOrigin?.Trim() ?? string.Empty,
+            FaultOriginConfidence = faultOriginConfidence,
+            Model = model,
+            Rationale = rationale,
+            Supersede = supersede,
+            ClientId = client,
+        }, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(classification.EndpointId, endpoint, StringComparison.OrdinalIgnoreCase))
+            throw OperatorToolErrors.MessageNotFound(endpoint, id);
+
+        return new RecordClassificationResult(_catalog.Environment, DateTimeOffset.UtcNow, endpoint, id, attempt, existing, true,
+            ClassificationInfo.From(classification),
+            existing
+                ? "A classification already existed and was returned unchanged. Pass supersede=true to record yours as a new revision."
+                : "Recorded. NimBus composed the guidance from your answers; read it from classification.guidance.");
+    }
+
+    /// <summary>Requests an AI classification of a failure from the deprecated provider.</summary>
+    [McpServerTool(Name = "nimbus_classify_failure", Title = "Classify a NimBus failure (deprecated)", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
+    [Description("Deprecated; removed in NimBus 5.0. Use nimbus_get_failure_evidence and nimbus_record_classification instead. Asks the deployment's built-in provider to classify a failed message's error, or returns the stored classification. It costs a provider call unless a classification already exists, and it never resubmits or skips anything. The result is advisory only. Requires the delegated nimbus.classify scope, the Contributor role and a configured provider.")]
     public async Task<ClassificationResult> ClassifyFailureAsync(
         [Description("Endpoint id, as returned by nimbus_list_endpoints.")] string endpointId,
         [Description("The message's event id.")] string eventId,
@@ -164,7 +249,8 @@ public sealed partial class OperatorActionTools
         [Description("Classify again even when a classification exists. Default false.")] bool force = false,
         CancellationToken cancellationToken = default)
     {
-        await _access.RequireScopeAsync(OperatorAction.Classify).ConfigureAwait(false);
+        // A workload's Nimbus.Classify role admits recording only, never a paid provider call.
+        await _access.RequireDelegatedScopeAsync(OperatorAction.Classify).ConfigureAwait(false);
         if (!_classifications.IsAvailable)
             throw OperatorToolErrors.FeatureUnavailable("AI failure classification is not enabled in this deployment.");
         if (!_classifications.CanAnalyze)
@@ -237,6 +323,32 @@ public sealed partial class OperatorActionTools
         ThrowUnlessAccepted(result, kind, endpoint, grant.EventId);
         LogMcpOfAccepted(_logger, kind, endpoint, grant.EventId, caller);
         return Accepted(kind, endpoint, grant.EventId, commandSent: true);
+    }
+
+    /// <summary>
+    /// Audits a recording refused for a missing Contributor role as a denied
+    /// <c>FailureClassified</c>, as the recorder audits its own refusals. Best-effort.
+    /// </summary>
+    private async Task AuditRecordingDeniedAsync(string endpoint, string? eventId, string? messageId)
+    {
+        var (_, _, client) = OperatorActionTokens.Identify(User());
+        var data = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            messageId = messageId?.Trim(),
+            provider = NimBus.Extensions.IntegrationIntelligence.FailureClassificationProviders.Agent,
+            clientId = client,
+            outcome = "Rejected",
+            reason = "Forbidden",
+        });
+        try
+        {
+            await _audit.LogAuditAsync(NimBus.MessageStore.MessageAuditType.FailureClassified, Http(), accessDenied: true, data: data,
+                eventId: eventId?.Trim(), endpointId: endpoint).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            LogMcpRecordingAuditFailed(_logger, ex, endpoint);
+        }
     }
 
     private async Task<OperatorCommandTarget> FindAsync(string endpoint, string eventId)
@@ -319,6 +431,9 @@ public sealed partial class OperatorActionTools
     [LoggerMessage(Level = LogLevel.Error, Message = "MCP {Action} of {EndpointId}/{EventId} failed while sending")]
     private static partial void LogMcpOfFailedWhileSending(ILogger logger, Exception exception, OperatorAction action, string endpointId, string eventId);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not audit a refused MCP classification recording on {EndpointId}")]
+    private static partial void LogMcpRecordingAuditFailed(ILogger logger, Exception exception, string endpointId);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "MCP {Action} of {EndpointId}/{EventId} accepted for {Caller}")]
     private static partial void LogMcpOfAccepted(ILogger logger, OperatorAction action, string endpointId, string eventId, string caller);
 }
@@ -341,6 +456,20 @@ public sealed record PrepareActionResult(
     string? Environment, DateTimeOffset AsOfUtc, string Action, string EndpointId, string EventId, string? SessionId,
     string ExpectedStatus, string MessageVersion, int AffectedMessages, int DeferredInSession, string Impact,
     string ActionToken, int ExpiresInSeconds);
+
+/// <summary>Result of <c>nimbus_record_classification</c>.</summary>
+/// <param name="Environment">The configured NimBus environment name.</param>
+/// <param name="AsOfUtc">When the result was produced.</param>
+/// <param name="EndpointId">The endpoint.</param>
+/// <param name="EventId">The message's event id.</param>
+/// <param name="MessageId">The failed attempt classified.</param>
+/// <param name="Existing">True when a stored classification was returned and nothing new was written.</param>
+/// <param name="Advisory">Always true: a classification never authorizes an action.</param>
+/// <param name="Classification">The stored classification, with the guidance NimBus composed.</param>
+/// <param name="Next">What to do next.</param>
+public sealed record RecordClassificationResult(
+    string? Environment, DateTimeOffset AsOfUtc, string EndpointId, string EventId, string MessageId,
+    bool Existing, bool Advisory, ClassificationInfo Classification, string Next);
 
 /// <summary>Result of an operator MCP tool that changes a message.</summary>
 /// <param name="Environment">The configured NimBus environment name.</param>

@@ -47,11 +47,13 @@ public sealed class IntegrationIntelligenceAuditMiddleware
         }
     }
 
+#pragma warning disable CS0618 // The deprecated analyze route stays audited until v5.0.0 (Spec 044 §6.10).
     private static bool IsClassificationPost(HttpContext context)
         => HttpMethods.IsPost(context.Request.Method)
             && context.GetEndpoint()?.Metadata.GetMetadata<ControllerActionDescriptor>() is { } descriptor
             && descriptor.ControllerTypeInfo == typeof(Controllers.IntegrationIntelligenceController).GetTypeInfo()
             && descriptor.ActionName == nameof(Controllers.IntegrationIntelligenceController.PostClassification);
+#pragma warning restore CS0618
 
     private static bool IsPreControllerRejection(int statusCode)
         => statusCode is StatusCodes.Status400BadRequest

@@ -141,7 +141,7 @@ public sealed class TestDiagnosticsTests
 
             var exception = await Assert.ThrowsExactlyAsync<AggregateException>(() => TestSteps.RunWithCleanupAsync(
                 () => steps.RunAsync("receive", TimeSpan.FromMilliseconds(100), () => never.Task),
-                () => emulator.DisposeAsync().AsTask()));
+                () => emulator.DisposeOrThrowAsync().AsTask()));
 
             Assert.HasCount(2, exception.InnerExceptions);
             StringAssert.Contains(exception.InnerExceptions[0].Message, "Step 'receive' did not finish within");
@@ -156,6 +156,96 @@ public sealed class TestDiagnosticsTests
                 Directory.Delete(directory, recursive: true);
             }
         }
+    }
+
+    [TestMethod]
+    [Timeout(30_000)]
+    public async Task The_default_emulator_dispose_logs_an_exit_timeout_and_does_not_throw()
+    {
+        if (System.Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_CS") is { Length: > 0 })
+        {
+            Assert.Inconclusive("An external emulator is configured; its process is not owned by the test.");
+        }
+
+        var directory = Path.Combine(Path.GetTempPath(), $"nimbus-sbemulator-dispose-{Guid.NewGuid():N}");
+        var journalPath = Path.Combine(directory, "topology.json");
+        var original = Console.Out;
+        using var captured = new StringWriter();
+        try
+        {
+            var emulator = await EmulatorProcess.StartAsync(journalPath, startupDeadline: TimeSpan.FromSeconds(20));
+            emulator.WaitForExitOverride = _ => false;
+
+            Console.SetOut(captured);
+            await emulator.DisposeAsync();
+        }
+        finally
+        {
+            Console.SetOut(original);
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+
+        var log = captured.ToString();
+        StringAssert.Contains(log, "[step] dispose emulator");
+        StringAssert.Contains(log, "did not exit within");
+        StringAssert.Contains(log, "Emulator output:");
+    }
+
+    [TestMethod]
+    [Timeout(10_000)]
+    public async Task Every_cleanup_runs_in_order_and_failures_are_reported_body_first()
+    {
+        var steps = new TestSteps(() => "trace");
+        var never = new TaskCompletionSource();
+        var ran = new List<string>();
+
+        var exception = await Assert.ThrowsExactlyAsync<AggregateException>(() => TestSteps.RunWithCleanupsAsync(
+            () => steps.RunAsync("delete topic", TimeSpan.FromMilliseconds(100), () => never.Task),
+            () =>
+            {
+                ran.Add("receiver");
+                return steps.RunAsync("dispose receiver", TimeSpan.FromMilliseconds(100), () => never.Task);
+            },
+            () =>
+            {
+                ran.Add("sender");
+                return Task.CompletedTask;
+            },
+            () =>
+            {
+                ran.Add("client");
+                return steps.RunAsync("dispose client", TimeSpan.FromMilliseconds(100), () => never.Task);
+            },
+            () =>
+            {
+                ran.Add("emulator");
+                return Task.CompletedTask;
+            }));
+
+        CollectionAssert.AreEqual(new[] { "receiver", "sender", "client", "emulator" }, ran);
+        Assert.HasCount(3, exception.InnerExceptions);
+        StringAssert.Contains(exception.InnerExceptions[0].Message, "Step 'delete topic' did not finish within");
+        StringAssert.Contains(exception.InnerExceptions[1].Message, "Step 'dispose receiver' did not finish within");
+        StringAssert.Contains(exception.InnerExceptions[2].Message, "Step 'dispose client' did not finish within");
+    }
+
+    [TestMethod]
+    [Timeout(10_000)]
+    public async Task A_single_failure_among_cleanups_is_rethrown_unchanged()
+    {
+        var steps = new TestSteps(() => "trace");
+        var never = new TaskCompletionSource();
+
+        var exception = await Assert.ThrowsExactlyAsync<TimeoutException>(() => TestSteps.RunWithCleanupsAsync(
+            () => Task.CompletedTask,
+            () => Task.CompletedTask,
+            () => steps.RunAsync("dispose sender", TimeSpan.FromMilliseconds(100), () => never.Task),
+            () => Task.CompletedTask));
+
+        StringAssert.Contains(exception.Message, "Step 'dispose sender' did not finish within");
     }
 
     [TestMethod]

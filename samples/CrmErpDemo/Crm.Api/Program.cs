@@ -45,6 +45,9 @@ else
 builder.Services.AddSingleton<ErrorModeState>();
 builder.Services.AddSingleton<CircuitStateStore>();
 
+// CloudEvents partner showcase: the switch that turns partner-portal's recurring leads on and off.
+builder.Services.AddSingleton(new PartnerLeadsState(PartnerLeadsState.EnabledAtStart(builder.Configuration)));
+
 // CORS for the Vite SPA.
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));

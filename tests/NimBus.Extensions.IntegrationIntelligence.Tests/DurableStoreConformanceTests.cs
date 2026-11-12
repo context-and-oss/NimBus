@@ -114,6 +114,39 @@ public sealed class DurableStoreConformanceTests
         Assert.HasCount(0, result.Snapshots);
     }
 
+    [TestMethod]
+    [DataRow("memory")]
+    [DataRow("sql")]
+    [DataRow("cosmos")]
+    public async Task Agent_Recordings_Round_Trip_Their_New_Fields_Beside_Version_One_Results(string provider)
+    {
+        // Spec 044 §6.4: the new fields are optional members of the JSON document; no migration.
+        await using var fixture = await StoreFixture.CreateAsync(provider);
+        var store = fixture.First;
+        var id = Guid.NewGuid().ToString("D");
+        var first = await store.ReserveAsync(id, Guid.NewGuid().ToString("D"), false, fixture.Clock.Now, Scope(id));
+        await store.CompleteAsync(first.OperationId, Result(id, first.Revision));
+        var second = await store.ReserveAsync(id, Guid.NewGuid().ToString("D"), true, fixture.Clock.Now, Scope(id));
+        var agent = Result(id, second.Revision) with
+        {
+            Provider = "Agent", Model = "unspecified", QuestionSetVersion = 2, FaultOrigin = "source_data",
+            FaultOriginConfidence = 0.75, ClientId = "44444444-4444-4444-4444-444444444444", Rationale = "Field customerId is empty.",
+        };
+        await store.CompleteAsync(second.OperationId, agent);
+
+        var history = await fixture.Second.GetHistoryAsync(id);
+
+        Assert.HasCount(2, history);
+        Assert.AreEqual("Agent", history[0].Provider);
+        Assert.AreEqual("source_data", history[0].FaultOrigin);
+        Assert.AreEqual(0.75, history[0].FaultOriginConfidence);
+        Assert.AreEqual(agent.ClientId, history[0].ClientId);
+        Assert.AreEqual(agent.Rationale, history[0].Rationale);
+        Assert.AreEqual("TypeSafe", history[1].Provider);
+        Assert.IsNull(history[1].FaultOrigin);
+        Assert.IsNull(history[1].Rationale);
+    }
+
     private static ClassificationScope Scope(string id) => new(id, "event", "endpoint", "session");
 
     private static async Task<string> CompleteAsync(IFailureClassificationStore store, string id, DateTimeOffset now)

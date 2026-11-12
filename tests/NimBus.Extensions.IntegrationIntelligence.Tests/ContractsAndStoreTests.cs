@@ -89,11 +89,52 @@ public sealed class ContractsAndStoreTests
     [TestMethod]
     public void QuestionSet_Contains_All_Version_One_Questions()
     {
-        Assert.AreEqual(1, FailureClassificationQuestionSet.Version);
+        // Spec 044 §6.2: the deprecated provider keeps asking version 1; agents answer version 2,
+        // which keeps the four version 1 questions and adds fault_origin.
+        Assert.AreEqual(1, FailureClassificationQuestionSet.ProviderVersion);
         CollectionAssert.AreEquivalent(
             QuestionIds,
+            FailureClassificationQuestionSet.ProviderItems.Keys.ToArray());
+        CollectionAssert.AreEquivalent(
+            QuestionIds.Append("fault_origin").ToArray(),
             FailureClassificationQuestionSet.Items.Keys.ToArray());
         CollectionAssert.Contains(FailureClassificationQuestionSet.Items["failure_category"].Criteria!.Keys.ToArray(), "unknown");
+    }
+
+    [TestMethod]
+    public void Provider_Question_Wire_Format_Is_Unchanged()
+    {
+        // The typed choices serialize exactly as the anonymous objects they replaced.
+        var json = System.Text.Json.JsonSerializer.Serialize(FailureClassificationQuestionSet.ProviderItems["failure_category"].Criteria!["unknown"]);
+        Assert.AreEqual("{\"what\":\"There is insufficient evidence or no category fits.\",\"examples\":[]}", json);
+    }
+
+    [TestMethod]
+    [DataRow(0.59, 0.90, 0.00, "transient_dependency")]
+    [DataRow(0.90, 0.10, 0.90, "business_rule")]
+    public void Compose_Overload_Matches_The_Provider_Result_Overload(double confidence, double retry, double changeRequired, string category)
+    {
+        var options = new FailureClassificationOptions();
+        var result = new FailureIntelligenceProviderResult(category, category, confidence, new Dictionary<string, double> { [category] = 1 }, retry, changeRequired, 0, null, null);
+        Assert.AreEqual(FailureGuidanceRules.Compose(result, options), FailureGuidanceRules.Compose(category, confidence, retry, changeRequired, options));
+    }
+
+    [TestMethod]
+    public void Version_One_Json_Reads_With_No_Origin_And_New_Fields_Round_Trip()
+    {
+        var v1 = Newtonsoft.Json.JsonConvert.SerializeObject(CreateResult(1));
+        var read = Newtonsoft.Json.JsonConvert.DeserializeObject<FailureClassification>(v1)!;
+        Assert.IsNull(read.FaultOrigin);
+        Assert.IsNull(read.FaultOriginConfidence);
+        Assert.IsNull(read.ClientId);
+        Assert.IsNull(read.Rationale);
+
+        var agent = CreateResult(2) with { Provider = "Agent", FaultOrigin = "adapter_code", FaultOriginConfidence = 0.7, ClientId = "c", Rationale = "r" };
+        var back = Newtonsoft.Json.JsonConvert.DeserializeObject<FailureClassification>(Newtonsoft.Json.JsonConvert.SerializeObject(agent))!;
+        Assert.AreEqual("adapter_code", back.FaultOrigin);
+        Assert.AreEqual(0.7, back.FaultOriginConfidence);
+        Assert.AreEqual("c", back.ClientId);
+        Assert.AreEqual("r", back.Rationale);
     }
 
     private static FailureClassification CreateResult(int revision)

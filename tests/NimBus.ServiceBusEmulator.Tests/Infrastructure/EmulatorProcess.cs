@@ -50,11 +50,13 @@ internal sealed class EmulatorProcess : IAsyncDisposable
     /// <summary>
     /// Starts the emulator, retrying on a new port up to three times, all within
     /// <paramref name="startupDeadline"/> (default <see cref="DefaultStartupDeadline"/>).
+    /// <paramref name="environment"/> adds environment variables to the emulator process.
     /// A failure carries the emulator output of the last launch attempt.
     /// </summary>
     public static async Task<EmulatorProcess> StartAsync(
         string? journalPath = null,
         bool deleteJournalOnDispose = true,
+        IReadOnlyDictionary<string, string>? environment = null,
         TimeSpan? startupDeadline = null)
     {
         if (System.Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_CS") is { Length: > 0 } existing)
@@ -73,7 +75,7 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         while (launches < MaxLaunches && (launches == 0 || clock.Elapsed < deadline))
         {
             launches++;
-            var attempt = await StartOnceAsync(journalPath, deleteJournalOnDispose, clock, deadline);
+            var attempt = await StartOnceAsync(journalPath, deleteJournalOnDispose, environment, clock, deadline);
             if (attempt.Instance is { } instance)
             {
                 Console.WriteLine($"[step] emulator startup: {clock.ElapsedMilliseconds} ms ({launches} launch attempt(s))");
@@ -105,6 +107,7 @@ internal sealed class EmulatorProcess : IAsyncDisposable
     private static async Task<StartAttempt> StartOnceAsync(
         string? journalPath,
         bool deleteJournalOnDispose,
+        IReadOnlyDictionary<string, string>? environment,
         Stopwatch clock,
         TimeSpan deadline)
     {
@@ -123,6 +126,11 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         };
         startInfo.Environment["NIMBUS_SBEMULATOR_TOPOLOGY_PATH"] = journalPath;
         startInfo.Environment["NIMBUS_SBEMULATOR_DIAGNOSTICS"] = "1";
+        foreach (var (name, value) in environment ?? new Dictionary<string, string>())
+        {
+            startInfo.Environment[name] = value;
+        }
+
         var process = Process.Start(startInfo);
         if (process is null)
         {
@@ -216,25 +224,56 @@ internal sealed class EmulatorProcess : IAsyncDisposable
     }
 
     /// <summary>
-    /// Disposes the emulator as the named step "dispose emulator". If the process does not
-    /// exit within <see cref="ExitTimeout"/> after being killed, it throws a
-    /// <see cref="TimeoutException"/> naming the step and carrying the emulator output, and
-    /// leaves the journal in place.
+    /// Disposes the emulator as the logged step "dispose emulator", and never throws on an
+    /// exit timeout. Callers use <c>await using</c>, where a throwing dispose would replace the
+    /// body's exception. If the process does not exit within <see cref="ExitTimeout"/> after
+    /// being killed, the timeout is written to the test output with the emulator output, and
+    /// the journal is left in place. Use <see cref="DisposeOrThrowAsync"/> to fail on it instead.
     /// </summary>
     public ValueTask DisposeAsync()
     {
+        if (DisposeCore() is { } exitTimeout)
+        {
+            Console.WriteLine($"[step] dispose emulator: {exitTimeout}");
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Disposes the emulator like <see cref="DisposeAsync"/>, but throws a
+    /// <see cref="TimeoutException"/> naming the step "dispose emulator" and carrying the
+    /// emulator output when the process does not exit within <see cref="ExitTimeout"/> of
+    /// being killed. Opt in only where the dispose runs as a failure-preserving cleanup
+    /// (<c>TestSteps.RunWithCleanupsAsync</c>), never under <c>await using</c>.
+    /// </summary>
+    public ValueTask DisposeOrThrowAsync()
+    {
+        if (DisposeCore() is { } exitTimeout)
+        {
+            throw new TimeoutException($"Step 'dispose emulator' did not finish: {exitTimeout}");
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Kills the process and, if it exited, deletes the journal when configured to. Returns
+    /// null on success, or a description of the exit timeout with the emulator output.
+    /// </summary>
+    private string? DisposeCore()
+    {
         if (_process is null)
         {
-            return ValueTask.CompletedTask;
+            return null;
         }
 
         var watch = Stopwatch.StartNew();
         if (!KillProcess())
         {
-            throw new TimeoutException(
-                $"Step 'dispose emulator' did not finish: the emulator process did not exit within " +
+            return $"the emulator process did not exit within " +
                 $"{ExitTimeout.TotalSeconds:0.###} s of being killed ({watch.ElapsedMilliseconds} ms); " +
-                $"its journal was left at '{_journalPath}'. Emulator output:{System.Environment.NewLine}{DumpOutput()}");
+                $"its journal was left at '{_journalPath}'. Emulator output:{System.Environment.NewLine}{DumpOutput()}";
         }
 
         if (_deleteJournalOnDispose && _journalPath is not null)
@@ -243,7 +282,7 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         }
 
         Console.WriteLine($"[step] dispose emulator: {watch.ElapsedMilliseconds} ms");
-        return ValueTask.CompletedTask;
+        return null;
     }
 
     /// <summary>How long a kill waits for the emulator process to exit.</summary>
