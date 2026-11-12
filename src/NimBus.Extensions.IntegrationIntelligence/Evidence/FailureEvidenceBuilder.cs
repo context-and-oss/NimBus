@@ -66,12 +66,12 @@ public sealed class FailureEvidenceBuilder
                 ScrubSourceText(target, error?.ErrorText),
                 CleanSource(error?.ExceptionSource)),
             DeadLetterReason = ScrubSourceText(target, target.DeadLetterReason),
-            SourceEndpoint = Blank(current.From) ?? Blank(target.From),
-            OriginatingEndpoint = OriginatingEndpoint(current.OriginatingFrom ?? target.OriginatingFrom, current.From ?? target.From),
         };
 
         var history = _options.Data.IncludeRecentFailureHistory
             ? await _messages.GetEventHistory(eventId).ConfigureAwait(false) : [];
+        var (source, originating) = Senders(target, current, history);
+        input = input with { SourceEndpoint = source, OriginatingEndpoint = originating };
         var priorFailures = history
             .Where(row => string.Equals(row.EndpointId, target.EndpointId, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(row.SessionId, target.SessionId, StringComparison.Ordinal)
@@ -133,22 +133,39 @@ public sealed class FailureEvidenceBuilder
     {
         ArgumentNullException.ThrowIfNull(row);
         ArgumentNullException.ThrowIfNull(text);
+        // Fail closed, as for error text: without a payload whose sensitive values can be read,
+        // nothing proves the text is free of them, so it is not stored.
         var payload = row.MessageContent?.EventContent?.EventJson;
+        if (string.IsNullOrWhiteSpace(payload) || !_masker.TryCollectSensitiveValues(row.EventTypeId, payload, out var values))
+            return null;
         var scrubbed = text;
-        if (!string.IsNullOrWhiteSpace(payload))
-        {
-            // Fail closed: text about a payload whose sensitive values can't be read is not stored.
-            if (!_masker.TryCollectSensitiveValues(row.EventTypeId, payload, out var values)) return null;
-            foreach (var value in values.Where(value => !string.IsNullOrWhiteSpace(value)).OrderByDescending(value => value.Length))
-                scrubbed = scrubbed.Replace(value, EventJsonMasker.DefaultRedactToken, StringComparison.Ordinal);
-        }
+        foreach (var value in values.Where(value => !string.IsNullOrWhiteSpace(value)).OrderByDescending(value => value.Length))
+            scrubbed = scrubbed.Replace(value, EventJsonMasker.DefaultRedactToken, StringComparison.Ordinal);
         return IntelligenceDataRedactor.ScrubText(scrubbed, maximumLength);
     }
 
-    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+    /// <summary>
+    /// The endpoint that sent the failed event and, when it differs, the one it originated from.
+    /// A failure row's <c>From</c> is the subscriber that answered with the error, so the sender
+    /// is read from the event request that reached this endpoint, else from the publisher
+    /// captured at publish time (<c>OriginatingFrom</c>).
+    /// </summary>
+    private static (string? Source, string? Originating) Senders(MessageEntity target, UnresolvedEvent current, IEnumerable<MessageEntity> history)
+    {
+        var originating = Endpoint(current.OriginatingFrom) ?? Endpoint(target.OriginatingFrom);
+        var request = history
+            .Where(row => row.MessageType == MessageType.EventRequest
+                && string.Equals(row.EndpointId, target.EndpointId, StringComparison.OrdinalIgnoreCase)
+                && row.EnqueuedTimeUtc <= target.EnqueuedTimeUtc)
+            .OrderByDescending(row => row.EnqueuedTimeUtc)
+            .Select(row => Endpoint(row.From))
+            .FirstOrDefault(from => from is not null);
+        var source = request ?? originating;
+        return (source, string.Equals(originating, source, StringComparison.OrdinalIgnoreCase) ? null : originating);
+    }
 
-    private static string? OriginatingEndpoint(string? originating, string? from)
-        => string.IsNullOrWhiteSpace(originating) || string.Equals(originating, from, StringComparison.OrdinalIgnoreCase) ? null : originating;
+    private static string? Endpoint(string? value)
+        => string.IsNullOrWhiteSpace(value) || string.Equals(value, Constants.Self, StringComparison.OrdinalIgnoreCase) ? null : value;
 
     private static string? CleanSource(string? source)
         => string.IsNullOrWhiteSpace(source) ? null : source.Split([',', '\n', '\r'], 2)[0].Trim();

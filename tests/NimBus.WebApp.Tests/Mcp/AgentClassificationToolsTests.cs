@@ -200,6 +200,20 @@ public class AgentClassificationToolsTests
 
         AssertError(result, code);
         Assert.IsNull(await store.GetLatestOperationAsync(Attempt));
+        var rows = host.Get<McpTestHost.RecordingAuditLog>().Rows;
+        switch (refusal)
+        {
+            case "contributor":
+                var denied = rows.Single(r => r.Type == MessageAuditType.FailureClassified);
+                Assert.IsTrue(denied.Denied);
+                StringAssert.Contains(denied.Data, "\"provider\":\"Agent\"", StringComparison.Ordinal);
+                break;
+            case "hidden-endpoint":
+                var refused = rows.Single(r => r.Type == MessageAuditType.McpAccessRefused);
+                Assert.IsTrue(refused.Denied);
+                StringAssert.Contains(refused.Data, "\"reason\":\"endpoint\"", StringComparison.Ordinal);
+                break;
+        }
     }
 
     [TestMethod]
@@ -389,7 +403,22 @@ public class AgentClassificationToolsTests
 
     private static async Task SeedFailureAsync(McpTestHost host, ResolutionStatus status = ResolutionStatus.Failed)
     {
+        // Shaped as the Resolver writes them: the request comes from the publisher, and the error
+        // response comes from the subscriber that failed, with the publisher in OriginatingFrom.
         var store = host.Get<InMemoryMessageStore>();
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = EventId,
+            MessageId = "req-1",
+            EndpointId = Endpoint,
+            SessionId = Session,
+            MessageType = MessageType.EventRequest,
+            EnqueuedTimeUtc = DateTime.UtcNow.AddSeconds(-5),
+            EventTypeId = "CustomerChanged",
+            From = "PartnerPortal",
+            To = Endpoint,
+            OriginatingFrom = "PartnerPortal",
+        });
         await store.StoreMessage(new MessageEntity
         {
             EventId = EventId,
@@ -399,8 +428,9 @@ public class AgentClassificationToolsTests
             MessageType = MessageType.ErrorResponse,
             EnqueuedTimeUtc = DateTime.UtcNow,
             EventTypeId = "CustomerChanged",
-            From = "PartnerPortal",
-            To = Endpoint,
+            From = Endpoint,
+            To = "Resolver",
+            OriginatingFrom = "PartnerPortal",
             MessageContent = new MessageContent
             {
                 EventContent = new EventContent { EventJson = $"{{\"name\":\"{Sensitive}\"}}", EventTypeId = "CustomerChanged" },

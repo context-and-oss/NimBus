@@ -213,6 +213,10 @@ public sealed class OperatorActionAccess
         return user is not null && McpOperatorPermissions.HasDelegatedScope(user, ScopeOf(action));
     }
 
+    /// <summary>Audits a refusal of <paramref name="action"/> as <c>McpAccessRefused</c>, deduplicated per window.</summary>
+    public Task RecordRefusalAsync(McpRefusalReason reason, OperatorAction action, string? endpointId)
+        => RecordAsync(reason, action, endpointId);
+
     private Task RecordAsync(McpRefusalReason reason, OperatorAction action, string? endpointId)
     {
         var http = _httpContextAccessor.HttpContext;

@@ -1,5 +1,6 @@
 #pragma warning disable CA1707, CA2007
 using System.Reflection;
+using NimBus.Core.Messages;
 using NimBus.Extensions.IntegrationIntelligence.Evidence;
 using NimBus.Extensions.IntegrationIntelligence.Storage;
 using NimBus.MessageStore;
@@ -222,20 +223,62 @@ public sealed class RecorderTests
     }
 
     [TestMethod]
-    public async Task Evidence_Carries_The_Input_Senders_And_Latest_Result_For_A_Reader()
+    public async Task Evidence_Names_The_Publisher_Not_The_Failing_Subscriber_As_The_Source()
     {
+        // The Resolver writes a failure row from the ErrorResponse: From is the subscriber that
+        // failed, OriginatingFrom the publisher captured at publish time.
         var fixture = new RecorderFixture();
         fixture.Host.Contributor = false;
-        fixture.Source.Current.From = "CrmEndpoint";
-        fixture.Source.Current.OriginatingFrom = "PartnerPortal";
+        fixture.Source.Current.From = "endpoint";
+        fixture.Source.Message.From = "endpoint";
+        fixture.Source.Current.OriginatingFrom = "CrmEndpoint";
 
         var evidence = await fixture.Recorder.GetEvidenceAsync("endpoint", "event", "failure", default);
 
         Assert.AreEqual("failure", evidence.Input.MessageId);
         Assert.AreEqual("CrmEndpoint", evidence.Input.SourceEndpoint);
-        Assert.AreEqual("PartnerPortal", evidence.Input.OriginatingEndpoint);
+        Assert.IsNull(evidence.Input.OriginatingEndpoint, "The originating endpoint is the source itself.");
         Assert.IsNull(evidence.Input.EventPayloadJson, "The payload switch is off by default.");
         Assert.IsNull(evidence.Latest);
+    }
+
+    [TestMethod]
+    public async Task Evidence_Takes_The_Sender_From_The_Event_Request_And_Names_A_Different_Originator()
+    {
+        var fixture = new RecorderFixture();
+        fixture.Source.Current.From = "endpoint";
+        fixture.Source.Current.OriginatingFrom = "PartnerPortal";
+        fixture.Source.Message.EnqueuedTimeUtc = DateTime.UtcNow;
+        fixture.Source.History.Add(new MessageEntity
+        {
+            EventId = "event", MessageId = "request", EndpointId = "endpoint", MessageType = MessageType.EventRequest,
+            From = "CrmEndpoint", To = "endpoint", EnqueuedTimeUtc = DateTime.UtcNow.AddMinutes(-1),
+        });
+
+        var evidence = await fixture.Recorder.GetEvidenceAsync("endpoint", "event", "failure", default);
+
+        Assert.AreEqual("CrmEndpoint", evidence.Input.SourceEndpoint);
+        Assert.AreEqual("PartnerPortal", evidence.Input.OriginatingEndpoint);
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task A_Rationale_That_Cannot_Be_Checked_Against_A_Payload_Is_Refused(bool noEventContent)
+    {
+        // Fail closed like error text: without a readable payload nothing proves the rationale is
+        // free of values marked sensitive.
+        var fixture = new RecorderFixture();
+        if (noEventContent) fixture.Source.Message.MessageContent.EventContent = null!;
+        else fixture.Source.Message.MessageContent.EventContent!.EventJson = " ";
+
+        var error = await Assert.ThrowsExactlyAsync<ClassificationServiceException>(() =>
+            fixture.Recorder.RecordAsync(Answers() with { Rationale = "Customer sensitive-long-value has no address." }, default));
+        var withoutRationale = await fixture.Recorder.RecordAsync(Answers(), default);
+
+        Assert.AreEqual("InvalidRecording", error.Code);
+        Assert.IsNull(withoutRationale.Result.Rationale);
+        Assert.HasCount(1, await fixture.Store.GetHistoryAsync("failure"), "Only the recording without a rationale was stored.");
     }
 
     [TestMethod]

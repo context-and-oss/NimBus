@@ -30,6 +30,7 @@ public sealed partial class OperatorActionTools
     private readonly IMessageTrackingStore _store;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<OperatorActionTools> _logger;
+    private readonly NimBus.WebApp.Services.IAuditLogService _audit;
 
     /// <summary>Creates the tools for one request.</summary>
     public OperatorActionTools(
@@ -42,8 +43,10 @@ public sealed partial class OperatorActionTools
         IOperatorClassificationSource classifications,
         IMessageTrackingStore store,
         IHttpContextAccessor httpContextAccessor,
-        ILogger<OperatorActionTools> logger)
+        ILogger<OperatorActionTools> logger,
+        NimBus.WebApp.Services.IAuditLogService audit)
     {
+        _audit = audit;
         _catalog = catalog;
         _commands = commands;
         _access = access;
@@ -178,10 +181,21 @@ public sealed partial class OperatorActionTools
         if (!_classifications.CanRecord)
             throw OperatorToolErrors.FeatureUnavailable(OperatorClassificationSource.NotRecordable);
 
-        var endpoint = await _catalog.RequireReadableAsync(endpointId).ConfigureAwait(false);
+        // Spec 044 §6.12: a hidden endpoint and a missing Contributor role are refused and audited.
+        // The hidden endpoint still answers like a missing one (Spec 037).
+        if (_catalog.IsHidden(endpointId?.Trim()))
+        {
+            await _access.RecordRefusalAsync(NimBus.WebApp.Mcp.Access.McpRefusalReason.Endpoint, OperatorAction.Classify, endpointId!.Trim()).ConfigureAwait(false);
+            throw OperatorToolErrors.EndpointNotFound(endpointId);
+        }
+
+        var endpoint = await _catalog.RequireReadableAsync(endpointId!).ConfigureAwait(false);
         await _access.RequireChangeAllowedOnAsync(OperatorAction.Classify, endpoint).ConfigureAwait(false);
         if (!await _access.MayFreshAsync(OperatorAction.Classify, endpoint).ConfigureAwait(false))
+        {
+            await AuditRecordingDeniedAsync(endpoint, eventId, messageId).ConfigureAwait(false);
             throw OperatorToolErrors.PermissionDenied($"Recording a classification requires the Contributor role on endpoint '{endpoint}'.");
+        }
         var id = RequireEventId(eventId);
         var key = RequireGuid(idempotencyKey);
         if (string.IsNullOrWhiteSpace(messageId))
@@ -311,6 +325,32 @@ public sealed partial class OperatorActionTools
         return Accepted(kind, endpoint, grant.EventId, commandSent: true);
     }
 
+    /// <summary>
+    /// Audits a recording refused for a missing Contributor role as a denied
+    /// <c>FailureClassified</c>, as the recorder audits its own refusals. Best-effort.
+    /// </summary>
+    private async Task AuditRecordingDeniedAsync(string endpoint, string? eventId, string? messageId)
+    {
+        var (_, _, client) = OperatorActionTokens.Identify(User());
+        var data = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            messageId = messageId?.Trim(),
+            provider = NimBus.Extensions.IntegrationIntelligence.FailureClassificationProviders.Agent,
+            clientId = client,
+            outcome = "Rejected",
+            reason = "Forbidden",
+        });
+        try
+        {
+            await _audit.LogAuditAsync(NimBus.MessageStore.MessageAuditType.FailureClassified, Http(), accessDenied: true, data: data,
+                eventId: eventId?.Trim(), endpointId: endpoint).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            LogMcpRecordingAuditFailed(_logger, ex, endpoint);
+        }
+    }
+
     private async Task<OperatorCommandTarget> FindAsync(string endpoint, string eventId)
     {
         var lookup = await _commands.FindCurrentAsync(endpoint, eventId).ConfigureAwait(false);
@@ -390,6 +430,9 @@ public sealed partial class OperatorActionTools
 
     [LoggerMessage(Level = LogLevel.Error, Message = "MCP {Action} of {EndpointId}/{EventId} failed while sending")]
     private static partial void LogMcpOfFailedWhileSending(ILogger logger, Exception exception, OperatorAction action, string endpointId, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not audit a refused MCP classification recording on {EndpointId}")]
+    private static partial void LogMcpRecordingAuditFailed(ILogger logger, Exception exception, string endpointId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "MCP {Action} of {EndpointId}/{EventId} accepted for {Caller}")]
     private static partial void LogMcpOfAccepted(ILogger logger, OperatorAction action, string endpointId, string eventId, string caller);

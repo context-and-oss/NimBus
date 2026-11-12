@@ -221,12 +221,13 @@ public class MessageSource : DispatchProxy
     public bool Throw { get; set; }
     public bool Deleted { get; set; }
     public int HistoryReads { get; private set; }
+    public List<MessageEntity> History { get; } = [];
     protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
     {
         if (Throw) throw new InvalidOperationException("credential must never leak");
         if (targetMethod!.Name == "GetMessage") return Task.FromResult(Message);
         if (targetMethod.Name == "GetEvent") return Task.FromResult(Deleted ? null! : Current);
-        if (targetMethod.Name == "GetEventHistory") { HistoryReads++; return Task.FromResult<IEnumerable<MessageEntity>>([]); }
+        if (targetMethod.Name == "GetEventHistory") { HistoryReads++; return Task.FromResult<IEnumerable<MessageEntity>>(History.ToList()); }
         throw new NotSupportedException(targetMethod.Name);
     }
 }
