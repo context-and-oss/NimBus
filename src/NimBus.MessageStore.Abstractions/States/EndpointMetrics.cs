@@ -72,6 +72,13 @@ public class FailedMessageInfo
     /// event id finds nothing on Cosmos). Null when a provider does not project it.
     /// </summary>
     public string? SessionId { get; set; }
+
+    /// <summary>
+    /// The endpoint that published the failed event (<c>OriginatingFrom</c>), for grouping
+    /// source-data failures by source (Spec 044 Phase 3). Null when a provider does not project it
+    /// or the message carries none.
+    /// </summary>
+    public string? OriginatingFrom { get; set; }
 }
 
 public class EndpointLatencyMetricsResult

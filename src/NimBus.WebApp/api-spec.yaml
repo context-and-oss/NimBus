@@ -6141,6 +6141,12 @@ components:
           description: Occurrences grouped by saved recovery guidance. Null unless enrichment is available.
           items:
             $ref: '#/components/schemas/InsightGroup'
+        faultOriginGroups:
+          type: array
+          nullable: true
+          description: Occurrences grouped by the fault origin agents recorded (Spec 044 Phase 3) - source_data, adapter_code, target_system, configuration, platform, unknown - plus notAssessed (question set version 1), uncertain, notAnalyzed and notEligible. Null unless enrichment is available.
+          items:
+            $ref: '#/components/schemas/InsightGroup'
     InsightsEnrichmentStatus:
       title: InsightsEnrichmentStatus
       type: string
@@ -6194,6 +6200,12 @@ components:
           type: array
           items:
             type: string
+        sources:
+          type: array
+          nullable: true
+          description: The publishing endpoints of the group's failures with their counts, most first (Spec 044 Phase 3) - the data-quality view for a source's owner.
+          items:
+            $ref: '#/components/schemas/InsightSourceCount'
         latestOccurrence:
           type: string
           format: date-time
@@ -6205,6 +6217,16 @@ components:
         morePatterns:
           type: integer
           description: Distinct error patterns in the group beyond topPatterns.
+    InsightSourceCount:
+      title: InsightSourceCount
+      type: object
+      properties:
+        endpointId:
+          type: string
+        eventTypeId:
+          type: string
+        count:
+          type: integer
     InsightsPerspective:
       title: InsightsPerspective
       type: string
@@ -6212,6 +6234,7 @@ components:
         - errorPattern
         - cause
         - guidance
+        - faultOrigin
     InsightAnalysisState:
       title: InsightAnalysisState
       type: string

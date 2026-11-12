@@ -89,6 +89,51 @@ public sealed partial class FailedInsightsServiceTests
     }
 
     [TestMethod]
+    public async Task Failures_group_by_fault_origin_with_their_sources_and_version_1_results_are_not_assessed()
+    {
+        // Spec 044 Phase 3 §8.5: the data-quality view for a source's owner.
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "m1", "Country 'Denmark' is not ISO alpha-2", minutesAgo: 30, publisher: "crm");
+        await Fail(store, "orders", "e2", "m2", "Country 'Sweden' is not ISO alpha-2", minutesAgo: 25, publisher: "crm");
+        await Fail(store, "orders", "e3", "m3", "Customer 4712 not found", minutesAgo: 20, publisher: "partner");
+        var enrichment = new FakeEnrichment();
+        foreach (var (message, eventId) in new[] { ("m1", "e1"), ("m2", "e2") })
+        {
+            enrichment.Save(Result(message, eventId, "orders", "contract_schema", FailureGuidance.ChangeLikelyRequired) with
+            {
+                Provider = FailureClassificationProviders.Agent, QuestionSetVersion = 2, FaultOrigin = "source_data", FaultOriginConfidence = 0.9,
+            });
+        }
+        enrichment.Save(Result("m3", "e3", "orders", "missing_reference_data", FailureGuidance.Investigate));
+
+        var overview = await Build(store, enrichment);
+        var page = await Service(store, enrichment).GetOccurrencesAsync(new FailedInsightsPageRequest(From, To, null, InsightsPerspective.FaultOrigin,
+            "source_data", 10, null));
+
+        var sourceData = Group(overview.FaultOriginGroups, "source_data");
+        Assert.AreEqual(2, sourceData.Count);
+        Assert.AreEqual("Source data", sourceData.Label);
+        Assert.AreEqual("crm", sourceData.Sources!.Single().EndpointId);
+        Assert.AreEqual(2, sourceData.Sources!.Single().Count);
+        Assert.AreEqual(1, Group(overview.FaultOriginGroups, "notAssessed").Count, "A version 1 result has no origin.");
+        Assert.AreEqual(FailedInsightsQueryStatus.Ok, page.Status, page.Error);
+        Assert.AreEqual(2, page.Page!.Occurrences!.Count);
+    }
+
+    [TestMethod]
+    public async Task An_unknown_fault_origin_group_key_is_refused()
+    {
+        var store = new CountingStore();
+        await Fail(store, "orders", "e1", "m1", "Timeout", minutesAgo: 30);
+        var enrichment = new FakeEnrichment();
+
+        var page = await Service(store, enrichment).GetOccurrencesAsync(new FailedInsightsPageRequest(From, To, null, InsightsPerspective.FaultOrigin,
+            "cosmic_rays", 10, null));
+
+        Assert.AreEqual(FailedInsightsQueryStatus.BadRequest, page.Status);
+    }
+
+    [TestMethod]
     public async Task Coverage_partitions_and_every_perspective_reconcile_for_a_mixed_scope()
     {
         var store = new CountingStore();
@@ -607,9 +652,10 @@ public sealed partial class FailedInsightsServiceTests
         => groups!.Single(g => g.GroupKey == key);
 
     private static Task Fail(InMemoryMessageStore store, string endpointId, string eventId, string messageId, string errorText,
-        int minutesAgo = 60, DateTime? at = null, string sessionId = "s1")
+        int minutesAgo = 60, DateTime? at = null, string sessionId = "s1", string? publisher = null)
         => store.StoreMessage(new MessageEntity
         {
+            OriginatingFrom = publisher!,
             EventId = eventId,
             MessageId = messageId,
             SessionId = sessionId,

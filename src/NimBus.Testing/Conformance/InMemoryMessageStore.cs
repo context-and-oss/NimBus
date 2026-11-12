@@ -1397,6 +1397,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
                 EventId = m.EventId,
                 MessageId = m.MessageId,
                 SessionId = m.SessionId,
+                OriginatingFrom = m.OriginatingFrom,
             })
             .ToList();
 

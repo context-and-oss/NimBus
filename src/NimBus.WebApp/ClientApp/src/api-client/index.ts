@@ -15942,6 +15942,8 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
     causeGroups?: InsightGroup[] | undefined;
     /** Occurrences grouped by saved recovery guidance. Null unless enrichment is available. */
     guidanceGroups?: InsightGroup[] | undefined;
+    /** Occurrences grouped by the fault origin agents recorded (Spec 044 Phase 3) - source_data, adapter_code, target_system, configuration, platform, unknown - plus notAssessed (question set version 1), uncertain, notAnalyzed and notEligible. Null unless enrichment is available. */
+    faultOriginGroups?: InsightGroup[] | undefined;
 
     [key: string]: any;
 
@@ -15986,6 +15988,11 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
                 for (let item of _data["guidanceGroups"])
                     this.guidanceGroups!.push(InsightGroup.fromJS(item));
             }
+            if (Array.isArray(_data["faultOriginGroups"])) {
+                this.faultOriginGroups = [] as any;
+                for (let item of _data["faultOriginGroups"])
+                    this.faultOriginGroups!.push(InsightGroup.fromJS(item));
+            }
         }
     }
 
@@ -16028,6 +16035,11 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
             for (let item of this.guidanceGroups)
                 data["guidanceGroups"].push(item ? item.toJSON() : undefined as any);
         }
+        if (Array.isArray(this.faultOriginGroups)) {
+            data["faultOriginGroups"] = [];
+            for (let item of this.faultOriginGroups)
+                data["faultOriginGroups"].push(item ? item.toJSON() : undefined as any);
+        }
         return data;
     }
 
@@ -16065,6 +16077,8 @@ export interface IFailedInsightsOverview {
     causeGroups?: InsightGroup[] | undefined;
     /** Occurrences grouped by saved recovery guidance. Null unless enrichment is available. */
     guidanceGroups?: InsightGroup[] | undefined;
+    /** Occurrences grouped by the fault origin agents recorded (Spec 044 Phase 3) - source_data, adapter_code, target_system, configuration, platform, unknown - plus notAssessed (question set version 1), uncertain, notAnalyzed and notEligible. Null unless enrichment is available. */
+    faultOriginGroups?: InsightGroup[] | undefined;
 
     [key: string]: any;
 }
@@ -16170,6 +16184,8 @@ export class InsightGroup implements IInsightGroup {
     coverage?: InsightsCoverage | undefined;
     endpoints?: string[];
     eventTypes?: string[];
+    /** The publishing endpoints of the group's failures with their counts, most first (Spec 044 Phase 3) - the data-quality view for a source's owner. */
+    sources?: InsightSourceCount[] | undefined;
     latestOccurrence?: moment.Moment;
     /** The group's most frequent error patterns, at most the configured limit. */
     topPatterns?: InsightGroupPattern[];
@@ -16206,6 +16222,11 @@ export class InsightGroup implements IInsightGroup {
                 this.eventTypes = [] as any;
                 for (let item of _data["eventTypes"])
                     this.eventTypes!.push(item);
+            }
+            if (Array.isArray(_data["sources"])) {
+                this.sources = [] as any;
+                for (let item of _data["sources"])
+                    this.sources!.push(InsightSourceCount.fromJS(item));
             }
             this.latestOccurrence = _data["latestOccurrence"] ? moment(_data["latestOccurrence"].toString()) : undefined as any;
             if (Array.isArray(_data["topPatterns"])) {
@@ -16244,6 +16265,11 @@ export class InsightGroup implements IInsightGroup {
             for (let item of this.eventTypes)
                 data["eventTypes"].push(item);
         }
+        if (Array.isArray(this.sources)) {
+            data["sources"] = [];
+            for (let item of this.sources)
+                data["sources"].push(item ? item.toJSON() : undefined as any);
+        }
         data["latestOccurrence"] = this.latestOccurrence ? this.latestOccurrence.toISOString() : undefined as any;
         if (Array.isArray(this.topPatterns)) {
             data["topPatterns"] = [];
@@ -16271,6 +16297,8 @@ export interface IInsightGroup {
     coverage?: InsightsCoverage | undefined;
     endpoints?: string[];
     eventTypes?: string[];
+    /** The publishing endpoints of the group's failures with their counts, most first (Spec 044 Phase 3) - the data-quality view for a source's owner. */
+    sources?: InsightSourceCount[] | undefined;
     latestOccurrence?: moment.Moment;
     /** The group's most frequent error patterns, at most the configured limit. */
     topPatterns?: InsightGroupPattern[];
@@ -16280,10 +16308,74 @@ export interface IInsightGroup {
     [key: string]: any;
 }
 
+export class InsightSourceCount implements IInsightSourceCount {
+    endpointId?: string;
+    eventTypeId?: string;
+    count?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IInsightSourceCount) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.eventTypeId = _data["eventTypeId"];
+            this.count = _data["count"];
+        }
+    }
+
+    static fromJS(data: any): InsightSourceCount {
+        data = typeof data === 'object' ? data : {};
+        let result = new InsightSourceCount();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["eventTypeId"] = this.eventTypeId;
+        data["count"] = this.count;
+        return data;
+    }
+
+    clone(): InsightSourceCount {
+        const json = this.toJSON();
+        let result = new InsightSourceCount();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IInsightSourceCount {
+    endpointId?: string;
+    eventTypeId?: string;
+    count?: number;
+
+    [key: string]: any;
+}
+
 export enum InsightsPerspective {
     ErrorPattern = "errorPattern",
     Cause = "cause",
     Guidance = "guidance",
+    FaultOrigin = "faultOrigin",
 }
 
 /** The occurrence's coverage state. unavailable (listed first so an unset value never claims analysis) means saved classifications could not be read for this scope. */

@@ -120,6 +120,23 @@ describe("Insights page", () => {
     expect(mocks.insights).toHaveBeenCalledTimes(1);
   });
 
+  it("groups by fault origin with the sources that sent the failing data", async () => {
+    // Spec 044 Phase 3: the data-quality view for a source's owner.
+    mocks.insights.mockResolvedValue(overview({
+      faultOriginGroups: [
+        new api.InsightGroup({
+          groupKey: "source_data", label: "Source data", count: 4, coverage: coverage(4, 0, 0), endpoints: ["erp"], eventTypes: ["CrmAccountCreated"],
+          sources: [new api.InsightSourceCount({ endpointId: "crm", eventTypeId: "CrmAccountCreated", count: 4 })], topPatterns: [], morePatterns: 0,
+        }),
+      ],
+    }));
+    renderAt("/Insights?by=origin");
+
+    expect(await screen.findByText("Source data")).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Sources" }).textContent).toContain("crm");
+    expect(screen.getByRole("button", { name: "Fault origin" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("restores the perspective and endpoint from the URL and loads that scope", async () => {
     mocks.insights.mockResolvedValue(overview());
     renderAt("/Insights?by=guidance&endpoint=crm");

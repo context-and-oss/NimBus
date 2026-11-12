@@ -14749,6 +14749,7 @@ namespace NimBus.WebApp.ManagementApi
         private InsightsCoverage _coverage;
         private System.Collections.Generic.List<InsightGroup> _causeGroups;
         private System.Collections.Generic.List<InsightGroup> _guidanceGroups;
+        private System.Collections.Generic.List<InsightGroup> _faultOriginGroups;
 
         [Newtonsoft.Json.JsonProperty("groups", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<ErrorPatternGroup> Groups    {
@@ -14966,6 +14967,22 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// Occurrences grouped by the fault origin agents recorded (Spec 044 Phase 3) - source_data, adapter_code, target_system, configuration, platform, unknown - plus notAssessed (question set version 1), uncertain, notAnalyzed and notEligible. Null unless enrichment is available.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("faultOriginGroups", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightGroup> FaultOriginGroups    {
+            get { return _faultOriginGroups; }
+            set
+            {
+                if (_faultOriginGroups != value)
+                {
+                    _faultOriginGroups = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -15164,6 +15181,7 @@ namespace NimBus.WebApp.ManagementApi
         private InsightsCoverage _coverage;
         private System.Collections.Generic.List<string> _endpoints;
         private System.Collections.Generic.List<string> _eventTypes;
+        private System.Collections.Generic.List<InsightSourceCount> _sources;
         private System.DateTime _latestOccurrence;
         private System.Collections.Generic.List<InsightGroupPattern> _topPatterns;
         private int _morePatterns;
@@ -15249,6 +15267,22 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// The publishing endpoints of the group's failures with their counts, most first (Spec 044 Phase 3) - the data-quality view for a source's owner.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("sources", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightSourceCount> Sources    {
+            get { return _sources; }
+            set
+            {
+                if (_sources != value)
+                {
+                    _sources = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         [Newtonsoft.Json.JsonProperty("latestOccurrence", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.DateTime LatestOccurrence    {
             get { return _latestOccurrence; }
@@ -15326,6 +15360,83 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightSourceCount : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpointId;
+        private string _eventTypeId;
+        private int _count;
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Count    {
+            get { return _count; }
+            set
+            {
+                if (_count != value)
+                {
+                    _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightSourceCount FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightSourceCount>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public enum InsightsPerspective
     {
 
@@ -15337,6 +15448,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"guidance")]
         Guidance = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"faultOrigin")]
+        FaultOrigin = 3,
 
     }
 
