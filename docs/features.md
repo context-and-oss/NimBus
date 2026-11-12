@@ -44,7 +44,7 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 | Local development | Local stack from packages | An adapter repository's AppHost runs the Service Bus emulator, topology provisioning, Resolver and WebApp as dotnet tools, without a NimBus source checkout. | `Akaule.NimBus.AspireHosting`, `Akaule.NimBus.ServiceBusEmulator`, `Akaule.NimBus.Resolver.Host`, `Akaule.NimBus.WebApp`, `Akaule.NimBus.CommandLine` |
 | Local development | Service defaults | OpenTelemetry with NimBus instrumentation, health checks and service discovery; the standard HTTP resilience handler is opt-in. | `Akaule.NimBus.ServiceDefaults` |
 | AI agents | Event-type registry + REST agent API | `/api/v1/agent/*` (catalog, event types, subscribe, receive, publish, settle) lets AI agents define event types and take part on the bus. | `NimBus.Agents`, `NimBus.WebApp` |
-| AI agents | Operator MCP endpoint | Opt-in `/mcp` endpoint for monitoring endpoints, investigating failures and recovering single failed messages under WebApp roles and audit. | `NimBus.WebApp` |
+| AI agents | Operator MCP endpoint | Opt-in `/mcp` endpoint for monitoring endpoints, investigating failures, recording an agent's classification of a failure and recovering single failed messages under WebApp roles and audit. The `handle-failures` prompt runs the classify-and-act loop. | `NimBus.WebApp` |
 
 ## Extension framework
 
@@ -61,4 +61,4 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 | Notifications | Sends configurable notifications on lifecycle events (failure/dead-letter by default) through Webhook, Microsoft Teams and Email channels or a custom `INotificationChannel`, with per-channel severity filters and rate limiting. | `NimBus.Extensions.Notifications` |
 | Identity | Adds ASP.NET Core Identity username/password auth for WebApp, with email confirmation/reset flow and optional dual-login with Entra ID. | `NimBus.Extensions.Identity` |
 | Entra bearer tokens for HTTP clients | `AddAzureBearerToken(...)` adds a cached Microsoft Entra token to an `IHttpClientFactory` client, for adapters calling Dataverse, Business Central or Finance and Operations. | `Akaule.NimBus.Extensions.Http` |
-| Integration Intelligence | On-demand, idempotent, audited classification of a persisted failed or dead-lettered occurrence with bounded redacted evidence and deterministic operator guidance. | `Akaule.NimBus.Extensions.IntegrationIntelligence`, `NimBus.WebApp` |
+| Integration Intelligence | Agents classify a persisted failed or dead-lettered occurrence from bounded, redacted evidence and record the result over MCP; NimBus stores it with provenance and composes deterministic operator guidance. No model runs in NimBus; the built-in provider is deprecated and removed in v5.0.0. | `Akaule.NimBus.Extensions.IntegrationIntelligence`, `NimBus.WebApp` |

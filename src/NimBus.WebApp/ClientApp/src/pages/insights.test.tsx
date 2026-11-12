@@ -180,6 +180,8 @@ describe("Insights page", () => {
               category: "transient_dependency",
               categoryConfidence: 0.82,
               guidance: "RetryMayHelp",
+              provider: "Agent",
+              faultOrigin: "target_system",
               classifiedAt: moment.utc("2026-11-07T10:05:30Z"),
               currentStatus: "Completed",
             }),
@@ -218,6 +220,10 @@ describe("Insights page", () => {
     expect(cells("m1")[analyzed].textContent).toBe(local("2026-11-07T10:05:30Z"));
     expect(cells("m1")[headers.indexOf("Failed")].textContent).toBe(local("2026-11-07T10:00:00Z"));
     expect(cells("m2")[analyzed].textContent).toBe("-");
+    // Spec 044 §6.8: group detail shows who made each saved result, and its fault origin.
+    const recordedBy = headers.indexOf("Recorded by");
+    expect(cells("m1")[recordedBy].textContent).toBe("AgentOrigin: Target system");
+    expect(cells("m2")[recordedBy].textContent).toBe("-");
 
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     await waitFor(() => expect(mocks.occurrences).toHaveBeenCalledTimes(2));

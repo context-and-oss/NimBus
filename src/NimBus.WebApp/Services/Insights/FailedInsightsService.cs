@@ -428,6 +428,8 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             Guidance = result is null ? null : Enum.IsDefined(result.Guidance) ? result.Guidance.ToString() : ((int)result.Guidance).ToString(System.Globalization.CultureInfo.InvariantCulture),
             Revision = result?.Revision,
             Model = result?.Model,
+            Provider = result?.Provider,
+            FaultOrigin = result?.FaultOrigin,
             ClassifiedAt = result?.CreatedAtUtc.UtcDateTime,
             CurrentStatus = statuses.GetValueOrDefault((row.Info.EndpointId, StoredId(row.Info.EventId, row.Info.SessionId))),
         };

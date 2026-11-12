@@ -124,6 +124,42 @@ public sealed class SdkSmokeTests
     }
 
     [TestMethod]
+    [TestCategory("EmulatorOnly")]
+    [Timeout(60_000)]
+    public async Task Receiver_disposes_when_its_topic_is_deleted_while_a_drain_is_outstanding()
+    {
+        // After an empty receive leaves credit on the link, the receiver's close drains that
+        // credit and waits for the drain. When the topic was deleted before the pump answered
+        // it, the pump failed and detached without completing the drain, so DisposeAsync
+        // hung. The hook holds the pump until the drain arrives; the delete completes before
+        // the close sends it, so the pump always reads the deleted topic while draining.
+        await using var emulator = await EmulatorProcess.StartAsync(
+            environment: new Dictionary<string, string> { ["NIMBUS_SBEMULATOR_TEST_ACQUIRE_HOLD_UNTIL_DRAIN_MS"] = "15000" });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var entityName = $"deleted-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(entityName, timeout.Token);
+        await admin.CreateSubscriptionAsync(entityName, "consumer", timeout.Token);
+        await using var client = new ServiceBusClient(emulator.ConnectionString);
+        var receiver = client.CreateReceiver(entityName, "consumer");
+
+        Assert.IsNull(await receiver.ReceiveMessageAsync(TimeSpan.FromMilliseconds(500), timeout.Token));
+        await admin.DeleteTopicAsync(entityName, timeout.Token);
+
+        await receiver.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10), timeout.Token);
+
+        // The emulator's output reaches DumpOutput through asynchronous pipe callbacks.
+        const string drainPathDiagnostic = "Pump failed: draining=True";
+        var outputDeadline = DateTime.UtcNow.AddSeconds(5);
+        while (!emulator.DumpOutput().Contains(drainPathDiagnostic, StringComparison.Ordinal) && DateTime.UtcNow < outputDeadline)
+        {
+            await Task.Delay(50, timeout.Token);
+        }
+
+        StringAssert.Contains(emulator.DumpOutput(), drainPathDiagnostic, StringComparison.Ordinal);
+    }
+
+    [TestMethod]
     [TestCategory("CommonFidelity")]
     [Timeout(60_000)]
     public async Task Stock_sdk_subscription_created_without_a_rule_gets_true_default_and_receives_messages()

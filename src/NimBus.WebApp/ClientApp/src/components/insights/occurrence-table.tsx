@@ -7,6 +7,7 @@ import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "components/ui/card";
 import { Spinner } from "components/ui/spinner";
+import { faultOriginLabel, provenanceLabel } from "lib/failure-classification";
 import { ANALYSIS_STATE, causeLabel, guidanceLabel, markerLabel } from "./insights-labels";
 
 /** The fixed window and endpoint the overview was built for (spec 043 §4.2). */
@@ -90,6 +91,7 @@ export function OccurrenceTable({ scope, perspective, groupKey, title, onClose }
                   <th className="py-2 px-3">Analysis</th>
                   <th className="py-2 px-3">Likely cause</th>
                   <th className="py-2 px-3">Guidance</th>
+                  <th className="py-2 px-3">Recorded by</th>
                   <th className="py-2 px-3">Analyzed at</th>
                   <th className="py-2 px-3">Status now</th>
                 </tr>
@@ -126,6 +128,12 @@ export function OccurrenceTable({ scope, perspective, groupKey, title, onClose }
                         )}
                       </td>
                       <td className="py-2 px-3">{guidanceLabel(row.guidance) ?? "-"}</td>
+                      <td className="py-2 px-3">
+                        {provenanceLabel(row.provider) ?? "-"}
+                        {row.provider && (
+                          <div className="mt-1 text-xs text-muted-foreground">Origin: {faultOriginLabel(row.faultOrigin)}</div>
+                        )}
+                      </td>
                       <td className="py-2 px-3 whitespace-nowrap">{row.classifiedAt ? formatMoment(row.classifiedAt, true) : "-"}</td>
                       <td className="py-2 px-3">{row.currentStatus ?? <span className="text-muted-foreground">Unavailable</span>}</td>
                     </tr>

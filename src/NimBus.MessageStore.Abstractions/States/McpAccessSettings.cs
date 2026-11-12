@@ -39,6 +39,12 @@ public class McpAccessSettings
     /// <summary>Accept app-only (workload) tokens for the read tools.</summary>
     public bool AllowWorkloads { get; set; } = true;
 
+    /// <summary>
+    /// Let workloads holding the <c>Nimbus.Classify</c> app role record failure classifications
+    /// (Spec 044 §6.6). Effective only while <see cref="AllowWorkloads"/> is on. Default false.
+    /// </summary>
+    public bool AllowWorkloadClassification { get; set; }
+
     /// <summary>Who may connect.</summary>
     public McpPeopleSettings People { get; set; } = new();
 

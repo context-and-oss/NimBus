@@ -11,6 +11,7 @@ import {
 } from './simulator';
 import CircuitBreakerPanel from './components/admin/circuit-breaker-panel';
 import DataResetPanel from './components/admin/data-reset-panel';
+import PartnerLeadsPanel from './components/admin/partner-leads-panel';
 import SignedInBadge from './components/SignedInBadge';
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
@@ -64,6 +65,7 @@ export default function App() {
       </header>
       <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
         <CircuitBreakerPanel />
+        <PartnerLeadsPanel />
         <DataResetPanel />
         <Routes>
           <Route path="/" element={<AccountsList />} />

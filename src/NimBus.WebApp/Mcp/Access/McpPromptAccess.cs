@@ -8,14 +8,18 @@ namespace NimBus.WebApp.Mcp.Access;
 /// <summary>
 /// Hides the prompts that lead to a tool the MCP access policy makes unavailable from
 /// <c>prompts/list</c>, and refuses <c>prompts/get</c> for them (Spec 040). Prompts have no switch
-/// of their own: <c>recover-message</c> follows <c>nimbus_prepare_action</c>.
+/// of their own: <c>recover-message</c> follows <c>nimbus_prepare_action</c>, and
+/// <c>handle-failures</c> follows <c>nimbus_record_classification</c> (Spec 044 §6.9).
 /// </summary>
 public static class McpPromptAccess
 {
     /// <summary>Whether <paramref name="prompt"/> is available to <paramref name="caller"/> under <paramref name="policy"/>.</summary>
-    public static bool IsAvailable(string prompt, McpAccessPolicy policy, McpCaller caller)
-        => !string.Equals(prompt, OperatorPrompts.RecoverMessage, StringComparison.Ordinal)
-            || McpToolAccess.IsAvailable(McpToolAccess.PrepareTool, policy, caller);
+    public static bool IsAvailable(string prompt, McpAccessPolicy policy, McpCaller caller) => prompt switch
+    {
+        OperatorPrompts.RecoverMessage => McpToolAccess.IsAvailable(McpToolAccess.PrepareTool, policy, caller),
+        OperatorPrompts.HandleFailures => McpToolAccess.IsAvailable(McpToolAccess.RecordTool, policy, caller),
+        _ => true,
+    };
 
     /// <summary>The <c>prompts/list</c> filter.</summary>
     public static McpRequestHandler<ListPromptsRequestParams, ListPromptsResult> FilterList(McpRequestHandler<ListPromptsRequestParams, ListPromptsResult> next)

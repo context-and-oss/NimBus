@@ -57,7 +57,12 @@ public sealed class IntegrationIntelligenceReadController : ControllerBase
         => await ClassificationResults.ExecuteAsync(() => _reader.GetHistoryAsync(eventId, messageId, cancellationToken)).ConfigureAwait(false);
 }
 
-/// <summary>Serves advisory failure classification requests. Available only when a provider is ready.</summary>
+/// <summary>
+/// Serves advisory failure classification requests. Available only when a provider is ready.
+/// Deprecated with the provider (Spec 044 §6.10); removed in v5.0.0. There is no replacement
+/// route: agents record classifications over MCP.
+/// </summary>
+[Obsolete(IntegrationIntelligenceDeprecation.Provider)]
 [ApiController]
 [Authorize]
 [Route("api/integration-intelligence/failures/{eventId}/{messageId}/classification")]

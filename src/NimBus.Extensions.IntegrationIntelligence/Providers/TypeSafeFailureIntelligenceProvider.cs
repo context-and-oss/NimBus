@@ -8,7 +8,8 @@ using NimBus.Extensions.IntegrationIntelligence.Evidence;
 
 namespace NimBus.Extensions.IntegrationIntelligence.Providers;
 
-/// <summary>Failure raised by the provider with a stable operational category.</summary>
+/// <summary>Failure raised by the provider with a stable operational category. Deprecated; removed in v5.0.0.</summary>
+[Obsolete(IntegrationIntelligenceDeprecation.Provider)]
 public sealed class IntelligenceProviderException : Exception
 {
     /// <summary>Creates a provider exception.</summary>
@@ -26,7 +27,8 @@ public sealed class IntelligenceProviderException : Exception
     public bool OutcomeUnknown { get; }
 }
 
-/// <summary>Named TypeSafe provider client. It sends one bounded request per analysis.</summary>
+/// <summary>Named TypeSafe provider client. It sends one bounded request per analysis. Deprecated; removed in v5.0.0.</summary>
+[Obsolete(IntegrationIntelligenceDeprecation.Provider)]
 public sealed class TypeSafeFailureIntelligenceProvider : IFailureIntelligenceProvider
 {
     private const string ClientName = "NimBus.TypeSafe";
@@ -60,7 +62,7 @@ public sealed class TypeSafeFailureIntelligenceProvider : IFailureIntelligencePr
         {
             model = _options.Model,
             state,
-            questions = FailureClassificationQuestionSet.Items.ToDictionary(
+            questions = FailureClassificationQuestionSet.ProviderItems.ToDictionary(
                 pair => pair.Key,
                 pair => new { type = pair.Value.Type, instructions = pair.Value.Instructions, criteria = pair.Value.Criteria }),
         };
@@ -131,7 +133,7 @@ public sealed class TypeSafeFailureIntelligenceProvider : IFailureIntelligencePr
         var answers = root.GetProperty("answers");
         var category = answers.GetProperty("failure_category");
         var categoryId = RequiredString(category, "choice");
-        var pinnedCategories = FailureClassificationQuestionSet.Items["failure_category"].Criteria!.Keys
+        var pinnedCategories = FailureClassificationQuestionSet.ProviderItems["failure_category"].Criteria!.Keys
             .ToHashSet(StringComparer.Ordinal);
         if (!pinnedCategories.Contains(categoryId))
         {

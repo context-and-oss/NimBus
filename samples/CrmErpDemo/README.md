@@ -689,8 +689,8 @@ Key mechanics on display:
 ### Manual smoke flow
 
 1. AppHost up → **partner-portal** logs a published lead every 45 s
-   (`PARTNER_LEAD_INTERVAL_SECONDS` to change; `PARTNER_PUBLISH_LEADS=false` to turn the
-   leads off, see [below](#turning-the-partner-leads-off)).
+   (`PARTNER_LEAD_INTERVAL_SECONDS` to change; the **Partner leads** switch in crm-web turns
+   the leads off, see [below](#turning-the-partner-leads-off)).
 2. **crm-adapter** logs `PartnerLeadSubmittedHandler` with the CloudEvent id/source/type;
    open **crm-web** → Contacts → the lead appears with a violet **Partner** badge.
 3. Open **erp-web** → create a customer (or create an account in **crm-web** and let the
@@ -703,15 +703,23 @@ Key mechanics on display:
 
 ### Turning the partner leads off
 
-A lead every 45 seconds adds up in a demo that runs for days. `PARTNER_PUBLISH_LEADS=false`
-stops the recurring `PartnerLeadSubmitted` leads; partner-portal keeps logging the ERP
+A lead every 45 seconds adds up in a demo that runs for days. The **Partner leads** switch in
+**crm-web** (below the circuit-breaker panel) turns the recurring `PartnerLeadSubmitted` leads
+off and on while the demo runs. crm-api holds the flag and partner-portal asks for it before
+each lead, so a flip takes effect within a few seconds. partner-portal keeps logging the ERP
 CloudEvents it receives, and `PARTNER_SEND_INVALID=true` still sends its one message.
 
-- **Locally:** set `PARTNER_PUBLISH_LEADS=false` in the AppHost's environment before starting it.
-- **Azure, without a redeploy:**
-  `az containerapp update -g rg-crmerp-demo -n partner-portal --set-env-vars PARTNER_PUBLISH_LEADS=false`
-  (`=true` turns them back on). A later `aspire deploy` resets it unless the same variable is
-  set on the deploy.
+The flag lives in crm-api's memory, so a crm-api restart returns it to the startup setting:
+on, unless `PARTNER_PUBLISH_LEADS=false`. If partner-portal cannot reach crm-api it keeps the
+last answer it got, starting from its own `PARTNER_PUBLISH_LEADS`.
+
+- **Locally:** set `PARTNER_PUBLISH_LEADS=false` in the AppHost's environment before starting
+  it. The AppHost passes it to crm-api and partner-portal.
+- **Azure:** set `PARTNER_PUBLISH_LEADS=false` on the `aspire deploy` process. On a demo that
+  is already running, set it on both apps:
+  `az containerapp update -g rg-crmerp-demo -n crm-api --set-env-vars PARTNER_PUBLISH_LEADS=false`
+  and the same for `partner-portal`. A later `aspire deploy` without the variable starts the
+  leads on again.
 
 ## Showcase: Inbox deduplication (CrmEndpoint)
 

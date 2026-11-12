@@ -26,7 +26,7 @@ public class McpAccessPolicyEnforcementTests
     private static readonly string[] ChangeTools =
     [
         "nimbus_prepare_action", "nimbus_resubmit_message", "nimbus_skip_message",
-        "nimbus_set_message_reported", "nimbus_classify_failure",
+        "nimbus_set_message_reported", "nimbus_classify_failure", "nimbus_record_classification",
     ];
 
     [TestMethod]
