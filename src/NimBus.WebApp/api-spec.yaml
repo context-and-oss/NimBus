@@ -4,8 +4,17 @@ info:
   description: HTTP API behind the NimBus WebApp for inspecting endpoints, events and sessions, and for recovering messages (resubmit, skip)
   version: 0.0.1
 servers:
-  - url: 'https://localhost:5001'
-    description: Local
+  - url: 'https://{host}'
+    description: >-
+      A NimBus WebApp deployment. Set host to the WebApp's host name, for
+      example webapp-<solution>-<environment>-management.azurewebsites.net
+      or your custom domain.
+    variables:
+      host:
+        default: nimbus.example.com
+        description: Host name (and port, if not 443) of the NimBus WebApp.
+  - url: 'https://localhost:18443'
+    description: Local development (dotnet run or the Aspire AppHost)
 paths:
   /api/endpoint/status/count:
     get:

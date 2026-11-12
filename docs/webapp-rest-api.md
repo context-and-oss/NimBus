@@ -460,7 +460,7 @@ into the resolver. Internal infrastructure surface; not for external callers.
 The spec is authoritative; both sides of the wire are generated from it.
 
 - **Server contracts:** NSwag emits `Controllers/ApiContract.g.cs` pre-build
-  via the MSBuild target in `NimBus.WebApp.csproj:102-104`. The generated
+  via the `NSwag` MSBuild target in `NimBus.WebApp.csproj`. The generated
   interfaces are implemented by hand under
   `Controllers/ApiContract/*Implementation.cs`.
 - **Reference TypeScript client:** the same NSwag run emits
@@ -468,13 +468,19 @@ The spec is authoritative; both sides of the wire are generated from it.
   Manual overrides for auth/headers live in
   [`ClientApp/src/api-client/index.extensions.ts`](../src/NimBus.WebApp/ClientApp/src/api-client/index.extensions.ts).
 - **External clients:** point any OpenAPI generator at
-  `src/NimBus.WebApp/api-spec.yaml` (or the runtime copy served from the
-  WebApp's `wwwroot/api-spec.yaml` in dev) to produce a client in your
-  preferred language. The TS client in this repo is a usable reference.
+  `src/NimBus.WebApp/api-spec.yaml` to produce a client in your preferred
+  language. The TS client in this repo is a usable reference. The spec's
+  first `servers` entry is `https://{host}` with a `host` variable: set it to
+  your WebApp's host name (generators that support server variables expose it
+  as a setting; others take the default `nimbus.example.com`, which you then
+  override with the client's base-URL option). The second entry is the local
+  development URL, `https://localhost:18443`. The build copies the spec to
+  `wwwroot/`, but the WebApp does not serve that copy.
 
 Swagger UI is exposed only in the Development environment
-(`Startup.cs:416-420`), via `app.UseOpenApi(); app.UseSwaggerUi();`. Production
-hosts do not expose `/swagger` anonymously.
+(`Startup.Pipeline.cs`), via `app.UseOpenApi(); app.UseSwaggerUi();`, and shows
+a document NSwag builds from the controllers rather than `api-spec.yaml`.
+Production hosts do not expose `/swagger` anonymously.
 
 ## CORS
 
