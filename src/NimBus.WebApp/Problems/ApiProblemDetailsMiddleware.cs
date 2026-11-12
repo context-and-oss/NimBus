@@ -39,7 +39,13 @@ internal sealed partial class ApiProblemDetailsMiddleware
         catch (Exception exception) when (!context.Response.HasStarted && !context.RequestAborted.IsCancellationRequested)
         {
             LogUnhandled(exception, context.Request.Method, context.Request.Path);
+            // Keep the CORS answer, so a cross-origin caller can still read the problem.
+            var cors = context.Response.Headers
+                .Where(h => h.Key.StartsWith("Access-Control-", StringComparison.OrdinalIgnoreCase) || h.Key.Equals("Vary", StringComparison.OrdinalIgnoreCase))
+                .ToList();
             context.Response.Clear();
+            foreach (var (name, value) in cors)
+                context.Response.Headers[name] = value;
             var problem = ApiProblems.Create(context, StatusCodes.Status500InternalServerError,
                 _environment.IsDevelopment() ? exception.Message : "The server could not complete the request.");
             await ApiProblems.WriteAsync(context, problem).ConfigureAwait(false);

@@ -36,13 +36,13 @@ Two distinct audiences share the same surface:
 ## Authentication
 
 Authentication is configured in
-[`src/NimBus.WebApp/Startup.cs:60-189`](../src/NimBus.WebApp/Startup.cs). Which
+[`src/NimBus.WebApp/Startup.Security.cs`](../src/NimBus.WebApp/Startup.Security.cs). Which
 branch runs depends on configuration; the four supported shapes are:
 
 ### 1. Operator — Identity cookie
 
 When `NimBusIdentity:ConnectionString` is configured and `AzureAd:ClientId` is
-not (`Startup.cs:110-120`), the WebApp runs in *Identity-only* mode: users
+not, the WebApp runs in *Identity-only* mode: users
 sign in with email + password, the server issues a cookie named
 `NimBus.Identity` with an 8-hour sliding expiry, and every `/api/…` request
 must carry that cookie.
@@ -52,13 +52,13 @@ for password-policy, email-confirmation, and bootstrap-admin details.
 
 ### 2. Operator — Entra ID (interactive)
 
-When `AzureAd:ClientId` is set (`Startup.cs:121-188`), the WebApp uses
+When `AzureAd:ClientId` is set, the WebApp uses
 Microsoft Identity Web. Browser sign-in goes through OpenID Connect;
 authenticated browsers carry the standard ASP.NET cookie.
 
 ### 3. Dual — Identity *and* Entra ID
 
-Both schemes registered concurrently (`Startup.cs:121-157`). A policy scheme
+Both schemes registered concurrently. A policy scheme
 named `"Az"` inspects each request and forwards to the right handler:
 
 - Request carries `Authorization: Bearer …` → JWT bearer.
@@ -80,14 +80,14 @@ Authorization: Bearer <access-token>
 Audience and scope come from the WebApp's `AzureAd` registration — see
 [`docs/authentication.md`](authentication.md) for the app-registration setup.
 The bearer arm is `JwtBearerDefaults.AuthenticationScheme`, validated by
-`Microsoft.Identity.Web` (`Startup.cs:145, 176`).
+`Microsoft.Identity.Web`.
 
 ### Local dev shortcut
 
 For local development *only*, setting `EnableLocalDevAuthentication=true`
-(`Startup.cs:101-109`) installs a `"LocalDev"` scheme that authenticates every
+installs a `"LocalDev"` scheme that authenticates every
 request as a fixed test user. Startup fails fast if this flag is enabled
-outside the Development environment (`Startup.cs:64-71`). Never use it in
+outside the Development environment. Never use it in
 production.
 
 ## Calling from outside the SPA
@@ -168,7 +168,7 @@ The `/hubs/*` SignalR hub, `/mcp`, the health probes and the sign-in pages
   [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) problem with media type
   `application/problem+json` — see [Errors](#errors).
 - **HTTPS only:** redirected by `app.UseHttpsRedirection()`
-  (`Startup.cs:404`).
+  (`Startup.Pipeline.cs`).
 
 ## Errors
 
@@ -500,51 +500,59 @@ Production hosts do not expose `/swagger` anonymously.
 
 ## CORS
 
-The current CORS policy (`Startup.cs:399-402`) allows credentials but
-restricts origins to `login.microsoftonline.com` only. Browser-based external
-callers from any other origin will be blocked by the browser; that's the
-intended posture for now.
+By default the WebApp answers no cross-origin requests, so browser code on
+another origin cannot call the API. Server-to-server callers are not affected
+by CORS at all: call `https://<your-nimbus-host>/api/v1/…` with a bearer token.
 
-External integration today should be **server-to-server**: your service makes
-the HTTPS call directly to `https://<your-nimbus-host>/api/…` with the bearer
-token, bypassing browser CORS entirely. If your scenario requires browser
-access from a third-party origin, see
-[the gap list](#whats-not-external-ready-yet).
+To let browser code on approved origins call the REST API, list the origins
+in `Cors:AllowedOrigins` (app settings `Cors__AllowedOrigins__0`,
+`Cors__AllowedOrigins__1`, …):
+
+```json
+{
+  "Cors": {
+    "AllowedOrigins": [ "https://portal.example.com", "https://ops.example.com:8443" ]
+  }
+}
+```
+
+- **Scope:** only `/api/…`. The SPA, the SignalR hub, `/mcp` and the sign-in
+  pages never answer cross-origin requests.
+- **No credentials:** responses never carry
+  `Access-Control-Allow-Credentials`, so the browser does not send the
+  WebApp's sign-in cookies. A cross-origin caller authenticates with a header:
+  an Entra ID bearer token (`Authorization`) or an agent key
+  (`X-NimBus-Agent-Key`). Cross-site request forgery therefore stays out of
+  reach.
+- **What is allowed:** methods `GET`, `POST`, `PUT`, `PATCH` and `DELETE`;
+  request headers `Authorization`, `Content-Type`, `Accept`,
+  `Idempotency-Key`, `X-NimBus-Agent-Key` and `X-Agent-Id`. The browser may
+  read `Retry-After`, `Deprecation`, `Link`, `Location` and
+  `Content-Disposition`. Preflights are cached for 10 minutes and answered
+  before sign-in is checked.
+- **Validation:** startup fails on an empty entry, `*`, a value that is not
+  a bare origin (`scheme://host[:port]`, no path or trailing slash), or an
+  `http://` origin outside the Development environment.
+- **Redeploys:** `nb infra apply` and the Bicep template carry `Cors__*`
+  settings forward (see [Deployment](deployment.md)).
 
 ## What's not external-ready yet
 
-Honest list of work needed before this API can be claimed as fully
-external-grade. Each item is its own focused workstream:
+One gap remains before this API can be offered to external integrators
+without caveats:
 
-1. **API-key / service-principal auth — agents only.** Agents have Owner-issued,
-   revocable API keys for `/api/v1/agent/*` ([Spec 039](spec/039-agent-api-keys/spec.md)).
-   The rest of the API still needs a signed-in person or an Entra ID token; a
-   general integrator key path with per-caller scopes is not implemented.
-2. **`ProblemDetails` error envelope (RFC 7807).** Standardise error
-   responses so callers can branch on a stable schema instead of per-endpoint
-   shapes. Touches every `*Implementation.cs` under
-   `Controllers/ApiContract/`.
-3. **Rate limiting — partial.** Four policies now protect the highest-cost
-   surfaces: a concurrency limiter on `GET /api/v1/agent/receive` and fixed
-   windows on `/api/v1/admin/*`, the two search endpoints, and
-   `POST /account/login`. See [Rate Limiting](rate-limiting.md) for values,
-   bounds and tuning. Every other `/api/*` route is still unthrottled — there
-   is no global limiter — and enforcement is per process, so a scaled-out
-   deployment multiplies effective limits by instance count.
-4. **Public base URL in the spec.** `api-spec.yaml:7` lists only
-   `https://localhost:5001`. A production server entry should be added so
-   external generators produce clients pointing at the right host out of the
-   box.
-5. **SemVer cut to `v1` + route versioning.** Add `/api/v1/…` prefix (or
-   document the chosen versioning strategy) and commit to a non-breaking
-   change policy.
-6. **External CORS allow-list.** Move from the single
-   `login.microsoftonline.com` origin to a configuration-driven allow-list
-   so browser-based external callers from approved origins can work.
+1. **API-key / service-principal auth — agents only.** Agents have
+   Owner-issued, revocable API keys for `/api/v1/agent/*`
+   ([Spec 039](spec/039-agent-api-keys/spec.md)). The rest of the API still
+   needs a signed-in person or an Entra ID token; a general integrator key
+   with a role and endpoint scope is planned (Spec 045).
 
-Order in this list is roughly priority for shipping an "external" promise; the
-audit that produced it lives in the planning notes for the documentation
-work.
+Closed since the first version of this list: the
+[problem error envelope](#errors), a [global rate limit](rate-limiting.md) on
+every `/api/…` route, a production `servers` entry in the spec,
+[`/api/v1` versioning with a compatibility policy](#versioning--stability), and
+a [configuration-driven CORS allow-list](#cors). Rate limits are still
+enforced per process; see [Rate Limiting](rate-limiting.md#scope).
 
 ## Audit
 

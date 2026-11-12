@@ -11,6 +11,7 @@ using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.RateLimiting;
 using NimBus.WebApp.Problems;
 using NimBus.WebApp.Versioning;
+using NimBus.WebApp.Cors;
 using System.Text.Json.Serialization;
 using NimBus.Management.ServiceBus;
 using Azure.Messaging.ServiceBus;
@@ -61,6 +62,9 @@ public partial class Startup
 
         // Every API route at /api/v1/… plus its deprecated unversioned alias (see Versioning/).
         services.AddNimBusApiVersioning();
+
+        // Browser callers on the origins in Cors:AllowedOrigins may call /api; none by default.
+        services.AddNimBusApiCors(Configuration, Env);
 
         services.AddSwaggerDocument(s =>
         {
