@@ -67,6 +67,91 @@ public sealed class TestDiagnosticsTests
     }
 
     [TestMethod]
+    [Timeout(10_000)]
+    public async Task A_body_step_timeout_followed_by_a_failing_cleanup_still_reports_the_body_step_first()
+    {
+        var steps = new TestSteps(() => "trace");
+        var never = new TaskCompletionSource();
+
+        var exception = await Assert.ThrowsExactlyAsync<AggregateException>(() => TestSteps.RunWithCleanupAsync(
+            () => steps.RunAsync("receive", TimeSpan.FromMilliseconds(100), () => never.Task),
+            () => steps.RunAsync("dispose client", TimeSpan.FromMilliseconds(100), () => never.Task)));
+
+        Assert.HasCount(2, exception.InnerExceptions);
+        StringAssert.Contains(exception.InnerExceptions[0].Message, "Step 'receive' did not finish within");
+        StringAssert.Contains(exception.InnerExceptions[1].Message, "Step 'dispose client' did not finish within");
+        Assert.IsLessThan(
+            exception.Message.IndexOf("Step 'dispose client'", StringComparison.Ordinal),
+            exception.Message.IndexOf("Step 'receive'", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    [Timeout(10_000)]
+    public async Task A_body_failure_with_a_clean_cleanup_rethrows_the_body_failure_unchanged()
+    {
+        var steps = new TestSteps(() => "trace");
+        var never = new TaskCompletionSource();
+        var cleanedUp = false;
+
+        var exception = await Assert.ThrowsExactlyAsync<TimeoutException>(() => TestSteps.RunWithCleanupAsync(
+            () => steps.RunAsync("send", TimeSpan.FromMilliseconds(100), () => never.Task),
+            () =>
+            {
+                cleanedUp = true;
+                return Task.CompletedTask;
+            }));
+
+        Assert.IsTrue(cleanedUp);
+        StringAssert.Contains(exception.Message, "Step 'send' did not finish within");
+    }
+
+    [TestMethod]
+    [Timeout(10_000)]
+    public async Task A_failing_cleanup_after_a_successful_body_fails_as_its_own_named_step()
+    {
+        var steps = new TestSteps(() => "trace");
+        var never = new TaskCompletionSource();
+
+        var exception = await Assert.ThrowsExactlyAsync<TimeoutException>(() => TestSteps.RunWithCleanupAsync(
+            () => Task.CompletedTask,
+            () => steps.RunAsync("dispose client", TimeSpan.FromMilliseconds(100), () => never.Task)));
+
+        StringAssert.Contains(exception.Message, "Step 'dispose client' did not finish within");
+    }
+
+    [TestMethod]
+    [Timeout(30_000)]
+    public async Task A_failed_launch_attempt_leaves_a_supplied_journal_and_its_directory_in_place()
+    {
+        if (System.Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_CS") is { Length: > 0 })
+        {
+            Assert.Inconclusive("An external emulator is configured; startup is not exercised.");
+        }
+
+        var directory = Path.Combine(Path.GetTempPath(), $"nimbus-sbemulator-journal-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var journalPath = Path.Combine(directory, "topology.json");
+        await File.WriteAllTextAsync(journalPath, "{}");
+        try
+        {
+            await Assert.ThrowsExactlyAsync<TimeoutException>(() => EmulatorProcess.StartAsync(
+                journalPath,
+                deleteJournalOnDispose: true,
+                startupDeadline: TimeSpan.FromMilliseconds(1)));
+
+            Assert.IsTrue(Directory.Exists(directory), "A failed launch attempt deleted the caller's journal directory.");
+            Assert.IsTrue(File.Exists(journalPath), "A failed launch attempt deleted the caller's journal.");
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
     [Timeout(30_000)]
     public async Task Emulator_startup_past_its_overall_deadline_fails_with_a_timeout_naming_the_deadline()
     {

@@ -84,6 +84,38 @@ internal sealed class TestSteps
         return RunAsync($"dispose {name}", budget, () => resource.DisposeAsync().AsTask());
     }
 
+    /// <summary>
+    /// Runs <paramref name="body"/>, then always runs <paramref name="cleanup"/>, keeping the
+    /// first failure as the reported one. If only the body fails, its exception is rethrown
+    /// unchanged. If both fail, an <see cref="AggregateException"/> carries the body's
+    /// failure first and the cleanup's second. If only the cleanup fails, its exception is
+    /// thrown as the step's own failure.
+    /// </summary>
+    public static async Task RunWithCleanupAsync(Func<Task> body, Func<Task> cleanup)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        ArgumentNullException.ThrowIfNull(cleanup);
+        try
+        {
+            await body();
+        }
+        catch (Exception first)
+        {
+            try
+            {
+                await cleanup();
+            }
+            catch (Exception second)
+            {
+                throw new AggregateException(first, second);
+            }
+
+            throw;
+        }
+
+        await cleanup();
+    }
+
     private TimeSpan Bound(TimeSpan budget)
     {
         if (_overallBudget == Timeout.InfiniteTimeSpan)

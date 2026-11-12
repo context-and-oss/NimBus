@@ -125,21 +125,20 @@ public sealed class SdkSmokeTests
         Assert.IsFalse(rules.Any(rule => rule.Filter is SqlRuleFilter { SqlExpression: "1=1" }));
 
         // A publish straight after creation lands in the provisioning window.
+        // The client is always disposed, but a failure there never hides an earlier step's.
         var client = new ServiceBusClient(emulator.ConnectionString);
-        try
-        {
-            var sender = client.CreateSender(entityName);
-            await steps.RunAsync("send", step, () => sender.SendMessageAsync(new ServiceBusMessage("window"), timeout.Token));
-            await steps.DisposeAsync("sender", sender, step);
-            var receiver = client.CreateReceiver(entityName, "closed");
-            var received = await steps.RunAsync("receive", step, () => receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token));
-            Assert.IsNull(received);
-            await steps.DisposeAsync("receiver", receiver, step);
-        }
-        finally
-        {
-            await steps.DisposeAsync("client", client, step);
-        }
+        await TestSteps.RunWithCleanupAsync(
+            async () =>
+            {
+                var sender = client.CreateSender(entityName);
+                await steps.RunAsync("send", step, () => sender.SendMessageAsync(new ServiceBusMessage("window"), timeout.Token));
+                await steps.DisposeAsync("sender", sender, step);
+                var receiver = client.CreateReceiver(entityName, "closed");
+                var received = await steps.RunAsync("receive", step, () => receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token));
+                Assert.IsNull(received);
+                await steps.DisposeAsync("receiver", receiver, step);
+            },
+            () => steps.DisposeAsync("client", client, step));
 
         await steps.RunAsync("delete topic", step, () => admin.DeleteTopicAsync(entityName, timeout.Token));
     }

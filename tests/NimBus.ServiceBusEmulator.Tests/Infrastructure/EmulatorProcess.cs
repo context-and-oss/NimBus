@@ -110,6 +110,7 @@ internal sealed class EmulatorProcess : IAsyncDisposable
     {
         var port = GetAvailablePort();
         var project = FindProject();
+        var ownsJournal = journalPath is null;
         journalPath ??= Path.Combine(Path.GetTempPath(), $"nimbus-sbemulator-test-{Guid.NewGuid():N}", "topology.json");
         var startInfo = new ProcessStartInfo("dotnet")
         {
@@ -174,7 +175,14 @@ internal sealed class EmulatorProcess : IAsyncDisposable
 
         failure ??= new TimeoutException(
             $"The emulator did not become healthy within the {deadline.TotalSeconds:0.###} s startup deadline.");
-        await instance.DisposeAsync();
+        // A failed attempt only kills its process. A caller-supplied journal is left in place
+        // for the retry that reuses it; only a journal this attempt generated is removed.
+        instance.KillProcess();
+        if (ownsJournal)
+        {
+            DeleteJournalDirectory(journalPath);
+        }
+
         return new StartAttempt(null, failure, instance.DumpOutput());
     }
 
@@ -206,6 +214,25 @@ internal sealed class EmulatorProcess : IAsyncDisposable
             return ValueTask.CompletedTask;
         }
 
+        var watch = Stopwatch.StartNew();
+        KillProcess();
+        if (_deleteJournalOnDispose && _journalPath is not null)
+        {
+            DeleteJournalDirectory(_journalPath);
+        }
+
+        Console.WriteLine($"[step] dispose emulator: {watch.ElapsedMilliseconds} ms");
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Kills the process (waiting at most 5 s for it to exit) without touching the journal.</summary>
+    private void KillProcess()
+    {
+        if (_process is null)
+        {
+            return;
+        }
+
         if (!_process.HasExited)
         {
             _process.Kill(entireProcessTree: true);
@@ -213,13 +240,14 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         }
 
         _process.Dispose();
-        if (_deleteJournalOnDispose && _journalPath is not null &&
-            Path.GetDirectoryName(_journalPath) is { } directory && Directory.Exists(directory))
+    }
+
+    private static void DeleteJournalDirectory(string journalPath)
+    {
+        if (Path.GetDirectoryName(journalPath) is { } directory && Directory.Exists(directory))
         {
             Directory.Delete(directory, recursive: true);
         }
-
-        return ValueTask.CompletedTask;
     }
 
     private static int GetAvailablePort()
