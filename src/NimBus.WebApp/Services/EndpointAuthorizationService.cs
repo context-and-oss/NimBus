@@ -233,20 +233,8 @@ public partial class EndpointAuthorizationService : IEndpointAuthorizationServic
             return null;
         }
 
-        // Try to get name from various claim types
-        var name = context.User.FindFirst(c => c.Type.Equals("name", StringComparison.OrdinalIgnoreCase))?.Value;
-
-        if (string.IsNullOrEmpty(name))
-        {
-            name = context.User.FindFirst(ClaimTypes.Name)?.Value;
-        }
-
-        if (string.IsNullOrEmpty(name))
-        {
-            name = context.User.FindFirst("preferred_username")?.Value;
-        }
-
-        return name;
+        // Name claims first; an app-only (workload) token is named after its client application.
+        return PrincipalNames.Resolve(context.User);
     }
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Authorization denied: required {Required} on '{EndpointId}', principal has site {SiteRole}")]

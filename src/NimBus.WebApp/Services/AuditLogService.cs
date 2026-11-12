@@ -185,26 +185,10 @@ public sealed partial class AuditLogService : IAuditLogService
             return AnonymousAuditorName;
         }
 
-        // Per spec FR-020: name claim → ClaimTypes.Name → preferred_username → "anonymous"
-        var name = user.FindFirst(c => string.Equals(c.Type, "name", StringComparison.OrdinalIgnoreCase))?.Value;
-        if (!string.IsNullOrEmpty(name))
-        {
-            return name;
-        }
-
-        name = user.FindFirst(ClaimTypes.Name)?.Value;
-        if (!string.IsNullOrEmpty(name))
-        {
-            return name;
-        }
-
-        name = user.FindFirst("preferred_username")?.Value;
-        if (!string.IsNullOrEmpty(name))
-        {
-            return name;
-        }
-
-        return AnonymousAuditorName;
+        // Per spec FR-020: name claim → ClaimTypes.Name → preferred_username → "anonymous".
+        // An app-only (workload) token carries no name claim, so it is named after its client
+        // application (Spec 044) instead of "anonymous".
+        return PrincipalNames.Resolve(user) ?? AnonymousAuditorName;
     }
 
     internal static string? TruncateData(string? data)
