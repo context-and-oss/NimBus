@@ -22,8 +22,11 @@ namespace NimBus.Testing.Conformance;
 /// transitions, message persistence, and basic queries the conformance suite cares
 /// about. Search/pagination methods return empty results.
 /// </summary>
-public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore
+public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore
 {
+    // The operator operation journal (Spec 044 Phase 2), kept in its own class.
+    private readonly InMemoryOperatorOperationStore _operations = new();
+
     private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _events = new();
     // Rows archived by TryArchiveUnresolvedEvent, kept so TryRestoreArchivedEvent can put them back.
     private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _archived = new();
@@ -1557,4 +1560,13 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
 
         return keys;
     }
+
+    // ───────── Operator operation journal (IOperatorOperationStore) — implementation in InMemoryOperatorOperationStore ─────────
+    public virtual Task<OperatorOperationCreateResult> TryCreateOperatorOperation(OperatorOperation operation) => _operations.TryCreateOperatorOperation(operation);
+    public virtual Task<OperatorOperation?> GetOperatorOperation(string operationId) => _operations.GetOperatorOperation(operationId);
+    public virtual Task<bool> TryUpdateOperatorOperation(OperatorOperation operation, string expectedVersion) => _operations.TryUpdateOperatorOperation(operation, expectedVersion);
+    public virtual Task<IReadOnlyList<OperatorOperation>> ListDueOperatorOperations(IReadOnlyCollection<OperatorOperationStatus> statuses, DateTime updatedBeforeUtc, int limit)
+        => _operations.ListDueOperatorOperations(statuses, updatedBeforeUtc, limit);
+    public virtual Task<int> CountOperatorOperations(OperatorOperationQuery query) => _operations.CountOperatorOperations(query);
+    public virtual Task<int> PurgeExpiredOperatorOperations(DateTime nowUtc, int limit) => _operations.PurgeExpiredOperatorOperations(nowUtc, limit);
 }

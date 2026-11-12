@@ -84,3 +84,10 @@ public sealed class CosmosDbHeartbeatHistoryStoreConformanceTests : HeartbeatHis
     protected override IHeartbeatHistoryStore CreateStore()
         => (IHeartbeatHistoryStore)CosmosDbStoreTestHarness.CreateStore();
 }
+
+[TestClass]
+public sealed class CosmosDbOperatorOperationStoreTests : OperatorOperationStoreConformanceTests
+{
+    protected override IOperatorOperationStore CreateStore()
+        => (IOperatorOperationStore)CosmosDbStoreTestHarness.CreateStore();
+}

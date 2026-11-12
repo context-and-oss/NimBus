@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
 
-public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore
+public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore
 {
     /// <inheritdoc />
     public bool PrunesHeartbeatHistoryAutomatically => _heartbeatHistory.PrunesHeartbeatHistoryAutomatically;
@@ -36,6 +36,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private readonly CosmosDbHeartbeatHistoryStore _heartbeatHistory;
     private readonly CosmosDbServiceHealthStore _serviceHealth;
     private readonly CosmosDbEndpointAcknowledgementStore _acknowledgements;
+    private readonly CosmosDbOperatorOperationStore _operations;
     private readonly CosmosDbEndpointMetadataStore _endpointMetadata;
     private readonly CosmosDbMessageTrackingStore _messageTracking;
 
@@ -69,6 +70,8 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private const string HeartbeatUptimeDaysContainer = "heartbeatuptimedays";
     private const string HeartbeatGapsContainer = "heartbeatgaps";
     private const string EndpointAcknowledgementsContainer = "endpointacknowledgements";
+    // Operator operation journal (Spec 044 Phase 2). TTL on; items carry a 30-day ttl.
+    private const string OperatorOperationsContainer = "operatoroperations";
     private const int HeartbeatHistoryTtlSeconds = 90 * 24 * 60 * 60;
 
     // Seconds stamped as the document ttl on non-terminal tracking rows. -1 disables
@@ -98,6 +101,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _heartbeatHistory = new CosmosDbHeartbeatHistoryStore(GetHeartbeatUptimeDaysContainer, GetHeartbeatGapsContainer, GetSettingsContainer);
         _serviceHealth = new CosmosDbServiceHealthStore(GetServiceHealthContainer, _logger);
         _acknowledgements = new CosmosDbEndpointAcknowledgementStore(GetEndpointAcknowledgementsContainer);
+        _operations = new CosmosDbOperatorOperationStore(GetOperatorOperationsContainer);
         _endpointMetadata = new CosmosDbEndpointMetadataStore(GetMetadataContainer, GetSettingsContainer, _logger);
         _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, endpointId => _containerCache.TryRemove(endpointId, out _), _logger, _unresolvedTtlSeconds);
     }
@@ -125,6 +129,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _heartbeatHistory = new CosmosDbHeartbeatHistoryStore(GetHeartbeatUptimeDaysContainer, GetHeartbeatGapsContainer, GetSettingsContainer);
         _serviceHealth = new CosmosDbServiceHealthStore(GetServiceHealthContainer, _logger);
         _acknowledgements = new CosmosDbEndpointAcknowledgementStore(GetEndpointAcknowledgementsContainer);
+        _operations = new CosmosDbOperatorOperationStore(GetOperatorOperationsContainer);
         _endpointMetadata = new CosmosDbEndpointMetadataStore(GetMetadataContainer, GetSettingsContainer, _logger);
         _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, endpointId => _containerCache.TryRemove(endpointId, out _), _logger, _unresolvedTtlSeconds);
     }
@@ -254,6 +259,9 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private Task<ICosmosContainerAdapter> GetEndpointAcknowledgementsContainer() =>
         GetCachedContainerAsync(EndpointAcknowledgementsContainer, "/id");
 
+    private Task<ICosmosContainerAdapter> GetOperatorOperationsContainer() =>
+        GetCachedContainerAsync(OperatorOperationsContainer, "/id", CosmosContainerDefaults.EndpointContainerDefaultTimeToLive);
+
     private Task<ICosmosContainerAdapter> GetHeartbeatUptimeDaysContainer() =>
         GetCachedContainerAsync(HeartbeatUptimeDaysContainer, "/EndpointId", CosmosContainerDefaults.EndpointContainerDefaultTimeToLive);
 
@@ -358,6 +366,15 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         => _endpointMetadata.TrySetAgentApiKeySettings(settings, expectedRevision);
     public Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage() => _endpointMetadata.GetAgentApiKeyUsage();
     public Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc) => _endpointMetadata.RecordAgentApiKeyUse(keyId, usedAtUtc);
+
+    // ── IOperatorOperationStore — implementation in CosmosDbOperatorOperationStore ──
+    public Task<OperatorOperationCreateResult> TryCreateOperatorOperation(OperatorOperation operation) => _operations.TryCreateOperatorOperation(operation);
+    public Task<OperatorOperation?> GetOperatorOperation(string operationId) => _operations.GetOperatorOperation(operationId);
+    public Task<bool> TryUpdateOperatorOperation(OperatorOperation operation, string expectedVersion) => _operations.TryUpdateOperatorOperation(operation, expectedVersion);
+    public Task<IReadOnlyList<OperatorOperation>> ListDueOperatorOperations(IReadOnlyCollection<OperatorOperationStatus> statuses, DateTime updatedBeforeUtc, int limit)
+        => _operations.ListDueOperatorOperations(statuses, updatedBeforeUtc, limit);
+    public Task<int> CountOperatorOperations(OperatorOperationQuery query) => _operations.CountOperatorOperations(query);
+    public Task<int> PurgeExpiredOperatorOperations(DateTime nowUtc, int limit) => _operations.PurgeExpiredOperatorOperations(nowUtc, limit);
 
     // ── IDashboardTokenStore — implementation in CosmosDbEndpointMetadataStore ──
     public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();
