@@ -291,6 +291,24 @@ public class AgentClassificationToolsTests
     }
 
     [TestMethod]
+    public async Task A_workload_token_without_a_name_claim_records_under_its_client_id()
+    {
+        // Entra app-only tokens carry no name, ClaimTypes.Name or preferred_username claim.
+        var store = new MemoryStore();
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, store: store, entra: true,
+            policy: p => p.AllowWorkloadClassification = true);
+        await SeedFailureAsync(host);
+        await using var client = await host.CreateClientAsync(
+            McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Observe Nimbus.Classify", name: null));
+
+        var result = await client.CallToolAsync("nimbus_record_classification", Answers());
+
+        Assert.IsFalse(result.IsError == true, ErrorText(result));
+        var stored = await store.GetLatestAsync(Attempt);
+        Assert.AreEqual("app:" + McpTestHost.AgentClientId, stored!.RequestedBy);
+    }
+
+    [TestMethod]
     public async Task A_workload_role_never_admits_the_deprecated_provider_analysis()
     {
         await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
@@ -459,9 +477,10 @@ public class AgentClassificationToolsTests
         => string.Join(" ", result.Content.OfType<TextContentBlock>().Select(c => c.Text));
 
     /// <summary>The ACL and audit boundary, answering from the stub access the MCP host also uses.</summary>
-    private sealed class AllowingHost(McpTestHost.StubAccess access, McpTestHost.RecordingAuditLog audit) : IIntegrationIntelligenceHost
+    private sealed class AllowingHost(McpTestHost.StubAccess access, McpTestHost.RecordingAuditLog audit, Microsoft.AspNetCore.Http.IHttpContextAccessor http) : IIntegrationIntelligenceHost
     {
-        public string? CurrentActor => "Agent Operator";
+        // Named as the WebApp names the caller, so a workload token without a name claim is covered.
+        public string? CurrentActor => NimBus.WebApp.Services.PrincipalNames.Resolve(http.HttpContext?.User) ?? "Agent Operator";
         public Task<bool> EndpointExistsAsync(string endpointId, CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task<bool> HasReaderAsync(string endpointId, CancellationToken cancellationToken = default)
             => Task.FromResult(McpTestHost.ReadableEndpoints.Contains(endpointId, StringComparer.OrdinalIgnoreCase));

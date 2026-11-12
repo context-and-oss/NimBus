@@ -69,6 +69,33 @@ public sealed class AuditLogServiceTests
     }
 
     [TestMethod]
+    [DataRow("azp", DisplayName = "v2 token (azp)")]
+    [DataRow("appid", DisplayName = "v1 token (appid)")]
+    public async Task LogAuditAsync_names_an_app_only_token_after_its_client(string clientClaim)
+    {
+        // Entra app-only tokens carry no name claim; "anonymous" would hide which agent acted.
+        var store = new CapturingStore();
+        var sut = new AuditLogService(NullLogger(), store);
+        var ctx = MakeContextWithClaims(("oid", "33333333-3333-3333-3333-333333333333"), (clientClaim, "agent-client"), ("roles", "Nimbus.Classify"));
+
+        await sut.LogAuditAsync(MessageAuditType.Resubmit, ctx);
+
+        Assert.AreEqual("app:agent-client", store.Entries.Single().Entity.AuditorName);
+    }
+
+    [TestMethod]
+    public async Task LogAuditAsync_prefers_a_name_claim_over_the_client_id()
+    {
+        var store = new CapturingStore();
+        var sut = new AuditLogService(NullLogger(), store);
+        var ctx = MakeContextWithClaims(("azp", "agent-client"), ("name", "Alice Name"));
+
+        await sut.LogAuditAsync(MessageAuditType.Resubmit, ctx);
+
+        Assert.AreEqual("Alice Name", store.Entries.Single().Entity.AuditorName);
+    }
+
+    [TestMethod]
     public async Task LogAuditAsync_falls_back_to_anonymous_when_no_principal()
     {
         var store = new CapturingStore();
