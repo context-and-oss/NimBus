@@ -9272,6 +9272,9 @@ namespace NimBus.WebApp.ManagementApi
         private string _endpointOwnerEmail;
         private System.Collections.Generic.List<TechnicalContact> _technicalContacts;
         private string _subscriptionStatus;
+        private string _sourceSystem;
+        private string _repositoryUrl;
+        private string _ticketLinkTemplate;
 
         [Newtonsoft.Json.JsonProperty("id", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string Id    {
@@ -9346,6 +9349,54 @@ namespace NimBus.WebApp.ManagementApi
                 if (_subscriptionStatus != value)
                 {
                     _subscriptionStatus = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The business system the endpoint's adapter integrates, at most 200 characters (Spec 044 Phase 3).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("sourceSystem", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SourceSystem    {
+            get { return _sourceSystem; }
+            set
+            {
+                if (_sourceSystem != value)
+                {
+                    _sourceSystem = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The https address of the adapter's repository, where agents file adapter defects (Spec 044 Phase 3). No credentials, query string or fragment.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("repositoryUrl", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string RepositoryUrl    {
+            get { return _repositoryUrl; }
+            set
+            {
+                if (_repositoryUrl != value)
+                {
+                    _repositoryUrl = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The issue tracker as an https link template containing {ticketId}. Overrides the site's ticket link for this endpoint (Spec 044 Phase 3).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("ticketLinkTemplate", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TicketLinkTemplate    {
+            get { return _ticketLinkTemplate; }
+            set
+            {
+                if (_ticketLinkTemplate != value)
+                {
+                    _ticketLinkTemplate = value;
                     RaisePropertyChanged();
                 }
             }

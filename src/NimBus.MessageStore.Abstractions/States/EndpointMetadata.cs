@@ -27,4 +27,25 @@ public class EndpointMetadata
     public List<Heartbeat>? Heartbeats { get; set; }
 
     public bool? SubscriptionStatus { get; set; }
+
+    /// <summary>
+    /// The business system this endpoint's adapter integrates (for example "Dynamics 365 Sales"),
+    /// named in data-quality reports to the source's owner (Spec 044 Phase 3). Owner-edited.
+    /// </summary>
+    public string? SourceSystem { get; set; }
+
+    /// <summary>
+    /// The https address of the adapter's source repository (Spec 044 Phase 3). An agent that
+    /// finds an adapter defect opens its issue and draft pull request here; without it adapter
+    /// faults go to a person. Never the NimBus repository. Owner-edited.
+    /// </summary>
+    public string? RepositoryUrl { get; set; }
+
+    /// <summary>
+    /// The issue tracker for this endpoint as an https link template containing
+    /// <c>{ticketId}</c>, for example <c>https://github.com/org/adapter/issues/{ticketId}</c>.
+    /// Overrides the site's <c>TicketLinkTemplate</c> for this endpoint's reported messages
+    /// (Spec 044 Phase 3, §14 Q4). Owner-edited.
+    /// </summary>
+    public string? TicketLinkTemplate { get; set; }
 }

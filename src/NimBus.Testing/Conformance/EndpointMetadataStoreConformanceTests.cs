@@ -40,6 +40,27 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.AreEqual(true, fetched.SubscriptionStatus);
         Assert.AreEqual(1, fetched.TechnicalContacts!.Count);
         Assert.AreEqual("Ops", fetched.TechnicalContacts[0].Name);
+        Assert.AreEqual("Dynamics 365 Sales", fetched.SourceSystem);
+        Assert.AreEqual("https://github.com/example/crm-adapter", fetched.RepositoryUrl);
+        Assert.AreEqual("https://github.com/example/crm-adapter/issues/{ticketId}", fetched.TicketLinkTemplate);
+    }
+
+    [TestMethod]
+    public async Task Code_location_fields_round_trip_as_null()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-no-code");
+        var metadata = SampleMetadata(endpointId);
+        metadata.SourceSystem = null;
+        metadata.RepositoryUrl = null;
+        metadata.TicketLinkTemplate = null;
+
+        await store.SetEndpointMetadata(metadata);
+        var fetched = await store.GetEndpointMetadata(endpointId);
+
+        Assert.IsNull(fetched!.SourceSystem);
+        Assert.IsNull(fetched.RepositoryUrl);
+        Assert.IsNull(fetched.TicketLinkTemplate);
     }
 
     [TestMethod]
@@ -602,6 +623,9 @@ public abstract class EndpointMetadataStoreConformanceTests
             new() { Name = "Ops", Email = "ops@example.com" },
         },
         SubscriptionStatus = true,
+        SourceSystem = "Dynamics 365 Sales",
+        RepositoryUrl = "https://github.com/example/crm-adapter",
+        TicketLinkTemplate = "https://github.com/example/crm-adapter/issues/{ticketId}",
     };
 
     // Single-row lookups return null for a missing row; optional strings round-trip exactly.

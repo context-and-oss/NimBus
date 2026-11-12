@@ -5101,6 +5101,18 @@ components:
             $ref: '#/components/schemas/TechnicalContact'
         subscriptionStatus:
           type: string
+        sourceSystem:
+          type: string
+          nullable: true
+          description: The business system the endpoint's adapter integrates, at most 200 characters (Spec 044 Phase 3).
+        repositoryUrl:
+          type: string
+          nullable: true
+          description: The https address of the adapter's repository, where agents file adapter defects (Spec 044 Phase 3). No credentials, query string or fragment.
+        ticketLinkTemplate:
+          type: string
+          nullable: true
+          description: The issue tracker as an https link template containing {ticketId}. Overrides the site's ticket link for this endpoint (Spec 044 Phase 3).
     TechnicalContact:
       title: TechnicalContact
       x-stoplight:

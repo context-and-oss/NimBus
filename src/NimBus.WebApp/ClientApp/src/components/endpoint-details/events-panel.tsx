@@ -31,7 +31,7 @@ import { notifyWithUndo, notifyError } from "functions/notifications.functions";
 import { describeCommandError } from "functions/operator-command.functions";
 import { failureBacklog } from "functions/failed-messages.functions";
 import { reportedCellState } from "functions/reported.functions";
-import { useTicketLinkTemplate } from "hooks/app-status";
+import { useEndpointTicketLinkTemplate } from "hooks/app-status";
 import { useCurrentUser } from "hooks/use-current-user";
 
 const isHandoffEvent = (event: api.Event): boolean =>
@@ -332,7 +332,7 @@ const EventsPanel = (props: EventsPanelProps) => {
   // template ("…/{ticket}"); undefined → ticket chips render as plain text.
   // currentUser names the operator on optimistic marks so the who/when tooltip
   // is populated before the next refetch.
-  const ticketLinkTemplate = useTicketLinkTemplate();
+  const ticketLinkTemplate = useEndpointTicketLinkTemplate(endpointId);
   const { user: currentUser } = useCurrentUser();
   const [reportTarget, setReportTarget] = React.useState<{
     event: api.Event;

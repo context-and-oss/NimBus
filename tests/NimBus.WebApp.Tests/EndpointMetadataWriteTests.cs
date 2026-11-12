@@ -144,6 +144,46 @@ public sealed class EndpointMetadataWriteTests
     }
 
     [TestMethod]
+    public async Task The_code_location_is_stored_trimmed()
+    {
+        var store = new InMemoryMessageStore();
+        var sut = CreateSut(store, new RecordingAudit());
+        var body = Body(Endpoint, "Owner");
+        body.SourceSystem = " Dynamics 365 Sales ";
+        body.RepositoryUrl = " https://github.com/example/crm-adapter ";
+        body.TicketLinkTemplate = "https://github.com/example/crm-adapter/issues/{ticketId}";
+
+        var result = await sut.PostMetadataEndpointAsync(body, Endpoint);
+
+        Assert.IsInstanceOfType<OkObjectResult>(result);
+        var stored = await store.GetEndpointMetadata(Endpoint);
+        Assert.AreEqual("Dynamics 365 Sales", stored!.SourceSystem);
+        Assert.AreEqual("https://github.com/example/crm-adapter", stored.RepositoryUrl);
+        Assert.AreEqual("https://github.com/example/crm-adapter/issues/{ticketId}", stored.TicketLinkTemplate);
+    }
+
+    [TestMethod]
+    [DataRow("http://github.com/example/adapter", null, DisplayName = "repository over http")]
+    [DataRow("https://user:secret@github.com/example/adapter", null, DisplayName = "repository with credentials")]
+    [DataRow("https://github.com/example/adapter?token=1", null, DisplayName = "repository with a query string")]
+    [DataRow("git@github.com:example/adapter.git", null, DisplayName = "repository over ssh")]
+    [DataRow(null, "https://github.com/example/adapter/issues/1", DisplayName = "ticket link without the placeholder")]
+    [DataRow(null, "javascript:alert({ticketId})", DisplayName = "ticket link that is not https")]
+    public async Task An_unsafe_code_location_is_refused(string? repositoryUrl, string? ticketLinkTemplate)
+    {
+        var store = new InMemoryMessageStore();
+        var sut = CreateSut(store, new RecordingAudit());
+        var body = Body(Endpoint, "Owner");
+        body.RepositoryUrl = repositoryUrl!;
+        body.TicketLinkTemplate = ticketLinkTemplate!;
+
+        var result = await sut.PostMetadataEndpointAsync(body, Endpoint);
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
+        Assert.IsNull(await store.GetEndpointMetadata(Endpoint));
+    }
+
+    [TestMethod]
     public void Endpoint_metadata_changes_are_always_recorded()
         => Assert.IsTrue(AuditSettingsProvider.AlwaysRecorded.Contains(MessageAuditType.UpdateEndpointMetadata));
 

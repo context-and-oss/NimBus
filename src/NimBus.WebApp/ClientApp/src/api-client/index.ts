@@ -11808,6 +11808,12 @@ export class Metadata implements IMetadata {
     endpointOwnerEmail?: string;
     technicalContacts?: TechnicalContact[];
     subscriptionStatus?: string;
+    /** The business system the endpoint's adapter integrates, at most 200 characters (Spec 044 Phase 3). */
+    sourceSystem?: string | undefined;
+    /** The https address of the adapter's repository, where agents file adapter defects (Spec 044 Phase 3). No credentials, query string or fragment. */
+    repositoryUrl?: string | undefined;
+    /** The issue tracker as an https link template containing {ticketId}. Overrides the site's ticket link for this endpoint (Spec 044 Phase 3). */
+    ticketLinkTemplate?: string | undefined;
 
     [key: string]: any;
 
@@ -11836,6 +11842,9 @@ export class Metadata implements IMetadata {
                     this.technicalContacts!.push(TechnicalContact.fromJS(item));
             }
             this.subscriptionStatus = _data["subscriptionStatus"];
+            this.sourceSystem = _data["sourceSystem"];
+            this.repositoryUrl = _data["repositoryUrl"];
+            this.ticketLinkTemplate = _data["ticketLinkTemplate"];
         }
     }
 
@@ -11862,6 +11871,9 @@ export class Metadata implements IMetadata {
                 data["technicalContacts"].push(item ? item.toJSON() : undefined as any);
         }
         data["subscriptionStatus"] = this.subscriptionStatus;
+        data["sourceSystem"] = this.sourceSystem;
+        data["repositoryUrl"] = this.repositoryUrl;
+        data["ticketLinkTemplate"] = this.ticketLinkTemplate;
         return data;
     }
 
@@ -11880,6 +11892,12 @@ export interface IMetadata {
     endpointOwnerEmail?: string;
     technicalContacts?: TechnicalContact[];
     subscriptionStatus?: string;
+    /** The business system the endpoint's adapter integrates, at most 200 characters (Spec 044 Phase 3). */
+    sourceSystem?: string | undefined;
+    /** The https address of the adapter's repository, where agents file adapter defects (Spec 044 Phase 3). No credentials, query string or fragment. */
+    repositoryUrl?: string | undefined;
+    /** The issue tracker as an https link template containing {ticketId}. Overrides the site's ticket link for this endpoint (Spec 044 Phase 3). */
+    ticketLinkTemplate?: string | undefined;
 
     [key: string]: any;
 }
