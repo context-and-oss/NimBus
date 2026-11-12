@@ -352,6 +352,7 @@ var erpWeb = builder.AddViteApp("erp-web", "../Erp.Web")
     .WithReference(erpApi)
     .WaitFor(erpApi);
 
+IResourceBuilder<ParameterResource>? demoServiceKey = null;
 if (isPublish)
 {
     // The Vite dev-server proxy does not exist in Azure: each API serves its built UI
@@ -368,7 +369,7 @@ if (isPublish)
     // both APIs read the same NimBus Identity user store (nimbus-ops creates the schema and the
     // admin). The adapters call the APIs over the same URLs and present a shared service key,
     // generated on the first deploy and kept in the deployment state.
-    var demoServiceKey = builder.AddParameter(
+    demoServiceKey = builder.AddParameter(
         "demo-service-key",
         new GenerateParameterDefault { MinLength = 32, Special = false },
         secret: true,
@@ -410,19 +411,26 @@ WithFunctionsServiceBus(dataPlatformAdapter);
 // receiver in AutoDetect mode) and reads ERP CloudEvents from the plain
 // ErpEndpoint/PartnerPortalCapture subscription. Waits for crm-adapter so leads
 // don't pile up before the subscriber is listening.
+// The reference to crm-api is only for the "Partner leads" switch in crm-web: the portal asks
+// crm-api's flag before each lead (plain HTTP, still no NimBus).
 var partnerPortal = builder.AddProject<Projects.PartnerPortal>("partner-portal")
     .WithReference(servicebus)
+    .WithReference(crmApi)
     .WaitFor(crmAdapter)
     .WaitForCompletion(provisioner);
-// PARTNER_PUBLISH_LEADS=false on the AppHost (or on `aspire deploy`) turns the recurring
-// leads off; the portal keeps listening for ERP events.
+// PARTNER_PUBLISH_LEADS=false on the AppHost (or on `aspire deploy`) starts the demo with the
+// recurring leads off: crm-api's switch starts off, and the portal stays quiet until it is
+// flipped in crm-web. The portal keeps listening for ERP events either way.
 if (builder.Configuration["PARTNER_PUBLISH_LEADS"] is { Length: > 0 } publishPartnerLeads)
 {
     partnerPortal.WithEnvironment("PARTNER_PUBLISH_LEADS", publishPartnerLeads);
+    crmApi.WithEnvironment("PARTNER_PUBLISH_LEADS", publishPartnerLeads);
 }
 if (isPublish)
 {
-    partnerPortal.PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
+    // crm-api requires sign-in in Azure, so the portal presents the demo service key.
+    partnerPortal.WithEnvironment("Demo__ServiceKey", demoServiceKey!)
+                 .PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
 }
 
 // Agent Zone (spec 022). The park host subscribes to AgentZoneEndpoint and parks
