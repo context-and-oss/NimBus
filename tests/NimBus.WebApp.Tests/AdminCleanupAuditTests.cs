@@ -283,7 +283,10 @@ public sealed class AdminCleanupAuditTests
         // Dashboard token changes were appended after that.
         Assert.AreEqual(42, (int)MessageAuditType.DashboardTokenCreated);
         Assert.AreEqual(44, (int)MessageAuditType.DashboardTokenRemoved);
-        Assert.AreEqual(MessageAuditType.DashboardTokenRemoved, Enum.GetValues<MessageAuditType>().Max());
+        // Integrator API key changes (Spec 045) were appended after those.
+        Assert.AreEqual(45, (int)MessageAuditType.IntegratorApiKeyCreated);
+        Assert.AreEqual(47, (int)MessageAuditType.IntegratorApiKeyRemoved);
+        Assert.AreEqual(MessageAuditType.IntegratorApiKeyRemoved, Enum.GetValues<MessageAuditType>().Max());
     }
 
     [TestMethod]

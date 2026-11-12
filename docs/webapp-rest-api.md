@@ -214,7 +214,7 @@ Every error from `/api/…` (any 4xx or 5xx status) carries the same body, the
   `retryAfterSeconds`). Ignore members you don't know.
 - **Where the body comes from:** an operation's own error, the sign-in handlers
   (401, 403), the antiforgery check (400, `code: InvalidAntiforgeryToken`), the
-  rate limiter (429, plus a `Retry-After` header), an unknown `/api/…` route (404)
+  rate limiter (429, plus a `Retry-After` header; see [Rate Limiting](rate-limiting.md)), an unknown `/api/…` route (404)
   and unhandled exceptions (500; the message is shown only in the Development
   environment). Paths outside `/api/…` keep their own bodies.
 
