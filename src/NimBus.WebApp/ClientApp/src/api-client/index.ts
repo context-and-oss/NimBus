@@ -19176,6 +19176,8 @@ export class McpAccessSettings implements IMcpAccessSettings {
     allowWorkloadClassification?: boolean;
     /** Whether workloads with the Nimbus.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false. */
     allowWorkloadResubmit?: boolean;
+    /** Whether workloads with the Nimbus.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false. */
+    allowWorkloadAnnotation?: boolean;
     /** Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20). */
     workloadResubmitsPerDay?: number | undefined;
     /** Unsuccessful workload resubmits of one message, across agents, after which NimBus refuses another; 1-5. Null on a save keeps the default (2). */
@@ -19210,6 +19212,7 @@ export class McpAccessSettings implements IMcpAccessSettings {
             this.allowWorkloads = _data["allowWorkloads"];
             this.allowWorkloadClassification = _data["allowWorkloadClassification"];
             this.allowWorkloadResubmit = _data["allowWorkloadResubmit"];
+            this.allowWorkloadAnnotation = _data["allowWorkloadAnnotation"];
             this.workloadResubmitsPerDay = _data["workloadResubmitsPerDay"];
             this.workloadResubmitsPerMessage = _data["workloadResubmitsPerMessage"];
             this.people = _data["people"] ? McpPeople.fromJS(_data["people"]) : undefined as any;
@@ -19240,6 +19243,7 @@ export class McpAccessSettings implements IMcpAccessSettings {
         data["allowWorkloads"] = this.allowWorkloads;
         data["allowWorkloadClassification"] = this.allowWorkloadClassification;
         data["allowWorkloadResubmit"] = this.allowWorkloadResubmit;
+        data["allowWorkloadAnnotation"] = this.allowWorkloadAnnotation;
         data["workloadResubmitsPerDay"] = this.workloadResubmitsPerDay;
         data["workloadResubmitsPerMessage"] = this.workloadResubmitsPerMessage;
         data["people"] = this.people ? this.people.toJSON() : undefined as any;
@@ -19272,6 +19276,8 @@ export interface IMcpAccessSettings {
     allowWorkloadClassification?: boolean;
     /** Whether workloads with the Nimbus.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false. */
     allowWorkloadResubmit?: boolean;
+    /** Whether workloads with the Nimbus.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false. */
+    allowWorkloadAnnotation?: boolean;
     /** Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20). */
     workloadResubmitsPerDay?: number | undefined;
     /** Unsuccessful workload resubmits of one message, across agents, after which NimBus refuses another; 1-5. Null on a save keeps the default (2). */

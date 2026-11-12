@@ -339,6 +339,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetResubmitCounts(endpointId, eventIds);
     public Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId) => _messageTracking.SetEventReport(endpointId, eventId, isReported, reportedBy, ticketId);
     public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetEventReports(endpointId, eventIds);
+    public Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit) => _messageTracking.FindEventReports(endpointId, ticketId, limit);
     public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => _messageTracking.ArchiveFailedEvent(eventId, sessionId, endpointId);
     public Task<string> GetEndpointErrorList(string endpointId) => _messageTracking.GetEndpointErrorList(endpointId);
 

@@ -69,6 +69,12 @@ public static class McpOperatorPermissions
     public const string ResubmitRole = "Nimbus.Resubmit";
 
     /// <summary>
+    /// Application role for workloads that mark messages reported with a ticket id (Spec 044
+    /// Phase 3). It admits <c>nimbus_set_message_reported</c> only, while the Owner allows it.
+    /// </summary>
+    public const string AnnotateRole = "Nimbus.Annotate";
+
+    /// <summary>
     /// Every delegated scope the endpoint understands, in the order the protected-resource
     /// metadata advertises them. <see cref="ClassifyScope"/> and <see cref="ResubmitScope"/> have
     /// workload app roles (<see cref="ClassifyRole"/>, <see cref="ResubmitRole"/>); skip stays with

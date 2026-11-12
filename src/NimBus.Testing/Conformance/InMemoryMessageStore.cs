@@ -617,6 +617,19 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit)
+    {
+        IReadOnlyList<EventReport> found = string.IsNullOrEmpty(endpointId) || limit <= 0
+            ? []
+            : _eventReports.Values
+                .Where(r => r.EndpointId == endpointId && r.IsReported && (ticketId is null || r.TicketId == ticketId))
+                .OrderByDescending(r => r.ReportedAtUtc)
+                .ThenBy(r => r.EventId, StringComparer.Ordinal)
+                .Take(limit)
+                .ToList();
+        return Task.FromResult(found);
+    }
+
     public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds)
     {
         var result = new Dictionary<string, EventReport>();

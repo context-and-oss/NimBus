@@ -54,6 +54,13 @@ public class McpAccessSettings
     /// </summary>
     public bool AllowWorkloadResubmit { get; set; }
 
+    /// <summary>
+    /// Let workloads holding the <c>Nimbus.Annotate</c> app role mark messages reported with a
+    /// ticket id (Spec 044 Phase 3). It changes nothing on the bus. Effective only while
+    /// <see cref="AllowWorkloads"/> is on. Default false.
+    /// </summary>
+    public bool AllowWorkloadAnnotation { get; set; }
+
     /// <summary>Resubmits each workload client may make in a rolling 24 hours, 0-500. Default 20.</summary>
     public int WorkloadResubmitsPerDay { get; set; } = DefaultWorkloadResubmitsPerDay;
 

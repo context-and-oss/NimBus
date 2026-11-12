@@ -20,7 +20,7 @@ public class McpOperatorEndpointTests
         "nimbus_get_capabilities", "nimbus_list_endpoints", "nimbus_get_overview", "nimbus_get_endpoint",
         "nimbus_find_messages", "nimbus_get_message", "nimbus_get_message_history", "nimbus_get_session",
         "nimbus_search_messages", "nimbus_get_metrics", "nimbus_get_classification", "nimbus_prepare_action",
-        "nimbus_get_failure_evidence", "nimbus_get_operation",
+        "nimbus_get_failure_evidence", "nimbus_get_operation", "nimbus_find_reports",
     ];
 
     // Spec 035 Phase 2a and Spec 044. Listed for every caller; each checks its own scope and role.

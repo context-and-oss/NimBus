@@ -116,6 +116,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetResubmitCounts(endpointId, eventIds);
     public Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId) => _messageTracking.SetEventReport(endpointId, eventId, isReported, reportedBy, ticketId);
     public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetEventReports(endpointId, eventIds);
+    public Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit) => _messageTracking.FindEventReports(endpointId, ticketId, limit);
     public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetPendingEvent(endpointId, eventId, sessionId);
     public Task<UnresolvedEvent?> GetFailedEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetFailedEvent(endpointId, eventId, sessionId);
     public Task<UnresolvedEvent?> GetDeferredEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetDeferredEvent(endpointId, eventId, sessionId);

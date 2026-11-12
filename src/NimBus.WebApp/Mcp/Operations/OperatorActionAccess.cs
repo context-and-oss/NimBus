@@ -97,6 +97,7 @@ public sealed class OperatorActionAccess
             {
                 OperatorAction.Classify => $"classify requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.ClassifyRole} app role with workload recording allowed by an administrator.",
                 OperatorAction.Resubmit => $"resubmit requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.ResubmitRole} app role with unattended resubmits allowed by an administrator.",
+                OperatorAction.Report => $"report requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.AnnotateRole} app role with workload reporting allowed by an administrator.",
                 _ => $"{NameOf(action)} requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens cannot {NameOf(action)} messages.",
             });
         }
@@ -235,6 +236,9 @@ public sealed class OperatorActionAccess
             OperatorAction.Resubmit => _policies.Current?.AllowsWorkloadResubmit == true
                 && _journal.IsAvailable
                 && McpOperatorPermissions.IsWorkloadWithRole(user, McpOperatorPermissions.ResubmitRole),
+            // Spec 044 Phase 3: marking reported changes nothing on the bus.
+            OperatorAction.Report => _policies.Current?.AllowsWorkloadAnnotation == true
+                && McpOperatorPermissions.IsWorkloadWithRole(user, McpOperatorPermissions.AnnotateRole),
             _ => false,
         };
     }

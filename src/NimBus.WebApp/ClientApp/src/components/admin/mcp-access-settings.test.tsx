@@ -251,7 +251,7 @@ describe("MCP access model", () => {
 
     expect(on.find(r => r.name === "nimbus_record_classification")).toEqual(
       { name: "nimbus_record_classification", allowed: true, why: "Nimbus.Classify role + Contributor" });
-    expect(on.filter(r => r.allowed).map(r => r.name)).toEqual(["13 read tools", "nimbus_record_classification"]);
+    expect(on.filter(r => r.allowed).map(r => r.name)).toEqual(["14 read tools", "nimbus_record_classification"]);
     expect(off.find(r => r.name === "nimbus_record_classification")?.why).toBe("workload recording off");
     expect(describeChanges(settings(), s)).toEqual([{ text: "Let workloads record failure classifications", widens: true }]);
   });

@@ -207,7 +207,7 @@ export default function McpAccessSettings() {
               <ul className="divide-y divide-border rounded-md border border-border">
                 <li className="flex items-start justify-between gap-4 p-3">
                   <div><p className="text-sm font-semibold">Observe <Risk risk="low" text="read" /></p>
-                    <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics, failure evidence, stored classifications and operation outcomes: {READ_TOOL_COUNT} read tools. Never stack traces.</p></div>
+                    <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics, failure evidence, stored classifications, operation outcomes and reports: {READ_TOOL_COUNT} read tools. Never stack traces.</p></div>
                   <span className="shrink-0 rounded-full border border-dashed border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">Always on</span>
                 </li>
                 {CAPABILITIES.map(cap => (
@@ -234,6 +234,10 @@ export default function McpAccessSettings() {
               <SettingRow label="Workloads may record classifications" description="Workloads with the Nimbus.Classify app role may call nimbus_record_classification. They still need Contributor on the endpoint in Access Control, and Classify failures must be on. Recording is advisory and changes no message. Off by default.">
                 <Toggle aria-label="Allow workloads to record classifications" checked={Boolean(draft.allowWorkloadClassification)}
                   disabled={local || !draft.allowWorkloads} onChange={v => edit(s => { s.allowWorkloadClassification = v; })} />
+              </SettingRow>
+              <SettingRow label="Workloads may mark messages reported" description="Workloads with the Nimbus.Annotate app role may call nimbus_set_message_reported, for example with the ticket they filed. They still need Contributor on the endpoint and Mark reported must be on. Changes nothing on the bus. Off by default.">
+                <Toggle aria-label="Allow workloads to mark messages reported" checked={Boolean(draft.allowWorkloadAnnotation)}
+                  disabled={local || !draft.allowWorkloads} onChange={v => edit(s => { s.allowWorkloadAnnotation = v; })} />
               </SettingRow>
               <SettingRow label="Workloads may resubmit" description="Workloads with the Nimbus.Resubmit app role may resubmit failed messages without a person, through the operation journal. They still need Contributor on the endpoint and Resubmit messages must be on. Skip always stays with a person. Off by default.">
                 <Toggle aria-label="Allow workloads to resubmit" checked={Boolean(draft.allowWorkloadResubmit)}

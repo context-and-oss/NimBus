@@ -19092,6 +19092,7 @@ namespace NimBus.WebApp.ManagementApi
         private bool _allowWorkloads;
         private bool _allowWorkloadClassification;
         private bool _allowWorkloadResubmit;
+        private bool _allowWorkloadAnnotation;
         private int? _workloadResubmitsPerDay;
         private int? _workloadResubmitsPerMessage;
         private McpPeople _people;
@@ -19213,6 +19214,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_allowWorkloadResubmit != value)
                 {
                     _allowWorkloadResubmit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether workloads with the Nimbus.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("allowWorkloadAnnotation", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AllowWorkloadAnnotation    {
+            get { return _allowWorkloadAnnotation; }
+            set
+            {
+                if (_allowWorkloadAnnotation != value)
+                {
+                    _allowWorkloadAnnotation = value;
                     RaisePropertyChanged();
                 }
             }

@@ -21,6 +21,8 @@ export interface McpSettings {
   allowWorkloadClassification?: boolean;
   /** Spec 044 Phase 2: workloads with the Nimbus.Resubmit app role may resubmit unattended. Effective only with allowWorkloads. */
   allowWorkloadResubmit?: boolean;
+  /** Spec 044 Phase 3: workloads with the Nimbus.Annotate app role may mark messages reported. */
+  allowWorkloadAnnotation?: boolean;
   /** Resubmits per workload client in a rolling 24 hours (0-500, default 20). */
   workloadResubmitsPerDay?: number | null;
   /** Unsuccessful workload resubmits of one message before it stays with a person (1-5, default 2). */
@@ -90,8 +92,8 @@ export interface CapabilityInfo {
   tools: string[]; scope: string; role: string; description: string; note?: string;
 }
 
-export const READ_TOOL_COUNT = 13;
-export const TOTAL_TOOL_COUNT = 19;
+export const READ_TOOL_COUNT = 14;
+export const TOTAL_TOOL_COUNT = 20;
 
 export const CAPABILITIES: CapabilityInfo[] = [
   { key: "payloads", label: "Raw payloads", risk: "data", riskText: "data", tools: ["nimbus_get_message · includePayload"],
@@ -149,6 +151,8 @@ export function describeChanges(a: McpSettings, b: McpSettings): McpChange[] {
     add(b.allowWorkloadClassification ? "Let workloads record failure classifications" : "Stop workloads recording failure classifications", Boolean(b.allowWorkloadClassification));
   if (Boolean(a.allowWorkloadResubmit) !== Boolean(b.allowWorkloadResubmit))
     add(b.allowWorkloadResubmit ? "Let workloads resubmit failed messages unattended" : "Stop workloads resubmitting messages", Boolean(b.allowWorkloadResubmit));
+  if (Boolean(a.allowWorkloadAnnotation) !== Boolean(b.allowWorkloadAnnotation))
+    add(b.allowWorkloadAnnotation ? "Let workloads mark messages reported" : "Stop workloads marking messages reported", Boolean(b.allowWorkloadAnnotation));
   const perDay = (s: McpSettings) => s.workloadResubmitsPerDay ?? WORKLOAD_RESUBMITS_PER_DAY;
   const perMessage = (s: McpSettings) => s.workloadResubmitsPerMessage ?? WORKLOAD_RESUBMITS_PER_MESSAGE;
   if (perDay(a) !== perDay(b))
@@ -241,6 +245,10 @@ export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona
         ? { name, allowed: true, why: "Nimbus.Classify role + Contributor" }
         : { name, allowed: false, why: "workload recording off" };
     // Spec 044 Phase 2: a workload may resubmit with the Nimbus.Resubmit role, within its budget, when allowed here. Never skip.
+    if (!p.delegated && key === "report")
+      return s.allowWorkloadAnnotation
+        ? { name, allowed: true, why: "Nimbus.Annotate role + Contributor" }
+        : { name, allowed: false, why: "workload reporting off" };
     if (!p.delegated && key === "resubmit")
       return s.allowWorkloadResubmit
         ? { name, allowed: true, why: "Nimbus.Resubmit role + Contributor, within budget" }

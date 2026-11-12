@@ -86,6 +86,10 @@ public static class McpAccessRules
             Add(after.AllowWorkloadResubmit ? "Let workloads resubmit failed messages unattended" : "Stop workloads resubmitting messages",
                 after.AllowWorkloadResubmit);
 
+        if (before.AllowWorkloadAnnotation != after.AllowWorkloadAnnotation)
+            Add(after.AllowWorkloadAnnotation ? "Let workloads mark messages reported" : "Stop workloads marking messages reported",
+                after.AllowWorkloadAnnotation);
+
         if (before.WorkloadResubmitsPerDay != after.WorkloadResubmitsPerDay)
             Add($"Workload resubmits per day: {before.WorkloadResubmitsPerDay} → {after.WorkloadResubmitsPerDay}",
                 after.WorkloadResubmitsPerDay > before.WorkloadResubmitsPerDay);
