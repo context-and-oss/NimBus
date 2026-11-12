@@ -121,7 +121,7 @@ public class McpOperatorEndpointTests
         var json = StructuredContent(result);
         Assert.AreEqual("test", json.GetProperty("environment").GetString());
         Assert.AreEqual("LocalDevelopment", json.GetProperty("authenticationMode").GetString());
-        Assert.AreEqual("Agent Operator", json.GetProperty("caller").GetProperty("name").GetString());
+        Assert.AreEqual("Local Developer", json.GetProperty("caller").GetProperty("name").GetString());
         CollectionAssert.AreEquivalent(
             McpTestHost.ReadableEndpoints,
             json.GetProperty("readableEndpoints").EnumerateArray().Select(e => e.GetString()).ToArray());
