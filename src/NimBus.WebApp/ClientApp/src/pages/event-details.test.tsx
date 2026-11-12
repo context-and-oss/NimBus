@@ -16,6 +16,16 @@ vi.mock("components/event-details/message-listing", () => ({
   },
 }));
 
+// The operator commands live in the page header (EventActions). Capture its
+// props the same way so the command-follow-up tests can drive them.
+const capturedActions: { latest?: Record<string, unknown> } = {};
+vi.mock("components/event-details/event-actions", () => ({
+  default: (props: Record<string, unknown>) => {
+    capturedActions.latest = props;
+    return <div data-testid="event-actions-stub" />;
+  },
+}));
+
 // FlowTimeline / BlockedListing / Loading / TabSelection / Page are rendered
 // by the page but we only need to inspect the MessageListing wiring. Stub
 // the children that pull in heavy deps so the test stays fast and hermetic.
@@ -95,6 +105,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   capturedProps.latest = undefined;
+  capturedActions.latest = undefined;
 });
 
 describe("enrichBlockedItems", () => {
@@ -238,7 +249,7 @@ describe("EventDetails after an operator command", () => {
     await waitFor(() => expect(shownMessageId()).toBe("msg-1"));
 
     vi.useFakeTimers();
-    const resubmit = capturedProps.latest!.resubmitEvent as (
+    const resubmit = capturedActions.latest!.resubmitEvent as (
       eventId: string,
       messageId: string,
     ) => Promise<void>;
@@ -248,7 +259,7 @@ describe("EventDetails after an operator command", () => {
     expect(clientMocks.postResubmitEventIds).toHaveBeenCalledWith("evt-1", "msg-1");
 
     // The listing keeps the actions closed for the attempt the command acted on.
-    expect(capturedProps.latest!.commandAcceptedFor).toBe("msg-1");
+    expect(capturedActions.latest!.commandAcceptedFor).toBe("msg-1");
 
     await advance(15_000);
     expect(shownMessageId()).toBe("msg-3");
@@ -289,7 +300,7 @@ describe("EventDetails after an operator command", () => {
     await waitFor(() => expect(shownHistory()).toBe("initial"));
 
     vi.useFakeTimers();
-    const resubmit = capturedProps.latest!.resubmitEvent as (
+    const resubmit = capturedActions.latest!.resubmitEvent as (
       eventId: string,
       messageId: string,
     ) => Promise<void>;
@@ -315,7 +326,7 @@ describe("EventDetails after an operator command", () => {
     );
   const shownEvent = () => capturedProps.latest?.eventDetails as api.Event | undefined;
   const resubmitShownEvent = async () => {
-    const resubmit = capturedProps.latest!.resubmitEvent as (
+    const resubmit = capturedActions.latest!.resubmitEvent as (
       eventId: string,
       messageId: string,
     ) => Promise<void>;
@@ -437,7 +448,7 @@ describe("EventDetails after an operator command", () => {
       (capturedProps.latest?.eventDetails as api.Event | undefined)?.eventId;
     await waitFor(() => expect(shownEventId()).toBe("evt-1"));
 
-    const resubmit = capturedProps.latest!.resubmitEvent as (
+    const resubmit = capturedActions.latest!.resubmitEvent as (
       eventId: string,
       messageId: string,
     ) => Promise<void>;
@@ -453,7 +464,7 @@ describe("EventDetails after an operator command", () => {
 
     expect(clientMocks.getEventId).not.toHaveBeenCalled();
     expect(shownEventId()).toBe("evt-2");
-    expect(capturedProps.latest!.commandAcceptedFor).toBeUndefined();
+    expect(capturedActions.latest!.commandAcceptedFor).toBeUndefined();
   });
 });
 
@@ -478,6 +489,76 @@ describe("EventDetails -> MessageListing wiring (spec 005)", () => {
         (capturedProps.latest as { messages?: api.Message[] }).messages,
       ).toEqual(sampleHistory);
     });
+  });
+});
+
+describe("EventDetails header", () => {
+  const renderPage = () =>
+    render(
+      <MemoryRouter initialEntries={["/Message/Index/ep-1/evt-1/0"]}>
+        <Routes>
+          <Route
+            path="/Message/Index/:endpointId/:id/:backindex"
+            element={<EventDetails />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+  it("names the event by its type, shows its status and route, and puts the actions in the header", async () => {
+    clientMocks.getEventId.mockResolvedValue(
+      Object.assign(new api.Event(), {
+        eventId: "evt-1",
+        sessionId: "sess-1",
+        endpointId: "ErpEndpoint",
+        lastMessageId: "msg-1",
+        eventTypeId: "CrmAccountCreated",
+        messageType: "EventRequest",
+        from: "CrmEndpoint",
+        to: "ErpEndpoint",
+        resolutionStatus: "Failed",
+      }),
+    );
+    renderPage();
+
+    const heading = await screen.findByRole("heading", { level: 1 });
+    expect(heading.textContent).toBe("CrmAccountCreated");
+    const header = heading.closest("header")!;
+    expect(header.textContent).toContain("Failed");
+    expect(
+      header.querySelector('a[href="/Endpoints/Details/CrmEndpoint"]'),
+    ).not.toBeNull();
+    expect(
+      header.querySelector('a[href="/Endpoints/Details/ErpEndpoint"]'),
+    ).not.toBeNull();
+    expect(header.querySelector('[data-testid="event-actions-stub"]')).not.toBeNull();
+    expect(capturedActions.latest!.eventDetails).toMatchObject({ eventId: "evt-1" });
+  });
+
+  it("links the session-blocked notice to the Blocked tab", async () => {
+    clientMocks.getEventId.mockResolvedValue(
+      Object.assign(new api.Event(), {
+        eventId: "evt-1",
+        sessionId: "sess-1",
+        endpointId: "ep-1",
+        lastMessageId: "msg-1",
+        resolutionStatus: "Failed",
+      }),
+    );
+    clientMocks.getEventBlockedId.mockResolvedValue({
+      items: [Object.assign(new api.BlockedEvent(), { eventId: "b1", originatingId: "o1", status: "Deferred" })],
+      total: 1,
+    });
+    clientMocks.getEventIds.mockResolvedValue(Object.assign(new api.Message(), { eventId: "b1" }));
+    renderPage();
+
+    await waitFor(() => expect(capturedProps.latest?.blockedCount).toBe(1));
+    act(() => (capturedProps.latest!.onShowBlocked as () => void)());
+
+    await screen.findByTestId("blocked-stub");
+    expect(
+      screen.getByRole("tab", { name: /Blocked/ }).getAttribute("aria-selected"),
+    ).toBe("true");
   });
 });
 

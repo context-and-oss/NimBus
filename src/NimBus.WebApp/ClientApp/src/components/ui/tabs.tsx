@@ -11,6 +11,7 @@ import { cn } from "lib/utils";
 interface TabsContextValue {
   activeIndex: number;
   setActiveIndex: (index: number) => void;
+  variant: "enclosed" | "line";
 }
 
 const TabsContext = createContext<TabsContextValue | null>(null);
@@ -55,7 +56,7 @@ const Tabs = ({
   };
 
   return (
-    <TabsContext.Provider value={{ activeIndex, setActiveIndex }}>
+    <TabsContext.Provider value={{ activeIndex, setActiveIndex, variant }}>
       <div
         className={cn("flex flex-col w-full", className)}
         data-variant={variant}
@@ -100,8 +101,36 @@ const Tab = ({
   children,
   ...props
 }: TabProps) => {
-  const { activeIndex, setActiveIndex } = useTabsContext();
+  const { activeIndex, setActiveIndex, variant } = useTabsContext();
   const isActive = activeIndex === index;
+
+  if (variant === "line") {
+    // Underline tabs: no boxes, the active tab is marked by a primary bar.
+    return (
+      <button
+        role="tab"
+        type="button"
+        aria-selected={isActive}
+        aria-disabled={isDisabled}
+        tabIndex={isActive ? 0 : -1}
+        disabled={isDisabled}
+        className={cn(
+          "inline-flex items-center gap-2 h-10 px-0.5 -mb-px text-sm transition-colors",
+          "border-0 border-b-2 bg-transparent",
+          "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset",
+          isActive
+            ? "border-primary text-foreground font-bold"
+            : "border-transparent text-muted-foreground font-semibold hover:text-foreground",
+          isDisabled && "opacity-50 cursor-not-allowed hover:text-muted-foreground",
+          className,
+        )}
+        onClick={() => !isDisabled && setActiveIndex(index)}
+        {...props}
+      >
+        {children}
+      </button>
+    );
+  }
 
   return (
     <button
