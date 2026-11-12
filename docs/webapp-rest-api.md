@@ -551,6 +551,7 @@ controller method that fires each one:
 | `UpdateMcpSettings`   | `McpAccessImplementation.PutAdminMcpSettingsAsync` / `PostAdminMcpTurnOffAsync` — the revisions and the list of changes as `Data`; always recorded |
 | `McpAccessRefused`    | The operator MCP endpoint — a call refused by the MCP access policy or for a missing scope, with `AccessDenied` set; deduplicated per caller, client, reason and tool for 5 minutes per instance |
 | `DashboardTokenCreated` / `DashboardTokenRevoked` / `DashboardTokenRemoved` | `DashboardTokensImplementation` — the token id, name and expiry as `Data`, never the token; always recorded |
+| `UpdateEndpointMetadata` | `EndpointImplementation.PostMetadataEndpointAsync` — the endpoint owner, team, email and technical contacts before and after as `Data`; always recorded, and the change is refused (503) when the row can't be written |
 
 Resubmit, skip and resubmit-with-changes run through `OperatorCommandCoordinator`, shared with the
 operator MCP tools. Their `Data` records the channel (`WebApp` or `Mcp`), the reason and idempotency

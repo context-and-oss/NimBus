@@ -4726,6 +4726,7 @@ components:
             - dashboardTokenCreated
             - dashboardTokenRevoked
             - dashboardTokenRemoved
+            - updateEndpointMetadata
         comment:
           type: string
           nullable: true
@@ -6503,6 +6504,7 @@ components:
             - dashboardTokenCreated
             - dashboardTokenRevoked
             - dashboardTokenRemoved
+            - updateEndpointMetadata
         createdAtFrom:
           type: string
           format: date-time
@@ -7813,6 +7815,7 @@ components:
             - dashboardTokenCreated
             - dashboardTokenRevoked
             - dashboardTokenRemoved
+            - updateEndpointMetadata
         comment:
           type: string
           nullable: true

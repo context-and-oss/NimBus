@@ -24947,6 +24947,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRemoved")]
         DashboardTokenRemoved = 44,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"updateEndpointMetadata")]
+        UpdateEndpointMetadata = 45,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -25301,6 +25304,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRemoved")]
         DashboardTokenRemoved = 44,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"updateEndpointMetadata")]
+        UpdateEndpointMetadata = 45,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -25543,6 +25549,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRemoved")]
         DashboardTokenRemoved = 44,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"updateEndpointMetadata")]
+        UpdateEndpointMetadata = 45,
 
     }
 
