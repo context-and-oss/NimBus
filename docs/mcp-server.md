@@ -40,7 +40,9 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_record_classification` | Records your answers to the question set for one failed attempt. NimBus composes the guidance. Advisory, changes no message | `nimbus.classify` (workloads: the `Nimbus.Classify` app role) and endpoint Contributor; classification recordable |
 | `nimbus_classify_failure` | **Deprecated, removed in v5.0.0.** Asks the built-in provider to classify a failure, or returns the stored one | Delegated `nimbus.classify` and endpoint Contributor; a configured provider |
 
-Results never contain stack traces. Error and log text is cut to 2,000 characters and is untrusted
+Results never contain stack traces, except `nimbus_get_failure_evidence` with `includeStackTrace`
+when the adapter stores one and an Owner allows it (see
+[Integration Intelligence](integration-intelligence.md)). Error and log text is cut to 2,000 characters and is untrusted
 data from the failing handler. Timestamps are UTC. Errors start with a code in brackets, for example
 `[EndpointNotFound]` or `[PermissionDenied]`. A resource the caller cannot read is reported exactly
 like one that does not exist.

@@ -567,14 +567,37 @@ request, becomes `DataverseUnavailableException` with the original as the inner
 exception. The three types share an abstract base class
 ([`DataverseExceptions.cs`](../samples/DynamicsBcDemo/D365Sales.Adapter/Clients/DataverseExceptions.cs)).
 
-NimBus records only the exception's type name and message. Your properties and
-the stack trace are not stored, so put what an operator needs into the message:
+NimBus records only the exception's type name and message. Your properties are
+not stored, and neither is the stack trace unless the subscriber opts in (see
+below), so put what an operator needs into the message:
 the operation, the HTTP method and path, the status, and a truncated response
 body. The sample's messages read like this:
 
 ```text
 Update opportunity 0bb0…0105 failed: Dataverse API PATCH /api/data/v9.2/opportunities(0bb0…0105) → 404 Not Found. Body: {"error":{"code":"0x80040217",…}}
 ```
+
+To let operators, and failure-handling agents an Owner allows, locate a defect in
+your code, a subscriber can store the stack trace of the exception its handler
+threw on the error response
+([Spec 044](spec/044-agent-first/spec.md) Phase 3). It is off by default:
+
+```csharp
+services.AddNimBusSubscriber(
+    options =>
+    {
+        options.Endpoint = "CrmEndpoint";
+        options.IncludeStackTraceInErrorResponses = true;
+    },
+    sub => sub.AddHandlersFromAssemblyContaining<Program>());
+```
+
+Only the frames are stored (the message is already in the error text), cut at
+8,000 characters. The WebApp shows the trace to endpoint Readers. An agent reads
+it from `nimbus_get_failure_evidence` with `includeStackTrace` only when an Owner
+turns on **Settings → Failure intelligence → Agents may see stack traces**; it is
+then scrubbed (file paths cut to the file name, values marked sensitive and
+credential-shaped text replaced) and never sent to the deprecated provider.
 
 The message is kept in the audit trail and shown in the WebApp. Use record IDs,
 not names, email addresses or other personal data.

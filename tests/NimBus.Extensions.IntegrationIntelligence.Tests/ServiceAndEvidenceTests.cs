@@ -70,6 +70,64 @@ public sealed class ServiceAndEvidenceTests
         Assert.IsNull(input!.Exception.Message);
     }
 
+    private const string StoredTrace =
+        @"   at Crm.Adapter.CustomerMapper.MapAddress(CustomerDto dto) in C:\agent\_work\1\s\src\Crm.Adapter\CustomerMapper.cs:line 42" + "\n" +
+        "   at Crm.Adapter.Handlers.Upsert(String id) in /home/runner/work/crm/src/Handlers.cs:line 7 with sensitive-long-value Password=hunter2";
+
+    [TestMethod]
+    public async Task Evidence_Carries_No_Stack_Trace_Unless_An_Owner_Allows_It()
+    {
+        var fixture = new ServiceFixture();
+        fixture.Source.Message.MessageContent.ErrorContent!.ExceptionStackTrace = StoredTrace;
+
+        var input = await fixture.Evidence.BuildAsync("event", "failure");
+
+        Assert.IsNull(input!.StackTrace);
+    }
+
+    [TestMethod]
+    public async Task An_Allowed_Stack_Trace_Keeps_Frames_And_File_Names_And_Drops_Paths_And_Secrets()
+    {
+        // Spec 044 Phase 3: frames are what the agent needs; build paths, sensitive values and
+        // credentials are not.
+        var fixture = new ServiceFixture();
+        fixture.Options.IncludeStackTrace = true;
+        fixture.Source.Message.MessageContent.ErrorContent!.ExceptionStackTrace = StoredTrace;
+
+        var trace = (await fixture.Evidence.BuildAsync("event", "failure"))!.StackTrace!;
+
+        StringAssert.Contains(trace, "Crm.Adapter.CustomerMapper.MapAddress(CustomerDto dto) in CustomerMapper.cs:line 42", StringComparison.Ordinal);
+        StringAssert.Contains(trace, "in Handlers.cs:line 7", StringComparison.Ordinal);
+        Assert.IsFalse(trace.Contains("_work", StringComparison.Ordinal) || trace.Contains("/home/runner", StringComparison.Ordinal), trace);
+        Assert.IsFalse(trace.Contains("sensitive-long-value", StringComparison.Ordinal), trace);
+        Assert.IsFalse(trace.Contains("hunter2", StringComparison.Ordinal), trace);
+    }
+
+    [TestMethod]
+    public async Task A_Stack_Trace_Is_Never_Sent_To_The_Provider()
+    {
+        var fixture = new ServiceFixture();
+        fixture.Options.IncludeStackTrace = true;
+        fixture.Source.Message.MessageContent.ErrorContent!.ExceptionStackTrace = StoredTrace;
+
+        var input = await fixture.Evidence.BuildAsync("event", "failure");
+        var outbound = System.Text.Json.JsonSerializer.Serialize(NimBus.Extensions.IntegrationIntelligence.Evidence.OutboundFailureState.Create(input!));
+
+        Assert.IsNotNull(input!.StackTrace);
+        Assert.IsFalse(outbound.Contains("MapAddress", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task A_Stack_Trace_Whose_Sensitive_Values_Cannot_Be_Read_Is_Withheld()
+    {
+        var fixture = new ServiceFixture();
+        fixture.Options.IncludeStackTrace = true;
+        fixture.Source.Message.MessageContent.ErrorContent!.ExceptionStackTrace = StoredTrace;
+        fixture.Source.Message.MessageContent.EventContent = null!;
+
+        Assert.IsNull((await fixture.Evidence.BuildAsync("event", "failure"))!.StackTrace);
+    }
+
     [TestMethod]
     public async Task Disabled_History_Is_Not_Read_And_Required_State_Has_Hard_Limit()
     {

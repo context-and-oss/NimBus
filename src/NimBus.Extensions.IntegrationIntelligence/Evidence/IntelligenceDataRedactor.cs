@@ -27,6 +27,31 @@ public sealed class IntelligenceDataRedactor
         "(?m)^\\s*at\\s+[^\\r\\n]+$|--- End of (?:inner exception|stack trace)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
 
+    // " in C:\src\Adapter\Mapper.cs:line 42" → " in Mapper.cs:line 42": the file and line help an
+    // agent find the code; the build machine's directory layout does not.
+    private static readonly Regex StackTraceFilePattern = new(
+        @"(?m) in (?:[^\r\n]*[\\/])?([^\\/\r\n]+?):line (\d+)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+
+    /// <summary>The longest scrubbed stack trace.</summary>
+    public const int MaximumStackTraceLength = 8000;
+
+    /// <summary>
+    /// Scrubs a stack trace for agents (Spec 044 Phase 3): keeps the frames, shortens file paths to
+    /// the file name and redacts credential-shaped values. Unlike <see cref="ScrubText"/>, frames
+    /// are what is wanted here.
+    /// </summary>
+    /// <param name="value">The stored trace.</param>
+    /// <param name="maximumLength">The most characters to keep.</param>
+    public static string? ScrubStackTrace(string? value, int maximumLength = MaximumStackTraceLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var scrubbed = SecretPattern.Replace(StackTraceFilePattern.Replace(value, " in $1:line $2"), "$1[redacted]");
+        return scrubbed.Length <= maximumLength ? scrubbed : scrubbed[..maximumLength];
+    }
+
     /// <summary>Returns a scrubbed free-text field, or null for embedded exception dumps.</summary>
     public static string? ScrubText(string? value, int maximumLength)
     {
