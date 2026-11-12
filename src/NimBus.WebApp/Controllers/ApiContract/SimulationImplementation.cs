@@ -120,9 +120,9 @@ public class SimulationImplementation : Api.ISimulationApiController
 
     private static string ActionData(string action) => JsonConvert.SerializeObject(new { action });
 
-    private static Api.SimulationProblem Problem(string error) => Problem(new[] { error });
+    private static Api.ProblemDetails Problem(string error) => Problem(new[] { error });
 
-    private static Api.SimulationProblem Problem(IEnumerable<string> errors) => new() { Errors = errors.ToList() };
+    private static Api.ProblemDetails Problem(IEnumerable<string> errors) => new() { Errors = errors.ToList() };
 
     private Task<bool> IsSiteOwnerAsync() => _authorizationService.HasRoleAsync(AccessRole.Owner);
 }

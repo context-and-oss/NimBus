@@ -1,3 +1,4 @@
+import { isAntiforgeryRefusal } from "api-client/problem";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
@@ -27,8 +28,7 @@ async function problemText(response: Response): Promise<{ text: string; problem?
   const problem = await response.json().catch(() => undefined) as McpProblem | undefined;
   if (response.status === 401 || response.status === 403) return { text: "Only site Owners can change MCP access." };
   if (response.status === 409) return { text: "Another administrator changed these settings. Reload them before reviewing again.", problem };
-  // The antiforgery filter answers 400 with no body when the security token is missing or expired.
-  if (response.status === 400 && !problem) return { text: "Your security token expired. Reload the page and try again." };
+  if (isAntiforgeryRefusal(response.status, problem)) return { text: "Your security token expired. Reload the page and try again." };
   return { text: problem?.errors?.join(" ") || "The settings could not be saved. Reload and try again.", problem };
 }
 

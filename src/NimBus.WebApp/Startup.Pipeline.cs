@@ -4,6 +4,7 @@ using NimBus.WebApp.Middleware;
 using NimBus.Extensions.IntegrationIntelligence;
 using NimBus.WebApp.Csrf;
 using NimBus.WebApp.Mcp;
+using NimBus.WebApp.Problems;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 namespace NimBus.WebApp;
@@ -23,6 +24,11 @@ public partial class Startup
             // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
             app.UseHsts();
         }
+
+        // Every /api error ends as an RFC 7807 problem: bodyless statuses (ForbidResult, the auth
+        // handlers' 401/403, unmatched routes) and unhandled exceptions. Ahead of routing and
+        // authentication so their responses are covered; inside the developer exception page.
+        app.UseNimBusApiProblemDetails();
 
         app.UseHttpsRedirection();
 
@@ -176,6 +182,8 @@ public partial class Startup
                 monitorShellOptions.FileProvider = spaFiles;
             }
 
+            // An unknown /api route is a 404 problem, never the SPA's index.html.
+            endpoints.MapNimBusApiNotFound();
             endpoints.MapFallbackToFile("Monitor", "index.html", monitorShellOptions);
             endpoints.MapFallbackToFile("index.html", fallbackOptions);
         });

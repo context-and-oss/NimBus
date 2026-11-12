@@ -129,7 +129,7 @@ public sealed class SimulationApiTests
             },
         });
 
-        var problem = (Api.SimulationProblem)((BadRequestObjectResult)response.Result!).Value!;
+        var problem = (Api.ProblemDetails)((BadRequestObjectResult)response.Result!).Value!;
         Assert.AreEqual(4, problem.Errors.Count, string.Join("\n", problem.Errors));
     }
 
@@ -146,7 +146,7 @@ public sealed class SimulationApiTests
         var response = await controller.PostAdminSimulationStartAsync();
 
         var conflict = (ConflictObjectResult)response.Result!;
-        Assert.IsTrue(((Api.SimulationProblem)conflict.Value!).Errors.Single().Contains("Stopping", StringComparison.Ordinal));
+        Assert.IsTrue(((Api.ProblemDetails)conflict.Value!).Errors.Single().Contains("Stopping", StringComparison.Ordinal));
         sut.Hosts.ReleaseStops();
         await stop;
     }

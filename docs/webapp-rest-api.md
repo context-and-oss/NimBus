@@ -12,7 +12,7 @@ are still on the roadmap.
 
 ## At a glance
 
-- **Title** in the spec: *EIP Management Web API* — `api-spec.yaml:3`.
+- **Title** in the spec: *NimBus Management API*.
 - **Spec version:** `0.0.1` (pre-1.0; see [Versioning + stability](#versioning--stability) below).
 - **Route prefix:** every operation lives under `/api/…`.
 - **Surface size:** 115 operations across 12 tags (Admin, Event, Endpoint, AccessControl, Agent, Metrics, EventType, StorageHook, Application, Message, Audit, Heartbeat).
@@ -148,14 +148,48 @@ hash rather than tracking `main`.
   `maxItemCount` pair (e.g. `/api/messages/search`,
   `/api/audits/search`). Pass the value from the previous response back in to
   fetch the next page; an empty/null token means "no more pages."
-- **Errors:** *currently inconsistent.* Implementations return ad-hoc shapes
-  via `ForbidResult()`, `NotFoundObjectResult()`, and similar (see
-  `Controllers/ApiContract/AdminImplementation.cs:33-50`). There is no
-  global `ProblemDetails` mapping yet — callers should branch on HTTP
-  status code and treat the body as best-effort context. Standardising to
-  `ProblemDetails` is on [the gap list](#whats-not-external-ready-yet).
+- **Errors:** every `/api/…` error response is an
+  [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) problem with media type
+  `application/problem+json` — see [Errors](#errors).
 - **HTTPS only:** redirected by `app.UseHttpsRedirection()`
   (`Startup.cs:404`).
+
+## Errors
+
+Every error from `/api/…` (any 4xx or 5xx status) carries the same body, the
+`ProblemDetails` schema in `api-spec.yaml`:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.10",
+  "title": "Conflict",
+  "status": 409,
+  "detail": "Revoke the key before removing it.",
+  "traceId": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  "code": "StillActive",
+  "errors": ["Revoke the key before removing it."]
+}
+```
+
+- **Branch on `status`**, then on `code` where the operation documents its codes
+  (agent keys, dashboard tokens, MCP access, intelligence settings, antiforgery).
+  `title` is the status's reason phrase and `detail` is text for a person; don't
+  parse either.
+- **`errors`** lists the reasons when there are several (validation, simulator
+  refusals). `detail` then holds the same messages joined.
+- **`traceId`** matches the server's logs and traces; quote it in a support request.
+- **Other members** can appear: a contract body that some operations return on an
+  error keeps its members at the top level of the problem (the session-state 409
+  carries the current `SessionStateView`, a 429 carries `policy` and
+  `retryAfterSeconds`). Ignore members you don't know.
+- **Where the body comes from:** an operation's own error, the sign-in handlers
+  (401, 403), the antiforgery check (400, `code: InvalidAntiforgeryToken`), the
+  rate limiter (429, plus a `Retry-After` header), an unknown `/api/…` route (404)
+  and unhandled exceptions (500; the message is shown only in the Development
+  environment). Paths outside `/api/…` keep their own bodies.
+
+The generated TypeScript client throws `SwaggerException` for every error, with
+the parsed problem on `.result` and the raw body on `.response`.
 
 ## Domain reference
 

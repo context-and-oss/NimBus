@@ -167,7 +167,7 @@ describe("MCP access settings", () => {
   });
 
   it("explains an expired security token", async () => {
-    mockFetch(Response.json(state()), Response.json(activity), new Response(null, { status: 400 }));
+    mockFetch(Response.json(state()), Response.json(activity), Response.json({ status: 400, title: "Bad Request", code: "InvalidAntiforgeryToken" }, { status: 400 }));
     render(<McpAccessSettings />);
 
     await userEvent.click(await screen.findByRole("switch", { name: "Mark reported" }));

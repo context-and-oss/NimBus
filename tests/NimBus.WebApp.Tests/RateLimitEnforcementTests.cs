@@ -162,6 +162,29 @@ public class RateLimitEnforcementTests
     }
 
     [TestMethod]
+    public async Task An_api_rejection_is_a_problem_naming_the_policy_and_the_retry_delay()
+    {
+        await using var host = await Host(new() { ["RateLimiting:Admin:PermitLimit"] = "1" });
+        using var client = host.AuthenticatedClient();
+
+        using (var first = await client.PostAsync("/api/admin/endpoint/ep-1/purge", EmptyJson()))
+        {
+            Assert.AreNotEqual(HttpStatusCode.TooManyRequests, first.StatusCode);
+        }
+
+        using var rejected = await client.PostAsync("/api/admin/endpoint/ep-1/purge", EmptyJson());
+        var body = await rejected.Content.ReadAsStringAsync();
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.AreEqual("application/problem+json", rejected.Content.Headers.ContentType?.MediaType, body);
+        using var problem = System.Text.Json.JsonDocument.Parse(body);
+        Assert.AreEqual(429, problem.RootElement.GetProperty("status").GetInt32());
+        Assert.AreEqual(RateLimitPolicyNames.Admin, problem.RootElement.GetProperty("policy").GetString());
+        Assert.IsTrue(problem.RootElement.GetProperty("retryAfterSeconds").GetInt32() > 0);
+        Assert.IsNotNull(rejected.Headers.RetryAfter, "The Retry-After header stays.");
+    }
+
+    [TestMethod]
     public async Task Admin_budgets_are_per_user_not_shared()
     {
         // Without this a single shared bucket would still pass AC-6 while

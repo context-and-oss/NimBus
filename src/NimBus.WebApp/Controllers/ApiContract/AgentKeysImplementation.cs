@@ -159,7 +159,7 @@ public class AgentKeysImplementation : Api.IAgentKeysApiController
     };
 
     private static ObjectResult Problem(int status, string code, IEnumerable<string> errors)
-        => new(new Api.AgentApiKeyProblem { Code = code, Errors = errors.ToList() }) { StatusCode = status };
+        => new(new Api.ProblemDetails { Code = code, Errors = errors.ToList() }) { StatusCode = status };
 
     private Task<bool> IsSiteOwnerAsync() => _authorization.HasRoleAsync(AccessRole.Owner);
 }

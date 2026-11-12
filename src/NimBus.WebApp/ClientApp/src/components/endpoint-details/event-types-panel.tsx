@@ -2,6 +2,7 @@ import * as React from "react";
 const { useEffect, useMemo, useState } = React;
 import { Link } from "react-router-dom";
 import * as api from "api-client";
+import { errorMessage } from "api-client/problem";
 import { cn } from "lib/utils";
 
 interface EventTypesPanelProps {
@@ -73,13 +74,7 @@ const EventTypesPanel: React.FC<EventTypesPanelProps> = ({ endpointId }) => {
       })
       .catch((e) => {
         if (cancelled) return;
-        const msg =
-          api.SwaggerException.isSwaggerException(e) && e.response
-            ? e.response
-            : e instanceof Error
-              ? e.message
-              : String(e);
-        setError(msg);
+        setError(errorMessage(e));
       })
       .finally(() => {
         if (cancelled) return;

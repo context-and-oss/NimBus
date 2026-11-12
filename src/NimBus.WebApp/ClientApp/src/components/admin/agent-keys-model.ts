@@ -1,3 +1,5 @@
+import { isAntiforgeryRefusal, type ApiProblem } from "api-client/problem";
+
 // Settings → Agent keys (Spec 039): the shapes of /api/admin/agent-keys and the rules the
 // panel checks before sending. The server enforces the same rules.
 
@@ -63,17 +65,14 @@ export function expiryFrom(choice: ExpiryChoice, now: Date = new Date()): string
 export const activeKeyCount = (state: AgentKeysState) =>
   state.keys.filter((k) => k.status === "active").length;
 
-/** A readable reason for a refused write, from the server's AgentApiKeyProblem when there is one. */
+/** A readable reason for a refused write, from the server's problem body when there is one. */
 export async function problemMessage(response: Response): Promise<string> {
   if (response.status === 401 || response.status === 403)
     return "Only site Owners can manage agent keys.";
-  if (response.status === 400 && !(response.headers.get("content-type") ?? "").includes("json"))
+  const problem = (await response.json().catch(() => undefined)) as ApiProblem | undefined;
+  if (isAntiforgeryRefusal(response.status, problem))
     return "The page's security token expired. Reload and try again.";
-  try {
-    const problem = (await response.json()) as { code?: string; errors?: string[] };
-    if (problem.errors?.length) return problem.errors.join(" ");
-  } catch {
-    // Not a problem body; fall through.
-  }
+  if (problem?.errors?.length) return problem.errors.join(" ");
+  if (problem?.detail) return problem.detail;
   return `The request failed (HTTP ${response.status}).`;
 }

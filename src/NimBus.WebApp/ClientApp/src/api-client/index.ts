@@ -230,8 +230,7 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result404: any = null;
             let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-                result404 = resultData404 !== undefined ? resultData404 : null as any;
-    
+            result404 = ProblemDetails.fromJS(resultData404);
             return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
@@ -464,7 +463,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event type not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event type not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -509,15 +511,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers, result409);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -562,15 +573,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers, result409);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -624,11 +644,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Event is not a pending handoff", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Event is not a pending handoff", status, _responseText, _headers, result400);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or event not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -682,11 +708,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Event is not a pending handoff, or reason is missing", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Event is not a pending handoff, or reason is missing", status, _responseText, _headers, result400);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or event not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -825,7 +857,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or event not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -918,15 +953,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers, result409);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1315,7 +1359,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1396,11 +1443,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Unknown endpoint", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Unknown endpoint", status, _responseText, _headers, result400);
             });
         } else if (status === 401) {
             return response.text().then((_responseText) => {
-            return throwException("Missing or invalid webhook key", status, _responseText, _headers);
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("Missing or invalid webhook key", status, _responseText, _headers, result401);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1443,11 +1496,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Unknown service", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Unknown service", status, _responseText, _headers, result400);
             });
         } else if (status === 401) {
             return response.text().then((_responseText) => {
-            return throwException("Missing or invalid webhook key", status, _responseText, _headers);
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("Missing or invalid webhook key", status, _responseText, _headers, result401);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1501,7 +1560,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1718,7 +1780,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1807,7 +1872,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1867,7 +1935,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1921,7 +1992,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -1968,7 +2042,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2021,7 +2098,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2068,7 +2148,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2110,7 +2193,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2157,7 +2243,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2204,7 +2293,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2251,7 +2343,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2298,7 +2393,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2346,11 +2444,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("The endpoint or the event was not found.", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("The endpoint or the event was not found.", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("The event blocks its session (it failed, or is a pending hand-off), so deleting it would leave the session blocked. Skip or resubmit it first. Nothing was deleted.", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The event blocks its session (it failed, or is a pending hand-off), so deleting it would leave the session blocked. Skip or resubmit it first. Nothing was deleted.", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2398,7 +2502,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2594,15 +2701,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2649,7 +2765,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2749,7 +2868,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Not Found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2793,7 +2915,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2846,11 +2971,17 @@ export class Client extends ApiClientBase {
             return response.blob().then(blob => { return { fileName: fileName, data: blob, status: status, headers: _headers }; });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid format", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid format", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2901,15 +3032,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Cosmos DB storage is not configured", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Cosmos DB storage is not configured", status, _responseText, _headers, result404);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("Cosmos DB operation unavailable", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("Cosmos DB operation unavailable", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2960,19 +3100,31 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid confirmation or protected container", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid confirmation or protected container", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Container or Cosmos DB provider not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Container or Cosmos DB provider not found", status, _responseText, _headers, result404);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("Cosmos DB operation unavailable", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("Cosmos DB operation unavailable", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3016,7 +3168,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3065,11 +3220,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3113,7 +3274,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3162,11 +3326,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3210,7 +3380,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3266,7 +3439,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
@@ -3324,7 +3500,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
@@ -3380,7 +3559,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3424,7 +3606,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3475,18 +3660,21 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result400: any = null;
             let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result400 = AgentApiKeyProblem.fromJS(resultData400);
+            result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = AgentApiKeyProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -3534,20 +3722,23 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             let result404: any = null;
             let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result404 = AgentApiKeyProblem.fromJS(resultData404);
+            result404 = ProblemDetails.fromJS(resultData404);
             return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = AgentApiKeyProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -3597,25 +3788,28 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result400: any = null;
             let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result400 = AgentApiKeyProblem.fromJS(resultData400);
+            result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             let result404: any = null;
             let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result404 = AgentApiKeyProblem.fromJS(resultData404);
+            result404 = ProblemDetails.fromJS(resultData404);
             return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = AgentApiKeyProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -3660,11 +3854,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 501) {
             return response.text().then((_responseText) => {
-            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers);
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers, result501);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3715,23 +3915,29 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result400: any = null;
             let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result400 = DashboardTokenProblem.fromJS(resultData400);
+            result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = DashboardTokenProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status === 501) {
             return response.text().then((_responseText) => {
-            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers);
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers, result501);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3778,25 +3984,31 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             let result404: any = null;
             let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result404 = DashboardTokenProblem.fromJS(resultData404);
+            result404 = ProblemDetails.fromJS(resultData404);
             return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = DashboardTokenProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status === 501) {
             return response.text().then((_responseText) => {
-            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers);
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers, result501);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3845,30 +4057,36 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result400: any = null;
             let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result400 = DashboardTokenProblem.fromJS(resultData400);
+            result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             let result404: any = null;
             let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result404 = DashboardTokenProblem.fromJS(resultData404);
+            result404 = ProblemDetails.fromJS(resultData404);
             return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = DashboardTokenProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status === 501) {
             return response.text().then((_responseText) => {
-            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers);
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store dashboard tokens", status, _responseText, _headers, result501);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3912,7 +4130,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3963,7 +4184,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4011,15 +4235,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4070,7 +4303,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4117,11 +4353,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4168,11 +4410,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4223,7 +4471,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4270,11 +4521,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Topic belongs to the platform topology", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Topic belongs to the platform topology", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4328,11 +4585,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4379,19 +4642,31 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Unsupported Resolver subscription target", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Unsupported Resolver subscription target", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("Service Bus operation unavailable", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("Service Bus operation unavailable", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4442,23 +4717,38 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid selection or unsupported Resolver subscription target", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid selection or unsupported Resolver subscription target", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("A replay is already running for this subscription", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("A replay is already running for this subscription", status, _responseText, _headers, result409);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("Service Bus operation unavailable", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("Service Bus operation unavailable", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4513,15 +4803,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Action must be \'enable\' or \'disable\'", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Action must be \'enable\' or \'disable\'", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4571,15 +4870,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Subscription auto-forwards and cannot be drained; recreate it instead", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Subscription auto-forwards and cannot be drained; recreate it instead", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4629,11 +4937,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4683,15 +4997,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Platform has no recipe for this subscription; it cannot be recreated", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Platform has no recipe for this subscription; it cannot be recreated", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4741,11 +5064,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4798,11 +5127,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic, subscription or rule not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic, subscription or rule not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4852,15 +5187,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Platform has no recipe for this subscription", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Platform has no recipe for this subscription", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Topic or subscription not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4907,11 +5251,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -4958,11 +5308,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5009,11 +5365,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5060,11 +5422,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5114,11 +5482,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or session not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or session not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5168,11 +5542,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint or session not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint or session not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5222,15 +5602,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid session id", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid session id", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5284,15 +5673,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid request or session state JSON", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid request or session state JSON", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
@@ -5303,7 +5701,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The audit record could not be written; nothing was changed", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit record could not be written; nothing was changed", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5354,15 +5755,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5413,19 +5823,31 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The audit record could not be written; nothing was changed", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit record could not be written; nothing was changed", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5471,15 +5893,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Event not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Event not found", status, _responseText, _headers, result404);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("The event blocks its session (a Failed event, or Pending with a hand-off), so deleting it would leave the session blocked. Skip it first.", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The event blocks its session (a Failed event, or Pending with a hand-off), so deleting it would leave the session blocked. Skip it first.", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5670,11 +6101,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5725,15 +6162,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid or too-recent cutoff", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid or too-recent cutoff", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5782,11 +6228,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5835,11 +6287,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6079,15 +6537,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("The operation needs the Cosmos DB storage provider", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden (requires the site Owner role)", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6181,11 +6648,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6234,11 +6707,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6287,11 +6766,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6394,7 +6879,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6452,7 +6940,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6520,7 +7011,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6598,7 +7092,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid window, page size, group key or continuation token, or saved classifications unavailable for a cause or guidance group", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid window, page size, group key or continuation token, or saved classifications unavailable for a cause or guidance group", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6674,7 +7171,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid window, perspective, page size, group key or continuation token, or saved classifications unavailable", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid window, perspective, page size, group key or continuation token, or saved classifications unavailable", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6732,7 +7232,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6790,7 +7293,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers, result400);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6839,7 +7345,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6938,15 +7447,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -6989,11 +7507,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7037,15 +7561,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 401) {
             return response.text().then((_responseText) => {
-            return throwException("No session and no valid dashboard token", status, _responseText, _headers);
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("No session and no valid dashboard token", status, _responseText, _headers, result401);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Signed in without the site Reader role", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Signed in without the site Reader role", status, _responseText, _headers, result403);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7089,15 +7622,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 401) {
             return response.text().then((_responseText) => {
-            return throwException("No session and no valid dashboard token", status, _responseText, _headers);
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("No session and no valid dashboard token", status, _responseText, _headers, result401);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Signed in without the site Reader role", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Signed in without the site Reader role", status, _responseText, _headers, result403);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7141,15 +7683,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 401) {
             return response.text().then((_responseText) => {
-            return throwException("No session and no valid dashboard token", status, _responseText, _headers);
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("No session and no valid dashboard token", status, _responseText, _headers, result401);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Signed in without the site Reader role", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Signed in without the site Reader role", status, _responseText, _headers, result403);
             });
         } else if (status === 503) {
             return response.text().then((_responseText) => {
-            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers);
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The store could not be read and nothing earlier is cached", status, _responseText, _headers, result503);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7238,7 +7789,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
-            return throwException("Event type already exists with a different schema", status, _responseText, _headers);
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Event type already exists with a different schema", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7378,11 +7932,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Payload failed schema validation", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Payload failed schema validation", status, _responseText, _headers, result400);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Unknown eventTypeId", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Unknown eventTypeId", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7467,7 +8027,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7516,11 +8079,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7569,11 +8138,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7660,11 +8235,17 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7716,15 +8297,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7776,15 +8366,24 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
-            return throwException("Endpoint not found", status, _responseText, _headers);
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7828,7 +8427,10 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7879,18 +8481,21 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result400: any = null;
             let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result400 = SimulationProblem.fromJS(resultData400);
+            result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = SimulationProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -7942,12 +8547,15 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             let result400: any = null;
             let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result400 = SimulationProblem.fromJS(resultData400);
+            result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Bad Request", status, _responseText, _headers, result400);
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -7991,13 +8599,16 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = SimulationProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -8042,13 +8653,16 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = SimulationProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -8093,13 +8707,16 @@ export class Client extends ApiClientBase {
             });
         } else if (status === 403) {
             return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
             let result409: any = null;
             let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result409 = SimulationProblem.fromJS(resultData409);
+            result409 = ProblemDetails.fromJS(resultData409);
             return throwException("Conflict", status, _responseText, _headers, result409);
             });
         } else if (status !== 200 && status !== 204) {
@@ -8109,6 +8726,115 @@ export class Client extends ApiClientBase {
         }
         return Promise.resolve<SimulationStatus>(null as any);
     }
+}
+
+/** RFC 7807 problem returned by every error response (media type application/problem+json). Branch on status and, where an operation documents one, on code. Further members may appear; ignore the ones you don't know. */
+export class ProblemDetails implements IProblemDetails {
+    /** A URI reference that identifies the problem type (the RFC 9110 section for the status). */
+    type?: string | undefined;
+    /** A short summary of the problem type, usually the status's reason phrase. */
+    title?: string | undefined;
+    /** The HTTP status code. */
+    status?: number | undefined;
+    /** A human-readable explanation of this occurrence. */
+    detail?: string | undefined;
+    /** A URI reference that identifies this occurrence. */
+    instance?: string | undefined;
+    /** The request's trace id, for correlating with server logs. */
+    traceId?: string | undefined;
+    /** A stable machine-readable reason, on operations that document their codes. */
+    code?: string | undefined;
+    /** Validation or refusal messages, when there are several. */
+    errors?: string[] | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IProblemDetails) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.type = _data["type"];
+            this.title = _data["title"];
+            this.status = _data["status"];
+            this.detail = _data["detail"];
+            this.instance = _data["instance"];
+            this.traceId = _data["traceId"];
+            this.code = _data["code"];
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): ProblemDetails {
+        data = typeof data === 'object' ? data : {};
+        let result = new ProblemDetails();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["type"] = this.type;
+        data["title"] = this.title;
+        data["status"] = this.status;
+        data["detail"] = this.detail;
+        data["instance"] = this.instance;
+        data["traceId"] = this.traceId;
+        data["code"] = this.code;
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        return data;
+    }
+
+    clone(): ProblemDetails {
+        const json = this.toJSON();
+        let result = new ProblemDetails();
+        result.init(json);
+        return result;
+    }
+}
+
+/** RFC 7807 problem returned by every error response (media type application/problem+json). Branch on status and, where an operation documents one, on code. Further members may appear; ignore the ones you don't know. */
+export interface IProblemDetails {
+    /** A URI reference that identifies the problem type (the RFC 9110 section for the status). */
+    type?: string | undefined;
+    /** A short summary of the problem type, usually the status's reason phrase. */
+    title?: string | undefined;
+    /** The HTTP status code. */
+    status?: number | undefined;
+    /** A human-readable explanation of this occurrence. */
+    detail?: string | undefined;
+    /** A URI reference that identifies this occurrence. */
+    instance?: string | undefined;
+    /** The request's trace id, for correlating with server logs. */
+    traceId?: string | undefined;
+    /** A stable machine-readable reason, on operations that document their codes. */
+    code?: string | undefined;
+    /** Validation or refusal messages, when there are several. */
+    errors?: string[] | undefined;
+
+    [key: string]: any;
 }
 
 export enum SimulationRunState {
@@ -8139,69 +8865,6 @@ export enum SimulationDeliveryOutcome {
     Threw = "threw",
     Poisoned = "poisoned",
     Unsupported = "unsupported",
-}
-
-export class SimulationProblem implements ISimulationProblem {
-    errors?: string[];
-
-    [key: string]: any;
-
-    constructor(data?: ISimulationProblem) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (this as any)[property] = (data as any)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            for (var property in _data) {
-                if (_data.hasOwnProperty(property))
-                    this[property] = _data[property];
-            }
-            if (Array.isArray(_data["errors"])) {
-                this.errors = [] as any;
-                for (let item of _data["errors"])
-                    this.errors!.push(item);
-            }
-        }
-    }
-
-    static fromJS(data: any): SimulationProblem {
-        data = typeof data === 'object' ? data : {};
-        let result = new SimulationProblem();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        for (var property in this) {
-            if (this.hasOwnProperty(property))
-                data[property] = this[property];
-        }
-        if (Array.isArray(this.errors)) {
-            data["errors"] = [];
-            for (let item of this.errors)
-                data["errors"].push(item);
-        }
-        return data;
-    }
-
-    clone(): SimulationProblem {
-        const json = this.toJSON();
-        let result = new SimulationProblem();
-        result.init(json);
-        return result;
-    }
-}
-
-export interface ISimulationProblem {
-    errors?: string[];
-
-    [key: string]: any;
 }
 
 export class SimulationSettings implements ISimulationSettings {
@@ -20118,34 +20781,22 @@ export interface IMcpAccessChange {
     [key: string]: any;
 }
 
-export class McpAccessProblem implements IMcpAccessProblem {
-    /** Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken. */
-    code?: string;
-    errors?: string[];
+/** A refused MCP access change. code is Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken. */
+export class McpAccessProblem extends ProblemDetails implements IMcpAccessProblem {
     changes?: McpAccessChange[];
 
     [key: string]: any;
 
     constructor(data?: IMcpAccessProblem) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (this as any)[property] = (data as any)[property];
-            }
-        }
+        super(data);
     }
 
-    init(_data?: any) {
+    override init(_data?: any) {
+        super.init(_data);
         if (_data) {
             for (var property in _data) {
                 if (_data.hasOwnProperty(property))
                     this[property] = _data[property];
-            }
-            this.code = _data["code"];
-            if (Array.isArray(_data["errors"])) {
-                this.errors = [] as any;
-                for (let item of _data["errors"])
-                    this.errors!.push(item);
             }
             if (Array.isArray(_data["changes"])) {
                 this.changes = [] as any;
@@ -20155,30 +20806,25 @@ export class McpAccessProblem implements IMcpAccessProblem {
         }
     }
 
-    static fromJS(data: any): McpAccessProblem {
+    static override fromJS(data: any): McpAccessProblem {
         data = typeof data === 'object' ? data : {};
         let result = new McpAccessProblem();
         result.init(data);
         return result;
     }
 
-    toJSON(data?: any) {
+    override toJSON(data?: any) {
         data = typeof data === 'object' ? data : {};
         for (var property in this) {
             if (this.hasOwnProperty(property))
                 data[property] = this[property];
-        }
-        data["code"] = this.code;
-        if (Array.isArray(this.errors)) {
-            data["errors"] = [];
-            for (let item of this.errors)
-                data["errors"].push(item);
         }
         if (Array.isArray(this.changes)) {
             data["changes"] = [];
             for (let item of this.changes)
                 data["changes"].push(item ? item.toJSON() : undefined as any);
         }
+        super.toJSON(data);
         return data;
     }
 
@@ -20190,10 +20836,8 @@ export class McpAccessProblem implements IMcpAccessProblem {
     }
 }
 
-export interface IMcpAccessProblem {
-    /** Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken. */
-    code?: string;
-    errors?: string[];
+/** A refused MCP access change. code is Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken. */
+export interface IMcpAccessProblem extends IProblemDetails {
     changes?: McpAccessChange[];
 
     [key: string]: any;
@@ -20509,75 +21153,6 @@ export interface IAgentApiKeyIssued {
     [key: string]: any;
 }
 
-export class AgentApiKeyProblem implements IAgentApiKeyProblem {
-    /** Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken. */
-    code?: string;
-    errors?: string[];
-
-    [key: string]: any;
-
-    constructor(data?: IAgentApiKeyProblem) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (this as any)[property] = (data as any)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            for (var property in _data) {
-                if (_data.hasOwnProperty(property))
-                    this[property] = _data[property];
-            }
-            this.code = _data["code"];
-            if (Array.isArray(_data["errors"])) {
-                this.errors = [] as any;
-                for (let item of _data["errors"])
-                    this.errors!.push(item);
-            }
-        }
-    }
-
-    static fromJS(data: any): AgentApiKeyProblem {
-        data = typeof data === 'object' ? data : {};
-        let result = new AgentApiKeyProblem();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        for (var property in this) {
-            if (this.hasOwnProperty(property))
-                data[property] = this[property];
-        }
-        data["code"] = this.code;
-        if (Array.isArray(this.errors)) {
-            data["errors"] = [];
-            for (let item of this.errors)
-                data["errors"].push(item);
-        }
-        return data;
-    }
-
-    clone(): AgentApiKeyProblem {
-        const json = this.toJSON();
-        let result = new AgentApiKeyProblem();
-        result.init(json);
-        return result;
-    }
-}
-
-export interface IAgentApiKeyProblem {
-    /** Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken. */
-    code?: string;
-    errors?: string[];
-
-    [key: string]: any;
-}
-
 export enum DashboardTokenStatus {
     Active = "active",
     Revoked = "revoked",
@@ -20874,75 +21449,6 @@ export interface IDashboardTokenIssued {
     token?: string;
     issued?: DashboardTokenInfo;
     state?: DashboardTokenState;
-
-    [key: string]: any;
-}
-
-export class DashboardTokenProblem implements IDashboardTokenProblem {
-    /** Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken. */
-    code?: string;
-    errors?: string[];
-
-    [key: string]: any;
-
-    constructor(data?: IDashboardTokenProblem) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (this as any)[property] = (data as any)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            for (var property in _data) {
-                if (_data.hasOwnProperty(property))
-                    this[property] = _data[property];
-            }
-            this.code = _data["code"];
-            if (Array.isArray(_data["errors"])) {
-                this.errors = [] as any;
-                for (let item of _data["errors"])
-                    this.errors!.push(item);
-            }
-        }
-    }
-
-    static fromJS(data: any): DashboardTokenProblem {
-        data = typeof data === 'object' ? data : {};
-        let result = new DashboardTokenProblem();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        for (var property in this) {
-            if (this.hasOwnProperty(property))
-                data[property] = this[property];
-        }
-        data["code"] = this.code;
-        if (Array.isArray(this.errors)) {
-            data["errors"] = [];
-            for (let item of this.errors)
-                data["errors"].push(item);
-        }
-        return data;
-    }
-
-    clone(): DashboardTokenProblem {
-        const json = this.toJSON();
-        let result = new DashboardTokenProblem();
-        result.init(json);
-        return result;
-    }
-}
-
-export interface IDashboardTokenProblem {
-    /** Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken. */
-    code?: string;
-    errors?: string[];
 
     [key: string]: any;
 }
@@ -23828,10 +24334,7 @@ export class SwaggerException extends Error {
 }
 
 function throwException(message: string, status: number, response: string, headers: { [key: string]: any; }, result?: any): any {
-    if (result !== null && result !== undefined)
-        throw result;
-    else
-        throw new SwaggerException(message, status, response, headers, null);
+    throw new SwaggerException(message, status, response, headers, result);
 }
 
 export const CookieAuth = () =>

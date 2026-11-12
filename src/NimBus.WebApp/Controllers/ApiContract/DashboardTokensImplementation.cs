@@ -160,7 +160,7 @@ public class DashboardTokensImplementation : Api.IDashboardTokensApiController
     };
 
     private static ObjectResult Problem(int status, string code, IEnumerable<string> errors)
-        => new(new Api.DashboardTokenProblem { Code = code, Errors = errors.ToList() }) { StatusCode = status };
+        => new(new Api.ProblemDetails { Code = code, Errors = errors.ToList() }) { StatusCode = status };
 
     private static ObjectResult NotImplemented()
         => Problem(StatusCodes.Status501NotImplemented, "Unavailable", ["The storage provider cannot store dashboard tokens."]);

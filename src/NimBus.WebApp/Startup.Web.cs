@@ -9,6 +9,7 @@ using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Controllers;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.RateLimiting;
+using NimBus.WebApp.Problems;
 using System.Text.Json.Serialization;
 using NimBus.Management.ServiceBus;
 using Azure.Messaging.ServiceBus;
@@ -54,10 +55,13 @@ public partial class Startup
 
         services.AddMvc();
 
+        // Every /api error result becomes an RFC 7807 problem (see Problems/).
+        services.AddNimBusApiProblemDetails();
+
         services.AddSwaggerDocument(s =>
         {
-            s.Title = "DIS Management API";
-            s.Description = "Enterprise Integration Platform API - For data displayed in the management-webapp.";
+            s.Title = "NimBus Management API";
+            s.Description = "HTTP API behind the NimBus WebApp for inspecting endpoints, events and sessions, and for recovering messages.";
         });
 
         services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();

@@ -153,6 +153,18 @@ public static partial class RateLimitingServiceCollectionExtensions
             .GetRequiredService<ILoggerFactory>()
             .CreateLogger(typeof(RateLimitingServiceCollectionExtensions).FullName!), policy, http.Request.Path, retryAfter ?? "n/a");
 
+        // The REST API answers with the same problem schema as every other /api error.
+        if (NimBus.WebApp.Problems.ApiProblems.IsApiPath(http.Request.Path))
+        {
+            var problem = NimBus.WebApp.Problems.ApiProblems.Create(http, StatusCodes.Status429TooManyRequests, retryAfter is null
+                ? $"Too many requests ({policy}). Retry shortly."
+                : $"Too many requests ({policy}). Retry in {retryAfter} seconds.");
+            problem.Extensions["policy"] = policy;
+            if (retryAfter is not null)
+                problem.Extensions["retryAfterSeconds"] = int.Parse(retryAfter, CultureInfo.InvariantCulture);
+            return new ValueTask(NimBus.WebApp.Problems.ApiProblems.WriteAsync(http, problem));
+        }
+
         // POST /account/login is a browser form surface — a bodyless 429 shows a
         // human nothing at all.
         http.Response.ContentType = "text/plain";
