@@ -112,6 +112,84 @@ public class ReportToolsTests
     }
 
     [TestMethod]
+    public async Task Resubmit_by_ticket_runs_each_eligible_message_as_its_own_operation()
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true });
+        var store = host.Get<InMemoryMessageStore>();
+        foreach (var id in new[] { "evt-1", "evt-2", "evt-3" })
+        {
+            await SeedFailureAsync(store, id, "Address was null");
+            await store.SetEventReport(Endpoint, id, true, "agent", "BUG-12");
+        }
+        await store.SetEventReport(Endpoint, "evt-gone", true, "agent", "BUG-12");
+        await using var client = await host.CreateClientAsync();
+
+        var prepared = await CallAsync(client, "nimbus_prepare_action", new() { ["action"] = "resubmit", ["endpointId"] = Endpoint, ["ticketId"] = "BUG-12" });
+        Assert.AreEqual(3, prepared.GetProperty("affectedMessages").GetInt32());
+        Assert.AreEqual("evt-gone", prepared.GetProperty("notEligible")[0].GetProperty("eventId").GetString());
+
+        // One message fails again with a new attempt before the batch runs.
+        await SeedFailureAsync(store, "evt-3", "Address was null", attempt: "err-evt-3-b");
+        var key = Guid.NewGuid().ToString();
+        var executed = await CallAsync(client, "nimbus_resubmit_message", new()
+        {
+            ["actionToken"] = prepared.GetProperty("actionToken").GetString(), ["idempotencyKey"] = key, ["reason"] = "Fix deployed",
+        });
+
+        var items = executed.GetProperty("items").EnumerateArray().ToDictionary(i => i.GetProperty("eventId").GetString()!);
+        Assert.AreEqual("Dispatched", items["evt-1"].GetProperty("status").GetString());
+        Assert.AreEqual("Dispatched", items["evt-2"].GetProperty("status").GetString());
+        Assert.AreEqual("StaleMessage", items["evt-3"].GetProperty("status").GetString());
+        Assert.AreEqual("Partial", executed.GetProperty("status").GetString());
+        Assert.AreEqual(2, host.Get<McpTestHost.RecordingManagerClient>().CommandIds.Count);
+        Assert.AreNotEqual(items["evt-1"].GetProperty("operationId").GetString(), items["evt-2"].GetProperty("operationId").GetString());
+
+        // A retry with the same key sends nothing again.
+        var retry = await CallAsync(client, "nimbus_resubmit_message", new()
+        {
+            ["actionToken"] = prepared.GetProperty("actionToken").GetString(), ["idempotencyKey"] = key, ["reason"] = "Fix deployed",
+        });
+        Assert.AreEqual(2, host.Get<McpTestHost.RecordingManagerClient>().CommandIds.Count);
+        var replayed = retry.GetProperty("items").EnumerateArray().Single(i => i.GetProperty("eventId").GetString() == "evt-1");
+        Assert.AreEqual("Already run with this idempotencyKey.", replayed.GetProperty("detail").GetString());
+    }
+
+    [TestMethod]
+    public async Task A_workload_resubmit_by_ticket_stops_at_its_budget()
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
+            policy: p => { p.AllowWorkloadResubmit = true; p.WorkloadResubmitsPerDay = 1; });
+        var store = host.Get<InMemoryMessageStore>();
+        foreach (var id in new[] { "evt-1", "evt-2" })
+        {
+            await SeedFailureAsync(store, id, "Address was null");
+            await store.SetEventReport(Endpoint, id, true, "agent", "BUG-13");
+        }
+        await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Observe Nimbus.Resubmit", name: null));
+
+        var prepared = await CallAsync(client, "nimbus_prepare_action", new() { ["action"] = "resubmit", ["endpointId"] = Endpoint, ["ticketId"] = "BUG-13" });
+        var executed = await CallAsync(client, "nimbus_resubmit_message", new()
+        {
+            ["actionToken"] = prepared.GetProperty("actionToken").GetString(), ["idempotencyKey"] = Guid.NewGuid().ToString(), ["reason"] = "Fix deployed",
+        });
+
+        var statuses = executed.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("status").GetString()).ToList();
+        CollectionAssert.AreEquivalent(new[] { "Dispatched", "Refused" }, statuses);
+        Assert.AreEqual(1, host.Get<McpTestHost.RecordingManagerClient>().CommandIds.Count);
+    }
+
+    [TestMethod]
+    public async Task Skip_cannot_be_prepared_by_ticket()
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true });
+        await using var client = await host.CreateClientAsync();
+
+        var result = await client.CallToolAsync("nimbus_prepare_action", new Dictionary<string, object?> { ["action"] = "skip", ["endpointId"] = Endpoint, ["ticketId"] = "BUG-1" });
+
+        AssertError(result, "InvalidArgument");
+    }
+
+    [TestMethod]
     public void Letting_workloads_mark_messages_reported_is_a_widening_change()
     {
         var on = NimBus.WebApp.Mcp.Access.McpAccessRules.Changes(new McpAccessSettings(), new McpAccessSettings { AllowWorkloadAnnotation = true });
@@ -132,9 +210,25 @@ public class ReportToolsTests
         ["ticketId"] = ticketId,
     };
 
-    private static async Task SeedFailureAsync(InMemoryMessageStore store, string eventId, string errorText)
+    private static async Task SeedFailureAsync(InMemoryMessageStore store, string eventId, string errorText, string? attempt = null)
     {
-        var row = await OperatorCommandTestRows.SeedFailedRowAsync(store, Endpoint, eventId, "sess-" + eventId, "err-" + eventId);
+        attempt ??= "err-" + eventId;
+        // The failed attempt, as the Resolver stores it, with the payload a resubmit replays.
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId,
+            MessageId = attempt,
+            EndpointId = Endpoint,
+            SessionId = "sess-" + eventId,
+            MessageType = MessageType.ErrorResponse,
+            EnqueuedTimeUtc = DateTime.UtcNow,
+            EventTypeId = "CrmAccountCreated",
+            From = Endpoint,
+            To = "Resolver",
+            OriginatingMessageId = "req-" + eventId,
+            MessageContent = new MessageContent { EventContent = new EventContent { EventJson = "{}", EventTypeId = "CrmAccountCreated" } },
+        });
+        var row = await OperatorCommandTestRows.SeedFailedRowAsync(store, Endpoint, eventId, "sess-" + eventId, attempt);
         row.MessageContent = new MessageContent { ErrorContent = new ErrorContent { ErrorText = errorText, ErrorType = "KeyNotFoundException" } };
         row.EventTypeId = "CrmAccountCreated";
         await store.UploadFailedMessage(eventId, row.SessionId!, Endpoint, row);

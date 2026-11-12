@@ -17,6 +17,8 @@ namespace NimBus.WebApp.Mcp.Operations;
 /// <param name="TenantId">The caller's tenant, when known.</param>
 /// <param name="ClientId">The OAuth client the caller used, when known.</param>
 /// <param name="Environment">The NimBus environment that issued the token.</param>
+/// <param name="TicketId">For a resubmit by ticket (Spec 044 Phase 3), the ticket; null for one message.</param>
+/// <param name="Members">For a resubmit by ticket, each eligible message at the version it was previewed.</param>
 public sealed record OperatorActionGrant(
     string Action,
     string EndpointId,
@@ -25,7 +27,14 @@ public sealed record OperatorActionGrant(
     string Caller,
     string? TenantId,
     string? ClientId,
-    string? Environment);
+    string? Environment,
+    string? TicketId = null,
+    IReadOnlyList<OperatorBatchMember>? Members = null);
+
+/// <summary>One message of a resubmit by ticket, at the version it was previewed.</summary>
+/// <param name="EventId">The message's event id.</param>
+/// <param name="MessageVersion">The encoded version.</param>
+public sealed record OperatorBatchMember(string EventId, string MessageVersion);
 
 /// <summary>
 /// Issues and reads the short-lived tokens <c>nimbus_prepare_action</c> hands out. A token is

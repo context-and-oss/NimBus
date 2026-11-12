@@ -70,18 +70,28 @@ public sealed partial class OperatorActionTools
 
     /// <summary>Previews a resubmit or skip and returns a token to run it.</summary>
     [McpServerTool(Name = "nimbus_prepare_action", Title = "Prepare a NimBus recovery action", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Checks and previews resubmitting or skipping one failed message without changing anything. Pass the messageVersion from nimbus_get_message. Returns the impact and an actionToken, valid for about two minutes and only for you, to pass to nimbus_resubmit_message or nimbus_skip_message. Show the preview to the user and get their confirmation before running a skip.")]
+    [Description("Checks and previews resubmitting or skipping one failed message without changing anything: pass eventId and the messageVersion from nimbus_get_message. Or previews resubmitting every failed message on the endpoint reported under one ticket (after the fix is deployed): pass ticketId instead, at most 50 messages. Returns the impact and an actionToken, valid for about two minutes and only for you, to pass to nimbus_resubmit_message or nimbus_skip_message. Show the preview to the user and get their confirmation before running a skip.")]
     public async Task<PrepareActionResult> PrepareActionAsync(
         [Description("resubmit or skip.")] string action,
         [Description("Endpoint id, as returned by nimbus_list_endpoints.")] string endpointId,
-        [Description("The message's event id.")] string eventId,
-        [Description("messageVersion from nimbus_get_message: the state you decided on.")] string messageVersion)
+        [Description("The message's event id. Omit when you pass ticketId.")] string? eventId = null,
+        [Description("messageVersion from nimbus_get_message: the state you decided on. Omit when you pass ticketId.")] string? messageVersion = null,
+        [Description("Resubmit every failed message on this endpoint reported under this ticket. Resubmit only.")] string? ticketId = null)
     {
         var kind = ParseCommand(action);
         await _access.RequireScopeAsync(kind).ConfigureAwait(false);
         var endpoint = await _catalog.RequireReadableAsync(endpointId).ConfigureAwait(false);
         await _access.RequireChangeAllowedOnAsync(kind, endpoint).ConfigureAwait(false);
-        var id = RequireEventId(eventId);
+        if (!string.IsNullOrWhiteSpace(ticketId))
+        {
+            if (!string.IsNullOrWhiteSpace(eventId) || !string.IsNullOrWhiteSpace(messageVersion))
+                throw OperatorToolErrors.InvalidArgument("Pass ticketId, or eventId with messageVersion, not both.");
+            if (kind != OperatorAction.Resubmit)
+                throw OperatorToolErrors.InvalidArgument("Only resubmit can be prepared by ticket; skip one message at a time.");
+            return await PrepareByTicketAsync(endpoint, ticketId.Trim()).ConfigureAwait(false);
+        }
+
+        var id = RequireEventId(eventId!);
         if (!OperatorMessageVersion.TryDecode(messageVersion, out var expected))
             throw OperatorToolErrors.InvalidArgument("messageVersion is not one nimbus_get_message returned.");
 
@@ -122,6 +132,62 @@ public sealed partial class OperatorActionTools
             impact,
             token,
             (int)OperatorActionTokens.Lifetime.TotalSeconds);
+    }
+
+    private async Task<PrepareActionResult> PrepareByTicketAsync(string endpoint, string ticketId)
+    {
+        if (!await _access.MayAsync(OperatorAction.Resubmit, endpoint).ConfigureAwait(false))
+            throw OperatorToolErrors.PermissionDenied($"resubmit requires the Contributor role on endpoint '{endpoint}'.");
+
+        var reports = await _store.FindEventReports(endpoint, ticketId, MaxReportBatch).ConfigureAwait(false);
+        var members = new List<OperatorBatchMember>();
+        var notEligible = new List<ReportItem>();
+        var sessions = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var report in reports)
+        {
+            var lookup = await _commands.FindCurrentAsync(endpoint, report.EventId).ConfigureAwait(false);
+            if (lookup.Target is not { } target)
+            {
+                notEligible.Add(new ReportItem(report.EventId, lookup.Status.ToString(), "No longer tracked on this endpoint."));
+                continue;
+            }
+
+            if (!OperatorCommandCoordinator.IsActionable(target.Row, OperatorChannel.Mcp))
+            {
+                notEligible.Add(new ReportItem(report.EventId, "NotAllowed", $"It is {target.Row.ResolutionStatus}."));
+                continue;
+            }
+
+            members.Add(new OperatorBatchMember(report.EventId, target.Version.Encode()));
+            if (!string.IsNullOrEmpty(target.Row.SessionId))
+                sessions.Add(target.Row.SessionId);
+        }
+
+        if (members.Count == 0)
+            throw OperatorToolErrors.ActionNotAllowed($"No failed message on endpoint '{endpoint}' is reported under ticket '{ticketId}'.");
+
+        var (caller, tenant, client) = OperatorActionTokens.Identify(User());
+        var token = _tokens.Issue(new OperatorActionGrant(
+            OperatorActionAccess.NameOf(OperatorAction.Resubmit), endpoint, string.Empty, string.Empty, caller, tenant, client, _catalog.Environment,
+            ticketId, members));
+
+        return new PrepareActionResult(
+            _catalog.Environment,
+            DateTimeOffset.UtcNow,
+            OperatorActionAccess.NameOf(OperatorAction.Resubmit),
+            endpoint,
+            string.Empty,
+            null,
+            "Failed",
+            string.Empty,
+            members.Count,
+            0,
+            $"Sends {members.Count} message(s) reported under ticket '{ticketId}' to endpoint '{endpoint}' again with their latest stored payloads, across {sessions.Count} session(s). Each runs only while it is still in the state previewed and gets its own operation.",
+            token,
+            (int)OperatorActionTokens.Lifetime.TotalSeconds,
+            ticketId,
+            members.Select(m => m.EventId).ToList(),
+            notEligible);
     }
 
     /// <summary>Runs a prepared resubmit.</summary>
@@ -405,11 +471,16 @@ public sealed partial class OperatorActionTools
             || !string.Equals(grant.Caller, caller, StringComparison.Ordinal)
             || !string.Equals(grant.TenantId, tenant, StringComparison.Ordinal)
             || !string.Equals(grant.ClientId, client, StringComparison.Ordinal)
-            || !string.Equals(grant.Environment, _catalog.Environment, StringComparison.Ordinal)
-            || !OperatorMessageVersion.TryDecode(grant.MessageVersion, out var expected))
+            || !string.Equals(grant.Environment, _catalog.Environment, StringComparison.Ordinal))
         {
             throw OperatorToolErrors.StaleMessage($"The actionToken was not issued to you for {OperatorActionAccess.NameOf(kind)}.");
         }
+
+        if (grant.Members is { } batch)
+            return await ExecuteBatchAsync(kind, grant, batch, context, caller, tenant, client).ConfigureAwait(false);
+
+        if (!OperatorMessageVersion.TryDecode(grant.MessageVersion, out var expected))
+            throw OperatorToolErrors.StaleMessage($"The actionToken was not issued to you for {OperatorActionAccess.NameOf(kind)}.");
 
         var endpoint = await _catalog.RequireReadableAsync(grant.EndpointId).ConfigureAwait(false);
         await _access.RequireChangeAllowedOnAsync(kind, endpoint).ConfigureAwait(false);
@@ -478,6 +549,95 @@ public sealed partial class OperatorActionTools
         }
 
         return Accepted(kind, endpoint, grant.EventId, commandSent: true);
+    }
+
+    /// <summary>
+    /// Runs a resubmit by ticket (Spec 044 Phase 3): each member through the same guarded,
+    /// journaled path as one message, as its own operation keyed by the idempotency key and its
+    /// event id, so a retry with the same key runs none of them again. A stale member, a refusal
+    /// or the budget running out stops only that member; the result lists each one.
+    /// </summary>
+    private async Task<OperatorActionResult> ExecuteBatchAsync(OperatorAction kind, OperatorActionGrant grant, IReadOnlyList<OperatorBatchMember> batch,
+        OperatorCommandContext context, string caller, string? tenant, string? client)
+    {
+        if (kind != OperatorAction.Resubmit || !_journal.IsAvailable)
+            throw OperatorToolErrors.FeatureUnavailable("A resubmit by ticket needs the operation journal.");
+
+        var endpoint = await _catalog.RequireReadableAsync(grant.EndpointId).ConfigureAwait(false);
+        await _access.RequireChangeAllowedOnAsync(kind, endpoint).ConfigureAwait(false);
+        _limiter.Acquire(Http());
+
+        var items = new List<ReportItem>(batch.Count);
+        foreach (var member in batch)
+        {
+            var operationId = OperatorOperationJournal.OperationIdFor(tenant, caller, context.IdempotencyKey + "|" + member.EventId);
+            if (await _journal.GetAsync(operationId).ConfigureAwait(false) is { } earlier)
+            {
+                var replayed = await _journal.ReconcileAsync(earlier, repair: false).ConfigureAwait(false);
+                items.Add(new ReportItem(member.EventId, replayed.Status.ToString(), "Already run with this idempotencyKey.", replayed.OperationId));
+                continue;
+            }
+
+            var lookup = await _commands.FindCurrentAsync(endpoint, member.EventId).ConfigureAwait(false);
+            if (lookup.Target is not { } target || !OperatorMessageVersion.TryDecode(member.MessageVersion, out var expected) || target.Version != expected)
+            {
+                items.Add(new ReportItem(member.EventId, "StaleMessage", "Changed since you prepared the action."));
+                continue;
+            }
+
+            var created = await _journal.CreateAsync(new OperatorOperation
+            {
+                OperationId = operationId,
+                TenantId = tenant ?? string.Empty,
+                Caller = caller,
+                ClientId = client,
+                IsWorkload = _access.IsWorkloadFor(kind),
+                ActorName = _authorization.GetCurrentUserName(),
+                IdempotencyKey = context.IdempotencyKey!,
+                ArgumentsHash = OperatorOperationJournal.ArgumentsHashFor(OperatorOperationAction.Resubmit, endpoint, member.EventId, member.MessageVersion, context.Reason!),
+                Action = OperatorOperationAction.Resubmit,
+                EndpointId = endpoint,
+                EventId = member.EventId,
+                SessionId = target.Row.SessionId ?? string.Empty,
+                SourceMessageId = target.Version.LastMessageId ?? string.Empty,
+                MessageVersion = member.MessageVersion,
+                Reason = context.Reason!,
+            }).ConfigureAwait(false);
+            var operation = created.Operation;
+            if (!created.Created)
+            {
+                items.Add(new ReportItem(member.EventId, operation.Status.ToString(), "Already run with this idempotencyKey.", operation.OperationId));
+                continue;
+            }
+
+            try
+            {
+                if (operation.IsWorkload)
+                    await RequireWithinWorkloadLimitsAsync(operation).ConfigureAwait(false);
+
+                var memberContext = context with { Journal = _journal.Track(operation) };
+                var result = await _commands.ResubmitAsync(target, memberContext).ConfigureAwait(false);
+                var current = OperatorOperationJournal.CurrentOf(memberContext.Journal!);
+                items.Add(new ReportItem(member.EventId, result.Status == OperatorCommandStatus.Accepted ? current.Status.ToString() : result.Status.ToString(),
+                    result.Detail, current.OperationId));
+            }
+            catch (ModelContextProtocol.McpException ex)
+            {
+                items.Add(new ReportItem(member.EventId, "Refused", ex.Message, operation.OperationId));
+            }
+            catch (Exception ex)
+            {
+                LogMcpOfFailedWhileSending(_logger, ex, kind, endpoint, member.EventId);
+                items.Add(new ReportItem(member.EventId, nameof(OperatorOperationStatus.OutcomeUnknown),
+                    "Sending failed; the message was restored, but the command may have reached Service Bus. Don't resubmit it again.", operation.OperationId));
+            }
+        }
+
+        var sent = items.Count(i => i.Status == nameof(OperatorOperationStatus.Dispatched));
+        return new OperatorActionResult(_catalog.Environment, DateTimeOffset.UtcNow, OperatorActionAccess.NameOf(kind), endpoint, string.Empty,
+            sent == items.Count ? "Accepted" : "Partial", sent > 0,
+            $"{sent} of {items.Count} messages under ticket '{grant.TicketId}' were sent. Poll nimbus_get_operation for each operationId in items.",
+            Items: items);
     }
 
     /// <summary>
@@ -663,10 +823,14 @@ public sealed partial class OperatorActionTools
 /// <param name="Impact">What running the action does, for the user to confirm.</param>
 /// <param name="ActionToken">Pass to nimbus_resubmit_message or nimbus_skip_message. Opaque, single caller.</param>
 /// <param name="ExpiresInSeconds">How long the token stays valid.</param>
+/// <param name="TicketId">For a resubmit by ticket, the ticket.</param>
+/// <param name="Members">For a resubmit by ticket, the event ids it will resubmit.</param>
+/// <param name="NotEligible">For a resubmit by ticket, reported messages it leaves out, and why.</param>
 public sealed record PrepareActionResult(
     string? Environment, DateTimeOffset AsOfUtc, string Action, string EndpointId, string EventId, string? SessionId,
     string ExpectedStatus, string MessageVersion, int AffectedMessages, int DeferredInSession, string Impact,
-    string ActionToken, int ExpiresInSeconds);
+    string ActionToken, int ExpiresInSeconds, string? TicketId = null, IReadOnlyList<string>? Members = null,
+    IReadOnlyList<ReportItem>? NotEligible = null);
 
 /// <summary>Result of <c>nimbus_record_classification</c>.</summary>
 /// <param name="Environment">The configured NimBus environment name.</param>
@@ -702,9 +866,10 @@ public sealed record OperatorActionResult(
 
 /// <summary>One message's result in a batch.</summary>
 /// <param name="EventId">The message's event id.</param>
-/// <param name="Status">Accepted, or why not: NotFound, Forbidden, Invalid, AuditUnavailable.</param>
-/// <param name="Detail">A description, when there is one.</param>
-public sealed record ReportItem(string EventId, string Status, string? Detail);
+/// <param name="Status">For reports: Accepted, or why not (NotFound, Forbidden, Invalid, AuditUnavailable). For a resubmit by ticket: the operation's status (Dispatched, OutcomeUnknown, Refused) or StaleMessage.</param>
+/// <param name="Detail">A description, when there is one. Untrusted.</param>
+/// <param name="OperationId">For a resubmit, the operation to poll with nimbus_get_operation.</param>
+public sealed record ReportItem(string EventId, string Status, string? Detail, string? OperationId = null);
 
 /// <summary>Result of <c>nimbus_find_reports</c>.</summary>
 /// <param name="Environment">The configured NimBus environment name.</param>
