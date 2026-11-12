@@ -334,7 +334,7 @@ run duration.
 
 Each rule deletes with `DELETE TOP (5000)` and repeats until a batch deletes fewer than
 5,000 rows, so no single statement locks more than 5,000 rows. Schema script
-`0025_RetentionIndexes.sql` adds the indexes that let R1 and R3 seek to old rows; deployments
+`0026_RetentionIndexes.sql` adds the indexes that let R1 and R3 seek to old rows; deployments
 on `VerifyOnly` must apply it before upgrading.
 
 > **Retention deletes rows permanently.** A tracking row deleted by R4 can no longer be
