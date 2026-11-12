@@ -90,10 +90,13 @@ public sealed class SdkSmokeTests
     [Timeout(60_000)]
     public async Task Stock_sdk_subscription_created_with_an_initial_rule_has_only_that_rule_and_receives_nothing()
     {
-        var startup = Stopwatch.StartNew();
-        await using var emulator = await EmulatorProcess.StartAsync();
-        Console.WriteLine($"[step] emulator startup: {startup.ElapsedMilliseconds} ms");
-        var steps = new TestSteps(emulator);
+        // Every awaited step is bounded, and the bounds sum to less than the 60 s [Timeout]:
+        // startup has a 20 s deadline, each later step 10 s, all capped by a 50 s overall
+        // budget, and emulator disposal waits at most 5 s for the process to exit. A hang
+        // therefore fails naming its step, with the emulator's protocol trace (AF-9).
+        var clock = Stopwatch.StartNew();
+        await using var emulator = await EmulatorProcess.StartAsync(startupDeadline: TimeSpan.FromSeconds(20));
+        var steps = new TestSteps(emulator, clock, TimeSpan.FromSeconds(50));
         var step = TimeSpan.FromSeconds(10);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var entityName = $"initial-{Guid.NewGuid():N}";
@@ -138,7 +141,8 @@ public sealed class SdkSmokeTests
             await steps.DisposeAsync("client", client, step);
         }
 
-        await steps.RunAsync("delete topic", step, () => admin.DeleteTopicAsync(entityName, timeout.Token));    }
+        await steps.RunAsync("delete topic", step, () => admin.DeleteTopicAsync(entityName, timeout.Token));
+    }
 
     [TestMethod]
     [TestCategory("CommonFidelity")]

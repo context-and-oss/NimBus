@@ -39,32 +39,74 @@ internal sealed class EmulatorProcess : IAsyncDisposable
 
     public Uri HttpEndpoint { get; }
 
-    public static async Task<EmulatorProcess> StartAsync(string? journalPath = null, bool deleteJournalOnDispose = true)
+    /// <summary>
+    /// The default overall startup deadline across all launch attempts. It leaves room for
+    /// the test itself inside the suite's usual 60 s <c>[Timeout]</c>.
+    /// </summary>
+    public static readonly TimeSpan DefaultStartupDeadline = TimeSpan.FromSeconds(30);
+
+    private const int MaxLaunches = 3;
+
+    /// <summary>
+    /// Starts the emulator, retrying on a new port up to three times, all within
+    /// <paramref name="startupDeadline"/> (default <see cref="DefaultStartupDeadline"/>).
+    /// A failure carries the emulator output of the last launch attempt.
+    /// </summary>
+    public static async Task<EmulatorProcess> StartAsync(
+        string? journalPath = null,
+        bool deleteJournalOnDispose = true,
+        TimeSpan? startupDeadline = null)
     {
         if (System.Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_CS") is { Length: > 0 } existing)
         {
             return new EmulatorProcess(null, 0, existing);
         }
 
+        var deadline = startupDeadline ?? DefaultStartupDeadline;
+        var clock = Stopwatch.StartNew();
+
         // Startup can fail transiently on a loaded runner (port stolen
         // between probe and bind, resource pressure); retry on a new port.
         Exception? lastFailure = null;
-        for (var launch = 0; launch < 3; launch++)
+        var lastOutput = string.Empty;
+        var launches = 0;
+        while (launches < MaxLaunches && (launches == 0 || clock.Elapsed < deadline))
         {
-            try
+            launches++;
+            var attempt = await StartOnceAsync(journalPath, deleteJournalOnDispose, clock, deadline);
+            if (attempt.Instance is { } instance)
             {
-                return await StartOnceAsync(journalPath, deleteJournalOnDispose);
+                Console.WriteLine($"[step] emulator startup: {clock.ElapsedMilliseconds} ms ({launches} launch attempt(s))");
+                return instance;
             }
-            catch (Exception exception) when (exception is InvalidOperationException or TimeoutException)
-            {
-                lastFailure = exception;
-            }
+
+            lastFailure = attempt.Failure;
+            lastOutput = attempt.Output;
         }
 
-        throw new InvalidOperationException("The emulator failed to start after 3 attempts.", lastFailure);
+        var newLine = System.Environment.NewLine;
+        if (clock.Elapsed >= deadline)
+        {
+            throw new TimeoutException(
+                $"The emulator did not become healthy within the {deadline.TotalSeconds:0.###} s startup deadline " +
+                $"({launches} launch attempt(s), {clock.ElapsedMilliseconds} ms). " +
+                $"Output of the last attempt:{newLine}{lastOutput}",
+                lastFailure);
+        }
+
+        throw new InvalidOperationException(
+            $"The emulator failed to start after {launches} attempts ({clock.ElapsedMilliseconds} ms). " +
+            $"Output of the last attempt:{newLine}{lastOutput}",
+            lastFailure);
     }
 
-    private static async Task<EmulatorProcess> StartOnceAsync(string? journalPath, bool deleteJournalOnDispose)
+    private readonly record struct StartAttempt(EmulatorProcess? Instance, Exception? Failure, string Output);
+
+    private static async Task<StartAttempt> StartOnceAsync(
+        string? journalPath,
+        bool deleteJournalOnDispose,
+        Stopwatch clock,
+        TimeSpan deadline)
     {
         var port = GetAvailablePort();
         var project = FindProject();
@@ -80,7 +122,12 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         };
         startInfo.Environment["NIMBUS_SBEMULATOR_TOPOLOGY_PATH"] = journalPath;
         startInfo.Environment["NIMBUS_SBEMULATOR_DIAGNOSTICS"] = "1";
-        var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start the emulator process.");
+        var process = Process.Start(startInfo);
+        if (process is null)
+        {
+            return new StartAttempt(null, new InvalidOperationException("Could not start the emulator process."), string.Empty);
+        }
+
         var instance = new EmulatorProcess(
             process,
             port,
@@ -91,34 +138,44 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
-        for (var attempt = 0; attempt < 100; attempt++)
+        Exception? failure = null;
+        while (deadline - clock.Elapsed is var remaining && remaining > TimeSpan.Zero)
         {
             if (process.HasExited)
             {
-                throw new InvalidOperationException(
-                    $"The emulator exited during startup with code {process.ExitCode}. Output:{System.Environment.NewLine}{instance.DumpOutput()}");
+                failure = new InvalidOperationException($"The emulator exited during startup with code {process.ExitCode}.");
+                break;
             }
 
+            using var probe = new CancellationTokenSource(remaining);
             try
             {
-                using var response = await client.GetAsync($"http://127.0.0.1:{port}/health");
+                using var response = await client.GetAsync(new Uri($"http://127.0.0.1:{port}/health"), probe.Token);
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
-                    return instance;
+                    return new StartAttempt(instance, null, string.Empty);
                 }
             }
             catch (HttpRequestException)
             {
             }
-            catch (TaskCanceledException)
+            catch (OperationCanceledException)
             {
             }
 
-            await Task.Delay(50);
+            try
+            {
+                await Task.Delay(50, probe.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
         }
 
+        failure ??= new TimeoutException(
+            $"The emulator did not become healthy within the {deadline.TotalSeconds:0.###} s startup deadline.");
         await instance.DisposeAsync();
-        throw new TimeoutException("The emulator did not become healthy.");
+        return new StartAttempt(null, failure, instance.DumpOutput());
     }
 
     public string DumpOutput() => string.Join(System.Environment.NewLine, _output);

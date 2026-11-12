@@ -6,16 +6,43 @@ namespace NimBus.ServiceBusEmulator.Tests;
 
 /// <summary>
 /// Runs each awaited step of an emulator test under its own deadline, so a hang fails
-/// with a message naming the step (and the emulator's output) instead of an anonymous
-/// MSTest <c>[Timeout]</c>. Every step's duration is written to the test output.
+/// with a message naming the step (and the emulator's protocol trace) instead of an
+/// anonymous MSTest <c>[Timeout]</c>. Each step is also capped by what is left of an
+/// overall budget, so a hang late in a slow run still fails before the test timeout.
+/// Every step's duration is written to the test output.
 /// </summary>
-internal sealed class TestSteps(EmulatorProcess emulator)
+internal sealed class TestSteps
 {
-    private readonly Stopwatch _total = Stopwatch.StartNew();
+    private readonly Func<string> _dumpOutput;
+    private readonly Stopwatch _clock;
+    private readonly TimeSpan _overallBudget;
+
+    /// <summary>Creates steps whose failures carry <paramref name="emulator"/>'s output.</summary>
+    public TestSteps(EmulatorProcess emulator, Stopwatch clock, TimeSpan overallBudget)
+        : this(emulator.DumpOutput, clock, overallBudget)
+    {
+    }
+
+    /// <summary>Creates steps with no overall budget beyond each step's own.</summary>
+    public TestSteps(Func<string> dumpOutput)
+        : this(dumpOutput, Stopwatch.StartNew(), Timeout.InfiniteTimeSpan)
+    {
+    }
+
+    /// <summary>Creates steps capped by <paramref name="overallBudget"/> measured on <paramref name="clock"/>.</summary>
+    public TestSteps(Func<string> dumpOutput, Stopwatch clock, TimeSpan overallBudget)
+    {
+        ArgumentNullException.ThrowIfNull(dumpOutput);
+        ArgumentNullException.ThrowIfNull(clock);
+        _dumpOutput = dumpOutput;
+        _clock = clock;
+        _overallBudget = overallBudget;
+    }
 
     /// <summary>Runs <paramref name="step"/> and fails if it takes longer than <paramref name="budget"/>.</summary>
     public async Task RunAsync(string name, TimeSpan budget, Func<Task> step)
     {
+        ArgumentNullException.ThrowIfNull(step);
         await RunAsync<object?>(name, budget, async () =>
         {
             await step();
@@ -27,19 +54,26 @@ internal sealed class TestSteps(EmulatorProcess emulator)
     public async Task<T> RunAsync<T>(string name, TimeSpan budget, Func<Task<T>> step)
     {
         ArgumentNullException.ThrowIfNull(step);
+        var bound = Bound(budget);
+        if (bound <= TimeSpan.Zero)
+        {
+            throw Failure($"Step '{name}' had no time left in the {_overallBudget.TotalSeconds:0.#} s overall budget", null);
+        }
+
         var watch = Stopwatch.StartNew();
         try
         {
-            var result = await step().WaitAsync(budget);
-            Console.WriteLine($"[step] {name}: {watch.ElapsedMilliseconds} ms (total {_total.ElapsedMilliseconds} ms)");
+            var result = await step().WaitAsync(bound);
+            Console.WriteLine($"[step] {name}: {watch.ElapsedMilliseconds} ms (total {_clock.ElapsedMilliseconds} ms)");
             return result;
         }
         catch (TimeoutException exception)
         {
-            throw new TimeoutException(
-                $"Step '{name}' did not finish within {budget.TotalSeconds:0.#} s (total {_total.ElapsedMilliseconds} ms). " +
-                $"Emulator output:{System.Environment.NewLine}{emulator.DumpOutput()}",
-                exception);
+            throw Failure($"Step '{name}' did not finish within {bound.TotalSeconds:0.###} s", exception);
+        }
+        catch (OperationCanceledException exception)
+        {
+            throw Failure($"Step '{name}' was cancelled after {watch.ElapsedMilliseconds} ms", exception);
         }
     }
 
@@ -48,5 +82,23 @@ internal sealed class TestSteps(EmulatorProcess emulator)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return RunAsync($"dispose {name}", budget, () => resource.DisposeAsync().AsTask());
+    }
+
+    private TimeSpan Bound(TimeSpan budget)
+    {
+        if (_overallBudget == Timeout.InfiniteTimeSpan)
+        {
+            return budget;
+        }
+
+        var remaining = _overallBudget - _clock.Elapsed;
+        return remaining < budget ? remaining : budget;
+    }
+
+    private TimeoutException Failure(string what, Exception? inner)
+    {
+        return new TimeoutException(
+            $"{what} (total {_clock.ElapsedMilliseconds} ms). Emulator output:{System.Environment.NewLine}{_dumpOutput()}",
+            inner);
     }
 }
