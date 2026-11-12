@@ -43,7 +43,7 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 | Local development | Aspire orchestration | Local AppHost orchestrates provisioner, resolver, webapp, publisher, and subscriber. | `NimBus.AppHost`, `NimBus.ServiceDefaults` |
 | Local development | Local stack from packages | An adapter repository's AppHost runs the Service Bus emulator, topology provisioning, Resolver and WebApp as dotnet tools, without a NimBus source checkout. | `Akaule.NimBus.AspireHosting`, `Akaule.NimBus.ServiceBusEmulator`, `Akaule.NimBus.Resolver.Host`, `Akaule.NimBus.WebApp`, `Akaule.NimBus.CommandLine` |
 | Local development | Service defaults | OpenTelemetry with NimBus instrumentation, health checks and service discovery; the standard HTTP resilience handler is opt-in. | `Akaule.NimBus.ServiceDefaults` |
-| AI agents | Event-type registry + REST agent API | `/api/agent/*` (catalog, event types, subscribe, receive, publish, settle) lets AI agents define event types and take part on the bus. | `NimBus.Agents`, `NimBus.WebApp` |
+| AI agents | Event-type registry + REST agent API | `/api/v1/agent/*` (catalog, event types, subscribe, receive, publish, settle) lets AI agents define event types and take part on the bus. | `NimBus.Agents`, `NimBus.WebApp` |
 | AI agents | Operator MCP endpoint | Opt-in `/mcp` endpoint for monitoring endpoints, investigating failures and recovering single failed messages under WebApp roles and audit. | `NimBus.WebApp` |
 
 ## Extension framework

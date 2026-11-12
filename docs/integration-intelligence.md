@@ -38,7 +38,7 @@ The feature is disabled by default. Enable it only when the host has configured 
 
 To try it locally, the CrmErpDemo sample's erp-web **Error mode** toggle has a failure-reason dropdown that makes every ERP handler throw a realistic exception per classification category (transient dependency, expired credentials, schema mismatch, business rule, missing reference, application defect). See the sample README's [Failure reasons](../samples/CrmErpDemo/README.md#failure-reasons-integration-intelligence-showcase) section.
 
-The API exposes an endpoint capability check at `GET /api/integration-intelligence/status?endpointId=...`, the latest result at `GET /api/integration-intelligence/failures/{eventId}/{messageId}/classification`, revision history at `/history`, and on-demand analysis through `POST` on the classification route. Every POST requires a UUID `Idempotency-Key`; repeated requests return the same completed result, while `force: true` creates a new revision. The WebApp applies its intelligence rate-limit policy to the POST route.
+The API exposes an endpoint capability check at `GET /api/v1/integration-intelligence/status?endpointId=...`, the latest result at `GET /api/v1/integration-intelligence/failures/{eventId}/{messageId}/classification`, revision history at `/history`, and on-demand analysis through `POST` on the classification route. Every POST requires a UUID `Idempotency-Key`; repeated requests return the same completed result, while `force: true` creates a new revision. The WebApp applies its intelligence rate-limit policy to the POST route.
 
 Only users with Reader access can view results. Contributor access is required to start analysis. The target endpoint comes from the stored message occurrence, and access is checked against that endpoint. Every request is audited with `MessageAuditType.FailureClassified`, including access denials and provider errors.
 
@@ -125,7 +125,7 @@ settings before calling `AddNimBusIntegrationIntelligence`.
   read disables classification until storage is restored and the WebApp restarts;
   ordinary management remains available. Back up this record: deleting it restores
   deployment defaults. Event retention does not delete configuration.
-- `GET/PUT /api/admin/failure-intelligence` require site Owner access. GET issues an
+- `GET/PUT /api/v1/admin/failure-intelligence` require site Owner access. GET issues an
   antiforgery token; PUT requires its cookie and `X-NimBus-CSRF` header, a complete
   settings DTO, expected revision, and payload-sharing acknowledgment. PUT may also
   carry `apiKey` (replace) or `clearApiKey: true` (remove), never both; omitting

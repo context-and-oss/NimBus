@@ -13,11 +13,11 @@ Exceeding a limit returns **HTTP 429**.
 | Policy | Endpoint(s) | Limiter | Default | Partitioned by |
 |---|---|---|---|---|
 | `nimbus-global` | every `/api/*` route, ahead of the policies below | Fixed window | 600 per 60 s | user id (agent key, dashboard token or client IP when anonymous) |
-| `nimbus-agent-receive` | `GET /api/agent/receive` | Concurrency | 20 permits + 5 queued | nothing (global) |
-| `nimbus-admin` | every `/api/admin/*` route | Fixed window | 60 per 60 s | user id |
-| `nimbus-search` | `POST /api/messages/search`, `POST /api/audits/search` | Fixed window | 120 per 60 s | user id |
+| `nimbus-agent-receive` | `GET /api/v1/agent/receive` | Concurrency | 20 permits + 5 queued | nothing (global) |
+| `nimbus-admin` | every `/api/v1/admin/*` route | Fixed window | 60 per 60 s | user id |
+| `nimbus-search` | `POST /api/v1/messages/search`, `POST /api/v1/audits/search` | Fixed window | 120 per 60 s | user id |
 | `nimbus-login` | `POST /account/login` | Fixed window | 50 per 300 s | client IP |
-| `nimbus-intelligence` | `POST /api/integration-intelligence/failures/{eventId}/{messageId}/classification` | Fixed window | 10 per 60 s | user id |
+| `nimbus-intelligence` | `POST /api/v1/integration-intelligence/failures/{eventId}/{messageId}/classification` | Fixed window | 10 per 60 s | user id |
 | `nimbus-mcp` | `/mcp` (operator MCP endpoint, when enabled) | Fixed window | 60 per 60 s | tenant + client application + user |
 
 The operator MCP tools that change a message (resubmit, skip, report, classify) are further limited

@@ -21,7 +21,7 @@ type SettingsState = {
   savedApiKey: "none" | "configured" | "unreadable";
   csrfToken: string;
 };
-const url = "/api/admin/failure-intelligence";
+const url = "/api/v1/admin/failure-intelligence";
 const names = (value: string) => value.split(",").map(item => item.trim()).filter(Boolean);
 const FORM_ID = "failure-intelligence-settings";
 /** Number of edited fields; list fields and the API key count once each. */

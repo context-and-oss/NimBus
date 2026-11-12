@@ -135,10 +135,15 @@ public sealed class IntelligenceActivationTests
     public async Task Enabled_Analyze_Policy_Respects_Global_Kill_Switch(bool rateLimit)
     {
         using var host = await CreateHost("local", true, "20", rateLimit: rateLimit);
-        var endpoint = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.Single(e =>
-            e.Metadata.GetMetadata<Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor>()?.ActionName == "PostClassification");
-        var policy = endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute>()?.PolicyName;
-        Assert.AreEqual(rateLimit ? RateLimitPolicyNames.Intelligence : null, policy);
+        // One endpoint per route: /api/v1/… and its deprecated /api/… alias carry the same policy.
+        var endpoints = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.Where(e =>
+            e.Metadata.GetMetadata<Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor>()?.ActionName == "PostClassification").ToList();
+        Assert.AreEqual(2, endpoints.Count);
+        foreach (var endpoint in endpoints)
+        {
+            var policy = endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute>()?.PolicyName;
+            Assert.AreEqual(rateLimit ? RateLimitPolicyNames.Intelligence : null, policy);
+        }
     }
 
     private static Task<IHost> CreateHost(string branch, bool enabled, string timeout, Action<IServiceCollection>? inspect = null, bool rateLimit = true, Action<IServiceCollection>? configure = null, IConfiguration? overrides = null, string? apiKey = "test-only")

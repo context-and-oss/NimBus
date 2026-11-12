@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: NimBus Management API
   description: HTTP API behind the NimBus WebApp for inspecting endpoints, events and sessions, and for recovering messages (resubmit, skip)
-  version: 0.0.1
+  version: 1.0.0
 servers:
   - url: 'https://{host}'
     description: >-
@@ -16,7 +16,7 @@ servers:
   - url: 'https://localhost:18443'
     description: Local development (dotnet run or the Aspire AppHost)
 paths:
-  /api/endpoint/status/count:
+  /api/v1/endpoint/status/count:
     get:
       summary: Get current status of all endpoints
       description: Return an array of endpoint statuses.
@@ -54,7 +54,7 @@ paths:
         description: ''
       tags:
         - Endpoint
-  '/api/endpoint/{endpointName}/status/':
+  '/api/v1/endpoint/{endpointName}/status/':
     get:
       parameters:
         - in: path
@@ -81,7 +81,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
       operationId: get-endpoint-status-id
-  '/api/event/{eventId}/{messageId}':
+  '/api/v1/event/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -105,7 +105,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Message'
       operationId: get-event-ids
-  '/api/event/unresolved/{endpointId}/{eventId}/{sessionId}':
+  '/api/v1/event/unresolved/{endpointId}/{eventId}/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -134,7 +134,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Event'
       operationId: get-unresolved-failed-event-id
-  /api/event-types:
+  /api/v1/event-types:
     get:
       summary: GetEventTypes
       tags:
@@ -149,7 +149,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/EventType'
       operationId: get-event-types
-  '/api/event-types/{eventtypeid}':
+  '/api/v1/event-types/{eventtypeid}':
     parameters:
       - schema:
           type: string
@@ -168,7 +168,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EventTypeDetails'
       operationId: get-eventtypes-eventtypeid
-  '/api/event-types/{eventtypeid}/fake':
+  '/api/v1/event-types/{eventtypeid}/fake':
     parameters:
       - schema:
           type: string
@@ -201,7 +201,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
       operationId: get-eventtypes-eventtypeid-fake
-  '/api/event/resubmit/{eventId}/{messageId}':
+  '/api/v1/event/resubmit/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -243,7 +243,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Event
-  '/api/event/skip/{eventId}/{messageId}':
+  '/api/v1/event/skip/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -285,7 +285,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Event
-  '/api/event/handoff/complete/{endpointId}/{eventId}/{messageId}':
+  '/api/v1/event/handoff/complete/{endpointId}/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -331,7 +331,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Event
-  '/api/event/handoff/fail/{endpointId}/{eventId}/{messageId}':
+  '/api/v1/event/handoff/fail/{endpointId}/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -378,7 +378,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Event
-  '/api/endpoint/status/{endpointName}':
+  '/api/v1/endpoint/status/{endpointName}':
     parameters:
       - schema:
           type: string
@@ -398,7 +398,7 @@ paths:
       tags:
         - Endpoint
       description: Returns detailed endpoint status including enriched unresolved events with pagination support.
-  '/api/event/details/{endpoint}/{id}':
+  '/api/v1/event/details/{endpoint}/{id}':
     parameters:
       - schema:
           type: string
@@ -422,7 +422,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EventDetails'
       operationId: get-event-details-id
-  '/api/event/data/{endpoint}/{id}':
+  '/api/v1/event/data/{endpoint}/{id}':
     parameters:
       - schema:
           type: string
@@ -453,7 +453,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
       operationId: get-event-id
-  '/api/event-types/endpoint/{endpointId}':
+  '/api/v1/event-types/endpoint/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -486,7 +486,7 @@ paths:
                       $ref: '#/components/schemas/EventTypeDetails'
               examples: {}
       operationId: get-eventtypes-by-endpoint-id
-  '/api/event/change/{eventId}/{messageId}':
+  '/api/v1/event/change/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -534,7 +534,7 @@ paths:
       description: ''
       tags:
         - Event
-  /api/app/stats:
+  /api/v1/app/stats:
     get:
       summary: Get application status and version
       description: >-
@@ -552,7 +552,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApplicationStatus'
       operationId: get-api-app-stats
-  /api/endpoint/endpoints:
+  /api/v1/endpoint/endpoints:
     get:
       summary: Get all endpoint IDs
       responses:
@@ -567,7 +567,7 @@ paths:
       operationId: get-endpoints-all
       tags:
         - Endpoint
-  '/api/endpoint/{endpointName}/status/count':
+  '/api/v1/endpoint/{endpointName}/status/count':
     parameters:
       - schema:
           type: string
@@ -586,7 +586,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EndpointStatusCount'
       operationId: get-endpoint-status-count-id
-  '/api/endpoint/{endpointName}/status/continuationToken':
+  '/api/v1/endpoint/{endpointName}/status/continuationToken':
     parameters:
       - schema:
           type: string
@@ -610,7 +610,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ContinuationToken'
-  '/api/event/details/{endpointId}/{id}/logs':
+  '/api/v1/event/details/{endpointId}/{id}/logs':
     parameters:
       - schema:
           type: string
@@ -636,7 +636,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/EventLogEntry'
       operationId: get-event-details-logs-id
-  '/api/event/details/{endpointId}/{id}/history':
+  '/api/v1/event/details/{endpointId}/{id}/history':
     parameters:
       - schema:
           type: string
@@ -662,7 +662,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Message'
       operationId: get-event-details-history-id
-  '/api/endpoint/{endpointId}/session/{sessionId}':
+  '/api/v1/endpoint/{endpointId}/session/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -686,7 +686,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SessionStatus'
       operationId: get-endpoint-session-id
-  '/api/endpoint/{endpointId}/sessions/batch':
+  '/api/v1/endpoint/{endpointId}/sessions/batch':
     parameters:
       - schema:
           type: string
@@ -721,7 +721,7 @@ paths:
         description: Array of session IDs to query
       tags:
         - Endpoint
-  '/api/storagehook/cosmos/{endpointId}':
+  '/api/v1/storagehook/cosmos/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -740,7 +740,7 @@ paths:
           description: OK
       tags:
         - StorageHook
-  '/api/storagehook/heartbeat/{endpointId}':
+  '/api/v1/storagehook/heartbeat/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -768,7 +768,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - StorageHook
-  '/api/storagehook/servicehealth/{serviceId}':
+  '/api/v1/storagehook/servicehealth/{serviceId}':
     parameters:
       - schema:
           type: string
@@ -799,7 +799,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - StorageHook
-  '/api/event/audit/{eventId}':
+  '/api/v1/event/audit/{eventId}':
     parameters:
       - schema:
           type: string
@@ -839,7 +839,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MessageAudit'
-  '/api/event/deferred/{endpointId}/{eventId}':
+  '/api/v1/event/deferred/{endpointId}/{eventId}':
     get:
       summary: Inspect deferred tracking and broker presence
       operationId: get-deferred-inspection
@@ -855,7 +855,7 @@ paths:
               schema: { $ref: '#/components/schemas/DeferredInspection' }
         '403': { description: Reader permission required }
         '404': { description: Endpoint or event not found }
-  '/api/event/deferred/{endpointId}/{eventId}/skip-tracking':
+  '/api/v1/event/deferred/{endpointId}/{eventId}/skip-tracking':
     post:
       summary: Skip a stale deferred tracking record without publishing or settling messages
       operationId: post-skip-deferred-tracking
@@ -879,7 +879,7 @@ paths:
         '404': { description: Endpoint or event not found }
         '409': { description: Row changed or broker inspection does not permit skipping }
         '501': { description: Storage provider does not support conditional recovery }
-  '/api/event/reprocess-deferred/{endpointId}/{sessionId}':
+  '/api/v1/event/reprocess-deferred/{endpointId}/{sessionId}':
     post:
       summary: Reprocess deferred messages for a session
       operationId: post-reprocess-deferred
@@ -909,7 +909,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/me:
+  /api/v1/me:
     get:
       summary: Get current user info
       operationId: get-me
@@ -922,7 +922,7 @@ paths:
                 $ref: '#/components/schemas/UserInfo'
       tags:
         - Application
-  /api/event/compose-new:
+  /api/v1/event/compose-new:
     post:
       summary: Your POST endpoint
       operationId: post-compose-new-event
@@ -946,7 +946,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ResubmitWithChanges'
-  '/api/event/blocked/{endpointId}/{sessionId}':
+  '/api/v1/event/blocked/{endpointId}/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -993,7 +993,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
       operationId: get-event-blocked-id
-  '/api/event/pending/{endpointId}':
+  '/api/v1/event/pending/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -1026,7 +1026,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
       operationId: get-event-pending-id
-  '/api/endpoint/{endpointId}/subscribe':
+  '/api/v1/endpoint/{endpointId}/subscribe':
     parameters:
       - schema:
           type: string
@@ -1094,7 +1094,7 @@ paths:
             examples: {}
       tags:
         - Endpoint
-  '/api/endpoint/{endpointName}/purge':
+  '/api/v1/endpoint/{endpointName}/purge':
     parameters:
       - schema:
           type: string
@@ -1116,7 +1116,7 @@ paths:
       description: Remove all messages on endpoint
       tags:
         - Endpoint
-  '/api/endpoint/{endpointId}/subscriptionstatus':
+  '/api/v1/endpoint/{endpointId}/subscriptionstatus':
     parameters:
       - schema:
           type: string
@@ -1165,7 +1165,7 @@ paths:
       tags:
         - Endpoint
       description: Get status for given subscription on endpoint
-  '/api/endpoint/{endpointId}/sendstatus':
+  '/api/v1/endpoint/{endpointId}/sendstatus':
     parameters:
       - schema:
           type: string
@@ -1214,7 +1214,7 @@ paths:
       tags:
         - Endpoint
       description: Get send (publish) status for an endpoint's topic
-  '/api/event/invalid/{endpointId}/{eventId}/{sessionId}':
+  '/api/v1/event/invalid/{endpointId}/{eventId}/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -1256,7 +1256,7 @@ paths:
         blocked on.
       tags:
         - Event
-  '/api/endpoint/{endpointId}/roleAssignmentScript':
+  '/api/v1/endpoint/{endpointId}/roleAssignmentScript':
     parameters:
       - schema:
           type: string
@@ -1284,7 +1284,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       operationId: get-endpoint-roleAssignmentScript
       description: Get role assignment script for a given endpoint
-  '/api/event/unsupported/{endpointId}/{eventId}/{sessionId}':
+  '/api/v1/event/unsupported/{endpointId}/{eventId}/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -1314,7 +1314,7 @@ paths:
                 $ref: '#/components/schemas/Event'
       operationId: get-event-unsupported-endpointId-eventId
       description: ''
-  '/api/event/deadletter/{endpointId}/{eventId}/{sessionId}':
+  '/api/v1/event/deadletter/{endpointId}/{eventId}/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -1344,7 +1344,7 @@ paths:
                 $ref: '#/components/schemas/Event'
       operationId: get-event-deadletter-endpointId-eventId
       description: ''
-  '/api/event/{endpointId}/getByFilter':
+  '/api/v1/event/{endpointId}/getByFilter':
     parameters:
       - schema:
           type: string
@@ -1369,7 +1369,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SearchRequest'
         description: getByFilterBody
-  '/api/event/{endpointId}/{eventId}/report':
+  '/api/v1/event/{endpointId}/{eventId}/report':
     parameters:
       - schema:
           type: string
@@ -1419,7 +1419,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ReportEventRequest'
         description: reportEventBody
-  '/api/metadata/{endpointId}':
+  '/api/v1/metadata/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -1460,7 +1460,7 @@ paths:
       tags:
         - Endpoint
       description: ''
-  /api/metadatashort:
+  /api/v1/metadatashort:
     parameters: []
     post:
       summary: Metadata short
@@ -1494,7 +1494,7 @@ paths:
                 type: string
       tags:
         - Endpoint
-  /api/admin/platform-config:
+  /api/v1/admin/platform-config:
     get:
       summary: Get platform configuration
       operationId: get-admin-platform-config
@@ -1513,7 +1513,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/asyncapi:
+  /api/v1/admin/asyncapi:
     get:
       summary: Export platform topology as an AsyncAPI 3.0 document
       operationId: get-admin-asyncapi
@@ -1546,7 +1546,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/storage/cosmos/containers:
+  /api/v1/admin/storage/cosmos/containers:
     get:
       summary: List Cosmos DB containers with platform membership
       operationId: get-admin-cosmos-containers
@@ -1579,7 +1579,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/storage/cosmos/containers/{containerName}/delete':
+  '/api/v1/admin/storage/cosmos/containers/{containerName}/delete':
     parameters:
       - schema:
           type: string
@@ -1628,7 +1628,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/heartbeat/settings:
+  /api/v1/admin/heartbeat/settings:
     get:
       summary: Get the platform heartbeat schedule
       operationId: get-admin-heartbeat-settings
@@ -1681,7 +1681,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/audit/settings:
+  /api/v1/admin/audit/settings:
     get:
       summary: Get which audit types are recorded
       operationId: get-admin-audit-settings
@@ -1735,7 +1735,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/mcp/settings:
+  /api/v1/admin/mcp/settings:
     get:
       summary: Get the MCP access policy and the deployment's MCP configuration
       description: >-
@@ -1798,7 +1798,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/McpAccessProblem'
-  /api/admin/mcp/turn-off:
+  /api/v1/admin/mcp/turn-off:
     post:
       summary: Turn MCP access off now
       description: >-
@@ -1833,7 +1833,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/McpAccessProblem'
-  /api/admin/mcp/activity:
+  /api/v1/admin/mcp/activity:
     get:
       summary: Recent agent activity over MCP
       description: >-
@@ -1865,7 +1865,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/agent-keys:
+  /api/v1/admin/agent-keys:
     get:
       summary: List the agent API keys
       description: >-
@@ -1892,7 +1892,7 @@ paths:
       description: >-
         Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the
         full key once; only its hash is stored. The key authenticates as agentId on
-        /api/agent/* and nowhere else, on every instance within 30 seconds.
+        /api/v1/agent/* and nowhere else, on every instance within 30 seconds.
       operationId: post-admin-agent-keys
       tags:
         - AgentKeys
@@ -1926,7 +1926,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/AgentApiKeyProblem'
-  /api/admin/agent-keys/{keyId}/revoke:
+  /api/v1/admin/agent-keys/{keyId}/revoke:
     post:
       summary: Revoke an agent API key
       description: >-
@@ -1966,7 +1966,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/AgentApiKeyProblem'
-  /api/admin/agent-keys/{keyId}:
+  /api/v1/admin/agent-keys/{keyId}:
     delete:
       summary: Remove a revoked or expired agent API key
       description: >-
@@ -2012,7 +2012,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/AgentApiKeyProblem'
-  /api/admin/dashboard-tokens:
+  /api/v1/admin/dashboard-tokens:
     get:
       summary: List the dashboard tokens
       description: >-
@@ -2045,7 +2045,7 @@ paths:
       description: >-
         Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full token
         once; only its hash is stored. The token gives read-only access to the Monitor feed
-        (/api/monitor/feed/*) and nothing else.
+        (/api/v1/monitor/feed/*) and nothing else.
       operationId: post-admin-dashboard-tokens
       tags:
         - DashboardTokens
@@ -2085,7 +2085,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/dashboard-tokens/{tokenId}/revoke:
+  /api/v1/admin/dashboard-tokens/{tokenId}/revoke:
     post:
       summary: Revoke a dashboard token
       description: >-
@@ -2132,7 +2132,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/dashboard-tokens/{tokenId}:
+  /api/v1/admin/dashboard-tokens/{tokenId}:
     delete:
       summary: Remove a revoked or expired dashboard token
       description: >-
@@ -2184,7 +2184,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/heartbeat/send:
+  /api/v1/admin/heartbeat/send:
     post:
       summary: Send a heartbeat to every monitored endpoint now
       description: Runs the fan-out regardless of the enabled flag. Returns the number of probes sent.
@@ -2204,7 +2204,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/heartbeat/overview:
+  /api/v1/admin/heartbeat/overview:
     get:
       summary: Heartbeat status per endpoint
       operationId: get-admin-heartbeat-overview
@@ -2225,7 +2225,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/heartbeat/endpoint/{endpointId}/enabled':
+  '/api/v1/admin/heartbeat/endpoint/{endpointId}/enabled':
     parameters:
       - schema:
           type: string
@@ -2266,7 +2266,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/health/services:
+  /api/v1/admin/health/services:
     get:
       summary: Liveness of the platform's own services
       operationId: get-admin-health-services
@@ -2287,7 +2287,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/topology/{endpointName}':
+  '/api/v1/admin/topology/{endpointName}':
     parameters:
       - schema:
           type: string
@@ -2318,7 +2318,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/topology/{endpointName}/remove-deprecated':
+  '/api/v1/admin/topology/{endpointName}/remove-deprecated':
     parameters:
       - schema:
           type: string
@@ -2349,7 +2349,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/servicebus/topics:
+  /api/v1/admin/servicebus/topics:
     get:
       summary: Message counts per Service Bus topic across the namespace
       operationId: get-admin-servicebus-topics
@@ -2370,7 +2370,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/topics/{topicName}':
+  '/api/v1/admin/servicebus/topics/{topicName}':
     parameters:
       - schema:
           type: string
@@ -2401,7 +2401,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/topics/{topicName}/subscriptions':
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions':
     parameters:
       - schema:
           type: string
@@ -2434,7 +2434,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters':
+  '/api/v1/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters':
     parameters:
       - schema:
           type: string
@@ -2477,7 +2477,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit':
+  '/api/v1/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit':
     parameters:
       - schema:
           type: string
@@ -2532,7 +2532,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status':
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status':
     parameters:
       - schema:
           type: string
@@ -2579,7 +2579,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge':
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge':
     parameters:
       - schema:
           type: string
@@ -2621,7 +2621,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/deadletters/purge':
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/deadletters/purge':
     parameters:
       - schema:
           type: string
@@ -2662,7 +2662,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate':
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate':
     parameters:
       - schema:
           type: string
@@ -2704,7 +2704,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}':
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}':
     parameters:
       - schema:
           type: string
@@ -2740,7 +2740,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}':
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}':
     parameters:
       - schema:
           type: string
@@ -2781,7 +2781,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules':
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules':
     parameters:
       - schema:
           type: string
@@ -2823,7 +2823,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/failed-preview':
+  '/api/v1/admin/endpoint/{endpointId}/failed-preview':
     parameters:
       - schema:
           type: string
@@ -2854,7 +2854,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/bulk-resubmit':
+  '/api/v1/admin/endpoint/{endpointId}/bulk-resubmit':
     parameters:
       - schema:
           type: string
@@ -2885,7 +2885,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/deadlettered-preview':
+  '/api/v1/admin/endpoint/{endpointId}/deadlettered-preview':
     parameters:
       - schema:
           type: string
@@ -2935,7 +2935,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/delete-deadlettered':
+  '/api/v1/admin/endpoint/{endpointId}/delete-deadlettered':
     parameters:
       - schema:
           type: string
@@ -2974,7 +2974,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/session/{sessionId}/preview':
+  '/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/preview':
     parameters:
       - schema:
           type: string
@@ -3010,7 +3010,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/session/{sessionId}/purge':
+  '/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/purge':
     parameters:
       - schema:
           type: string
@@ -3046,7 +3046,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/session/{sessionId}/state':
+  '/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/state':
     parameters:
       - schema:
           type: string
@@ -3143,7 +3143,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/session-cleanup/preview':
+  '/api/v1/admin/endpoint/{endpointId}/session-cleanup/preview':
     parameters:
       - schema:
           type: string
@@ -3186,7 +3186,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/session-cleanup':
+  '/api/v1/admin/endpoint/{endpointId}/session-cleanup':
     parameters:
       - schema:
           type: string
@@ -3235,7 +3235,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/event/{eventId}':
+  '/api/v1/admin/endpoint/{endpointId}/event/{eventId}':
     parameters:
       - schema:
           type: string
@@ -3276,7 +3276,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/delete-all':
+  '/api/v1/admin/endpoint/{endpointId}/delete-all':
     post:
       summary: Wipe an endpoint (recreates its own and Deferred subscriptions, purges stored events and message history)
       operationId: post-admin-delete-all
@@ -3295,7 +3295,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
-  '/api/admin/endpoint/{endpointId}/purge-preview':
+  '/api/v1/admin/endpoint/{endpointId}/purge-preview':
     post:
       summary: Preview subscription purge
       operationId: post-admin-purge-preview
@@ -3319,7 +3319,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PurgePreview'
-  '/api/admin/endpoint/{endpointId}/purge':
+  '/api/v1/admin/endpoint/{endpointId}/purge':
     post:
       summary: Execute subscription purge
       operationId: post-admin-purge
@@ -3343,7 +3343,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
-  '/api/admin/endpoint/{endpointId}/stale-pending-preview':
+  '/api/v1/admin/endpoint/{endpointId}/stale-pending-preview':
     post:
       summary: Preview stale Pending reconciliation
       operationId: post-admin-stale-pending-preview
@@ -3379,7 +3379,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/stale-pending-reconcile':
+  '/api/v1/admin/endpoint/{endpointId}/stale-pending-reconcile':
     post:
       summary: Reconcile stale Pending rows
       operationId: post-admin-stale-pending-reconcile
@@ -3422,7 +3422,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/messages/delete-by-to-preview:
+  /api/v1/admin/messages/delete-by-to-preview:
     post:
       summary: Preview delete messages by To field
       operationId: post-admin-delete-by-to-preview
@@ -3452,7 +3452,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/messages/delete-by-to:
+  /api/v1/admin/messages/delete-by-to:
     post:
       summary: Delete messages by To field
       operationId: post-admin-delete-by-to
@@ -3482,7 +3482,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/admin/endpoint/{endpointId}/delete-by-status-preview':
+  '/api/v1/admin/endpoint/{endpointId}/delete-by-status-preview':
     post:
       summary: Preview delete events by status
       operationId: post-admin-delete-by-status-preview
@@ -3507,7 +3507,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CountResponse'
-  '/api/admin/endpoint/{endpointId}/delete-by-status':
+  '/api/v1/admin/endpoint/{endpointId}/delete-by-status':
     post:
       summary: Delete events by status
       operationId: post-admin-delete-by-status
@@ -3532,7 +3532,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
-  '/api/admin/endpoint/{endpointId}/skip-preview':
+  '/api/v1/admin/endpoint/{endpointId}/skip-preview':
     post:
       summary: Preview skip messages
       operationId: post-admin-skip-preview
@@ -3557,7 +3557,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CountResponse'
-  '/api/admin/endpoint/{endpointId}/skip':
+  '/api/v1/admin/endpoint/{endpointId}/skip':
     post:
       summary: Skip messages by status
       description: >-
@@ -3586,7 +3586,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
-  '/api/admin/endpoint/{endpointId}/copy':
+  '/api/v1/admin/endpoint/{endpointId}/copy':
     post:
       summary: Copy endpoint data to another Cosmos DB
       operationId: post-admin-copy
@@ -3628,7 +3628,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/messages/search:
+  /api/v1/messages/search:
     post:
       summary: Search messages across all endpoints
       operationId: post-messages-search
@@ -3646,7 +3646,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MessageSearchRequest'
-  /api/failed/search:
+  /api/v1/failed/search:
     post:
       summary: Search unresolved failures across every endpoint the caller can read
       description: >-
@@ -3681,7 +3681,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/FailedSearchRequest'
-  /api/failed/histogram:
+  /api/v1/failed/histogram:
     post:
       summary: Count unresolved failures per time bucket
       description: >-
@@ -3715,7 +3715,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/FailedHistogramRequest'
-  /api/failed/error-groups:
+  /api/v1/failed/error-groups:
     post:
       summary: Group unresolved failures by error category and pattern
       description: >-
@@ -3749,7 +3749,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/FailedErrorGroupsRequest'
-  /api/audits/search:
+  /api/v1/audits/search:
     post:
       summary: Search audit log entries across all events
       operationId: post-audits-search
@@ -3767,7 +3767,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AuditSearchRequest'
-  /api/metrics/overview:
+  /api/v1/metrics/overview:
     get:
       summary: Get metrics overview for all endpoints
       operationId: get-metrics-overview
@@ -3806,7 +3806,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/metrics/latency:
+  /api/v1/metrics/latency:
     get:
       summary: Get latency percentiles for all endpoints
       operationId: get-metrics-latency
@@ -3845,7 +3845,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/metrics/failed-insights:
+  /api/v1/metrics/failed-insights:
     get:
       summary: Get failed message insights grouped by error pattern
       operationId: get-metrics-failed-insights
@@ -3896,7 +3896,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/metrics/failed-insights/occurrences:
+  /api/v1/metrics/failed-insights/occurrences:
     get:
       summary: Page the failure occurrences of one insights group
       description: Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis.
@@ -3958,7 +3958,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/metrics/failed-insights/patterns:
+  /api/v1/metrics/failed-insights/patterns:
     get:
       summary: Page the error patterns of one likely-cause or recovery-guidance group
       operationId: get-metrics-failed-insights-patterns
@@ -4017,7 +4017,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/metrics/timeseries:
+  /api/v1/metrics/timeseries:
     get:
       summary: Get time-bucketed message counts
       operationId: get-metrics-timeseries
@@ -4056,7 +4056,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/metrics/timeseries-by-eventtype:
+  /api/v1/metrics/timeseries-by-eventtype:
     get:
       summary: Time-series buckets of published messages grouped by event type.
       operationId: get-metrics-timeseries-by-eventtype
@@ -4095,7 +4095,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/heartbeat/page:
+  /api/v1/heartbeat/page:
     get:
       summary: Get fleet heartbeat history and current liveness
       operationId: get-heartbeat-page
@@ -4123,7 +4123,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Heartbeat
-  /api/monitor/acknowledgements:
+  /api/v1/monitor/acknowledgements:
     get:
       summary: List the Monitor acknowledgements the caller can see
       description: >-
@@ -4143,7 +4143,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/MonitorAcknowledgement'
-  '/api/monitor/acknowledgements/{endpointId}':
+  '/api/v1/monitor/acknowledgements/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -4210,7 +4210,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/monitor/feed/status:
+  /api/v1/monitor/feed/status:
     get:
       summary: The Monitor's current state, polled every few seconds
       description: >-
@@ -4245,7 +4245,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/monitor/feed/metrics:
+  /api/v1/monitor/feed/metrics:
     get:
       summary: The Monitor's last-hour throughput and timings, polled every 30 seconds
       description: >-
@@ -4280,7 +4280,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/monitor/feed/history:
+  /api/v1/monitor/feed/history:
     get:
       summary: The Monitor's longer history, polled every 5 minutes
       description: >-
@@ -4316,7 +4316,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/agent/catalog:
+  /api/v1/agent/catalog:
     get:
       summary: Get agent catalog
       operationId: get-agent-catalog
@@ -4329,7 +4329,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentCatalog'
-  /api/agent/event-types:
+  /api/v1/agent/event-types:
     post:
       summary: Define or retrieve an event type
       operationId: post-agent-event-types
@@ -4353,7 +4353,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/agent/subscribe:
+  /api/v1/agent/subscribe:
     post:
       summary: Subscribe to an event type
       operationId: post-agent-subscribe
@@ -4367,7 +4367,7 @@ paths:
       responses:
         '200':
           description: OK
-  /api/agent/receive:
+  /api/v1/agent/receive:
     get:
       summary: Receive the next available event
       operationId: get-agent-receive
@@ -4393,7 +4393,7 @@ paths:
                 $ref: '#/components/schemas/AgentReceivedMessage'
         '204':
           description: No message available in the wait window
-  /api/agent/publish:
+  /api/v1/agent/publish:
     post:
       summary: Publish an event
       operationId: post-agent-publish
@@ -4419,7 +4419,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/agent/settle:
+  /api/v1/agent/settle:
     post:
       summary: Settle a received event
       operationId: post-agent-settle
@@ -4433,7 +4433,7 @@ paths:
       responses:
         '200':
           description: OK
-  /api/access-control:
+  /api/v1/access-control:
     get:
       summary: Get the site-wide access-control lists
       operationId: get-access-control
@@ -4452,7 +4452,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/access-control/roles:
+  /api/v1/access-control/roles:
     post:
       summary: Grant a site-wide role to an email address or Entra object id
       operationId: post-access-control-role
@@ -4511,7 +4511,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/access-control/me:
+  /api/v1/access-control/me:
     get:
       summary: Get the current user's resolved access
       operationId: get-access-control-me
@@ -4524,7 +4524,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentUserAccessInfo'
-  '/api/access-control/endpoint/{endpointId}':
+  '/api/v1/access-control/endpoint/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -4555,7 +4555,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  '/api/access-control/endpoint/{endpointId}/roles':
+  '/api/v1/access-control/endpoint/{endpointId}/roles':
     parameters:
       - schema:
           type: string
@@ -4632,7 +4632,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/simulation:
+  /api/v1/admin/simulation:
     get:
       summary: Traffic simulator status
       description: >-
@@ -4655,7 +4655,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/simulation/settings:
+  /api/v1/admin/simulation/settings:
     put:
       summary: Update the traffic simulator settings
       description: >-
@@ -4695,7 +4695,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/SimulationProblem'
-  /api/admin/simulation/config:
+  /api/v1/admin/simulation/config:
     put:
       summary: Replace the traffic simulator config
       description: >-
@@ -4728,7 +4728,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-  /api/admin/simulation/start:
+  /api/v1/admin/simulation/start:
     post:
       summary: Start or resume the traffic simulator
       operationId: post-admin-simulation-start
@@ -4753,7 +4753,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/SimulationProblem'
-  /api/admin/simulation/pause:
+  /api/v1/admin/simulation/pause:
     post:
       summary: Pause the traffic simulator
       operationId: post-admin-simulation-pause
@@ -4778,7 +4778,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/SimulationProblem'
-  /api/admin/simulation/stop:
+  /api/v1/admin/simulation/stop:
     post:
       summary: Stop the traffic simulator
       description: Stops publishers, drains simulated subscribers within the drain window, then stops them.
@@ -5378,7 +5378,7 @@ components:
       title: FakeEventPayload
       type: object
       description: >-
-        Response shape for GET /api/event-types/{eventtypeid}/fake. The
+        Response shape for GET /api/v1/event-types/{eventtypeid}/fake. The
         payload field is a fully-formed JSON string (indented), not a
         structured object — the client inserts it verbatim into the textarea.
         Null when the type cannot be constructed (abstract, interface, or no

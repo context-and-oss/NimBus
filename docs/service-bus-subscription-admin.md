@@ -4,7 +4,7 @@ Operator reference for the **Subscriptions** view of the NimBus WebApp's **Topol
 Use it when a producer floods the bus and you need to find, stop and clear a
 backlog without collateral damage to other endpoints.
 
-Access is site **Owner**, same as the rest of `/api/admin`. Every mutating action is
+Access is site **Owner**, same as the rest of `/api/v1/admin`. Every mutating action is
 written to the audit trail as `ManageSubscription`.
 
 ## What the numbers mean

@@ -18,6 +18,7 @@ using NimBus.WebApp.Constants;
 using NimBus.WebApp.Hubs;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.RateLimiting;
+using NimBus.WebApp.Versioning;
 
 namespace NimBus.WebApp.Tests;
 
@@ -60,7 +61,7 @@ public class RateLimitEndpointMetadataTests
     public void Agent_receive_is_the_only_endpoint_on_the_receive_policy()
     {
         CollectionAssert.AreEquivalent(
-            new[] { "GET api/agent/receive" },
+            new[] { "GET api/v1/agent/receive", "GET api/agent/receive" },
             Routes(RateLimitPolicyNames.AgentReceive),
             "The concurrency limiter must bind to exactly the long-poll receive endpoint.");
     }
@@ -78,7 +79,11 @@ public class RateLimitEndpointMetadataTests
     public void Search_policy_binds_to_both_search_endpoints()
     {
         CollectionAssert.AreEquivalent(
-            new[] { "POST api/messages/search", "POST api/audits/search" },
+            new[]
+            {
+                "POST api/v1/messages/search", "POST api/v1/audits/search",
+                "POST api/messages/search", "POST api/audits/search",
+            },
             Routes(RateLimitPolicyNames.Search));
     }
 
@@ -87,7 +92,8 @@ public class RateLimitEndpointMetadataTests
     {
         var onPolicy = Routes(RateLimitPolicyNames.Admin);
         var underAdminPrefix = _endpoints
-            .Where(e => e.Route.StartsWith("api/admin/", StringComparison.OrdinalIgnoreCase))
+            .Where(e => e.Route.StartsWith("api/admin/", StringComparison.OrdinalIgnoreCase)
+                        || e.Route.StartsWith("api/v1/admin/", StringComparison.OrdinalIgnoreCase))
             .Select(e => e.Method + " " + e.Route)
             .ToArray();
 
@@ -227,6 +233,7 @@ public class RateLimitEndpointMetadataTests
                     // MVC resolves application parts from the entry assembly,
                     // which under `dotnet test` is the test host — so both parts
                     // must be added explicitly. Production is unaffected.
+                    services.AddNimBusApiVersioning();
                     services.AddControllers()
                         .AddApplicationPart(typeof(ApplicationApiController).Assembly)
                         .AddApplicationPart(typeof(AccountController).Assembly);

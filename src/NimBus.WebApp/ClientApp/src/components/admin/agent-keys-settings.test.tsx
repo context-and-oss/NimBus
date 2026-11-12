@@ -93,7 +93,7 @@ describe("Agent keys settings", () => {
     await user.click(screen.getByRole("button", { name: "Issue key" }));
 
     const [url, init] = fetchMock.mock.calls[1];
-    expect(url).toBe("/api/admin/agent-keys");
+    expect(url).toBe("/api/v1/admin/agent-keys");
     expect(init.method).toBe("POST");
     expect(init.headers["X-NimBus-CSRF"]).toBe("csrf-test");
     expect(JSON.parse(init.body)).toEqual({ agentId: "new-agent", name: null, expiresAtUtc: null });
@@ -133,7 +133,7 @@ describe("Agent keys settings", () => {
     await user.click(within(dialog).getByRole("button", { name: "Revoke key" }));
 
     const [url, init] = fetchMock.mock.calls[1];
-    expect(url).toBe("/api/admin/agent-keys/abcdefghijkl/revoke");
+    expect(url).toBe("/api/v1/admin/agent-keys/abcdefghijkl/revoke");
     expect(init.method).toBe("POST");
     expect(init.headers["X-NimBus-CSRF"]).toBe("csrf-test");
     expect(await screen.findByText("Revoked")).toBeTruthy();
@@ -148,7 +148,7 @@ describe("Agent keys settings", () => {
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove key" }));
 
     const [url, init] = fetchMock.mock.calls[1];
-    expect(url).toBe("/api/admin/agent-keys/abcdefghijkl");
+    expect(url).toBe("/api/v1/admin/agent-keys/abcdefghijkl");
     expect(init.method).toBe("DELETE");
     expect(await screen.findByText("No agent keys yet")).toBeTruthy();
   });

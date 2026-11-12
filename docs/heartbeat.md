@@ -16,7 +16,7 @@ which still proves the endpoint is reachable.
 The Heartbeat page is open to site Readers and above. Its **Platform services**
 card and the **Configure probing** link are shown to site Owners only, and
 **Settings → Heartbeat probing** is site **Owner** only, same as the rest of
-`/api/admin`. Every mutating action is audited (`UpdateHeartbeatSettings`,
+`/api/v1/admin`. Every mutating action is audited (`UpdateHeartbeatSettings`,
 `SendHeartbeatNow`, `EnableEndpointHeartbeat`, `DisableEndpointHeartbeat`).
 
 ## Operator controls
@@ -66,7 +66,7 @@ from the last real response — a timed-out probe carries none. The Heartbeat
 page's **Adapter status** table shows the SDK version; an `Unsupported` endpoint
 that reported none reads *pre-heartbeat SDK*, meaning the adapter is running a
 pre-heartbeat SDK. The per-endpoint round-trip and timestamps are returned by
-`GET /api/admin/heartbeat/overview`; the last-sent time reflects the most recent
+`GET /api/v1/admin/heartbeat/overview`; the last-sent time reflects the most recent
 probe whatever its outcome.
 
 Endpoints the store has never seen are still listed, synthesized as `Unknown`

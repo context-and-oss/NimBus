@@ -54,7 +54,6 @@ export class ApiClientBase {
     if (!options.headers) {
       options.headers = {};
     }
-    options.headers = { ...options.headers, "api-version": "2" };
     const csrfToken = SAFE_METHODS.has((options.method ?? "GET").toUpperCase())
       ? undefined
       : readCsrfToken();

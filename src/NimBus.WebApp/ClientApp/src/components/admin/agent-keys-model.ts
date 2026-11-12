@@ -34,7 +34,7 @@ export interface AgentKeyIssued {
   state: AgentKeysState;
 }
 
-export const AGENT_KEYS_URL = "/api/admin/agent-keys";
+export const AGENT_KEYS_URL = "/api/v1/admin/agent-keys";
 
 const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 

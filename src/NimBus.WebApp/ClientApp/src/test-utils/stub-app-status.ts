@@ -48,7 +48,7 @@ export const stubStatusFetch = (body: () => unknown) => {
   const mock = vi.fn((url: RequestInfo | URL) =>
     Promise.resolve(
       new Response(
-        JSON.stringify(String(url).includes("/api/app/stats") ? body() : {}),
+        JSON.stringify(String(url).includes("/api/v1/app/stats") ? body() : {}),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
     ),

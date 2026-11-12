@@ -5,6 +5,7 @@ using NimBus.Extensions.IntegrationIntelligence;
 using NimBus.WebApp.Csrf;
 using NimBus.WebApp.Mcp;
 using NimBus.WebApp.Problems;
+using NimBus.WebApp.Versioning;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 namespace NimBus.WebApp;
@@ -44,6 +45,9 @@ public partial class Startup
         app.UseMiddleware<SecurityHeadersMiddleware>();
 
         app.UseRouting();
+
+        // After routing, so the endpoint is known: deprecated /api/… routes announce /api/v1/….
+        app.UseNimBusLegacyApiRouteHeaders();
 
         // Serve the Brotli/gzip siblings the Vite build emits next to each
         // asset, before the SPA static-file middleware. When the client

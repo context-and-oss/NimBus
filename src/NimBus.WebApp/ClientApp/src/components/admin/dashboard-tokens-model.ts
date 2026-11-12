@@ -33,7 +33,7 @@ export interface DashboardTokenIssued {
   state: DashboardTokensState;
 }
 
-export const DASHBOARD_TOKENS_URL = "/api/admin/dashboard-tokens";
+export const DASHBOARD_TOKENS_URL = "/api/v1/admin/dashboard-tokens";
 
 export const NAME_MAX = 100;
 

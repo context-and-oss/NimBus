@@ -47,7 +47,6 @@ export class ApiClientBase {
     if (!options.headers) {
       options.headers = {};
     }
-    options.headers = { ...options.headers, "api-version": "2" };
     const csrfToken = SAFE_METHODS.has((options.method ?? "GET").toUpperCase())
       ? undefined
       : readCsrfToken();
@@ -89,7 +88,7 @@ export class Client extends ApiClientBase {
      * @return Successfully returned endpoint statuses
      */
     getEndpointStatusCountAll(): Promise<EndpointStatusCount[]> {
-        let url_ = this.baseUrl + "/api/endpoint/status/count";
+        let url_ = this.baseUrl + "/api/v1/endpoint/status/count";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -137,7 +136,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postApiEndpointStatusCount(body?: string[] | undefined): Promise<EndpointStatusCount[]> {
-        let url_ = this.baseUrl + "/api/endpoint/status/count";
+        let url_ = this.baseUrl + "/api/v1/endpoint/status/count";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -189,7 +188,7 @@ export class Client extends ApiClientBase {
      * @return Dictionary of all the Unresolved Events for the endpoint, or an empty object if no Unresolved Events.
      */
     getEndpointStatusId(endpointName: string): Promise<Event[]> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointName}/status/";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointName}/status/";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -246,7 +245,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventIds(eventId: string, messageId: string): Promise<Message> {
-        let url_ = this.baseUrl + "/api/event/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/{eventId}/{messageId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -292,7 +291,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getUnresolvedFailedEventId(endpointId: string, eventId: string, sessionId: string): Promise<Event> {
-        let url_ = this.baseUrl + "/api/event/unresolved/{endpointId}/{eventId}/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/event/unresolved/{endpointId}/{eventId}/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -341,7 +340,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventTypes(): Promise<EventType[]> {
-        let url_ = this.baseUrl + "/api/event-types";
+        let url_ = this.baseUrl + "/api/v1/event-types";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -388,7 +387,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventtypesEventtypeid(eventtypeid: string): Promise<EventTypeDetails> {
-        let url_ = this.baseUrl + "/api/event-types/{eventtypeid}";
+        let url_ = this.baseUrl + "/api/v1/event-types/{eventtypeid}";
         if (eventtypeid === undefined || eventtypeid === null)
             throw new globalThis.Error("The parameter 'eventtypeid' must be defined.");
         url_ = url_.replace("{eventtypeid}", encodeURIComponent("" + eventtypeid));
@@ -431,7 +430,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventtypesEventtypeidFake(eventtypeid: string): Promise<FakeEventPayload> {
-        let url_ = this.baseUrl + "/api/event-types/{eventtypeid}/fake";
+        let url_ = this.baseUrl + "/api/v1/event-types/{eventtypeid}/fake";
         if (eventtypeid === undefined || eventtypeid === null)
             throw new globalThis.Error("The parameter 'eventtypeid' must be defined.");
         url_ = url_.replace("{eventtypeid}", encodeURIComponent("" + eventtypeid));
@@ -480,7 +479,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postResubmitEventIds(eventId: string, messageId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/resubmit/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/resubmit/{eventId}/{messageId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -542,7 +541,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postSkipEventIds(eventId: string, messageId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/skip/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/skip/{eventId}/{messageId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -606,7 +605,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postHandoffComplete(endpointId: string, eventId: string, messageId: string, body?: CompleteHandoffRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/handoff/complete/{endpointId}/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/handoff/complete/{endpointId}/{eventId}/{messageId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -670,7 +669,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postHandoffFail(endpointId: string, eventId: string, messageId: string, body?: FailHandoffRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/handoff/fail/{endpointId}/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/handoff/fail/{endpointId}/{eventId}/{messageId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -733,7 +732,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getApiEndpointstatusStatusEndpointName(endpointName: string): Promise<EndpointStatus> {
-        let url_ = this.baseUrl + "/api/endpoint/status/{endpointName}";
+        let url_ = this.baseUrl + "/api/v1/endpoint/status/{endpointName}";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -776,7 +775,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventDetailsId(id: string, endpoint: string): Promise<EventDetails> {
-        let url_ = this.baseUrl + "/api/event/details/{endpoint}/{id}";
+        let url_ = this.baseUrl + "/api/v1/event/details/{endpoint}/{id}";
         if (id === undefined || id === null)
             throw new globalThis.Error("The parameter 'id' must be defined.");
         url_ = url_.replace("{id}", encodeURIComponent("" + id));
@@ -822,7 +821,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventId(id: string, endpoint: string): Promise<Event> {
-        let url_ = this.baseUrl + "/api/event/data/{endpoint}/{id}";
+        let url_ = this.baseUrl + "/api/v1/event/data/{endpoint}/{id}";
         if (id === undefined || id === null)
             throw new globalThis.Error("The parameter 'id' must be defined.");
         url_ = url_.replace("{id}", encodeURIComponent("" + id));
@@ -875,7 +874,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventtypesByEndpointId(endpointId: string): Promise<Anonymous> {
-        let url_ = this.baseUrl + "/api/event-types/endpoint/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/event-types/endpoint/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -918,7 +917,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postResubmitWithChangesEventIds(eventId: string, messageId: string, body?: ResubmitWithChanges | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/change/{eventId}/{messageId}";
+        let url_ = this.baseUrl + "/api/v1/event/change/{eventId}/{messageId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -985,7 +984,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getApiAppStats(): Promise<ApplicationStatus> {
-        let url_ = this.baseUrl + "/api/app/stats";
+        let url_ = this.baseUrl + "/api/v1/app/stats";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -1025,7 +1024,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointsAll(): Promise<string[]> {
-        let url_ = this.baseUrl + "/api/endpoint/endpoints";
+        let url_ = this.baseUrl + "/api/v1/endpoint/endpoints";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -1072,7 +1071,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointStatusCountId(endpointName: string): Promise<EndpointStatusCount> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointName}/status/count";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointName}/status/count";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -1116,7 +1115,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointStatusIdToken(endpointName: string, body?: ContinuationToken | undefined): Promise<EndpointStatus> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointName}/status/continuationToken";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointName}/status/continuationToken";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -1163,7 +1162,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventDetailsLogsId(id: string, endpointId: string): Promise<EventLogEntry[]> {
-        let url_ = this.baseUrl + "/api/event/details/{endpointId}/{id}/logs";
+        let url_ = this.baseUrl + "/api/v1/event/details/{endpointId}/{id}/logs";
         if (id === undefined || id === null)
             throw new globalThis.Error("The parameter 'id' must be defined.");
         url_ = url_.replace("{id}", encodeURIComponent("" + id));
@@ -1216,7 +1215,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventDetailsHistoryId(id: string, endpointId: string): Promise<Message[]> {
-        let url_ = this.baseUrl + "/api/event/details/{endpointId}/{id}/history";
+        let url_ = this.baseUrl + "/api/v1/event/details/{endpointId}/{id}/history";
         if (id === undefined || id === null)
             throw new globalThis.Error("The parameter 'id' must be defined.");
         url_ = url_.replace("{id}", encodeURIComponent("" + id));
@@ -1269,7 +1268,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointSessionId(endpointId: string, sessionId: string): Promise<SessionStatus> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/session/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/session/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1316,7 +1315,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointSessionsBatch(endpointId: string, body?: string[] | undefined): Promise<SessionStatus[]> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/sessions/batch";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/sessions/batch";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1376,7 +1375,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     storagehookReceive(endpointId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/storagehook/cosmos/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/storagehook/cosmos/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1415,7 +1414,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postStoragehookHeartbeat(endpointId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/storagehook/heartbeat/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/storagehook/heartbeat/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1468,7 +1467,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postStoragehookServicehealth(serviceId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/storagehook/servicehealth/{serviceId}";
+        let url_ = this.baseUrl + "/api/v1/storagehook/servicehealth/{serviceId}";
         if (serviceId === undefined || serviceId === null)
             throw new globalThis.Error("The parameter 'serviceId' must be defined.");
         url_ = url_.replace("{serviceId}", encodeURIComponent("" + serviceId));
@@ -1521,7 +1520,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMessageAuditsEventId(eventId: string): Promise<MessageAudit[]> {
-        let url_ = this.baseUrl + "/api/event/audit/{eventId}";
+        let url_ = this.baseUrl + "/api/v1/event/audit/{eventId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -1578,7 +1577,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postMessageAudit(eventId: string, body?: MessageAudit | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/audit/{eventId}";
+        let url_ = this.baseUrl + "/api/v1/event/audit/{eventId}";
         if (eventId === undefined || eventId === null)
             throw new globalThis.Error("The parameter 'eventId' must be defined.");
         url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
@@ -1621,7 +1620,7 @@ export class Client extends ApiClientBase {
      * @return Point-in-time broker inspection and stored processing evidence
      */
     getDeferredInspection(endpointId: string, eventId: string): Promise<DeferredInspection> {
-        let url_ = this.baseUrl + "/api/event/deferred/{endpointId}/{eventId}";
+        let url_ = this.baseUrl + "/api/v1/event/deferred/{endpointId}/{eventId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1675,7 +1674,7 @@ export class Client extends ApiClientBase {
      * @return Tracking row skipped; audit persistence is reported separately
      */
     postSkipDeferredTracking(endpointId: string, eventId: string, body: DeferredSkipRequest): Promise<DeferredSkipResult> {
-        let url_ = this.baseUrl + "/api/event/deferred/{endpointId}/{eventId}/skip-tracking";
+        let url_ = this.baseUrl + "/api/v1/event/deferred/{endpointId}/{eventId}/skip-tracking";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1745,7 +1744,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postReprocessDeferred(endpointId: string, sessionId: string): Promise<DeferredReprocessResult> {
-        let url_ = this.baseUrl + "/api/event/reprocess-deferred/{endpointId}/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/event/reprocess-deferred/{endpointId}/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1798,7 +1797,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMe(): Promise<UserInfo> {
-        let url_ = this.baseUrl + "/api/me";
+        let url_ = this.baseUrl + "/api/v1/me";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -1839,7 +1838,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postComposeNewEvent(body?: ResubmitWithChanges | undefined): Promise<ComposeNewEventResult> {
-        let url_ = this.baseUrl + "/api/event/compose-new";
+        let url_ = this.baseUrl + "/api/v1/event/compose-new";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -1892,7 +1891,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventBlockedId(endpointId: string, sessionId: string, skip?: number | undefined, take?: number | undefined): Promise<BlockedEventsPage> {
-        let url_ = this.baseUrl + "/api/event/blocked/{endpointId}/{sessionId}?";
+        let url_ = this.baseUrl + "/api/v1/event/blocked/{endpointId}/{sessionId}?";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -1953,7 +1952,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventPendingId(endpointId: string): Promise<Event[]> {
-        let url_ = this.baseUrl + "/api/event/pending/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/event/pending/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2010,7 +2009,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointSubscribe(endpointId: string, body?: EndpointSubscription | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/subscribe";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscribe";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2059,7 +2058,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointSubscribe(endpointId: string): Promise<EndpointSubscription[]> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/subscribe";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscribe";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2116,7 +2115,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteEndpointSubscribe(endpointId: string, body?: SubscriptionAuthor | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/subscribe";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscribe";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2165,7 +2164,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointPurge(endpointName: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointName}/purge";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointName}/purge";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -2211,7 +2210,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointSubscriptionstatus(endpointId: string, body?: string | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/subscriptionstatus";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscriptionstatus";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2260,7 +2259,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointSubscriptionstatus(endpointId: string): Promise<string> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/subscriptionstatus";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscriptionstatus";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2311,7 +2310,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postEndpointSendstatus(endpointId: string, body?: string | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/sendstatus";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/sendstatus";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2360,7 +2359,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointSendstatus(endpointId: string): Promise<string> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/sendstatus";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/sendstatus";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2410,7 +2409,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteEventInvalidId(endpointId: string, eventId: string, sessionId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/invalid/{endpointId}/{eventId}/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/event/invalid/{endpointId}/{eventId}/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2469,7 +2468,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointRoleAssignmentScript(endpointId: string): Promise<string> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/roleAssignmentScript";
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/roleAssignmentScript";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2520,7 +2519,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventUnsupportedEndpointIdEventId(endpointId: string, eventId: string, sessionId: string): Promise<Event> {
-        let url_ = this.baseUrl + "/api/event/unsupported/{endpointId}/{eventId}/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/event/unsupported/{endpointId}/{eventId}/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2569,7 +2568,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEventDeadletterEndpointIdEventId(endpointId: string, eventId: string, sessionId: string): Promise<Event> {
-        let url_ = this.baseUrl + "/api/event/deadletter/{endpointId}/{eventId}/{sessionId}";
+        let url_ = this.baseUrl + "/api/v1/event/deadletter/{endpointId}/{eventId}/{sessionId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2618,7 +2617,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postApiEventEndpointIdGetByFilter(endpointId: string, body?: SearchRequest | undefined): Promise<SearchResponse> {
-        let url_ = this.baseUrl + "/api/event/{endpointId}/getByFilter";
+        let url_ = this.baseUrl + "/api/v1/event/{endpointId}/getByFilter";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2666,7 +2665,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postReportEvent(endpointId: string, eventId: string, body?: ReportEventRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/event/{endpointId}/{eventId}/report";
+        let url_ = this.baseUrl + "/api/v1/event/{endpointId}/{eventId}/report";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2733,7 +2732,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMetadataEndpoint(endpointId: string): Promise<Metadata> {
-        let url_ = this.baseUrl + "/api/metadata/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/metadata/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2784,7 +2783,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postMetadataEndpoint(endpointId: string, body?: Metadata | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/metadata/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/metadata/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -2828,7 +2827,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postApiMetadatashort(body?: string[] | undefined): Promise<MetadataShort[]> {
-        let url_ = this.baseUrl + "/api/metadatashort";
+        let url_ = this.baseUrl + "/api/v1/metadatashort";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -2886,7 +2885,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminPlatformConfig(): Promise<PlatformConfig> {
-        let url_ = this.baseUrl + "/api/admin/platform-config";
+        let url_ = this.baseUrl + "/api/v1/admin/platform-config";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -2934,7 +2933,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminAsyncapi(format?: string | undefined): Promise<FileResponse> {
-        let url_ = this.baseUrl + "/api/admin/asyncapi?";
+        let url_ = this.baseUrl + "/api/v1/admin/asyncapi?";
         if (format === null)
             throw new globalThis.Error("The parameter 'format' cannot be null.");
         else if (format !== undefined)
@@ -2996,7 +2995,7 @@ export class Client extends ApiClientBase {
      * @return Cosmos DB containers
      */
     getAdminCosmosContainers(): Promise<CosmosContainerInfo[]> {
-        let url_ = this.baseUrl + "/api/admin/storage/cosmos/containers";
+        let url_ = this.baseUrl + "/api/v1/admin/storage/cosmos/containers";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3064,7 +3063,7 @@ export class Client extends ApiClientBase {
      * @return Container deleted
      */
     postAdminCosmosContainerDelete(body: CosmosContainerDeleteRequest, containerName: string): Promise<CosmosContainerDeleteResult> {
-        let url_ = this.baseUrl + "/api/admin/storage/cosmos/containers/{containerName}/delete";
+        let url_ = this.baseUrl + "/api/v1/admin/storage/cosmos/containers/{containerName}/delete";
         if (containerName === undefined || containerName === null)
             throw new globalThis.Error("The parameter 'containerName' must be defined.");
         url_ = url_.replace("{containerName}", encodeURIComponent("" + containerName));
@@ -3139,7 +3138,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminHeartbeatSettings(): Promise<HeartbeatSettings> {
-        let url_ = this.baseUrl + "/api/admin/heartbeat/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/heartbeat/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3187,7 +3186,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminHeartbeatSettings(body?: HeartbeatSettings | undefined): Promise<HeartbeatSettings> {
-        let url_ = this.baseUrl + "/api/admin/heartbeat/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/heartbeat/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -3245,7 +3244,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminAuditSettings(): Promise<AuditSettings> {
-        let url_ = this.baseUrl + "/api/admin/audit/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/audit/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3293,7 +3292,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminAuditSettings(body?: AuditSettings | undefined): Promise<AuditSettings> {
-        let url_ = this.baseUrl + "/api/admin/audit/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/audit/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -3351,7 +3350,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminMcpSettings(): Promise<McpAccessState> {
-        let url_ = this.baseUrl + "/api/admin/mcp/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/mcp/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3399,7 +3398,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminMcpSettings(body?: McpAccessUpdate | undefined): Promise<McpAccessState> {
-        let url_ = this.baseUrl + "/api/admin/mcp/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/mcp/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -3464,7 +3463,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminMcpTurnOff(): Promise<McpAccessState> {
-        let url_ = this.baseUrl + "/api/admin/mcp/turn-off";
+        let url_ = this.baseUrl + "/api/v1/admin/mcp/turn-off";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3526,7 +3525,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminMcpActivity(hours?: number | undefined): Promise<McpActivity> {
-        let url_ = this.baseUrl + "/api/admin/mcp/activity?";
+        let url_ = this.baseUrl + "/api/v1/admin/mcp/activity?";
         if (hours === null)
             throw new globalThis.Error("The parameter 'hours' cannot be null.");
         else if (hours !== undefined)
@@ -3577,7 +3576,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminAgentKeys(): Promise<AgentApiKeyState> {
-        let url_ = this.baseUrl + "/api/admin/agent-keys";
+        let url_ = this.baseUrl + "/api/v1/admin/agent-keys";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3625,7 +3624,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminAgentKeys(body?: AgentApiKeyCreate | undefined): Promise<AgentApiKeyIssued> {
-        let url_ = this.baseUrl + "/api/admin/agent-keys";
+        let url_ = this.baseUrl + "/api/v1/admin/agent-keys";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -3690,7 +3689,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminAgentKeyRevoke(keyId: string): Promise<AgentApiKeyState> {
-        let url_ = this.baseUrl + "/api/admin/agent-keys/{keyId}/revoke";
+        let url_ = this.baseUrl + "/api/v1/admin/agent-keys/{keyId}/revoke";
         if (keyId === undefined || keyId === null)
             throw new globalThis.Error("The parameter 'keyId' must be defined.");
         url_ = url_.replace("{keyId}", encodeURIComponent("" + keyId));
@@ -3754,7 +3753,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteAdminAgentKey(keyId: string): Promise<AgentApiKeyState> {
-        let url_ = this.baseUrl + "/api/admin/agent-keys/{keyId}";
+        let url_ = this.baseUrl + "/api/v1/admin/agent-keys/{keyId}";
         if (keyId === undefined || keyId === null)
             throw new globalThis.Error("The parameter 'keyId' must be defined.");
         url_ = url_.replace("{keyId}", encodeURIComponent("" + keyId));
@@ -3825,7 +3824,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminDashboardTokens(): Promise<DashboardTokenState> {
-        let url_ = this.baseUrl + "/api/admin/dashboard-tokens";
+        let url_ = this.baseUrl + "/api/v1/admin/dashboard-tokens";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3880,7 +3879,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDashboardTokens(body?: DashboardTokenCreate | undefined): Promise<DashboardTokenIssued> {
-        let url_ = this.baseUrl + "/api/admin/dashboard-tokens";
+        let url_ = this.baseUrl + "/api/v1/admin/dashboard-tokens";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -3952,7 +3951,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDashboardTokenRevoke(tokenId: string): Promise<DashboardTokenState> {
-        let url_ = this.baseUrl + "/api/admin/dashboard-tokens/{tokenId}/revoke";
+        let url_ = this.baseUrl + "/api/v1/admin/dashboard-tokens/{tokenId}/revoke";
         if (tokenId === undefined || tokenId === null)
             throw new globalThis.Error("The parameter 'tokenId' must be defined.");
         url_ = url_.replace("{tokenId}", encodeURIComponent("" + tokenId));
@@ -4023,7 +4022,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteAdminDashboardToken(tokenId: string): Promise<DashboardTokenState> {
-        let url_ = this.baseUrl + "/api/admin/dashboard-tokens/{tokenId}";
+        let url_ = this.baseUrl + "/api/v1/admin/dashboard-tokens/{tokenId}";
         if (tokenId === undefined || tokenId === null)
             throw new globalThis.Error("The parameter 'tokenId' must be defined.");
         url_ = url_.replace("{tokenId}", encodeURIComponent("" + tokenId));
@@ -4101,7 +4100,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminHeartbeatSend(): Promise<CountResponse> {
-        let url_ = this.baseUrl + "/api/admin/heartbeat/send";
+        let url_ = this.baseUrl + "/api/v1/admin/heartbeat/send";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -4148,7 +4147,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminHeartbeatOverview(): Promise<HeartbeatOverviewRow[]> {
-        let url_ = this.baseUrl + "/api/admin/heartbeat/overview";
+        let url_ = this.baseUrl + "/api/v1/admin/heartbeat/overview";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -4203,7 +4202,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminHeartbeatEndpointEnabled(endpointId: string, body?: HeartbeatEndpointEnabledRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/admin/heartbeat/endpoint/{endpointId}/enabled";
+        let url_ = this.baseUrl + "/api/v1/admin/heartbeat/endpoint/{endpointId}/enabled";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -4267,7 +4266,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminHealthServices(): Promise<ServiceHealthRow[]> {
-        let url_ = this.baseUrl + "/api/admin/health/services";
+        let url_ = this.baseUrl + "/api/v1/admin/health/services";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -4321,7 +4320,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminTopology(endpointName: string): Promise<TopologyAuditResult> {
-        let url_ = this.baseUrl + "/api/admin/topology/{endpointName}";
+        let url_ = this.baseUrl + "/api/v1/admin/topology/{endpointName}";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -4378,7 +4377,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminTopologyRemoveDeprecated(endpointName: string): Promise<TopologyCleanupResult> {
-        let url_ = this.baseUrl + "/api/admin/topology/{endpointName}/remove-deprecated";
+        let url_ = this.baseUrl + "/api/v1/admin/topology/{endpointName}/remove-deprecated";
         if (endpointName === undefined || endpointName === null)
             throw new globalThis.Error("The parameter 'endpointName' must be defined.");
         url_ = url_.replace("{endpointName}", encodeURIComponent("" + endpointName));
@@ -4435,7 +4434,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminServicebusTopics(): Promise<ServiceBusTopicOverview[]> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -4489,7 +4488,7 @@ export class Client extends ApiClientBase {
      * @return Topic deleted
      */
     deleteAdminServicebusTopic(topicName: string): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4546,7 +4545,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminServicebusSubscriptions(topicName: string): Promise<ServiceBusSubscriptionInfo[]> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4610,7 +4609,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminServicebusResolverDeadletters(subscriptionName: string): Promise<DeadLetterOverview> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters";
         if (subscriptionName === undefined || subscriptionName === null)
             throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
         url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
@@ -4681,7 +4680,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusResolverDeadlettersResubmit(body: DeadLetterResubmitRequest, subscriptionName: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit";
         if (subscriptionName === undefined || subscriptionName === null)
             throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
         url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
@@ -4764,7 +4763,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusSubscriptionStatus(topicName: string, subscriptionName: string, body?: SubscriptionStatusRequest | undefined): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4835,7 +4834,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusSubscriptionPurge(topicName: string, subscriptionName: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4902,7 +4901,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusSubscriptionDeadlettersPurge(topicName: string, subscriptionName: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/deadletters/purge";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/deadletters/purge";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -4962,7 +4961,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusSubscriptionRecreate(topicName: string, subscriptionName: string): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -5029,7 +5028,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteAdminServicebusSubscription(topicName: string, subscriptionName: string): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -5089,7 +5088,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteAdminServicebusSubscriptionRule(topicName: string, subscriptionName: string, ruleName: string): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -5152,7 +5151,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminServicebusSubscriptionRestoreRules(topicName: string, subscriptionName: string): Promise<SubscriptionActionResult> {
-        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules";
+        let url_ = this.baseUrl + "/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules";
         if (topicName === undefined || topicName === null)
             throw new globalThis.Error("The parameter 'topicName' must be defined.");
         url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
@@ -5219,7 +5218,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminFailedPreview(endpointId: string): Promise<BulkResubmitPreview> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/failed-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/failed-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5276,7 +5275,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminBulkResubmit(endpointId: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/bulk-resubmit";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/bulk-resubmit";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5333,7 +5332,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminDeadletteredPreview(endpointId: string): Promise<Anonymous2> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/deadlettered-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/deadlettered-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5390,7 +5389,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteDeadlettered(endpointId: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-deadlettered";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/delete-deadlettered";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5447,7 +5446,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminSessionPreview(endpointId: string, sessionId: string): Promise<SessionPurgePreview> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session/{sessionId}/preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5507,7 +5506,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSessionPurge(endpointId: string, sessionId: string): Promise<SessionPurgeResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session/{sessionId}/purge";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/purge";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5567,7 +5566,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminSessionState(endpointId: string, sessionId: string): Promise<SessionStateView> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session/{sessionId}/state";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/state";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5634,7 +5633,7 @@ export class Client extends ApiClientBase {
      * @return The state after the change
      */
     postAdminSessionState(body: SessionStateChangeRequest, endpointId: string, sessionId: string): Promise<SessionStateView> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session/{sessionId}/state";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/state";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5719,7 +5718,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSessionCleanupPreview(body: SessionCleanupPreviewRequest, endpointId: string): Promise<SessionCleanupPreview> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session-cleanup/preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session-cleanup/preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5787,7 +5786,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSessionCleanup(body: SessionCleanupRequest, endpointId: string): Promise<SessionCleanupResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/session-cleanup";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/session-cleanup";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5862,7 +5861,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     deleteAdminEvent(endpointId: string, eventId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/event/{eventId}";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/event/{eventId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5925,7 +5924,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteAll(endpointId: string): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-all";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/delete-all";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -5969,7 +5968,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminPurgePreview(endpointId: string, body?: PurgeRequest | undefined): Promise<PurgePreview> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/purge-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/purge-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6017,7 +6016,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminPurge(endpointId: string, body?: PurgeRequest | undefined): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/purge";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/purge";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6065,7 +6064,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminStalePendingPreview(endpointId: string, body?: StalePendingReconcileRequest | undefined): Promise<StalePendingPreview> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/stale-pending-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/stale-pending-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6126,7 +6125,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminStalePendingReconcile(endpointId: string, body: StalePendingReconcileRequest): Promise<StalePendingReconcileResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/stale-pending-reconcile";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/stale-pending-reconcile";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6195,7 +6194,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteByToPreview(body?: DeleteByToRequest | undefined): Promise<CountResponse> {
-        let url_ = this.baseUrl + "/api/admin/messages/delete-by-to-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/messages/delete-by-to-preview";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6254,7 +6253,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteByTo(body?: DeleteByToRequest | undefined): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/messages/delete-by-to";
+        let url_ = this.baseUrl + "/api/v1/admin/messages/delete-by-to";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6312,7 +6311,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteByStatusPreview(endpointId: string, body: DeleteByStatusRequest): Promise<CountResponse> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-by-status-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/delete-by-status-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6359,7 +6358,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminDeleteByStatus(endpointId: string, body: DeleteByStatusRequest): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-by-status";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/delete-by-status";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6406,7 +6405,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSkipPreview(endpointId: string, body: SkipRequest): Promise<CountResponse> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/skip-preview";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/skip-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6453,7 +6452,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSkip(endpointId: string, body: SkipRequest): Promise<BulkOperationResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/skip";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/skip";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6501,7 +6500,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminCopy(endpointId: string, body?: CopyRequest | undefined): Promise<CopyResult> {
-        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/copy";
+        let url_ = this.baseUrl + "/api/v1/admin/endpoint/{endpointId}/copy";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -6570,7 +6569,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postMessagesSearch(body?: MessageSearchRequest | undefined): Promise<MessageSearchResponse> {
-        let url_ = this.baseUrl + "/api/messages/search";
+        let url_ = this.baseUrl + "/api/v1/messages/search";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6615,7 +6614,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postFailedSearch(body?: FailedSearchRequest | undefined): Promise<SearchResponse> {
-        let url_ = this.baseUrl + "/api/failed/search";
+        let url_ = this.baseUrl + "/api/v1/failed/search";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6674,7 +6673,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postFailedHistogram(body?: FailedHistogramRequest | undefined): Promise<FailedHistogram> {
-        let url_ = this.baseUrl + "/api/failed/histogram";
+        let url_ = this.baseUrl + "/api/v1/failed/histogram";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6733,7 +6732,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postFailedErrorGroups(body?: FailedErrorGroupsRequest | undefined): Promise<FailedErrorGroups> {
-        let url_ = this.baseUrl + "/api/failed/error-groups";
+        let url_ = this.baseUrl + "/api/v1/failed/error-groups";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6792,7 +6791,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAuditsSearch(body?: AuditSearchRequest | undefined): Promise<AuditSearchResponse> {
-        let url_ = this.baseUrl + "/api/audits/search";
+        let url_ = this.baseUrl + "/api/v1/audits/search";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -6838,7 +6837,7 @@ export class Client extends ApiClientBase {
      * @return Successfully returned metrics overview
      */
     getMetricsOverview(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<MetricsOverview> {
-        let url_ = this.baseUrl + "/api/metrics/overview?";
+        let url_ = this.baseUrl + "/api/v1/metrics/overview?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
@@ -6899,7 +6898,7 @@ export class Client extends ApiClientBase {
      * @return Latency percentiles per endpoint and event type
      */
     getMetricsLatency(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<LatencyOverview> {
-        let url_ = this.baseUrl + "/api/metrics/latency?";
+        let url_ = this.baseUrl + "/api/v1/metrics/latency?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
@@ -6962,7 +6961,7 @@ export class Client extends ApiClientBase {
      * @return Failed message insights grouped by error pattern, and by likely cause and recovery guidance when saved classifications are available
      */
     getMetricsFailedInsights(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined, endpointId?: string | undefined, refresh?: boolean | undefined): Promise<FailedInsightsOverview> {
-        let url_ = this.baseUrl + "/api/metrics/failed-insights?";
+        let url_ = this.baseUrl + "/api/v1/metrics/failed-insights?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
@@ -7035,7 +7034,7 @@ export class Client extends ApiClientBase {
      * @return One page of occurrences
      */
     getMetricsFailedInsightsOccurrences(from: moment.Moment, to: moment.Moment, perspective: InsightsPerspective, groupKey: string, endpointId?: string | undefined, pageSize?: number | undefined, continuationToken?: string | undefined): Promise<InsightOccurrencePage> {
-        let url_ = this.baseUrl + "/api/metrics/failed-insights/occurrences?";
+        let url_ = this.baseUrl + "/api/v1/metrics/failed-insights/occurrences?";
         if (from === undefined || from === null)
             throw new globalThis.Error("The parameter 'from' must be defined and cannot be null.");
         else
@@ -7114,7 +7113,7 @@ export class Client extends ApiClientBase {
      * @return One page of error patterns, most frequent first
      */
     getMetricsFailedInsightsPatterns(from: moment.Moment, to: moment.Moment, perspective: InsightsPerspective, groupKey: string, endpointId?: string | undefined, pageSize?: number | undefined, continuationToken?: string | undefined): Promise<InsightGroupPatternPage> {
-        let url_ = this.baseUrl + "/api/metrics/failed-insights/patterns?";
+        let url_ = this.baseUrl + "/api/v1/metrics/failed-insights/patterns?";
         if (from === undefined || from === null)
             throw new globalThis.Error("The parameter 'from' must be defined and cannot be null.");
         else
@@ -7191,7 +7190,7 @@ export class Client extends ApiClientBase {
      * @return Time-bucketed message counts
      */
     getMetricsTimeseries(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<TimeSeriesOverview> {
-        let url_ = this.baseUrl + "/api/metrics/timeseries?";
+        let url_ = this.baseUrl + "/api/v1/metrics/timeseries?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
@@ -7252,7 +7251,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMetricsTimeseriesByEventtype(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<EventTypeTimeSeriesOverview> {
-        let url_ = this.baseUrl + "/api/metrics/timeseries-by-eventtype?";
+        let url_ = this.baseUrl + "/api/v1/metrics/timeseries-by-eventtype?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
@@ -7312,7 +7311,7 @@ export class Client extends ApiClientBase {
      * @return Fleet heartbeat page
      */
     getHeartbeatPage(windowDays?: number | undefined): Promise<HeartbeatPage> {
-        let url_ = this.baseUrl + "/api/heartbeat/page?";
+        let url_ = this.baseUrl + "/api/v1/heartbeat/page?";
         if (windowDays === null)
             throw new globalThis.Error("The parameter 'windowDays' cannot be null.");
         else if (windowDays !== undefined)
@@ -7363,7 +7362,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMonitorAcknowledgements(): Promise<MonitorAcknowledgement[]> {
-        let url_ = this.baseUrl + "/api/monitor/acknowledgements";
+        let url_ = this.baseUrl + "/api/v1/monitor/acknowledgements";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -7411,7 +7410,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putMonitorAcknowledgement(endpointId: string, body?: MonitorAcknowledgementRequest | undefined): Promise<MonitorAcknowledgement> {
-        let url_ = this.baseUrl + "/api/monitor/acknowledgements/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/monitor/acknowledgements/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -7479,7 +7478,7 @@ export class Client extends ApiClientBase {
      * @return Cleared
      */
     deleteMonitorAcknowledgement(endpointId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/monitor/acknowledgements/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/monitor/acknowledgements/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -7532,7 +7531,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMonitorFeedStatus(): Promise<MonitorFeedStatus> {
-        let url_ = this.baseUrl + "/api/monitor/feed/status";
+        let url_ = this.baseUrl + "/api/v1/monitor/feed/status";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -7593,7 +7592,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMonitorFeedMetrics(): Promise<MonitorFeedMetrics> {
-        let url_ = this.baseUrl + "/api/monitor/feed/metrics";
+        let url_ = this.baseUrl + "/api/v1/monitor/feed/metrics";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -7654,7 +7653,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getMonitorFeedHistory(): Promise<MonitorFeedHistory> {
-        let url_ = this.baseUrl + "/api/monitor/feed/history";
+        let url_ = this.baseUrl + "/api/v1/monitor/feed/history";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -7715,7 +7714,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAgentCatalog(): Promise<AgentCatalog> {
-        let url_ = this.baseUrl + "/api/agent/catalog";
+        let url_ = this.baseUrl + "/api/v1/agent/catalog";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -7756,7 +7755,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAgentEventTypes(body?: DefineEventTypeRequest | undefined): Promise<EventTypeInfo> {
-        let url_ = this.baseUrl + "/api/agent/event-types";
+        let url_ = this.baseUrl + "/api/v1/agent/event-types";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -7808,7 +7807,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAgentSubscribe(body?: AgentSubscribeRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/agent/subscribe";
+        let url_ = this.baseUrl + "/api/v1/agent/subscribe";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -7850,7 +7849,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAgentReceive(eventTypeId?: string | undefined, waitSeconds?: number | undefined): Promise<AgentReceivedMessage> {
-        let url_ = this.baseUrl + "/api/agent/receive?";
+        let url_ = this.baseUrl + "/api/v1/agent/receive?";
         if (eventTypeId === null)
             throw new globalThis.Error("The parameter 'eventTypeId' cannot be null.");
         else if (eventTypeId !== undefined)
@@ -7903,7 +7902,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAgentPublish(body?: AgentPublishRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/agent/publish";
+        let url_ = this.baseUrl + "/api/v1/agent/publish";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -7958,7 +7957,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAgentSettle(body?: AgentSettleRequest | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/agent/settle";
+        let url_ = this.baseUrl + "/api/v1/agent/settle";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -7998,7 +7997,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAccessControl(): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control";
+        let url_ = this.baseUrl + "/api/v1/access-control";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -8046,7 +8045,7 @@ export class Client extends ApiClientBase {
      * @return OK — returns the updated access-control lists
      */
     postAccessControlRole(body?: RoleEntry | undefined): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control/roles";
+        let url_ = this.baseUrl + "/api/v1/access-control/roles";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -8105,7 +8104,7 @@ export class Client extends ApiClientBase {
      * @return OK — returns the updated access-control lists
      */
     deleteAccessControlRole(body?: RoleEntry | undefined): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control/roles";
+        let url_ = this.baseUrl + "/api/v1/access-control/roles";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -8163,7 +8162,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAccessControlMe(): Promise<CurrentUserAccessInfo> {
-        let url_ = this.baseUrl + "/api/access-control/me";
+        let url_ = this.baseUrl + "/api/v1/access-control/me";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -8203,7 +8202,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getEndpointAccessControl(endpointId: string): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control/endpoint/{endpointId}";
+        let url_ = this.baseUrl + "/api/v1/access-control/endpoint/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -8261,7 +8260,7 @@ export class Client extends ApiClientBase {
      * @return OK — returns the updated access-control lists
      */
     postEndpointAccessControlRole(endpointId: string, body?: RoleEntry | undefined): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control/endpoint/{endpointId}/roles";
+        let url_ = this.baseUrl + "/api/v1/access-control/endpoint/{endpointId}/roles";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -8330,7 +8329,7 @@ export class Client extends ApiClientBase {
      * @return OK — returns the updated access-control lists
      */
     deleteEndpointAccessControlRole(endpointId: string, body?: RoleEntry | undefined): Promise<AccessControlSet> {
-        let url_ = this.baseUrl + "/api/access-control/endpoint/{endpointId}/roles";
+        let url_ = this.baseUrl + "/api/v1/access-control/endpoint/{endpointId}/roles";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
@@ -8398,7 +8397,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     getAdminSimulation(): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -8446,7 +8445,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminSimulationSettings(body?: SimulationSettings | undefined): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation/settings";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation/settings";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -8512,7 +8511,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     putAdminSimulationConfig(body?: SimulationConfig | undefined): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation/config";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation/config";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -8570,7 +8569,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSimulationStart(): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation/start";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation/start";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -8624,7 +8623,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSimulationPause(): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation/pause";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation/pause";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -8678,7 +8677,7 @@ export class Client extends ApiClientBase {
      * @return OK
      */
     postAdminSimulationStop(): Promise<SimulationStatus> {
-        let url_ = this.baseUrl + "/api/admin/simulation/stop";
+        let url_ = this.baseUrl + "/api/v1/admin/simulation/stop";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -10630,7 +10629,7 @@ export interface IEventTypeDetails {
     [key: string]: any;
 }
 
-/** Response shape for GET /api/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor). */
+/** Response shape for GET /api/v1/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor). */
 export class FakeEventPayload implements IFakeEventPayload {
     /** Indented JSON payload string, or null when the type cannot be constructed. */
     payload?: string | undefined;
@@ -10681,7 +10680,7 @@ export class FakeEventPayload implements IFakeEventPayload {
     }
 }
 
-/** Response shape for GET /api/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor). */
+/** Response shape for GET /api/v1/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor). */
 export interface IFakeEventPayload {
     /** Indented JSON payload string, or null when the type cannot be constructed. */
     payload?: string | undefined;

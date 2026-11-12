@@ -18,9 +18,9 @@ import { PanelFooter, PanelSection, useInPanel, usePanelDirty, usePanelReviewing
 // within 30 seconds without a restart.
 
 const FORM_ID = "mcp-access-settings";
-const settingsUrl = "/api/admin/mcp/settings";
-const turnOffUrl = "/api/admin/mcp/turn-off";
-const activityUrl = "/api/admin/mcp/activity?hours=24";
+const settingsUrl = "/api/v1/admin/mcp/settings";
+const turnOffUrl = "/api/v1/admin/mcp/turn-off";
+const activityUrl = "/api/v1/admin/mcp/activity?hours=24";
 const clone = (s: McpSettings): McpSettings => JSON.parse(JSON.stringify(s)) as McpSettings;
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "");
 

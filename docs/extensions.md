@@ -454,7 +454,7 @@ The framework is fully backward compatible. `MessageHandler` accepts optional `M
 
 A `public static readonly T Example = new T { … }` field on an `IEvent`
 type now feeds **both** the existing "Example payload" tab in the WebApp
-**and** the seed for `GET /api/event-types/{eventtypeid}/fake` (used by the
+**and** the seed for `GET /api/v1/event-types/{eventtypeid}/fake` (used by the
 Compose dialog's "Generate fake data" button — see
 [`docs/webapp-rest-api.md`](webapp-rest-api.md#server-side-schema-valid-fake-payloads)).
 The fake-payload generator deep-clones the example, type-aware randomizes

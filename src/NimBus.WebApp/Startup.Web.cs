@@ -10,6 +10,7 @@ using NimBus.WebApp.Controllers;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.RateLimiting;
 using NimBus.WebApp.Problems;
+using NimBus.WebApp.Versioning;
 using System.Text.Json.Serialization;
 using NimBus.Management.ServiceBus;
 using Azure.Messaging.ServiceBus;
@@ -57,6 +58,9 @@ public partial class Startup
 
         // Every /api error result becomes an RFC 7807 problem (see Problems/).
         services.AddNimBusApiProblemDetails();
+
+        // Every API route at /api/v1/… plus its deprecated unversioned alias (see Versioning/).
+        services.AddNimBusApiVersioning();
 
         services.AddSwaggerDocument(s =>
         {

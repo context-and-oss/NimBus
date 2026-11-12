@@ -36,7 +36,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
   const alive = useRef(true);
   const scrolled = useRef(false);
   const eligible = ["failed", "deadlettered"].includes((props.resolutionStatus ?? "").toLowerCase());
-  const baseUrl = `/api/integration-intelligence/failures/${encodeURIComponent(props.eventId)}/${encodeURIComponent(props.messageId)}/classification`;
+  const baseUrl = `/api/v1/integration-intelligence/failures/${encodeURIComponent(props.eventId)}/${encodeURIComponent(props.messageId)}/classification`;
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
@@ -44,7 +44,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       try {
-        const response = await fetch(`/api/integration-intelligence/status?endpointId=${encodeURIComponent(props.endpointId)}`, { headers, signal: controller.signal });
+        const response = await fetch(`/api/v1/integration-intelligence/status?endpointId=${encodeURIComponent(props.endpointId)}`, { headers, signal: controller.signal });
         if (!response.ok) return;
         const capability = await response.json() as IntelligenceStatus;
         if (controller.signal.aborted) return;

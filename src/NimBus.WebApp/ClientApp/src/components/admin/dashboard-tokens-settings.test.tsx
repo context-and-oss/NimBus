@@ -90,7 +90,7 @@ describe("Dashboard tokens settings", () => {
     await user.click(screen.getByRole("button", { name: "Issue token" }));
 
     const [url, init] = fetchMock.mock.calls[1];
-    expect(url).toBe("/api/admin/dashboard-tokens");
+    expect(url).toBe("/api/v1/admin/dashboard-tokens");
     expect(init.method).toBe("POST");
     expect(init.headers["X-NimBus-CSRF"]).toBe("csrf-test");
     const body = JSON.parse(init.body);
@@ -127,7 +127,7 @@ describe("Dashboard tokens settings", () => {
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke token" }));
 
     const [url, init] = fetchMock.mock.calls[1];
-    expect(url).toBe("/api/admin/dashboard-tokens/abcdefghijkl/revoke");
+    expect(url).toBe("/api/v1/admin/dashboard-tokens/abcdefghijkl/revoke");
     expect(init.method).toBe("POST");
     expect(await screen.findByText("Revoked")).toBeTruthy();
   });

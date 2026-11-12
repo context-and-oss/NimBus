@@ -215,7 +215,7 @@ The Service Bus namespace follows the convention `sb-{solutionId}-{environment}.
 
 For Cosmos deployments, the template also configures `CosmosAccountResourceId` and grants the WebApp's managed identity Cosmos DB Operator on `MessageDatabase`. The **Topology → Storage** view uses that ARM access to list and delete containers outside the current platform catalog; Cosmos data-plane Entra authentication cannot perform container deletion.
 
-The template also grants the WebApp's managed identity Reader on the Application Insights component (`ai-{solutionId}-{environment}-global-tracelog`), because the event logs endpoint (`GET /api/event/details/{endpointId}/{id}/logs`) queries Application Insights with that identity ([details](authentication.md#application-insights-log-queries)). No API key is involved: the `apiKey` parameter is deprecated and ignored, so leave it out.
+The template also grants the WebApp's managed identity Reader on the Application Insights component (`ai-{solutionId}-{environment}-global-tracelog`), because the event logs endpoint (`GET /api/v1/event/details/{endpointId}/{id}/logs`) queries Application Insights with that identity ([details](authentication.md#application-insights-log-queries)). No API key is involved: the `apiKey` parameter is deprecated and ignored, so leave it out.
 
 **Re-running against an existing WebApp?** Pass `webAppExists=true`. The app-settings deployment is a full replace, and several settings are configured out of band — `webAppExists=true` makes the template read the site's current settings and carry those keys forward instead of wiping them (which, for the auth settings, takes authentication down). Four prefixes are preserved:
 
