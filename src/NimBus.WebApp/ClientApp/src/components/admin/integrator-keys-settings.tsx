@@ -305,7 +305,6 @@ export default function IntegratorKeysSettings() {
                 <thead className="border-b border-border text-left text-xs text-muted-foreground">
                   <tr>
                     <th className="px-4 py-2 font-medium">Name</th>
-                    <th className="px-4 py-2 font-medium">Key</th>
                     <th className="px-4 py-2 font-medium">Access</th>
                     <th className="px-4 py-2 font-medium">Status</th>
                     <th className="px-4 py-2 font-medium">Issued</th>
@@ -317,8 +316,10 @@ export default function IntegratorKeysSettings() {
                 <tbody>
                   {state.keys.map((k) => (
                     <tr key={k.keyId} className="border-b border-border last:border-0">
-                      <td className="px-4 py-2 font-medium">{k.name}</td>
-                      <td className="px-4 py-2 font-mono text-xs">{k.prefix}</td>
+                      <td className="px-4 py-2">
+                        <div className="font-medium">{k.name}</div>
+                        <div className="font-mono text-xs text-muted-foreground">{k.prefix}</div>
+                      </td>
                       <td className="px-4 py-2">
                         <div>
                           {ROLE_LABEL[k.role]}
