@@ -39,7 +39,10 @@ internal sealed class EmulatorProcess : IAsyncDisposable
 
     public Uri HttpEndpoint { get; }
 
-    public static async Task<EmulatorProcess> StartAsync(string? journalPath = null, bool deleteJournalOnDispose = true)
+    public static async Task<EmulatorProcess> StartAsync(
+        string? journalPath = null,
+        bool deleteJournalOnDispose = true,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         if (System.Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_CS") is { Length: > 0 } existing)
         {
@@ -53,7 +56,7 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         {
             try
             {
-                return await StartOnceAsync(journalPath, deleteJournalOnDispose);
+                return await StartOnceAsync(journalPath, deleteJournalOnDispose, environment);
             }
             catch (Exception exception) when (exception is InvalidOperationException or TimeoutException)
             {
@@ -64,7 +67,10 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         throw new InvalidOperationException("The emulator failed to start after 3 attempts.", lastFailure);
     }
 
-    private static async Task<EmulatorProcess> StartOnceAsync(string? journalPath, bool deleteJournalOnDispose)
+    private static async Task<EmulatorProcess> StartOnceAsync(
+        string? journalPath,
+        bool deleteJournalOnDispose,
+        IReadOnlyDictionary<string, string>? environment)
     {
         var port = GetAvailablePort();
         var project = FindProject();
@@ -80,6 +86,10 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         };
         startInfo.Environment["NIMBUS_SBEMULATOR_TOPOLOGY_PATH"] = journalPath;
         startInfo.Environment["NIMBUS_SBEMULATOR_DIAGNOSTICS"] = "1";
+        foreach (var (name, value) in environment ?? new Dictionary<string, string>())
+        {
+            startInfo.Environment[name] = value;
+        }
         var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start the emulator process.");
         var instance = new EmulatorProcess(
             process,
