@@ -1,10 +1,10 @@
 # Rate Limiting
 
-The NimBus management WebApp applies request-rate policies to its
-highest-cost surfaces. Everything else — the SignalR grid-events hub, the
-health probes, the SPA's static assets, and every other `/api/*` route — carries
-no rate-limiting metadata at all. There is no global limiter, so "not listed
-here" means "not throttled".
+The NimBus management WebApp puts a per-caller ceiling on every `/api/*`
+request (the global limit) and tighter request-rate policies on its
+highest-cost surfaces. Everything outside `/api/*` — the SignalR grid-events
+hub, the health probes, the SPA and its static assets — is not throttled; the
+operator MCP endpoint `/mcp` has its own policy.
 
 Exceeding a limit returns **HTTP 429**.
 
@@ -12,6 +12,7 @@ Exceeding a limit returns **HTTP 429**.
 
 | Policy | Endpoint(s) | Limiter | Default | Partitioned by |
 |---|---|---|---|---|
+| `nimbus-global` | every `/api/*` route, ahead of the policies below | Fixed window | 600 per 60 s | user id (agent key, dashboard token or client IP when anonymous) |
 | `nimbus-agent-receive` | `GET /api/agent/receive` | Concurrency | 20 permits + 5 queued | nothing (global) |
 | `nimbus-admin` | every `/api/admin/*` route | Fixed window | 60 per 60 s | user id |
 | `nimbus-search` | `POST /api/messages/search`, `POST /api/audits/search` | Fixed window | 120 per 60 s | user id |
@@ -46,6 +47,7 @@ quote:
 
 | Policy | Per window | Across a window edge | Sustained |
 |---|---|---|---|
+| `nimbus-global` | ≤ 600 per caller | ≤ 1,200 | 36,000/hour per caller |
 | `nimbus-admin` | ≤ 60 per user | ≤ 120 | 3,600/hour per user |
 | `nimbus-search` | ≤ 120 per user | ≤ 240 | 7,200/hour per user |
 | `nimbus-login` | ≤ 50 per address | ≤ 100 | 600/hour per address |
@@ -162,6 +164,8 @@ a restart, which an App Service application-setting change triggers anyway.
 | Key | Default |
 |---|---|
 | `RateLimiting:Enabled` | `true` |
+| `RateLimiting:Global:PermitLimit` | `600` |
+| `RateLimiting:Global:WindowSeconds` | `60` |
 | `RateLimiting:TrustForwardedForHeader` | `false` (Bicep sets `true` for App Service) |
 | `RateLimiting:AgentReceive:PermitLimit` | `20` |
 | `RateLimiting:AgentReceive:QueueLimit` | `5` |
@@ -183,8 +187,8 @@ In App Service these are environment-variable style keys:
 `RateLimiting__Login__PermitLimit`, and so on.
 
 **`Enabled: false` is the kill switch** if a limit is mis-sized in production.
-It stops the policies being *attached* to endpoints; they stay registered, so
-the app still starts. It is not template-managed, so it survives a redeploy.
+It stops the policies being *attached* to endpoints and removes the global
+limit; the named policies stay registered, so the app still starts. It is not template-managed, so it survives a redeploy.
 
 ### What survives a redeploy
 
@@ -199,11 +203,15 @@ operator-set `RateLimiting__*` settings forward, with one exception:
 
 ## On 429
 
-Rejections carry a short `text/plain` body naming the policy — `POST
-/account/login` is a browser form surface, where a bodyless 429 shows a human
-nothing. The fixed-window policies also emit `Retry-After`; the
-concurrency limiter does not, because it has no meaningful retry hint (permits
-return on completion, not on a clock).
+A rejection on `/api/*` is an RFC 7807 problem (`application/problem+json`, see
+[Errors](webapp-rest-api.md#errors)) whose `policy` member names the limit that
+refused it — `nimbus-global` when the global limit did, even on a route that also
+has its own policy — plus `retryAfterSeconds` where there is one. `POST
+/account/login` keeps a short `text/plain` body naming the policy, because it is
+a browser form surface where a bodyless 429 shows a human nothing. The
+fixed-window limits also emit `Retry-After`; the concurrency limiter does not,
+because it has no meaningful retry hint (permits return on completion, not on a
+clock).
 
 Every rejection *that occurs* is logged at warning level with the policy name
 and partition key, which for login is a client IP — deliberate security
@@ -212,15 +220,21 @@ a caller pacing under the limit is never rejected and so never appears there.
 
 Neither the SPA nor the `nb` CLI currently surfaces or retries on 429. The `nb`
 CLI calls none of these surfaces, and the limits are sized so legitimate
-SPA usage never reaches them.
+SPA usage never reaches them: its busiest views poll every 2 to 5 seconds, and
+the Monitor wall makes one request per 5-second tick. Raise
+`RateLimiting:Global:PermitLimit` for an automation that needs more, rather than
+spreading it over several identities.
 
 ## Scope
 
-Enforcement is **per process**. The shipped Bicep provisions a single instance,
-so per-process limits are the effective limits. If the WebApp is ever scaled
-out, effective limits multiply by instance count and the login policy weakens
-proportionally — a distributed/shared-state limiter would be needed at that
-point.
+Enforcement is **per process**: each instance counts on its own, and nothing is
+shared through a store. The shipped Bicep provisions a single instance, so
+per-process limits are the effective limits. If the WebApp is scaled out,
+effective limits multiply by instance count (behind a load balancer without
+affinity, a caller's requests spread over the instances) and the login policy
+weakens proportionally. A distributed limiter is not part of NimBus; front a
+scaled-out WebApp with a gateway that limits centrally (Azure Front Door or API
+Management) if you need one.
 
 ## See also
 

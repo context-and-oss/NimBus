@@ -93,10 +93,17 @@ public static partial class RateLimitingServiceCollectionExtensions
                     new RateLimitOptions.WindowLimits { PermitLimit = permits, WindowSeconds = options.Mcp.WindowSeconds });
             });
 
-            // GlobalLimiter stays null on purpose: everything not explicitly
-            // listed above — the SignalR hub, health probes, static files, the
-            // SPA fallback, every other /api route — carries no rate-limiting
-            // metadata and is therefore not throttled at all (AC-10).
+            // A per-caller ceiling over every /api request, so no route is unthrottled. It runs
+            // ahead of the named policies above, which stay tighter on their routes. Everything
+            // outside /api — the SignalR hub, health probes, static files, the SPA, /mcp (which
+            // has its own policy) — gets no limiter (AC-10). The kill switch removes it too.
+            if (options.Enabled)
+            {
+                limiter.GlobalLimiter = new GlobalApiRateLimiter(PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                    NimBus.WebApp.Problems.ApiProblems.IsApiPath(context.Request.Path)
+                        ? FixedWindow("global:" + UserPartitionKey(context, options), options.Global)
+                        : RateLimitPartition.GetNoLimiter("outside-api")));
+            }
         });
 
         services.AddSingleton<IConfigureOptions<MvcOptions>, ConfigureRateLimitConventions>();
@@ -135,7 +142,9 @@ public static partial class RateLimitingServiceCollectionExtensions
     private static ValueTask OnRejectedAsync(OnRejectedContext context, CancellationToken cancellationToken)
     {
         var http = context.HttpContext;
-        var policy = http.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "unknown";
+        var policy = GlobalApiRateLimiter.Rejected(http)
+            ? RateLimitPolicyNames.Global
+            : http.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "unknown";
 
         string? retryAfter = null;
         if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var delay))
