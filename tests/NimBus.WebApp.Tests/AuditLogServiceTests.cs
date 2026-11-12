@@ -111,6 +111,38 @@ public sealed class AuditLogServiceTests
         Assert.IsTrue(scope.ContainsKey(nameof(MessageAuditEntity.EndpointId)));
     }
 
+    [TestMethod]
+    public async Task LogAuditAsync_escapes_line_breaks_in_the_structured_log_but_stores_the_original()
+    {
+        // Caller-supplied values reach the log sink; a raw line break there could forge a log entry.
+        var store = new CapturingStore();
+        var logger = new RecordingLogger<AuditLogService>();
+        var sut = new AuditLogService(logger, store);
+        var ctx = MakeContextWithClaims(("name", "Auditor\r\nAuditType=Forged"));
+
+        await sut.LogAuditAsync(MessageAuditType.SearchEvents, ctx,
+            eventId: "evt-1\nforged", endpointId: "ep-1\rforged", data: "{\"a\":1}\n{\"b\":2}");
+
+        var scope = (IReadOnlyDictionary<string, object?>)logger.Records
+            .Single(r => r.Message == AuditLogService.StructuredLogMessage).Scope!;
+        foreach (var key in new[]
+        {
+            nameof(MessageAuditEntity.AuditorName), nameof(MessageAuditEntity.EventId),
+            nameof(MessageAuditEntity.EndpointId), nameof(MessageAuditEntity.Data),
+        })
+        {
+            var value = (string)scope[key]!;
+            Assert.IsFalse(value.Contains('\r', StringComparison.Ordinal) || value.Contains('\n', StringComparison.Ordinal),
+                $"{key} must not carry a raw line break into the log: {value}");
+        }
+
+        Assert.AreEqual("Auditor\\r\\nAuditType=Forged", scope[nameof(MessageAuditEntity.AuditorName)]);
+
+        var entity = store.Entries.Single().Entity;
+        Assert.AreEqual("Auditor\r\nAuditType=Forged", entity.AuditorName, "the durable audit row keeps the original value");
+        Assert.AreEqual("{\"a\":1}\n{\"b\":2}", entity.Data);
+    }
+
     // ───────── FR-050 case 3: store write failure is absorbed ─────────
 
     [TestMethod]
