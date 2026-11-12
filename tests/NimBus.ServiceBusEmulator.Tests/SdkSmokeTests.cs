@@ -94,8 +94,17 @@ public sealed class SdkSmokeTests
         // startup has a 20 s deadline, each later step 10 s, all capped by a 50 s overall
         // budget, and emulator disposal waits at most 5 s for the process to exit. A hang
         // therefore fails naming its step, with the emulator's protocol trace (AF-9).
+        // The emulator is disposed as a cleanup step: a failing dispose (an exit timeout or
+        // a journal delete error) is reported next to the body's first failure, never instead of it.
         var clock = Stopwatch.StartNew();
-        await using var emulator = await EmulatorProcess.StartAsync(startupDeadline: TimeSpan.FromSeconds(20));
+        var emulator = await EmulatorProcess.StartAsync(startupDeadline: TimeSpan.FromSeconds(20));
+        await TestSteps.RunWithCleanupAsync(
+            () => RunInitialRuleScenarioAsync(emulator, clock),
+            () => emulator.DisposeAsync().AsTask());
+    }
+
+    private static async Task RunInitialRuleScenarioAsync(EmulatorProcess emulator, Stopwatch clock)
+    {
         var steps = new TestSteps(emulator, clock, TimeSpan.FromSeconds(50));
         var step = TimeSpan.FromSeconds(10);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));

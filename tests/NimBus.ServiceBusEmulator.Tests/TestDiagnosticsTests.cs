@@ -121,6 +121,45 @@ public sealed class TestDiagnosticsTests
 
     [TestMethod]
     [Timeout(30_000)]
+    public async Task A_failing_emulator_dispose_after_a_failing_body_still_reports_the_body_failure_first()
+    {
+        if (System.Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_CS") is { Length: > 0 })
+        {
+            Assert.Inconclusive("An external emulator is configured; its process is not owned by the test.");
+        }
+
+        var directory = Path.Combine(Path.GetTempPath(), $"nimbus-sbemulator-dispose-{Guid.NewGuid():N}");
+        var journalPath = Path.Combine(directory, "topology.json");
+        try
+        {
+            var emulator = await EmulatorProcess.StartAsync(journalPath, startupDeadline: TimeSpan.FromSeconds(20));
+
+            // Simulate a process that does not exit within the bound after being killed.
+            emulator.WaitForExitOverride = _ => false;
+            var steps = new TestSteps(emulator.DumpOutput);
+            var never = new TaskCompletionSource();
+
+            var exception = await Assert.ThrowsExactlyAsync<AggregateException>(() => TestSteps.RunWithCleanupAsync(
+                () => steps.RunAsync("receive", TimeSpan.FromMilliseconds(100), () => never.Task),
+                () => emulator.DisposeAsync().AsTask()));
+
+            Assert.HasCount(2, exception.InnerExceptions);
+            StringAssert.Contains(exception.InnerExceptions[0].Message, "Step 'receive' did not finish within");
+            Assert.IsInstanceOfType<TimeoutException>(exception.InnerExceptions[1]);
+            StringAssert.Contains(exception.InnerExceptions[1].Message, "Step 'dispose emulator'");
+            StringAssert.Contains(exception.InnerExceptions[1].Message, "Emulator output:");
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
+    [Timeout(30_000)]
     public async Task A_failed_launch_attempt_leaves_a_supplied_journal_and_its_directory_in_place()
     {
         if (System.Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_CS") is { Length: > 0 })

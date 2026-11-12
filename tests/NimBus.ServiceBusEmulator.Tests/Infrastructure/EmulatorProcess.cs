@@ -177,8 +177,16 @@ internal sealed class EmulatorProcess : IAsyncDisposable
             $"The emulator did not become healthy within the {deadline.TotalSeconds:0.###} s startup deadline.");
         // A failed attempt only kills its process. A caller-supplied journal is left in place
         // for the retry that reuses it; only a journal this attempt generated is removed.
-        instance.KillProcess();
-        if (ownsJournal)
+        // A process that does not exit after the kill is folded into this attempt's failure,
+        // so it never throws past the startup retry.
+        if (!instance.KillProcess())
+        {
+            failure = new AggregateException(
+                $"Launch attempt failed, and its process did not exit within {ExitTimeout.TotalSeconds:0.###} s of being killed.",
+                failure,
+                new TimeoutException("The failed launch attempt's emulator process did not exit after being killed."));
+        }
+        else if (ownsJournal)
         {
             DeleteJournalDirectory(journalPath);
         }
@@ -207,6 +215,12 @@ internal sealed class EmulatorProcess : IAsyncDisposable
             ?? throw new InvalidOperationException("Could not determine the active test build configuration.");
     }
 
+    /// <summary>
+    /// Disposes the emulator as the named step "dispose emulator". If the process does not
+    /// exit within <see cref="ExitTimeout"/> after being killed, it throws a
+    /// <see cref="TimeoutException"/> naming the step and carrying the emulator output, and
+    /// leaves the journal in place.
+    /// </summary>
     public ValueTask DisposeAsync()
     {
         if (_process is null)
@@ -215,7 +229,14 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         }
 
         var watch = Stopwatch.StartNew();
-        KillProcess();
+        if (!KillProcess())
+        {
+            throw new TimeoutException(
+                $"Step 'dispose emulator' did not finish: the emulator process did not exit within " +
+                $"{ExitTimeout.TotalSeconds:0.###} s of being killed ({watch.ElapsedMilliseconds} ms); " +
+                $"its journal was left at '{_journalPath}'. Emulator output:{System.Environment.NewLine}{DumpOutput()}");
+        }
+
         if (_deleteJournalOnDispose && _journalPath is not null)
         {
             DeleteJournalDirectory(_journalPath);
@@ -225,21 +246,37 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Kills the process (waiting at most 5 s for it to exit) without touching the journal.</summary>
-    private void KillProcess()
+    /// <summary>How long a kill waits for the emulator process to exit.</summary>
+    internal static readonly TimeSpan ExitTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Test seam: replaces the wait for the killed process to exit. It receives
+    /// <see cref="ExitTimeout"/> and returns whether the process exited.
+    /// </summary>
+    internal Func<TimeSpan, bool>? WaitForExitOverride { get; set; }
+
+    /// <summary>
+    /// Kills the process without touching the journal, waiting at most
+    /// <see cref="ExitTimeout"/> for it to exit. Returns whether it exited.
+    /// </summary>
+    private bool KillProcess()
     {
         if (_process is null)
         {
-            return;
+            return true;
         }
 
+        var exited = true;
         if (!_process.HasExited)
         {
             _process.Kill(entireProcessTree: true);
-            _process.WaitForExit(5_000);
+            exited = WaitForExitOverride is { } wait
+                ? wait(ExitTimeout)
+                : _process.WaitForExit(ExitTimeout);
         }
 
         _process.Dispose();
+        return exited;
     }
 
     private static void DeleteJournalDirectory(string journalPath)
