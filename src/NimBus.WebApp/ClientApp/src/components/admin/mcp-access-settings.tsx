@@ -1,3 +1,4 @@
+import { isAntiforgeryRefusal } from "api-client/problem";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
@@ -17,9 +18,9 @@ import { PanelFooter, PanelSection, useInPanel, usePanelDirty, usePanelReviewing
 // within 30 seconds without a restart.
 
 const FORM_ID = "mcp-access-settings";
-const settingsUrl = "/api/admin/mcp/settings";
-const turnOffUrl = "/api/admin/mcp/turn-off";
-const activityUrl = "/api/admin/mcp/activity?hours=24";
+const settingsUrl = "/api/v1/admin/mcp/settings";
+const turnOffUrl = "/api/v1/admin/mcp/turn-off";
+const activityUrl = "/api/v1/admin/mcp/activity?hours=24";
 const clone = (s: McpSettings): McpSettings => JSON.parse(JSON.stringify(s)) as McpSettings;
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "");
 
@@ -27,8 +28,7 @@ async function problemText(response: Response): Promise<{ text: string; problem?
   const problem = await response.json().catch(() => undefined) as McpProblem | undefined;
   if (response.status === 401 || response.status === 403) return { text: "Only site Owners can change MCP access." };
   if (response.status === 409) return { text: "Another administrator changed these settings. Reload them before reviewing again.", problem };
-  // The antiforgery filter answers 400 with no body when the security token is missing or expired.
-  if (response.status === 400 && !problem) return { text: "Your security token expired. Reload the page and try again." };
+  if (isAntiforgeryRefusal(response.status, problem)) return { text: "Your security token expired. Reload the page and try again." };
   return { text: problem?.errors?.join(" ") || "The settings could not be saved. Reload and try again.", problem };
 }
 

@@ -397,7 +397,7 @@ describe("useMonitorData status feed", () => {
     const http = clientHttp.mock.calls.at(-1)![0] as {
       fetch: (url: string, init?: RequestInit) => Promise<Response>;
     };
-    await http.fetch("/api/monitor/feed/status", { headers: { Accept: "application/json" } });
+    await http.fetch("/api/v1/monitor/feed/status", { headers: { Accept: "application/json" } });
     const init = fetchSpy.mock.calls.at(-1)![1] as RequestInit;
     expect(new Headers(init.headers).get("X-NimBus-Dashboard-Token")).toBe("nbdt_abc");
     expect(new Headers(init.headers).get("Accept")).toBe("application/json");

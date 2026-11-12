@@ -14,7 +14,7 @@ The reconcile **re-applies a decision the Resolver already recorded**. It never 
 skips, never writes to history, and never invents a status: the only terminal it can produce is a
 `ResolutionResponse` already stored for that event and session.
 
-Access is site **Owner**, same as the rest of `/api/admin`. Every repair is audited as
+Access is site **Owner**, same as the rest of `/api/v1/admin`. Every repair is audited as
 `ReconcileStalePending` — one audit row per run (on both the denied and the successful branch) and
 one per repaired event, the latter carrying the previous status, the stale message, the response it
 was repaired from, and your note.

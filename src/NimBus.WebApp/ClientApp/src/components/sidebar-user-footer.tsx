@@ -44,7 +44,7 @@ const SidebarUserFooter: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/auth/me", {
+    fetch("/api/v1/auth/me", {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
@@ -81,7 +81,7 @@ const SidebarUserFooter: React.FC = () => {
 
   const handleSignOut = async () => {
     try {
-      await fetch("/api/auth/logout", {
+      await fetch("/api/v1/auth/logout", {
         method: "POST",
         credentials: "include",
       });

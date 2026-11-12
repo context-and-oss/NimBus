@@ -9,7 +9,7 @@ const stubFetch = (counts: unknown) => {
     Promise.resolve(
       new Response(
         JSON.stringify(
-          String(url).endsWith("/api/endpoint/status/count") ? counts : {},
+          String(url).endsWith("/api/v1/endpoint/status/count") ? counts : {},
         ),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),

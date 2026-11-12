@@ -132,7 +132,7 @@ describe("MCP access settings", () => {
 
     await screen.findByText(/Saved revision 99999999/);
     const [url, request] = fetchMock.mock.calls[2];
-    expect(url).toBe("/api/admin/mcp/settings");
+    expect(url).toBe("/api/v1/admin/mcp/settings");
     expect(request.method).toBe("PUT");
     expect(request.headers["X-NimBus-CSRF"]).toBe("csrf-test");
     expect(JSON.parse(request.body)).toMatchObject({
@@ -167,7 +167,7 @@ describe("MCP access settings", () => {
   });
 
   it("explains an expired security token", async () => {
-    mockFetch(Response.json(state()), Response.json(activity), new Response(null, { status: 400 }));
+    mockFetch(Response.json(state()), Response.json(activity), Response.json({ status: 400, title: "Bad Request", code: "InvalidAntiforgeryToken" }, { status: 400 }));
     render(<McpAccessSettings />);
 
     await userEvent.click(await screen.findByRole("switch", { name: "Mark reported" }));
@@ -186,7 +186,7 @@ describe("MCP access settings", () => {
     await userEvent.click(screen.getByRole("button", { name: "Turn off MCP access" }));
 
     await screen.findByText(/MCP access is off. Agents get 503/);
-    expect(fetchMock.mock.calls[2][0]).toBe("/api/admin/mcp/turn-off");
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/v1/admin/mcp/turn-off");
     expect(fetchMock.mock.calls[2][1].headers["X-NimBus-CSRF"]).toBe("csrf-test");
     expect(screen.queryByRole("button", { name: "Turn off now" })).toBeNull();
   });

@@ -117,11 +117,14 @@ export function SessionStateCard({ endpoints, initialEndpoint }: { endpoints: En
       setEditing(false);
       setNotice(`${ACTION_COPY[action].title}: done.`);
     } catch (err) {
-      if (err instanceof api.SessionStateView) {
+      const conflict = api.SwaggerException.isSwaggerException(err) && err.result instanceof api.SessionStateView
+        ? err.result
+        : undefined;
+      if (conflict) {
         // 409: the state moved since it was read, or a receiver holds the session.
-        setView(err);
+        setView(conflict);
         setError(
-          err.locked
+          conflict.locked
             ? "A receiver holds the session right now, so nothing was changed. Try again shortly."
             : "The session state changed since you read it, so nothing was changed. Review the current state below and try again.",
         );

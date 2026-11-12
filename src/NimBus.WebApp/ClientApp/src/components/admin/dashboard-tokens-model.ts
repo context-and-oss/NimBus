@@ -1,3 +1,5 @@
+import { isAntiforgeryRefusal, type ApiProblem } from "api-client/problem";
+
 // Settings → Dashboard tokens: the shapes of /api/admin/dashboard-tokens and the rules the
 // panel checks before sending. The server enforces the same rules.
 
@@ -31,7 +33,7 @@ export interface DashboardTokenIssued {
   state: DashboardTokensState;
 }
 
-export const DASHBOARD_TOKENS_URL = "/api/admin/dashboard-tokens";
+export const DASHBOARD_TOKENS_URL = "/api/v1/admin/dashboard-tokens";
 
 export const NAME_MAX = 100;
 
@@ -75,13 +77,10 @@ export async function problemMessage(response: Response): Promise<string> {
     return "Only site Owners can manage dashboard tokens.";
   if (response.status === 501)
     return "This deployment's storage provider cannot store dashboard tokens.";
-  if (response.status === 400 && !(response.headers.get("content-type") ?? "").includes("json"))
+  const problem = (await response.json().catch(() => undefined)) as ApiProblem | undefined;
+  if (isAntiforgeryRefusal(response.status, problem))
     return "The page's security token expired. Reload and try again.";
-  try {
-    const problem = (await response.json()) as { code?: string; errors?: string[] };
-    if (problem.errors?.length) return problem.errors.join(" ");
-  } catch {
-    // Not a problem body; fall through.
-  }
+  if (problem?.errors?.length) return problem.errors.join(" ");
+  if (problem?.detail) return problem.detail;
   return `The request failed (HTTP ${response.status}).`;
 }

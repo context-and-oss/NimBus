@@ -57,7 +57,7 @@ lower that requirement.
 
 ## API
 
-`GET /api/metrics/failed-insights`, `GET /api/metrics/failed-insights/occurrences` and
-`GET /api/metrics/failed-insights/patterns`; see
+`GET /api/v1/metrics/failed-insights`, `GET /api/v1/metrics/failed-insights/occurrences` and
+`GET /api/v1/metrics/failed-insights/patterns`; see
 [WebApp REST API](webapp-rest-api.md#failed-insights) for parameters and the `NimBus:Insights`
 limits.

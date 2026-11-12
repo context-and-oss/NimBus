@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "api-client";
+import { problemOf } from "api-client/problem";
 
 /** Speed multipliers the server accepts (plan Decision 11). */
 export const SPEEDS = [0.5, 1, 2, 5, 10, 20] as const;
@@ -34,7 +35,7 @@ export const clamp = (value: number, min: number, max: number): number =>
 /** Human text for a failed call: the server's violation list when there is one. */
 export function problemMessage(error: unknown): string {
   if (error && typeof error === "object") {
-    const errors = (error as { errors?: unknown }).errors;
+    const errors = problemOf(error)?.errors;
     if (Array.isArray(errors) && errors.length > 0) return errors.join(" ");
     const status = (error as { status?: unknown }).status;
     if (status === 401 || status === 403)

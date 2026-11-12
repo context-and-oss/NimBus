@@ -86,7 +86,7 @@
       "generateClientInterfaces": false,
       "generateOptionalParameters": true,
       "exportTypes": true,
-      "wrapDtoExceptions": false,
+      "wrapDtoExceptions": true,
       "exceptionClass": "SwaggerException",
       "clientBaseClass": "ApiClientBase",
       "wrapResponses": false,

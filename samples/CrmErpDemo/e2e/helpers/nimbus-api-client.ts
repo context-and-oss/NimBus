@@ -81,21 +81,21 @@ export class NimBusApiClient {
 
   /** Bulk endpoint state counts. Pass the endpoint IDs you care about. */
   async getStatusCounts(endpointIds: string[]): Promise<EndpointStatusCount[]> {
-    const res = await this.api.post("/api/endpoint/status/count", { data: endpointIds });
+    const res = await this.api.post("/api/v1/endpoint/status/count", { data: endpointIds });
     if (!res.ok()) throw new Error(`NimBus POST status/count → ${res.status()} ${await res.text()}`);
     return (await res.json()) as EndpointStatusCount[];
   }
 
   /** Get a single endpoint's state count. */
   async getStatusCount(endpointId: string): Promise<EndpointStatusCount> {
-    const res = await this.api.get(`/api/endpoint/${endpointId}/status/count`);
+    const res = await this.api.get(`/api/v1/endpoint/${endpointId}/status/count`);
     if (!res.ok()) throw new Error(`NimBus GET ${endpointId}/status/count → ${res.status()}`);
     return (await res.json()) as EndpointStatusCount;
   }
 
   /** Search messages on an endpoint by filter (status, event id, session id, etc.). */
   async searchEvents(endpointId: string, filter: EventFilter, max = 100): Promise<NimBusEvent[]> {
-    const res = await this.api.post(`/api/event/${endpointId}/getByFilter`, {
+    const res = await this.api.post(`/api/v1/event/${endpointId}/getByFilter`, {
       data: {
         continuationToken: "",
         eventFilter: filter,
@@ -109,36 +109,36 @@ export class NimBusApiClient {
 
   /** Resubmit a single failed event by (eventId, lastMessageId). */
   async resubmit(eventId: string, messageId: string): Promise<void> {
-    const res = await this.api.post(`/api/event/resubmit/${eventId}/${messageId}`);
+    const res = await this.api.post(`/api/v1/event/resubmit/${eventId}/${messageId}`);
     if (!res.ok()) throw new Error(`NimBus resubmit → ${res.status()} ${await res.text()}`);
   }
 
   /** Skip a single event (terminal — flips Failed → Skipped, unblocks the session). */
   async skipMessage(eventId: string, messageId: string): Promise<void> {
-    const res = await this.api.post(`/api/event/skip/${eventId}/${messageId}`);
+    const res = await this.api.post(`/api/v1/event/skip/${eventId}/${messageId}`);
     if (!res.ok()) throw new Error(`NimBus skip → ${res.status()} ${await res.text()}`);
   }
 
   async settleHandoff(endpoint: string, event: NimBusEvent, outcome: "complete" | "fail", reason = "E2E external rejection"): Promise<void> {
-    const res = await this.api.post(`/api/event/handoff/${outcome}/${endpoint}/${event.eventId}/${event.lastMessageId}`,
+    const res = await this.api.post(`/api/v1/event/handoff/${outcome}/${endpoint}/${event.eventId}/${event.lastMessageId}`,
       { data: outcome === "fail" ? { reason } : {} });
     if (!res.ok()) throw new Error(`NimBus handoff ${outcome} → ${res.status()} ${await res.text()}`);
   }
 
   async channelState(endpoint: string, channel: "send" | "subscription"): Promise<string> {
-    const res = await this.api.get(`/api/endpoint/${endpoint}/${channel}status`);
+    const res = await this.api.get(`/api/v1/endpoint/${endpoint}/${channel}status`);
     if (!res.ok()) throw new Error(`NimBus channel status: ${res.status()}`);
     return await res.text();
   }
 
   async history(endpoint: string, eventId: string): Promise<Array<{ messageType: string; [key: string]: unknown }>> {
-    const res = await this.api.get(`/api/event/details/${endpoint}/${eventId}/history`);
+    const res = await this.api.get(`/api/v1/event/details/${endpoint}/${eventId}/history`);
     if (!res.ok()) throw new Error(`NimBus event history: ${res.status()}`);
     return await res.json();
   }
 
   async setChannelState(endpoint: string, channel: "send" | "subscription", enabled: boolean): Promise<void> {
-    const res = await this.api.post(`/api/endpoint/${endpoint}/${channel}status`, {
+    const res = await this.api.post(`/api/v1/endpoint/${endpoint}/${channel}status`, {
       data: JSON.stringify(enabled ? "enable" : "disable"), headers: { "Content-Type": "application/json" },
     });
     if (!res.ok()) throw new Error(`NimBus change channel status: ${res.status()} ${await res.text()}`);
@@ -146,7 +146,7 @@ export class NimBusApiClient {
 
   /** Trigger reprocessing of all Deferred messages on a (endpoint, session). */
   async reprocessDeferred(endpointId: string, sessionId: string): Promise<void> {
-    const res = await this.api.post(`/api/event/reprocess-deferred/${endpointId}/${sessionId}`);
+    const res = await this.api.post(`/api/v1/event/reprocess-deferred/${endpointId}/${sessionId}`);
     if (!res.ok()) throw new Error(`NimBus reprocess-deferred → ${res.status()} ${await res.text()}`);
   }
 }

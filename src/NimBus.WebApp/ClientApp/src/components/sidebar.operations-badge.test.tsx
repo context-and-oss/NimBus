@@ -7,9 +7,9 @@ import { MemoryRouter } from "react-router-dom";
 const stubFetch = (counts: unknown) => {
   const mock = vi.fn((url: RequestInfo | URL) => {
     const path = String(url);
-    const body = path.endsWith("/api/endpoint/status/count")
+    const body = path.endsWith("/api/v1/endpoint/status/count")
       ? counts
-      : path.endsWith("/api/access-control/me")
+      : path.endsWith("/api/v1/access-control/me")
         ? { canManageAccessControl: true, endpointRoles: [] }
         : {};
     return Promise.resolve(
@@ -74,7 +74,7 @@ describe("Sidebar Operations badge", () => {
 
     await screen.findByRole("link", { name: /Operations/ });
     await waitFor(() =>
-      expect(fetch.mock.calls.some(([u]) => String(u).endsWith("/api/endpoint/status/count"))).toBe(true),
+      expect(fetch.mock.calls.some(([u]) => String(u).endsWith("/api/v1/endpoint/status/count"))).toBe(true),
     );
     expect(screen.queryByLabelText(/endpoints? paused/)).toBeNull();
   });
