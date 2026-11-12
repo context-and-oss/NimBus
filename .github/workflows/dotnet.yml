@@ -4,14 +4,16 @@
 name: .NET
 
 on:
-  push:
-    branches: [ "master" ]
+  # No push trigger: master only advances through the merge queue, whose merge_group run
+  # already built and tested the exact tree that lands, so a post-merge run repeats it.
+  # Use workflow_dispatch to run CI on master by hand.
   pull_request:
     branches: [ "master" ]
   # The org ruleset requires PR branches to be up to date with master. The master merge
   # queue meets that by testing each queued PR on top of master, so "ci" must also run
   # for merge groups or queued PRs never get the check.
   merge_group:
+  workflow_dispatch:
 
 jobs:
   build:
