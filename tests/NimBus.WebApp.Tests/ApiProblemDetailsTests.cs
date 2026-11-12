@@ -184,7 +184,7 @@ public class ApiProblemDetailsTests
     {
         await using var host = await ProbeHost.StartAsync();
         using var client = host.CreateClient();
-        using var request = new HttpRequestMessage(path.EndsWith("antiforgery", StringComparison.Ordinal) ? HttpMethod.Post : HttpMethod.Get, path);
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.Accept.ParseAdd("application/json");
         if (authenticated)
             request.Headers.Add(TestAuthHeader, "alice@example.com");
@@ -324,7 +324,9 @@ public sealed class ProblemProbeController : Controller
     [Authorize]
     public IActionResult Protected() => new OkResult();
 
-    [HttpPost("api/probe/antiforgery")]
+    // A GET: the filter maps the refusal result whatever the method, and a probe POST that skips
+    // token validation would itself be a CSRF finding.
+    [HttpGet("api/probe/antiforgery")]
     public IActionResult Antiforgery() => new AntiforgeryValidationFailedResult();
 
     [HttpGet("api/probe/unavailable")]
