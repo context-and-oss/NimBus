@@ -22,7 +22,7 @@ namespace NimBus.Testing.Conformance;
 /// transitions, message persistence, and basic queries the conformance suite cares
 /// about. Search/pagination methods return empty results.
 /// </summary>
-public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore
+public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IIntegratorApiKeyStore
 {
     private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _events = new();
     // Rows archived by TryArchiveUnresolvedEvent, kept so TryRestoreArchivedEvent can put them back.
@@ -56,6 +56,9 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
     private readonly object _dashboardTokensLock = new();
     private DashboardTokenSettings? _dashboardTokenSettings;
     private readonly ConcurrentDictionary<string, DateTime> _dashboardTokenUsage = new(StringComparer.Ordinal);
+    private readonly object _integratorApiKeysLock = new();
+    private IntegratorApiKeySettings? _integratorApiKeySettings;
+    private readonly ConcurrentDictionary<string, DateTime> _integratorApiKeyUsage = new(StringComparer.Ordinal);
 
     private static (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -1037,6 +1040,43 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tokenId);
         _dashboardTokenUsage[tokenId] = usedAtUtc;
+        return Task.CompletedTask;
+    }
+
+    public virtual Task<IntegratorApiKeySettings> GetIntegratorApiKeySettings()
+    {
+        lock (_integratorApiKeysLock)
+        {
+            return Task.FromResult(_integratorApiKeySettings?.Clone() ?? new IntegratorApiKeySettings());
+        }
+    }
+
+    public virtual Task<bool> TrySetIntegratorApiKeySettings(IntegratorApiKeySettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The keys must carry their new revision.", nameof(settings));
+        lock (_integratorApiKeysLock)
+        {
+            if (!string.Equals(_integratorApiKeySettings?.Revision, expectedRevision, StringComparison.Ordinal))
+                return Task.FromResult(false);
+
+            var stored = settings.Clone();
+            stored.Id = IntegratorApiKeySettings.SingletonId;
+            _integratorApiKeySettings = stored;
+            return Task.FromResult(true);
+        }
+    }
+
+    public virtual Task<List<IntegratorApiKeyUsage>> GetIntegratorApiKeyUsage()
+        => Task.FromResult(_integratorApiKeyUsage
+            .Select(u => new IntegratorApiKeyUsage { KeyId = u.Key, LastUsedAtUtc = u.Value })
+            .ToList());
+
+    public virtual Task RecordIntegratorApiKeyUse(string keyId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyId);
+        _integratorApiKeyUsage[keyId] = usedAtUtc;
         return Task.CompletedTask;
     }
 

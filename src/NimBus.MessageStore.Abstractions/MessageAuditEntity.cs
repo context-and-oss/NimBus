@@ -217,4 +217,16 @@ public enum MessageAuditType
 
     /// <summary>A site Owner removed a revoked or expired Monitor dashboard token. Always recorded.</summary>
     DashboardTokenRemoved,
+
+    /// <summary>
+    /// A site Owner issued an integrator API key (Spec 045). The key id, name, role, endpoints,
+    /// PII flag and expiry are recorded as Data, never the key. Always recorded.
+    /// </summary>
+    IntegratorApiKeyCreated,
+
+    /// <summary>A site Owner revoked an integrator API key (Spec 045). Always recorded.</summary>
+    IntegratorApiKeyRevoked,
+
+    /// <summary>A site Owner removed a revoked or expired integrator API key (Spec 045). Always recorded.</summary>
+    IntegratorApiKeyRemoved,
 }

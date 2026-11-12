@@ -8,6 +8,7 @@ using NimBus.WebApp.Problems;
 using NimBus.WebApp.RateLimiting;
 using NimBus.WebApp.Versioning;
 using NimBus.WebApp.Cors;
+using NimBus.WebApp.Services.IntegratorApiKeys;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 namespace NimBus.WebApp;
@@ -120,6 +121,8 @@ public partial class Startup
             app.UseMiddleware<NimBus.Extensions.IntegrationIntelligence.IntegrationIntelligenceAuditMiddleware>();
 
         app.UseAuthentication();
+        // Spec 045: an integrator API key on an /api request, after the sign-in schemes ran.
+        app.UseNimBusIntegratorApiKeys();
         app.UseAuthorization();
 
         // After authorization: the token it hands the SPA is bound to the signed-in user (#296).

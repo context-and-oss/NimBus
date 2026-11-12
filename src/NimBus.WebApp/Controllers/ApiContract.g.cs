@@ -2672,6 +2672,128 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public interface IIntegratorKeysApiController
+    {
+
+        /// <summary>
+        /// List the integrator API keys
+        /// </summary>
+
+        /// <remarks>
+        /// Site Owner only. Every issued integrator API key with its role, endpoint scope, status and last use, never the secret, plus the endpoints a key can be scoped to and an antiforgery token for the write operations (Spec 045).
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<IntegratorKeyState>> GetAdminIntegratorKeysAsync();
+
+        /// <summary>
+        /// Issue an integrator API key
+        /// </summary>
+
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full key once; only its hash is stored. The key authenticates REST API calls in the X-NimBus-Api-Key header with the role (Reader or Contributor, never Owner), endpoint scope and PII access issued here.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<IntegratorKeyIssued>> PostAdminIntegratorKeysAsync(IntegratorKeyCreate body);
+
+        /// <summary>
+        /// Revoke an integrator API key
+        /// </summary>
+
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. The key stops working on this instance at once and on every other instance within 30 seconds (2 minutes while the store is unreachable). It stays listed until it is removed.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<IntegratorKeyState>> PostAdminIntegratorKeyRevokeAsync(string keyId);
+
+        /// <summary>
+        /// Remove a revoked or expired integrator API key
+        /// </summary>
+
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active key must be revoked first (400 StillActive).
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<IntegratorKeyState>> DeleteAdminIntegratorKeyAsync(string keyId);
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class IntegratorKeysApiController : Microsoft.AspNetCore.Mvc.Controller
+    {
+        private IIntegratorKeysApiController _implementation;
+
+        public IntegratorKeysApiController(IIntegratorKeysApiController implementation)
+        {
+            _implementation = implementation;
+        }
+
+        /// <summary>
+        /// List the integrator API keys
+        /// </summary>
+        /// <remarks>
+        /// Site Owner only. Every issued integrator API key with its role, endpoint scope, status and last use, never the secret, plus the endpoints a key can be scoped to and an antiforgery token for the write operations (Spec 045).
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/v1/admin/integrator-keys")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<IntegratorKeyState>> GetAdminIntegratorKeys()
+        {
+
+            return _implementation.GetAdminIntegratorKeysAsync();
+        }
+
+        /// <summary>
+        /// Issue an integrator API key
+        /// </summary>
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full key once; only its hash is stored. The key authenticates REST API calls in the X-NimBus-Api-Key header with the role (Reader or Contributor, never Owner), endpoint scope and PII access issued here.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/v1/admin/integrator-keys")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<IntegratorKeyIssued>> PostAdminIntegratorKeys([Microsoft.AspNetCore.Mvc.FromBody] IntegratorKeyCreate body)
+        {
+
+            return _implementation.PostAdminIntegratorKeysAsync(body);
+        }
+
+        /// <summary>
+        /// Revoke an integrator API key
+        /// </summary>
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. The key stops working on this instance at once and on every other instance within 30 seconds (2 minutes while the store is unreachable). It stays listed until it is removed.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/v1/admin/integrator-keys/{keyId}/revoke")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<IntegratorKeyState>> PostAdminIntegratorKeyRevoke(string keyId)
+        {
+
+            return _implementation.PostAdminIntegratorKeyRevokeAsync(keyId);
+        }
+
+        /// <summary>
+        /// Remove a revoked or expired integrator API key
+        /// </summary>
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active key must be revoked first (400 StillActive).
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpDelete, Microsoft.AspNetCore.Mvc.Route("api/v1/admin/integrator-keys/{keyId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<IntegratorKeyState>> DeleteAdminIntegratorKey(string keyId)
+        {
+
+            return _implementation.DeleteAdminIntegratorKeyAsync(keyId);
+        }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public interface IMessageApiController
     {
 
@@ -21360,6 +21482,551 @@ namespace NimBus.WebApp.ManagementApi
         }
     }
 
+    /// <summary>
+    /// The role an integrator API key grants. Owner is never available.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum IntegratorKeyRole
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reader")]
+        Reader = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"contributor")]
+        Contributor = 1,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum IntegratorKeyStatus
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"active")]
+        Active = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"revoked")]
+        Revoked = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"expired")]
+        Expired = 2,
+
+    }
+
+    /// <summary>
+    /// An issued integrator API key. Never carries the secret.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class IntegratorKeyInfo : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _keyId;
+        private string _prefix;
+        private string _name;
+        private IntegratorKeyRole _role;
+        private System.Collections.Generic.List<string> _endpoints;
+        private bool _canReadPii;
+        private IntegratorKeyStatus _status;
+        private System.DateTime _createdAtUtc;
+        private string _createdBy;
+        private System.DateTime? _expiresAtUtc;
+        private System.DateTime? _revokedAtUtc;
+        private string _revokedBy;
+        private System.DateTime? _lastUsedAtUtc;
+
+        [Newtonsoft.Json.JsonProperty("keyId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string KeyId    {
+            get { return _keyId; }
+            set
+            {
+                if (_keyId != value)
+                {
+                    _keyId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The non-secret start of the key, nbik_&lt;keyId&gt;, to recognise it.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("prefix", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Prefix    {
+            get { return _prefix; }
+            set
+            {
+                if (_prefix != value)
+                {
+                    _prefix = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("role", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public IntegratorKeyRole Role    {
+            get { return _role; }
+            set
+            {
+                if (_role != value)
+                {
+                    _role = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The endpoints the role applies to; null when it applies to every endpoint.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether the key may read raw event payloads.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("canReadPii", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool CanReadPii    {
+            get { return _canReadPii; }
+            set
+            {
+                if (_canReadPii != value)
+                {
+                    _canReadPii = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public IntegratorKeyStatus Status    {
+            get { return _status; }
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("createdAtUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime CreatedAtUtc    {
+            get { return _createdAtUtc; }
+            set
+            {
+                if (_createdAtUtc != value)
+                {
+                    _createdAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("createdBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CreatedBy    {
+            get { return _createdBy; }
+            set
+            {
+                if (_createdBy != value)
+                {
+                    _createdBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("expiresAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ExpiresAtUtc    {
+            get { return _expiresAtUtc; }
+            set
+            {
+                if (_expiresAtUtc != value)
+                {
+                    _expiresAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("revokedAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? RevokedAtUtc    {
+            get { return _revokedAtUtc; }
+            set
+            {
+                if (_revokedAtUtc != value)
+                {
+                    _revokedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("revokedBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string RevokedBy    {
+            get { return _revokedBy; }
+            set
+            {
+                if (_revokedBy != value)
+                {
+                    _revokedBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Recorded at most every 5 minutes per instance; null when never used.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("lastUsedAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastUsedAtUtc    {
+            get { return _lastUsedAtUtc; }
+            set
+            {
+                if (_lastUsedAtUtc != value)
+                {
+                    _lastUsedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static IntegratorKeyInfo FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<IntegratorKeyInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class IntegratorKeyState : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<IntegratorKeyInfo> _keys;
+        private System.Collections.Generic.List<string> _endpoints;
+        private string _csrfToken;
+
+        [Newtonsoft.Json.JsonProperty("keys", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<IntegratorKeyInfo> Keys    {
+            get { return _keys; }
+            set
+            {
+                if (_keys != value)
+                {
+                    _keys = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The endpoint ids a key can be scoped to.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Send as the X-NimBus-CSRF header on writes.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("csrfToken", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CsrfToken    {
+            get { return _csrfToken; }
+            set
+            {
+                if (_csrfToken != value)
+                {
+                    _csrfToken = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static IntegratorKeyState FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<IntegratorKeyState>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class IntegratorKeyCreate : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name;
+        private IntegratorKeyRole _role;
+        private System.Collections.Generic.List<string> _endpoints;
+        private bool _canReadPii;
+        private System.DateTime? _expiresAtUtc;
+
+        /// <summary>
+        /// A label, for example the system that uses the key. Required, up to 100 characters.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("role", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public IntegratorKeyRole Role    {
+            get { return _role; }
+            set
+            {
+                if (_role != value)
+                {
+                    _role = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The endpoints the role applies to. Omit or null for every endpoint; a list must name at least one endpoint the platform defines.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether the key may read raw event payloads. Default false.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("canReadPii", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool CanReadPii    {
+            get { return _canReadPii; }
+            set
+            {
+                if (_canReadPii != value)
+                {
+                    _canReadPii = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When the key stops working; null for no expiry. Must be in the future.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("expiresAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ExpiresAtUtc    {
+            get { return _expiresAtUtc; }
+            set
+            {
+                if (_expiresAtUtc != value)
+                {
+                    _expiresAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static IntegratorKeyCreate FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<IntegratorKeyCreate>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class IntegratorKeyIssued : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _key;
+        private IntegratorKeyInfo _issued;
+        private IntegratorKeyState _state;
+
+        /// <summary>
+        /// The full key. Shown once; it cannot be retrieved again.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("key", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Key    {
+            get { return _key; }
+            set
+            {
+                if (_key != value)
+                {
+                    _key = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("issued", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public IntegratorKeyInfo Issued    {
+            get { return _issued; }
+            set
+            {
+                if (_issued != value)
+                {
+                    _issued = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("state", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public IntegratorKeyState State    {
+            get { return _state; }
+            set
+            {
+                if (_state != value)
+                {
+                    _state = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static IntegratorKeyIssued FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<IntegratorKeyIssued>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class MonitorFeedStatus : System.ComponentModel.INotifyPropertyChanged
     {
@@ -24844,6 +25511,15 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRemoved")]
         DashboardTokenRemoved = 44,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"integratorApiKeyCreated")]
+        IntegratorApiKeyCreated = 45,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"integratorApiKeyRevoked")]
+        IntegratorApiKeyRevoked = 46,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"integratorApiKeyRemoved")]
+        IntegratorApiKeyRemoved = 47,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -25198,6 +25874,15 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRemoved")]
         DashboardTokenRemoved = 44,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"integratorApiKeyCreated")]
+        IntegratorApiKeyCreated = 45,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"integratorApiKeyRevoked")]
+        IntegratorApiKeyRevoked = 46,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"integratorApiKeyRemoved")]
+        IntegratorApiKeyRemoved = 47,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -25440,6 +26125,15 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRemoved")]
         DashboardTokenRemoved = 44,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"integratorApiKeyCreated")]
+        IntegratorApiKeyCreated = 45,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"integratorApiKeyRevoked")]
+        IntegratorApiKeyRevoked = 46,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"integratorApiKeyRemoved")]
+        IntegratorApiKeyRemoved = 47,
 
     }
 

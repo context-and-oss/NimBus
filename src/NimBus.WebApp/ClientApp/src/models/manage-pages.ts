@@ -79,6 +79,17 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     ],
   },
   {
+    id: "integrator-keys",
+    group: "API access",
+    name: "Integrator keys",
+    description:
+      "Issue and revoke the keys scripts and partner systems use to call the REST API, each with a role and endpoint scope.",
+    applies: "Applies to every instance within 30 s",
+    tabs: [
+      { id: "keys", label: "Keys", keywords: "integrator api key rest partner script automation reader contributor endpoint scope pii revoke" },
+    ],
+  },
+  {
     id: "heartbeat",
     group: "Monitoring",
     name: "Heartbeat probing",

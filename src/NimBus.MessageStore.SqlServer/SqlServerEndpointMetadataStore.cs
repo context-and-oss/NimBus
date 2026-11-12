@@ -511,6 +511,78 @@ WHEN NOT MATCHED THEN INSERT (TokenId, LastUsedAtUtc) VALUES (@TokenId, @UsedAtU
         await conn.ExecuteAsync(sql, new { TokenId = tokenId, UsedAtUtc = usedAtUtc }, commandTimeout: _context.CommandTimeout);
     }
 
+    public async Task<IntegratorApiKeySettings> GetIntegratorApiKeySettings()
+    {
+        await using var conn = await OpenAsync();
+        var json = await conn.QuerySingleOrDefaultAsync<string?>(
+            $"SELECT SettingsJson FROM {T("IntegratorApiKeys")} WHERE Id = @Id",
+            new { Id = IntegratorApiKeySettings.SingletonId },
+            commandTimeout: _context.CommandTimeout);
+
+        return string.IsNullOrEmpty(json)
+            ? new IntegratorApiKeySettings()
+            : JsonConvert.DeserializeObject<IntegratorApiKeySettings>(json) ?? new IntegratorApiKeySettings();
+    }
+
+    public async Task<bool> TrySetIntegratorApiKeySettings(IntegratorApiKeySettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The keys must carry their new revision.", nameof(settings));
+        settings.Id = IntegratorApiKeySettings.SingletonId;
+
+        // Same compare-and-set shape as TrySetAgentApiKeySettings.
+        var sql = expectedRevision is null
+            ? $@"
+INSERT INTO {T("IntegratorApiKeys")} (Id, Revision, SettingsJson)
+SELECT @Id, @Revision, @Json
+WHERE NOT EXISTS (SELECT 1 FROM {T("IntegratorApiKeys")} WITH (UPDLOCK, HOLDLOCK) WHERE Id = @Id);"
+            : $@"
+UPDATE {T("IntegratorApiKeys")}
+SET Revision = @Revision, SettingsJson = @Json, UpdatedAtUtc = SYSUTCDATETIME()
+WHERE Id = @Id AND Revision = @Expected;";
+
+        await using var conn = await OpenAsync();
+        try
+        {
+            var rows = await conn.ExecuteAsync(sql, new
+            {
+                settings.Id,
+                settings.Revision,
+                Json = JsonConvert.SerializeObject(settings),
+                Expected = expectedRevision,
+            }, commandTimeout: _context.CommandTimeout);
+            return rows == 1;
+        }
+        catch (SqlException e) when (e.Number is 2627 or 2601)
+        {
+            // A concurrent first save won the primary key.
+            return false;
+        }
+    }
+
+    public async Task<List<IntegratorApiKeyUsage>> GetIntegratorApiKeyUsage()
+    {
+        await using var conn = await OpenAsync();
+        var rows = await conn.QueryAsync<IntegratorApiKeyUsage>(
+            $"SELECT KeyId, LastUsedAtUtc FROM {T("IntegratorApiKeyUsage")}",
+            commandTimeout: _context.CommandTimeout);
+        return rows.ToList();
+    }
+
+    public async Task RecordIntegratorApiKeyUse(string keyId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyId);
+        var sql = $@"
+MERGE {T("IntegratorApiKeyUsage")} WITH (HOLDLOCK) AS target
+USING (SELECT @KeyId AS KeyId) AS source
+ON target.KeyId = source.KeyId
+WHEN MATCHED THEN UPDATE SET LastUsedAtUtc = @UsedAtUtc
+WHEN NOT MATCHED THEN INSERT (KeyId, LastUsedAtUtc) VALUES (@KeyId, @UsedAtUtc);";
+        await using var conn = await OpenAsync();
+        await conn.ExecuteAsync(sql, new { KeyId = keyId, UsedAtUtc = usedAtUtc }, commandTimeout: _context.CommandTimeout);
+    }
+
     public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         // The rows-affected check is what makes at most one scaled-out instance

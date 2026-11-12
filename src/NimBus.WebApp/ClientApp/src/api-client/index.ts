@@ -4117,6 +4117,282 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * List the integrator API keys
+     * @return OK
+     */
+    getAdminIntegratorKeys(): Promise<IntegratorKeyState> {
+        let url_ = this.baseUrl + "/api/v1/admin/integrator-keys";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminIntegratorKeys(_response);
+        });
+    }
+
+    protected processGetAdminIntegratorKeys(response: Response): Promise<IntegratorKeyState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = IntegratorKeyState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store integrator API keys", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<IntegratorKeyState>(null as any);
+    }
+
+    /**
+     * Issue an integrator API key
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminIntegratorKeys(body?: IntegratorKeyCreate | undefined): Promise<IntegratorKeyIssued> {
+        let url_ = this.baseUrl + "/api/v1/admin/integrator-keys";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminIntegratorKeys(_response);
+        });
+    }
+
+    protected processPostAdminIntegratorKeys(response: Response): Promise<IntegratorKeyIssued> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = IntegratorKeyIssued.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store integrator API keys", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<IntegratorKeyIssued>(null as any);
+    }
+
+    /**
+     * Revoke an integrator API key
+     * @return OK
+     */
+    postAdminIntegratorKeyRevoke(keyId: string): Promise<IntegratorKeyState> {
+        let url_ = this.baseUrl + "/api/v1/admin/integrator-keys/{keyId}/revoke";
+        if (keyId === undefined || keyId === null)
+            throw new globalThis.Error("The parameter 'keyId' must be defined.");
+        url_ = url_.replace("{keyId}", encodeURIComponent("" + keyId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminIntegratorKeyRevoke(_response);
+        });
+    }
+
+    protected processPostAdminIntegratorKeyRevoke(response: Response): Promise<IntegratorKeyState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = IntegratorKeyState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store integrator API keys", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<IntegratorKeyState>(null as any);
+    }
+
+    /**
+     * Remove a revoked or expired integrator API key
+     * @return OK
+     */
+    deleteAdminIntegratorKey(keyId: string): Promise<IntegratorKeyState> {
+        let url_ = this.baseUrl + "/api/v1/admin/integrator-keys/{keyId}";
+        if (keyId === undefined || keyId === null)
+            throw new globalThis.Error("The parameter 'keyId' must be defined.");
+        url_ = url_.replace("{keyId}", encodeURIComponent("" + keyId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteAdminIntegratorKey(_response);
+        });
+    }
+
+    protected processDeleteAdminIntegratorKey(response: Response): Promise<IntegratorKeyState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = IntegratorKeyState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store integrator API keys", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<IntegratorKeyState>(null as any);
+    }
+
+    /**
      * Send a heartbeat to every monitored endpoint now
      * @return OK
      */
@@ -21473,6 +21749,374 @@ export interface IDashboardTokenIssued {
     [key: string]: any;
 }
 
+/** The role an integrator API key grants. Owner is never available. */
+export enum IntegratorKeyRole {
+    Reader = "reader",
+    Contributor = "contributor",
+}
+
+export enum IntegratorKeyStatus {
+    Active = "active",
+    Revoked = "revoked",
+    Expired = "expired",
+}
+
+/** An issued integrator API key. Never carries the secret. */
+export class IntegratorKeyInfo implements IIntegratorKeyInfo {
+    keyId?: string;
+    /** The non-secret start of the key, nbik_<keyId>, to recognise it. */
+    prefix?: string;
+    name?: string;
+    role?: IntegratorKeyRole;
+    /** The endpoints the role applies to; null when it applies to every endpoint. */
+    endpoints?: string[] | undefined;
+    /** Whether the key may read raw event payloads. */
+    canReadPii?: boolean;
+    status?: IntegratorKeyStatus;
+    createdAtUtc?: moment.Moment;
+    createdBy?: string | undefined;
+    expiresAtUtc?: moment.Moment | undefined;
+    revokedAtUtc?: moment.Moment | undefined;
+    revokedBy?: string | undefined;
+    /** Recorded at most every 5 minutes per instance; null when never used. */
+    lastUsedAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IIntegratorKeyInfo) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.keyId = _data["keyId"];
+            this.prefix = _data["prefix"];
+            this.name = _data["name"];
+            this.role = _data["role"];
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+            this.canReadPii = _data["canReadPii"];
+            this.status = _data["status"];
+            this.createdAtUtc = _data["createdAtUtc"] ? moment(_data["createdAtUtc"].toString()) : undefined as any;
+            this.createdBy = _data["createdBy"];
+            this.expiresAtUtc = _data["expiresAtUtc"] ? moment(_data["expiresAtUtc"].toString()) : undefined as any;
+            this.revokedAtUtc = _data["revokedAtUtc"] ? moment(_data["revokedAtUtc"].toString()) : undefined as any;
+            this.revokedBy = _data["revokedBy"];
+            this.lastUsedAtUtc = _data["lastUsedAtUtc"] ? moment(_data["lastUsedAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): IntegratorKeyInfo {
+        data = typeof data === 'object' ? data : {};
+        let result = new IntegratorKeyInfo();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["keyId"] = this.keyId;
+        data["prefix"] = this.prefix;
+        data["name"] = this.name;
+        data["role"] = this.role;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        data["canReadPii"] = this.canReadPii;
+        data["status"] = this.status;
+        data["createdAtUtc"] = this.createdAtUtc ? this.createdAtUtc.toISOString() : undefined as any;
+        data["createdBy"] = this.createdBy;
+        data["expiresAtUtc"] = this.expiresAtUtc ? this.expiresAtUtc.toISOString() : undefined as any;
+        data["revokedAtUtc"] = this.revokedAtUtc ? this.revokedAtUtc.toISOString() : undefined as any;
+        data["revokedBy"] = this.revokedBy;
+        data["lastUsedAtUtc"] = this.lastUsedAtUtc ? this.lastUsedAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): IntegratorKeyInfo {
+        const json = this.toJSON();
+        let result = new IntegratorKeyInfo();
+        result.init(json);
+        return result;
+    }
+}
+
+/** An issued integrator API key. Never carries the secret. */
+export interface IIntegratorKeyInfo {
+    keyId?: string;
+    /** The non-secret start of the key, nbik_<keyId>, to recognise it. */
+    prefix?: string;
+    name?: string;
+    role?: IntegratorKeyRole;
+    /** The endpoints the role applies to; null when it applies to every endpoint. */
+    endpoints?: string[] | undefined;
+    /** Whether the key may read raw event payloads. */
+    canReadPii?: boolean;
+    status?: IntegratorKeyStatus;
+    createdAtUtc?: moment.Moment;
+    createdBy?: string | undefined;
+    expiresAtUtc?: moment.Moment | undefined;
+    revokedAtUtc?: moment.Moment | undefined;
+    revokedBy?: string | undefined;
+    /** Recorded at most every 5 minutes per instance; null when never used. */
+    lastUsedAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class IntegratorKeyState implements IIntegratorKeyState {
+    keys?: IntegratorKeyInfo[];
+    /** The endpoint ids a key can be scoped to. */
+    endpoints?: string[];
+    /** Send as the X-NimBus-CSRF header on writes. */
+    csrfToken?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IIntegratorKeyState) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["keys"])) {
+                this.keys = [] as any;
+                for (let item of _data["keys"])
+                    this.keys!.push(IntegratorKeyInfo.fromJS(item));
+            }
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+            this.csrfToken = _data["csrfToken"];
+        }
+    }
+
+    static fromJS(data: any): IntegratorKeyState {
+        data = typeof data === 'object' ? data : {};
+        let result = new IntegratorKeyState();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.keys)) {
+            data["keys"] = [];
+            for (let item of this.keys)
+                data["keys"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        data["csrfToken"] = this.csrfToken;
+        return data;
+    }
+
+    clone(): IntegratorKeyState {
+        const json = this.toJSON();
+        let result = new IntegratorKeyState();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IIntegratorKeyState {
+    keys?: IntegratorKeyInfo[];
+    /** The endpoint ids a key can be scoped to. */
+    endpoints?: string[];
+    /** Send as the X-NimBus-CSRF header on writes. */
+    csrfToken?: string;
+
+    [key: string]: any;
+}
+
+export class IntegratorKeyCreate implements IIntegratorKeyCreate {
+    /** A label, for example the system that uses the key. Required, up to 100 characters. */
+    name?: string;
+    role?: IntegratorKeyRole;
+    /** The endpoints the role applies to. Omit or null for every endpoint; a list must name at least one endpoint the platform defines. */
+    endpoints?: string[] | undefined;
+    /** Whether the key may read raw event payloads. Default false. */
+    canReadPii?: boolean;
+    /** When the key stops working; null for no expiry. Must be in the future. */
+    expiresAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IIntegratorKeyCreate) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+            this.role = _data["role"];
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+            this.canReadPii = _data["canReadPii"];
+            this.expiresAtUtc = _data["expiresAtUtc"] ? moment(_data["expiresAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): IntegratorKeyCreate {
+        data = typeof data === 'object' ? data : {};
+        let result = new IntegratorKeyCreate();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        data["role"] = this.role;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        data["canReadPii"] = this.canReadPii;
+        data["expiresAtUtc"] = this.expiresAtUtc ? this.expiresAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): IntegratorKeyCreate {
+        const json = this.toJSON();
+        let result = new IntegratorKeyCreate();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IIntegratorKeyCreate {
+    /** A label, for example the system that uses the key. Required, up to 100 characters. */
+    name?: string;
+    role?: IntegratorKeyRole;
+    /** The endpoints the role applies to. Omit or null for every endpoint; a list must name at least one endpoint the platform defines. */
+    endpoints?: string[] | undefined;
+    /** Whether the key may read raw event payloads. Default false. */
+    canReadPii?: boolean;
+    /** When the key stops working; null for no expiry. Must be in the future. */
+    expiresAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class IntegratorKeyIssued implements IIntegratorKeyIssued {
+    /** The full key. Shown once; it cannot be retrieved again. */
+    key?: string;
+    issued?: IntegratorKeyInfo;
+    state?: IntegratorKeyState;
+
+    [key: string]: any;
+
+    constructor(data?: IIntegratorKeyIssued) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.key = _data["key"];
+            this.issued = _data["issued"] ? IntegratorKeyInfo.fromJS(_data["issued"]) : undefined as any;
+            this.state = _data["state"] ? IntegratorKeyState.fromJS(_data["state"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): IntegratorKeyIssued {
+        data = typeof data === 'object' ? data : {};
+        let result = new IntegratorKeyIssued();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["key"] = this.key;
+        data["issued"] = this.issued ? this.issued.toJSON() : undefined as any;
+        data["state"] = this.state ? this.state.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): IntegratorKeyIssued {
+        const json = this.toJSON();
+        let result = new IntegratorKeyIssued();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IIntegratorKeyIssued {
+    /** The full key. Shown once; it cannot be retrieved again. */
+    key?: string;
+    issued?: IntegratorKeyInfo;
+    state?: IntegratorKeyState;
+
+    [key: string]: any;
+}
+
 export class MonitorFeedStatus implements IMonitorFeedStatus {
     environment?: string | undefined;
     platformName?: string | undefined;
@@ -23938,6 +24582,9 @@ export enum MessageAuditAuditType {
     DashboardTokenCreated = "dashboardTokenCreated",
     DashboardTokenRevoked = "dashboardTokenRevoked",
     DashboardTokenRemoved = "dashboardTokenRemoved",
+    IntegratorApiKeyCreated = "integratorApiKeyCreated",
+    IntegratorApiKeyRevoked = "integratorApiKeyRevoked",
+    IntegratorApiKeyRemoved = "integratorApiKeyRemoved",
 }
 
 export class MessageContent implements IMessageContent {
@@ -24102,6 +24749,9 @@ export enum AuditSearchFilterAuditType {
     DashboardTokenCreated = "dashboardTokenCreated",
     DashboardTokenRevoked = "dashboardTokenRevoked",
     DashboardTokenRemoved = "dashboardTokenRemoved",
+    IntegratorApiKeyCreated = "integratorApiKeyCreated",
+    IntegratorApiKeyRevoked = "integratorApiKeyRevoked",
+    IntegratorApiKeyRemoved = "integratorApiKeyRemoved",
 }
 
 export enum StalePendingRowVerdict {
@@ -24189,6 +24839,9 @@ export enum AuditEntryAuditType {
     DashboardTokenCreated = "dashboardTokenCreated",
     DashboardTokenRevoked = "dashboardTokenRevoked",
     DashboardTokenRemoved = "dashboardTokenRemoved",
+    IntegratorApiKeyCreated = "integratorApiKeyCreated",
+    IntegratorApiKeyRevoked = "integratorApiKeyRevoked",
+    IntegratorApiKeyRemoved = "integratorApiKeyRemoved",
 }
 
 export enum AgentSettleRequestOutcome {

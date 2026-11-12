@@ -156,6 +156,8 @@ public partial class Startup
         services.AddTransient<IAgentKeysApiController, AgentKeysImplementation>();
         // Settings → Dashboard tokens; DashboardTokenService comes with AddNimBusDashboardTokens.
         services.AddTransient<IDashboardTokensApiController, DashboardTokensImplementation>();
+        // Settings → Integrator keys (Spec 045); IntegratorApiKeyService comes with AddNimBusIntegratorApiKeys.
+        services.AddTransient<IIntegratorKeysApiController, IntegratorKeysImplementation>();
         services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();
         services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
 

@@ -51,6 +51,13 @@ public sealed class CosmosDbDashboardTokenStoreTests : DashboardTokenStoreConfor
 }
 
 [TestClass]
+public sealed class CosmosDbIntegratorApiKeyStoreTests : IntegratorApiKeyStoreConformanceTests
+{
+    protected override IIntegratorApiKeyStore CreateStore()
+        => (IIntegratorApiKeyStore)CosmosDbStoreTestHarness.CreateStore();
+}
+
+[TestClass]
 public sealed class CosmosDbEventSchemaStoreConformanceTests : EventSchemaStoreConformanceTests
 {
     protected override IEventSchemaStore CreateStore()

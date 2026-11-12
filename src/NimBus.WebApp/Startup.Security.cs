@@ -8,6 +8,7 @@ using Microsoft.Identity.Web.UI;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.Services.AgentApiKeys;
 using NimBus.WebApp.Services.DashboardTokens;
+using NimBus.WebApp.Services.IntegratorApiKeys;
 using NimBus.Extensions.Identity;
 
 namespace NimBus.WebApp;
@@ -182,6 +183,11 @@ public partial class Startup
         // A wall display reads the Monitor feed with a dashboard token in every mode. The token
         // scheme is never a default either, so a token admits nothing but /api/monitor/feed/*.
         services.AddNimBusDashboardTokens();
+
+        // Spec 045: integrator API keys authenticate on the REST API in every sign-in mode, with
+        // the role and endpoint scope their Owner issued. The scheme is never a default; the
+        // pipeline adds a key's identity on /api paths (UseNimBusIntegratorApiKeys).
+        services.AddNimBusIntegratorApiKeys();
 
         // The NSwag-generated controllers cannot carry per-action attributes,
         // so the stats endpoint's anonymous exemption is applied via an

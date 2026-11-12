@@ -25,7 +25,7 @@ public static class ApiCorsExtensions
     /// <summary>Request headers a cross-origin caller may send.</summary>
     public static readonly IReadOnlyList<string> AllowedHeaders =
     [
-        "Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-NimBus-Agent-Key", "X-Agent-Id",
+        "Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-NimBus-Api-Key", "X-NimBus-Agent-Key", "X-Agent-Id",
     ];
 
     /// <summary>Response headers a cross-origin caller may read.</summary>

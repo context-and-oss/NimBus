@@ -100,6 +100,21 @@ public sealed class SqlServerDashboardTokenStoreTests : DashboardTokenStoreConfo
 }
 
 [TestClass]
+public sealed class SqlServerIntegratorApiKeyStoreTests : IntegratorApiKeyStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerIntegratorApiKeyStoreTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerIntegratorApiKeyStoreTests));
+
+    protected override IIntegratorApiKeyStore CreateStore()
+        => (IIntegratorApiKeyStore)SqlServerStoreTestHarness.CreateStore(typeof(SqlServerIntegratorApiKeyStoreTests));
+}
+
+[TestClass]
 public sealed class SqlServerEventSchemaStoreConformanceTests : EventSchemaStoreConformanceTests
 {
     [ClassInitialize]

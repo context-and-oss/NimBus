@@ -45,6 +45,12 @@ public sealed class InMemoryDashboardTokenStoreTests : DashboardTokenStoreConfor
 }
 
 [TestClass]
+public sealed class InMemoryIntegratorApiKeyStoreTests : IntegratorApiKeyStoreConformanceTests
+{
+    protected override IIntegratorApiKeyStore CreateStore() => new InMemoryMessageStore();
+}
+
+[TestClass]
 public sealed class InMemoryEventSchemaStoreConformanceTests : EventSchemaStoreConformanceTests
 {
     protected override IEventSchemaStore CreateStore() => new InMemoryMessageStore();

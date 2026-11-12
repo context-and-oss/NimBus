@@ -520,6 +520,96 @@ internal sealed partial class CosmosDbEndpointMetadataStore : IEndpointMetadataS
         public DateTime LastUsedAtUtc { get; set; }
     }
 
+    public async Task<IntegratorApiKeySettings> GetIntegratorApiKeySettings()
+    {
+        var container = await _getSettingsContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<IntegratorApiKeySettings>(
+                IntegratorApiKeySettings.SingletonId,
+                new PartitionKey(IntegratorApiKeySettings.SingletonId));
+            return response.Resource ?? new IntegratorApiKeySettings();
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new IntegratorApiKeySettings();
+        }
+    }
+
+    public async Task<bool> TrySetIntegratorApiKeySettings(IntegratorApiKeySettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The keys must carry their new revision.", nameof(settings));
+        settings.Id = IntegratorApiKeySettings.SingletonId;
+        var partitionKey = new PartitionKey(IntegratorApiKeySettings.SingletonId);
+
+        // Same compare-and-set shape as TrySetAgentApiKeySettings.
+        var container = await _getSettingsContainer();
+        try
+        {
+            if (expectedRevision is null)
+            {
+                await container.CreateItemAsync(settings, partitionKey);
+                return true;
+            }
+
+            var current = await container.ReadItemAsync<IntegratorApiKeySettings>(IntegratorApiKeySettings.SingletonId, partitionKey);
+            if (!string.Equals(current.Resource?.Revision, expectedRevision, StringComparison.Ordinal))
+                return false;
+
+            await container.UpsertItemAsync(settings, partitionKey, new ItemRequestOptions { IfMatchEtag = current.ETag });
+            return true;
+        }
+        catch (CosmosException e) when (e.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
+    public async Task<List<IntegratorApiKeyUsage>> GetIntegratorApiKeyUsage()
+    {
+        var container = await _getSettingsContainer();
+        var query = new QueryDefinition("SELECT * FROM c WHERE STARTSWITH(c.id, @prefix)")
+            .WithParameter("@prefix", IntegratorApiKeyUsageDocument.IdPrefix);
+        var usage = new List<IntegratorApiKeyUsage>();
+        using var iterator = container.GetItemQueryIterator<IntegratorApiKeyUsageDocument>(query);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var document in await iterator.ReadNextAsync())
+            {
+                usage.Add(new IntegratorApiKeyUsage { KeyId = document.KeyId, LastUsedAtUtc = document.LastUsedAtUtc });
+            }
+        }
+        return usage;
+    }
+
+    public async Task RecordIntegratorApiKeyUse(string keyId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyId);
+        // One small document per key in the settings container (partitioned on /id).
+        var document = new IntegratorApiKeyUsageDocument
+        {
+            Id = IntegratorApiKeyUsageDocument.IdPrefix + keyId,
+            KeyId = keyId,
+            LastUsedAtUtc = usedAtUtc,
+        };
+        var container = await _getSettingsContainer();
+        await container.UpsertItemAsync(document, new PartitionKey(document.Id));
+    }
+
+    private sealed class IntegratorApiKeyUsageDocument
+    {
+        public const string IdPrefix = "IntegratorApiKeyUsage-";
+
+        [Newtonsoft.Json.JsonProperty("id")]
+        public string Id { get; set; } = string.Empty;
+
+        public string KeyId { get; set; } = string.Empty;
+
+        public DateTime LastUsedAtUtc { get; set; }
+    }
+
     public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         // The ETag precondition is what makes at most one scaled-out instance send

@@ -61,6 +61,45 @@ builder.Services.AddNimBusAgent<MyHandler, MyEvent>(o =>
 
 The local Aspire AppHost's development sign-in bypass admits agents without a key.
 
+## Integrator API keys
+
+Scripts, CI jobs and partner systems call the REST API (`/api/v1/*`) without a person signed in and
+without an Entra ID app registration. A site Owner issues each caller its own key in
+**Settings → Integrator keys**, or through the admin API below. The design is
+[Spec 045](spec/045-integrator-api-keys/spec.md).
+
+| Request | Does |
+|---|---|
+| `GET /api/v1/admin/integrator-keys` | Lists the keys, without their secrets, the endpoints a key can be scoped to, and the `csrfToken` that the requests below must send as the `X-NimBus-CSRF` header |
+| `POST /api/v1/admin/integrator-keys` | Issues a key. Body: `name` (required), `role` (`reader` or `contributor`), optional `endpoints`, `canReadPii` and `expiresAtUtc`. The response's `key` is the full key |
+| `POST /api/v1/admin/integrator-keys/{keyId}/revoke` | Revokes a key |
+| `DELETE /api/v1/admin/integrator-keys/{keyId}` | Removes a revoked or expired key |
+
+```bash
+curl -H "X-NimBus-Api-Key: $NIMBUS_API_KEY" https://nimbus.example.com/api/v1/endpoint/status/count
+```
+
+- **A role and a scope, never Owner.** A key is a Reader (reads endpoints, events, messages and
+  audits) or a Contributor (also resubmits, skips and settles). With `endpoints` listed, the role
+  applies to those endpoints only; without, to every endpoint, including ones added later.
+  `canReadPii` grants payload access. Settings and everything else under `/api/v1/admin/*` need
+  site Owner, so they stay with signed-in people.
+- **Exactly what was issued.** The key's record decides its access: no ACL entry, admin group,
+  `BypassEndpointAuthorization` or `GrantPiiReaderInDevelopment` widens it. A request that sends a
+  key and also carries a sign-in is evaluated as the key, and a refused key answers 401 even then.
+- **Works in every sign-in mode**, Identity-only included. The key travels in the
+  `X-NimBus-Api-Key` header to a scheme of its own, `IntegratorApiKey`, which is never a default and
+  runs only on `/api/*`. The agent API and the Monitor feed refuse it (they have agent keys and
+  dashboard tokens), and so do the SignalR hub and `/mcp`.
+- **Shown once, stored hashed.** The full key (`nbik_<keyId>_<secret>`) appears once, when it is
+  issued. NimBus stores only a SHA-256 of the secret. Issuing, revoking and removing are
+  Owner-only and always audited, with the key id, role and scope but never the key. A key's own
+  actions are audited as `integrator:<keyId>`.
+- **Revocation takes effect within 30 seconds** on every instance, at once on the instance that
+  saved it, and before any change a key makes (the fresh role check re-reads the keys). A key can
+  also carry an expiry. "Last used" is updated at most every 5 minutes per instance.
+- **Rate limits** count per key: every key has its own [global budget](rate-limiting.md).
+
 ## Dashboard tokens
 
 A wall display shows the Monitor without a person signed in. A site Owner issues each wall its own

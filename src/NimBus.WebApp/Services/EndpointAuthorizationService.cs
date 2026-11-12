@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using NimBus.MessageStore.States;
+using NimBus.WebApp.Services.IntegratorApiKeys;
 
 namespace NimBus.WebApp.Services;
 
@@ -36,6 +37,8 @@ public partial class EndpointAuthorizationService : IEndpointAuthorizationServic
     private readonly ILogger<EndpointAuthorizationService> _logger;
     private readonly IConfiguration _configuration;
     private readonly IAccessControlSnapshotProvider _snapshotProvider;
+    private readonly IIntegratorApiKeyProvider? _integratorKeys;
+    private readonly TimeProvider _time;
 
     // Per-request memo (the service is scoped). Assignment races are benign —
     // both tasks resolve to the same answer for the same principal.
@@ -46,13 +49,17 @@ public partial class EndpointAuthorizationService : IEndpointAuthorizationServic
         IPlatform platform,
         ILogger<EndpointAuthorizationService> logger,
         IConfiguration configuration,
-        IAccessControlSnapshotProvider snapshotProvider)
+        IAccessControlSnapshotProvider snapshotProvider,
+        IIntegratorApiKeyProvider? integratorKeys = null,
+        TimeProvider? time = null)
     {
         _httpContextAccessor = httpContextAccessor;
         _platform = platform;
         _logger = logger;
         _configuration = configuration;
         _snapshotProvider = snapshotProvider;
+        _integratorKeys = integratorKeys;
+        _time = time ?? TimeProvider.System;
     }
 
     /// <inheritdoc/>
@@ -74,7 +81,7 @@ public partial class EndpointAuthorizationService : IEndpointAuthorizationServic
         // fails, an invalidated generation resolves to the empty snapshot, so store grants fail
         // closed. The per-request memo is bypassed for the same reason.
         _snapshotProvider.Invalidate();
-        return Satisfies(await ResolveAsync(), required, endpointId);
+        return Satisfies(await ResolveAsync(fresh: true), required, endpointId);
     }
 
     private bool Satisfies(CurrentUserAccess access, AccessRole required, string? endpointId)
@@ -100,7 +107,7 @@ public partial class EndpointAuthorizationService : IEndpointAuthorizationServic
     /// <inheritdoc/>
     public Task<CurrentUserAccess> GetCurrentUserAccessAsync() => _resolved ??= ResolveAsync();
 
-    private async Task<CurrentUserAccess> ResolveAsync()
+    private async Task<CurrentUserAccess> ResolveAsync(bool fresh = false)
     {
         var user = _httpContextAccessor.HttpContext?.User;
         if (user?.Identity?.IsAuthenticated != true)
@@ -108,6 +115,14 @@ public partial class EndpointAuthorizationService : IEndpointAuthorizationServic
             LogAuthorizationCheckFailedNoAuthenticatedUser(_logger);
             return new CurrentUserAccess();
         }
+
+        // Spec 045: a request that presents an integrator API key is evaluated as the key alone,
+        // even when it also carries a sign-in. The key's record decides; no claim, ACL, compat
+        // grant or development flag can widen it.
+        var keyIdentity = user.Identities.FirstOrDefault(i =>
+            i.IsAuthenticated && string.Equals(i.AuthenticationType, IntegratorApiKeyDefaults.SchemeName, StringComparison.Ordinal));
+        if (keyIdentity is not null)
+            return await ResolveIntegratorKeyAsync(keyIdentity, fresh);
 
         var emails = ResolveEmails(user);
         var objectId = user.FindFirst(OidClaimType)?.Value ?? user.FindFirst(OidLongClaimType)?.Value;
@@ -159,6 +174,38 @@ public partial class EndpointAuthorizationService : IEndpointAuthorizationServic
             IsPiiReader = isPiiReader,
             EndpointRoles = endpointRoles,
         };
+    }
+
+    private async Task<CurrentUserAccess> ResolveIntegratorKeyAsync(ClaimsIdentity identity, bool fresh)
+    {
+        var keyId = identity.FindFirst(IntegratorApiKeyDefaults.KeyIdClaim)?.Value;
+        var settings = _integratorKeys is null || keyId is null
+            ? null
+            : fresh ? await _integratorKeys.GetFreshAsync() : await _integratorKeys.GetAsync();
+        var key = settings?.Keys.FirstOrDefault(k => string.Equals(k.KeyId, keyId, StringComparison.Ordinal));
+
+        // Revoked or expired since the request authenticated, or the store is unreadable: no access.
+        if (key is null
+            || key.RevokedAtUtc is not null
+            || (key.ExpiresAtUtc is { } expires && _time.GetUtcNow().UtcDateTime >= expires))
+        {
+            return new CurrentUserAccess();
+        }
+
+        var role = key.Role switch
+        {
+            IntegratorApiKeyRole.Contributor => AccessRole.Contributor,
+            IntegratorApiKeyRole.Reader => AccessRole.Reader,
+            _ => AccessRole.None,
+        };
+
+        if (key.Endpoints is null)
+            return new CurrentUserAccess { SiteRole = role, IsPiiReader = key.CanReadPii };
+
+        var endpointRoles = new Dictionary<string, AccessRole>(StringComparer.OrdinalIgnoreCase);
+        foreach (var endpointId in key.Endpoints)
+            endpointRoles[endpointId] = role;
+        return new CurrentUserAccess { SiteRole = AccessRole.None, IsPiiReader = key.CanReadPii, EndpointRoles = endpointRoles };
     }
 
     private AccessRole ResolveCompatSiteRole(ClaimsPrincipal user)

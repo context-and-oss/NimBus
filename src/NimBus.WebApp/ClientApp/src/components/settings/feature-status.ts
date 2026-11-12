@@ -6,6 +6,7 @@ import {
 } from "components/admin/mcp-access-model";
 import { activeKeyCount, type AgentKeysState } from "components/admin/agent-keys-model";
 import { activeTokenCount, type DashboardTokensState } from "components/admin/dashboard-tokens-model";
+import { activeKeyCount as activeIntegratorKeyCount, type IntegratorKeysState } from "components/admin/integrator-keys-model";
 
 // Status, summary, call to action and quick action for each row of the Settings list
 // (Spec 038 §7). Pure: the data comes from use-settings-status.
@@ -58,6 +59,7 @@ export interface SettingsSnapshot {
   heartbeat?: { settings: api.HeartbeatSettings; overview: api.HeartbeatOverviewRow[] } | "error";
   agentKeys?: AgentKeysState | "error";
   dashboardTokens?: DashboardTokensState | "error";
+  integratorKeys?: IntegratorKeysState | "error";
 }
 
 const UNAVAILABLE: FeatureStatus = {
@@ -208,6 +210,21 @@ function dashboardTokens(state: NonNullable<SettingsSnapshot["dashboardTokens"]>
       };
 }
 
+function integratorKeys(state: NonNullable<SettingsSnapshot["integratorKeys"]>): FeatureStatus {
+  if (state === "error") return UNAVAILABLE;
+  const active = activeIntegratorKeyCount(state);
+  // Issuing a key widens access, so it is the call to action rather than an inline action.
+  return active > 0
+    ? { tone: "ok", label: `${active} active`, summary: "Scripts and partner systems call the API with these keys", on: true }
+    : {
+        tone: "off",
+        label: "No active keys",
+        summary: "API callers need a sign-in or an Entra ID token",
+        on: false,
+        cta: { label: "Issue key", tab: "keys" },
+      };
+}
+
 /** A row's status, or undefined while that feature's state is still loading. */
 export function featureStatus(featureId: string, snapshot: SettingsSnapshot): FeatureStatus | undefined {
   switch (featureId) {
@@ -225,6 +242,8 @@ export function featureStatus(featureId: string, snapshot: SettingsSnapshot): Fe
       return snapshot.agentKeys && agentKeys(snapshot.agentKeys);
     case "dashboard-tokens":
       return snapshot.dashboardTokens && dashboardTokens(snapshot.dashboardTokens);
+    case "integrator-keys":
+      return snapshot.integratorKeys && integratorKeys(snapshot.integratorKeys);
     default:
       return undefined;
   }

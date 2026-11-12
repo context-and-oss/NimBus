@@ -80,3 +80,7 @@ public partial class AccessControlApiController;
 /// <summary>Serves this controller's routes at /api/v1/… and, deprecated, at /api/….</summary>
 [ApiVersionAliases]
 public partial class SimulationApiController;
+
+/// <summary>Serves this controller's routes at /api/v1/… and, deprecated, at /api/….</summary>
+[ApiVersionAliases]
+public partial class IntegratorKeysApiController;

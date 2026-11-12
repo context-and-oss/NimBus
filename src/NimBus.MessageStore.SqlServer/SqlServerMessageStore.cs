@@ -29,7 +29,7 @@ namespace NimBus.MessageStore.SqlServer;
 /// Concurrency: ROWVERSION on UnresolvedEvents enables optimistic conflict
 /// detection if needed by future writers.
 /// </summary>
-public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore
+public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IIntegratorApiKeyStore
 {
     private readonly SqlServerMessageStoreOptions _options;
     private readonly string _schema;
@@ -195,6 +195,13 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
         => _endpointMetadata.TrySetDashboardTokenSettings(settings, expectedRevision);
     public Task<List<DashboardTokenUsage>> GetDashboardTokenUsage() => _endpointMetadata.GetDashboardTokenUsage();
     public Task RecordDashboardTokenUse(string tokenId, DateTime usedAtUtc) => _endpointMetadata.RecordDashboardTokenUse(tokenId, usedAtUtc);
+
+    // ───────── Integrator API keys (IIntegratorApiKeyStore, Spec 045) — implementation in SqlServerEndpointMetadataStore ─────────
+    public Task<IntegratorApiKeySettings> GetIntegratorApiKeySettings() => _endpointMetadata.GetIntegratorApiKeySettings();
+    public Task<bool> TrySetIntegratorApiKeySettings(IntegratorApiKeySettings settings, string? expectedRevision)
+        => _endpointMetadata.TrySetIntegratorApiKeySettings(settings, expectedRevision);
+    public Task<List<IntegratorApiKeyUsage>> GetIntegratorApiKeyUsage() => _endpointMetadata.GetIntegratorApiKeyUsage();
+    public Task RecordIntegratorApiKeyUse(string keyId, DateTime usedAtUtc) => _endpointMetadata.RecordIntegratorApiKeyUse(keyId, usedAtUtc);
     // ───────── Durable endpoint heartbeat history — implementation in SqlServerHeartbeatHistoryStore ─────────
     public Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
         => _heartbeatHistory.GetHeartbeatUptimeDays(fromDayUtc);

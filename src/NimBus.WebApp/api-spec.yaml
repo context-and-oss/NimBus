@@ -2219,6 +2219,180 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/integrator-keys:
+    get:
+      summary: List the integrator API keys
+      description: >-
+        Site Owner only. Every issued integrator API key with its role, endpoint scope, status
+        and last use, never the secret, plus the endpoints a key can be scoped to and an
+        antiforgery token for the write operations (Spec 045).
+      operationId: get-admin-integrator-keys
+      tags:
+        - IntegratorKeys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegratorKeyState'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: The storage provider cannot store integrator API keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      summary: Issue an integrator API key
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full key
+        once; only its hash is stored. The key authenticates REST API calls in the
+        X-NimBus-Api-Key header with the role (Reader or Contributor, never Owner), endpoint
+        scope and PII access issued here.
+      operationId: post-admin-integrator-keys
+      tags:
+        - IntegratorKeys
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntegratorKeyCreate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegratorKeyIssued'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: The storage provider cannot store integrator API keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/integrator-keys/{keyId}/revoke:
+    post:
+      summary: Revoke an integrator API key
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. The key stops working on
+        this instance at once and on every other instance within 30 seconds (2 minutes while
+        the store is unreachable). It stays listed until it is removed.
+      operationId: post-admin-integrator-key-revoke
+      tags:
+        - IntegratorKeys
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegratorKeyState'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: The storage provider cannot store integrator API keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/integrator-keys/{keyId}:
+    delete:
+      summary: Remove a revoked or expired integrator API key
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active key must be
+        revoked first (400 StillActive).
+      operationId: delete-admin-integrator-key
+      tags:
+        - IntegratorKeys
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegratorKeyState'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: The storage provider cannot store integrator API keys
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/admin/heartbeat/send:
     post:
       summary: Send a heartbeat to every monitored endpoint now
@@ -4840,6 +5014,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/SimulationProblem'
 components:
+  securitySchemes:
+    integratorApiKey:
+      type: apiKey
+      in: header
+      name: X-NimBus-Api-Key
+      description: >-
+        An integrator API key issued by a site Owner (Spec 045), with a Reader or
+        Contributor role and an optional endpoint scope. Accepted on every operation
+        except the agent API, the Monitor feed and the Owner-only admin operations.
+    entraBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: A Microsoft Entra ID access token for the WebApp, where the WebApp uses Entra ID sign-in.
+    agentApiKey:
+      type: apiKey
+      in: header
+      name: X-NimBus-Agent-Key
+      description: An agent API key (Spec 039). Accepted on the agent API only.
   schemas:
     ProblemDetails:
       title: ProblemDetails
@@ -5634,6 +5827,9 @@ components:
             - dashboardTokenCreated
             - dashboardTokenRevoked
             - dashboardTokenRemoved
+            - integratorApiKeyCreated
+            - integratorApiKeyRevoked
+            - integratorApiKeyRemoved
         comment:
           type: string
           nullable: true
@@ -7403,6 +7599,9 @@ components:
             - dashboardTokenCreated
             - dashboardTokenRevoked
             - dashboardTokenRemoved
+            - integratorApiKeyCreated
+            - integratorApiKeyRevoked
+            - integratorApiKeyRemoved
         createdAtFrom:
           type: string
           format: date-time
@@ -8239,6 +8438,119 @@ components:
         RevisionConflict or InvalidAntiforgeryToken.
       allOf:
         - $ref: '#/components/schemas/ProblemDetails'
+    IntegratorKeyRole:
+      title: IntegratorKeyRole
+      type: string
+      description: The role an integrator API key grants. Owner is never available.
+      enum:
+        - reader
+        - contributor
+    IntegratorKeyStatus:
+      title: IntegratorKeyStatus
+      type: string
+      enum:
+        - active
+        - revoked
+        - expired
+    IntegratorKeyInfo:
+      title: IntegratorKeyInfo
+      type: object
+      description: An issued integrator API key. Never carries the secret.
+      properties:
+        keyId:
+          type: string
+        prefix:
+          type: string
+          description: The non-secret start of the key, nbik_<keyId>, to recognise it.
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/IntegratorKeyRole'
+        endpoints:
+          type: array
+          nullable: true
+          description: The endpoints the role applies to; null when it applies to every endpoint.
+          items:
+            type: string
+        canReadPii:
+          type: boolean
+          description: Whether the key may read raw event payloads.
+        status:
+          $ref: '#/components/schemas/IntegratorKeyStatus'
+        createdAtUtc:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          nullable: true
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedBy:
+          type: string
+          nullable: true
+        lastUsedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: Recorded at most every 5 minutes per instance; null when never used.
+    IntegratorKeyState:
+      title: IntegratorKeyState
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntegratorKeyInfo'
+        endpoints:
+          type: array
+          description: The endpoint ids a key can be scoped to.
+          items:
+            type: string
+        csrfToken:
+          type: string
+          description: Send as the X-NimBus-CSRF header on writes.
+    IntegratorKeyCreate:
+      title: IntegratorKeyCreate
+      type: object
+      properties:
+        name:
+          type: string
+          description: A label, for example the system that uses the key. Required, up to 100 characters.
+        role:
+          $ref: '#/components/schemas/IntegratorKeyRole'
+        endpoints:
+          type: array
+          nullable: true
+          description: >-
+            The endpoints the role applies to. Omit or null for every endpoint; a list must
+            name at least one endpoint the platform defines.
+          items:
+            type: string
+        canReadPii:
+          type: boolean
+          description: Whether the key may read raw event payloads. Default false.
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the key stops working; null for no expiry. Must be in the future.
+    IntegratorKeyIssued:
+      title: IntegratorKeyIssued
+      type: object
+      properties:
+        key:
+          type: string
+          description: The full key. Shown once; it cannot be retrieved again.
+        issued:
+          $ref: '#/components/schemas/IntegratorKeyInfo'
+        state:
+          $ref: '#/components/schemas/IntegratorKeyState'
     MonitorFeedStatus:
       title: MonitorFeedStatus
       type: object
@@ -8700,6 +9012,9 @@ components:
             - dashboardTokenCreated
             - dashboardTokenRevoked
             - dashboardTokenRemoved
+            - integratorApiKeyCreated
+            - integratorApiKeyRevoked
+            - integratorApiKeyRemoved
         comment:
           type: string
           nullable: true
@@ -8842,3 +9157,4 @@ tags:
   - name: Simulation
   - name: McpAccess
   - name: AgentKeys
+  - name: IntegratorKeys

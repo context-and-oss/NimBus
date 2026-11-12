@@ -145,6 +145,8 @@ public static class CosmosDbMessageStoreBuilderExtensions
             (IMonitorMetricsStore)sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IDashboardTokenStore>(sp =>
             (IDashboardTokenStore)sp.GetRequiredService<INimBusMessageStore>());
+        services.AddSingleton<IIntegratorApiKeyStore>(sp =>
+            (IIntegratorApiKeyStore)sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IStorageProviderRegistration>(_ => new CosmosDbStorageProviderRegistration());
         services.AddSingleton<IStorageProviderCapabilities>(_ => new CosmosDbStorageProviderCapabilities());
         services.AddSingleton<ICosmosContainerAdmin>(sp =>

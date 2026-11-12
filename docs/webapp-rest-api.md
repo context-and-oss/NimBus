@@ -15,8 +15,8 @@ are still on the roadmap.
 - **Title** in the spec: *NimBus Management API*.
 - **Spec version:** `1.0.0` — see [Versioning + stability](#versioning--stability) below.
 - **Route prefix:** every operation lives under `/api/v1/…`. The unversioned `/api/…` routes still work but are deprecated.
-- **Surface size:** 153 operations across 19 tags (Admin, Event, Endpoint, AccessControl, Agent, AgentKeys, DashboardTokens, McpAccess, Metrics, Monitor, MonitorFeed, EventType, Failed, Simulation, StorageHook, Application, Message, Audit, Heartbeat).
-- **Auth:** ASP.NET Identity cookie *and/or* Microsoft Entra ID (interactive browser flow + bearer-token flow). Effectively all `/api/…` endpoints require an authenticated principal. Two are reachable anonymously by design: `GET /api/v1/app/stats` (a liveness shape that discloses nothing to an anonymous caller — see [Application](#application)) and `POST /api/v1/storagehook/cosmos/{endpointId}` (gated by a shared webhook key rather than a principal). The agent API (`/api/v1/agent/*`) also accepts an agent API key in `X-NimBus-Agent-Key`, which admits nothing else — see [Agent API keys](authentication.md#agent-api-keys). Beyond `/api/…`, `/health`, `/alive` and `/ready` are anonymous.
+- **Surface size:** 157 operations across 20 tags (Admin, Event, Endpoint, AccessControl, Agent, AgentKeys, DashboardTokens, IntegratorKeys, McpAccess, Metrics, Monitor, MonitorFeed, EventType, Failed, Simulation, StorageHook, Application, Message, Audit, Heartbeat).
+- **Auth:** ASP.NET Identity cookie *and/or* Microsoft Entra ID (interactive browser flow + bearer-token flow). Effectively all `/api/…` endpoints require an authenticated principal. Two are reachable anonymously by design: `GET /api/v1/app/stats` (a liveness shape that discloses nothing to an anonymous caller — see [Application](#application)) and `POST /api/v1/storagehook/cosmos/{endpointId}` (gated by a shared webhook key rather than a principal). Scripts and partner systems can instead send an integrator API key in `X-NimBus-Api-Key`, with a Reader or Contributor role and an optional endpoint scope — see [Integrator API keys](#5-external--integrator-api-key). The agent API (`/api/v1/agent/*`) also accepts an agent API key in `X-NimBus-Agent-Key`, which admits nothing else — see [Agent API keys](authentication.md#agent-api-keys). Beyond `/api/…`, `/health`, `/alive` and `/ready` are anonymous.
 - **Schema generation:** NSwag reads `api-spec.yaml` pre-build and emits server contracts (`Controllers/ApiContract.g.cs`) plus a TypeScript client (`ClientApp/src/api-client/index.ts`) — see [Code generation](#code-generation).
 
 ## Audience
@@ -28,10 +28,8 @@ Two distinct audiences share the same surface:
    the same cookie or bearer token the user signs in with.
 
 2. **External HTTP callers.** CI scripts, partner automation, internal tools
-   reaching across service boundaries. Today external use works *server-to-server*
-   with an Entra ID access token; see [Calling from outside the SPA](#calling-from-outside-the-spa)
-   for the supported shape and [What's not external-ready yet](#whats-not-external-ready-yet)
-   for the rough edges.
+   reaching across service boundaries. They authenticate with an integrator API key
+   or an Entra ID access token; see [Calling from outside the SPA](#calling-from-outside-the-spa).
 
 ## Authentication
 
@@ -82,6 +80,22 @@ Audience and scope come from the WebApp's `AzureAd` registration — see
 The bearer arm is `JwtBearerDefaults.AuthenticationScheme`, validated by
 `Microsoft.Identity.Web`.
 
+### 5. External — integrator API key
+
+A site Owner issues a key in **Settings → Integrator keys** with a role (Reader or Contributor,
+never Owner), an optional list of endpoints and optional payload access. The caller sends it in a
+header on every request:
+
+```bash
+curl -H "X-NimBus-Api-Key: $NIMBUS_API_KEY" \
+     https://nimbus.example.com/api/v1/endpoint/status/count
+```
+
+This works in every sign-in mode, needs no app registration, and the key is revocable on its own.
+A Reader key gets 403 on a resubmit, an endpoint-scoped key gets 403 outside its endpoints, and
+every key gets 403 on `/api/v1/admin/*`. See
+[Integrator API keys](authentication.md#integrator-api-keys) for the full rules.
+
 ### Local dev shortcut
 
 For local development *only*, setting `EnableLocalDevAuthentication=true`
@@ -92,8 +106,8 @@ production.
 
 ## Calling from outside the SPA
 
-The supported external shape today is server-to-server with an Entra ID bearer
-token. A minimal `curl`:
+With an integrator API key, send it in `X-NimBus-Api-Key` (see
+[above](#5-external--integrator-api-key)). With an Entra ID bearer token, a minimal `curl`:
 
 ```bash
 TOKEN=$(curl -s -X POST \
@@ -521,12 +535,12 @@ in `Cors:AllowedOrigins` (app settings `Cors__AllowedOrigins__0`,
 - **No credentials:** responses never carry
   `Access-Control-Allow-Credentials`, so the browser does not send the
   WebApp's sign-in cookies. A cross-origin caller authenticates with a header:
-  an Entra ID bearer token (`Authorization`) or an agent key
-  (`X-NimBus-Agent-Key`). Cross-site request forgery therefore stays out of
+  an Entra ID bearer token (`Authorization`), an integrator key
+  (`X-NimBus-Api-Key`) or an agent key (`X-NimBus-Agent-Key`). Cross-site request forgery therefore stays out of
   reach.
 - **What is allowed:** methods `GET`, `POST`, `PUT`, `PATCH` and `DELETE`;
   request headers `Authorization`, `Content-Type`, `Accept`,
-  `Idempotency-Key`, `X-NimBus-Agent-Key` and `X-Agent-Id`. The browser may
+  `Idempotency-Key`, `X-NimBus-Api-Key`, `X-NimBus-Agent-Key` and `X-Agent-Id`. The browser may
   read `Retry-After`, `Deprecation`, `Link`, `Location` and
   `Content-Disposition`. Preflights are cached for 10 minutes and answered
   before sign-in is checked.
@@ -535,24 +549,6 @@ in `Cors:AllowedOrigins` (app settings `Cors__AllowedOrigins__0`,
   `http://` origin outside the Development environment.
 - **Redeploys:** `nb infra apply` and the Bicep template carry `Cors__*`
   settings forward (see [Deployment](deployment.md)).
-
-## What's not external-ready yet
-
-One gap remains before this API can be offered to external integrators
-without caveats:
-
-1. **API-key / service-principal auth — agents only.** Agents have
-   Owner-issued, revocable API keys for `/api/v1/agent/*`
-   ([Spec 039](spec/039-agent-api-keys/spec.md)). The rest of the API still
-   needs a signed-in person or an Entra ID token; a general integrator key
-   with a role and endpoint scope is planned (Spec 045).
-
-Closed since the first version of this list: the
-[problem error envelope](#errors), a [global rate limit](rate-limiting.md) on
-every `/api/…` route, a production `servers` entry in the spec,
-[`/api/v1` versioning with a compatibility policy](#versioning--stability), and
-a [configuration-driven CORS allow-list](#cors). Rate limits are still
-enforced per process; see [Rate Limiting](rate-limiting.md#scope).
 
 ## Audit
 
