@@ -1,0 +1,42 @@
+{
+  "name": "nimbus-docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The NimBus documentation portal, built from the Markdown in ../docs.",
+  "scripts": {
+    "start": "docusaurus start",
+    "build": "docusaurus build",
+    "serve": "docusaurus serve",
+    "clear": "docusaurus clear"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.10.2",
+    "@docusaurus/preset-classic": "3.10.2",
+    "@docusaurus/theme-mermaid": "3.10.2",
+    "@easyops-cn/docusaurus-search-local": "0.55.3",
+    "@mdx-js/react": "^3.1.1",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "overrides": {
+    "tinypool": "^2.2.0",
+    "serialize-javascript": "^7.1.4",
+    "uuid": "^11.1.1"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "browserslist": {
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 3 chrome version",
+      "last 3 firefox version",
+      "last 5 safari version"
+    ]
+  }
+}

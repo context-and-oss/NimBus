@@ -11,7 +11,7 @@ namespace NimBus.Core.Pipeline;
 /// Middleware that validates message context before processing.
 /// Rejects messages with missing critical fields by dead-lettering them.
 /// </summary>
-public sealed class ValidationMiddleware : IMessagePipelineBehavior
+public sealed partial class ValidationMiddleware : IMessagePipelineBehavior
 {
     private readonly ILogger<ValidationMiddleware> _logger;
 
@@ -24,7 +24,7 @@ public sealed class ValidationMiddleware : IMessagePipelineBehavior
     {
         if (string.IsNullOrEmpty(context.EventId))
         {
-            _logger.LogWarning("Message rejected: missing EventId (MessageId={MessageId})", context.MessageId);
+            LogMessageRejectedMissingEventId(_logger, context.MessageId);
             var reason = "Validation failed: EventId is required";
             await context.DeadLetter(reason, new InvalidOperationException(reason), cancellationToken);
             throw new MessageAlreadyDeadLetteredException(reason);
@@ -32,7 +32,7 @@ public sealed class ValidationMiddleware : IMessagePipelineBehavior
 
         if (context.MessageType == MessageType.EventRequest && string.IsNullOrEmpty(context.EventTypeId))
         {
-            _logger.LogWarning("EventRequest rejected: missing EventTypeId (EventId={EventId})", context.EventId);
+            LogEventRequestRejectedMissingEventTypeId(_logger, context.EventId);
             var reason = "Validation failed: EventTypeId is required for EventRequest";
             await context.DeadLetter(reason, new InvalidOperationException(reason), cancellationToken);
             throw new MessageAlreadyDeadLetteredException(reason);
@@ -40,6 +40,12 @@ public sealed class ValidationMiddleware : IMessagePipelineBehavior
 
         await next(context, cancellationToken);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Message rejected: missing EventId (MessageId={MessageId})")]
+    private static partial void LogMessageRejectedMissingEventId(ILogger logger, string messageId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "EventRequest rejected: missing EventTypeId (EventId={EventId})")]
+    private static partial void LogEventRequestRejectedMissingEventTypeId(ILogger logger, string eventId);
 }
 
 /// <summary>

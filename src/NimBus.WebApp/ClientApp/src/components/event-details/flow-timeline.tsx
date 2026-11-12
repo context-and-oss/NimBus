@@ -1,4 +1,5 @@
 import * as React from "react";
+import moment from "moment";
 import { messageTypeKey } from "functions/message-type.functions";
 import * as api from "api-client";
 import { formatMoment } from "functions/endpoint.functions";
@@ -105,6 +106,7 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
 
   return (
     <div className="relative pl-8 py-4 w-full">
+      <p className="mb-3 text-xs text-muted-foreground">Times shown in local time ({Intl.DateTimeFormat().resolvedOptions().timeZone}).</p>
       {/* Vertical line */}
       <div className="absolute left-3.5 top-0 bottom-0 w-0.5 bg-border" />
 
@@ -115,7 +117,7 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
               <div className={`absolute left-[-20px] top-2 w-3 h-3 rounded-full border-2 border-background ${AUDIT_COLOR.dot}`} />
               <div className={`ml-4 p-3 rounded-md border ${AUDIT_COLOR.bg} ${AUDIT_COLOR.border}`}>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-mono">{entry.timestamp.toISOString().replace("T", " ").slice(0, 23)}</span>
+                  <span className="font-mono">{formatMoment(moment(entry.timestamp))}</span>
                   <span className="font-semibold text-sky-700">
                     {entry.auditType === "comment" ? "Comment" : entry.auditType}
                   </span>
@@ -147,7 +149,7 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
                   )}
                 </div>
                 <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">
-                  {entry.timestamp.toISOString().replace("T", " ").slice(0, 23)}
+                  {formatMoment(moment(entry.timestamp))}
                 </span>
               </div>
               {entry.errorText && (

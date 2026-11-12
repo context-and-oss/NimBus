@@ -52,7 +52,7 @@ public sealed class AsyncApiExporterTests
         Assert.AreEqual(1, fwd.Count);
         Assert.AreEqual("Alpha", fwd[0]!["topic"]!.GetValue<string>());
         Assert.AreEqual("Beta", fwd[0]!["forwardTo"]!.GetValue<string>());
-        Assert.AreEqual("user.EventTypeId = 'OrderPlaced' AND user.From IS NULL", fwd[0]!["filter"]!.GetValue<string>());
+        Assert.AreEqual("user.EventTypeId = 'OrderPlaced' AND user.MessageType = 'EventRequest' AND user.From IS NULL", fwd[0]!["filter"]!.GetValue<string>());
     }
 
     [TestMethod]

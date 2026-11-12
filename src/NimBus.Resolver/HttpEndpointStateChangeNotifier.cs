@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.MessageStore.Abstractions;
 
 namespace NimBus.Resolver;
@@ -24,7 +25,7 @@ namespace NimBus.Resolver;
 /// configured; otherwise the Resolver keeps the no-op notifier and existing
 /// deployments are unaffected (spec NFR-004).
 /// </summary>
-public sealed class HttpEndpointStateChangeNotifier : IMessageStateChangeNotifier, IDisposable
+public sealed partial class HttpEndpointStateChangeNotifier : IMessageStateChangeNotifier, IDisposable
 {
     // Mirrors StorageHookImplementation.WebhookKeyHeaderName on the WebApp
     // side. Kept as a literal so the Resolver host need not reference the
@@ -33,7 +34,7 @@ public sealed class HttpEndpointStateChangeNotifier : IMessageStateChangeNotifie
 
     private readonly HttpClient _httpClient;
     private readonly string? _webhookKey;
-    private readonly ILogger<HttpEndpointStateChangeNotifier>? _logger;
+    private readonly ILogger<HttpEndpointStateChangeNotifier> _logger;
 
     /// <param name="httpClient">
     /// Client whose <see cref="HttpClient.BaseAddress"/> is the WebApp origin;
@@ -51,7 +52,7 @@ public sealed class HttpEndpointStateChangeNotifier : IMessageStateChangeNotifie
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _webhookKey = string.IsNullOrEmpty(webhookKey) ? null : webhookKey;
-        _logger = logger;
+        _logger = logger ?? NullLogger<HttpEndpointStateChangeNotifier>.Instance;
     }
 
     public Task NotifyEndpointStateChangedAsync(string endpointId, CancellationToken cancellationToken = default)
@@ -93,17 +94,21 @@ public sealed class HttpEndpointStateChangeNotifier : IMessageStateChangeNotifie
             using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                _logger?.LogDebug(
-                    "Flow notifier: WebApp storage-hook {Route} returned {StatusCode} for {Id}.",
-                    route, (int)response.StatusCode, id);
+                LogFlowNotifierWebAppStorageHookReturned(_logger, route, (int)response.StatusCode, id);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             // Non-fatal: realtime push is best-effort; the pages reconcile via polling.
-            _logger?.LogDebug(ex, "Flow notifier: failed to post {Route} update for {Id}.", route, id);
+            LogFlowNotifierFailedToPostUpdate(_logger, ex, route, id);
         }
     }
 
     public void Dispose() => _httpClient.Dispose();
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Flow notifier: WebApp storage-hook {Route} returned {StatusCode} for {Id}.")]
+    private static partial void LogFlowNotifierWebAppStorageHookReturned(ILogger logger, string route, int statusCode, string id);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Flow notifier: failed to post {Route} update for {Id}.")]
+    private static partial void LogFlowNotifierFailedToPostUpdate(ILogger logger, Exception exception, string route, string id);
 }

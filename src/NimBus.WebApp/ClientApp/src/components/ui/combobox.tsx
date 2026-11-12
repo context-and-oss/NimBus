@@ -1,6 +1,28 @@
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import { cn } from "lib/utils";
 import { Checkbox } from "./checkbox";
+
+// The open list's tallest height (eight options), and the room below the field under
+// which it opens upward instead, if there is more room above.
+const LIST_MAX_HEIGHT = 288;
+const LIST_MIN_HEIGHT = 160;
+const LIST_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+
+interface ListPlacement {
+  top?: number;
+  bottom?: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+}
 
 export interface ComboboxOption {
   value: string;
@@ -11,6 +33,12 @@ export interface ComboboxProps {
   options: ComboboxOption[];
   value?: string[];
   onChange?: (value: string[]) => void;
+  /**
+   * Called once a change is settled: when the list closes with a different selection than
+   * it opened with, or when a chip is removed while the list is closed. Lets a filter apply
+   * a multi-pick in one go instead of once per click.
+   */
+  onCommit?: (value: string[]) => void;
   placeholder?: string;
   label?: string;
   multiple?: boolean;
@@ -22,6 +50,7 @@ const Combobox = ({
   options,
   value = [],
   onChange,
+  onCommit,
   placeholder = "Select...",
   label,
   multiple = true,
@@ -31,14 +60,31 @@ const Combobox = ({
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [placement, setPlacement] = useState<ListPlacement | null>(null);
+  const valueKey = JSON.stringify(value);
+  const valueAtOpen = useRef(valueKey);
+  const wasOpen = useRef(false);
 
-  // Close on outside click
+  useEffect(() => {
+    if (isOpen && !wasOpen.current) valueAtOpen.current = valueKey;
+    if (!isOpen && wasOpen.current && valueKey !== valueAtOpen.current)
+      onCommit?.(value);
+    wasOpen.current = isOpen;
+    // Only the open/close transition matters; value is read as of that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  // Close on outside click. The list is in a portal, outside the container.
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
       if (
         containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
+        !containerRef.current.contains(target) &&
+        !listRef.current?.contains(target)
       ) {
         setIsOpen(false);
       }
@@ -46,6 +92,44 @@ const Combobox = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // The open list is a popup over the page: fixed to the field, in a portal, so no
+  // container's overflow clips it and it never makes the page longer. It opens below
+  // the field, or above it when there is more room there, and takes at most the room
+  // left in the window, scrolling inside when the options need more. It follows the
+  // field as the page scrolls or the window resizes.
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setPlacement(null);
+      return;
+    }
+    const place = () => {
+      const field = fieldRef.current;
+      if (!field) return;
+      const r = field.getBoundingClientRect();
+      const below = window.innerHeight - r.bottom - LIST_GAP - VIEWPORT_MARGIN;
+      const above = r.top - LIST_GAP - VIEWPORT_MARGIN;
+      const openUp = below < LIST_MIN_HEIGHT && above > below;
+      setPlacement({
+        left: r.left,
+        width: r.width,
+        maxHeight: Math.max(
+          0,
+          Math.min(LIST_MAX_HEIGHT, openUp ? above : below),
+        ),
+        ...(openUp
+          ? { bottom: window.innerHeight - r.top + LIST_GAP }
+          : { top: r.bottom + LIST_GAP }),
+      });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [isOpen]);
 
   const filteredOptions = options.filter((option) =>
     option.label.toLowerCase().includes(search.toLowerCase()),
@@ -59,6 +143,8 @@ const Combobox = ({
         ? value.filter((v) => v !== optionValue)
         : [...value, optionValue];
       onChange(newValue);
+      // A chip removed with the list closed has no close to wait for.
+      if (!isOpen) onCommit?.(newValue);
     } else {
       onChange([optionValue]);
       setIsOpen(false);
@@ -90,28 +176,43 @@ const Combobox = ({
         </label>
       )}
       <div
+        ref={fieldRef}
         className={cn(
-          "flex items-center border border-input rounded-md bg-background",
+          // min-h-10 matches Input, so a combobox lines up with the inputs beside it.
+          // gap-1 keeps the last chip's x clear of the arrow.
+          "flex min-h-10 items-center gap-1 border border-input rounded-md bg-background",
           "focus-within:ring-2 focus-within:ring-primary focus-within:border-primary",
           disabled && "bg-muted cursor-not-allowed",
         )}
+        // The whole box opens the list, so a search input squeezed to nothing beside the
+        // chips is no obstacle.
+        onClick={() => {
+          if (disabled) return;
+          setIsOpen(true);
+          inputRef.current?.focus();
+        }}
       >
-        <div className="flex flex-wrap gap-1 p-1.5 flex-1 min-w-0">
+        <div className="flex flex-wrap gap-1 p-1 flex-1 min-w-0">
           {multiple && value.length > 0 && (
-            <div className="flex flex-wrap gap-1">
+            // contents: chips and the search input wrap as one line of items, so the input
+            // sits after the last chip instead of taking a line of its own.
+            <div className="contents">
               {selectedLabels.map((label, idx) => (
                 <span
                   key={idx}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-200 text-xs rounded-sm"
+                  title={label}
+                  className="inline-flex max-w-full min-w-0 items-center gap-1 whitespace-nowrap px-2 py-0.5 bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-200 text-xs rounded-sm"
                 >
-                  {label}
+                  {/* A long name is cut short rather than widening the field. */}
+                  <span className="truncate">{label}</span>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleSelect(value[idx]);
                     }}
-                    className="hover:text-primary-600 dark:hover:text-primary-300"
+                    aria-label={`Remove ${label}`}
+                    className="shrink-0 hover:text-primary-600 dark:hover:text-primary-300"
                   >
                     <svg
                       className="w-3 h-3"
@@ -132,7 +233,17 @@ const Combobox = ({
           <input
             ref={inputRef}
             type="text"
-            className="flex-1 min-w-[100px] outline-hidden text-sm py-1 px-1 bg-transparent"
+            className={cn(
+              "flex-1 outline-hidden text-sm py-1 px-1 bg-transparent text-foreground placeholder:text-muted-foreground",
+              // With chips there is no placeholder to show. Closed, the input leaves the flow
+              // (still focusable) so it never adds a line under the chips; open, it gets room
+              // to type in.
+              multiple && value.length > 0
+                ? isOpen
+                  ? "min-w-16"
+                  : "absolute h-px w-px min-w-0 opacity-0"
+                : "min-w-[100px]",
+            )}
             placeholder={
               value.length === 0
                 ? placeholder
@@ -143,13 +254,19 @@ const Combobox = ({
             value={search}
             onChange={handleInputChange}
             onClick={handleInputClick}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setIsOpen(false);
+            }}
             disabled={disabled}
           />
         </div>
         <button
           type="button"
           className="px-2 py-2 text-muted-foreground hover:text-foreground"
-          onClick={() => !disabled && setIsOpen(!isOpen)}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!disabled) setIsOpen(!isOpen);
+          }}
           disabled={disabled}
         >
           <svg
@@ -171,38 +288,46 @@ const Combobox = ({
         </button>
       </div>
 
-      {isOpen && !disabled && (
-        <div className="absolute z-50 w-full mt-1 bg-popover text-popover-foreground border border-border rounded-md shadow-lg max-h-60 overflow-auto">
-          {filteredOptions.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
-              No options found
-            </div>
-          ) : (
-            filteredOptions.map((option) => {
-              const isSelected = value.includes(option.value);
-              return (
-                <div
-                  key={option.value}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent",
-                    isSelected && "bg-primary-50 dark:bg-primary-900/30",
-                  )}
-                  onClick={() => handleSelect(option.value)}
-                >
-                  {multiple && (
-                    <Checkbox
-                      checked={isSelected}
-                      onChange={() => {}}
-                      aria-label={option.label}
-                    />
-                  )}
-                  <span className="text-sm break-all">{option.label}</span>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
+      {isOpen &&
+        !disabled &&
+        placement &&
+        createPortal(
+          <div
+            ref={listRef}
+            style={{ position: "fixed", ...placement }}
+            className="z-50 bg-popover text-popover-foreground border border-border rounded-md shadow-lg overflow-auto overscroll-contain"
+          >
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-muted-foreground">
+                No options found
+              </div>
+            ) : (
+              filteredOptions.map((option) => {
+                const isSelected = value.includes(option.value);
+                return (
+                  <div
+                    key={option.value}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent",
+                      isSelected && "bg-primary-50 dark:bg-primary-900/30",
+                    )}
+                    onClick={() => handleSelect(option.value)}
+                  >
+                    {multiple && (
+                      <Checkbox
+                        checked={isSelected}
+                        onChange={() => {}}
+                        aria-label={option.label}
+                      />
+                    )}
+                    <span className="text-sm break-all">{option.label}</span>
+                  </div>
+                );
+              })
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

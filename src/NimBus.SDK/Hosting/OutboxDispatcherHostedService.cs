@@ -11,7 +11,7 @@ namespace NimBus.SDK.Hosting;
 /// <summary>
 /// Background service that polls the outbox and dispatches pending messages to Service Bus.
 /// </summary>
-public class OutboxDispatcherHostedService : BackgroundService
+public partial class OutboxDispatcherHostedService : BackgroundService
 {
     private readonly OutboxDispatcher _dispatcher;
     private readonly TimeSpan _pollingInterval;
@@ -32,9 +32,7 @@ public class OutboxDispatcherHostedService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation(
-            "OutboxDispatcherHostedService started (polling interval {Interval}, batch size {BatchSize})",
-            _pollingInterval, _batchSize);
+        LogOutboxDispatcherHostedServiceStarted(_logger, _pollingInterval, _batchSize);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -53,10 +51,16 @@ public class OutboxDispatcherHostedService : BackgroundService
             catch (Exception ex)
             {
                 // Transient failures should not stop the dispatcher; log and continue.
-                _logger.LogError(ex, "Outbox dispatcher poll failed; will retry after {Interval}.", _pollingInterval);
+                LogOutboxDispatcherPollFailed(_logger, ex, _pollingInterval);
             }
 
             await Task.Delay(_pollingInterval, stoppingToken);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "OutboxDispatcherHostedService started (polling interval {Interval}, batch size {BatchSize})")]
+    private static partial void LogOutboxDispatcherHostedServiceStarted(ILogger logger, TimeSpan interval, int batchSize);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Outbox dispatcher poll failed; will retry after {Interval}.")]
+    private static partial void LogOutboxDispatcherPollFailed(ILogger logger, Exception exception, TimeSpan interval);
 }

@@ -65,6 +65,7 @@ public sealed class CosmosDbMessageStoreRegistrationTests
         var aggregate = provider.GetRequiredService<INimBusMessageStore>();
         Assert.IsNotNull(provider.GetRequiredService<IMessageTrackingStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<ISubscriptionStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<ISubscriptionNotificationStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IEndpointMetadataStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IMetricsStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IEventSchemaStore>());
@@ -72,6 +73,8 @@ public sealed class CosmosDbMessageStoreRegistrationTests
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IServiceHealthStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IEndpointAcknowledgementStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IHeartbeatHistoryStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IMonitorMetricsStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IDashboardTokenStore>());
         Assert.IsNotNull(provider.GetRequiredService<ICosmosContainerAdmin>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<INimBusMessageStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<INimBusMessageStore>());
@@ -115,8 +118,8 @@ public sealed class CosmosDbMessageStoreRegistrationTests
         var ex = await Assert.ThrowsExactlyAsync<OptionsValidationException>(
             () => startupValidator.StartAsync(CancellationToken.None));
 
-        StringAssert.Contains(string.Join(" ", ex.Failures), nameof(CosmosDbMessageStoreOptions.UnresolvedRetentionDays));
-        StringAssert.Contains(string.Join(" ", ex.Failures), days.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        StringAssert.Contains(string.Join(" ", ex.Failures), nameof(CosmosDbMessageStoreOptions.UnresolvedRetentionDays), StringComparison.Ordinal);
+        StringAssert.Contains(string.Join(" ", ex.Failures), days.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
     [TestMethod]

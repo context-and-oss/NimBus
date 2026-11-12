@@ -110,7 +110,7 @@ public class McpAccessSettingsTests
 
         var errors = McpAccessRules.Normalize(settings, Catalog, new RateLimitOptions { Enabled = false });
 
-        StringAssert.Contains(errors.Single(), "Rate limiting is off");
+        StringAssert.Contains(errors.Single(), "Rate limiting is off", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -316,8 +316,8 @@ public class McpAccessSettingsTests
 
         var row = audit.Rows.Single();
         Assert.AreEqual(MessageAuditType.UpdateMcpSettings, row.Type);
-        StringAssert.Contains(row.Data, "Stop skipping messages");
-        StringAssert.Contains(row.Data, "Hide PayrollEndpoint from agents");
+        StringAssert.Contains(row.Data, "Stop skipping messages", StringComparison.Ordinal);
+        StringAssert.Contains(row.Data, "Hide PayrollEndpoint from agents", StringComparison.Ordinal);
 
         // The same body again carries a revision that is now stale.
         using var stale = await SendAsync(client, HttpMethod.Put, "/api/admin/mcp/settings", state,
@@ -360,7 +360,7 @@ public class McpAccessSettingsTests
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         Assert.IsFalse((await store.GetMcpAccessSettings()).Enabled);
-        StringAssert.Contains(audit.Rows.Single().Data, "\"turnOff\":true");
+        StringAssert.Contains(audit.Rows.Single().Data, "\"turnOff\":true", StringComparison.Ordinal);
     }
 
     [TestMethod]

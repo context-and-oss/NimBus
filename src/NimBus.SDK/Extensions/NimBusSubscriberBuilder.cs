@@ -107,7 +107,7 @@ public class NimBusSubscriberBuilder
     /// </summary>
     public NimBusSubscriberBuilder AddHandlersFromAssembly(Assembly assembly)
     {
-        if (assembly == null) throw new ArgumentNullException(nameof(assembly));
+        ArgumentNullException.ThrowIfNull(assembly);
 
         foreach (var registration in DiscoverHandlerRegistrations(assembly))
         {
@@ -122,7 +122,7 @@ public class NimBusSubscriberBuilder
     /// </summary>
     public NimBusSubscriberBuilder AddHandlersFromAssemblies(params Assembly[] assemblies)
     {
-        if (assemblies == null) throw new ArgumentNullException(nameof(assemblies));
+        ArgumentNullException.ThrowIfNull(assemblies);
 
         foreach (var assembly in assemblies)
         {
@@ -207,7 +207,7 @@ public class NimBusSubscriberBuilder
     /// <param name="handlerFactory">Factory that receives the DI container and returns the handler. Must not be null.</param>
     public NimBusSubscriberBuilder AddDynamicFallbackHandler(Func<IServiceProvider, IEventJsonHandler> handlerFactory)
     {
-        if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+        ArgumentNullException.ThrowIfNull(handlerFactory);
 
         HandlerRegistrations.Add(new HandlerRegistration
         {
@@ -237,7 +237,7 @@ public class NimBusSubscriberBuilder
     public NimBusSubscriberBuilder AddScopedDynamicFallbackHandler(
         Func<IServiceProvider, IEventJsonHandler> handlerFactory)
     {
-        if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+        ArgumentNullException.ThrowIfNull(handlerFactory);
 
         HandlerRegistrations.Add(new HandlerRegistration
         {
@@ -263,7 +263,7 @@ public class NimBusSubscriberBuilder
     {
         if (string.IsNullOrWhiteSpace(eventTypeId))
             throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
-        if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+        ArgumentNullException.ThrowIfNull(handlerFactory);
 
         // Symmetric to AddHandlerRegistration's dedup: two handlers (dynamic or
         // typed) claiming the same wire EventTypeId can't both win the dispatch
@@ -344,7 +344,7 @@ public class NimBusSubscriberBuilder
                 $"{nameof(InboxOptions.DeduplicationStore)} must be selected explicitly when enabling the inbox.");
         }
 
-        if (!Enum.IsDefined(typeof(InboxStore), provider))
+        if (!Enum.IsDefined(provider))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(InboxOptions.DeduplicationStore),
@@ -389,8 +389,8 @@ public class NimBusSubscriberBuilder
 
     private void AddHandlerRegistration(Type eventType, Type handlerType, bool explicitRegistration)
     {
-        if (eventType == null) throw new ArgumentNullException(nameof(eventType));
-        if (handlerType == null) throw new ArgumentNullException(nameof(handlerType));
+        ArgumentNullException.ThrowIfNull(eventType);
+        ArgumentNullException.ThrowIfNull(handlerType);
 
         var expectedHandlerInterface = typeof(IEventHandler<>).MakeGenericType(eventType);
         if (!typeof(IEvent).IsAssignableFrom(eventType))

@@ -22,7 +22,7 @@ public class MessageAuditEntity
     /// Optional structured context for the action: search filter JSON,
     /// ResubmitWithChanges body, or any other payload the caller wants
     /// preserved alongside the audit row. Truncated to ~4 KB by the
-    /// <see cref="NimBus.WebApp.Services"/> audit writer to stay within
+    /// <c>NimBus.WebApp.Services</c> audit writer to stay within
     /// every provider's column / document size budget.
     /// </summary>
     public string? Data { get; set; }
@@ -198,4 +198,23 @@ public enum MessageAuditType
     /// never the target connection string.
     /// </summary>
     CopyEndpointData,
+
+    /// <summary>
+    /// A site Owner changed or reset Service Bus session state (Operations → Session state, or
+    /// Clean up session state). Data carries the session, the action and the state before and
+    /// after. Always recorded: the change is refused when the record can't be written.
+    /// </summary>
+    ChangeSessionState,
+
+    /// <summary>
+    /// A site Owner issued a Monitor dashboard token. The token id, name and expiry are recorded
+    /// as Data, never the token. Always recorded.
+    /// </summary>
+    DashboardTokenCreated,
+
+    /// <summary>A site Owner revoked a Monitor dashboard token. Always recorded.</summary>
+    DashboardTokenRevoked,
+
+    /// <summary>A site Owner removed a revoked or expired Monitor dashboard token. Always recorded.</summary>
+    DashboardTokenRemoved,
 }

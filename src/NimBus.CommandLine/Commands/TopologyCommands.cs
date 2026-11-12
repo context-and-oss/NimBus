@@ -39,11 +39,10 @@ internal static class TopologyCommands
 
                 exportCommand.OnExecuteAsync(async cancellationToken =>
                 {
-                    var exporter = new PlatformConfigExporter();
                     var outputPath = output.HasValue() ? output.Value()! : Path.Combine(Environment.CurrentDirectory, "platform-config.json");
                     var factory = await ResolvePlatformFactoryAsync(
                         exportAssembly.Value(), exportPackage.Value(), exportFeed.Value(), exportPlatformType.Value(), cancellationToken).ConfigureAwait(false);
-                    await exporter.ExportAsync(outputPath, cancellationToken, factory).ConfigureAwait(false);
+                    await PlatformConfigExporter.ExportAsync(outputPath, cancellationToken, factory).ConfigureAwait(false);
                     return 0;
                 });
             });
@@ -73,6 +72,7 @@ internal static class TopologyCommands
                 var topologyNamespaceName = applyCommand.Option("--service-bus-namespace-name <NAME>",
                     "Override the Service Bus namespace name (default: 'sb-{solution-id}-{environment}'). Use the value passed to 'nb infra apply'.",
                     CommandOptionType.SingleValue);
+                var topologyPostfix = applyCommand.Option(ResourceNaming.PostfixOptionTemplate, ResourceNaming.PostfixLookupOptionDescription, CommandOptionType.SingleValue);
                 var topologyDnsWait = applyCommand.Option(NetworkSelection.DnsWaitOptionTemplate, NetworkSelection.DnsWaitOptionDescription, CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
@@ -82,6 +82,7 @@ internal static class TopologyCommands
                         NetworkSelection.ValidateServiceBusNamespaceName(topologyNamespaceName.Value()!.Trim());
                     }
 
+                    _ = ResourceNaming.NormalizePostfix(topologyPostfix.Value());
                     var dnsWait = NetworkSelection.ParseDnsWaitOption(topologyDnsWait.Value());
                     var az = new AzureCliRunner();
                     var platformFactory = await ResolvePlatformFactoryAsync(
@@ -107,7 +108,7 @@ internal static class TopologyCommands
                         }
 
                         provisioner = new ServiceBusTopologyProvisioner(az, platformFactory);
-                        options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, topologyNamespaceName.Value(), dnsWait);
+                        options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, topologyNamespaceName.Value(), dnsWait, topologyPostfix.Value());
                     }
 
                     await provisioner.ApplyAsync(options, cancellationToken).ConfigureAwait(false);

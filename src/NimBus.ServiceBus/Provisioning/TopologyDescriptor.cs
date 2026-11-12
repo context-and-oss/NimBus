@@ -28,13 +28,19 @@ public sealed record ExpectedRule(string Name, string Filter, string? Action = n
 /// <c>Deferred</c> subscription sets one — parked sessions must survive far longer
 /// than an ordinary message.
 /// </param>
+/// <param name="DeadLetterOnMessageExpiration">
+/// True when a message that expires must move to the dead-letter queue instead of
+/// vanishing. Only the <c>Deferred</c> subscription sets it: an expired parked message
+/// is an event the endpoint still owes, and must stay visible to an operator.
+/// </param>
 public sealed record ExpectedSubscription(
     string Name,
     bool RequiresSession,
     string? ForwardTo,
     IReadOnlyList<ExpectedRule> Rules,
     bool KeepDefaultRule = false,
-    TimeSpan? DefaultMessageTimeToLive = null);
+    TimeSpan? DefaultMessageTimeToLive = null,
+    bool DeadLetterOnMessageExpiration = false);
 
 /// <summary>
 /// The NimBus Service Bus topology, expressed declaratively.
@@ -66,10 +72,12 @@ public static class TopologyDescriptor
     public const string DynamicForwardPrefix = "AgentDyn-";
 
     /// <summary>
-    /// Deferred-subscription TTL on a real namespace. Parked sessions wait for an
-    /// operator, so they must outlive an ordinary message by a wide margin.
+    /// Deferred-subscription TTL on a real namespace: unbounded, the Service Bus default.
+    /// A parked message waits until the event blocking its session is resolved, which can
+    /// take an operator weeks. The former 14-day cap expired such messages silently, leaving
+    /// the tracking row Deferred with nothing to replay when the session was unblocked.
     /// </summary>
-    public static readonly TimeSpan DeferredMessageTimeToLive = TimeSpan.FromDays(14);
+    public static readonly TimeSpan DeferredMessageTimeToLive = TimeSpan.MaxValue;
 
     /// <summary>
     /// Deferred-subscription TTL on the official emulator, whose upper bound is
@@ -92,14 +100,30 @@ public static class TopologyDescriptor
     public static string ToFilter(string to) => $"user.To = '{to}'";
 
     /// <summary>
-    /// Filter for a forwarder rule. <c>user.From IS NULL</c> restricts the rule to
-    /// ORIGINAL publishes: without it, an event type produced AND consumed by both
-    /// endpoints forwards back and forth until Service Bus's MaxHopCount
-    /// dead-letters it. Only <see cref="ForwardAction"/> populates <c>From</c>, so
-    /// checking IS NULL cleanly excludes already-forwarded copies.
+    /// Filter for a forwarder rule. It matches only ORIGINAL publishes of
+    /// <paramref name="eventTypeId"/>, through two guards:
+    /// <list type="bullet">
+    /// <item><description>
+    /// <c>user.MessageType = 'EventRequest'</c> excludes the endpoint's own control
+    /// traffic about an event of that type. Responses to the Resolver, RetryRequest,
+    /// ProcessDeferredRequest, ContinuationRequest and CLI resubmissions all carry the
+    /// inbound <c>EventTypeId</c> and no <c>From</c>; without this guard they would be
+    /// forwarded to the consumer as if they were events, and its dead-letter response
+    /// forwarded back, round after round.
+    /// </description></item>
+    /// <item><description>
+    /// <c>user.From IS NULL</c> excludes already-forwarded copies (only
+    /// <see cref="ForwardAction"/> populates <c>From</c> on the forward path), parked
+    /// copies and deferred replays, which carry a <c>From</c> marker, and Manager
+    /// traffic. Without it an event type produced AND consumed by both endpoints
+    /// forwards back and forth until Service Bus's MaxHopCount dead-letters it.
+    /// </description></item>
+    /// </list>
+    /// A producer outside NimBus must stamp <c>MessageType = EventRequest</c> for its
+    /// publishes to be forwarded.
     /// </summary>
     public static string ForwardFilter(string eventTypeId) =>
-        $"user.EventTypeId = '{eventTypeId}' AND user.From IS NULL";
+        $"user.EventTypeId = '{eventTypeId}' AND user.MessageType = '{nameof(MessageType.EventRequest)}' AND user.From IS NULL";
 
     /// <summary>
     /// Action for a forwarder rule: re-stamps the message as coming from the
@@ -190,7 +214,11 @@ public static class TopologyDescriptor
             KeepDefaultRule: false,
             DefaultMessageTimeToLive: isEmulator
                 ? DeferredMessageTimeToLiveOnEmulator
-                : DeferredMessageTimeToLive);
+                : DeferredMessageTimeToLive,
+            // An expired parked message is an event the endpoint still owes: keep it in the
+            // dead-letter queue, where the WebApp's deferred recovery finds it. Real namespaces
+            // only; the emulator's subscription settings are left as they were.
+            DeadLetterOnMessageExpiration: !isEmulator);
 
     /// <summary>
     /// The DeferredProcessor subscription — sessions off, receives the triggers that

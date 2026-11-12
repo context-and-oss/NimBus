@@ -632,7 +632,7 @@ namespace NimBus.WebApp.ManagementApi
 
         /// <returns>OK</returns>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostComposeNewEventAsync(ResubmitWithChanges body);
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<ComposeNewEventResult>> PostComposeNewEventAsync(ResubmitWithChanges body);
 
         /// <summary>
         /// Get blocked events on a session (paginated)
@@ -901,7 +901,7 @@ namespace NimBus.WebApp.ManagementApi
         /// </summary>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/event/compose-new")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostComposeNewEvent([Microsoft.AspNetCore.Mvc.FromBody] ResubmitWithChanges body)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<ComposeNewEventResult>> PostComposeNewEvent([Microsoft.AspNetCore.Mvc.FromBody] ResubmitWithChanges body)
         {
 
             return _implementation.PostComposeNewEventAsync(body);
@@ -1557,6 +1557,52 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SessionPurgeResult>> PostAdminSessionPurgeAsync(string endpointId, string sessionId);
 
         /// <summary>
+        /// Look up a session's Service Bus session state
+        /// </summary>
+
+        /// <remarks>
+        /// Reads the session state on the endpoint subscription under a briefly held session lock, together with the session's queued messages and store counts. Never writes.
+        /// </remarks>
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SessionStateView>> GetAdminSessionStateAsync(string endpointId, string sessionId);
+
+        /// <summary>
+        /// Change a session's Service Bus session state
+        /// </summary>
+
+        /// <remarks>
+        /// Applies a guided action or replaces the state with validated JSON. The change is refused with 409 when the stored state no longer matches expectedVersion or the session is locked by a receiver, and with 503 when the audit record cannot be written.
+        /// </remarks>
+
+
+
+        /// <returns>The state after the change</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SessionStateView>> PostAdminSessionStateAsync(SessionStateChangeRequest body, string endpointId, string sessionId);
+
+        /// <summary>
+        /// Preview which sessions hold idle session state
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SessionCleanupPreview>> PostAdminSessionCleanupPreviewAsync(SessionCleanupPreviewRequest body, string endpointId);
+
+        /// <summary>
+        /// Reset the session state of previewed idle sessions
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SessionCleanupResult>> PostAdminSessionCleanupAsync(SessionCleanupRequest body, string endpointId);
+
+        /// <summary>
         /// Delete a specific event from Cosmos DB
         /// </summary>
 
@@ -2062,6 +2108,56 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
+        /// Look up a session's Service Bus session state
+        /// </summary>
+        /// <remarks>
+        /// Reads the session state on the endpoint subscription under a briefly held session lock, together with the session's queued messages and store counts. Never writes.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/session/{sessionId}/state")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SessionStateView>> GetAdminSessionState(string endpointId, string sessionId)
+        {
+
+            return _implementation.GetAdminSessionStateAsync(endpointId, sessionId);
+        }
+
+        /// <summary>
+        /// Change a session's Service Bus session state
+        /// </summary>
+        /// <remarks>
+        /// Applies a guided action or replaces the state with validated JSON. The change is refused with 409 when the stored state no longer matches expectedVersion or the session is locked by a receiver, and with 503 when the audit record cannot be written.
+        /// </remarks>
+        /// <returns>The state after the change</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/session/{sessionId}/state")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SessionStateView>> PostAdminSessionState([Microsoft.AspNetCore.Mvc.FromBody] SessionStateChangeRequest body, string endpointId, string sessionId)
+        {
+
+            return _implementation.PostAdminSessionStateAsync(body, endpointId, sessionId);
+        }
+
+        /// <summary>
+        /// Preview which sessions hold idle session state
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/session-cleanup/preview")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SessionCleanupPreview>> PostAdminSessionCleanupPreview([Microsoft.AspNetCore.Mvc.FromBody] SessionCleanupPreviewRequest body, string endpointId)
+        {
+
+            return _implementation.PostAdminSessionCleanupPreviewAsync(body, endpointId);
+        }
+
+        /// <summary>
+        /// Reset the session state of previewed idle sessions
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/session-cleanup")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SessionCleanupResult>> PostAdminSessionCleanup([Microsoft.AspNetCore.Mvc.FromBody] SessionCleanupRequest body, string endpointId)
+        {
+
+            return _implementation.PostAdminSessionCleanupAsync(body, endpointId);
+        }
+
+        /// <summary>
         /// Delete a specific event from Cosmos DB
         /// </summary>
         /// <returns>OK</returns>
@@ -2454,6 +2550,128 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public interface IDashboardTokensApiController
+    {
+
+        /// <summary>
+        /// List the dashboard tokens
+        /// </summary>
+
+        /// <remarks>
+        /// Site Owner only. Every issued Monitor dashboard token with its status and last use, never the secret, plus an antiforgery token for the write operations.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DashboardTokenState>> GetAdminDashboardTokensAsync();
+
+        /// <summary>
+        /// Issue a dashboard token
+        /// </summary>
+
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full token once; only its hash is stored. The token gives read-only access to the Monitor feed (/api/monitor/feed/*) and nothing else.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DashboardTokenIssued>> PostAdminDashboardTokensAsync(DashboardTokenCreate body);
+
+        /// <summary>
+        /// Revoke a dashboard token
+        /// </summary>
+
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. The token stops working on this instance at once and on every other instance within 30 seconds (2 minutes while the store is unreachable). It stays listed until it is removed.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DashboardTokenState>> PostAdminDashboardTokenRevokeAsync(string tokenId);
+
+        /// <summary>
+        /// Remove a revoked or expired dashboard token
+        /// </summary>
+
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active token must be revoked first (400 StillActive).
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DashboardTokenState>> DeleteAdminDashboardTokenAsync(string tokenId);
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DashboardTokensApiController : Microsoft.AspNetCore.Mvc.Controller
+    {
+        private IDashboardTokensApiController _implementation;
+
+        public DashboardTokensApiController(IDashboardTokensApiController implementation)
+        {
+            _implementation = implementation;
+        }
+
+        /// <summary>
+        /// List the dashboard tokens
+        /// </summary>
+        /// <remarks>
+        /// Site Owner only. Every issued Monitor dashboard token with its status and last use, never the secret, plus an antiforgery token for the write operations.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/dashboard-tokens")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DashboardTokenState>> GetAdminDashboardTokens()
+        {
+
+            return _implementation.GetAdminDashboardTokensAsync();
+        }
+
+        /// <summary>
+        /// Issue a dashboard token
+        /// </summary>
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full token once; only its hash is stored. The token gives read-only access to the Monitor feed (/api/monitor/feed/*) and nothing else.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/dashboard-tokens")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DashboardTokenIssued>> PostAdminDashboardTokens([Microsoft.AspNetCore.Mvc.FromBody] DashboardTokenCreate body)
+        {
+
+            return _implementation.PostAdminDashboardTokensAsync(body);
+        }
+
+        /// <summary>
+        /// Revoke a dashboard token
+        /// </summary>
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. The token stops working on this instance at once and on every other instance within 30 seconds (2 minutes while the store is unreachable). It stays listed until it is removed.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/dashboard-tokens/{tokenId}/revoke")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DashboardTokenState>> PostAdminDashboardTokenRevoke(string tokenId)
+        {
+
+            return _implementation.PostAdminDashboardTokenRevokeAsync(tokenId);
+        }
+
+        /// <summary>
+        /// Remove a revoked or expired dashboard token
+        /// </summary>
+        /// <remarks>
+        /// Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active token must be revoked first (400 StillActive).
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpDelete, Microsoft.AspNetCore.Mvc.Route("api/admin/dashboard-tokens/{tokenId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DashboardTokenState>> DeleteAdminDashboardToken(string tokenId)
+        {
+
+            return _implementation.DeleteAdminDashboardTokenAsync(tokenId);
+        }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public interface IMessageApiController
     {
 
@@ -2664,9 +2882,51 @@ namespace NimBus.WebApp.ManagementApi
 
         /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
 
-        /// <returns>Failed message insights grouped by error pattern</returns>
+        /// <param name="endpointId">Exact endpoint id to narrow the failures to. Omitted selects every endpoint.</param>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period, System.DateTime? from, System.DateTime? to);
+        /// <param name="refresh">Re-read saved classifications instead of using the short-lived enrichment cache. New failures can still lag by the metrics cache lifetime.</param>
+
+        /// <returns>Failed message insights grouped by error pattern, and by likely cause and recovery guidance when saved classifications are available</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period, System.DateTime? from, System.DateTime? to, string endpointId, bool? refresh);
+
+        /// <summary>
+        /// Page the failure occurrences of one insights group
+        /// </summary>
+
+        /// <remarks>
+        /// Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis.
+        /// </remarks>
+
+        /// <param name="from">Window start (inclusive), as returned by the overview.</param>
+
+        /// <param name="to">Window end (exclusive), as returned by the overview.</param>
+
+
+        /// <param name="groupKey">A groupKey from the overview for the same perspective.</param>
+
+        /// <param name="pageSize">1 to 100; default 50.</param>
+
+
+        /// <returns>One page of occurrences</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<InsightOccurrencePage>> GetMetricsFailedInsightsOccurrencesAsync(System.DateTime from, System.DateTime to, string endpointId, InsightsPerspective perspective, string groupKey, int? pageSize, string continuationToken);
+
+        /// <summary>
+        /// Page the error patterns of one likely-cause or recovery-guidance group
+        /// </summary>
+
+
+
+        /// <param name="perspective">cause or guidance.</param>
+
+
+        /// <param name="pageSize">1 to 100; default 50.</param>
+
+
+        /// <returns>One page of error patterns, most frequent first</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<InsightGroupPatternPage>> GetMetricsFailedInsightsPatternsAsync(System.DateTime from, System.DateTime to, string endpointId, InsightsPerspective perspective, string groupKey, int? pageSize, string continuationToken);
 
         /// <summary>
         /// Get time-bucketed message counts
@@ -2737,12 +2997,45 @@ namespace NimBus.WebApp.ManagementApi
         /// </summary>
         /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
         /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
-        /// <returns>Failed message insights grouped by error pattern</returns>
+        /// <param name="endpointId">Exact endpoint id to narrow the failures to. Omitted selects every endpoint.</param>
+        /// <param name="refresh">Re-read saved classifications instead of using the short-lived enrichment cache. New failures can still lag by the metrics cache lifetime.</param>
+        /// <returns>Failed message insights grouped by error pattern, and by likely cause and recovery guidance when saved classifications are available</returns>
         [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/metrics/failed-insights")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsights([Microsoft.AspNetCore.Mvc.FromQuery] Period period, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? to)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsights([Microsoft.AspNetCore.Mvc.FromQuery] Period period, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? to, [Microsoft.AspNetCore.Mvc.FromQuery] string endpointId, [Microsoft.AspNetCore.Mvc.FromQuery] bool? refresh)
         {
 
-            return _implementation.GetMetricsFailedInsightsAsync(period, from, to);
+            return _implementation.GetMetricsFailedInsightsAsync(period, from, to, endpointId, refresh);
+        }
+
+        /// <summary>
+        /// Page the failure occurrences of one insights group
+        /// </summary>
+        /// <remarks>
+        /// Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis.
+        /// </remarks>
+        /// <param name="from">Window start (inclusive), as returned by the overview.</param>
+        /// <param name="to">Window end (exclusive), as returned by the overview.</param>
+        /// <param name="groupKey">A groupKey from the overview for the same perspective.</param>
+        /// <param name="pageSize">1 to 100; default 50.</param>
+        /// <returns>One page of occurrences</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/metrics/failed-insights/occurrences")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<InsightOccurrencePage>> GetMetricsFailedInsightsOccurrences([Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime to, [Microsoft.AspNetCore.Mvc.FromQuery] string endpointId, [Microsoft.AspNetCore.Mvc.FromQuery] InsightsPerspective perspective, [Microsoft.AspNetCore.Mvc.FromQuery] string groupKey, [Microsoft.AspNetCore.Mvc.FromQuery] int? pageSize, [Microsoft.AspNetCore.Mvc.FromQuery] string continuationToken)
+        {
+
+            return _implementation.GetMetricsFailedInsightsOccurrencesAsync(from, to, endpointId, perspective, groupKey, pageSize, continuationToken);
+        }
+
+        /// <summary>
+        /// Page the error patterns of one likely-cause or recovery-guidance group
+        /// </summary>
+        /// <param name="perspective">cause or guidance.</param>
+        /// <param name="pageSize">1 to 100; default 50.</param>
+        /// <returns>One page of error patterns, most frequent first</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/metrics/failed-insights/patterns")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<InsightGroupPatternPage>> GetMetricsFailedInsightsPatterns([Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime to, [Microsoft.AspNetCore.Mvc.FromQuery] string endpointId, [Microsoft.AspNetCore.Mvc.FromQuery] InsightsPerspective perspective, [Microsoft.AspNetCore.Mvc.FromQuery] string groupKey, [Microsoft.AspNetCore.Mvc.FromQuery] int? pageSize, [Microsoft.AspNetCore.Mvc.FromQuery] string continuationToken)
+        {
+
+            return _implementation.GetMetricsFailedInsightsPatternsAsync(from, to, endpointId, perspective, groupKey, pageSize, continuationToken);
         }
 
         /// <summary>
@@ -2905,6 +3198,102 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.DeleteMonitorAcknowledgementAsync(endpointId);
+        }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public interface IMonitorFeedApiController
+    {
+
+        /// <summary>
+        /// The Monitor's current state, polled every few seconds
+        /// </summary>
+
+        /// <remarks>
+        /// Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header). Every endpoint, unfiltered: status counts, blocked sessions, heartbeat and acknowledgement. stale is true when the store could not be read and an earlier result is returned.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MonitorFeedStatus>> GetMonitorFeedStatusAsync();
+
+        /// <summary>
+        /// The Monitor's last-hour throughput and timings, polled every 30 seconds
+        /// </summary>
+
+        /// <remarks>
+        /// Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header). A per-minute series for the last hour (60 buckets, the last partial) and per-endpoint counts and average timings over the 60 minutes up to now.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MonitorFeedMetrics>> GetMonitorFeedMetricsAsync();
+
+        /// <summary>
+        /// The Monitor's longer history, polled every 5 minutes
+        /// </summary>
+
+        /// <remarks>
+        /// Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header). A per-hour series for the last 3 days (72 buckets, the last partial), queue and processing time per hour for the last 24 hours, and each endpoint's 24-hour average processing time.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MonitorFeedHistory>> GetMonitorFeedHistoryAsync();
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorFeedApiController : Microsoft.AspNetCore.Mvc.Controller
+    {
+        private IMonitorFeedApiController _implementation;
+
+        public MonitorFeedApiController(IMonitorFeedApiController implementation)
+        {
+            _implementation = implementation;
+        }
+
+        /// <summary>
+        /// The Monitor's current state, polled every few seconds
+        /// </summary>
+        /// <remarks>
+        /// Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header). Every endpoint, unfiltered: status counts, blocked sessions, heartbeat and acknowledgement. stale is true when the store could not be read and an earlier result is returned.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/monitor/feed/status")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MonitorFeedStatus>> GetMonitorFeedStatus()
+        {
+
+            return _implementation.GetMonitorFeedStatusAsync();
+        }
+
+        /// <summary>
+        /// The Monitor's last-hour throughput and timings, polled every 30 seconds
+        /// </summary>
+        /// <remarks>
+        /// Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header). A per-minute series for the last hour (60 buckets, the last partial) and per-endpoint counts and average timings over the 60 minutes up to now.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/monitor/feed/metrics")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MonitorFeedMetrics>> GetMonitorFeedMetrics()
+        {
+
+            return _implementation.GetMonitorFeedMetricsAsync();
+        }
+
+        /// <summary>
+        /// The Monitor's longer history, polled every 5 minutes
+        /// </summary>
+        /// <remarks>
+        /// Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header). A per-hour series for the last 3 days (72 buckets, the last partial), queue and processing time per hour for the last 24 hours, and each endpoint's 24-hour average processing time.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/monitor/feed/history")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MonitorFeedHistory>> GetMonitorFeedHistory()
+        {
+
+            return _implementation.GetMonitorFeedHistoryAsync();
         }
 
     }
@@ -7793,6 +8182,116 @@ namespace NimBus.WebApp.ManagementApi
         }
     }
 
+    /// <summary>
+    /// Identity of the event a compose published, so the operator can follow it.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ComposeNewEventResult : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _eventTypeId;
+        private string _publishedBy;
+        private string _messageId;
+        private string _sessionId;
+
+        /// <summary>
+        /// The composed event type.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The producing endpoint whose topic the event was published to.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("publishedBy", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string PublishedBy    {
+            get { return _publishedBy; }
+            set
+            {
+                if (_publishedBy != value)
+                {
+                    _publishedBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The published message id. Every subscriber's Event Request carries it, so it finds the event on each subscriber.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("messageId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string MessageId    {
+            get { return _messageId; }
+            set
+            {
+                if (_messageId != value)
+                {
+                    _messageId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The session the event was published on.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("sessionId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string SessionId    {
+            get { return _sessionId; }
+            set
+            {
+                if (_sessionId != value)
+                {
+                    _sessionId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static ComposeNewEventResult FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<ComposeNewEventResult>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class CompleteHandoffRequest : System.ComponentModel.INotifyPropertyChanged
     {
@@ -9300,6 +9799,7 @@ namespace NimBus.WebApp.ManagementApi
         private Period _period;
         private System.DateTime? _from;
         private System.DateTime? _to;
+        private string _timeZone;
 
         [Newtonsoft.Json.JsonProperty("filter", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public FailedSearchFilter Filter    {
@@ -9360,6 +9860,22 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// IANA time zone (for example Europe/Berlin) the bars follow: they start at local midnight and step in whole buckets of local time. UTC when absent or unknown.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("timeZone", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TimeZone    {
+            get { return _timeZone; }
+            set
+            {
+                if (_timeZone != value)
+                {
+                    _timeZone = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -9402,7 +9918,7 @@ namespace NimBus.WebApp.ManagementApi
         private bool _truncated;
 
         /// <summary>
-        /// Bucket size in minutes.
+        /// Nominal bucket size in minutes. Each bucket ends where the next one starts, so a bar across a daylight-saving change is shorter or longer.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("bucketMinutes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public int BucketMinutes    {
@@ -12748,6 +13264,1014 @@ namespace NimBus.WebApp.ManagementApi
         }
     }
 
+    /// <summary>
+    /// A session's Service Bus session state on the endpoint subscription, read under a session lock, with the session's queued messages and store counts.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SessionStateView : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _sessionId;
+        private bool _locked;
+        private bool _readable;
+        private bool _isEmpty;
+        private string _stateJson;
+        private string _stateVersion;
+        private string _blockedByEventId;
+        private string _blockedByMessageId;
+        private int _deferredCount;
+        private int _nextDeferralSequence;
+        private int? _replayedThroughSequence;
+        private int? _drainRequestedForSequence;
+        private System.DateTime? _drainRequestedAtUtc;
+        private int _legacyDeferredCount;
+        private bool _blocked;
+        private bool _hasUnreplayedMessages;
+        private int _activeMessageCount;
+        private int _deferredSubscriptionCount;
+        private int _storePendingCount;
+        private int _storeDeferredCount;
+        private string _blockingEventStatus;
+        private string _message;
+
+        [Newtonsoft.Json.JsonProperty("sessionId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SessionId    {
+            get { return _sessionId; }
+            set
+            {
+                if (_sessionId != value)
+                {
+                    _sessionId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// A receiver holds the session, so its state could not be read.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("locked", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Locked    {
+            get { return _locked; }
+            set
+            {
+                if (_locked != value)
+                {
+                    _locked = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The stored state parses as NimBus session state.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("readable", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Readable    {
+            get { return _readable; }
+            set
+            {
+                if (_readable != value)
+                {
+                    _readable = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("isEmpty", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool IsEmpty    {
+            get { return _isEmpty; }
+            set
+            {
+                if (_isEmpty != value)
+                {
+                    _isEmpty = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The stored state as text; null when nothing is stored.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("stateJson", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string StateJson    {
+            get { return _stateJson; }
+            set
+            {
+                if (_stateJson != value)
+                {
+                    _stateJson = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// SHA-256 of the stored bytes; send it back as expectedVersion.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("stateVersion", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string StateVersion    {
+            get { return _stateVersion; }
+            set
+            {
+                if (_stateVersion != value)
+                {
+                    _stateVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("blockedByEventId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string BlockedByEventId    {
+            get { return _blockedByEventId; }
+            set
+            {
+                if (_blockedByEventId != value)
+                {
+                    _blockedByEventId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("blockedByMessageId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string BlockedByMessageId    {
+            get { return _blockedByMessageId; }
+            set
+            {
+                if (_blockedByMessageId != value)
+                {
+                    _blockedByMessageId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("deferredCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int DeferredCount    {
+            get { return _deferredCount; }
+            set
+            {
+                if (_deferredCount != value)
+                {
+                    _deferredCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("nextDeferralSequence", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int NextDeferralSequence    {
+            get { return _nextDeferralSequence; }
+            set
+            {
+                if (_nextDeferralSequence != value)
+                {
+                    _nextDeferralSequence = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("replayedThroughSequence", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? ReplayedThroughSequence    {
+            get { return _replayedThroughSequence; }
+            set
+            {
+                if (_replayedThroughSequence != value)
+                {
+                    _replayedThroughSequence = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("drainRequestedForSequence", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? DrainRequestedForSequence    {
+            get { return _drainRequestedForSequence; }
+            set
+            {
+                if (_drainRequestedForSequence != value)
+                {
+                    _drainRequestedForSequence = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("drainRequestedAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? DrainRequestedAtUtc    {
+            get { return _drainRequestedAtUtc; }
+            set
+            {
+                if (_drainRequestedAtUtc != value)
+                {
+                    _drainRequestedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("legacyDeferredCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int LegacyDeferredCount    {
+            get { return _legacyDeferredCount; }
+            set
+            {
+                if (_legacyDeferredCount != value)
+                {
+                    _legacyDeferredCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("blocked", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Blocked    {
+            get { return _blocked; }
+            set
+            {
+                if (_blocked != value)
+                {
+                    _blocked = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("hasUnreplayedMessages", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool HasUnreplayedMessages    {
+            get { return _hasUnreplayedMessages; }
+            set
+            {
+                if (_hasUnreplayedMessages != value)
+                {
+                    _hasUnreplayedMessages = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Messages queued on the session (peeked, at most 100).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("activeMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int ActiveMessageCount    {
+            get { return _activeMessageCount; }
+            set
+            {
+                if (_activeMessageCount != value)
+                {
+                    _activeMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Messages parked on the Deferred subscription (peeked, at most 100).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("deferredSubscriptionCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int DeferredSubscriptionCount    {
+            get { return _deferredSubscriptionCount; }
+            set
+            {
+                if (_deferredSubscriptionCount != value)
+                {
+                    _deferredSubscriptionCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("storePendingCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int StorePendingCount    {
+            get { return _storePendingCount; }
+            set
+            {
+                if (_storePendingCount != value)
+                {
+                    _storePendingCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("storeDeferredCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int StoreDeferredCount    {
+            get { return _storeDeferredCount; }
+            set
+            {
+                if (_storeDeferredCount != value)
+                {
+                    _storeDeferredCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stored status of the blocking event; null when not blocked or not found.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("blockingEventStatus", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string BlockingEventStatus    {
+            get { return _blockingEventStatus; }
+            set
+            {
+                if (_blockingEventStatus != value)
+                {
+                    _blockingEventStatus = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("message", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Message    {
+            get { return _message; }
+            set
+            {
+                if (_message != value)
+                {
+                    _message = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SessionStateView FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SessionStateView>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SessionStateChangeRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private SessionStateChangeRequestAction _action;
+        private string _expectedVersion;
+        private string _stateJson;
+
+        [Newtonsoft.Json.JsonProperty("action", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public SessionStateChangeRequestAction Action    {
+            get { return _action; }
+            set
+            {
+                if (_action != value)
+                {
+                    _action = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The stateVersion the change was based on.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("expectedVersion", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string ExpectedVersion    {
+            get { return _expectedVersion; }
+            set
+            {
+                if (_expectedVersion != value)
+                {
+                    _expectedVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The new state, for replace.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("stateJson", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string StateJson    {
+            get { return _stateJson; }
+            set
+            {
+                if (_stateJson != value)
+                {
+                    _stateJson = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SessionStateChangeRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SessionStateChangeRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SessionCleanupPreviewRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.DateTime? _updatedSince;
+        private int? _maxSessions;
+        private bool _includeStaleBlocks;
+
+        /// <summary>
+        /// Only sessions of events updated since; defaults to 30 days ago.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("updatedSince", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? UpdatedSince    {
+            get { return _updatedSince; }
+            set
+            {
+                if (_updatedSince != value)
+                {
+                    _updatedSince = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Most sessions to inspect, 1 to 1000; defaults to 200.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("maxSessions", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? MaxSessions    {
+            get { return _maxSessions; }
+            set
+            {
+                if (_maxSessions != value)
+                {
+                    _maxSessions = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("includeStaleBlocks", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool IncludeStaleBlocks    {
+            get { return _includeStaleBlocks; }
+            set
+            {
+                if (_includeStaleBlocks != value)
+                {
+                    _includeStaleBlocks = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SessionCleanupPreviewRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SessionCleanupPreviewRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SessionCleanupPreview : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _inspectedCount;
+        private int _emptyCount;
+        private bool _truncated;
+        private System.Collections.Generic.List<SessionCleanupCandidate> _sessions;
+
+        [Newtonsoft.Json.JsonProperty("inspectedCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int InspectedCount    {
+            get { return _inspectedCount; }
+            set
+            {
+                if (_inspectedCount != value)
+                {
+                    _inspectedCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Inspected sessions that hold no state.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("emptyCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int EmptyCount    {
+            get { return _emptyCount; }
+            set
+            {
+                if (_emptyCount != value)
+                {
+                    _emptyCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// More sessions matched than maxSessions.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("truncated", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Truncated    {
+            get { return _truncated; }
+            set
+            {
+                if (_truncated != value)
+                {
+                    _truncated = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sessions", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<SessionCleanupCandidate> Sessions    {
+            get { return _sessions; }
+            set
+            {
+                if (_sessions != value)
+                {
+                    _sessions = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SessionCleanupPreview FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SessionCleanupPreview>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SessionCleanupCandidate : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _sessionId;
+        private SessionCleanupCandidateClassification _classification;
+        private string _reason;
+        private string _stateVersion;
+        private string _stateJson;
+
+        [Newtonsoft.Json.JsonProperty("sessionId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SessionId    {
+            get { return _sessionId; }
+            set
+            {
+                if (_sessionId != value)
+                {
+                    _sessionId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("classification", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public SessionCleanupCandidateClassification Classification    {
+            get { return _classification; }
+            set
+            {
+                if (_classification != value)
+                {
+                    _classification = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Reason    {
+            get { return _reason; }
+            set
+            {
+                if (_reason != value)
+                {
+                    _reason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("stateVersion", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string StateVersion    {
+            get { return _stateVersion; }
+            set
+            {
+                if (_stateVersion != value)
+                {
+                    _stateVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("stateJson", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string StateJson    {
+            get { return _stateJson; }
+            set
+            {
+                if (_stateJson != value)
+                {
+                    _stateJson = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SessionCleanupCandidate FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SessionCleanupCandidate>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SessionCleanupRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private bool _includeStaleBlocks;
+        private System.Collections.Generic.List<SessionCleanupSelection> _sessions = new System.Collections.Generic.List<SessionCleanupSelection>();
+
+        [Newtonsoft.Json.JsonProperty("includeStaleBlocks", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool IncludeStaleBlocks    {
+            get { return _includeStaleBlocks; }
+            set
+            {
+                if (_includeStaleBlocks != value)
+                {
+                    _includeStaleBlocks = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sessions", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required]
+        public System.Collections.Generic.List<SessionCleanupSelection> Sessions    {
+            get { return _sessions; }
+            set
+            {
+                if (_sessions != value)
+                {
+                    _sessions = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SessionCleanupRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SessionCleanupRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SessionCleanupSelection : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _sessionId;
+        private string _stateVersion;
+
+        [Newtonsoft.Json.JsonProperty("sessionId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string SessionId    {
+            get { return _sessionId; }
+            set
+            {
+                if (_sessionId != value)
+                {
+                    _sessionId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("stateVersion", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string StateVersion    {
+            get { return _stateVersion; }
+            set
+            {
+                if (_stateVersion != value)
+                {
+                    _stateVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SessionCleanupSelection FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SessionCleanupSelection>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SessionCleanupResult : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _resetCount;
+        private System.Collections.Generic.List<SessionCleanupSkip> _skipped;
+        private System.Collections.Generic.List<string> _errors;
+
+        [Newtonsoft.Json.JsonProperty("resetCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int ResetCount    {
+            get { return _resetCount; }
+            set
+            {
+                if (_resetCount != value)
+                {
+                    _resetCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("skipped", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<SessionCleanupSkip> Skipped    {
+            get { return _skipped; }
+            set
+            {
+                if (_skipped != value)
+                {
+                    _skipped = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("errors", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Errors    {
+            get { return _errors; }
+            set
+            {
+                if (_errors != value)
+                {
+                    _errors = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SessionCleanupResult FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SessionCleanupResult>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SessionCleanupSkip : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _sessionId;
+        private string _reason;
+
+        [Newtonsoft.Json.JsonProperty("sessionId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SessionId    {
+            get { return _sessionId; }
+            set
+            {
+                if (_sessionId != value)
+                {
+                    _sessionId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Reason    {
+            get { return _reason; }
+            set
+            {
+                if (_reason != value)
+                {
+                    _reason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SessionCleanupSkip FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SessionCleanupSkip>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class MetricsOverview : System.ComponentModel.INotifyPropertyChanged
     {
@@ -13162,6 +14686,18 @@ namespace NimBus.WebApp.ManagementApi
     {
         private System.Collections.Generic.List<ErrorPatternGroup> _groups;
         private int _totalFailed;
+        private System.DateTime _from;
+        private System.DateTime _to;
+        private string _endpointId;
+        private int _totalOccurrences;
+        private System.DateTime _occurrencesReadAt;
+        private System.DateTime? _classificationsReadAt;
+        private InsightsEnrichmentStatus _enrichment;
+        private int _enrichmentLimit;
+        private bool _analysisAvailable;
+        private InsightsCoverage _coverage;
+        private System.Collections.Generic.List<InsightGroup> _causeGroups;
+        private System.Collections.Generic.List<InsightGroup> _guidanceGroups;
 
         [Newtonsoft.Json.JsonProperty("groups", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<ErrorPatternGroup> Groups    {
@@ -13176,6 +14712,9 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// Failure occurrences in the window. Always equal to totalOccurrences; kept for existing clients.
+        /// </summary>
         [Newtonsoft.Json.JsonProperty("totalFailed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public int TotalFailed    {
             get { return _totalFailed; }
@@ -13184,6 +14723,193 @@ namespace NimBus.WebApp.ManagementApi
                 if (_totalFailed != value)
                 {
                     _totalFailed = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolved window start (inclusive, UTC). Send it back unchanged with to for drill-down.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("from", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime From    {
+            get { return _from; }
+            set
+            {
+                if (_from != value)
+                {
+                    _from = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolved window end (exclusive, UTC).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("to", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime To    {
+            get { return _to; }
+            set
+            {
+                if (_to != value)
+                {
+                    _to = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The endpoint filter applied, or null for every endpoint.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Failed attempts in the scope. An event that failed three times counts three.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("totalOccurrences", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int TotalOccurrences    {
+            get { return _totalOccurrences; }
+            set
+            {
+                if (_totalOccurrences != value)
+                {
+                    _totalOccurrences = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When the failure occurrences were read from the message store.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("occurrencesReadAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime OccurrencesReadAt    {
+            get { return _occurrencesReadAt; }
+            set
+            {
+                if (_occurrencesReadAt != value)
+                {
+                    _occurrencesReadAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When saved classifications were read, or null when enrichment is not available.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("classificationsReadAt", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ClassificationsReadAt    {
+            get { return _classificationsReadAt; }
+            set
+            {
+                if (_classificationsReadAt != value)
+                {
+                    _classificationsReadAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("enrichment", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public InsightsEnrichmentStatus Enrichment    {
+            get { return _enrichment; }
+            set
+            {
+                if (_enrichment != value)
+                {
+                    _enrichment = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The largest scope, in occurrences, that is enriched with saved classifications.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("enrichmentLimit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int EnrichmentLimit    {
+            get { return _enrichmentLimit; }
+            set
+            {
+                if (_enrichmentLimit != value)
+                {
+                    _enrichmentLimit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("analysisAvailable", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AnalysisAvailable    {
+            get { return _analysisAvailable; }
+            set
+            {
+                if (_analysisAvailable != value)
+                {
+                    _analysisAvailable = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Occurrences grouped by likely failure cause. Null unless enrichment is available.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("causeGroups", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightGroup> CauseGroups    {
+            get { return _causeGroups; }
+            set
+            {
+                if (_causeGroups != value)
+                {
+                    _causeGroups = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Occurrences grouped by saved recovery guidance. Null unless enrichment is available.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("guidanceGroups", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightGroup> GuidanceGroups    {
+            get { return _guidanceGroups; }
+            set
+            {
+                if (_guidanceGroups != value)
+                {
+                    _guidanceGroups = value;
                     RaisePropertyChanged();
                 }
             }
@@ -13220,16 +14946,953 @@ namespace NimBus.WebApp.ManagementApi
         }
     }
 
+    /// <summary>
+    /// Whether saved classifications enrich this response. Every value except available leaves coverage and the cause and guidance groups null. disabled is listed first so an unset value never reads as available.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum InsightsEnrichmentStatus
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disabled")]
+        Disabled = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"available")]
+        Available = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"unavailable")]
+        Unavailable = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"unsupported")]
+        Unsupported = 3,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"limitExceeded")]
+        LimitExceeded = 4,
+
+    }
+
+    /// <summary>
+    /// How many occurrences have saved analysis. classified + uncertain + notAnalyzed + notEligible = total.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightsCoverage : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _total;
+        private int _analyzed;
+        private int _classified;
+        private int _uncertain;
+        private int _notAnalyzed;
+        private int _notEligible;
+
+        [Newtonsoft.Json.JsonProperty("total", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Total    {
+            get { return _total; }
+            set
+            {
+                if (_total != value)
+                {
+                    _total = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// classified + uncertain.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("analyzed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Analyzed    {
+            get { return _analyzed; }
+            set
+            {
+                if (_analyzed != value)
+                {
+                    _analyzed = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("classified", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Classified    {
+            get { return _classified; }
+            set
+            {
+                if (_classified != value)
+                {
+                    _classified = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("uncertain", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Uncertain    {
+            get { return _uncertain; }
+            set
+            {
+                if (_uncertain != value)
+                {
+                    _uncertain = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// No completed result, and analysis could be requested. Includes failures that can no longer be analyzed because their event has since completed or been skipped.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("notAnalyzed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int NotAnalyzed    {
+            get { return _notAnalyzed; }
+            set
+            {
+                if (_notAnalyzed != value)
+                {
+                    _notAnalyzed = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// No completed result, and the endpoint is outside the configured analysis allow-list.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("notEligible", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int NotEligible    {
+            get { return _notEligible; }
+            set
+            {
+                if (_notEligible != value)
+                {
+                    _notEligible = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightsCoverage FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightsCoverage>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// One likely-cause or recovery-guidance group.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightGroup : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _groupKey;
+        private string _label;
+        private int _count;
+        private InsightsCoverage _coverage;
+        private System.Collections.Generic.List<string> _endpoints;
+        private System.Collections.Generic.List<string> _eventTypes;
+        private System.DateTime _latestOccurrence;
+        private System.Collections.Generic.List<InsightGroupPattern> _topPatterns;
+        private int _morePatterns;
+
+        /// <summary>
+        /// Stable within this response. A taxonomy or guidance name, or uncertain, notAnalyzed, notEligible.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("groupKey", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string GroupKey    {
+            get { return _groupKey; }
+            set
+            {
+                if (_groupKey != value)
+                {
+                    _groupKey = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("label", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Label    {
+            get { return _label; }
+            set
+            {
+                if (_label != value)
+                {
+                    _label = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Count    {
+            get { return _count; }
+            set
+            {
+                if (_count != value)
+                {
+                    _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventTypes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> EventTypes    {
+            get { return _eventTypes; }
+            set
+            {
+                if (_eventTypes != value)
+                {
+                    _eventTypes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("latestOccurrence", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime LatestOccurrence    {
+            get { return _latestOccurrence; }
+            set
+            {
+                if (_latestOccurrence != value)
+                {
+                    _latestOccurrence = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The group's most frequent error patterns, at most the configured limit.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("topPatterns", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightGroupPattern> TopPatterns    {
+            get { return _topPatterns; }
+            set
+            {
+                if (_topPatterns != value)
+                {
+                    _topPatterns = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Distinct error patterns in the group beyond topPatterns.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("morePatterns", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int MorePatterns    {
+            get { return _morePatterns; }
+            set
+            {
+                if (_morePatterns != value)
+                {
+                    _morePatterns = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightGroup FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightGroup>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum InsightsPerspective
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"errorPattern")]
+        ErrorPattern = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"cause")]
+        Cause = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"guidance")]
+        Guidance = 2,
+
+    }
+
+    /// <summary>
+    /// The occurrence's coverage state. unavailable (listed first so an unset value never claims analysis) means saved classifications could not be read for this scope.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum InsightAnalysisState
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"unavailable")]
+        Unavailable = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"classified")]
+        Classified = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"uncertain")]
+        Uncertain = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"notAnalyzed")]
+        NotAnalyzed = 3,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"notEligible")]
+        NotEligible = 4,
+
+    }
+
+    /// <summary>
+    /// One failed attempt.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightOccurrence : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _messageId;
+        private string _eventId;
+        private string _endpointId;
+        private string _eventTypeId;
+        private System.DateTime _failedAt;
+        private string _errorPatternKey;
+        private string _normalizedPattern;
+        private InsightAnalysisState _analysisState;
+        private string _operationMarker;
+        private string _category;
+        private double? _categoryConfidence;
+        private string _guidance;
+        private int? _revision;
+        private string _model;
+        private System.DateTime? _classifiedAt;
+        private string _currentStatus;
+
+        [Newtonsoft.Json.JsonProperty("messageId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string MessageId    {
+            get { return _messageId; }
+            set
+            {
+                if (_messageId != value)
+                {
+                    _messageId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventId    {
+            get { return _eventId; }
+            set
+            {
+                if (_eventId != value)
+                {
+                    _eventId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("failedAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime FailedAt    {
+            get { return _failedAt; }
+            set
+            {
+                if (_failedAt != value)
+                {
+                    _failedAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("errorPatternKey", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ErrorPatternKey    {
+            get { return _errorPatternKey; }
+            set
+            {
+                if (_errorPatternKey != value)
+                {
+                    _errorPatternKey = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("normalizedPattern", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string NormalizedPattern    {
+            get { return _normalizedPattern; }
+            set
+            {
+                if (_normalizedPattern != value)
+                {
+                    _normalizedPattern = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("analysisState", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public InsightAnalysisState AnalysisState    {
+            get { return _analysisState; }
+            set
+            {
+                if (_analysisState != value)
+                {
+                    _analysisState = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// analysisRunning, outcomeUnknown, lastAnalysisFailed or identityMismatch; null when the latest operation is the completed result.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("operationMarker", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string OperationMarker    {
+            get { return _operationMarker; }
+            set
+            {
+                if (_operationMarker != value)
+                {
+                    _operationMarker = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The saved category; for an uncertain result, the provider's suggestion.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("category", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Category    {
+            get { return _category; }
+            set
+            {
+                if (_category != value)
+                {
+                    _category = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("categoryConfidence", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public double? CategoryConfidence    {
+            get { return _categoryConfidence; }
+            set
+            {
+                if (_categoryConfidence != value)
+                {
+                    _categoryConfidence = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The saved guidance name, or the raw stored value when unrecognized.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("guidance", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Guidance    {
+            get { return _guidance; }
+            set
+            {
+                if (_guidance != value)
+                {
+                    _guidance = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("revision", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? Revision    {
+            get { return _revision; }
+            set
+            {
+                if (_revision != value)
+                {
+                    _revision = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("model", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Model    {
+            get { return _model; }
+            set
+            {
+                if (_model != value)
+                {
+                    _model = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("classifiedAt", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ClassifiedAt    {
+            get { return _classifiedAt; }
+            set
+            {
+                if (_classifiedAt != value)
+                {
+                    _classifiedAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The event's current resolution status, or null when unavailable. Never implies unresolved.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("currentStatus", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CurrentStatus    {
+            get { return _currentStatus; }
+            set
+            {
+                if (_currentStatus != value)
+                {
+                    _currentStatus = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightOccurrence FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightOccurrence>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightOccurrencePage : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<InsightOccurrence> _occurrences;
+        private string _continuationToken;
+        private System.DateTime _occurrencesReadAt;
+        private System.DateTime? _classificationsReadAt;
+        private InsightsEnrichmentStatus _enrichment;
+
+        [Newtonsoft.Json.JsonProperty("occurrences", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightOccurrence> Occurrences    {
+            get { return _occurrences; }
+            set
+            {
+                if (_occurrences != value)
+                {
+                    _occurrences = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("continuationToken", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ContinuationToken    {
+            get { return _continuationToken; }
+            set
+            {
+                if (_continuationToken != value)
+                {
+                    _continuationToken = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("occurrencesReadAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime OccurrencesReadAt    {
+            get { return _occurrencesReadAt; }
+            set
+            {
+                if (_occurrencesReadAt != value)
+                {
+                    _occurrencesReadAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("classificationsReadAt", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ClassificationsReadAt    {
+            get { return _classificationsReadAt; }
+            set
+            {
+                if (_classificationsReadAt != value)
+                {
+                    _classificationsReadAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("enrichment", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public InsightsEnrichmentStatus Enrichment    {
+            get { return _enrichment; }
+            set
+            {
+                if (_enrichment != value)
+                {
+                    _enrichment = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightOccurrencePage FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightOccurrencePage>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightGroupPatternPage : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<InsightGroupPattern> _patterns;
+        private string _continuationToken;
+        private System.DateTime _occurrencesReadAt;
+
+        [Newtonsoft.Json.JsonProperty("patterns", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightGroupPattern> Patterns    {
+            get { return _patterns; }
+            set
+            {
+                if (_patterns != value)
+                {
+                    _patterns = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("continuationToken", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ContinuationToken    {
+            get { return _continuationToken; }
+            set
+            {
+                if (_continuationToken != value)
+                {
+                    _continuationToken = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("occurrencesReadAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime OccurrencesReadAt    {
+            get { return _occurrencesReadAt; }
+            set
+            {
+                if (_occurrencesReadAt != value)
+                {
+                    _occurrencesReadAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightGroupPatternPage FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightGroupPatternPage>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightGroupPattern : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _groupKey;
+        private string _normalizedPattern;
+        private int _count;
+        private string _exampleErrorText;
+
+        /// <summary>
+        /// The error pattern's key, as on ErrorSubGroup.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("groupKey", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string GroupKey    {
+            get { return _groupKey; }
+            set
+            {
+                if (_groupKey != value)
+                {
+                    _groupKey = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("normalizedPattern", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string NormalizedPattern    {
+            get { return _normalizedPattern; }
+            set
+            {
+                if (_normalizedPattern != value)
+                {
+                    _normalizedPattern = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Count    {
+            get { return _count; }
+            set
+            {
+                if (_count != value)
+                {
+                    _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("exampleErrorText", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ExampleErrorText    {
+            get { return _exampleErrorText; }
+            set
+            {
+                if (_exampleErrorText != value)
+                {
+                    _exampleErrorText = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightGroupPattern FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightGroupPattern>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class ErrorPatternGroup : System.ComponentModel.INotifyPropertyChanged
     {
+        private string _groupKey;
         private string _errorCategory;
         private int _count;
+        private InsightsCoverage _coverage;
         private System.Collections.Generic.List<string> _endpoints;
         private System.Collections.Generic.List<string> _eventTypes;
         private System.DateTime _latestOccurrence;
         private string _exampleErrorText;
         private System.Collections.Generic.List<ErrorSubGroup> _subGroups;
+
+        /// <summary>
+        /// Stable within this response; not durable across releases.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("groupKey", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string GroupKey    {
+            get { return _groupKey; }
+            set
+            {
+                if (_groupKey != value)
+                {
+                    _groupKey = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
 
         [Newtonsoft.Json.JsonProperty("errorCategory", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string ErrorCategory    {
@@ -13252,6 +15915,19 @@ namespace NimBus.WebApp.ManagementApi
                 if (_count != value)
                 {
                     _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
                     RaisePropertyChanged();
                 }
             }
@@ -13356,12 +16032,30 @@ namespace NimBus.WebApp.ManagementApi
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class ErrorSubGroup : System.ComponentModel.INotifyPropertyChanged
     {
+        private string _groupKey;
         private string _normalizedPattern;
         private int _count;
+        private InsightsCoverage _coverage;
         private System.Collections.Generic.List<string> _endpoints;
         private System.Collections.Generic.List<string> _eventTypes;
         private System.DateTime _latestOccurrence;
         private string _exampleErrorText;
+
+        /// <summary>
+        /// Stable within this response; not durable across releases.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("groupKey", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string GroupKey    {
+            get { return _groupKey; }
+            set
+            {
+                if (_groupKey != value)
+                {
+                    _groupKey = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
 
         [Newtonsoft.Json.JsonProperty("normalizedPattern", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string NormalizedPattern    {
@@ -13384,6 +16078,19 @@ namespace NimBus.WebApp.ManagementApi
                 if (_count != value)
                 {
                     _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
                     RaisePropertyChanged();
                 }
             }
@@ -18225,6 +20932,1325 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum DashboardTokenStatus
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"active")]
+        Active = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"revoked")]
+        Revoked = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"expired")]
+        Expired = 2,
+
+    }
+
+    /// <summary>
+    /// An issued Monitor dashboard token. Never carries the secret.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DashboardTokenInfo : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _tokenId;
+        private string _prefix;
+        private string _name;
+        private DashboardTokenStatus _status;
+        private System.DateTime _createdAtUtc;
+        private string _createdBy;
+        private System.DateTime? _expiresAtUtc;
+        private System.DateTime? _revokedAtUtc;
+        private string _revokedBy;
+        private System.DateTime? _lastUsedAtUtc;
+
+        [Newtonsoft.Json.JsonProperty("tokenId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TokenId    {
+            get { return _tokenId; }
+            set
+            {
+                if (_tokenId != value)
+                {
+                    _tokenId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The non-secret start of the token, nbdt_&lt;tokenId&gt;, to recognise it.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("prefix", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Prefix    {
+            get { return _prefix; }
+            set
+            {
+                if (_prefix != value)
+                {
+                    _prefix = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public DashboardTokenStatus Status    {
+            get { return _status; }
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("createdAtUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime CreatedAtUtc    {
+            get { return _createdAtUtc; }
+            set
+            {
+                if (_createdAtUtc != value)
+                {
+                    _createdAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("createdBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CreatedBy    {
+            get { return _createdBy; }
+            set
+            {
+                if (_createdBy != value)
+                {
+                    _createdBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("expiresAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ExpiresAtUtc    {
+            get { return _expiresAtUtc; }
+            set
+            {
+                if (_expiresAtUtc != value)
+                {
+                    _expiresAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("revokedAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? RevokedAtUtc    {
+            get { return _revokedAtUtc; }
+            set
+            {
+                if (_revokedAtUtc != value)
+                {
+                    _revokedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("revokedBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string RevokedBy    {
+            get { return _revokedBy; }
+            set
+            {
+                if (_revokedBy != value)
+                {
+                    _revokedBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Recorded at most every 5 minutes per instance; null when never used.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("lastUsedAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastUsedAtUtc    {
+            get { return _lastUsedAtUtc; }
+            set
+            {
+                if (_lastUsedAtUtc != value)
+                {
+                    _lastUsedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DashboardTokenInfo FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DashboardTokenInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DashboardTokenState : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<DashboardTokenInfo> _tokens;
+        private string _csrfToken;
+
+        [Newtonsoft.Json.JsonProperty("tokens", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<DashboardTokenInfo> Tokens    {
+            get { return _tokens; }
+            set
+            {
+                if (_tokens != value)
+                {
+                    _tokens = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Send as the X-NimBus-CSRF header on writes.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("csrfToken", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CsrfToken    {
+            get { return _csrfToken; }
+            set
+            {
+                if (_csrfToken != value)
+                {
+                    _csrfToken = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DashboardTokenState FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DashboardTokenState>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DashboardTokenCreate : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name;
+        private System.DateTime? _expiresAtUtc;
+
+        /// <summary>
+        /// A label, for example the wall the token is for. Required, up to 100 characters.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When the token stops working; null for no expiry. Must be in the future.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("expiresAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ExpiresAtUtc    {
+            get { return _expiresAtUtc; }
+            set
+            {
+                if (_expiresAtUtc != value)
+                {
+                    _expiresAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DashboardTokenCreate FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DashboardTokenCreate>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DashboardTokenIssued : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _token;
+        private DashboardTokenInfo _issued;
+        private DashboardTokenState _state;
+
+        /// <summary>
+        /// The full token. Shown once; it cannot be retrieved again.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("token", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Token    {
+            get { return _token; }
+            set
+            {
+                if (_token != value)
+                {
+                    _token = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("issued", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public DashboardTokenInfo Issued    {
+            get { return _issued; }
+            set
+            {
+                if (_issued != value)
+                {
+                    _issued = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("state", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public DashboardTokenState State    {
+            get { return _state; }
+            set
+            {
+                if (_state != value)
+                {
+                    _state = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DashboardTokenIssued FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DashboardTokenIssued>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DashboardTokenProblem : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _code;
+        private System.Collections.Generic.List<string> _errors;
+
+        /// <summary>
+        /// Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("code", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Code    {
+            get { return _code; }
+            set
+            {
+                if (_code != value)
+                {
+                    _code = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("errors", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Errors    {
+            get { return _errors; }
+            set
+            {
+                if (_errors != value)
+                {
+                    _errors = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DashboardTokenProblem FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DashboardTokenProblem>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorFeedStatus : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _environment;
+        private string _platformName;
+        private System.DateTime _serverTimeUtc;
+        private System.DateTime _generatedAtUtc;
+        private bool _stale;
+        private bool _tokenAccess;
+        private System.Collections.Generic.List<MonitorFeedEndpoint> _endpoints;
+
+        [Newtonsoft.Json.JsonProperty("environment", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Environment    {
+            get { return _environment; }
+            set
+            {
+                if (_environment != value)
+                {
+                    _environment = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("platformName", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string PlatformName    {
+            get { return _platformName; }
+            set
+            {
+                if (_platformName != value)
+                {
+                    _platformName = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("serverTimeUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime ServerTimeUtc    {
+            get { return _serverTimeUtc; }
+            set
+            {
+                if (_serverTimeUtc != value)
+                {
+                    _serverTimeUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When the endpoint data was read from the store.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("generatedAtUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime GeneratedAtUtc    {
+            get { return _generatedAtUtc; }
+            set
+            {
+                if (_generatedAtUtc != value)
+                {
+                    _generatedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True when the latest read failed and this is an earlier result.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("stale", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Stale    {
+            get { return _stale; }
+            set
+            {
+                if (_stale != value)
+                {
+                    _stale = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True when the caller authenticated with a dashboard token.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("tokenAccess", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool TokenAccess    {
+            get { return _tokenAccess; }
+            set
+            {
+                if (_tokenAccess != value)
+                {
+                    _tokenAccess = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<MonitorFeedEndpoint> Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorFeedStatus FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorFeedStatus>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorFeedEndpoint : System.ComponentModel.INotifyPropertyChanged
+    {
+        private EndpointStatusCount _status;
+        private int? _blockedSessionCount;
+        private MonitorFeedHeartbeat _heartbeat;
+        private MonitorAcknowledgement _acknowledgement;
+
+        [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public EndpointStatusCount Status    {
+            get { return _status; }
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Estimated sessions blocked by a failed, dead-lettered or pending hand-off message. Null when the store cannot tell.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("blockedSessionCount", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? BlockedSessionCount    {
+            get { return _blockedSessionCount; }
+            set
+            {
+                if (_blockedSessionCount != value)
+                {
+                    _blockedSessionCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("heartbeat", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public MonitorFeedHeartbeat Heartbeat    {
+            get { return _heartbeat; }
+            set
+            {
+                if (_heartbeat != value)
+                {
+                    _heartbeat = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("acknowledgement", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public MonitorAcknowledgement Acknowledgement    {
+            get { return _acknowledgement; }
+            set
+            {
+                if (_acknowledgement != value)
+                {
+                    _acknowledgement = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorFeedEndpoint FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorFeedEndpoint>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// Absent when the endpoint does not take part in heartbeats.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorFeedHeartbeat : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _liveness;
+        private System.DateTime? _lastAnsweredUtc;
+
+        /// <summary>
+        /// alive, late, missing or notDeployed.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("liveness", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Liveness    {
+            get { return _liveness; }
+            set
+            {
+                if (_liveness != value)
+                {
+                    _liveness = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When the endpoint last answered a heartbeat probe.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("lastAnsweredUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastAnsweredUtc    {
+            get { return _lastAnsweredUtc; }
+            set
+            {
+                if (_lastAnsweredUtc != value)
+                {
+                    _lastAnsweredUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorFeedHeartbeat FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorFeedHeartbeat>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorFeedCounts : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _published;
+        private int _handled;
+        private int _failed;
+        private LatencyStats _queue;
+        private LatencyStats _processing;
+
+        [Newtonsoft.Json.JsonProperty("published", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Published    {
+            get { return _published; }
+            set
+            {
+                if (_published != value)
+                {
+                    _published = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("handled", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Handled    {
+            get { return _handled; }
+            set
+            {
+                if (_handled != value)
+                {
+                    _handled = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Failed attempts (error responses), not the unresolved state.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("failed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Failed    {
+            get { return _failed; }
+            set
+            {
+                if (_failed != value)
+                {
+                    _failed = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("queue", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public LatencyStats Queue    {
+            get { return _queue; }
+            set
+            {
+                if (_queue != value)
+                {
+                    _queue = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("processing", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public LatencyStats Processing    {
+            get { return _processing; }
+            set
+            {
+                if (_processing != value)
+                {
+                    _processing = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorFeedCounts FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorFeedCounts>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorFeedEndpointMetrics : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpointId;
+        private MonitorFeedCounts _counts;
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("counts", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public MonitorFeedCounts Counts    {
+            get { return _counts; }
+            set
+            {
+                if (_counts != value)
+                {
+                    _counts = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorFeedEndpointMetrics FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorFeedEndpointMetrics>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorFeedMetrics : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.DateTime _generatedAtUtc;
+        private bool _stale;
+        private System.Collections.Generic.List<TimeSeriesDataPoint> _lastHour;
+        private MonitorFeedCounts _fleet;
+        private System.Collections.Generic.List<MonitorFeedEndpointMetrics> _endpoints;
+
+        [Newtonsoft.Json.JsonProperty("generatedAtUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime GeneratedAtUtc    {
+            get { return _generatedAtUtc; }
+            set
+            {
+                if (_generatedAtUtc != value)
+                {
+                    _generatedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("stale", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Stale    {
+            get { return _stale; }
+            set
+            {
+                if (_stale != value)
+                {
+                    _stale = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Per-minute buckets, ascending; the last one is the current, partial minute.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("lastHour", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<TimeSeriesDataPoint> LastHour    {
+            get { return _lastHour; }
+            set
+            {
+                if (_lastHour != value)
+                {
+                    _lastHour = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("fleet", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public MonitorFeedCounts Fleet    {
+            get { return _fleet; }
+            set
+            {
+                if (_fleet != value)
+                {
+                    _fleet = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<MonitorFeedEndpointMetrics> Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorFeedMetrics FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorFeedMetrics>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorFeedLatencyPoint : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _timestamp;
+        private LatencyStats _queue;
+        private LatencyStats _processing;
+
+        [Newtonsoft.Json.JsonProperty("timestamp", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Timestamp    {
+            get { return _timestamp; }
+            set
+            {
+                if (_timestamp != value)
+                {
+                    _timestamp = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("queue", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public LatencyStats Queue    {
+            get { return _queue; }
+            set
+            {
+                if (_queue != value)
+                {
+                    _queue = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("processing", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public LatencyStats Processing    {
+            get { return _processing; }
+            set
+            {
+                if (_processing != value)
+                {
+                    _processing = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorFeedLatencyPoint FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorFeedLatencyPoint>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorFeedEndpointHistory : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpointId;
+        private LatencyStats _processing;
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("processing", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public LatencyStats Processing    {
+            get { return _processing; }
+            set
+            {
+                if (_processing != value)
+                {
+                    _processing = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorFeedEndpointHistory FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorFeedEndpointHistory>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorFeedHistory : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.DateTime _generatedAtUtc;
+        private bool _stale;
+        private System.Collections.Generic.List<TimeSeriesDataPoint> _lastThreeDays;
+        private System.Collections.Generic.List<MonitorFeedLatencyPoint> _latencyLastDay;
+        private System.Collections.Generic.List<MonitorFeedEndpointHistory> _endpoints;
+
+        [Newtonsoft.Json.JsonProperty("generatedAtUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime GeneratedAtUtc    {
+            get { return _generatedAtUtc; }
+            set
+            {
+                if (_generatedAtUtc != value)
+                {
+                    _generatedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("stale", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Stale    {
+            get { return _stale; }
+            set
+            {
+                if (_stale != value)
+                {
+                    _stale = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Per-hour buckets, ascending; the last one is the current, partial hour.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("lastThreeDays", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<TimeSeriesDataPoint> LastThreeDays    {
+            get { return _lastThreeDays; }
+            set
+            {
+                if (_lastThreeDays != value)
+                {
+                    _lastThreeDays = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sparse per-hour queue and processing time; null when the store cannot tell.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("latencyLastDay", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<MonitorFeedLatencyPoint> LatencyLastDay    {
+            get { return _latencyLastDay; }
+            set
+            {
+                if (_latencyLastDay != value)
+                {
+                    _latencyLastDay = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<MonitorFeedEndpointHistory> Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorFeedHistory FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorFeedHistory>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class McpActivityCount : System.ComponentModel.INotifyPropertyChanged
     {
         private string _name;
@@ -20858,6 +24884,18 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"copyEndpointData")]
         CopyEndpointData = 40,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"changeSessionState")]
+        ChangeSessionState = 41,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenCreated")]
+        DashboardTokenCreated = 42,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRevoked")]
+        DashboardTokenRevoked = 43,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRemoved")]
+        DashboardTokenRemoved = 44,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -21041,6 +25079,39 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum SessionStateChangeRequestAction
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"clearBlock")]
+        ClearBlock = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"markReplayed")]
+        MarkReplayed = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reset")]
+        Reset = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"replace")]
+        Replace = 3,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum SessionCleanupCandidateClassification
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"idle")]
+        Idle = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"staleBlock")]
+        StaleBlock = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"inUse")]
+        InUse = 2,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public enum AuditSearchFilterAuditType
     {
 
@@ -21166,6 +25237,18 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"copyEndpointData")]
         CopyEndpointData = 40,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"changeSessionState")]
+        ChangeSessionState = 41,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenCreated")]
+        DashboardTokenCreated = 42,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRevoked")]
+        DashboardTokenRevoked = 43,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRemoved")]
+        DashboardTokenRemoved = 44,
 
     }
 
@@ -21397,6 +25480,18 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"copyEndpointData")]
         CopyEndpointData = 40,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"changeSessionState")]
+        ChangeSessionState = 41,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenCreated")]
+        DashboardTokenCreated = 42,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRevoked")]
+        DashboardTokenRevoked = 43,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"dashboardTokenRemoved")]
+        DashboardTokenRemoved = 44,
 
     }
 

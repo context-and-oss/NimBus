@@ -61,7 +61,7 @@ public class Property : IProperty
         // Open generic definitions have no FullName for their arguments; the
         // definition's own name is enough (List<T> rather than List`1).
         var raw = (fullName ? type.GetGenericTypeDefinition().FullName : null) ?? type.Name;
-        var tick = raw.IndexOf('`');
+        var tick = raw.IndexOf('`', StringComparison.Ordinal);
         var head = tick >= 0 ? raw.Substring(0, tick) : raw;
         var args = type.GetGenericArguments().Select(a => a.IsGenericParameter ? a.Name : FormatTypeName(a, fullName));
         return head + "<" + string.Join(", ", args) + ">";

@@ -77,7 +77,7 @@ public class PublisherClient : IPublisherClient
         string endpoint,
         CancellationToken cancellationToken = default)
     {
-        if (client == null) throw new ArgumentNullException(nameof(client));
+        ArgumentNullException.ThrowIfNull(client);
         if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
 
         // Wrap with the publisher instrumentation decorator so callers using
@@ -129,8 +129,8 @@ public class PublisherClient : IPublisherClient
         string messageId,
         CancellationToken cancellationToken = default)
     {
-        if (@event == null) throw new ArgumentNullException(nameof(@event));
-        if (context == null) throw new ArgumentNullException(nameof(context));
+        ArgumentNullException.ThrowIfNull(@event);
+        ArgumentNullException.ThrowIfNull(context);
         if (string.IsNullOrWhiteSpace(messageId))
             throw new ArgumentException("A deterministic outgoing message ID is required.", nameof(messageId));
         if (string.IsNullOrWhiteSpace(context.MessageId))
@@ -369,7 +369,7 @@ public class PublisherClient : IPublisherClient
 
             events.RemoveRange(0, page.Count);
             yield return page;
-        } while (events.Any());
+        } while (events.Count != 0);
     }
 
     private static long MeasureBodyBytes(IEvent @event)
@@ -378,7 +378,7 @@ public class PublisherClient : IPublisherClient
         return System.Text.Encoding.UTF8.GetByteCount(JsonConvert.SerializeObject(message.MessageContent));
     }
 
-    private IMessage GetMessage(IEvent @event, string? correlationId = null, string? messageId = null, string? sessionId = null)
+    private Message GetMessage(IEvent @event, string? correlationId = null, string? messageId = null, string? sessionId = null)
     {
         var message = (Message)GetMessageStatic(@event, correlationId, messageId, sessionId);
         if (!string.IsNullOrEmpty(_publisherEndpoint))
@@ -428,13 +428,13 @@ public class PublisherClient : IPublisherClient
         return new CloudEventPublishContext(cloudEvent, _cloudEvents.ContentMode);
     }
 
-    private static IMessage GetMessageStatic(IEvent @event, string? correlationId = null, string? messageId = null, string? sessionId = null)
+    private static Message GetMessageStatic(IEvent @event, string? correlationId = null, string? messageId = null, string? sessionId = null)
     {
         @event.Validate();
 
         var eventType = @event.GetEventType().Id;
         var messagePayload = JsonConvert.SerializeObject(@event);
-        messageId ??= $"{eventType}-{DeterministicHash(messagePayload)}";
+        messageId ??= DeterministicMessageId(eventType, messagePayload);
         sessionId ??= @event.GetSessionId();
         correlationId ??= Guid.NewGuid().ToString();
         var message = new Message()
@@ -460,6 +460,22 @@ public class PublisherClient : IPublisherClient
         // IMessage.DiagnosticId property is no longer populated or read.
         return message;
     }
+
+    /// <summary>
+    /// Returns the MessageId that <see cref="Publish(IEvent)"/> stamps on <paramref name="event"/>
+    /// when no explicit id is given: the event type id plus a hash of the event's JSON. Publishing
+    /// the same content again yields the same id, which is what duplicate detection keys on.
+    /// </summary>
+    /// <param name="event">The event to derive the id for.</param>
+    /// <returns>The content-derived MessageId.</returns>
+    public static string GetMessageId(IEvent @event)
+    {
+        ArgumentNullException.ThrowIfNull(@event);
+        return DeterministicMessageId(@event.GetEventType().Id, JsonConvert.SerializeObject(@event));
+    }
+
+    private static string DeterministicMessageId(string eventTypeId, string messagePayload) =>
+        $"{eventTypeId}-{DeterministicHash(messagePayload)}";
 
     private static string DeterministicHash(string input)
     {

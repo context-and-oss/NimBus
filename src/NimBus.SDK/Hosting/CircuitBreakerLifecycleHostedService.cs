@@ -7,7 +7,7 @@ using NimBus.Core.Extensions;
 namespace NimBus.SDK.Hosting;
 
 /// <summary>Dispatches synchronous circuit transitions to asynchronous lifecycle observers.</summary>
-internal sealed class CircuitBreakerLifecycleHostedService : BackgroundService
+internal sealed partial class CircuitBreakerLifecycleHostedService : BackgroundService
 {
     private readonly IEndpointCircuitBreaker _circuitBreaker;
     private readonly MessageLifecycleNotifier _notifier;
@@ -49,12 +49,7 @@ internal sealed class CircuitBreakerLifecycleHostedService : BackgroundService
                 }
                 catch (Exception exception)
                 {
-                    _logger.LogWarning(
-                        exception,
-                        "Circuit state lifecycle observer failed for endpoint {Endpoint} transition {FromState}->{ToState}",
-                        change.Endpoint,
-                        change.From,
-                        change.To);
+                    LogCircuitStateLifecycleObserverFailed(_logger, exception, change.Endpoint, change.From, change.To);
                 }
             }
         }
@@ -65,4 +60,7 @@ internal sealed class CircuitBreakerLifecycleHostedService : BackgroundService
     }
 
     private void OnStateChanged(CircuitStateChange change) => _changes.Writer.TryWrite(change);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Circuit state lifecycle observer failed for endpoint {Endpoint} transition {FromState}->{ToState}")]
+    private static partial void LogCircuitStateLifecycleObserverFailed(ILogger logger, Exception exception, string endpoint, CircuitState fromState, CircuitState toState);
 }

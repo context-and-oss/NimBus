@@ -7,6 +7,7 @@ using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.Services.AgentApiKeys;
+using NimBus.WebApp.Services.DashboardTokens;
 using NimBus.Extensions.Identity;
 
 namespace NimBus.WebApp;
@@ -178,6 +179,10 @@ public partial class Startup
         // scheme is never a default, so a key admits nothing else.
         services.AddNimBusAgentApiKeys();
 
+        // A wall display reads the Monitor feed with a dashboard token in every mode. The token
+        // scheme is never a default either, so a token admits nothing but /api/monitor/feed/*.
+        services.AddNimBusDashboardTokens();
+
         // The NSwag-generated controllers cannot carry per-action attributes,
         // so the stats endpoint's anonymous exemption is applied via an
         // application-model convention instead of a class-level
@@ -230,7 +235,7 @@ public partial class Startup
         }
     }
 
-    private void AddAuthorizationAndAuditServices(IServiceCollection services)
+    private static void AddAuthorizationAndAuditServices(IServiceCollection services)
     {
         // Short-TTL cache for hot read-only store results (status counts,
         // metrics aggregates). Singleton is required: the consuming

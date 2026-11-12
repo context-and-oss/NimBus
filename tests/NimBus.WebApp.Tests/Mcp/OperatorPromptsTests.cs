@@ -68,8 +68,8 @@ public partial class OperatorPromptsTests
         Assert.AreEqual(1, result.Messages.Count);
         Assert.AreEqual(Role.User, result.Messages[0].Role);
         var text = Text(result);
-        StringAssert.Contains(text, "nimbus_get_capabilities");
-        StringAssert.Contains(text, "untrusted");
+        StringAssert.Contains(text, "nimbus_get_capabilities", StringComparison.Ordinal);
+        StringAssert.Contains(text, "untrusted", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -84,9 +84,9 @@ public partial class OperatorPromptsTests
         });
 
         var inputs = Text(result)[Text(result).IndexOf("Inputs", StringComparison.Ordinal)..];
-        StringAssert.Contains(inputs, "endpointId: \"CrmEndpoint\"");
-        StringAssert.Contains(inputs, "eventId: \"evt \\\"42\\\"\"");
-        StringAssert.Contains(inputs, "action: \"skip\"");
+        StringAssert.Contains(inputs, "endpointId: \"CrmEndpoint\"", StringComparison.Ordinal);
+        StringAssert.Contains(inputs, "eventId: \"evt \\\"42\\\"\"", StringComparison.Ordinal);
+        StringAssert.Contains(inputs, "action: \"skip\"", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -97,8 +97,8 @@ public partial class OperatorPromptsTests
 
         var text = Text(await client.GetPromptAsync("triage"));
 
-        StringAssert.Contains(text, "period: \"1d\"");
-        StringAssert.Contains(text, "endpointId: (all readable endpoints)");
+        StringAssert.Contains(text, "period: \"1d\"", StringComparison.Ordinal);
+        StringAssert.Contains(text, "endpointId: (all readable endpoints)", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -117,7 +117,7 @@ public partial class OperatorPromptsTests
 
         var error = await Assert.ThrowsAsync<McpProtocolException>(() => client.GetPromptAsync(prompt, arguments).AsTask());
 
-        StringAssert.Contains(error.Message, "[InvalidArgument]");
+        StringAssert.Contains(error.Message, "[InvalidArgument]", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -131,7 +131,7 @@ public partial class OperatorPromptsTests
             ["endpointId"] = "CrmEndpoint", ["eventId"] = new string('e', 201),
         }).AsTask());
 
-        StringAssert.Contains(error.Message, "[InvalidArgument]");
+        StringAssert.Contains(error.Message, "[InvalidArgument]", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -149,10 +149,10 @@ public partial class OperatorPromptsTests
 
         CollectionAssert.DoesNotContain(prompts, "recover-message");
         CollectionAssert.IsSubsetOf(ReadOnlyPrompts, prompts);
-        StringAssert.Contains(error.Message, "[PermissionDenied] recover-message is turned off by an administrator.");
+        StringAssert.Contains(error.Message, "[PermissionDenied] recover-message is turned off by an administrator.", StringComparison.Ordinal);
         var refusal = host.Get<McpTestHost.RecordingAuditLog>().Rows.Single(r => r.Type == MessageAuditType.McpAccessRefused && r.Denied);
-        StringAssert.Contains(refusal.Data, "\"reason\":\"tool\"");
-        StringAssert.Contains(refusal.Data, "recover-message");
+        StringAssert.Contains(refusal.Data, "\"reason\":\"tool\"", StringComparison.Ordinal);
+        StringAssert.Contains(refusal.Data, "recover-message", StringComparison.Ordinal);
     }
 
     [TestMethod]

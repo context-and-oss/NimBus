@@ -17,6 +17,18 @@ namespace NimBus.WebApp;
 
 public partial class Startup
 {
+    private static readonly string[] AdditionalCompressedMimeTypes =
+    [
+        // SPA bundle assets — Vite emits these and they dominate first-load bytes.
+        "application/javascript",
+        // JSON API responses (endpoints/audits/messages lists run 100-500 KB).
+        "application/json",
+        // SPA stylesheet bundle (Tailwind compresses ~80 % under Brotli).
+        "text/css",
+        // Inline icon assets shipped from ClientApp/public.
+        "image/svg+xml",
+    ];
+
     // Controllers/JSON, Razor, NSwag, response compression, SignalR.
     private void AddWebPipeline(IServiceCollection services)
     {
@@ -62,17 +74,7 @@ public partial class Startup
             options.EnableForHttps = true;
             options.Providers.Add<BrotliCompressionProvider>();
             options.Providers.Add<GzipCompressionProvider>();
-            options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(new[]
-            {
-                // SPA bundle assets — Vite emits these and they dominate first-load bytes.
-                "application/javascript",
-                // JSON API responses (endpoints/audits/messages lists run 100-500 KB).
-                "application/json",
-                // SPA stylesheet bundle (Tailwind compresses ~80 % under Brotli).
-                "text/css",
-                // Inline icon assets shipped from ClientApp/public.
-                "image/svg+xml",
-            });
+            options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(AdditionalCompressedMimeTypes);
         });
         services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);
         services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);
@@ -98,11 +100,10 @@ public partial class Startup
         services.AddTransient<IMessageApiController, MessageImplementation>();
         services.AddTransient<IFailedApiController, FailedImplementation>();
         services.AddScoped<IAdminService, AdminService>();
+        services.AddScoped<ISessionStateService, SessionStateService>();
         // The emulator caps entity TTLs far below a real namespace, so a rebuild has to
         // ask the descriptor for emulator-safe values when that is what we're pointed at.
-        var isEmulator = ServiceBusTopologyProvisioner.IsEmulator(
-            Configuration.GetConnectionString("servicebus")
-            ?? Configuration.GetValue<string>("AzureWebJobsServiceBus"));
+        var isEmulator = IsServiceBusEmulator(Configuration);
         services.AddScoped<ISubscriptionAdminService>(sp => new SubscriptionAdminService(
             sp.GetRequiredService<IPlatform>(),
             sp.GetRequiredService<IServiceBusManagement>(),
@@ -113,9 +114,20 @@ public partial class Startup
             sp.GetRequiredService<IResolverDeadLetterClient>()));
         services.AddTransient<IAdminApiController, AdminImplementation>();
         services.AddTransient<IMetricsApiController, MetricsImplementation>();
+        // Spec 043: failed-message insights with saved-classification enrichment.
+        services.AddOptions<Services.Insights.FailedInsightsOptions>()
+            .Bind(Configuration.GetSection(Services.Insights.FailedInsightsOptions.SectionName))
+            .Validate(options => options.Validate().Count == 0, "NimBus:Insights settings are out of range.")
+            .ValidateOnStart();
+        services.AddScoped<Services.Insights.IInsightsEnrichmentSource, Services.Insights.InsightsEnrichmentSource>();
+        services.AddScoped<Services.Insights.IFailedInsightsQuery, Services.Insights.FailedInsightsService>();
         services.AddTransient<IHeartbeatApiController, HeartbeatImplementation>();
         services.AddTransient<IMonitorApiController, MonitorImplementation>();
         services.AddScoped<IMonitorAcknowledgementService, MonitorAcknowledgementService>();
+        // The Monitor wall's feed: site Reader or a dashboard token (scheme registered with the
+        // sign-in stack in Startup.Security).
+        services.AddTransient<IMonitorFeedApiController, MonitorFeedImplementation>();
+        services.AddSingleton<Services.MonitorFeed.IMonitorFeedCache, Services.MonitorFeed.MonitorFeedCache>();
         services.AddTransient<IAuditApiController, AuditImplementation>();
         services.AddTransient<IAccessControlApiController, AccessControlImplementation>();
         services.AddTransient<IAgentApiController, AgentImplementation>();
@@ -130,6 +142,8 @@ public partial class Startup
         // stack (Startup.Security).
         services.AddScoped<NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyService>();
         services.AddTransient<IAgentKeysApiController, AgentKeysImplementation>();
+        // Settings → Dashboard tokens; DashboardTokenService comes with AddNimBusDashboardTokens.
+        services.AddTransient<IDashboardTokensApiController, DashboardTokensImplementation>();
         services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();
         services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
 

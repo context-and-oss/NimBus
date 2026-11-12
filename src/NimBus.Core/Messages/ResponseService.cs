@@ -209,7 +209,7 @@ public class ResponseService : IResponseService
         await _sender.Send(response, cancellationToken: cancellationToken);
     }
 
-    private static IMessage CreateResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent)
+    private static Message CreateResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent)
     {
         // Preserve the inbound CloudEvent's identity on the response so the Resolver
         // persists it on the tracking/audit record. Null (native message) leaves the
@@ -267,7 +267,7 @@ public class ResponseService : IResponseService
     private static string? GetOriginator(IMessageContext messageContext) =>
         messageContext.GetFromOrDefault() ?? messageContext.OriginatingFrom;
 
-    private IMessage CreateRetryResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent) =>
+    private static Message CreateRetryResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent) =>
         new Message()
         {
             To = Constants.RetryId,

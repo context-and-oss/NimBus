@@ -48,7 +48,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddNimBusPublisher(
         this IServiceCollection services, string endpoint, Action<NimBusPublisherBuilder> configure)
     {
-        if (configure is null) throw new ArgumentNullException(nameof(configure));
+        ArgumentNullException.ThrowIfNull(configure);
 
         // Unchanged send wiring — the fluent path is metadata-only.
         services.AddNimBusPublisher(options => options.Endpoint = endpoint);

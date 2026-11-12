@@ -832,6 +832,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComposeNewEventResult'
         '400':
           description: Bad Request
       tags:
@@ -1739,6 +1743,146 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentApiKeyProblem'
+  /api/admin/dashboard-tokens:
+    get:
+      summary: List the dashboard tokens
+      description: >-
+        Site Owner only. Every issued Monitor dashboard token with its status and last use,
+        never the secret, plus an antiforgery token for the write operations.
+      operationId: get-admin-dashboard-tokens
+      tags:
+        - DashboardTokens
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenState'
+        '403':
+          description: Forbidden
+        '501':
+          description: The storage provider cannot store dashboard tokens
+    post:
+      summary: Issue a dashboard token
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full token
+        once; only its hash is stored. The token gives read-only access to the Monitor feed
+        (/api/monitor/feed/*) and nothing else.
+      operationId: post-admin-dashboard-tokens
+      tags:
+        - DashboardTokens
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardTokenCreate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenIssued'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '403':
+          description: Forbidden
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '501':
+          description: The storage provider cannot store dashboard tokens
+  /api/admin/dashboard-tokens/{tokenId}/revoke:
+    post:
+      summary: Revoke a dashboard token
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. The token stops working
+        on this instance at once and on every other instance within 30 seconds (2 minutes while
+        the store is unreachable). It stays listed until it is removed.
+      operationId: post-admin-dashboard-token-revoke
+      tags:
+        - DashboardTokens
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenState'
+        '403':
+          description: Forbidden
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '501':
+          description: The storage provider cannot store dashboard tokens
+  /api/admin/dashboard-tokens/{tokenId}:
+    delete:
+      summary: Remove a revoked or expired dashboard token
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active token must be
+        revoked first (400 StillActive).
+      operationId: delete-admin-dashboard-token
+      tags:
+        - DashboardTokens
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenState'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '403':
+          description: Forbidden
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '501':
+          description: The storage provider cannot store dashboard tokens
   /api/admin/heartbeat/send:
     post:
       summary: Send a heartbeat to every monitored endpoint now
@@ -2385,6 +2529,139 @@ paths:
           description: Forbidden
         '404':
           description: Endpoint or session not found
+  '/api/admin/endpoint/{endpointId}/session/{sessionId}/state':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    get:
+      summary: Look up a session's Service Bus session state
+      description: >-
+        Reads the session state on the endpoint subscription under a briefly held session
+        lock, together with the session's queued messages and store counts. Never writes.
+      operationId: get-admin-session-state
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStateView'
+        '400':
+          description: Invalid session id
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+    post:
+      summary: Change a session's Service Bus session state
+      description: >-
+        Applies a guided action or replaces the state with validated JSON. The change is
+        refused with 409 when the stored state no longer matches expectedVersion or the
+        session is locked by a receiver, and with 503 when the audit record cannot be written.
+      operationId: post-admin-session-state
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStateChangeRequest'
+      responses:
+        '200':
+          description: The state after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStateView'
+        '400':
+          description: Invalid request or session state JSON
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+        '409':
+          description: The state changed since it was read, or the session is locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStateView'
+        '503':
+          description: The audit record could not be written; nothing was changed
+  '/api/admin/endpoint/{endpointId}/session-cleanup/preview':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Preview which sessions hold idle session state
+      operationId: post-admin-session-cleanup-preview
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCleanupPreviewRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionCleanupPreview'
+        '400':
+          description: Invalid request
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  '/api/admin/endpoint/{endpointId}/session-cleanup':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Reset the session state of previewed idle sessions
+      operationId: post-admin-session-cleanup
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCleanupRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionCleanupResult'
+        '400':
+          description: Invalid request
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+        '503':
+          description: The audit record could not be written; nothing was changed
   '/api/admin/endpoint/{endpointId}/event/{eventId}':
     parameters:
       - schema:
@@ -2927,15 +3204,140 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: endpointId
+          in: query
+          required: false
+          description: Exact endpoint id to narrow the failures to. Omitted selects every endpoint.
+          schema:
+            type: string
+        - name: refresh
+          in: query
+          required: false
+          description: Re-read saved classifications instead of using the short-lived enrichment cache. New failures can still lag by the metrics cache lifetime.
+          schema:
+            type: boolean
       responses:
         '200':
-          description: Failed message insights grouped by error pattern
+          description: Failed message insights grouped by error pattern, and by likely cause and recovery guidance when saved classifications are available
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FailedInsightsOverview'
         '400':
           description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
+      tags:
+        - Metrics
+  /api/metrics/failed-insights/occurrences:
+    get:
+      summary: Page the failure occurrences of one insights group
+      description: Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis.
+      operationId: get-metrics-failed-insights-occurrences
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Window start (inclusive), as returned by the overview.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Window end (exclusive), as returned by the overview.
+          schema:
+            type: string
+            format: date-time
+        - name: endpointId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: perspective
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/InsightsPerspective'
+        - name: groupKey
+          in: query
+          required: true
+          description: A groupKey from the overview for the same perspective.
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          required: false
+          description: 1 to 100; default 50.
+          schema:
+            type: integer
+        - name: continuationToken
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of occurrences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightOccurrencePage'
+        '400':
+          description: Invalid window, page size, group key or continuation token, or saved classifications unavailable for a cause or guidance group
+      tags:
+        - Metrics
+  /api/metrics/failed-insights/patterns:
+    get:
+      summary: Page the error patterns of one likely-cause or recovery-guidance group
+      operationId: get-metrics-failed-insights-patterns
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: endpointId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: perspective
+          in: query
+          required: true
+          description: cause or guidance.
+          schema:
+            $ref: '#/components/schemas/InsightsPerspective'
+        - name: groupKey
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          required: false
+          description: 1 to 100; default 50.
+          schema:
+            type: integer
+        - name: continuationToken
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of error patterns, most frequent first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightGroupPatternPage'
+        '400':
+          description: Invalid window, perspective, page size, group key or continuation token, or saved classifications unavailable
       tags:
         - Metrics
   /api/metrics/timeseries:
@@ -3099,6 +3501,76 @@ paths:
           description: Forbidden
         '404':
           description: Endpoint not found
+  /api/monitor/feed/status:
+    get:
+      summary: The Monitor's current state, polled every few seconds
+      description: >-
+        Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header).
+        Every endpoint, unfiltered: status counts, blocked sessions, heartbeat and acknowledgement.
+        stale is true when the store could not be read and an earlier result is returned.
+      operationId: get-monitor-feed-status
+      tags:
+        - MonitorFeed
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorFeedStatus'
+        '401':
+          description: No session and no valid dashboard token
+        '403':
+          description: Signed in without the site Reader role
+        '503':
+          description: The store could not be read and nothing earlier is cached
+  /api/monitor/feed/metrics:
+    get:
+      summary: The Monitor's last-hour throughput and timings, polled every 30 seconds
+      description: >-
+        Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header).
+        A per-minute series for the last hour (60 buckets, the last partial) and per-endpoint
+        counts and average timings over the 60 minutes up to now.
+      operationId: get-monitor-feed-metrics
+      tags:
+        - MonitorFeed
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorFeedMetrics'
+        '401':
+          description: No session and no valid dashboard token
+        '403':
+          description: Signed in without the site Reader role
+        '503':
+          description: The store could not be read and nothing earlier is cached
+  /api/monitor/feed/history:
+    get:
+      summary: The Monitor's longer history, polled every 5 minutes
+      description: >-
+        Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header).
+        A per-hour series for the last 3 days (72 buckets, the last partial), queue and
+        processing time per hour for the last 24 hours, and each endpoint's 24-hour average
+        processing time.
+      operationId: get-monitor-feed-history
+      tags:
+        - MonitorFeed
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorFeedHistory'
+        '401':
+          description: No session and no valid dashboard token
+        '403':
+          description: Signed in without the site Reader role
+        '503':
+          description: The store could not be read and nothing earlier is cached
   /api/agent/catalog:
     get:
       summary: Get agent catalog
@@ -4250,6 +4722,10 @@ components:
             - agentApiKeyRevoked
             - agentApiKeyRemoved
             - copyEndpointData
+            - changeSessionState
+            - dashboardTokenCreated
+            - dashboardTokenRevoked
+            - dashboardTokenRemoved
         comment:
           type: string
           nullable: true
@@ -4358,6 +4834,28 @@ components:
           type: string
         eventContent:
           type: string
+    ComposeNewEventResult:
+      title: ComposeNewEventResult
+      type: object
+      description: Identity of the event a compose published, so the operator can follow it.
+      required:
+        - eventTypeId
+        - publishedBy
+        - messageId
+        - sessionId
+      properties:
+        eventTypeId:
+          type: string
+          description: The composed event type.
+        publishedBy:
+          type: string
+          description: The producing endpoint whose topic the event was published to.
+        messageId:
+          type: string
+          description: The published message id. Every subscriber's Event Request carries it, so it finds the event on each subscriber.
+        sessionId:
+          type: string
+          description: The session the event was published on.
     CompleteHandoffRequest:
       title: CompleteHandoffRequest
       type: object
@@ -4707,13 +5205,22 @@ components:
           format: date-time
           nullable: true
           description: Custom window end; used with `from` instead of `period`.
+        timeZone:
+          type: string
+          nullable: true
+          description: >-
+            IANA time zone (for example Europe/Berlin) the bars follow: they start
+            at local midnight and step in whole buckets of local time. UTC when
+            absent or unknown.
     FailedHistogram:
       title: FailedHistogram
       type: object
       properties:
         bucketMinutes:
           type: integer
-          description: Bucket size in minutes.
+          description: >-
+            Nominal bucket size in minutes. Each bucket ends where the next one
+            starts, so a bar across a daylight-saving change is shorter or longer.
         from:
           type: string
           format: date-time
@@ -5307,6 +5814,192 @@ components:
           type: array
           items:
             type: string
+    SessionStateView:
+      title: SessionStateView
+      description: >-
+        A session's Service Bus session state on the endpoint subscription, read under a
+        session lock, with the session's queued messages and store counts.
+      type: object
+      properties:
+        sessionId:
+          type: string
+        locked:
+          type: boolean
+          description: A receiver holds the session, so its state could not be read.
+        readable:
+          type: boolean
+          description: The stored state parses as NimBus session state.
+        isEmpty:
+          type: boolean
+        stateJson:
+          type: string
+          nullable: true
+          description: The stored state as text; null when nothing is stored.
+        stateVersion:
+          type: string
+          nullable: true
+          description: SHA-256 of the stored bytes; send it back as expectedVersion.
+        blockedByEventId:
+          type: string
+          nullable: true
+        blockedByMessageId:
+          type: string
+          nullable: true
+        deferredCount:
+          type: integer
+        nextDeferralSequence:
+          type: integer
+        replayedThroughSequence:
+          type: integer
+          nullable: true
+        drainRequestedForSequence:
+          type: integer
+          nullable: true
+        drainRequestedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        legacyDeferredCount:
+          type: integer
+        blocked:
+          type: boolean
+        hasUnreplayedMessages:
+          type: boolean
+        activeMessageCount:
+          type: integer
+          description: Messages queued on the session (peeked, at most 100).
+        deferredSubscriptionCount:
+          type: integer
+          description: Messages parked on the Deferred subscription (peeked, at most 100).
+        storePendingCount:
+          type: integer
+        storeDeferredCount:
+          type: integer
+        blockingEventStatus:
+          type: string
+          nullable: true
+          description: Stored status of the blocking event; null when not blocked or not found.
+        message:
+          type: string
+          nullable: true
+    SessionStateChangeRequest:
+      title: SessionStateChangeRequest
+      type: object
+      required:
+        - action
+        - expectedVersion
+      properties:
+        action:
+          type: string
+          enum:
+            - clearBlock
+            - markReplayed
+            - reset
+            - replace
+        expectedVersion:
+          type: string
+          description: The stateVersion the change was based on.
+        stateJson:
+          type: string
+          nullable: true
+          description: The new state, for replace.
+    SessionCleanupPreviewRequest:
+      title: SessionCleanupPreviewRequest
+      type: object
+      properties:
+        updatedSince:
+          type: string
+          format: date-time
+          nullable: true
+          description: Only sessions of events updated since; defaults to 30 days ago.
+        maxSessions:
+          type: integer
+          nullable: true
+          description: Most sessions to inspect, 1 to 1000; defaults to 200.
+        includeStaleBlocks:
+          type: boolean
+    SessionCleanupPreview:
+      title: SessionCleanupPreview
+      type: object
+      properties:
+        inspectedCount:
+          type: integer
+        emptyCount:
+          type: integer
+          description: Inspected sessions that hold no state.
+        truncated:
+          type: boolean
+          description: More sessions matched than maxSessions.
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionCleanupCandidate'
+    SessionCleanupCandidate:
+      title: SessionCleanupCandidate
+      type: object
+      properties:
+        sessionId:
+          type: string
+        classification:
+          type: string
+          enum:
+            - idle
+            - staleBlock
+            - inUse
+        reason:
+          type: string
+          nullable: true
+        stateVersion:
+          type: string
+          nullable: true
+        stateJson:
+          type: string
+          nullable: true
+    SessionCleanupRequest:
+      title: SessionCleanupRequest
+      type: object
+      required:
+        - sessions
+      properties:
+        includeStaleBlocks:
+          type: boolean
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionCleanupSelection'
+    SessionCleanupSelection:
+      title: SessionCleanupSelection
+      type: object
+      required:
+        - sessionId
+        - stateVersion
+      properties:
+        sessionId:
+          type: string
+        stateVersion:
+          type: string
+    SessionCleanupResult:
+      title: SessionCleanupResult
+      type: object
+      properties:
+        resetCount:
+          type: integer
+        skipped:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionCleanupSkip'
+        errors:
+          type: array
+          items:
+            type: string
+    SessionCleanupSkip:
+      title: SessionCleanupSkip
+      type: object
+      properties:
+        sessionId:
+          type: string
+        reason:
+          type: string
     MetricsOverview:
       title: MetricsOverview
       type: object
@@ -5388,14 +6081,245 @@ components:
             $ref: '#/components/schemas/ErrorPatternGroup'
         totalFailed:
           type: integer
+          description: Failure occurrences in the window. Always equal to totalOccurrences; kept for existing clients.
+        from:
+          type: string
+          format: date-time
+          description: Resolved window start (inclusive, UTC). Send it back unchanged with to for drill-down.
+        to:
+          type: string
+          format: date-time
+          description: Resolved window end (exclusive, UTC).
+        endpointId:
+          type: string
+          nullable: true
+          description: The endpoint filter applied, or null for every endpoint.
+        totalOccurrences:
+          type: integer
+          description: Failed attempts in the scope. An event that failed three times counts three.
+        occurrencesReadAt:
+          type: string
+          format: date-time
+          description: When the failure occurrences were read from the message store.
+        classificationsReadAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When saved classifications were read, or null when enrichment is not available.
+        enrichment:
+          $ref: '#/components/schemas/InsightsEnrichmentStatus'
+        enrichmentLimit:
+          type: integer
+          description: The largest scope, in occurrences, that is enriched with saved classifications.
+        analysisAvailable:
+          type: boolean
+          description: Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is.
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
+        causeGroups:
+          type: array
+          nullable: true
+          description: Occurrences grouped by likely failure cause. Null unless enrichment is available.
+          items:
+            $ref: '#/components/schemas/InsightGroup'
+        guidanceGroups:
+          type: array
+          nullable: true
+          description: Occurrences grouped by saved recovery guidance. Null unless enrichment is available.
+          items:
+            $ref: '#/components/schemas/InsightGroup'
+    InsightsEnrichmentStatus:
+      title: InsightsEnrichmentStatus
+      type: string
+      description: Whether saved classifications enrich this response. Every value except available leaves coverage and the cause and guidance groups null. disabled is listed first so an unset value never reads as available.
+      enum:
+        - disabled
+        - available
+        - unavailable
+        - unsupported
+        - limitExceeded
+    InsightsCoverage:
+      title: InsightsCoverage
+      type: object
+      nullable: true
+      description: How many occurrences have saved analysis. classified + uncertain + notAnalyzed + notEligible = total.
+      properties:
+        total:
+          type: integer
+        analyzed:
+          type: integer
+          description: classified + uncertain.
+        classified:
+          type: integer
+        uncertain:
+          type: integer
+        notAnalyzed:
+          type: integer
+          description: No completed result, and analysis could be requested. Includes failures that can no longer be analyzed because their event has since completed or been skipped.
+        notEligible:
+          type: integer
+          description: No completed result, and the endpoint is outside the configured analysis allow-list.
+    InsightGroup:
+      title: InsightGroup
+      type: object
+      description: One likely-cause or recovery-guidance group.
+      properties:
+        groupKey:
+          type: string
+          description: Stable within this response. A taxonomy or guidance name, or uncertain, notAnalyzed, notEligible.
+        label:
+          type: string
+        count:
+          type: integer
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
+        endpoints:
+          type: array
+          items:
+            type: string
+        eventTypes:
+          type: array
+          items:
+            type: string
+        latestOccurrence:
+          type: string
+          format: date-time
+        topPatterns:
+          type: array
+          description: The group's most frequent error patterns, at most the configured limit.
+          items:
+            $ref: '#/components/schemas/InsightGroupPattern'
+        morePatterns:
+          type: integer
+          description: Distinct error patterns in the group beyond topPatterns.
+    InsightsPerspective:
+      title: InsightsPerspective
+      type: string
+      enum:
+        - errorPattern
+        - cause
+        - guidance
+    InsightAnalysisState:
+      title: InsightAnalysisState
+      type: string
+      description: The occurrence's coverage state. unavailable (listed first so an unset value never claims analysis) means saved classifications could not be read for this scope.
+      enum:
+        - unavailable
+        - classified
+        - uncertain
+        - notAnalyzed
+        - notEligible
+    InsightOccurrence:
+      title: InsightOccurrence
+      type: object
+      description: One failed attempt.
+      properties:
+        messageId:
+          type: string
+        eventId:
+          type: string
+        endpointId:
+          type: string
+        eventTypeId:
+          type: string
+        failedAt:
+          type: string
+          format: date-time
+        errorPatternKey:
+          type: string
+        normalizedPattern:
+          type: string
+        analysisState:
+          $ref: '#/components/schemas/InsightAnalysisState'
+        operationMarker:
+          type: string
+          nullable: true
+          description: analysisRunning, outcomeUnknown, lastAnalysisFailed or identityMismatch; null when the latest operation is the completed result.
+        category:
+          type: string
+          nullable: true
+          description: The saved category; for an uncertain result, the provider's suggestion.
+        categoryConfidence:
+          type: number
+          nullable: true
+        guidance:
+          type: string
+          nullable: true
+          description: The saved guidance name, or the raw stored value when unrecognized.
+        revision:
+          type: integer
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        classifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        currentStatus:
+          type: string
+          nullable: true
+          description: The event's current resolution status, or null when unavailable. Never implies unresolved.
+    InsightOccurrencePage:
+      title: InsightOccurrencePage
+      type: object
+      properties:
+        occurrences:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsightOccurrence'
+        continuationToken:
+          type: string
+          nullable: true
+        occurrencesReadAt:
+          type: string
+          format: date-time
+        classificationsReadAt:
+          type: string
+          format: date-time
+          nullable: true
+        enrichment:
+          $ref: '#/components/schemas/InsightsEnrichmentStatus'
+    InsightGroupPatternPage:
+      title: InsightGroupPatternPage
+      type: object
+      properties:
+        patterns:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsightGroupPattern'
+        continuationToken:
+          type: string
+          nullable: true
+        occurrencesReadAt:
+          type: string
+          format: date-time
+    InsightGroupPattern:
+      title: InsightGroupPattern
+      type: object
+      properties:
+        groupKey:
+          type: string
+          description: The error pattern's key, as on ErrorSubGroup.
+        normalizedPattern:
+          type: string
+        count:
+          type: integer
+        exampleErrorText:
+          type: string
     ErrorPatternGroup:
       title: ErrorPatternGroup
       type: object
       properties:
+        groupKey:
+          type: string
+          description: Stable within this response; not durable across releases.
         errorCategory:
           type: string
         count:
           type: integer
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
         endpoints:
           type: array
           items:
@@ -5417,10 +6341,15 @@ components:
       title: ErrorSubGroup
       type: object
       properties:
+        groupKey:
+          type: string
+          description: Stable within this response; not durable across releases.
         normalizedPattern:
           type: string
         count:
           type: integer
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
         endpoints:
           type: array
           items:
@@ -5562,6 +6491,10 @@ components:
             - agentApiKeyRevoked
             - agentApiKeyRemoved
             - copyEndpointData
+            - changeSessionState
+            - dashboardTokenCreated
+            - dashboardTokenRevoked
+            - dashboardTokenRemoved
         createdAtFrom:
           type: string
           format: date-time
@@ -6320,6 +7253,235 @@ components:
           type: array
           items:
             type: string
+    DashboardTokenStatus:
+      title: DashboardTokenStatus
+      type: string
+      enum:
+        - active
+        - revoked
+        - expired
+    DashboardTokenInfo:
+      title: DashboardTokenInfo
+      type: object
+      description: An issued Monitor dashboard token. Never carries the secret.
+      properties:
+        tokenId:
+          type: string
+        prefix:
+          type: string
+          description: The non-secret start of the token, nbdt_<tokenId>, to recognise it.
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/DashboardTokenStatus'
+        createdAtUtc:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          nullable: true
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedBy:
+          type: string
+          nullable: true
+        lastUsedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: Recorded at most every 5 minutes per instance; null when never used.
+    DashboardTokenState:
+      title: DashboardTokenState
+      type: object
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardTokenInfo'
+        csrfToken:
+          type: string
+          description: Send as the X-NimBus-CSRF header on writes.
+    DashboardTokenCreate:
+      title: DashboardTokenCreate
+      type: object
+      properties:
+        name:
+          type: string
+          description: A label, for example the wall the token is for. Required, up to 100 characters.
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the token stops working; null for no expiry. Must be in the future.
+    DashboardTokenIssued:
+      title: DashboardTokenIssued
+      type: object
+      properties:
+        token:
+          type: string
+          description: The full token. Shown once; it cannot be retrieved again.
+        issued:
+          $ref: '#/components/schemas/DashboardTokenInfo'
+        state:
+          $ref: '#/components/schemas/DashboardTokenState'
+    DashboardTokenProblem:
+      title: DashboardTokenProblem
+      type: object
+      properties:
+        code:
+          type: string
+          description: Invalid, NotFound, StillActive, RevisionConflict or InvalidAntiforgeryToken.
+        errors:
+          type: array
+          items:
+            type: string
+    MonitorFeedStatus:
+      title: MonitorFeedStatus
+      type: object
+      properties:
+        environment:
+          type: string
+          nullable: true
+        platformName:
+          type: string
+          nullable: true
+        serverTimeUtc:
+          type: string
+          format: date-time
+        generatedAtUtc:
+          type: string
+          format: date-time
+          description: When the endpoint data was read from the store.
+        stale:
+          type: boolean
+          description: True when the latest read failed and this is an earlier result.
+        tokenAccess:
+          type: boolean
+          description: True when the caller authenticated with a dashboard token.
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitorFeedEndpoint'
+    MonitorFeedEndpoint:
+      title: MonitorFeedEndpoint
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/EndpointStatusCount'
+        blockedSessionCount:
+          type: integer
+          nullable: true
+          description: >-
+            Estimated sessions blocked by a failed, dead-lettered or pending hand-off message.
+            Null when the store cannot tell.
+        heartbeat:
+          $ref: '#/components/schemas/MonitorFeedHeartbeat'
+        acknowledgement:
+          $ref: '#/components/schemas/MonitorAcknowledgement'
+    MonitorFeedHeartbeat:
+      title: MonitorFeedHeartbeat
+      type: object
+      description: Absent when the endpoint does not take part in heartbeats.
+      properties:
+        liveness:
+          type: string
+          description: 'alive, late, missing or notDeployed.'
+        lastAnsweredUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the endpoint last answered a heartbeat probe.
+    MonitorFeedCounts:
+      title: MonitorFeedCounts
+      type: object
+      properties:
+        published:
+          type: integer
+        handled:
+          type: integer
+        failed:
+          type: integer
+          description: Failed attempts (error responses), not the unresolved state.
+        queue:
+          $ref: '#/components/schemas/LatencyStats'
+        processing:
+          $ref: '#/components/schemas/LatencyStats'
+    MonitorFeedEndpointMetrics:
+      title: MonitorFeedEndpointMetrics
+      type: object
+      properties:
+        endpointId:
+          type: string
+        counts:
+          $ref: '#/components/schemas/MonitorFeedCounts'
+    MonitorFeedMetrics:
+      title: MonitorFeedMetrics
+      type: object
+      properties:
+        generatedAtUtc:
+          type: string
+          format: date-time
+        stale:
+          type: boolean
+        lastHour:
+          type: array
+          description: Per-minute buckets, ascending; the last one is the current, partial minute.
+          items:
+            $ref: '#/components/schemas/TimeSeriesDataPoint'
+        fleet:
+          $ref: '#/components/schemas/MonitorFeedCounts'
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitorFeedEndpointMetrics'
+    MonitorFeedLatencyPoint:
+      title: MonitorFeedLatencyPoint
+      type: object
+      properties:
+        timestamp:
+          type: string
+        queue:
+          $ref: '#/components/schemas/LatencyStats'
+        processing:
+          $ref: '#/components/schemas/LatencyStats'
+    MonitorFeedEndpointHistory:
+      title: MonitorFeedEndpointHistory
+      type: object
+      properties:
+        endpointId:
+          type: string
+        processing:
+          $ref: '#/components/schemas/LatencyStats'
+    MonitorFeedHistory:
+      title: MonitorFeedHistory
+      type: object
+      properties:
+        generatedAtUtc:
+          type: string
+          format: date-time
+        stale:
+          type: boolean
+        lastThreeDays:
+          type: array
+          description: Per-hour buckets, ascending; the last one is the current, partial hour.
+          items:
+            $ref: '#/components/schemas/TimeSeriesDataPoint'
+        latencyLastDay:
+          type: array
+          nullable: true
+          description: Sparse per-hour queue and processing time; null when the store cannot tell.
+          items:
+            $ref: '#/components/schemas/MonitorFeedLatencyPoint'
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitorFeedEndpointHistory'
     McpActivityCount:
       title: McpActivityCount
       type: object
@@ -6636,6 +7798,10 @@ components:
             - agentApiKeyRevoked
             - agentApiKeyRemoved
             - copyEndpointData
+            - changeSessionState
+            - dashboardTokenCreated
+            - dashboardTokenRevoked
+            - dashboardTokenRemoved
         comment:
           type: string
           nullable: true

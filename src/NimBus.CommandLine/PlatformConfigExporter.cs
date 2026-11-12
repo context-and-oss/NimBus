@@ -5,13 +5,20 @@ using NimBus.Core.Messages;
 
 namespace NimBus.CommandLine;
 
-internal sealed class PlatformConfigExporter
+internal static class PlatformConfigExporter
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+    };
+
     /// <param name="platformFactory">
     /// Catalog to export. Null keeps the built-in platform; callers pass a factory to
     /// export a customer's own catalog from --assembly or --platform-package.
     /// </param>
-    public async Task ExportAsync(string outputPath, CancellationToken cancellationToken, Func<IPlatform>? platformFactory = null)
+    public static async Task ExportAsync(string outputPath, CancellationToken cancellationToken, Func<IPlatform>? platformFactory = null)
     {
         var platform = platformFactory?.Invoke() ?? new PlatformConfiguration();
         var config = new PlatformConfigJson
@@ -48,13 +55,6 @@ internal sealed class PlatformConfigExporter
                 .ToList(),
         };
 
-        var options = new JsonSerializerOptions
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true,
-        };
-
         var fullPath = Path.GetFullPath(outputPath);
         var directory = Path.GetDirectoryName(fullPath);
         if (!string.IsNullOrWhiteSpace(directory))
@@ -62,7 +62,7 @@ internal sealed class PlatformConfigExporter
             Directory.CreateDirectory(directory);
         }
 
-        var json = JsonSerializer.Serialize(config, options);
+        var json = JsonSerializer.Serialize(config, SerializerOptions);
         await File.WriteAllTextAsync(fullPath, json, cancellationToken).ConfigureAwait(false);
         CliOutput.WriteLine($"Platform configuration exported to '{fullPath}'.");
     }

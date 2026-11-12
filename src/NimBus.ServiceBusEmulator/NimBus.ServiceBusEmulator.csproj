@@ -29,7 +29,7 @@
          private deliveryCount field), all resolved at RUNTIME by UnsafeAccessor
          and reflection. A rename in the dependency is therefore a green build and
          a broken broker, which only the tests catch. -->
-    <PackageReference Include="AMQPNetLite.Core" Version="2.5.3" />
+    <PackageReference Include="AMQPNetLite.Core" Version="2.5.5" />
   </ItemGroup>
 
 </Project>

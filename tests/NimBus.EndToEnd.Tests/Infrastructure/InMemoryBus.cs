@@ -177,12 +177,12 @@ internal sealed class InMemoryBus : ISender
 
         // Simulate SQL Rule Action: SET user.EventId = newid()
         var eventIdKey = "EventId";
-        if (!properties.ContainsKey(eventIdKey) || properties[eventIdKey] is null or "")
+        if (!properties.TryGetValue(eventIdKey, out object? eventId) || eventId is null or "")
             properties[eventIdKey] = Guid.NewGuid().ToString();
 
         // Simulate SQL Rule Action: SET user.From = '<topicName>'
         var fromKey = "From";
-        if (!properties.ContainsKey(fromKey) || properties[fromKey] is null or "")
+        if (!properties.TryGetValue(fromKey, out object? fromValue) || fromValue is null or "")
             properties[fromKey] = "test-topic";
 
         return ServiceBusModelFactory.ServiceBusReceivedMessage(

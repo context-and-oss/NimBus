@@ -10,7 +10,6 @@ using NimBus.Extensions.IntegrationIntelligence.Controllers;
 using NimBus.Extensions.IntegrationIntelligence.Evidence;
 using NimBus.Extensions.IntegrationIntelligence.Providers;
 using NimBus.Extensions.IntegrationIntelligence.Storage;
-using System.Reflection;
 
 namespace NimBus.Extensions.IntegrationIntelligence;
 
@@ -36,7 +35,7 @@ public static class IntegrationIntelligenceRegistration
             if (!section.GetValue<bool>("Enabled") || !section.GetValue("FailureClassification:Enabled", true))
             {
                 services.AddControllers().ConfigureApplicationPartManager(manager =>
-                    manager.FeatureProviders.Add(new IntegrationIntelligenceFeatureProvider(false, false, false)));
+                    manager.FeatureProviders.Add(new IntegrationIntelligenceFeatureProvider(false, false, false, false)));
                 return services;
             }
             parent = section.Get<IntegrationIntelligenceOptions>();
@@ -59,11 +58,14 @@ public static class IntegrationIntelligenceRegistration
         var validationErrors = bindingErrors.Concat(options.Validate()).ToArray();
         var hasStorage = services.Any(d => d.ServiceType == typeof(IIntegrationIntelligenceStorageSettings) || d.ServiceType == typeof(IFailureClassificationStore));
         var hasHostAdapter = services.Any(d => d.ServiceType == typeof(IIntegrationIntelligenceHost));
-        var ready = options.Enabled && validationErrors.Length == 0 && hasStorage && hasHostAdapter;
+        // Spec 043: saved classifications stay readable when only provider, threshold or evidence
+        // settings are invalid (for example no API key). A binding failure still fails closed.
+        var readable = options.Enabled && bindingErrors.Count == 0 && hasStorage && hasHostAdapter;
+        var ready = readable && validationErrors.Length == 0;
         services.AddSingleton(options);
-        services.AddSingleton(new IntegrationIntelligenceActivation(options.Enabled, ready, validationErrors));
+        services.AddSingleton(new IntegrationIntelligenceActivation(options.Enabled, ready, validationErrors) { Readable = readable });
         services.AddControllers().ConfigureApplicationPartManager(manager =>
-            manager.FeatureProviders.Add(new IntegrationIntelligenceFeatureProvider(options.Enabled, ready, hasHostAdapter)));
+            manager.FeatureProviders.Add(new IntegrationIntelligenceFeatureProvider(options.Enabled, readable, ready, hasHostAdapter)));
 
         if (options.Enabled && (validationErrors.Length > 0 || !hasStorage || !hasHostAdapter))
         {
@@ -81,6 +83,20 @@ public static class IntegrationIntelligenceRegistration
         }
 
         services.AddScoped<IntegrationIntelligenceStatusService>();
+        if (!readable)
+        {
+            return services;
+        }
+
+        // Read-only mode and above: durable storage, its schema and retention, and saved-result reads.
+        services.TryAddSingleton<IFailureClassificationStore>(CreateStore);
+        services.AddHostedService<SqlClassificationSchemaInitializer>();
+        services.AddHostedService<ClassificationRetentionWorker>();
+        services.AddScoped(sp => new FailureClassificationReader(
+            sp.GetRequiredService<IIntegrationIntelligenceHost>(),
+            sp.GetRequiredService<IFailureClassificationStore>(),
+            sp.GetRequiredService<NimBus.MessageStore.Abstractions.IMessageTrackingStore>(),
+            sp.GetService<ILogger<FailureClassificationReader>>()));
         if (!ready)
         {
             return services;
@@ -98,51 +114,45 @@ public static class IntegrationIntelligenceRegistration
             client.Timeout = Timeout.InfiniteTimeSpan;
         });
         services.AddSingleton<IFailureIntelligenceProvider, TypeSafeFailureIntelligenceProvider>();
-        services.TryAddSingleton<IFailureClassificationStore>(sp =>
-        {
-            var storage = sp.GetService<IIntegrationIntelligenceStorageSettings>();
-            if (storage is null) return new UnavailableClassificationStore();
-            if (string.Equals(storage.Provider, "sqlserver", StringComparison.OrdinalIgnoreCase))
-            {
-                return string.IsNullOrWhiteSpace(storage.SqlConnectionString) ? new UnavailableClassificationStore() : new SqlClassificationStore(storage.SqlConnectionString);
-            }
-            if (string.Equals(storage.Provider, "cosmos", StringComparison.OrdinalIgnoreCase)
-                && storage.CosmosClient is not null
-                && !string.IsNullOrWhiteSpace(storage.CosmosDatabaseName))
-            {
-                return new CosmosClassificationStore(storage.CosmosClient, storage.CosmosDatabaseName);
-            }
-            return new UnavailableClassificationStore();
-        });
-        services.AddHostedService<SqlClassificationSchemaInitializer>();
-        services.AddHostedService<ClassificationRetentionWorker>();
         services.AddScoped<FailureClassificationService>();
         return services;
     }
 
-    private sealed class IntegrationIntelligenceFeatureProvider(bool enabled, bool ready, bool hasHostAdapter) : IApplicationFeatureProvider<ControllerFeature>
+    private static IFailureClassificationStore CreateStore(IServiceProvider sp)
+    {
+        var storage = sp.GetService<IIntegrationIntelligenceStorageSettings>();
+        if (storage is null) return new UnavailableClassificationStore();
+        if (string.Equals(storage.Provider, "sqlserver", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.IsNullOrWhiteSpace(storage.SqlConnectionString) ? new UnavailableClassificationStore() : new SqlClassificationStore(storage.SqlConnectionString);
+        }
+        if (string.Equals(storage.Provider, "cosmos", StringComparison.OrdinalIgnoreCase)
+            && storage.CosmosClient is not null
+            && !string.IsNullOrWhiteSpace(storage.CosmosDatabaseName))
+        {
+            return new CosmosClassificationStore(storage.CosmosClient, storage.CosmosDatabaseName);
+        }
+        return new UnavailableClassificationStore();
+    }
+
+    /// <summary>
+    /// Off: no intelligence controllers. Enabled but unreadable: status only. Read-only: status and
+    /// the classification GET routes. Ready: everything, including POST analyze.
+    /// </summary>
+    private sealed class IntegrationIntelligenceFeatureProvider(bool enabled, bool readable, bool ready, bool hasHostAdapter) : IApplicationFeatureProvider<ControllerFeature>
     {
         public void PopulateFeature(IEnumerable<ApplicationPart> parts, ControllerFeature feature)
         {
-            if (!enabled || !hasHostAdapter)
+            for (var index = feature.Controllers.Count - 1; index >= 0; index--)
             {
-                for (var index = feature.Controllers.Count - 1; index >= 0; index--)
-                {
-                    if (IsIntelligenceController(feature.Controllers[index])) feature.Controllers.RemoveAt(index);
-                }
-            }
-            else if (!ready)
-            {
-                for (var index = feature.Controllers.Count - 1; index >= 0; index--)
-                {
-                    if (feature.Controllers[index].AsType() == typeof(IntegrationIntelligenceController)) feature.Controllers.RemoveAt(index);
-                }
+                var type = feature.Controllers[index].AsType();
+                var keep = type == typeof(IntegrationIntelligenceStatusController) ? enabled && hasHostAdapter
+                    : type == typeof(IntegrationIntelligenceReadController) ? readable
+                    : type == typeof(IntegrationIntelligenceController) ? ready
+                    : true;
+                if (!keep) feature.Controllers.RemoveAt(index);
             }
         }
-
-        private static bool IsIntelligenceController(TypeInfo type)
-            => typeof(IntegrationIntelligenceStatusController).IsAssignableFrom(type.AsType())
-                || typeof(IntegrationIntelligenceController).IsAssignableFrom(type.AsType());
     }
 }
 
@@ -181,7 +191,7 @@ internal sealed class InvalidConfigurationWarning(IReadOnlyList<string> diagnost
 {
     private static readonly Action<ILogger, string, Exception?> LogWarning =
         LoggerMessage.Define<string>(LogLevel.Warning, new EventId(2, "InvalidConfiguration"),
-            "Integration Intelligence is disabled because enabled configuration is invalid or incomplete: {Diagnostics}");
+            "Integration Intelligence analysis is unavailable because enabled configuration is invalid or incomplete; saved classifications stay readable when storage is configured: {Diagnostics}");
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -195,7 +205,14 @@ internal sealed class InvalidConfigurationWarning(IReadOnlyList<string> diagnost
 }
 
 /// <summary>Activation snapshot used by status and tests.</summary>
-public sealed record IntegrationIntelligenceActivation(bool Enabled, bool Ready, IReadOnlyList<string> ValidationErrors);
+public sealed record IntegrationIntelligenceActivation(bool Enabled, bool Ready, IReadOnlyList<string> ValidationErrors)
+{
+    /// <summary>
+    /// True when saved classifications can be read: enabled, bound, with storage and a host adapter.
+    /// Ready implies readable; read-only mode is readable without being ready (spec 043).
+    /// </summary>
+    public bool Readable { get; init; }
+}
 
 /// <summary>Stable status response data.</summary>
 public sealed record IntegrationIntelligenceStatus(

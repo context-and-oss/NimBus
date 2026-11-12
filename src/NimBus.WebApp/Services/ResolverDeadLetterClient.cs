@@ -34,7 +34,7 @@ public sealed class ResolverReplayInProgressException : Exception
 /// <summary>
 /// Browses and atomically replays the regular dead-letter queue of a Resolver subscription.
 /// </summary>
-public sealed class ResolverDeadLetterClient : IResolverDeadLetterClient, IAsyncDisposable
+public sealed partial class ResolverDeadLetterClient : IResolverDeadLetterClient, IAsyncDisposable
 {
     internal const int MaxReplaySnapshotMessages = 500;
     private const int ReceiveBatchSize = 100;
@@ -194,9 +194,7 @@ public sealed class ResolverDeadLetterClient : IResolverDeadLetterClient, IAsync
                         held.TryAdd(message.SequenceNumber, message);
                         failed++;
                         errors.Add($"Sequence {message.SequenceNumber} could not be replayed.");
-                        _logger.LogError(exception,
-                            "Resolver dead-letter replay failed for sequence {SequenceNumber} on {TopicName}/{SubscriptionName}",
-                            message.SequenceNumber, topicName, subscriptionName);
+                        LogResolverDeadLetterReplayFailed(_logger, exception, message.SequenceNumber, topicName, subscriptionName);
                     }
                 }
             }
@@ -217,9 +215,7 @@ public sealed class ResolverDeadLetterClient : IResolverDeadLetterClient, IAsync
                 }
                 catch (Exception exception)
                 {
-                    _logger.LogWarning(exception,
-                        "Could not release held Resolver dead-letter sequence {SequenceNumber}",
-                        message.SequenceNumber);
+                    LogCouldNotReleaseHeldResolverDead(_logger, exception, message.SequenceNumber);
                 }
             }
         }
@@ -293,9 +289,7 @@ public sealed class ResolverDeadLetterClient : IResolverDeadLetterClient, IAsync
                     }
                     catch (Exception exception)
                     {
-                        _logger.LogWarning(exception,
-                            "Could not renew held Resolver dead-letter sequence {SequenceNumber}",
-                            message.SequenceNumber);
+                        LogCouldNotRenewHeldResolverDead(_logger, exception, message.SequenceNumber);
                     }
                 }
             }
@@ -336,4 +330,13 @@ public sealed class ResolverDeadLetterClient : IResolverDeadLetterClient, IAsync
     private readonly record struct SnapshotEntry(long SequenceNumber, string? Reason);
 
     public ValueTask DisposeAsync() => _client.DisposeAsync();
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Resolver dead-letter replay failed for sequence {SequenceNumber} on {TopicName}/{SubscriptionName}")]
+    private static partial void LogResolverDeadLetterReplayFailed(ILogger logger, Exception exception, long sequenceNumber, string topicName, string subscriptionName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not release held Resolver dead-letter sequence {SequenceNumber}")]
+    private static partial void LogCouldNotReleaseHeldResolverDead(ILogger logger, Exception exception, long sequenceNumber);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not renew held Resolver dead-letter sequence {SequenceNumber}")]
+    private static partial void LogCouldNotRenewHeldResolverDead(ILogger logger, Exception exception, long sequenceNumber);
 }

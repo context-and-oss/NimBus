@@ -8,11 +8,14 @@ using NimBus.MessageStore.Abstractions;
 using NimBus.ServiceBus;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using NimBus.Resolver.Alerts;
 
 namespace NimBus.Resolver;
 
-public static class ServiceExtensions
+public static partial class ServiceExtensions
 {
     /// <summary>
     /// Legacy IServiceCollection-based registration. Storage provider must be
@@ -31,8 +34,10 @@ public static class ServiceExtensions
             sp.GetRequiredService<IMessageStateChangeNotifier>(),
             sp.GetService<ILogger<ResolverService>>(),
             sp.GetService<IEndpointMetadataStore>(),
-            sp.GetService<IServiceHealthStore>()));
+            sp.GetService<IServiceHealthStore>(),
+            sp.GetRequiredService<IEndpointAlertNotifier>()));
         services.AddFlowStateChangeNotifier();
+        services.AddEndpointAlertNotifier();
 
         services.AddSingleton(sp =>
         {
@@ -99,6 +104,69 @@ public static class ServiceExtensions
         return services;
     }
 
+    /// <summary>
+    /// Registers the endpoint alert notifier (the WebApp's Alerts tab). It mails subscribers
+    /// when <c>NimBus:Alerts:Mail</c> has an SMTP host and a sender, and the storage provider
+    /// offers <see cref="ISubscriptionNotificationStore"/>; otherwise it registers the no-op
+    /// notifier and logs why. Invalid settings never stop the Resolver: they are logged and
+    /// alert mail stays off. A notifier the host registered first is kept.
+    /// </summary>
+    internal static IServiceCollection AddEndpointAlertNotifier(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IEndpointAlertNotifier>(sp =>
+        {
+            var logger = sp.GetService<ILoggerFactory>()?.CreateLogger("NimBus.Resolver.Alerts")
+                ?? NullLogger.Instance;
+            var options = sp.GetService<IConfiguration>()?.GetSection(AlertMailOptions.SectionName).Get<AlertMailOptions>()
+                ?? new AlertMailOptions();
+
+            if (!options.IsConfigured)
+            {
+                LogEndpointAlertMailIsOffUntilConfigured(logger, AlertMailOptions.SectionName);
+                return new NoopEndpointAlertNotifier();
+            }
+
+            var errors = options.Validate();
+            if (errors.Count > 0)
+            {
+                LogEndpointAlertMailIsOffBecause(logger, string.Join(" ", errors));
+                return new NoopEndpointAlertNotifier();
+            }
+
+            var subscriptions = sp.GetService<ISubscriptionStore>();
+            var notifications = sp.GetService<ISubscriptionNotificationStore>();
+            if (subscriptions is null || notifications is null)
+            {
+                LogEndpointAlertMailIsOff(logger, nameof(ISubscriptionStore), nameof(ISubscriptionNotificationStore));
+                return new NoopEndpointAlertNotifier();
+            }
+
+            LogEndpointAlertMail(logger, options.Smtp.Host, options.Smtp.Port, options.From);
+            return new SubscriptionAlertNotifier(
+                subscriptions,
+                notifications,
+                new SmtpAlertMailSender(options),
+                new AlertMailComposer(options),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetService<ILogger<SubscriptionAlertNotifier>>() ?? NullLogger<SubscriptionAlertNotifier>.Instance);
+        });
+
+        return services;
+    }
+
     private static string EnsureTrailingSlash(string url) =>
         url.EndsWith('/') ? url : url + "/";
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Endpoint alert mail is off: set {Section}:Smtp:Host and {Section}:From to mail Alerts-tab subscribers.")]
+    private static partial void LogEndpointAlertMailIsOffUntilConfigured(ILogger logger, string section);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Endpoint alert mail is off because its settings are invalid: {Errors}")]
+    private static partial void LogEndpointAlertMailIsOffBecause(ILogger logger, string errors);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint alert mail is off: the storage provider registers no {SubscriptionStore} or {NotificationStore}.")]
+    private static partial void LogEndpointAlertMailIsOff(ILogger logger, string subscriptionStore, string notificationStore);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Endpoint alert mail is on: SMTP {Host}:{Port}, from {From}.")]
+    private static partial void LogEndpointAlertMail(ILogger logger, string? host, int port, string? from);
 }

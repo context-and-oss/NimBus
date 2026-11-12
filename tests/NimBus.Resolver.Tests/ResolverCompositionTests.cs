@@ -3,6 +3,7 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Resolver.Alerts;
 using NimBus.Resolver.Services;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
@@ -66,6 +67,76 @@ public class ResolverCompositionTests
         Assert.IsTrue(overview.Any(h => h.EndpointId == "BillingEndpoint"),
             "The heartbeat answer must be recorded through the registered store.");
         Assert.AreEqual(1, message.CompletedCalls);
+    }
+
+    // ── Endpoint alert mail ────────────────────────────────────────────────────────────
+
+    private static Dictionary<string, string?> AlertMailSettings(string from = "nimbus@example.com") => new()
+    {
+        ["NimBus:Alerts:Mail:Smtp:Host"] = "smtp.example.com",
+        ["NimBus:Alerts:Mail:From"] = from,
+    };
+
+    [TestMethod]
+    [DataRow(Registration.ServiceCollection)]
+    [DataRow(Registration.NimBusBuilder)]
+    public async Task AlertNotifier_WithoutMailSettings_IsTheNoop(Registration registration)
+    {
+        await using var provider = Build(registration, new Dictionary<string, string?>(), registerSubscriptionStores: true);
+
+        Assert.IsInstanceOfType<NoopEndpointAlertNotifier>(provider.GetRequiredService<IEndpointAlertNotifier>());
+    }
+
+    [TestMethod]
+    [DataRow(Registration.ServiceCollection)]
+    [DataRow(Registration.NimBusBuilder)]
+    public async Task AlertNotifier_WithMailSettings_MailsSubscribers(Registration registration)
+    {
+        await using var provider = Build(registration, AlertMailSettings(), registerSubscriptionStores: true);
+
+        Assert.IsInstanceOfType<SubscriptionAlertNotifier>(provider.GetRequiredService<IEndpointAlertNotifier>());
+    }
+
+    [TestMethod]
+    [DataRow(Registration.ServiceCollection)]
+    [DataRow(Registration.NimBusBuilder)]
+    public async Task AlertNotifier_WithInvalidMailSettings_IsTheNoop(Registration registration)
+    {
+        // A bad alert setting must not stop the Resolver from settling messages.
+        await using var provider = Build(registration, AlertMailSettings(from: "not an address"), registerSubscriptionStores: true);
+
+        Assert.IsInstanceOfType<NoopEndpointAlertNotifier>(provider.GetRequiredService<IEndpointAlertNotifier>());
+    }
+
+    [TestMethod]
+    [DataRow(Registration.ServiceCollection)]
+    [DataRow(Registration.NimBusBuilder)]
+    public async Task AlertNotifier_WithoutTheSubscriptionStores_IsTheNoop(Registration registration)
+    {
+        await using var provider = Build(registration, AlertMailSettings());
+
+        Assert.IsInstanceOfType<NoopEndpointAlertNotifier>(provider.GetRequiredService<IEndpointAlertNotifier>());
+    }
+
+    [TestMethod]
+    [DataRow(Registration.ServiceCollection)]
+    [DataRow(Registration.NimBusBuilder)]
+    public async Task MessageHandler_HandsFailuresToTheRegisteredAlertNotifier(Registration registration)
+    {
+        // A host may register its own notifier before AddResolver; the handler must use it.
+        var alerts = new ResolverAlertTests.RecordingAlertNotifier();
+        await using var provider = Build(
+            registration,
+            new Dictionary<string, string?>(),
+            configure: services => services.AddSingleton<IEndpointAlertNotifier>(alerts));
+        var handler = provider.GetRequiredService<IMessageHandler>();
+        var message = ResolverTestMessages.CreateMessageContext(
+            MessageType.ErrorResponse, to: Constants.ResolverId, from: "BillingEndpoint",
+            messageId: "rsp-1", parentMessageId: "req-1");
+
+        await handler.Handle(message);
+
+        Assert.AreEqual("BillingEndpoint", alerts.Contexts.Single().EndpointId);
     }
 
     [TestMethod]
@@ -162,7 +233,7 @@ public class ResolverCompositionTests
         await using var provider = Build(registration, new Dictionary<string, string?>());
 
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() => provider.GetRequiredService<ServiceBusClient>());
-        StringAssert.Contains(exception.Message, "AzureWebJobsServiceBus");
+        StringAssert.Contains(exception.Message, "AzureWebJobsServiceBus", StringComparison.Ordinal);
     }
 
     // ── Service Bus adapter ────────────────────────────────────────────────────────────
@@ -175,7 +246,7 @@ public class ResolverCompositionTests
         await using var provider = Build(registration, new Dictionary<string, string?> { ["AzureWebJobsServiceBus"] = ConnectionString });
 
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() => provider.GetRequiredService<IServiceBusAdapter>());
-        StringAssert.Contains(exception.Message, "ResolverId");
+        StringAssert.Contains(exception.Message, "ResolverId", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -254,7 +325,9 @@ public class ResolverCompositionTests
         Registration registration,
         IDictionary<string, string?> settings,
         InMemoryMessageStore? store = null,
-        bool registerStore = true)
+        bool registerStore = true,
+        bool registerSubscriptionStores = false,
+        Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(Configuration(settings));
@@ -265,7 +338,14 @@ public class ResolverCompositionTests
             services.AddSingleton<IMessageTrackingStore>(inMemory);
             services.AddSingleton<IEndpointMetadataStore>(inMemory);
             services.AddSingleton<IServiceHealthStore>(inMemory);
+            if (registerSubscriptionStores)
+            {
+                services.AddSingleton<ISubscriptionStore>(inMemory);
+                services.AddSingleton<ISubscriptionNotificationStore>(inMemory);
+            }
         }
+
+        configure?.Invoke(services);
 
         if (registration == Registration.ServiceCollection)
             ServiceExtensions.AddResolver(services);

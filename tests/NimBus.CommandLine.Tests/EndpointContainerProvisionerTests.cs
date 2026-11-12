@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
@@ -32,6 +33,19 @@ public sealed class EndpointContainerProvisionerTests
                 "--output", "none",
             },
             create);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_UsesThePostfixedCosmosAccount()
+    {
+        var az = new FakeAzureCliRunner();
+        var sut = new EndpointContainerProvisioner(az, () => new TestPlatform(new TestEndpoint("BillingEndpoint")));
+
+        await sut.ApplyAsync(new TopologyOptions("nbdemo", "dev", "rg-test", ResourceNamePostfix: "avk"), CancellationToken.None);
+
+        Assert.All(
+            az.Commands.Where(command => command.Contains("cosmosdb")),
+            command => Assert.Contains("cosmos-nbdemo-dev-avk", command));
     }
 
     [Fact]
@@ -77,8 +91,10 @@ public sealed class EndpointContainerProvisionerTests
     private sealed class FakeAzureCliRunner : IAzureCliRunner
     {
 
+        // The resource group read that resolves the recorded names; nothing is recorded.
         public Task<System.Text.Json.JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage) =>
-            Task.FromResult(System.Text.Json.JsonDocument.Parse("{}"));
+            Task.FromResult(System.Text.Json.JsonDocument.Parse(
+                arguments.Contains("group") ? """{"id":"/subscriptions/0/resourceGroups/rg-test","tags":null}""" : "{}"));
         public List<IReadOnlyList<string>> Commands { get; } = new();
 
         public string ListResponse { get; set; } = "[]";

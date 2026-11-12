@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using Azure;
 using Azure.Core;
 using Azure.Messaging.ServiceBus;
@@ -73,9 +74,11 @@ public sealed class ServiceBusTopologyProvisionerTests
         //   same EventTypeId -> forwarded back to CRM -> ...
         // Service Bus's MaxHopCount eventually dead-letters the message
         // ("Maximum transfer hop count is exceeded").
-        // The fix: filter must include "AND user.From IS NULL" so the rule only fires
-        // on original publishes (where the publisher never sets From), not on
-        // already-forwarded copies (where the action SETs From=<endpoint>).
+        // "user.From IS NULL" keeps the rule off already-forwarded copies (where the
+        // action SETs From=<endpoint>). "user.MessageType = 'EventRequest'" keeps it off
+        // the endpoint's own control traffic about the event (responses to the Resolver,
+        // RetryRequest, ProcessDeferredRequest, resubmissions), which carries the same
+        // EventTypeId and no From and would otherwise ping-pong between the endpoints.
         var client = new RecordingAdministrationClient();
 
         var crm = new EventEndpoint(
@@ -98,10 +101,143 @@ public sealed class ServiceBusTopologyProvisionerTests
         var crmFilter = ((SqlRuleFilter)crmToErpRule.Rule.Filter).SqlExpression;
         var erpFilter = ((SqlRuleFilter)erpToCrmRule.Rule.Filter).SqlExpression;
 
-        Assert.Contains("user.From IS NULL", crmFilter, StringComparison.Ordinal);
-        Assert.Contains("user.From IS NULL", erpFilter, StringComparison.Ordinal);
-        Assert.Contains("user.EventTypeId = 'ContactCreated'", crmFilter, StringComparison.Ordinal);
-        Assert.Contains("user.EventTypeId = 'ContactCreated'", erpFilter, StringComparison.Ordinal);
+        Assert.Equal(NewContactCreatedFilter, crmFilter, StringComparer.Ordinal);
+        Assert.Equal(NewContactCreatedFilter, erpFilter, StringComparer.Ordinal);
+    }
+
+    private const string NewContactCreatedFilter =
+        "user.EventTypeId = 'ContactCreated' AND user.MessageType = 'EventRequest' AND user.From IS NULL";
+
+    // The forwarder filter provisioned before the MessageType guard: a migration fixture.
+    private const string PreviousContactCreatedFilter =
+        "user.EventTypeId = 'ContactCreated' AND user.From IS NULL";
+
+    private static TestPlatform CrmErpPlatform() => new(
+        new[] { new DynamicForward("CrmEndpoint", "LegacyOrderPlaced", "ErpEndpoint") },
+        new EventEndpoint("CrmEndpoint", produces: new[] { "ContactCreated" }, consumes: new[] { "ContactCreated" }),
+        new EventEndpoint("ErpEndpoint", produces: new[] { "ContactCreated" }, consumes: new[] { "ContactCreated" }));
+
+    /// <summary>
+    /// Provisions the CRM/ERP topology, then puts the CrmEndpoint→ErpEndpoint forwarder rule
+    /// back to the filter older releases laid down, as an existing namespace would have it.
+    /// </summary>
+    private static async Task<(RecordingAdministrationClient Client, ServiceBusTopologyProvisioner Sut, string Action)> SeedPreviousForwarderRuleAsync(string connectionString)
+    {
+        var client = new RecordingAdministrationClient();
+        var sut = CreateProvisioner(client, CrmErpPlatform(), connectionString);
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        var action = TopologyDescriptor.ForwardAction("CrmEndpoint", "ErpEndpoint");
+        client.SeedRule("CrmEndpoint", "ErpEndpoint", ServiceBusModelFactory.RuleProperties(
+            "ContactCreated", new SqlRuleFilter(PreviousContactCreatedFilter), new SqlRuleAction(action)));
+        client.ResetRecords();
+        return (client, sut, action);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_RealNamespace_UpdatesMismatchedForwarderRuleInPlace()
+    {
+        // Deleting and recreating the rule would leave a window in which publishes of the
+        // type are not forwarded; a real namespace replaces the rule in one call.
+        var (client, sut, action) = await SeedPreviousForwarderRuleAsync(RealNamespaceConnectionString);
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        var updated = Assert.Single(client.UpdatedRules);
+        Assert.Equal(("CrmEndpoint", "ErpEndpoint", "ContactCreated"), (updated.TopicName, updated.SubscriptionName, updated.RuleName));
+        Assert.Equal(NewContactCreatedFilter, updated.Filter, StringComparer.Ordinal);
+        Assert.Equal(action, updated.Action, StringComparer.Ordinal);
+        Assert.DoesNotContain(client.DeletedRules, rule => rule.RuleName == "ContactCreated");
+        Assert.DoesNotContain(client.CreatedRules, rule => rule.Rule.Name == "ContactCreated");
+    }
+
+    [Fact]
+    public async Task ApplyAsync_Emulator_RecreatesMismatchedRule()
+    {
+        // The emulator's admin endpoint rejects a PUT for a rule that exists, so it keeps
+        // delete-then-create.
+        var (client, sut, action) = await SeedPreviousForwarderRuleAsync(EmulatorConnectionString);
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.Empty(client.UpdatedRules);
+        Assert.Equal(
+            new[] { "delete CrmEndpoint/ErpEndpoint/ContactCreated", "create CrmEndpoint/ErpEndpoint/ContactCreated" },
+            client.Operations);
+        var created = Assert.Single(client.CreatedRules).Rule;
+        Assert.Equal(NewContactCreatedFilter, ((SqlRuleFilter)created.Filter).SqlExpression, StringComparer.Ordinal);
+        Assert.Equal(action, ((SqlRuleAction)created.Action).SqlExpression, StringComparer.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(RealNamespaceConnectionString)]
+    [InlineData(EmulatorConnectionString)]
+    public async Task ApplyAsync_WhenEveryRuleMatches_WritesNoRule(string connectionString)
+    {
+        var client = new RecordingAdministrationClient();
+        var sut = CreateProvisioner(client, CrmErpPlatform(), connectionString);
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+        // The first apply removes every $Default it should; nothing is left to clean up.
+        Assert.All(client.DeletedRules, rule => Assert.Equal(TopologyDescriptor.DefaultRuleName, rule.RuleName));
+        client.ResetRecords();
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.Empty(client.UpdatedRules);
+        Assert.Empty(client.CreatedRules);
+        Assert.Empty(client.DeletedRules);
+    }
+
+    [Fact]
+    public async Task Rebuilder_LegacyConstructor_UpdatesMismatchedForwarderRuleInPlace()
+    {
+        var (client, expected) = SeedSubscriptionWithPreviousForwarderRule();
+        var sut = new ServiceBusTopologyRebuilder(client);
+
+        await sut.EnsureSubscriptionAsync("CrmEndpoint", expected);
+
+        Assert.False(sut.IsEmulator);
+        var updated = Assert.Single(client.UpdatedRules);
+        Assert.Equal("ContactCreated", updated.RuleName);
+        Assert.Equal(NewContactCreatedFilter, updated.Filter, StringComparer.Ordinal);
+        Assert.Equal(expected.Rules.Single().Action, updated.Action, StringComparer.Ordinal);
+        Assert.Empty(client.CreatedRules);
+        Assert.DoesNotContain(client.DeletedRules, rule => rule.RuleName == "ContactCreated");
+    }
+
+    [Fact]
+    public async Task Rebuilder_OnEmulator_RecreatesMismatchedForwarderRule()
+    {
+        var (client, expected) = SeedSubscriptionWithPreviousForwarderRule();
+        var sut = new ServiceBusTopologyRebuilder(client, isEmulator: true);
+
+        await sut.EnsureSubscriptionAsync("CrmEndpoint", expected);
+
+        Assert.True(sut.IsEmulator);
+        Assert.Empty(client.UpdatedRules);
+        Assert.Equal(
+            new[] { "delete CrmEndpoint/ErpEndpoint/ContactCreated", "create CrmEndpoint/ErpEndpoint/ContactCreated" },
+            client.Operations);
+        var created = Assert.Single(client.CreatedRules).Rule;
+        Assert.Equal(NewContactCreatedFilter, ((SqlRuleFilter)created.Filter).SqlExpression, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// An existing, Active CrmEndpoint→ErpEndpoint forwarder whose ContactCreated rule still
+    /// carries the previous filter — a mismatch that survives into a WebApp rebuild.
+    /// </summary>
+    private static (RecordingAdministrationClient Client, ExpectedSubscription Expected) SeedSubscriptionWithPreviousForwarderRule()
+    {
+        var expected = TopologyDescriptor.ConsumerForwarderSubscription("CrmEndpoint", "ErpEndpoint", new[] { "ContactCreated" });
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("CrmEndpoint");
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "ErpEndpoint",
+            requiresSession: false, forwardTo: "ErpEndpoint"));
+        client.SeedRule("CrmEndpoint", "ErpEndpoint", ServiceBusModelFactory.RuleProperties(
+            "ContactCreated",
+            new SqlRuleFilter(PreviousContactCreatedFilter),
+            new SqlRuleAction(TopologyDescriptor.ForwardAction("CrmEndpoint", "ErpEndpoint"))));
+        return (client, expected);
     }
 
     [Fact]
@@ -259,6 +395,81 @@ public sealed class ServiceBusTopologyProvisionerTests
     }
 
     [Fact]
+    public async Task ApplyAsync_CreatesEverySubscriptionWithAClosedInitialRuleUnlessItKeepsDefault()
+    {
+        // Service Bus seeds a rule-less subscription with a true-filter $Default, so between
+        // the create call and the $Default delete it would match everything published to the
+        // topic. Creating it with a false-filter $Default keeps it closed until its real rules
+        // are in place.
+        var client = new RecordingAdministrationClient();
+
+        var crm = new EventEndpoint("CrmEndpoint", produces: new[] { "AccountCreated", "ContactCreated" }, consumes: new[] { "ContactCreated" });
+        var erp = new EventEndpoint("ErpEndpoint", produces: Array.Empty<string>(), consumes: new[] { "AccountCreated", "ContactCreated" });
+        var platform = new TestPlatform(new[] { new DynamicForward("CrmEndpoint", "LegacyOrderPlaced", "ErpEndpoint") }, crm, erp);
+
+        var sut = CreateProvisioner(client, platform);
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        var checkedClosed = 0;
+        foreach (var topicName in new[] { Constants.ResolverId, "CrmEndpoint", "ErpEndpoint" })
+        {
+            foreach (var expected in TopologyDescriptor.ForTopic(topicName, platform))
+            {
+                var initialRules = client.CreatedSubscriptionInitialRules
+                    .Where(created => created.TopicName == topicName && created.SubscriptionName == expected.Name)
+                    .ToList();
+
+                if (expected.KeepDefaultRule)
+                {
+                    Assert.Empty(initialRules);
+                    continue;
+                }
+
+                var initial = Assert.Single(initialRules).Rule;
+                Assert.Equal(TopologyDescriptor.DefaultRuleName, initial.Name);
+                Assert.IsNotType<TrueRuleFilter>(initial.Filter);
+                var filter = Assert.IsType<FalseRuleFilter>(initial.Filter);
+                Assert.Equal("1=0", filter.SqlExpression);
+                checkedClosed++;
+            }
+        }
+
+        Assert.True(checkedClosed > 0);
+        Assert.Contains(client.CreatedSubscriptions, created => created.TopicName == Constants.ResolverId && created.SubscriptionName == Constants.ResolverId);
+    }
+
+    [Fact]
+    public async Task Rebuilder_RecreatesASubscriptionWithAClosedInitialRule()
+    {
+        // The WebApp's "Delete & recreate" deletes the subscription and rebuilds it through
+        // the rebuilder on a live topic.
+        var platform = new TestPlatform(new TestEndpoint("orders"));
+        var expected = TopologyDescriptor.FindSubscription("orders", "orders", platform)!;
+        Assert.NotNull(expected);
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("orders");
+
+        await new ServiceBusTopologyRebuilder(client).EnsureSubscriptionAsync("orders", expected);
+
+        var initial = Assert.Single(client.CreatedSubscriptionInitialRules, created =>
+            created.TopicName == "orders" && created.SubscriptionName == "orders").Rule;
+        Assert.Equal(TopologyDescriptor.DefaultRuleName, initial.Name);
+        Assert.Equal("1=0", Assert.IsType<FalseRuleFilter>(initial.Filter).SqlExpression);
+
+        Assert.Contains(client.DeletedRules, rule =>
+            rule.TopicName == "orders" && rule.SubscriptionName == "orders" && rule.RuleName == TopologyDescriptor.DefaultRuleName);
+        Assert.Equal(
+            expected.Rules.Select(rule => rule.Name).OrderBy(name => name, StringComparer.Ordinal),
+            client.CreatedRules
+                .Where(rule => rule.TopicName == "orders" && rule.SubscriptionName == "orders")
+                .Select(rule => rule.Rule.Name)
+                .OrderBy(name => name, StringComparer.Ordinal));
+        Assert.Equal(
+            new[] { $"delete orders/orders/{TopologyDescriptor.DefaultRuleName}" },
+            client.Operations.Where(operation => operation.StartsWith("delete", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void Descriptor_DescribesTheEndpointsOwnReplySubscription()
     {
         // The reply subscription is the one an endpoint's request/reply traffic lands on.
@@ -310,33 +521,239 @@ public sealed class ServiceBusTopologyProvisionerTests
     }
 
     [Fact]
-    public void DeferredSubscription_DropsToAnEmulatorSafeTimeToLive()
+    public void DeferredSubscription_KeepsParkedMessagesUntilReplayedAndDeadLettersAnyThatExpire()
     {
-        Assert.Equal(TimeSpan.FromDays(14), TopologyDescriptor.DeferredSubscription().DefaultMessageTimeToLive);
+        // A parked message waits for its blocking event to be resolved, which can take an
+        // operator weeks. A capped TTL silently dropped it, leaving the row Deferred forever
+        // with nothing to replay.
+        var deferred = TopologyDescriptor.DeferredSubscription();
+        Assert.Equal(TimeSpan.MaxValue, deferred.DefaultMessageTimeToLive);
+        Assert.True(deferred.DeadLetterOnMessageExpiration);
+
         Assert.Equal(TimeSpan.FromHours(1), TopologyDescriptor.DeferredSubscription(isEmulator: true).DefaultMessageTimeToLive);
     }
 
+    [Fact]
+    public async Task ApplyAsync_CreatesDeferredSubscriptionWithUnboundedTtlAndDeadLetteringOnExpiration()
+    {
+        var client = new RecordingAdministrationClient();
+        var sut = CreateProvisioner(client, new TestPlatform(new TestEndpoint("orders")));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        var deferred = Assert.Single(client.CreatedSubscriptions, x =>
+            x.TopicName == "orders" && x.SubscriptionName == Constants.DeferredSubscriptionName);
+        Assert.Equal(TimeSpan.MaxValue, deferred.DefaultMessageTimeToLive);
+        Assert.True(deferred.DeadLetteringOnMessageExpiration);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_UpdatesAnExistingDeferredSubscriptionInPlaceWithoutRecreatingIt()
+    {
+        // Existing namespaces were provisioned with a 14-day TTL. Recreating the subscription
+        // would delete every parked message, so the settings must change in place.
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("orders");
+        client.SeedSubscription("orders", MakeSubscriptionProperties("orders", Constants.DeferredSubscriptionName,
+            requiresSession: true, defaultMessageTimeToLive: TimeSpan.FromDays(14)));
+
+        var sut = CreateProvisioner(client, new TestPlatform(new TestEndpoint("orders")));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.DoesNotContain(client.DeletedSubscriptions, x => x.SubscriptionName == Constants.DeferredSubscriptionName);
+        Assert.DoesNotContain(client.CreatedSubscriptions, x => x.SubscriptionName == Constants.DeferredSubscriptionName);
+        var updated = Assert.Single(client.UpdatedSubscriptions);
+        Assert.Equal(("orders", Constants.DeferredSubscriptionName), (updated.TopicName, updated.SubscriptionName));
+        Assert.Equal(TimeSpan.MaxValue, updated.DefaultMessageTimeToLive);
+        Assert.True(updated.DeadLetteringOnMessageExpiration);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_LeavesSubscriptionsThatAlreadyMatchUntouched()
+    {
+        var client = new RecordingAdministrationClient();
+        var sut = CreateProvisioner(client, new TestPlatform(new TestEndpoint("orders")));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.Empty(client.UpdatedSubscriptions);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_LeavesAPausedForwardingSubscriptionAndItsBacklogInPlace()
+    {
+        // The WebApp's Pause on a forwarding subscription sets ReceiveDisabled and detaches
+        // ForwardTo so messages collect in it. Deleting and recreating it over the missing
+        // forward target would discard that backlog and silently undo the pause.
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("CrmEndpoint");
+        client.SeedTopic("ErpEndpoint");
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "ErpEndpoint",
+            requiresSession: false, forwardTo: string.Empty, status: EntityStatus.ReceiveDisabled));
+
+        var crm = new EventEndpoint("CrmEndpoint", produces: new[] { "ContactCreated" }, consumes: Array.Empty<string>());
+        var erp = new EventEndpoint("ErpEndpoint", produces: Array.Empty<string>(), consumes: new[] { "ContactCreated" });
+        var sut = CreateProvisioner(client, new TestPlatform(crm, erp));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.DoesNotContain(client.DeletedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.DoesNotContain(client.CreatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.DoesNotContain(client.UpdatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+
+        var stillPaused = client.GetSeeded("CrmEndpoint", "ErpEndpoint");
+        Assert.Equal(EntityStatus.ReceiveDisabled, stillPaused.Status);
+        Assert.True(string.IsNullOrEmpty(stillPaused.ForwardTo));
+
+        // Rules are still ensured, so resuming forwards exactly what the topology describes.
+        Assert.Contains(client.CreatedRules, r => r.TopicName == "CrmEndpoint" && r.SubscriptionName == "ErpEndpoint" && r.Rule.Name == "ContactCreated");
+    }
+
+    [Fact]
+    public async Task ApplyAsync_CorrectsTheForwardTargetOfAnActiveSubscriptionInPlace()
+    {
+        // A forward target that is missing or wrong on an Active subscription can change in
+        // place; recreating would delete whatever the subscription holds.
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("CrmEndpoint");
+        client.SeedTopic("ErpEndpoint");
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "ErpEndpoint",
+            requiresSession: false, forwardTo: "SomewhereElse"));
+
+        var crm = new EventEndpoint("CrmEndpoint", produces: new[] { "ContactCreated" }, consumes: Array.Empty<string>());
+        var erp = new EventEndpoint("ErpEndpoint", produces: Array.Empty<string>(), consumes: new[] { "ContactCreated" });
+        var sut = CreateProvisioner(client, new TestPlatform(crm, erp));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.DoesNotContain(client.DeletedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.DoesNotContain(client.CreatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        var updated = Assert.Single(client.UpdatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.Equal("ErpEndpoint", updated.ForwardTo);
+        Assert.Equal(EntityStatus.Active, updated.Status);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_LeavesAForwarderTheWebAppIsPurgingUntouched()
+    {
+        // A WebApp Purge of a paused forwarder makes it Active for the drain, with ForwardTo
+        // still detached. Without the purge marker, apply would re-attach forwarding mid-drain
+        // and hand the backlog the operator chose to discard to the destination.
+        var client = new RecordingAdministrationClient();
+        SeedDetachedActiveForwarder(client, SubscriptionMarkers.PurgeInProgress);
+
+        await CreateProvisioner(client, ContactForwardPlatform()).ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.DoesNotContain(client.UpdatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.DoesNotContain(client.DeletedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.DoesNotContain(client.CreatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+
+        var stillDraining = client.GetSeeded("CrmEndpoint", "ErpEndpoint");
+        Assert.Equal(EntityStatus.Active, stillDraining.Status);
+        Assert.True(string.IsNullOrEmpty(stillDraining.ForwardTo));
+
+        Assert.Contains(client.CreatedRules, r => r.TopicName == "CrmEndpoint" && r.SubscriptionName == "ErpEndpoint" && r.Rule.Name == "ContactCreated");
+    }
+
+    [Fact]
+    public async Task ApplyAsync_SaysWhyItSkippedAMarkedForwarderAndHowToClearTheMarker()
+    {
+        var client = new RecordingAdministrationClient();
+        SeedDetachedActiveForwarder(client, SubscriptionMarkers.PurgeInProgress);
+        var log = new List<string>();
+        var platform = ContactForwardPlatform();
+        var sut = new NimBus.ServiceBus.Provisioning.ServiceBusTopologyProvisioner(client, () => platform, log.Add);
+
+        await sut.ApplyAsync(CancellationToken.None);
+
+        var line = Assert.Single(log, l => l.Contains("'ErpEndpoint' on topic 'CrmEndpoint'", StringComparison.Ordinal));
+        Assert.Contains("purge marker", line, StringComparison.Ordinal);
+        Assert.Contains("Pause", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("until the purge", line, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("owner: team-a")]
+    public async Task ApplyAsync_StillReattachesAnUnmarkedDetachedActiveForwarder(string userMetadata)
+    {
+        // The marker, not "Active and detached", is what makes apply hold back: an unmarked
+        // forwarder that lost its target is still corrected in place.
+        var client = new RecordingAdministrationClient();
+        SeedDetachedActiveForwarder(client, userMetadata);
+
+        await CreateProvisioner(client, ContactForwardPlatform()).ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.DoesNotContain(client.DeletedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        var updated = Assert.Single(client.UpdatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.Equal("ErpEndpoint", updated.ForwardTo);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_StillRecreatesAMarkedForwarderWhoseSessionFlagIsWrong()
+    {
+        var client = new RecordingAdministrationClient();
+        client.SeedTopic("CrmEndpoint");
+        client.SeedTopic("ErpEndpoint");
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "ErpEndpoint",
+            requiresSession: true, forwardTo: string.Empty, userMetadata: SubscriptionMarkers.PurgeInProgress));
+
+        await CreateProvisioner(client, ContactForwardPlatform()).ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.Contains(client.DeletedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+        Assert.Contains(client.CreatedSubscriptions, x => x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+    }
+
+    private static void SeedDetachedActiveForwarder(RecordingAdministrationClient client, string userMetadata)
+    {
+        client.SeedTopic("CrmEndpoint");
+        client.SeedTopic("ErpEndpoint");
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "ErpEndpoint",
+            requiresSession: false, forwardTo: string.Empty, status: EntityStatus.Active, userMetadata: userMetadata));
+    }
+
+    /// <summary>CrmEndpoint publishes ContactCreated, ErpEndpoint consumes it: one forwarder.</summary>
+    private static TestPlatform ContactForwardPlatform() => new(
+        new EventEndpoint("CrmEndpoint", produces: new[] { "ContactCreated" }, consumes: Array.Empty<string>()),
+        new EventEndpoint("ErpEndpoint", produces: Array.Empty<string>(), consumes: new[] { "ContactCreated" }));
+
     private static SubscriptionProperties MakeSubscriptionProperties(
         string topicName, string subscriptionName,
-        bool requiresSession = false, string? forwardTo = null) =>
+        bool requiresSession = false, string? forwardTo = null,
+        TimeSpan? defaultMessageTimeToLive = null, bool deadLetteringOnMessageExpiration = false,
+        EntityStatus? status = null,
+        // The model factory rejects null UserMetadata, so "none" is string.Empty here.
+        string userMetadata = "") =>
         ServiceBusModelFactory.SubscriptionProperties(
             topicName, subscriptionName,
             lockDuration: TimeSpan.FromMinutes(1),
             requiresSession: requiresSession,
-            defaultMessageTimeToLive: TimeSpan.MaxValue,
+            defaultMessageTimeToLive: defaultMessageTimeToLive ?? TimeSpan.MaxValue,
             autoDeleteOnIdle: TimeSpan.MaxValue,
-            deadLetteringOnMessageExpiration: false,
+            deadLetteringOnMessageExpiration: deadLetteringOnMessageExpiration,
             maxDeliveryCount: 10,
             enableBatchedOperations: true,
-            status: EntityStatus.Active,
+            status: status ?? EntityStatus.Active,
             forwardTo: forwardTo,
             forwardDeadLetteredMessagesTo: string.Empty,
-            userMetadata: string.Empty);
+            userMetadata: userMetadata);
 
-    private static ServiceBusTopologyProvisioner CreateProvisioner(RecordingAdministrationClient client, IPlatform platform) =>
+    private const string RealNamespaceConnectionString =
+        "Endpoint=sb://example/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=test";
+
+    private const string EmulatorConnectionString =
+        "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;";
+
+    // The CLI wrapper derives isEmulator from the connection string, exactly as `nb topology apply` does.
+    private static ServiceBusTopologyProvisioner CreateProvisioner(
+        RecordingAdministrationClient client,
+        IPlatform platform,
+        string connectionString = RealNamespaceConnectionString) =>
         new(
             new AzureCliRunner(),
-            static (options, cancellationToken, runner) => Task.FromResult("Endpoint=sb://example/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=test"),
+            (options, cancellationToken, runner) => Task.FromResult(connectionString),
             _ => client,
             () => platform);
 
@@ -362,7 +779,24 @@ public sealed class ServiceBusTopologyProvisionerTests
         public List<(string TopicName, string SubscriptionName, string RuleName)> DeletedRules { get; } = new();
         public List<string> CreatedTopics { get; } = new();
 
+        /// <summary>Forgets what was recorded so far, keeping the entities in place.</summary>
+        public void ResetRecords()
+        {
+            CreatedSubscriptions.Clear();
+            CreatedSubscriptionInitialRules.Clear();
+            DeletedSubscriptions.Clear();
+            UpdatedSubscriptions.Clear();
+            CreatedRules.Clear();
+            DeletedRules.Clear();
+            UpdatedRules.Clear();
+            CreatedTopics.Clear();
+            Operations.Clear();
+        }
+
         public void SeedTopic(string topicName) => _topics.Add(topicName);
+
+        public SubscriptionProperties GetSeeded(string topicName, string subscriptionName) =>
+            _subscriptions[(topicName, subscriptionName)];
 
         public void SeedSubscription(string topicName, SubscriptionProperties properties) =>
             _subscriptions[(topicName, properties.SubscriptionName)] = properties;
@@ -402,11 +836,43 @@ public sealed class ServiceBusTopologyProvisionerTests
                 options.TopicName,
                 options.SubscriptionName,
                 requiresSession: options.RequiresSession,
-                forwardTo: _forwardToNormalizer(options.ForwardTo));
+                forwardTo: _forwardToNormalizer(options.ForwardTo),
+                defaultMessageTimeToLive: options.DefaultMessageTimeToLive,
+                deadLetteringOnMessageExpiration: options.DeadLetteringOnMessageExpiration);
             _subscriptions[(options.TopicName, options.SubscriptionName)] = subscription;
             // Azure Service Bus auto-creates a $Default rule on new subscriptions
             _rules[(options.TopicName, options.SubscriptionName, "$Default")] =
                 ServiceBusModelFactory.RuleProperties("$Default", new TrueRuleFilter());
+            return Task.FromResult(Response.FromValue(subscription, FakeResponse.Instance));
+        }
+
+        /// <summary>Subscriptions created with an initial rule, and the rule they were created with.</summary>
+        public List<(string TopicName, string SubscriptionName, CreateRuleOptions Rule)> CreatedSubscriptionInitialRules { get; } = new();
+
+        public override Task<Response<SubscriptionProperties>> CreateSubscriptionAsync(CreateSubscriptionOptions options, CreateRuleOptions rule, CancellationToken cancellationToken = default)
+        {
+            CreatedSubscriptionInitialRules.Add((options.TopicName, options.SubscriptionName, rule));
+            CreatedSubscriptions.Add(options);
+            var subscription = MakeSubscriptionProperties(
+                options.TopicName,
+                options.SubscriptionName,
+                requiresSession: options.RequiresSession,
+                forwardTo: _forwardToNormalizer(options.ForwardTo),
+                defaultMessageTimeToLive: options.DefaultMessageTimeToLive,
+                deadLetteringOnMessageExpiration: options.DeadLetteringOnMessageExpiration);
+            _subscriptions[(options.TopicName, options.SubscriptionName)] = subscription;
+            // Created with an explicit rule, Service Bus seeds that rule instead of $Default.
+            _rules[(options.TopicName, options.SubscriptionName, rule.Name)] =
+                ServiceBusModelFactory.RuleProperties(rule.Name, rule.Filter, rule.Action);
+            return Task.FromResult(Response.FromValue(subscription, FakeResponse.Instance));
+        }
+
+        public List<SubscriptionProperties> UpdatedSubscriptions { get; } = new();
+
+        public override Task<Response<SubscriptionProperties>> UpdateSubscriptionAsync(SubscriptionProperties subscription, CancellationToken cancellationToken = default)
+        {
+            UpdatedSubscriptions.Add(subscription);
+            _subscriptions[(subscription.TopicName, subscription.SubscriptionName)] = subscription;
             return Task.FromResult(Response.FromValue(subscription, FakeResponse.Instance));
         }
 
@@ -430,6 +896,7 @@ public sealed class ServiceBusTopologyProvisionerTests
         public override Task<Response<RuleProperties>> CreateRuleAsync(string topicName, string subscriptionName, CreateRuleOptions ruleOptions, CancellationToken cancellationToken = default)
         {
             CreatedRules.Add((topicName, subscriptionName, ruleOptions));
+            Operations.Add($"create {topicName}/{subscriptionName}/{ruleOptions.Name}");
             var rule = ServiceBusModelFactory.RuleProperties(ruleOptions.Name, ruleOptions.Filter, ruleOptions.Action);
             _rules[(topicName, subscriptionName, ruleOptions.Name)] = rule;
             return Task.FromResult(Response.FromValue(rule, FakeResponse.Instance));
@@ -438,8 +905,28 @@ public sealed class ServiceBusTopologyProvisionerTests
         public override Task<Response> DeleteRuleAsync(string topicName, string subscriptionName, string ruleName, CancellationToken cancellationToken = default)
         {
             DeletedRules.Add((topicName, subscriptionName, ruleName));
+            Operations.Add($"delete {topicName}/{subscriptionName}/{ruleName}");
             _rules.Remove((topicName, subscriptionName, ruleName));
             return Task.FromResult<Response>(FakeResponse.Instance);
+        }
+
+        /// <summary>Rule updates, with the filter and action as they were sent.</summary>
+        public List<(string TopicName, string SubscriptionName, string RuleName, string Filter, string Action)> UpdatedRules { get; } = new();
+
+        /// <summary>Rule writes in the order they happened, for delete-then-create assertions.</summary>
+        public List<string> Operations { get; } = new();
+
+        public override Task<Response<RuleProperties>> UpdateRuleAsync(string topicName, string subscriptionName, RuleProperties rule, CancellationToken cancellationToken = default)
+        {
+            UpdatedRules.Add((
+                topicName,
+                subscriptionName,
+                rule.Name,
+                (rule.Filter as SqlRuleFilter)?.SqlExpression ?? string.Empty,
+                (rule.Action as SqlRuleAction)?.SqlExpression ?? string.Empty));
+            Operations.Add($"update {topicName}/{subscriptionName}/{rule.Name}");
+            _rules[(topicName, subscriptionName, rule.Name)] = rule;
+            return Task.FromResult(Response.FromValue(rule, FakeResponse.Instance));
         }
     }
 
@@ -547,7 +1034,7 @@ public sealed class ServiceBusTopologyProvisionerTests
         public string Name { get; }
         public string Namespace => "Tests";
         public string Description => string.Empty;
-        public string SessionKeyProperty => string.Empty;
+        public static string SessionKeyProperty => string.Empty;
         public IEnumerable<IProperty> Properties => Array.Empty<IProperty>();
         public Type GetEventClassType() => typeof(TestEventType);
         public IEvent GetEventExample() => null!;

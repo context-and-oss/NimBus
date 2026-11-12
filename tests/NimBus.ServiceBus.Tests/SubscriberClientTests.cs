@@ -60,15 +60,26 @@ public class SubscriberClientTests
 
     // ── Handle delegates to adapter ─────────────────────────────────────
 
+    // Characterization test: pins the defective v4 behaviour of the obsolete two-argument
+    // overload. ServiceBusSessionMessageActions cannot complete the message, so after the
+    // handler succeeds a dead-letter ErrorResponse is sent and the failure is swallowed.
+    // Replaced when the overload is removed in v5.
     [TestMethod]
-    public async Task Handle_WithSessionActions_DelegatesToAdapter()
+    public async Task Handle_WithSessionActions_CannotSettle_SendsDeadLetterResponse()
     {
         var client = new RecordingServiceBusClient();
         var sut = await SubscriberClient.CreateAsync(client, "orders");
-        var message = CreateValidMessage();
+        var handler = new FakeTestEventHandler();
+        sut.RegisterHandler<TestEvent>(() => handler);
+        var message = CreateValidTestEventMessage();
 
-        // Should not throw (adapter processes the message through the handler pipeline)
-        await sut.Handle(message, ServiceBusTestDoubles.CreateSessionActions());
+        await sut.Handle(message, new StateCapableSessionActions());
+
+        Assert.AreEqual(1, handler.HandleCalls);
+        Assert.IsNotEmpty(client.Sender.SentMessages);
+        var last = client.Sender.SentMessages[^1];
+        Assert.IsTrue(last.ApplicationProperties.TryGetValue("DeadLetterReason", out var reason), "The last sent message should carry DeadLetterReason.");
+        Assert.AreEqual("Failed to handle message.", reason);
     }
 
     [TestMethod]
@@ -126,6 +137,35 @@ public class SubscriberClientTests
             HandleCalls++;
             return Task.CompletedTask;
         }
+    }
+
+    private static ServiceBusReceivedMessage CreateValidTestEventMessage()
+    {
+        var content = new NimBus.Core.Messages.MessageContent
+        {
+            EventContent = new NimBus.Core.Messages.EventContent
+            {
+                EventTypeId = "TestEvent",
+                EventJson = Newtonsoft.Json.JsonConvert.SerializeObject(new TestEvent()),
+            },
+        };
+
+        return ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromString(Newtonsoft.Json.JsonConvert.SerializeObject(content)),
+            messageId: "msg-1",
+            sessionId: "session-1",
+            properties: new System.Collections.Generic.Dictionary<string, object>
+            {
+                { "EventId", "event-1" },
+                { "To", "orders" },
+                { "From", "StorefrontEndpoint" },
+                { "MessageType", "EventRequest" },
+                { "OriginatingMessageId", "self" },
+                { "ParentMessageId", "self" },
+                { "OriginatingFrom", "StorefrontEndpoint" },
+                { "EventTypeId", "TestEvent" },
+                { "RetryCount", 0 },
+            });
     }
 
     private static ServiceBusReceivedMessage CreateValidMessage()

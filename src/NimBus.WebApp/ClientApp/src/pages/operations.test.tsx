@@ -73,6 +73,8 @@ vi.mock("components/admin/advanced-operations", () => ({
   DeleteAllEventsCard: card("Delete all events"),
 }));
 vi.mock("components/admin/session-management", () => ({ SessionPurgeCard: card("Session purge") }));
+vi.mock("components/admin/session-state", () => ({ SessionStateCard: card("Session state") }));
+vi.mock("components/admin/session-cleanup", () => ({ SessionCleanupCard: card("Clean up session state") }));
 vi.mock("components/admin/stale-pending-reconcile", () => ({
   StalePendingReconcileCard: card("Reconcile stale pending"),
 }));
@@ -98,7 +100,7 @@ const list = () => screen.getByRole("navigation", { name: "Operations" });
 
 beforeEach(() => {
   mocks.getEndpointStatusCountAll.mockReset().mockResolvedValue([
-    { endpointId: "crm", failedCount: 4, deadletterCount: 1, pendingCount: 7, unsupportedCount: 2 },
+    { endpointId: "crm", failedCount: 6, deadletterCount: 1, pendingCount: 5, unsupportedCount: 2 },
     { endpointId: "erp", failedCount: 20, deadletterCount: 5, pendingCount: 3, unsupportedCount: 0 },
   ]);
 });
@@ -166,8 +168,8 @@ describe("Operations page", () => {
     it("totals the endpoints' counts without double counting", async () => {
       renderAt("/Operations");
 
-      // failedCount already includes dead-lettered; unsupported is added as the
-      // sidebar's Failed badge does, and taken out of pending.
+      // failedCount already includes dead-lettered and unsupported, and
+      // pendingCount is pending only, so nothing is added or taken out.
       expect((await screen.findByRole("button", { name: /^Failed/ })).textContent).toContain("26");
       expect(screen.getByRole("button", { name: /^Dead-lettered/ }).textContent).toContain("6");
       expect(screen.getByRole("button", { name: /^Pending/ }).textContent).toContain("8");

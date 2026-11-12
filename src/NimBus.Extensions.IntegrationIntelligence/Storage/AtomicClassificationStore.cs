@@ -4,13 +4,52 @@ using Newtonsoft.Json;
 namespace NimBus.Extensions.IntegrationIntelligence.Storage;
 
 /// <summary>One conditional durable write commits each failure's state transition and result.</summary>
-public abstract class AtomicClassificationStore(TimeProvider? clock = null) : IFailureClassificationStore, IClassificationRetentionStore
+public abstract class AtomicClassificationStore(TimeProvider? clock = null) : IFailureClassificationStore, IClassificationRetentionStore, IFailureClassificationBulkReader
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
     protected abstract Task<(ClassificationDocument Document, string? Version)> ReadAsync(string failureId, CancellationToken ct);
     protected abstract Task<bool> TryWriteAsync(ClassificationDocument document, string? version, CancellationToken ct);
     protected abstract IAsyncEnumerable<ClassificationDocument> EnumerateAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Reads the stored documents of the listed failures, omitting ids with no stored state, and
+    /// throws when storage is unavailable. The default reads one document at a time; durable stores
+    /// override it with a single round trip.
+    /// </summary>
+    protected virtual async Task<IReadOnlyList<ClassificationDocument>> ReadManyAsync(IReadOnlyList<string> failureIds, CancellationToken ct)
+    {
+        var documents = new List<ClassificationDocument>(failureIds.Count);
+        foreach (var id in failureIds)
+        {
+            var (document, version) = await ReadAsync(id, ct).ConfigureAwait(false);
+            if (version is not null) documents.Add(document);
+        }
+        return documents;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, ClassificationSnapshot>> ReadLatestAsync(
+        IReadOnlyCollection<string> failureMessageIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(failureMessageIds);
+        var ids = failureMessageIds.Where(id => !string.IsNullOrEmpty(id)).Distinct(StringComparer.Ordinal).ToArray();
+        if (ids.Length == 0) return new Dictionary<string, ClassificationSnapshot>(StringComparer.Ordinal);
+
+        var now = _clock.GetUtcNow();
+        var snapshots = new Dictionary<string, ClassificationSnapshot>(ids.Length, StringComparer.Ordinal);
+        foreach (var document in await ReadManyAsync(ids, cancellationToken).ConfigureAwait(false))
+        {
+            var operation = Normalize(document.Operations.LastOrDefault(), now);
+            snapshots[document.FailureMessageId] = new ClassificationSnapshot(
+                document.FailureMessageId,
+                document.Deleted ? null : document.Operations.LastOrDefault(o => o.Result is not null)?.Result,
+                operation?.Status,
+                operation?.ErrorCode,
+                document.Deleted);
+        }
+        return snapshots;
+    }
 
     public async Task<FailureClassification?> GetLatestAsync(string failureMessageId, CancellationToken cancellationToken = default)
         => (await ReadAsync(failureMessageId, cancellationToken).ConfigureAwait(false)).Document.Operations.LastOrDefault(o => o.Result is not null)?.Result;

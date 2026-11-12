@@ -150,7 +150,7 @@ public class PublisherClientBatchTests
         foreach (var message in sender.Pages.SelectMany(p => p))
         {
             var sbMessage = MessageHelper.ToServiceBusMessage(message);
-            StringAssert.Contains(sbMessage.Body.ToString(), "EventJson");
+            StringAssert.Contains(sbMessage.Body.ToString(), "EventJson", StringComparison.Ordinal);
         }
 
         foreach (var @event in events)
@@ -165,7 +165,7 @@ public class PublisherClientBatchTests
     {
         // Control: property reads for exactly one measurement.
         var control = new CountingEvent { Id = "control", Padding = "p" };
-        PublisherClient.GetBatchesStatic(new List<IEvent> { control }).SelectMany(b => b).ToList();
+        _ = PublisherClient.GetBatchesStatic(new List<IEvent> { control }).SelectMany(b => b).ToList();
         var readsPerMeasure = control.GetterReads;
         Assert.IsTrue(readsPerMeasure >= 1, "Sanity: measuring an event reads its properties.");
 

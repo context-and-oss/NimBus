@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +15,7 @@ namespace NimBus.Extensions.Http;
 /// outside <see cref="AzureBearerTokenHandler"/> and is shared by every handler instance of a
 /// registration.
 /// </remarks>
+[SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "The cache is shared by every handler instance for the life of the process, and the SemaphoreSlim never allocates a wait handle (AvailableWaitHandle is unused), so there is nothing to release.")]
 public sealed class AzureAccessTokenCache
 {
     /// <summary>How long before <see cref="AccessToken.ExpiresOn"/> the token is refreshed.</summary>

@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Nodes;
@@ -88,7 +89,7 @@ public sealed class AsyncApiExporterTests
         Assert.Equal("BillingEndpoint", fwd[0]!["subscription"]!.GetValue<string>());
         // The forward subscription lives on the producer topic but forwards INTO the consumer's topic.
         Assert.Equal("BillingEndpoint", fwd[0]!["forwardTo"]!.GetValue<string>());
-        Assert.Equal("user.EventTypeId = 'OrderPlaced' AND user.From IS NULL", fwd[0]!["filter"]!.GetValue<string>());
+        Assert.Equal("user.EventTypeId = 'OrderPlaced' AND user.MessageType = 'EventRequest' AND user.From IS NULL", fwd[0]!["filter"]!.GetValue<string>());
         Assert.Equal(
             "SET user.From = 'StorefrontEndpoint'; SET user.EventId = newid(); SET user.To = 'BillingEndpoint';",
             fwd[0]!["action"]!.GetValue<string>());
@@ -197,7 +198,7 @@ public sealed class AsyncApiExporterTests
         Assert.Single(fwd);
         Assert.Equal("AgentDyn-DataPlatform", fwd[0]!["subscription"]!.GetValue<string>());
         Assert.Equal("AgentZone", fwd[0]!["topic"]!.GetValue<string>());
-        Assert.Equal($"user.EventTypeId = '{dynId}' AND user.From IS NULL", fwd[0]!["filter"]!.GetValue<string>());
+        Assert.Equal($"user.EventTypeId = '{dynId}' AND user.MessageType = 'EventRequest' AND user.From IS NULL", fwd[0]!["filter"]!.GetValue<string>());
     }
 
     // ---- Rich schema generation: enum / collection / nested / nullable (G4) ----

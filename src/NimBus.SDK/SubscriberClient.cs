@@ -45,7 +45,7 @@ public class SubscriberClient : ISubscriberClient
         string? entityPath = null,
         CancellationToken cancellationToken = default)
     {
-        if (client == null) throw new ArgumentNullException(nameof(client));
+        ArgumentNullException.ThrowIfNull(client);
         if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
 
         // Wrap with the publisher instrumentation decorator so responses
@@ -66,6 +66,8 @@ public class SubscriberClient : ISubscriberClient
         return Task.FromResult(new SubscriberClient(serviceBusAdapter, eventHandlerProvider));
     }
 
+    /// <inheritdoc />
+    [Obsolete("ServiceBusSessionMessageActions cannot complete or dead-letter messages. Bind ServiceBusMessageActions in the trigger and call Handle(message, messageActions, sessionActions, cancellationToken). This overload will be removed in v5.")]
     public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) =>
         _serviceBusAdapter.Handle(message, sessionActions, cancellationToken);
 
@@ -78,8 +80,8 @@ public class SubscriberClient : ISubscriberClient
     public Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default) =>
         _serviceBusAdapter.Handle(args, cancellationToken);
 
-    public void RegisterHandler<T_Event>(Func<IEventHandler<T_Event>> eventHandlerFactory)
-        where T_Event : IEvent
+    public void RegisterHandler<TEvent>(Func<IEventHandler<TEvent>> eventHandlerFactory)
+        where TEvent : IEvent
     {
         _eventHandlerProvider.RegisterHandler(eventHandlerFactory);
     }

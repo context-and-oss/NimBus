@@ -1,10 +1,13 @@
 using System.Data.Common;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace NimBus.CommandLine;
 
 internal sealed class InfrastructureDeployer
 {
+    private static readonly string[] RegisterEventGridArguments = ["provider", "register", "--namespace", "Microsoft.EventGrid"];
+
     private readonly CommandContext _context;
     private readonly IAzureCliRunner _az;
     private readonly PrivateEndpointDnsCheck _dnsCheck;
@@ -37,6 +40,10 @@ internal sealed class InfrastructureDeployer
             NetworkSelection.ValidateServiceBusNamespaceName(options.ServiceBusNamespaceName.Trim());
         }
 
+        // Legacy naming options fail on malformed values before login too.
+        _ = ResourceNaming.NormalizePostfix(options.ResourceNamePostFix);
+        _ = ResourceNaming.NormalizeFuncStorageAccountName(options.FuncStorageAccountName);
+
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
 
         // Provider registration is subscription-scoped, so an RG-scoped pipeline
@@ -44,18 +51,13 @@ internal sealed class InfrastructureDeployer
         // resources (the provider only backs optional storage-hook webhooks).
         // Warn instead of failing the whole deployment.
         var eventGridRegistration = await _az.TryRunAsync(
-            new[] { "provider", "register", "--namespace", "Microsoft.EventGrid" },
+            RegisterEventGridArguments,
             cancellationToken).ConfigureAwait(false);
         if (!eventGridRegistration.Succeeded)
         {
             CliOutput.WriteLine(
                 "Warning: could not register the Microsoft.EventGrid provider (requires subscription-level permission). Pre-register it once per subscription if you plan to use Event Grid storage hooks." +
                 $"{Environment.NewLine}{eventGridRegistration.StandardError}".TrimEnd());
-        }
-
-        if (!string.IsNullOrWhiteSpace(options.ResourceNamePostFix))
-        {
-            CliOutput.WriteLine($"Ignoring --resource-name-postfix '{options.ResourceNamePostFix}' because the current bicep templates do not consume it.");
         }
 
         // The recorded setup completes whatever the command line leaves out (spec 034 §5.13).
@@ -67,9 +69,20 @@ internal sealed class InfrastructureDeployer
             CliOutput.WriteLine($"Using the network setup recorded on '{options.ResourceGroupName}' ({NetworkIntent.ToTagValue(stored.State)}).");
         }
 
-        var names = NamingConventions.Build(options.SolutionId, options.Environment, serviceBusNamespaceName);
+        // Legacy naming: a recorded postfix or storage account fills in a missing option, and a
+        // different one fails before anything deploys.
+        var resourceNamePostfix = ResourceNaming.ResolvePostfix(options.ResourceNamePostFix, resourceGroup.Tags, options.ResourceGroupName);
+        var funcStorageAccountName = ResourceNaming.ResolveFuncStorageAccountName(options.FuncStorageAccountName, resourceGroup.Tags, options.ResourceGroupName);
 
+        var names = NamingConventions.Build(options.SolutionId, options.Environment, serviceBusNamespaceName, resourceNamePostfix, funcStorageAccountName);
         var existingLocations = await DiscoverExistingLocationsAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
+
+        // The first postfix decision on a resource group: a postfix (or its absence) that does
+        // not match the existing deployment would create a second set next to it.
+        if (!resourceGroup.Tags.TryGetValue(ResourceNaming.PostfixTag, out var recordedPostfix) || string.IsNullOrWhiteSpace(recordedPostfix))
+        {
+            ResourceNaming.GuardAgainstParallelDeployment(names, existingLocations.Keys, options.ResourceGroupName);
+        }
         var existingPlans = await DiscoverExistingPlansAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
 
         // An existing deployment pins its plan choices (like the location pins):
@@ -88,6 +101,21 @@ internal sealed class InfrastructureDeployer
         if (string.IsNullOrWhiteSpace(options.ManagementPlanSku) && existingManagementPlan is not null)
         {
             CliOutput.WriteLine($"Pinning management plan SKU to the existing '{names.ManagementAppServicePlanName}' SKU ({managementPlanSku}).");
+        }
+
+        // Checked once the plan is known: a new Elastic Premium Resolver derives its content
+        // share name from the app name. Still before anything is recorded or deployed.
+        ResourceNaming.ValidateDerivedNames(
+            names,
+            serviceBusNamespaceName,
+            options.SqlServerName,
+            new ResourceNaming.DerivedNameScope(
+                UsesCosmos: options.StorageProvider == StorageProviderChoice.Cosmos,
+                ProvisionsSqlServer: options.StorageProvider == StorageProviderChoice.SqlServer && options.SqlMode == SqlProvisioningMode.Provision,
+                CreatesResolverContentShare: resolverPlan == ResolverPlanChoice.ElasticPremium && !existingLocations.ContainsKey(names.ResolverFunctionAppName)));
+        if (resourceNamePostfix is not null)
+        {
+            CliOutput.WriteLine(ResourceNaming.DescribePostfix(names, PostfixedNames(options, names, serviceBusNamespaceName)));
         }
 
         // The existing namespace decides the Service Bus tier (Azure cannot convert Standard
@@ -148,6 +176,25 @@ internal sealed class InfrastructureDeployer
 
         var serviceBus = new ServiceBusDeployment(serviceBusSku, serviceBusCapacity, serviceBusNamespaceName);
 
+        // A reused storage account keeps its SKU and kind; an unusable kind fails here, before
+        // anything is recorded or deployed.
+        var funcStorage = funcStorageAccountName is null
+            ? null
+            : new FuncStorageDeployment(
+                funcStorageAccountName,
+                await DiscoverFuncStorageAccountAsync(options.ResourceGroupName, funcStorageAccountName, cancellationToken).ConfigureAwait(false));
+
+        // Private mode left a reused account at Deny with no bypass. Keeping that while the
+        // cleanup removes the private endpoints and VNet integration would cut the Resolver
+        // off from its storage, so leaving private reopens the firewall (its rules are kept).
+        var leavesPrivate = targetState != NetworkState.Private
+            && (currentState == NetworkState.Private || NetworkIntent.NeedsCleanup(stored, targetState));
+        if (leavesPrivate && funcStorage?.Existing is { NetworkAcls: { } lockedAcls } reused)
+        {
+            CliOutput.WriteLine($"Reopening the firewall of the storage account '{funcStorage.Name}' (default action Allow, Azure services bypass) as the deployment leaves private mode.");
+            funcStorage = funcStorage with { Existing = reused with { NetworkAcls = ReopenNetworkAcls(lockedAcls) } };
+        }
+
         // Record the intent before deploying: an interrupted run then converges on the next
         // one, and a validation failure above never records a setup that cannot deploy. A
         // deployment that never used private mode or a namespace override gets no tags.
@@ -165,8 +212,10 @@ internal sealed class InfrastructureDeployer
             await RecordNetworkIntentAsync(resourceGroup, desired, cancellationToken).ConfigureAwait(false);
         }
 
+        await RecordResourceNamesAsync(resourceGroup, resourceNamePostfix, funcStorageAccountName, cancellationToken).ConfigureAwait(false);
+
         CliOutput.WriteLine("Deploying core infrastructure...");
-        await DeployCoreInfrastructureAsync(options, names, resolverPlan, managementPlanSku, existingLocations, serviceBus, privateNetwork, cancellationToken).ConfigureAwait(false);
+        await DeployCoreInfrastructureAsync(options, names, resolverPlan, managementPlanSku, existingLocations, serviceBus, privateNetwork, funcStorage, cancellationToken).ConfigureAwait(false);
 
         // The template stops declaring the allow-all-Azure rule once a server is private, but
         // an incremental deployment does not delete it (spec 034 §5.13).
@@ -358,7 +407,7 @@ internal sealed class InfrastructureDeployer
         return plans;
     }
 
-    private static void AddPinnedLocation(List<string> arguments, IReadOnlyDictionary<string, string> existingLocations, string resourceName, string bicepParamName, List<(string Name, string Location)> pinned)
+    private static void AddPinnedLocation(List<string> arguments, Dictionary<string, string> existingLocations, string resourceName, string bicepParamName, List<(string Name, string Location)> pinned)
     {
         if (existingLocations.TryGetValue(resourceName, out var location) && !string.IsNullOrWhiteSpace(location))
         {
@@ -398,9 +447,10 @@ internal sealed class InfrastructureDeployer
         DeploymentNames names,
         ResolverPlanChoice resolverPlan,
         string managementPlanSku,
-        IReadOnlyDictionary<string, string> existingLocations,
+        Dictionary<string, string> existingLocations,
         ServiceBusDeployment serviceBus,
         ResolvedNetwork? privateNetwork,
+        FuncStorageDeployment? funcStorage,
         CancellationToken cancellationToken)
     {
         var storageProviderParam = options.StorageProvider == StorageProviderChoice.SqlServer ? "sqlserver" : "cosmos";
@@ -460,7 +510,26 @@ internal sealed class InfrastructureDeployer
             arguments.Add(FormattableString.Invariant($"{resolverMaxInstances.ParameterName}={resolverMaxInstances.Value}"));
         }
 
+        AddAlertMailParameters(arguments, options.AlertMail);
         AddServiceBusParameters(arguments, serviceBus);
+        AddResourceNamePostfixParameter(arguments, names);
+
+        // Nothing is passed without an override, so the template's derived name and its
+        // Standard_LRS / StorageV2 defaults apply exactly as before.
+        if (funcStorage is not null)
+        {
+            arguments.Add($"funcStorageAccountName={funcStorage.Name}");
+            if (funcStorage.Existing is { } existing)
+            {
+                arguments.Add($"funcStorageSkuName={existing.SkuName}");
+                arguments.Add($"funcStorageKind={existing.Kind}");
+                if (existing.NetworkAcls is { } networkAcls)
+                {
+                    arguments.Add($"funcStorageNetworkAcls={networkAcls}");
+                }
+            }
+        }
+
         if (privateNetwork is not null)
         {
             AddSharedNetworkParameters(arguments, privateNetwork);
@@ -496,11 +565,52 @@ internal sealed class InfrastructureDeployer
             command.AddSecureParameter("sqlAdminPassword", options.SqlAdminPassword ?? string.Empty);
         }
 
+        if (options.AlertMail?.SmtpPassword is { } alertMailSmtpPassword)
+        {
+            command.AddSecureParameter("alertMailSmtpPassword", alertMailSmtpPassword);
+        }
+
         await _az.EnsureSuccessAsync(
             command.BuildArguments(),
             _context.DeployDirectory,
             cancellationToken,
             "Core infrastructure deployment failed.").ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Endpoint alert mail for the Resolver. Nothing is passed when it is off, so the template
+    /// leaves the settings out; the Resolver's app settings are template-owned, so that also
+    /// turns off alert mail an earlier run turned on. Unset optional values keep the template
+    /// defaults. The password is a secure parameter, never a process argument.
+    /// </summary>
+    private static void AddAlertMailParameters(List<string> arguments, AlertMailDeployment? alertMail)
+    {
+        if (alertMail is null)
+        {
+            return;
+        }
+
+        arguments.Add($"alertMailSmtpHost={alertMail.SmtpHost}");
+        arguments.Add($"alertMailFrom={alertMail.From}");
+        if (alertMail.SmtpPort is { } port)
+        {
+            arguments.Add(FormattableString.Invariant($"alertMailSmtpPort={port}"));
+        }
+
+        if (alertMail.SmtpUseSsl is { } useSsl)
+        {
+            arguments.Add($"alertMailSmtpUseSsl={(useSsl ? "true" : "false")}");
+        }
+
+        if (alertMail.SmtpUsername is { } username)
+        {
+            arguments.Add($"alertMailSmtpUsername={username}");
+        }
+
+        if (alertMail.WebAppUrl is { } webAppUrl)
+        {
+            arguments.Add($"alertMailWebAppUrl={webAppUrl}");
+        }
     }
 
     private async Task DeployWebAppInfrastructureAsync(
@@ -512,7 +622,7 @@ internal sealed class InfrastructureDeployer
         string sqlConnectionString,
         string serviceBusFullyQualifiedNamespace,
         bool alwaysOnEnabled,
-        IReadOnlyDictionary<string, string> existingLocations,
+        Dictionary<string, string> existingLocations,
         ServiceBusDeployment serviceBus,
         ResolvedNetwork? privateNetwork,
         CancellationToken cancellationToken)
@@ -550,6 +660,8 @@ internal sealed class InfrastructureDeployer
         {
             arguments.Add($"serviceBusNamespaceName={serviceBus.NamespaceName}");
         }
+
+        AddResourceNamePostfixParameter(arguments, names);
 
         if (privateNetwork is not null)
         {
@@ -833,6 +945,217 @@ internal sealed class InfrastructureDeployer
     }
 
     private sealed record ExistingAppServicePlan(string SkuName, string Tier);
+
+    private sealed record ExistingStorageAccount(string SkuName, string Kind, string? NetworkAcls);
+
+    private sealed record FuncStorageDeployment(string Name, ExistingStorageAccount? Existing);
+
+    /// <summary>
+    /// The account's networkAcls with the default action and bypass of a public deployment;
+    /// IP, VNet and resource access rules stay as they are.
+    /// </summary>
+    internal static string ReopenNetworkAcls(string networkAclsJson)
+    {
+        var acls = JsonNode.Parse(networkAclsJson) as JsonObject
+            ?? throw new CommandException("Could not read the storage account's network rules.");
+        acls["defaultAction"] = "Allow";
+        acls["bypass"] = "AzureServices";
+        return acls.ToJsonString();
+    }
+
+    // The names the legacy pipeline postfixed (see NamingConventions.Build), as deployed by
+    // this run's storage provider.
+    // An explicit name override wins over the postfix, so an overridden name is not listed.
+    private static IEnumerable<string> PostfixedNames(InfrastructureOptions options, DeploymentNames names, string? serviceBusNamespaceOverride)
+    {
+        if (string.IsNullOrWhiteSpace(serviceBusNamespaceOverride))
+        {
+            yield return names.ServiceBusNamespace;
+        }
+
+        if (options.StorageProvider == StorageProviderChoice.Cosmos)
+        {
+            yield return names.CosmosAccountName;
+        }
+        else if (options.SqlMode == SqlProvisioningMode.Provision && string.IsNullOrWhiteSpace(options.SqlServerName))
+        {
+            yield return names.SqlServerName;
+        }
+
+        yield return names.ResolverFunctionAppName;
+        yield return names.WebAppName;
+    }
+
+    private static void AddResourceNamePostfixParameter(List<string> arguments, DeploymentNames names)
+    {
+        // Nothing is passed without a postfix, so those deployments' parameters stay as before.
+        if (names.ResourceNamePostfix is { } postfix)
+        {
+            arguments.Add($"resourceNamePostfix={postfix}");
+        }
+    }
+
+    /// <summary>
+    /// Records the legacy naming options on the resource group so later runs and the other
+    /// commands use the same names. Only merged, never deleted: dropping a recorded value
+    /// would let the next run deploy a second set of resources.
+    /// </summary>
+    private async Task RecordResourceNamesAsync(ResourceGroupInfo resourceGroup, string? postfix, string? funcStorageAccountName, CancellationToken cancellationToken)
+    {
+        var merge = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        AddIfChanged(merge, resourceGroup.Tags, ResourceNaming.PostfixTag, postfix);
+        AddIfChanged(merge, resourceGroup.Tags, ResourceNaming.FuncStorageAccountTag, funcStorageAccountName);
+        if (merge.Count == 0)
+        {
+            return;
+        }
+
+        await _az.EnsureSuccessAsync(
+            TagUpdateArguments(resourceGroup.Id, "Merge", merge),
+            cancellationToken,
+            "Could not record the resource naming options as tags on the resource group; an Azure Policy may forbid tag changes there. " +
+            $"Allow the {ResourceNaming.PostfixTag} and {ResourceNaming.FuncStorageAccountTag} tags, or pass the same naming options to every command.").ConfigureAwait(false);
+
+        static void AddIfChanged(Dictionary<string, string> merge, IReadOnlyDictionary<string, string> current, string tag, string? value)
+        {
+            if (value is not null && !(current.TryGetValue(tag, out var existing) && string.Equals(existing, value, StringComparison.Ordinal)))
+            {
+                merge[tag] = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// SKU, kind and firewall of a reused function storage account, so the deployment keeps
+    /// them instead of applying the template defaults (a kind change to StorageV2 cannot be
+    /// undone, and the defaults would replace the account's network rules). Null only when the
+    /// name is free, so the template creates the account. Any other failure to read it stops
+    /// the run: assuming "new" would redeploy an existing account with the defaults.
+    /// </summary>
+    private async Task<ExistingStorageAccount?> DiscoverFuncStorageAccountAsync(string resourceGroupName, string accountName, CancellationToken cancellationToken)
+    {
+        // The generic resource view returns networkAcls in the ARM shape the template takes.
+        var result = await _az.TryRunAsync(
+            new[]
+            {
+                "resource", "show",
+                "--resource-group", resourceGroupName,
+                "--name", accountName,
+                "--resource-type", "Microsoft.Storage/storageAccounts",
+                "--query", "{sku:sku.name, kind:kind, networkAcls:properties.networkAcls}",
+                "--output", "json",
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        if (!result.Succeeded)
+        {
+            await EnsureFuncStorageAccountNameIsFreeAsync(resourceGroupName, accountName, result.StandardError, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        string? sku = null;
+        string? kind = null;
+        string? networkAcls = null;
+        try
+        {
+            using var document = JsonDocument.Parse(result.StandardOutput);
+            var root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                sku = root.TryGetProperty("sku", out var skuElement) && skuElement.ValueKind == JsonValueKind.String ? skuElement.GetString() : null;
+                kind = root.TryGetProperty("kind", out var kindElement) && kindElement.ValueKind == JsonValueKind.String ? kindElement.GetString() : null;
+                networkAcls = root.TryGetProperty("networkAcls", out var aclElement) && aclElement.ValueKind == JsonValueKind.Object
+                    ? aclElement.GetRawText()
+                    : null;
+            }
+        }
+        catch (JsonException)
+        {
+            // Reported below as an unreadable account.
+        }
+
+        if (string.IsNullOrWhiteSpace(sku) || string.IsNullOrWhiteSpace(kind))
+        {
+            throw new CommandException(
+                $"Could not read the SKU and kind of the storage account '{accountName}' in '{resourceGroupName}'. " +
+                "A reused account keeps them, so nothing was deployed.");
+        }
+
+        if (string.Equals(kind, "BlobStorage", StringComparison.OrdinalIgnoreCase) || string.Equals(kind, "FileStorage", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(kind, "BlockBlobStorage", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new CommandException(
+                $"The storage account '{accountName}' is of kind '{kind}', which cannot host a function app (it needs blob, queue, table and file storage). " +
+                "Use a general-purpose account (StorageV2 or Storage) for --func-storage-account-name.");
+        }
+
+        // A Premium general-purpose account holds page blobs only: no queues or tables.
+        if (sku.StartsWith("Premium_", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new CommandException(
+                $"The storage account '{accountName}' has the SKU '{sku}', which has no queue or table storage and cannot host a function app. " +
+                "Use a Standard general-purpose account for --func-storage-account-name.");
+        }
+
+        CliOutput.WriteLine($"Keeping the existing storage account '{accountName}' ({sku}, {kind}) and its network rules for the Resolver.");
+        return new ExistingStorageAccount(sku, kind, networkAcls);
+    }
+
+    /// <summary>
+    /// The account could not be read in the deployment resource group. Creating it is safe only
+    /// when the globally unique name is free; a taken name means the account is in another
+    /// resource group or subscription, or this identity cannot read it.
+    /// </summary>
+    private async Task EnsureFuncStorageAccountNameIsFreeAsync(string resourceGroupName, string accountName, string showError, CancellationToken cancellationToken)
+    {
+        var check = await _az.TryRunAsync(
+            new[]
+            {
+                "storage", "account", "check-name",
+                "--name", accountName,
+                "--query", "{available:nameAvailable, reason:reason}",
+                "--output", "json",
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        bool? available = null;
+        string? reason = null;
+        if (check.Succeeded)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(check.StandardOutput);
+                var root = document.RootElement;
+                if (root.ValueKind == JsonValueKind.Object)
+                {
+                    available = root.TryGetProperty("available", out var availableElement) && availableElement.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? availableElement.GetBoolean()
+                        : null;
+                    reason = root.TryGetProperty("reason", out var reasonElement) && reasonElement.ValueKind == JsonValueKind.String
+                        ? reasonElement.GetString()
+                        : null;
+                }
+            }
+            catch (JsonException)
+            {
+                // Reported below as an unknown outcome.
+            }
+        }
+
+        if (available == true)
+        {
+            return;
+        }
+
+        var detail = string.Join(
+            Environment.NewLine,
+            new[] { showError, check.StandardError }.Where(text => !string.IsNullOrWhiteSpace(text)).Select(text => text.Trim()));
+        var message = available == false
+            ? $"The storage account name '{accountName}' is taken ({reason ?? "no reason given"}), but the account could not be read in resource group '{resourceGroupName}'. " +
+                "It is in another resource group or subscription, or this identity cannot read it; --func-storage-account-name reuses an account in the deployment resource group only."
+            : $"Could not tell whether the storage account '{accountName}' exists, so nothing was deployed.";
+        throw new CommandException(detail.Length > 0 ? message + Environment.NewLine + detail : message);
+    }
 
     private sealed record ServiceBusDeployment(string? Sku, int? Capacity, string? NamespaceName);
 

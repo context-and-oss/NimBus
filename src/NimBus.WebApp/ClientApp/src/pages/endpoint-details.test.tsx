@@ -135,6 +135,10 @@ describe("endpoint tab loading", () => {
       (screen.getByRole("tab", { name: "Alerts" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+    expect(screen.getByText(/No alert subscriptions/)).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "endpoint list" }).getAttribute("href"),
+    ).toBe("/Endpoints");
   });
 
   it("resets visited panels on endpoint navigation and ignores stale alert probes", async () => {

@@ -9,7 +9,7 @@ namespace NimBus.Core.Tests.Messages.PII;
 [TestClass]
 public class SensitiveAttributeTests
 {
-    private class Decorated
+    private sealed class Decorated
     {
         [Sensitive]
         public string? Default { get; set; }
@@ -24,7 +24,7 @@ public class SensitiveAttributeTests
     }
 
     [Sensitive]
-    private class FullyMarked
+    private sealed class FullyMarked
     {
         public string? A { get; set; }
         public string? B { get; set; }

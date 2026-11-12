@@ -298,7 +298,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
             return fullText;
 
         int availableLength = MaxDeadLetterErrorDescriptionLength - TruncationIndicator.Length;
-        int firstNewlineIndex = fullText.IndexOf('\n');
+        int firstNewlineIndex = fullText.IndexOf('\n', StringComparison.Ordinal);
 
         if (firstNewlineIndex > 0 && firstNewlineIndex < availableLength)
         {
@@ -310,7 +310,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
             return truncated + TruncationIndicator;
         }
 
-        return fullText.Substring(0, availableLength) + TruncationIndicator;
+        return string.Concat(fullText.AsSpan(0, availableLength), TruncationIndicator);
     }
 
     public async Task DeadLetter(string reason, Exception? exception = null, CancellationToken cancellationToken = default)

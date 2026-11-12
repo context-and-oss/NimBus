@@ -50,7 +50,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         if (result.HasMoreResults)
         {
             var eventDbo = await result.ReadNextAsync(cancellationToken);
-            if (eventDbo.Any())
+            if (eventDbo.Count != 0)
             {
                 return HydrateResolutionStatus(eventDbo.First());
             }
@@ -86,7 +86,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         if (result.HasMoreResults)
         {
             var eventDbo = await result.ReadNextAsync();
-            if (eventDbo.Any())
+            if (eventDbo.Count != 0)
                 return eventDbo.First().Event;
         }
 
@@ -132,7 +132,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         while (result.HasMoreResults)
         {
             var eventDbo = await result.ReadNextAsync();
-            if (eventDbo.Any())
+            if (eventDbo.Count != 0)
             {
                 return HydrateResolutionStatus(eventDbo.First());
             }

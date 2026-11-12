@@ -43,7 +43,7 @@ public class StorageHookWebhookKeyTests
 
         var result = await sut.StoragehookReceiveAsync(KnownEndpointId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.AreEqual(1, proxy.SentMethods.Count);
     }
 
@@ -56,7 +56,7 @@ public class StorageHookWebhookKeyTests
 
         var result = await sut.StoragehookReceiveAsync(KnownEndpointId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
     }
 
     [TestMethod]
@@ -68,7 +68,7 @@ public class StorageHookWebhookKeyTests
 
         var result = await sut.StoragehookReceiveAsync(KnownEndpointId);
 
-        Assert.IsInstanceOfType(result, typeof(UnauthorizedResult));
+        Assert.IsInstanceOfType<UnauthorizedResult>(result);
     }
 
     [TestMethod]
@@ -78,7 +78,7 @@ public class StorageHookWebhookKeyTests
 
         var result = await sut.StoragehookReceiveAsync(KnownEndpointId);
 
-        Assert.IsInstanceOfType(result, typeof(UnauthorizedResult));
+        Assert.IsInstanceOfType<UnauthorizedResult>(result);
     }
 
     [TestMethod]
@@ -90,7 +90,7 @@ public class StorageHookWebhookKeyTests
 
         var result = await sut.StoragehookReceiveAsync(KnownEndpointId);
 
-        Assert.IsInstanceOfType(result, typeof(UnauthorizedResult));
+        Assert.IsInstanceOfType<UnauthorizedResult>(result);
     }
 
     [TestMethod]
@@ -100,7 +100,7 @@ public class StorageHookWebhookKeyTests
 
         var result = await sut.StoragehookReceiveAsync(KnownEndpointId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
     }
 
     [TestMethod]
@@ -112,7 +112,7 @@ public class StorageHookWebhookKeyTests
 
         var result = await sut.StoragehookReceiveAsync("unknown-endpoint");
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestResult));
+        Assert.IsInstanceOfType<BadRequestResult>(result);
     }
 
     [TestMethod]
@@ -125,7 +125,7 @@ public class StorageHookWebhookKeyTests
 
         var result = await sut.PostStoragehookHeartbeatAsync(KnownEndpointId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         CollectionAssert.AreEqual(new[] { NimBus.WebApp.Constants.EventSignalNames.HeartbeatUpdate }, proxy.SentMethods);
     }
 
@@ -133,12 +133,12 @@ public class StorageHookWebhookKeyTests
     public async Task Heartbeat_hook_rejects_missing_key_and_unknown_endpoint()
     {
         var unauthenticated = CreateSut(ConfiguredKey, Environments.Production, new DefaultHttpContext(), new RecordingClientProxy());
-        Assert.IsInstanceOfType(await unauthenticated.PostStoragehookHeartbeatAsync(KnownEndpointId), typeof(UnauthorizedResult));
+        Assert.IsInstanceOfType<UnauthorizedResult>(await unauthenticated.PostStoragehookHeartbeatAsync(KnownEndpointId));
 
         var context = new DefaultHttpContext();
         context.Request.Headers[StorageHookImplementation.WebhookKeyHeaderName] = ConfiguredKey;
         var authenticated = CreateSut(ConfiguredKey, Environments.Production, context, new RecordingClientProxy());
-        Assert.IsInstanceOfType(await authenticated.PostStoragehookHeartbeatAsync("unknown-endpoint"), typeof(BadRequestResult));
+        Assert.IsInstanceOfType<BadRequestResult>(await authenticated.PostStoragehookHeartbeatAsync("unknown-endpoint"));
     }
 
     [TestMethod]
@@ -149,13 +149,11 @@ public class StorageHookWebhookKeyTests
         var proxy = new RecordingClientProxy();
         var sut = CreateSut(ConfiguredKey, Environments.Production, context, proxy);
 
-        Assert.IsInstanceOfType(
-            await sut.PostStoragehookServicehealthAsync(NimBus.Core.Messages.Constants.ResolverId),
-            typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(await sut.PostStoragehookServicehealthAsync(NimBus.Core.Messages.Constants.ResolverId));
         CollectionAssert.AreEqual(new[] { NimBus.WebApp.Constants.EventSignalNames.ServiceHealthUpdate }, proxy.SentMethods);
 
         // The route must not become an open broadcast channel for arbitrary ids.
-        Assert.IsInstanceOfType(await sut.PostStoragehookServicehealthAsync(KnownEndpointId), typeof(BadRequestResult));
+        Assert.IsInstanceOfType<BadRequestResult>(await sut.PostStoragehookServicehealthAsync(KnownEndpointId));
         Assert.AreEqual(1, proxy.SentMethods.Count);
     }
 
@@ -166,7 +164,7 @@ public class StorageHookWebhookKeyTests
 
         var result = await sut.PostStoragehookServicehealthAsync(NimBus.Core.Messages.Constants.ResolverId);
 
-        Assert.IsInstanceOfType(result, typeof(UnauthorizedResult));
+        Assert.IsInstanceOfType<UnauthorizedResult>(result);
     }
 
     private static StorageHookImplementation CreateSut(

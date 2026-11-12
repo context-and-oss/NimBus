@@ -1,0 +1,4 @@
+# The storage conformance suite is test code that ships in NimBus.Testing; it follows the
+# tests/ setting: inline expected-value arrays read better than hoisted static fields.
+[*.cs]
+dotnet_diagnostic.CA1861.severity = none

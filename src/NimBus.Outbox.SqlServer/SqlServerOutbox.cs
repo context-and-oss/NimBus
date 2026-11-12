@@ -323,7 +323,7 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery
             throw new ArgumentException($"SQL identifier '{parameterName}' cannot be null or empty.", parameterName);
         // Allow characters valid in bracket-quoted SQL Server identifiers, but reject
         // characters that could escape the brackets or enable injection.
-        if (value.Contains(']') || value.Contains('\'') || value.Contains(';') || value.Contains("--", StringComparison.Ordinal))
+        if (value.Contains(']', StringComparison.Ordinal) || value.Contains('\'', StringComparison.Ordinal) || value.Contains(';', StringComparison.Ordinal) || value.Contains("--", StringComparison.Ordinal))
             throw new ArgumentException($"SQL identifier '{parameterName}' contains characters that are not allowed (], ', ;, or --).", parameterName);
     }
 

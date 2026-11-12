@@ -91,7 +91,7 @@ public class AuthApiControllerTests
         var controller = CreateController(scope, principal: null);
         var result = await controller.Logout();
 
-        Assert.IsInstanceOfType(result, typeof(NoContentResult));
+        Assert.IsInstanceOfType<NoContentResult>(result);
     }
 
     private static AuthApiController CreateController(IdentityTestScope scope, ClaimsPrincipal? principal)

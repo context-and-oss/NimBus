@@ -22,7 +22,11 @@ internal sealed class PrivateNetworkCleanup
         _az = az;
     }
 
-    public static string OwnerValue(DeploymentNames names) => $"{names.SolutionId}-{names.Environment}";
+    /// <summary>Matches the templates' nimbus-deployment tag, including any resource-name postfix.</summary>
+    public static string OwnerValue(DeploymentNames names) =>
+        names.ResourceNamePostfix is null
+            ? $"{names.SolutionId}-{names.Environment}"
+            : $"{names.SolutionId}-{names.Environment}-{names.ResourceNamePostfix}";
 
     public async Task RunAsync(
         string resourceGroupName,

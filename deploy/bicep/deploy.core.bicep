@@ -159,6 +159,39 @@ param serviceBusCapacity int = 1
 // one it replaces (spec 034 §6, option A). Empty means sb-{solutionId}-{environment}.
 param serviceBusNamespaceName string = ''
 
+// Legacy pipeline compatibility: appended as '-<postfix>' to the names the legacy templates
+// postfixed (Service Bus, Cosmos DB, SQL server, Resolver, WebApp) so a deployment matches
+// existing resources. App Insights, the App Service plans and the function storage account
+// were never postfixed and stay as they are. Must match the value passed to deploy.webapp.bicep.
+@description('Legacy resource-name postfix. Lowercase letters and digits; empty means none.')
+param resourceNamePostfix string = ''
+
+// Override for the Resolver's storage account, e.g. the existing legacy msgstore account.
+// Empty means st{solutionId}{environment}func. The CLI passes the existing account's SKU and
+// kind so a redeployment does not change them.
+param funcStorageAccountName string = ''
+param funcStorageSkuName string = 'Standard_LRS'
+param funcStorageKind string = 'StorageV2'
+// The reused account's networkAcls, kept on redeploy. Empty for an account NimBus creates.
+param funcStorageNetworkAcls object = {}
+
+// Endpoint alert mail: the Resolver mails the subscribers on an endpoint's Alerts tab over
+// SMTP (Azure Communication Services, Microsoft 365, a SendGrid relay). Off unless both
+// alertMailSmtpHost and alertMailFrom are set. The Resolver's app settings are replaced on
+// every deploy, so pass these on every deploy; settings added by hand are removed.
+param alertMailSmtpHost string = ''
+@minValue(1)
+@maxValue(65535)
+param alertMailSmtpPort int = 587
+param alertMailSmtpUseSsl bool = true
+param alertMailSmtpUsername string = ''
+@secure()
+param alertMailSmtpPassword string = ''
+param alertMailFrom string = ''
+// The management WebApp's public URL, linked from each mail. Empty means the default
+// https://webapp-{solutionId}-{environment}-management.azurewebsites.net.
+param alertMailWebAppUrl string = ''
+
 //##############################################
 // Define names Azure resource names
 //##############################################
@@ -178,24 +211,27 @@ var effectiveManagementAppServicePlanLocation = empty(managementAppServicePlanLo
 var effectiveCoreAppServicePlanLocation = empty(coreAppServicePlanLocation) ? location : coreAppServicePlanLocation
 var effectiveResolverFunctionAppLocation = empty(resolverFunctionAppLocation) ? effectiveCoreAppServicePlanLocation : resolverFunctionAppLocation
 
-var sbNamespace = empty(serviceBusNamespaceName) ? 'sb-${toLower(solutionId)}-${toLower(environment)}' : serviceBusNamespaceName
+// Postfixed names follow the legacy layout; see resourceNamePostfix above.
+var nameSuffix = empty(resourceNamePostfix) ? '' : '-${toLower(resourceNamePostfix)}'
+
+var sbNamespace = empty(serviceBusNamespaceName) ? 'sb-${toLower(solutionId)}-${toLower(environment)}${nameSuffix}' : serviceBusNamespaceName
 
 var managementAppServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-management'
 
 var coreAppServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-core'
 
-var cosmosAccountName = 'cosmos-${toLower(solutionId)}-${toLower(environment)}'
+var cosmosAccountName = 'cosmos-${toLower(solutionId)}-${toLower(environment)}${nameSuffix}'
 
 var cosmosDbName = 'MessageDatabase'
 
-var defaultSqlServerName = 'sql-${toLower(solutionId)}-${toLower(environment)}'
+var defaultSqlServerName = 'sql-${toLower(solutionId)}-${toLower(environment)}${nameSuffix}'
 var effectiveSqlServerName = empty(sqlServerName) ? defaultSqlServerName : sqlServerName
 
 var sqlDbName = 'MessageDatabase'
 
-var resolverFunctionAppName = 'func-${toLower(solutionId)}-${toLower(environment)}-resolver'
+var resolverFunctionAppName = 'func-${toLower(solutionId)}-${toLower(environment)}-resolver${nameSuffix}'
 
-var funcStorageAccountName = 'st${toLower(solutionId)}${toLower(environment)}func'
+var effectiveFuncStorageAccountName = empty(funcStorageAccountName) ? 'st${toLower(solutionId)}${toLower(environment)}func' : funcStorageAccountName
 
 var appInsightsName = 'ai-${toLower(solutionId)}-${toLower(environment)}-global-tracelog'
 
@@ -222,7 +258,7 @@ var effectivePrivateEndpointLocation = empty(privateEndpointLocation) ? location
 // Every network resource NimBus creates carries this tag; the rollback cleanup deletes
 // only resources that do (spec 034 §5.13).
 var networkTags = {
-  'nimbus-deployment': '${toLower(solutionId)}-${toLower(environment)}'
+  'nimbus-deployment': '${toLower(solutionId)}-${toLower(environment)}${nameSuffix}'
 }
 
 var dnsZonePrefix = privateDnsMode == 'create'
@@ -349,7 +385,10 @@ module azureSql 'templates/azureSql.bicep' = if (storageProvider == 'sqlserver' 
 module funcstorageaccount 'templates/storageaccount.bicep' = {
   name : 'FuncStorageAccountDeploy'
   params : {
-    name: funcStorageAccountName
+    name: effectiveFuncStorageAccountName
+    skuName: funcStorageSkuName
+    kind: funcStorageKind
+    existingNetworkAcls: funcStorageNetworkAcls
     location: effectiveFuncStorageLocation
     // Flex Consumption needs a blob container holding the app package, referenced
     // from the Function App via SystemAssignedIdentity. Provision it inline so
@@ -427,7 +466,40 @@ var cosmosResolverSetting = storageProvider == 'cosmos' ? [
   }
 ] : []
 
-var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, cosmosResolverSetting)
+var alertMailEnabled = !empty(alertMailSmtpHost) && !empty(alertMailFrom)
+var effectiveAlertMailWebAppUrl = empty(alertMailWebAppUrl)
+  ? 'https://webapp-${toLower(solutionId)}-${toLower(environment)}-management${nameSuffix}.azurewebsites.net'
+  : alertMailWebAppUrl
+
+var alertMailResolverSettings = alertMailEnabled ? concat([
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__Host'
+    value: alertMailSmtpHost
+  }
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__Port'
+    value: string(alertMailSmtpPort)
+  }
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__UseSsl'
+    value: string(alertMailSmtpUseSsl)
+  }
+  {
+    name: 'NimBus__Alerts__Mail__From'
+    value: alertMailFrom
+  }
+  {
+    name: 'NimBus__Alerts__Mail__WebAppUrl'
+    value: effectiveAlertMailWebAppUrl
+  }
+], empty(alertMailSmtpUsername) ? [] : [
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__Username'
+    value: alertMailSmtpUsername
+  }
+]) : []
+
+var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, cosmosResolverSetting, alertMailResolverSettings)
 
 // Secrets must remain secure across the nested module boundary. Passing them in
 // the ordinary settings array would retain their values in nested deployment
@@ -450,10 +522,15 @@ var sqlResolverSecretSettings = storageProvider == 'sqlserver' && sqlMode == 'pr
   SqlConnection: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;'
 } : {}
 
+var alertMailResolverSecretSettings = alertMailEnabled && !empty(alertMailSmtpPassword) ? {
+  NimBus__Alerts__Mail__Smtp__Password: alertMailSmtpPassword
+} : {}
+
 var resolverSecretSettings = union(
   sharedResolverSecretSettings,
   elasticPremiumSecretSettings,
-  sqlResolverSecretSettings)
+  sqlResolverSecretSettings,
+  alertMailResolverSecretSettings)
 
 //##############################################
 //# Private endpoints for the data services (private mode only)
@@ -518,7 +595,7 @@ var storageGroupIds = concat(['blob', 'queue', 'table'], resolverPlan == 'Elasti
 module peStorage 'templates/privateEndpoint.bicep' = [for groupId in storageGroupIds: if (isPrivate) {
   name: 'peStorage-${groupId}-Deploy'
   params: {
-    name: 'pe-${funcStorageAccountName}-${groupId}'
+    name: 'pe-${effectiveFuncStorageAccountName}-${groupId}'
     location: effectivePrivateEndpointLocation
     subnetId: privateEndpointSubnetId
     privateLinkServiceId: funcstorageaccount.outputs.storageId
@@ -645,7 +722,7 @@ module resolverRoleAssignments 'templates/roleAssignments.bicep' = {
     cosmosAccountName: storageProvider == 'cosmos' ? cosmosAccountName : ''
     principalId: resolverPrincipalId
     storageProvider: storageProvider
-    funcStorageAccountName: funcStorageAccountName
+    funcStorageAccountName: effectiveFuncStorageAccountName
     grantFuncStorageBlobAccess: resolverPlan == 'FlexConsumption'
   }
 }

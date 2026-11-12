@@ -49,10 +49,9 @@ public sealed class ClaudeContactClassifier : IContactClassifier, IDisposable
                 MaxTokens = 1024,
                 Messages =
                 [
-                    new MessageParam
+                    new UserMessageParam
                     {
-                        Role = Role.User,
-                        Content = new MessageParamContent(prompt),
+                        Content = new MessageContentParam(prompt),
                     }
                 ],
                 OutputConfig = new OutputConfig

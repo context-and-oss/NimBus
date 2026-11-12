@@ -5,6 +5,7 @@ import {
   type McpState,
 } from "components/admin/mcp-access-model";
 import { activeKeyCount, type AgentKeysState } from "components/admin/agent-keys-model";
+import { activeTokenCount, type DashboardTokensState } from "components/admin/dashboard-tokens-model";
 
 // Status, summary, call to action and quick action for each row of the Settings list
 // (Spec 038 §7). Pure: the data comes from use-settings-status.
@@ -56,6 +57,7 @@ export interface SettingsSnapshot {
   audit?: api.AuditSettings | "error";
   heartbeat?: { settings: api.HeartbeatSettings; overview: api.HeartbeatOverviewRow[] } | "error";
   agentKeys?: AgentKeysState | "error";
+  dashboardTokens?: DashboardTokensState | "error";
 }
 
 const UNAVAILABLE: FeatureStatus = {
@@ -191,6 +193,21 @@ function agentKeys(state: NonNullable<SettingsSnapshot["agentKeys"]>): FeatureSt
       };
 }
 
+function dashboardTokens(state: NonNullable<SettingsSnapshot["dashboardTokens"]>): FeatureStatus {
+  if (state === "error") return UNAVAILABLE;
+  const active = activeTokenCount(state);
+  // Issuing a token widens access, so it is the call to action rather than an inline action.
+  return active > 0
+    ? { tone: "ok", label: `${active} active`, summary: "Wall displays show the Monitor with these links", on: true }
+    : {
+        tone: "off",
+        label: "No active tokens",
+        summary: "A wall display has to sign in to show the Monitor",
+        on: false,
+        cta: { label: "Issue token", tab: "tokens" },
+      };
+}
+
 /** A row's status, or undefined while that feature's state is still loading. */
 export function featureStatus(featureId: string, snapshot: SettingsSnapshot): FeatureStatus | undefined {
   switch (featureId) {
@@ -206,6 +223,8 @@ export function featureStatus(featureId: string, snapshot: SettingsSnapshot): Fe
       return snapshot.heartbeat && heartbeat(snapshot.heartbeat);
     case "agent-keys":
       return snapshot.agentKeys && agentKeys(snapshot.agentKeys);
+    case "dashboard-tokens":
+      return snapshot.dashboardTokens && dashboardTokens(snapshot.dashboardTokens);
     default:
       return undefined;
   }

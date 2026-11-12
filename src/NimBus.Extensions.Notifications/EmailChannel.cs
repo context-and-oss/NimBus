@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
@@ -18,7 +19,7 @@ namespace NimBus.Extensions.Notifications;
 /// <see cref="EmailProvider.Smtp"/> (<see cref="SmtpClient"/>). The subject is derived from the
 /// notification title; the body from the message and error details (or a custom template).
 /// </summary>
-public class EmailChannel : INotificationChannel
+public partial class EmailChannel : INotificationChannel
 {
     private const string SendGridEndpoint = "https://api.sendgrid.com/v3/mail/send";
 
@@ -47,6 +48,7 @@ public class EmailChannel : INotificationChannel
     }
 
     /// <summary>Subject line for an email notification: <c>[{Severity}] {Title}</c>.</summary>
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Public instance API; making it static would break callers.")]
     public string BuildSubject(Notification notification) =>
         $"[{notification.Severity}] {notification.Title}";
 
@@ -78,9 +80,7 @@ public class EmailChannel : INotificationChannel
         using var response = await _httpClient.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogWarning(
-                "SendGrid email notification returned non-success status {StatusCode}.",
-                (int)response.StatusCode);
+            LogSendGridEmailNotificationReturnedNonSuccess(_logger, (int)response.StatusCode);
 
             throw new NotificationDeliveryException(
                 $"SendGrid delivery failed with status {(int)response.StatusCode}.");
@@ -148,4 +148,7 @@ public class EmailChannel : INotificationChannel
 
         await client.SendMailAsync(message, cancellationToken).ConfigureAwait(false);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "SendGrid email notification returned non-success status {StatusCode}.")]
+    private static partial void LogSendGridEmailNotificationReturnedNonSuccess(ILogger logger, int statusCode);
 }

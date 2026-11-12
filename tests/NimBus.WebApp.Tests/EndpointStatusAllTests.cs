@@ -69,7 +69,7 @@ public sealed class EndpointStatusAllTests
 
         var result = await sut.EndpointstatusAllAsync();
 
-        Assert.IsInstanceOfType(result.Result, typeof(NotFoundObjectResult));
+        Assert.IsInstanceOfType<NotFoundObjectResult>(result.Result);
     }
 
     private static EndpointImplementation CreateSut(INimBusMessageStore store, params string[] endpointIds)

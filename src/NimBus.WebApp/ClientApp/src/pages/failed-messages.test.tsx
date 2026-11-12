@@ -255,7 +255,7 @@ describe("Failed messages page", () => {
     renderPage("/Failed?display=table");
 
     await waitFor(() => expect(captured.rows?.length).toBe(3));
-    expect(captured.rows?.[0].route).toBe("/Message/Index/Crm/e1/0");
+    expect(captured.rows?.[0].route).toBe("/Message/Index/Crm/e1/0?from=failed");
     expect(screen.queryByRole("list", { name: "Failures" })).toBeNull();
   });
 

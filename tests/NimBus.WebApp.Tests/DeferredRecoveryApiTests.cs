@@ -31,7 +31,7 @@ public sealed class DeferredRecoveryApiTests
         var audit = (await store.GetMessageAudits("event")).Single();
         Assert.AreEqual("Checked with CRM operator", audit.Comment);
         Assert.AreEqual("operator", audit.AuditorName);
-        StringAssert.Contains(audit.Data!, "skip-deferred-tracking");
+        StringAssert.Contains(audit.Data!, "skip-deferred-tracking", StringComparison.Ordinal);
         Assert.AreEqual("history", (await store.GetEventHistory("event")).Single().MessageId);
     }
 

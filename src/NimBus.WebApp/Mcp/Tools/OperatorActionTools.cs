@@ -15,7 +15,7 @@ namespace NimBus.WebApp.Mcp.Tools;
 /// The agent verifies the outcome by reading the message again.
 /// </summary>
 [McpServerToolType]
-public sealed class OperatorActionTools
+public sealed partial class OperatorActionTools
 {
     /// <summary>Longest reason accepted.</summary>
     public const int MaxReasonLength = 1000;
@@ -167,6 +167,8 @@ public sealed class OperatorActionTools
         await _access.RequireScopeAsync(OperatorAction.Classify).ConfigureAwait(false);
         if (!_classifications.IsAvailable)
             throw OperatorToolErrors.FeatureUnavailable("AI failure classification is not enabled in this deployment.");
+        if (!_classifications.CanAnalyze)
+            throw OperatorToolErrors.FeatureUnavailable("AI failure classification can't start a new analysis in this deployment: no provider is configured. Saved classifications can still be read.");
 
         var endpoint = await _catalog.RequireReadableAsync(endpointId).ConfigureAwait(false);
         await _access.RequireChangeAllowedOnAsync(OperatorAction.Classify, endpoint).ConfigureAwait(false);
@@ -228,12 +230,12 @@ public sealed class OperatorActionTools
         }
         catch (Exception ex) when (ex is not ModelContextProtocol.McpException)
         {
-            _logger.LogError(ex, "MCP {Action} of {EndpointId}/{EventId} failed while sending", kind, endpoint, grant.EventId);
+            LogMcpOfFailedWhileSending(_logger, ex, kind, endpoint, grant.EventId);
             throw OperatorToolErrors.OutcomeUnknown("Sending the command failed and the message was restored, but the send may have reached Service Bus.");
         }
 
         ThrowUnlessAccepted(result, kind, endpoint, grant.EventId);
-        _logger.LogInformation("MCP {Action} of {EndpointId}/{EventId} accepted for {Caller}", kind, endpoint, grant.EventId, caller);
+        LogMcpOfAccepted(_logger, kind, endpoint, grant.EventId, caller);
         return Accepted(kind, endpoint, grant.EventId, commandSent: true);
     }
 
@@ -313,6 +315,12 @@ public sealed class OperatorActionTools
         ?? throw new InvalidOperationException("Operator tools run inside an HTTP request.");
 
     private System.Security.Claims.ClaimsPrincipal User() => Http().User;
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "MCP {Action} of {EndpointId}/{EventId} failed while sending")]
+    private static partial void LogMcpOfFailedWhileSending(ILogger logger, Exception exception, OperatorAction action, string endpointId, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "MCP {Action} of {EndpointId}/{EventId} accepted for {Caller}")]
+    private static partial void LogMcpOfAccepted(ILogger logger, OperatorAction action, string endpointId, string eventId, string caller);
 }
 
 /// <summary>Result of <c>nimbus_prepare_action</c>.</summary>

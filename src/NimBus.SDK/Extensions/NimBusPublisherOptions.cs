@@ -27,7 +27,7 @@ public class NimBusPublisherOptions
     /// <param name="configure">Configures the CloudEvents publish options.</param>
     public void UseCloudEvents(Action<CloudEventPublisherOptions> configure)
     {
-        if (configure is null) throw new ArgumentNullException(nameof(configure));
+        ArgumentNullException.ThrowIfNull(configure);
         var cloudEvents = new CloudEventPublisherOptions();
         configure(cloudEvents);
         CloudEvents = cloudEvents;

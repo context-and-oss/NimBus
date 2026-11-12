@@ -136,7 +136,7 @@ internal sealed class PlatformPackage
     /// net10.0, then the highest other .NET version, then netstandard — the same shape a
     /// NuGet restore would choose, without taking a dependency on the NuGet libraries.
     /// </summary>
-    private static IReadOnlyList<string> SelectTargetFrameworkAssemblies(string root, string packageId, string version)
+    private static string[] SelectTargetFrameworkAssemblies(string root, string packageId, string version)
     {
         var lib = Path.Combine(root, "lib");
         if (!Directory.Exists(lib))

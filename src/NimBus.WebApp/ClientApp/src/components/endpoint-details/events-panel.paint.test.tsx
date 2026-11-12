@@ -8,7 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import * as api from "api-client";
 // Static import: vi.mock is hoisted above it, so the mocks still apply, and the
 // component graph loads while the file is collected. A per-test dynamic import
@@ -19,7 +19,7 @@ import EventsPanel from "./events-panel";
 // Shared mock handles. `getByFilterMock` resolves the events immediately;
 // `postSessionsBatchMock` returns a promise we resolve by hand so the test can
 // observe the table BEFORE the session-status batch settles.
-const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock } =
+const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock, statusCountMock } =
   vi.hoisted(() => {
     const sessionsDeferreds: Array<(value: unknown) => void> = [];
     const postSessionsBatchMock = vi.fn(
@@ -29,7 +29,14 @@ const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock } =
         }),
     );
     const getByFilterMock = vi.fn();
-    return { sessionsDeferreds, postSessionsBatchMock, getByFilterMock };
+    // The endpoint-wide totals behind the status summary line.
+    const statusCountMock = vi.fn();
+    return {
+      sessionsDeferreds,
+      postSessionsBatchMock,
+      getByFilterMock,
+      statusCountMock,
+    };
   });
 
 // DataTable reads the toast provider for action feedback; no-op it.
@@ -43,6 +50,7 @@ vi.mock("api-client", async () => {
   class FakeClient {
     postApiEventEndpointIdGetByFilter = getByFilterMock;
     postEndpointSessionsBatch = postSessionsBatchMock;
+    getEndpointStatusCountId = statusCountMock;
     // EventTypeFiltering fetches the endpoint's event-type catalog on mount.
     getEventtypesByEndpointId = vi.fn().mockResolvedValue({});
     // useTicketLinkTemplate reads the app status on mount.
@@ -56,6 +64,7 @@ afterEach(() => {
   sessionsDeferreds.length = 0;
   postSessionsBatchMock.mockClear();
   getByFilterMock.mockReset();
+  statusCountMock.mockReset();
 });
 
 describe("EventsPanel paints before the session-status batch resolves", () => {
@@ -103,6 +112,28 @@ describe("EventsPanel paints before the session-status batch resolves", () => {
 });
 
 describe("EventsPanel id cells filter on click", () => {
+  it("provides a direct event details link", async () => {
+    getByFilterMock.mockResolvedValue({
+      events: [
+        new api.Event({
+          eventId: "evt-details",
+          sessionId: "sess",
+          eventTypeId: "DetailsEvent",
+          resolutionStatus: api.ResolutionStatus.Completed,
+        }),
+      ],
+    });
+    render(
+      <MemoryRouter>
+        <EventsPanel endpointId="ep-1" />
+      </MemoryRouter>,
+    );
+    expect(
+      (await screen.findByRole("link", { name: "evt-deta…" })).getAttribute(
+        "href",
+      ),
+    ).toBe("/Message/Index/ep-1/evt-details/0");
+  });
   it("clicking a Session Id re-queries with that session instead of copying", async () => {
     const event = Object.assign(new api.Event(), {
       eventId: "evt-1",
@@ -169,18 +200,11 @@ describe("EventsPanel duplicate status display", () => {
       expect(screen.getByText("Skipped (duplicate)")).toBeTruthy(),
     );
     expect(screen.getAllByText("Skipped")).toHaveLength(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "Grouped by Error" }));
-    fireEvent.click(screen.getByText("Unknown").closest("tr")!);
-
-    expect(screen.getByText("Skipped (duplicate)")).toBeTruthy();
-    expect(screen.getAllByText("Skipped")).toHaveLength(1);
   });
 });
 
 describe("EventsPanel row actions and report flag", () => {
   it("shows a flag-only Report button and an Actions menu only on actionable rows", async () => {
-    // The previous test left viewMode=grouped in the per-endpoint filter store.
     window.sessionStorage.clear();
     const failed = Object.assign(new api.Event(), {
       eventId: "evt-failed",
@@ -281,4 +305,158 @@ describe("EventsPanel payload URL filters", () => {
       expect(request.eventFilter?.payload).toBe(expected);
     },
   );
+});
+
+describe("EventsPanel status summary line", () => {
+  // Shows where the summary links navigate to.
+  const LocationProbe = () => {
+    const location = useLocation();
+    return (
+      <div data-testid="location">{location.pathname + location.search}</div>
+    );
+  };
+
+  const summaryItem = (name: RegExp) =>
+    within(
+      screen.getByRole("navigation", { name: "Endpoint status summary" }),
+    ).getByRole("button", { name });
+
+  const pageWithOneFailure = () =>
+    getByFilterMock.mockResolvedValue({
+      events: [
+        Object.assign(new api.Event(), {
+          eventId: "evt-tile",
+          sessionId: "sess-tile",
+          eventTypeId: "TileEvent",
+          lastMessageId: "msg-tile",
+          resolutionStatus: api.ResolutionStatus.Failed,
+        }),
+      ],
+      continuationToken: undefined,
+    });
+
+  const endpointTotals = () =>
+    // failedCount already includes DeadLettered and Unsupported; pendingCount
+    // is Pending only, so the line shows both as sent.
+    statusCountMock.mockResolvedValue({
+      endpointId: "ep-1",
+      failedCount: 13,
+      unsupportedCount: 2,
+      deferredCount: 3,
+      pendingCount: 17,
+    });
+
+  const renderPanel = (url = "/") =>
+    render(
+      <MemoryRouter initialEntries={[url]}>
+        <EventsPanel endpointId="ep-1" />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+  it("shows the endpoint's totals, not just the loaded page", async () => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    endpointTotals();
+
+    renderPanel();
+
+    await waitFor(() =>
+      expect(summaryItem(/^13 failed$/)).toBeTruthy(),
+    );
+    expect(summaryItem(/^3 deferred$/)).toBeTruthy();
+    expect(summaryItem(/^17 pending$/)).toBeTruthy();
+    expect(statusCountMock).toHaveBeenCalledWith("ep-1");
+  });
+
+  it("falls back to the loaded page when the totals can't be read", async () => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    statusCountMock.mockRejectedValue(new Error("unavailable"));
+
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByText("TileEvent")).toBeTruthy());
+    expect(summaryItem(/^1 failed$/)).toBeTruthy();
+    expect(summaryItem(/^0 pending$/)).toBeTruthy();
+  });
+
+  it("disables zero counts", async () => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    statusCountMock.mockResolvedValue({
+      endpointId: "ep-1",
+      failedCount: 1,
+      deferredCount: 0,
+      pendingCount: 0,
+    });
+
+    renderPanel();
+
+    await waitFor(() =>
+      expect(summaryItem(/^1 failed$/).hasAttribute("disabled")).toBe(false),
+    );
+    expect(summaryItem(/^0 deferred$/).hasAttribute("disabled")).toBe(true);
+    expect(summaryItem(/^0 pending$/).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("opens the endpoint's failures on the Failed page", async () => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    endpointTotals();
+
+    renderPanel();
+
+    await waitFor(() => expect(summaryItem(/^13 failed$/)).toBeTruthy());
+    fireEvent.click(summaryItem(/^13 failed$/));
+    expect(screen.getByTestId("location").textContent).toBe(
+      "/Failed?endpointId=ep-1",
+    );
+  });
+
+  it.each([
+    [/^3 deferred$/, api.ResolutionStatus.Deferred],
+    [/^17 pending$/, api.ResolutionStatus.Pending],
+  ])("filters the list when %s is clicked", async (name, status) => {
+    window.sessionStorage.clear();
+    pageWithOneFailure();
+    endpointTotals();
+
+    renderPanel();
+
+    await waitFor(() => expect(summaryItem(name)).toBeTruthy());
+    fireEvent.click(summaryItem(name));
+    await waitFor(() => {
+      const request = getByFilterMock.mock.calls.at(-1)![1];
+      expect(request.eventFilter?.resolutionStatus).toEqual([status]);
+    });
+  });
+});
+
+describe("EventsPanel view", () => {
+  it("offers only the list view, even for an old grouped-view link", async () => {
+    window.sessionStorage.clear();
+    getByFilterMock.mockResolvedValue({
+      events: [
+        Object.assign(new api.Event(), {
+          eventId: "evt-old-link",
+          sessionId: "sess-old-link",
+          eventTypeId: "OldLinkEvent",
+          lastMessageId: "msg-old-link",
+          resolutionStatus: api.ResolutionStatus.Failed,
+        }),
+      ],
+      continuationToken: undefined,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/?viewMode=grouped"]}>
+        <EventsPanel endpointId="ep-1" />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByText("OldLinkEvent")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Grouped by Error" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
+  });
 });

@@ -29,6 +29,7 @@ dotnet test src/NimBus.slnx -c Release --no-build
 npm --prefix src/NimBus.WebApp/ClientApp install   # Node.js 22
 npm --prefix src/NimBus.WebApp/ClientApp run test:ci
 npm --prefix src/NimBus.WebApp/ClientApp run build
+npm --prefix website ci && npm --prefix website run build   # docs portal
 dotnet run --project src/NimBus.AppHost        # local Aspire stack
 ```
 
@@ -58,6 +59,8 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
 - `docs/` — guides, `docs/adr/` for design rationale, `docs/spec/` for specs and designs,
   `docs/plan/` for implementation plans and plan reviews. Do not create `docs/superpowers/`
   or `docs/specs/`.
+- `website/` — the Docusaurus documentation portal. It renders `docs/` (not `plan/` or `spec/`)
+  and is published with `site/` by `.github/workflows/pages.yml`.
 
 ## Conventions
 
@@ -88,6 +91,9 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
   interface method silently bypasses the real store.
 - `EventTypeId` is the unqualified class name and is global to the Service Bus namespace:
   two event classes with the same name collide.
+- A new page under `docs/` must be added to `website/sidebars.js`, or to `unpublishedFiles` in
+  `website/docs-scope.js`; the portal build fails otherwise. It also fails on broken links, so
+  keep docs links relative: links to repository files are rewritten to GitHub at build time.
 - Service Bus topology is created only by `ServiceBusTopologyProvisioner`
   (`nb topology apply`).
 - Releases follow `docs/versioning.md#cutting-a-release` exactly, including the

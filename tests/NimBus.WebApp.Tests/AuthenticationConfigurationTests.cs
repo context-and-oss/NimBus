@@ -25,9 +25,9 @@ public sealed class AuthenticationConfigurationTests
     {
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() => BuildHost(environment, new()));
 
-        StringAssert.Contains(exception.Message, "AzureAd:ClientId");
-        StringAssert.Contains(exception.Message, "NimBusIdentity:ConnectionString");
-        StringAssert.Contains(exception.Message, "EnableLocalDevAuthentication");
+        StringAssert.Contains(exception.Message, "AzureAd:ClientId", StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, "NimBusIdentity:ConnectionString", StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, "EnableLocalDevAuthentication", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -37,7 +37,7 @@ public sealed class AuthenticationConfigurationTests
         var exception = Assert.ThrowsExactly<InvalidOperationException>(
             () => BuildHost("Production", new() { ["AzureAd:ClientId"] = "" }));
 
-        StringAssert.Contains(exception.Message, "AzureAd:ClientId");
+        StringAssert.Contains(exception.Message, "AzureAd:ClientId", StringComparison.Ordinal);
     }
 
     [TestMethod]

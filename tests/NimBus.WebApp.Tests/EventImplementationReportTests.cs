@@ -41,7 +41,7 @@ public sealed class EventImplementationReportTests
         // An empty `{}` body binds Reported to null (nullable DTO) — must 400.
         var result = await sut.PostReportEventAsync(new ReportEventRequest(), CanonicalEndpointId, EventId);
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
         var reports = await store.GetEventReports(CanonicalEndpointId, new[] { EventId });
         Assert.IsTrue(reports[EventId].IsReported, "a rejected request must not clear the existing marker");
         Assert.AreEqual("T-1", reports[EventId].TicketId);
@@ -60,7 +60,7 @@ public sealed class EventImplementationReportTests
             CanonicalEndpointId.ToLowerInvariant(),
             EventId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         var reports = await store.GetEventReports(CanonicalEndpointId, new[] { EventId });
         Assert.IsTrue(reports.ContainsKey(EventId), "marker must be found under the canonical endpoint id");
         Assert.AreEqual("OPS-9", reports[EventId].TicketId);
@@ -78,7 +78,7 @@ public sealed class EventImplementationReportTests
             CanonicalEndpointId,
             EventId);
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
         var reports = await store.GetEventReports(CanonicalEndpointId, new[] { EventId });
         Assert.AreEqual(0, reports.Count);
     }
@@ -95,7 +95,7 @@ public sealed class EventImplementationReportTests
             CanonicalEndpointId,
             EventId);
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         var reports = await store.GetEventReports(CanonicalEndpointId, new[] { EventId });
         Assert.IsFalse(reports[EventId].IsReported);
         Assert.IsNull(reports[EventId].TicketId);

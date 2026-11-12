@@ -61,6 +61,38 @@ describe("IntelligenceCard", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(screen.queryByText("old_failure (100%)")).toBeNull();
   });
+  it("shows a saved result in read-only mode without offering analysis", async () => {
+    // Spec 043 read-only mode: no provider is configured, but saved results stay readable.
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ProviderNotConfigured", canAnalyze: false, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ category: "business_rule", categoryConfidence: 0.9, retryLikelihood: 0, changeRequiredLikelihood: 1, externalDependencyLikelihood: 0, guidance: "ChangeLikelyRequired", revision: 2, model: "test", createdAtUtc: "2026-09-20T00:00:00Z" }))) as typeof fetch;
+    render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+    await screen.findByText("business_rule (90%)");
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("New analysis is unavailable because no provider is configured.")).toBeTruthy();
+  });
+
+  it("stays hidden in read-only mode when nothing was saved", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ProviderNotConfigured", canAnalyze: false, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/Failure intelligence/)).toBeNull();
+    expect(screen.queryByText("No analysis has been performed.")).toBeNull();
+  });
+
+  it("stays hidden in read-only mode when the saved result is not readable yet", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ProviderNotConfigured", canAnalyze: false, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: "AnalysisInProgress" }), { status: 409 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/Failure intelligence/)).toBeNull();
+  });
+
   it("shows existing results to Readers without offering paid analysis", async () => {
     globalThis.fetch = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: false, contractVersion: 1 })))
@@ -92,6 +124,31 @@ describe("IntelligenceCard", () => {
     expect(screen.getByText("unknown: 20%")).toBeTruthy();
     expect(screen.getByText("transient_dependency: 10%")).toBeTruthy();
     expect(screen.getByText("Question set v1")).toBeTruthy();
+  });
+
+  it("names the provider, says threshold settings were not recorded, and marks the linked occurrence", async () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      globalThis.fetch = vi.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: false, contractVersion: 1 })))
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          category: "business_rule", categoryConfidence: 0.9, retryLikelihood: 0, changeRequiredLikelihood: 1,
+          externalDependencyLikelihood: 0, guidance: "Investigate", revision: 2, provider: "TypeSafe", model: "test",
+          createdAtUtc: "2026-09-20T00:00:00Z", questionSetVersion: 1,
+        }))) as typeof fetch;
+      const view = render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" highlighted />);
+
+      await screen.findByText("business_rule (90%)");
+      expect(screen.getByText(/Revision 2 · TypeSafe · test/)).toBeTruthy();
+      await userEvent.click(screen.getByText("Classification details"));
+      expect(screen.getByText("Threshold settings not recorded")).toBeTruthy();
+      expect(view.container.querySelector('[aria-current="true"]')).toBeTruthy();
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 
   it("marks a saved result historical while a newer analysis is in progress", async () => {

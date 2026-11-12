@@ -52,11 +52,52 @@ subscription on `CrmEndpoint` *and* the `Resolver` subscription on `CrmEndpoint`
 | You want to… | Use | Notes |
 | --- | --- | --- |
 | Stop a subscription taking anything new | **Detach rule** | Removes the matching rule, so nothing new enters. What's already queued still drains. Reverse with **Restore rules**. Only rules the platform topology can rebuild are detachable — a `$Default` that is a subscription's whole routing, or anything on a hand-made subscription, is shown greyed out because NimBus could not put it back. |
-| Stop a subscription delivering / forwarding | **Pause** | Sets `ReceiveDisabled`. On an auto-forwarding subscription it *also* detaches the forward destination, so messages collect in the subscription instead of moving on. **Resume** puts the destination back. |
-| Empty a normal subscription | **Purge** | Drains active and deferred messages one batch at a time. Fine for hundreds, slow for tens of thousands. Leaves both dead-letter queues alone (see **Purge dead letters**). A paused subscription is made receivable for the duration and returned to Paused afterwards. |
+| Stop a subscription delivering / forwarding | **Pause** | Sets `ReceiveDisabled`. On an auto-forwarding subscription it *also* detaches the forward destination, so messages collect in the subscription instead of moving on. **Resume** puts the destination back. `nb topology apply` leaves a paused forwarding subscription paused, detached and holding its messages; only its rules are re-ensured. Pause and Resume both clear a [purge marker](#purge-and-nb-topology-apply) left behind by an interrupted purge, in the same update, and leave any other `UserMetadata` alone. |
+| Empty a normal subscription | **Purge** | Drains active and deferred messages one batch at a time. Fine for hundreds, slow for tens of thousands. Leaves both dead-letter queues alone (see **Purge dead letters**). A paused subscription is made receivable for the duration and returned to Paused afterwards. While a paused subscription drains it carries the [purge marker](#purge-and-nb-topology-apply) in its `UserMetadata`, and `nb topology apply` skips a marked forwarder. When the purge ends, the marker is removed and the original `UserMetadata` (or empty, if there was none) is put back, also when the drain fails. |
 | Empty a subscription's dead-letter queues | **Purge dead letters** | Completes every message in the dead-letter queue and the transfer dead-letter queue. Service Bus never empties these on its own, and dead-lettered messages count toward the topic's size quota. The subscription's status is left alone: a paused subscription stays paused, and if Service Bus refuses the receive the result says so. Shown only when either queue holds messages. To clear an endpoint's own dead-lettered events, start with **Operations → Delete dead-lettered**: it deletes the stored events together with their own messages in the queue, and leaves every other message for this action. |
-| Empty an auto-forwarding subscription | **Delete & recreate** | Service Bus refuses receive on a forwarding entity, so it can't be drained. Delete + re-provision discards the backlog in one management call. Alternatively **Pause** first (which detaches forwarding) and then **Purge**, if you'd rather not delete the entity. |
+| Empty an auto-forwarding subscription | **Delete & recreate** | Service Bus refuses receive on a forwarding entity, so it can't be drained. Delete + re-provision discards the backlog in one management call. Alternatively **Pause** first (which detaches forwarding) and then **Purge**, if you'd rather not delete the entity; the purge marker keeps `nb topology apply` from re-attaching forwarding while it drains. |
 | Remove something that shouldn't exist | **Delete** | No rebuild. |
+
+## Purge and `nb topology apply`
+
+Service Bus refuses receives on a `ReceiveDisabled` entity, so Purge makes a
+paused subscription Active for the drain. A paused forwarder therefore spends the
+whole drain Active with its forward destination detached, which `nb topology apply`
+would otherwise read as a forwarder that lost its target and re-attach. The rest
+of the backlog the operator chose to discard would then be forwarded downstream,
+the drain's receiver would start failing, and the purge would leave the
+subscription `ReceiveDisabled` with forwarding attached: neither paused and
+detached nor active and forwarding. Purge is slow for a large backlog, so that
+window can last minutes.
+
+To close it, Purge sets `UserMetadata` to the purge marker
+(`nimbus:purge-in-progress`, `SubscriptionMarkers.PurgeInProgress`) in the same
+update that activates the paused subscription. `nb topology apply` leaves a
+forwarder that carries the marker and has its destination detached alone, as it
+does a paused forwarder: no update, delete or recreate, only its rules are
+re-ensured. A session-flag mismatch still recreates it. When the drain ends,
+including when it fails, the same update that restores the paused status puts the
+original `UserMetadata` back, or empty if there was none or it was itself a
+leftover marker. A subscription that was already Active is not marked.
+
+A marker can be left behind if the restore update fails (the purge result says
+so) or the WebApp process dies mid-drain. The subscription is then Active,
+detached and marked, and apply keeps skipping it. **Pause** clears the purge
+marker and restores the pause. Resume afterwards only if forwarding should be
+re-attached. **Resume** also clears a marker it finds.
+
+**Decision.** NimBus marks the subscription rather than documenting the window and
+leaving operators to coordinate purges and applies by hand. The window has a real
+downstream effect: a backlog the operator chose to discard gets delivered, and the
+subscription ends up half-paused. The marker stays inside the two components that
+already own this convention: the WebApp's Pause, Resume and Purge, and the
+provisioner's paused-forwarder check.
+
+**Emulator limitation.** The NimBus Service Bus emulator does not persist
+subscription `UserMetadata`, so against it the marker is dropped and
+`nb topology apply` does not skip a forwarder that is being purged: the
+purge/apply window remains there. Avoid running apply while a purge drains on the
+emulator.
 
 ## Replaying Resolver dead letters
 

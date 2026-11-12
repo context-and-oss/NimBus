@@ -77,7 +77,7 @@ public class EmailChannelTests
 
         Assert.AreEqual("alerts@example.com", channel.CapturedFrom);
         Assert.AreEqual("[Error] Smtp test", channel.CapturedSubject);
-        StringAssert.Contains(channel.CapturedBody, "body text");
+        StringAssert.Contains(channel.CapturedBody, "body text", StringComparison.Ordinal);
         CollectionAssert.AreEquivalent(
             new[] { "oncall@example.com", "backup@example.com" }, channel.CapturedTo);
     }

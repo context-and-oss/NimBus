@@ -29,7 +29,7 @@ namespace NimBus.MessageStore.SqlServer;
 /// Concurrency: ROWVERSION on UnresolvedEvents enables optimistic conflict
 /// detection if needed by future writers.
 /// </summary>
-public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
+public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore
 {
     private readonly SqlServerMessageStoreOptions _options;
     private readonly string _schema;
@@ -161,6 +161,10 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
 
     public Task<bool> DeleteSubscription(string subscriptionId)
         => _subscriptions.DeleteSubscription(subscriptionId);
+
+    /// <inheritdoc />
+    public Task<bool> TrySetNotifiedAtAsync(string subscriptionId, string? expectedNotifiedAt, string? notifiedAt, CancellationToken cancellationToken = default)
+        => _subscriptions.TrySetNotifiedAtAsync(subscriptionId, expectedNotifiedAt, notifiedAt, cancellationToken);
     // ───────── IEndpointMetadataStore — implementation in SqlServerEndpointMetadataStore ─────────
     public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId) => _endpointMetadata.GetEndpointMetadata(endpointId);
     public Task<List<EndpointMetadata>> GetMetadatas() => _endpointMetadata.GetMetadatas();
@@ -184,6 +188,13 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
         => _endpointMetadata.TrySetAgentApiKeySettings(settings, expectedRevision);
     public Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage() => _endpointMetadata.GetAgentApiKeyUsage();
     public Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc) => _endpointMetadata.RecordAgentApiKeyUse(keyId, usedAtUtc);
+
+    // ───────── Dashboard tokens (IDashboardTokenStore) — implementation in SqlServerEndpointMetadataStore ─────────
+    public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();
+    public Task<bool> TrySetDashboardTokenSettings(DashboardTokenSettings settings, string? expectedRevision)
+        => _endpointMetadata.TrySetDashboardTokenSettings(settings, expectedRevision);
+    public Task<List<DashboardTokenUsage>> GetDashboardTokenUsage() => _endpointMetadata.GetDashboardTokenUsage();
+    public Task RecordDashboardTokenUse(string tokenId, DateTime usedAtUtc) => _endpointMetadata.RecordDashboardTokenUse(tokenId, usedAtUtc);
     // ───────── Durable endpoint heartbeat history — implementation in SqlServerHeartbeatHistoryStore ─────────
     public Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
         => _heartbeatHistory.GetHeartbeatUptimeDays(fromDayUtc);
@@ -240,6 +251,12 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => _metrics.GetEventTypeTimeSeriesMetrics(from, substringLength, bucketLabel);
 
     public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetEventTypeTimeSeriesMetrics(from, to, substringLength, bucketLabel);
+
+    // ───────── Monitor metrics — implementation in SqlServerMetricsStore and SqlServerMessageTrackingStore ─────────
+
+    public Task<LatencyTimeSeriesResult> GetLatencyTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetLatencyTimeSeriesMetrics(from, to, substringLength, bucketLabel);
+
+    public Task<int> GetBlockedSessionCount(string endpointId) => _messageTracking.GetBlockedSessionCount(endpointId);
 
     // ───────── Event schema store — implementation in SqlServerEventSchemaStore ─────────
 

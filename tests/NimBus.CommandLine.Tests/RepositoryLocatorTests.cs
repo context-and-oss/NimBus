@@ -1,9 +1,10 @@
+#pragma warning disable CA1707, CA2007
 using NimBus.CommandLine;
 using Xunit;
 
 namespace NimBus.CommandLine.Tests;
 
-public class RepositoryLocatorTests : IDisposable
+public sealed class RepositoryLocatorTests : IDisposable
 {
     private readonly string _tempRoot;
 
@@ -36,7 +37,7 @@ public class RepositoryLocatorTests : IDisposable
     {
         // No deploy/ or src/ directories
         var exception = Assert.Throws<CommandException>(() => RepositoryLocator.Resolve(_tempRoot));
-        Assert.Contains("does not look like", exception.Message);
+        Assert.Contains("does not look like", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

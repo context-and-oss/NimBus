@@ -15,7 +15,7 @@ public interface IAgentApiKeyUsageRecorder
 /// long-poll loop costs one store write every few minutes. Best effort: a failed write is
 /// logged and only leaves "last used" stale.
 /// </summary>
-public sealed class AgentApiKeyUsageRecorder : IAgentApiKeyUsageRecorder
+public sealed partial class AgentApiKeyUsageRecorder : IAgentApiKeyUsageRecorder
 {
     /// <summary>Minimum time between two writes for the same key.</summary>
     public static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
@@ -47,7 +47,10 @@ public sealed class AgentApiKeyUsageRecorder : IAgentApiKeyUsageRecorder
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Recording the use of agent API key {KeyId} failed", keyId);
+            LogRecordingTheUseOfAgentApi(_logger, ex, keyId);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Recording the use of agent API key {KeyId} failed")]
+    private static partial void LogRecordingTheUseOfAgentApi(ILogger logger, Exception exception, string keyId);
 }

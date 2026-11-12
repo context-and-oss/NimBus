@@ -31,14 +31,14 @@ public static class TemplateRenderer
         }
 
         return template
-            .Replace("{Severity}", Encode(notification.Severity.ToString(), jsonEncodeValues))
-            .Replace("{Title}", Encode(notification.Title, jsonEncodeValues))
-            .Replace("{Message}", Encode(notification.Message, jsonEncodeValues))
-            .Replace("{EventId}", Encode(notification.EventId, jsonEncodeValues))
-            .Replace("{EventTypeId}", Encode(notification.EventTypeId, jsonEncodeValues))
-            .Replace("{MessageId}", Encode(notification.MessageId, jsonEncodeValues))
-            .Replace("{CorrelationId}", Encode(notification.CorrelationId, jsonEncodeValues))
-            .Replace("{ErrorDetails}", Encode(notification.ErrorDetails, jsonEncodeValues));
+            .Replace("{Severity}", Encode(notification.Severity.ToString(), jsonEncodeValues), StringComparison.Ordinal)
+            .Replace("{Title}", Encode(notification.Title, jsonEncodeValues), StringComparison.Ordinal)
+            .Replace("{Message}", Encode(notification.Message, jsonEncodeValues), StringComparison.Ordinal)
+            .Replace("{EventId}", Encode(notification.EventId, jsonEncodeValues), StringComparison.Ordinal)
+            .Replace("{EventTypeId}", Encode(notification.EventTypeId, jsonEncodeValues), StringComparison.Ordinal)
+            .Replace("{MessageId}", Encode(notification.MessageId, jsonEncodeValues), StringComparison.Ordinal)
+            .Replace("{CorrelationId}", Encode(notification.CorrelationId, jsonEncodeValues), StringComparison.Ordinal)
+            .Replace("{ErrorDetails}", Encode(notification.ErrorDetails, jsonEncodeValues), StringComparison.Ordinal);
     }
 
     private static string Encode(string? value, bool jsonEncodeValues)

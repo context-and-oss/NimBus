@@ -32,6 +32,26 @@ public class EndpointStatusCountMappingTests
     }
 
     [TestMethod]
+    public void Folds_unsupported_into_failed_and_leaves_pending_alone()
+    {
+        // Unsupported never drains on its own, so it counts as a failure (as on the
+        // Failed page and the sidebar badge), not as in-flight work.
+        var status = Mapper.EndpointStatusCountFromEndpointStateCount(new EndpointStateCount
+        {
+            EndpointId = "billing",
+            FailedCount = 2,
+            DeadletterCount = 3,
+            UnsupportedCount = 4,
+            PendingCount = 5,
+        });
+
+        Assert.AreEqual(9, status.FailedCount);
+        Assert.AreEqual(5, status.PendingCount);
+        Assert.AreEqual(4, status.UnsupportedCount);
+        Assert.AreEqual(3, status.DeadletterCount);
+    }
+
+    [TestMethod]
     public void Leaves_oldest_failure_null_without_open_failures()
     {
         var status = Mapper.EndpointStatusCountFromEndpointStateCount(new EndpointStateCount { EndpointId = "billing" });

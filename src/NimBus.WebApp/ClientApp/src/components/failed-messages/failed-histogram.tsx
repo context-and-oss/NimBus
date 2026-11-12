@@ -62,10 +62,14 @@ export function brushIndexes(
     : { startIndex: 0, endIndex: last };
 }
 
-/** The window a brushed index range covers; undefined when it spans every bar. */
+/**
+ * The window a brushed index range covers; undefined when it spans every bar. A bar ends where
+ * the next starts (bars across a daylight-saving change differ in length); the last ends at
+ * `windowEnd`.
+ */
 export function windowOfIndexes(
   starts: number[],
-  bucketMinutes: number,
+  windowEnd: number,
   startIndex: number,
   endIndex: number,
 ): TimeWindow | undefined {
@@ -75,7 +79,7 @@ export function windowOfIndexes(
   if (first === 0 && last === starts.length - 1) return undefined;
   return {
     from: new Date(starts[first]),
-    to: new Date(starts[last] + bucketMinutes * 60_000),
+    to: new Date(starts[last + 1] ?? windowEnd),
   };
 }
 
@@ -169,6 +173,10 @@ export default function FailedHistogram({
     [rows],
   );
   const bucketMinutes = histogram?.bucketMinutes ?? 60;
+  const windowEnd =
+    histogram?.to?.valueOf() ??
+    (starts[starts.length - 1] ?? 0) + bucketMinutes * 60_000;
+  const endOf = (index: number) => starts[index + 1] ?? windowEnd;
   const from = window?.from.getTime();
   const to = window?.to.getTime();
   const inWindow = (start: number) =>
@@ -183,7 +191,7 @@ export default function FailedHistogram({
     if (s === undefined || e === undefined) return;
     if (s === startIndex && e === endIndex) return;
     settle.current = setTimeout(
-      () => onWindowChange(windowOfIndexes(starts, bucketMinutes, s, e)),
+      () => onWindowChange(windowOfIndexes(starts, windowEnd, s, e)),
       BRUSH_SETTLE_MS,
     );
   };
@@ -252,7 +260,11 @@ export default function FailedHistogram({
               return (
                 <div className="min-w-[180px] rounded-md border border-border bg-popover px-3 py-2 text-[11.5px] text-popover-foreground shadow-lg">
                   <div className="mb-1 font-mono text-muted-foreground">
-                    {formatBucket(new Date(row.start), bucketMinutes, true)}
+                    {formatBucket(
+                      new Date(row.start),
+                      bucketMinutes,
+                      new Date(endOf(starts.indexOf(new Date(row.start).getTime()))),
+                    )}
                   </div>
                   {series.map((s) => (
                     <div
@@ -292,7 +304,7 @@ export default function FailedHistogram({
               onClick={(_data: unknown, index: number) => {
                 const start = starts[index];
                 if (start === undefined) return;
-                const end = start + bucketMinutes * 60_000;
+                const end = endOf(index);
                 onWindowChange(
                   from === start && to === end
                     ? undefined

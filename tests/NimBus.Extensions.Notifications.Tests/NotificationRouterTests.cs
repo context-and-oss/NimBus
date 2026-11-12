@@ -110,15 +110,15 @@ public class NotificationRouterTests
         }
 
         Assert.AreEqual(20, channel.Received.Count, "Only the burst capacity is delivered immediately.");
-        Assert.IsFalse(channel.Received.Any(n => n.Title.Contains("suppressed")));
+        Assert.IsFalse(channel.Received.Any(n => n.Title.Contains("suppressed", StringComparison.Ordinal)));
 
         // Replenish tokens, then route one more — the accumulated storm is summarised once.
         time.Advance(TimeSpan.FromMinutes(1));
         await router.RouteAsync(TestNotifications.Build(severity: NotificationSeverity.Critical, eventId: "e-final"));
 
-        var summaries = channel.Received.Where(n => n.Title.Contains("suppressed")).ToList();
+        var summaries = channel.Received.Where(n => n.Title.Contains("suppressed", StringComparison.Ordinal)).ToList();
         Assert.AreEqual(1, summaries.Count, "Exactly one storm summary is emitted when tokens replenish.");
-        StringAssert.Contains(summaries[0].Title, "80");
+        StringAssert.Contains(summaries[0].Title, "80", StringComparison.Ordinal);
         Assert.IsTrue(channel.Received.Any(n => n.EventId == "e-final"), "The replenished notification is delivered.");
     }
 

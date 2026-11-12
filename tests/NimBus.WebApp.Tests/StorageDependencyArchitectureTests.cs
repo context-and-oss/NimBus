@@ -80,6 +80,13 @@ public sealed class StorageDependencyArchitectureTests
                 typeof(IEndpointAcknowledgementStore),
                 typeof(IMessageTrackingStore),
             ],
+            [typeof(MonitorFeedImplementation)] =
+            [
+                typeof(IMessageTrackingStore),
+                typeof(IEndpointMetadataStore),
+                typeof(IMetricsStore),
+                typeof(IMonitorMetricsStore),
+            ],
         };
 
         foreach (var (consumer, contracts) in expected)

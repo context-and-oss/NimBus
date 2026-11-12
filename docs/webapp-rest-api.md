@@ -295,6 +295,32 @@ Settings → MCP access (Spec 037): `GET`/`PUT /api/admin/mcp/settings`,
 returns, and `PUT` is fenced by the policy revision (409 when stale). See
 [docs/mcp-server.md](mcp-server.md#managing-access-in-the-webapp).
 
+### DashboardTokens
+
+Settings → Dashboard tokens: `GET`/`POST /api/admin/dashboard-tokens`,
+`POST /api/admin/dashboard-tokens/{tokenId}/revoke` and `DELETE /api/admin/dashboard-tokens/{tokenId}`.
+Site Owner only, under the `nimbus-admin` rate limit; the writes require the `X-NimBus-CSRF` token
+that `GET` returns. 501 when the storage provider cannot store tokens. See
+[Authentication → Dashboard tokens](authentication.md#dashboard-tokens).
+
+### MonitorFeed
+
+The Monitor wall's read API, for a site Reader or a dashboard token (`X-NimBus-Dashboard-Token`).
+Every caller gets the same fleet-wide payload, unfiltered, composed once per cache window:
+
+| Operation | Refresh | Holds |
+|---|---|---|
+| `GET /api/monitor/feed/status` | 5 s | Every endpoint's status counts, estimated blocked sessions, heartbeat and acknowledgement; the environment and platform name; `tokenAccess` |
+| `GET /api/monitor/feed/metrics` | 30 s | 60 minute buckets of published, handled and failed; per endpoint and fleet-wide counts and average queue and processing time over the last 60 minutes |
+| `GET /api/monitor/feed/history` | 5 min | 72 hour buckets of the same counts; queue and processing time per hour for 24 hours; each endpoint's 24-hour average processing time |
+
+Each response carries `generatedAtUtc` and `stale`: when the store cannot be read, the previous
+result is returned with `stale: true` and the store is tried again once per refresh interval. With
+nothing earlier to return the answer is 503. Responses are `Cache-Control: no-store`. A signed-in
+caller without the site Reader role gets 403. The Monitor's existing ACK operations
+(`/api/monitor/acknowledgements`) are unchanged and do not admit a token. See
+[The Monitor wall](webapp-monitor.md).
+
 ### Message
 
 Search the message history (`/api/messages/search`). Cursor-paginated.
@@ -331,6 +357,58 @@ Aggregations over the configurable period window (`1h`, `12h`, `1d`, `3d`,
 curl -H "Authorization: Bearer $TOKEN" \
      "https://nimbus.example.com/api/metrics/overview?period=1d"
 ```
+
+#### Failed insights
+
+`GET /api/metrics/failed-insights` groups failure occurrences (one per failed attempt) by error
+pattern. When saved failure classifications are readable it also groups them by likely cause
+and by recovery guidance, and reports coverage: `classified`, `uncertain`, `notAnalyzed` and
+`notEligible` ([Spec 043](spec/043-intelligent-failed-message-insights/spec.md)). Reading it
+never starts an analysis.
+
+- `endpointId` narrows the scope to one endpoint. `refresh=true` re-reads saved
+  classifications; new failures can still lag by the 30 s metrics cache. The answer comes from a
+  read that began after the request. Requests that refresh the same scope at the same time
+  share that read, so they cost at most one read beyond the one already running.
+- The response returns the resolved `from` and `to`, in whole milliseconds (a custom window's
+  bounds are truncated to the millisecond too). Send them back unchanged to page through the same
+  occurrences.
+- `enrichment` is `available`, `disabled`, `unavailable`, `unsupported` or `limitExceeded`.
+  Every value except `available` leaves `coverage`, `causeGroups` and `guidanceGroups` null; it
+  is never reported as zero coverage. When it is `unavailable`, the WebApp log has a warning
+  from `FailureClassificationReader` with the storage exception.
+- `analysisAvailable` is false when new analysis can't be requested: intelligence is off, or
+  only saved classifications can be read because no provider is configured.
+- `totalFailed` stays for existing clients and always equals `totalOccurrences`.
+
+Two read-only routes page one group of the overview. Both take the overview's `from` and `to`,
+the same `endpointId`, a `perspective` (`errorPattern`, `cause` or `guidance`), a `groupKey` from
+that perspective, `pageSize` (1–100, default 50) and `continuationToken`:
+
+- `GET /api/metrics/failed-insights/occurrences`: the group's failed attempts, newest first, each
+  with its analysis state, saved cause and guidance when there are any, an `operationMarker`
+  (`analysisRunning`, `outcomeUnknown`, `lastAnalysisFailed` or `identityMismatch`) and the event's
+  `currentStatus`, which is null when unavailable. Cause and guidance groups need saved
+  classifications; error-pattern groups page without them.
+- `GET /api/metrics/failed-insights/patterns`: a cause or guidance group's error patterns, most
+  frequent first.
+
+Group keys are valid only for the scope that issued them and are not durable across releases; a
+key with no occurrences in the requested scope is a `400`, in every perspective. A continuation
+token is bound to its window, endpoint and group; reusing it elsewhere is a `400`.
+Pages are live reads, not a snapshot: new classifications can move occurrences between groups.
+
+Limits, under `NimBus:Insights`:
+
+| Setting | Default | Range | Meaning |
+|---|---|---|---|
+| `EnrichmentCeiling` | 10000 | 100–100000 | Largest scope, after the endpoint filter, that is enriched; above it the response is `limitExceeded` |
+| `EnrichmentCacheSeconds` | 15 | 0–30 | Lifetime of a cached classification read. 0 turns the cache off: every request, including each drill-down page, reads classifications again |
+| `BulkReadBatchSize` | 500 | 50–1000 | Failures per classification-store call |
+| `BulkReadConcurrency` | 4 | 1–8 | Classification-store calls in flight |
+| `TopPatternsPerGroup` | 10 | 1–50 | Error patterns embedded in each cause or guidance group |
+
+Out-of-range values stop the WebApp at startup.
 
 ### Dev
 
@@ -472,6 +550,7 @@ controller method that fires each one:
 | `CommandNotSent`      | `OperatorCommandCoordinator` — a resubmit or skip was audited but publishing it failed, so the event was restored; always recorded |
 | `UpdateMcpSettings`   | `McpAccessImplementation.PutAdminMcpSettingsAsync` / `PostAdminMcpTurnOffAsync` — the revisions and the list of changes as `Data`; always recorded |
 | `McpAccessRefused`    | The operator MCP endpoint — a call refused by the MCP access policy or for a missing scope, with `AccessDenied` set; deduplicated per caller, client, reason and tool for 5 minutes per instance |
+| `DashboardTokenCreated` / `DashboardTokenRevoked` / `DashboardTokenRemoved` | `DashboardTokensImplementation` — the token id, name and expiry as `Data`, never the token; always recorded |
 
 Resubmit, skip and resubmit-with-changes run through `OperatorCommandCoordinator`, shared with the
 operator MCP tools. Their `Data` records the channel (`WebApp` or `Mcp`), the reason and idempotency

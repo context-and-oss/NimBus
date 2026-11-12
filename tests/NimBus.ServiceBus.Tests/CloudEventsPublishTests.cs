@@ -56,7 +56,7 @@ public class CloudEventsPublishTests
         // AC4: content-type is the data content type; body is the raw domain event, NOT the NimBus envelope.
         Assert.AreEqual("application/json", sent.ContentType);
         var body = Encoding.UTF8.GetString(sent.Body.ToArray());
-        StringAssert.Contains(body, "\"Payload\":\"hello\"");
+        StringAssert.Contains(body, "\"Payload\":\"hello\"", StringComparison.Ordinal);
         Assert.IsFalse(body.Contains("EventContent", StringComparison.Ordinal), "Binary body must be the domain event, not the MessageContent envelope.");
 
         // AC4: native NimBus routing metadata is still stamped so routing/sessions/resolver keep working.
@@ -182,7 +182,7 @@ public class CloudEventsPublishTests
 
         var sent = recorder.SentMessages.Single();
         var body = Encoding.UTF8.GetString(sent.Body.ToArray());
-        StringAssert.Contains(body, "EventContent");
+        StringAssert.Contains(body, "EventContent", StringComparison.Ordinal);
         Assert.IsFalse(sent.ApplicationProperties.Keys.Any(k => k.StartsWith("cloudEvents:", StringComparison.Ordinal)),
             "Native publish must not stamp any cloudEvents:* application properties.");
     }

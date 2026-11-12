@@ -27,13 +27,21 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
     /// </summary>
     public Func<IReadOnlyList<string>, string?>? Responder { get; set; }
 
-    /// <summary>Optional: commands for which TryRunAsync reports a failed az call.</summary>
+    /// <summary>
+    /// Optional: commands that fail. TryRunAsync reports a failed az call; CaptureJsonAsync throws
+    /// with its failure message, like the real runner.
+    /// </summary>
     public Func<IReadOnlyList<string>, bool>? FailWhen { get; set; }
 
     public Task<JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage)
     {
         Commands.Add(arguments.ToArray());
-        var fallback = arguments.Contains("group", StringComparer.Ordinal) && arguments.Contains("show", StringComparer.Ordinal)
+        if (FailWhen?.Invoke(arguments) == true)
+        {
+            throw new CommandException(failureMessage);
+        }
+
+        var fallback =arguments.Contains("group", StringComparer.Ordinal) && arguments.Contains("show", StringComparer.Ordinal)
             ? $$"""{"id":"{{ResourceGroupIdPrefix}}{{arguments[Array.IndexOf(arguments.ToArray(), "--name") + 1]}}","tags":null}"""
             : "{}";
         return Task.FromResult(JsonDocument.Parse(Responder?.Invoke(arguments) ?? fallback));

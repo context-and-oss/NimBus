@@ -29,7 +29,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
                 requestOptions);
         var query = ApplyEventFilter(queryable.Where(x => true), filter);
 
-        if (filter.ResolutionStatus != null && filter.ResolutionStatus.Any())
+        if (filter.ResolutionStatus != null && filter.ResolutionStatus.Count != 0)
             query = query
                 .Where(x => filter.ResolutionStatus.Contains(x.Status));
 
@@ -269,7 +269,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
 
         // Strings
-        if (filter.EventTypeId != null && filter.EventTypeId.Any())
+        if (filter.EventTypeId != null && filter.EventTypeId.Count != 0)
             query = query
                 .Where(x => filter.EventTypeId.Contains(x.EventType!));
 
@@ -498,12 +498,12 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger?.LogInformation("COSMOS PENDING-EVENTS: Endpoint container not found for '{EndpointId}'", endpointId);
+            LogCosmosPendingEvents(_logger, endpointId);
             return null;
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "COSMOS PENDING-EVENTS-ERROR: Failed to get pending events for endpoint '{EndpointId}'", endpointId);
+            LogCosmosPendingEventsError(_logger, e, endpointId);
             throw;
         }
 
@@ -648,7 +648,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
             parameters[p] = filter.SessionId;
         }
 
-        if (filter.EventTypeId != null && filter.EventTypeId.Any())
+        if (filter.EventTypeId != null && filter.EventTypeId.Count != 0)
         {
             var p = NextParam();
             conditions.Add($"ARRAY_CONTAINS({p}, c.message.EventTypeId)");
@@ -693,7 +693,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
 
         var sql = MessageSearchProjection;
-        if (conditions.Any())
+        if (conditions.Count != 0)
             sql += " WHERE " + string.Join(" AND ", conditions);
         sql += " ORDER BY c.message.EnqueuedTimeUtc DESC";
 
@@ -731,4 +731,10 @@ internal sealed partial class CosmosDbMessageTrackingStore
 
         return new MessageSearchResult { Messages = messages, ContinuationToken = token };
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS PENDING-EVENTS: Endpoint container not found for '{EndpointId}'")]
+    private static partial void LogCosmosPendingEvents(ILogger logger, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS PENDING-EVENTS-ERROR: Failed to get pending events for endpoint '{EndpointId}'")]
+    private static partial void LogCosmosPendingEventsError(ILogger logger, Exception exception, string endpointId);
 }

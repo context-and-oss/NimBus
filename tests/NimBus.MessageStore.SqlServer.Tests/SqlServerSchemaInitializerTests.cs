@@ -22,11 +22,11 @@ public sealed class SqlServerSchemaInitializerTests
         var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => initializer.StartAsync(CancellationToken.None));
 
-        StringAssert.Contains(ex.Message, "Missing artifacts");
-        StringAssert.Contains(ex.Message, $"schema '{schema}'");
-        StringAssert.Contains(ex.Message, $"[{schema}].[DbUpJournal]");
-        StringAssert.Contains(ex.Message, $"[{schema}].[Messages]");
-        StringAssert.Contains(ex.Message, $"[{schema}].[UnresolvedEvents]");
+        StringAssert.Contains(ex.Message, "Missing artifacts", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, $"schema '{schema}'", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, $"[{schema}].[DbUpJournal]", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, $"[{schema}].[Messages]", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, $"[{schema}].[UnresolvedEvents]", StringComparison.Ordinal);
     }
 
     [TestMethod]

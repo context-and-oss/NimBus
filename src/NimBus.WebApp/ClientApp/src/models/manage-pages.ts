@@ -90,6 +90,17 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     ],
   },
   {
+    id: "dashboard-tokens",
+    group: "Monitoring",
+    name: "Dashboard tokens",
+    description:
+      "Issue and revoke the links wall displays use to show the Monitor read-only without signing in.",
+    applies: "Applies to every instance within 30 s",
+    tabs: [
+      { id: "tokens", label: "Tokens", keywords: "monitor wall display kiosk dashboard token link issue revoke expiry" },
+    ],
+  },
+  {
     id: "simulation",
     group: "Testing",
     name: "Simulation",
@@ -140,6 +151,8 @@ export const OPERATIONS: readonly OperationInfo[] = [
     description: "Skip matching events, so the sessions they block continue." },
   { id: "session", group: "recovery", label: "Session purge", takesEndpoint: true,
     description: "Unblock one stuck session by clearing its deferred and blocked messages." },
+  { id: "session-state", group: "recovery", label: "Session state", takesEndpoint: true,
+    description: "Look up one session's Service Bus session state, and clear its block, reset it or edit it." },
   { id: "stale", group: "recovery", label: "Reconcile stale pending", takesEndpoint: true,
     description: "Repair rows a redelivered copy left Pending after the original completed." },
   { id: "dlq", group: "cleanup", label: "Delete dead-lettered", takesEndpoint: true,
@@ -150,6 +163,8 @@ export const OPERATIONS: readonly OperationInfo[] = [
     description: "Delete messages addressed to one value, across endpoints." },
   { id: "single", group: "cleanup", label: "Delete single event", takesEndpoint: true,
     description: "Delete one event by its ID." },
+  { id: "session-cleanup", group: "cleanup", label: "Clean up session state", takesEndpoint: true,
+    description: "Reset the session state that idle sessions keep after their messages are gone." },
   { id: "purge", group: "movement", label: "Purge subscription", takesEndpoint: true,
     description: "Drain an endpoint's Service Bus subscription. The messages are gone, not dead-lettered." },
   { id: "copy", group: "movement", label: "Copy endpoint data", takesEndpoint: true,
