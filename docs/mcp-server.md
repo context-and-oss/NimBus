@@ -33,8 +33,9 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_get_classification` | The stored classification of a failed attempt, with who recorded it, advisory only. A rationale is untrusted | Endpoint Reader; classification enabled |
 | `nimbus_get_failure_evidence` | The scrubbed evidence of one failed attempt, its sending endpoint, a redacted payload when allowed, and the question set to answer | Endpoint Reader; classification recordable |
 | `nimbus_prepare_action` | A read-only preview of resubmitting or skipping one message, and an `actionToken` to run it | The action's scope and endpoint Contributor |
-| `nimbus_resubmit_message` | Runs a prepared resubmit: replays the latest stored payload to the endpoint | `nimbus.resubmit` and endpoint Contributor |
-| `nimbus_skip_message` | Runs a prepared skip: the message is never processed, and later messages in its session may be released | `nimbus.skip` and endpoint Contributor |
+| `nimbus_resubmit_message` | Runs a prepared resubmit: replays the latest stored payload to the endpoint. Returns an `operationId` | `nimbus.resubmit` (workloads: the `Nimbus.Resubmit` app role, within a budget) and endpoint Contributor |
+| `nimbus_skip_message` | Runs a prepared skip: the message is never processed, and later messages in its session may be released. Returns an `operationId` | Delegated `nimbus.skip` and endpoint Contributor; never a workload |
+| `nimbus_get_operation` | The status and observed outcome of a resubmit or skip: Dispatched, Succeeded, Failed, NotSent, OutcomeUnknown or Refused | Endpoint Reader on the operation's endpoint; the operation journal |
 | `nimbus_set_message_reported` | Sets or clears the "reported" marker, optionally with an external ticket id | `nimbus.annotate` and endpoint Contributor |
 | `nimbus_record_classification` | Records your answers to the question set for one failed attempt. NimBus composes the guidance. Advisory, changes no message | `nimbus.classify` (workloads: the `Nimbus.Classify` app role) and endpoint Contributor; classification recordable |
 | `nimbus_classify_failure` | **Deprecated, removed in v5.0.0.** Asks the built-in provider to classify a failure, or returns the stored one | Delegated `nimbus.classify` and endpoint Contributor; a configured provider |
@@ -49,8 +50,9 @@ like one that does not exist.
 When a client connects, the server sends instructions with its initialize result
 ([Spec 040](spec/040-mcp-operator-prompts-and-plugin/spec.md),
 `src/NimBus.WebApp/Mcp/OperatorInstructions.cs`). They tell the agent what the tools are for, the
-rules for changing messages (capabilities first, an explicit yes before resubmit or skip, what skip
-releases, sent is not succeeded), that error text and payloads are untrusted, the session and
+rules for changing messages (capabilities first, an explicit yes before resubmit or skip when a
+person is present, that a workload may only resubmit within its budget, what skip releases, sent is
+not succeeded, never resend an `OutcomeUnknown` operation), that error text and payloads are untrusted, the session and
 status model, what each error code means, and which prompts exist. Claude Code loads them at the
 start of every session with the server, even while the tools themselves are deferred.
 
@@ -120,12 +122,70 @@ and pending handoffs are recovered in the Web UI. `nimbus_set_message_reported`,
 idempotency key directly.
 
 Tools that change a message require a delegated scope from a signed-in user. A workload token,
-which carries app roles and no `scp` claim, is refused with `[PermissionDenied]`. The one exception
-is recording a classification, which changes no message (see
-[Recording classifications](#recording-classifications)). Errors specific
+which carries app roles and no `scp` claim, is refused with `[PermissionDenied]`. The exceptions are
+recording a classification, which changes no message (see
+[Recording classifications](#recording-classifications)), and an unattended resubmit within a budget
+(see [Unattended resubmits](#unattended-resubmits)). A workload can never skip. Errors specific
 to these tools are `[StaleMessage]`, `[ActionNotAllowed]` (the message's state does not allow the
-action), `[RateLimited]`, `[AuditUnavailable]` and `[OutcomeUnknown]` (publishing failed after the
-message was claimed; it was restored, so read it again before you retry).
+action, or a workload's budget or the message's cap is used up), `[RateLimited]`,
+`[AuditUnavailable]` and `[OutcomeUnknown]` (publishing failed after the message was claimed; it was
+restored, but the command may have reached Service Bus).
+
+## Operation journal
+
+Every resubmit and skip over MCP is an operation ([Spec 044](spec/044-agent-first/spec.md) Phase 2,
+from Spec 035 Phase 2b), stored in the message store: SQL Server table `OperatorOperations`
+(migration `0026_OperatorOperations.sql`), the Cosmos container `operatoroperations` (partition key
+`/id`, item TTL on), or the in-memory store. Operations are kept for 30 days.
+
+- **The same idempotency key never runs twice.** The operation id is derived from the caller and
+  the key. Retrying with the same key returns the existing operation (`replayed: true`) and sends
+  nothing, even after the action token expired or the message changed. A key used for a resubmit
+  cannot be reused for a skip.
+- **The outcome comes from the Resolver.** The command is published with the operation id as its
+  Service Bus message id. When the Resolver has stored that message the operation is `Dispatched`,
+  and the endpoint's response, whose `ParentMessageId` names it, makes it `Succeeded`
+  (`ResolutionResponse`, `SkipResponse`) or `Failed` (`ErrorResponse`, `UnsupportedResponse`).
+  `nimbus_get_operation` reads it, and catches up with the history on every read.
+- **A crashed request is repaired, never republished.** The journal records each step before it is
+  taken: claimed, then publishing, then dispatched. A background reconciler on every WebApp
+  instance visits operations whose request stopped. One that stopped before publishing is
+  `NotSent` and its message is restored. One that stopped while publishing is confirmed from the
+  Resolver's history, or after 60 minutes without a trace its message is restored for a person and
+  it stays `OutcomeUnknown`. NimBus never sends a command again on its own, and an agent must not
+  resubmit an `OutcomeUnknown` operation. Repairs are audited as `CommandNotSent` by
+  "NimBus operation reconciler".
+
+Topic duplicate detection stays off: a subscriber that enables the [inbox](inbox-pattern.md) also
+skips a redelivered command, because the inbox records a resubmission's message id. Without the
+journal store (a custom storage provider that does not implement `IOperatorOperationStore`) resubmit
+and skip work as before, `nimbus_get_operation` answers `[FeatureUnavailable]`, and unattended
+resubmits are unavailable. The Web UI's own resubmit and skip are not journaled.
+
+## Unattended resubmits
+
+A workload resubmits failed messages without a person when:
+
+- its token carries the `Nimbus.Resubmit` app role;
+- the Owner turned on **Workloads may resubmit** in **Settings → MCP access** (off by default,
+  effective only while workload tokens are accepted and **Resubmit messages** is on);
+- its object id has Contributor on the endpoint in Access Control; and
+- the deployment has the operation journal.
+
+NimBus then enforces two limits, both counted from the journal, so they hold across instances and
+restarts and apply even when rate limiting is off:
+
+| Limit | Default | Range | Refusal |
+| --- | --- | --- | --- |
+| Resubmits per workload client in a rolling 24 hours | 20 | 0–500 | `[ActionNotAllowed]` "… used its budget …" |
+| Unsuccessful workload resubmits of one message, across agents | 2 | 1–5 | `[ActionNotAllowed]` "… Hand it to a person." |
+
+A resubmit counts against the cap unless its operation `Succeeded` (or was never sent or was
+refused). The per-minute change limit still applies on top. `nimbus_get_capabilities` reports
+`caller.isWorkload` and, for a workload admitted to resubmit, an `unattended` block with the budget,
+how much of it is used and the cap. The `handle-failures` prompt takes `unattended: true` for a
+runner with no person present: it then retries without asking, polls `nimbus_get_operation`, and
+hands a message to a person when a limit refuses it. There is no app role for skip.
 
 ## Recording classifications
 
@@ -180,6 +240,7 @@ The policy covers:
 | Raw payloads, mark reported, classify, resubmit, skip | A switched-off tool is removed from `tools/list` and from `permittedActions`; a direct call gets `[PermissionDenied] … turned off by an administrator`. The read tools have no switch. |
 | Unattended workloads | Whether app-only (`Nimbus.Observe`) tokens are accepted for the read tools. |
 | Workloads may record classifications | Whether workloads with the `Nimbus.Classify` app role may call `nimbus_record_classification`. Off by default; effective only while workload tokens are accepted and **Classify failures** is on. |
+| Workloads may resubmit | Whether workloads with the `Nimbus.Resubmit` app role may resubmit unattended, with the resubmits per agent per day and the unsuccessful resubmits per message (see [Unattended resubmits](#unattended-resubmits)). Off by default. |
 | People | Everyone with a NimBus role, or only listed users and groups (email, user object id, or a group object id from the `groups` claim). Workloads are governed by the workload switch instead. |
 | Client applications | Any client Entra lets sign in, or only approved ones, matched on `azp` (then `appid`). Each approved client can be allowed or denied the tools that change messages. |
 | Endpoints | Hide endpoints from agents (they answer `[EndpointNotFound]`), and limit where agents may change messages. |
