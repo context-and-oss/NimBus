@@ -740,6 +740,229 @@ public sealed class ServiceBusTopologyProvisionerTests
             forwardDeadLetteredMessagesTo: string.Empty,
             userMetadata: userMetadata);
 
+    // ───────────────────────── Routing keys (Spec 045) ─────────────────────────
+
+    [RoutingKey(nameof(Instance))]
+    public sealed class RoutedCustomerCreated : Event
+    {
+        public string Instance { get; set; } = "";
+    }
+
+    private static readonly IEventType Routed = new EventType<RoutedCustomerCreated>();
+    private static readonly TopologyOptions Options = new("nimbus", "dev", "rg-test");
+    private static string Plain => TopologyDescriptor.ForwardFilter(nameof(RoutedCustomerCreated));
+
+    private static TestPlatform RoutedPlatform(
+        IReadOnlyDictionary<string, string[]> keyed,
+        string? unmatched = "ErpUnrouted",
+        bool reporting = false)
+    {
+        var endpoints = new List<IEndpoint> { new KeyedEndpoint("CrmEndpoint", produces: true) };
+        endpoints.AddRange(keyed.Select(pair => new KeyedEndpoint(pair.Key, keys: pair.Value)));
+        if (unmatched is not null)
+            endpoints.Add(new KeyedEndpoint(unmatched, unmatched: true));
+        if (reporting)
+            endpoints.Add(new KeyedEndpoint("Reporting"));
+        return new TestPlatform(endpoints.ToArray());
+    }
+
+    private static string RuleFilter(RecordingAdministrationClient client, string subscription) =>
+        ((SqlRuleFilter)client.GetSeededRule("CrmEndpoint", subscription, nameof(RoutedCustomerCreated)).Filter).SqlExpression;
+
+    private static async Task ApplyAsync(RecordingAdministrationClient client, IPlatform platform, string connectionString = RealNamespaceConnectionString) =>
+        await CreateProvisioner(client, platform, connectionString).ApplyAsync(Options, CancellationToken.None);
+
+    [Fact]
+    public async Task ApplyAsync_RoutingKeys_WritesTheSpecFilters()
+    {
+        var client = new RecordingAdministrationClient();
+
+        await ApplyAsync(client, RoutedPlatform(
+            new Dictionary<string, string[]> { ["Erp01"] = ["01"], ["Erp02"] = ["03", "02"] },
+            reporting: true));
+
+        Assert.Equal($"{Plain} AND user.RoutingKey = '01'", RuleFilter(client, "Erp01"), StringComparer.Ordinal);
+        Assert.Equal($"{Plain} AND user.RoutingKey IN ('02', '03')", RuleFilter(client, "Erp02"), StringComparer.Ordinal);
+        Assert.Equal(
+            $"{Plain} AND (user.RoutingKey IS NULL OR user.RoutingKey NOT IN ('01', '02', '03'))",
+            RuleFilter(client, "ErpUnrouted"),
+            StringComparer.Ordinal);
+        Assert.Equal(Plain, RuleFilter(client, "Reporting"), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_UnmatchedConsumerWithoutKeyedConsumers_KeepsThePlainFilter()
+    {
+        // Keyed events must keep flowing between "publishers stamp keys" and "the first
+        // instance endpoint exists" (Spec 045 §4, last row of the filter table).
+        var client = new RecordingAdministrationClient();
+
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]>()));
+
+        Assert.Equal(Plain, RuleFilter(client, "ErpUnrouted"), StringComparer.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("AUnrouted")]
+    [InlineData("ZUnrouted")]
+    public async Task ApplyAsync_AddingAKey_WidensTheInstanceBeforeNarrowingTheUnmatchedRule(string unmatched)
+    {
+        var client = new RecordingAdministrationClient();
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"], ["Erp02"] = ["02"] }, unmatched));
+        client.ResetRecords();
+
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"], ["Erp02"] = ["02", "03"] }, unmatched));
+
+        var widen = client.Operations.IndexOf($"update CrmEndpoint/Erp02/{nameof(RoutedCustomerCreated)}");
+        var narrow = client.Operations.IndexOf($"update CrmEndpoint/{unmatched}/{nameof(RoutedCustomerCreated)}");
+        Assert.True(widen >= 0 && narrow >= 0, string.Join(", ", client.Operations));
+        Assert.True(widen < narrow, string.Join(", ", client.Operations));
+        Assert.Equal(2, client.UpdatedRules.Count);
+        Assert.Equal($"{Plain} AND user.RoutingKey IN ('02', '03')", RuleFilter(client, "Erp02"), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_MovingAKey_WidensTheNewOwnerBeforeNarrowingTheOldOne()
+    {
+        // Erp01 sorts before Erp02, so an ordinary single pass would narrow Erp01 first and
+        // leave key 05 matched by nobody until Erp02 caught up.
+        var client = new RecordingAdministrationClient();
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01", "05"], ["Erp02"] = ["02"] }));
+        client.ResetRecords();
+
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"], ["Erp02"] = ["02", "05"] }));
+
+        Assert.Equal(
+            new[]
+            {
+                $"update CrmEndpoint/Erp02/{nameof(RoutedCustomerCreated)}",
+                $"update CrmEndpoint/Erp01/{nameof(RoutedCustomerCreated)}",
+            },
+            client.Operations);
+        Assert.Equal($"{Plain} AND user.RoutingKey = '01'", RuleFilter(client, "Erp01"), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_RemovingAKey_WidensTheUnmatchedRuleBeforeNarrowingTheInstance()
+    {
+        var client = new RecordingAdministrationClient();
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"], ["Erp02"] = ["02", "03"] }, "AUnrouted"));
+        client.ResetRecords();
+
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"], ["Erp02"] = ["02"] }, "AUnrouted"));
+
+        Assert.Equal(
+            new[]
+            {
+                $"update CrmEndpoint/AUnrouted/{nameof(RoutedCustomerCreated)}",
+                $"update CrmEndpoint/Erp02/{nameof(RoutedCustomerCreated)}",
+            },
+            client.Operations);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_NewInstanceEndpoint_IsCreatedBeforeTheUnmatchedRuleNarrows()
+    {
+        var client = new RecordingAdministrationClient();
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"] }, "AUnrouted"));
+        client.ResetRecords();
+
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"], ["Erp02"] = ["02"] }, "AUnrouted"));
+
+        var created = client.Operations.FindIndex(operation => operation.StartsWith("create CrmEndpoint/Erp02/", StringComparison.Ordinal));
+        var narrow = client.Operations.IndexOf($"update CrmEndpoint/AUnrouted/{nameof(RoutedCustomerCreated)}");
+        Assert.True(created >= 0 && narrow > created, string.Join(", ", client.Operations));
+    }
+
+    [Theory]
+    [InlineData(RealNamespaceConnectionString)]
+    [InlineData(EmulatorConnectionString)]
+    public async Task ApplyAsync_RoutingKeys_SecondApplyWritesNoRule(string connectionString)
+    {
+        var client = new RecordingAdministrationClient();
+        var platform = RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"], ["Erp02"] = ["02"] }, reporting: true);
+        await ApplyAsync(client, platform, connectionString);
+        client.ResetRecords();
+
+        await ApplyAsync(client, platform, connectionString);
+
+        Assert.Empty(client.Operations);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_Emulator_MovesAKeyByRecreatingRules()
+    {
+        var client = new RecordingAdministrationClient();
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01", "05"], ["Erp02"] = ["02"] }), EmulatorConnectionString);
+        client.ResetRecords();
+
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"], ["Erp02"] = ["02", "05"] }), EmulatorConnectionString);
+
+        Assert.Empty(client.UpdatedRules);
+        Assert.Equal($"{Plain} AND user.RoutingKey IN ('02', '05')", RuleFilter(client, "Erp02"), StringComparer.Ordinal);
+        Assert.Equal($"{Plain} AND user.RoutingKey = '01'", RuleFilter(client, "Erp01"), StringComparer.Ordinal);
+        Assert.True(
+            client.Operations.IndexOf($"create CrmEndpoint/Erp02/{nameof(RoutedCustomerCreated)}")
+                < client.Operations.IndexOf($"delete CrmEndpoint/Erp01/{nameof(RoutedCustomerCreated)}"),
+            string.Join(", ", client.Operations));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_PausedForwarder_StillGetsItsRoutingRules()
+    {
+        var client = new RecordingAdministrationClient();
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"] }));
+        client.SeedSubscription("CrmEndpoint", MakeSubscriptionProperties("CrmEndpoint", "Erp01", forwardTo: null, status: EntityStatus.ReceiveDisabled));
+        client.ResetRecords();
+
+        await ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01", "04"] }));
+
+        Assert.Equal($"{Plain} AND user.RoutingKey IN ('01', '04')", RuleFilter(client, "Erp01"), StringComparer.Ordinal);
+        Assert.Empty(client.UpdatedSubscriptions);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_KeyedConsumersWithoutUnmatchedConsumer_IsRejected()
+    {
+        var client = new RecordingAdministrationClient();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ApplyAsync(client, RoutedPlatform(new Dictionary<string, string[]> { ["Erp01"] = ["01"] }, unmatched: null)));
+
+        Assert.Contains("no unmatched consumer", error.Message, StringComparison.Ordinal);
+        Assert.Empty(client.CreatedTopics);
+    }
+
+    private sealed class KeyedEndpoint : IEndpoint
+    {
+        private readonly string[] _keys;
+        private readonly bool _unmatched;
+
+        public KeyedEndpoint(string id, bool produces = false, string[]? keys = null, bool unmatched = false)
+        {
+            Id = id;
+            _keys = keys ?? [];
+            _unmatched = unmatched;
+            EventTypesProduced = produces ? [Routed] : [];
+            EventTypesConsumed = produces ? [] : [Routed];
+        }
+
+        public string Id { get; }
+        public string Name => Id;
+        public string Description => string.Empty;
+        public string Namespace => "Tests";
+        public string SecurityGroupName => string.Empty;
+        public ISystem System => null!;
+        public IEnumerable<IEventType> EventTypesProduced { get; }
+        public IEnumerable<IEventType> EventTypesConsumed { get; }
+        public IEnumerable<IRoleAssignment> RoleAssignments => Array.Empty<IRoleAssignment>();
+
+        public IReadOnlyCollection<string> GetRoutingKeys(IEventType eventType) =>
+            eventType.Id == Routed.Id ? RoutingKeys.Canonical(_keys) : [];
+
+        public bool IsUnmatchedConsumer(IEventType eventType) => _unmatched && eventType.Id == Routed.Id;
+    }
+
     private const string RealNamespaceConnectionString =
         "Endpoint=sb://example/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=test";
 
@@ -803,6 +1026,9 @@ public sealed class ServiceBusTopologyProvisionerTests
 
         public void SeedRule(string topicName, string subscriptionName, RuleProperties properties) =>
             _rules[(topicName, subscriptionName, properties.Name)] = properties;
+
+        public RuleProperties GetSeededRule(string topicName, string subscriptionName, string ruleName) =>
+            _rules[(topicName, subscriptionName, ruleName)];
 
         public override Task<Response<bool>> TopicExistsAsync(string topicName, CancellationToken cancellationToken = default) =>
             Task.FromResult(Response.FromValue(_topics.Contains(topicName), FakeResponse.Instance));

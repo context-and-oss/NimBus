@@ -8,6 +8,7 @@ import EventsPanel from "components/endpoint-details/events-panel";
 import EventTypesPanel from "components/endpoint-details/event-types-panel";
 import SubscriptionsTab from "components/endpoint-details/tabs/subscriptions-tab";
 import AuditTab from "components/endpoint-details/tabs/audit-tab";
+import MetadataTab from "components/endpoint-details/tabs/metadata-tab";
 import NotFoundPage from "components/not-found-page";
 import { cn } from "lib/utils";
 
@@ -20,7 +21,7 @@ type EndpointDetailsProps = {
   endpointState?: api.EndpointStatus;
 };
 
-type DetailTab = "messages" | "event-types" | "alerts" | "audit";
+type DetailTab = "messages" | "event-types" | "alerts" | "ownership" | "audit";
 
 const EndpointDetails = (props: EndpointDetailsProps) => {
   const { id } = useParams();
@@ -104,6 +105,7 @@ const EndpointDetailsContent = (
       { id: "messages", label: "Messages", enabled: true },
       { id: "event-types", label: "Event Types", enabled: true },
       { id: "alerts", label: "Alerts", enabled: isSubscriptionTabEnabled },
+      { id: "ownership", label: "Ownership", enabled: true },
       { id: "audit", label: "Audit", enabled: true },
     ],
     [isSubscriptionTabEnabled],
@@ -146,6 +148,11 @@ const EndpointDetailsContent = (
               initialSubscriptions={alertSubscriptions}
               setIsTabEnabled={setIsSubscriptionTabEnabled}
             />
+          </div>
+        )}
+        {visitedTabs.has("ownership") && (
+          <div className={activeTab === "ownership" ? "" : "hidden"}>
+            <MetadataTab />
           </div>
         )}
         {visitedTabs.has("audit") && (

@@ -1,19 +1,21 @@
 import * as api from "api-client";
 import type { BadgeVariant } from "components/ui/badge";
 
-/** The three ways the Insights page groups the same failures (spec 043 §6). */
-export type InsightsGroupBy = "patterns" | "cause" | "guidance";
+/** The ways the Insights page groups the same failures (spec 043 §6; fault origin: Spec 044 Phase 3). */
+export type InsightsGroupBy = "patterns" | "cause" | "guidance" | "origin";
 
 export const GROUP_BY_OPTIONS: { value: InsightsGroupBy; label: string }[] = [
   { value: "patterns", label: "Error patterns" },
   { value: "cause", label: "Likely failure causes" },
   { value: "guidance", label: "Recovery guidance" },
+  { value: "origin", label: "Fault origin" },
 ];
 
 export const PERSPECTIVE: Record<InsightsGroupBy, api.InsightsPerspective> = {
   patterns: api.InsightsPerspective.ErrorPattern,
   cause: api.InsightsPerspective.Cause,
   guidance: api.InsightsPerspective.Guidance,
+  origin: api.InsightsPerspective.FaultOrigin,
 };
 
 export const ANALYSIS_STATE: Record<

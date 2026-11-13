@@ -9,7 +9,57 @@ namespace NimBus.ServiceBus.Provisioning;
 /// A rule the platform expects on a subscription, described rather than created.
 /// <paramref name="Action"/> is null when the rule is a pure filter.
 /// </summary>
-public sealed record ExpectedRule(string Name, string Filter, string? Action = null);
+public sealed record ExpectedRule(string Name, string Filter, string? Action = null)
+{
+    /// <summary>
+    /// The routing-key shape of a forward rule (Spec 045), or null for a rule that doesn't
+    /// filter on a routing key. The provisioner uses it to widen a rule before narrowing it.
+    /// </summary>
+    public RoutingRule? Routing { get; init; }
+}
+
+/// <summary>How a forward rule filters on the routing key (Spec 045).</summary>
+public enum RoutingRuleMode
+{
+    /// <summary>The consumer takes only the listed keys.</summary>
+    Keyed,
+
+    /// <summary>The unmatched consumer: messages with no key, or with a key not in the list.</summary>
+    Unmatched,
+}
+
+/// <summary>
+/// The routing-key part of a forward rule (Spec 045). For <see cref="RoutingRuleMode.Keyed"/>,
+/// <see cref="Keys"/> are the keys the consumer takes; for <see cref="RoutingRuleMode.Unmatched"/>,
+/// the keys other consumers claim, which the rule excludes. Keys are distinct and in ordinal order.
+/// </summary>
+/// <param name="Mode">How the rule filters.</param>
+/// <param name="Keys">The keys, canonical.</param>
+public sealed record RoutingRule(RoutingRuleMode Mode, IReadOnlyList<string> Keys)
+{
+    /// <summary>Compares mode and keys by value.</summary>
+    /// <param name="other">The other rule.</param>
+    public bool Equals(RoutingRule? other) =>
+        other is not null && Mode == other.Mode && Keys.SequenceEqual(other.Keys, StringComparer.Ordinal);
+
+    /// <inheritdoc />
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(Mode);
+        foreach (var key in Keys)
+            hash.Add(key, StringComparer.Ordinal);
+        return hash.ToHashCode();
+    }
+}
+
+/// <summary>
+/// One event type a consumer takes from a producer, with its routing-key shape (Spec 045);
+/// <paramref name="Routing"/> is null for an unkeyed consumer.
+/// </summary>
+/// <param name="EventTypeId">The event type id; also the forward rule's name.</param>
+/// <param name="Routing">How the rule filters on the routing key, or null.</param>
+public sealed record ForwardedEventType(string EventTypeId, RoutingRule? Routing = null);
 
 /// <summary>
 /// A subscription the platform expects on a topic, described rather than created.
@@ -124,6 +174,196 @@ public static class TopologyDescriptor
     /// </summary>
     public static string ForwardFilter(string eventTypeId) =>
         $"user.EventTypeId = '{eventTypeId}' AND user.MessageType = '{nameof(MessageType.EventRequest)}' AND user.From IS NULL";
+
+    // ───────────────────────── Routing keys (Spec 045) ─────────────────────────
+
+    /// <summary>The Service Bus SQL filter limit.</summary>
+    public const int MaxFilterLength = 1024;
+
+    private const string RoutingKeyProperty = "user.RoutingKey";
+    private const string UnmatchedOpen = " AND (" + RoutingKeyProperty + " IS NULL OR " + RoutingKeyProperty + " NOT IN (";
+    private const string UnmatchedClose = "))";
+
+    /// <summary>
+    /// Filter for a consumer that takes <paramref name="eventTypeId"/> only for
+    /// <paramref name="keys"/>: <see cref="ForwardFilter(string)"/> plus <c>user.RoutingKey = 'k'</c>,
+    /// or <c>IN (…)</c> for several keys, written in ordinal order.
+    /// </summary>
+    /// <param name="eventTypeId">The event type id.</param>
+    /// <param name="keys">One or more declared keys.</param>
+    /// <exception cref="ArgumentException">No key, or a key outside the declared-key format.</exception>
+    public static string KeyedForwardFilter(string eventTypeId, IEnumerable<string> keys)
+    {
+        var canonical = CheckedKeys(keys);
+        if (canonical.Count == 0)
+            throw new ArgumentException("A keyed forward filter needs at least one key.", nameof(keys));
+
+        return canonical.Count == 1
+            ? $"{ForwardFilter(eventTypeId)} AND {RoutingKeyProperty} = '{canonical[0]}'"
+            : $"{ForwardFilter(eventTypeId)} AND {RoutingKeyProperty} IN ({KeyList(canonical)})";
+    }
+
+    /// <summary>
+    /// Filter for the unmatched consumer of <paramref name="eventTypeId"/>: messages with no
+    /// routing key, or with a key no consumer claims. With nothing claimed it is
+    /// <see cref="ForwardFilter(string)"/> unchanged, so keyed events still flow before the first keyed
+    /// consumer exists.
+    /// </summary>
+    /// <param name="eventTypeId">The event type id.</param>
+    /// <param name="claimedKeys">Every key a consumer of the type claims.</param>
+    public static string UnmatchedForwardFilter(string eventTypeId, IEnumerable<string> claimedKeys)
+    {
+        var canonical = CheckedKeys(claimedKeys);
+        return canonical.Count == 0
+            ? ForwardFilter(eventTypeId)
+            : $"{ForwardFilter(eventTypeId)}{UnmatchedOpen}{KeyList(canonical)}{UnmatchedClose}";
+    }
+
+    /// <summary>The forward filter for <paramref name="eventTypeId"/> with an optional routing shape.</summary>
+    /// <param name="eventTypeId">The event type id.</param>
+    /// <param name="routing">The routing shape, or null for an unkeyed consumer.</param>
+    public static string ForwardFilter(string eventTypeId, RoutingRule? routing) =>
+        routing switch
+        {
+            null => ForwardFilter(eventTypeId),
+            { Mode: RoutingRuleMode.Keyed } => KeyedForwardFilter(eventTypeId, routing.Keys),
+            _ => UnmatchedForwardFilter(eventTypeId, routing.Keys),
+        };
+
+    /// <summary>
+    /// Reads the routing shape back from a forward filter NimBus wrote. Returns false for a
+    /// filter not in canonical form. On true, <paramref name="routing"/> is null when the filter
+    /// is the plain <see cref="ForwardFilter(string)"/> (every key).
+    /// </summary>
+    /// <param name="filter">The existing filter text.</param>
+    /// <param name="eventTypeId">The event type the rule forwards.</param>
+    /// <param name="routing">The routing shape read, or null for every key.</param>
+    public static bool TryReadRoutingKeys(string? filter, string eventTypeId, out RoutingRule? routing)
+    {
+        routing = null;
+        if (filter is null)
+            return false;
+
+        var plain = ForwardFilter(eventTypeId);
+        if (string.Equals(filter, plain, StringComparison.Ordinal))
+            return true;
+        if (!filter.StartsWith(plain, StringComparison.Ordinal))
+            return false;
+
+        var rest = filter[plain.Length..];
+        var single = $" AND {RoutingKeyProperty} = '";
+        var many = $" AND {RoutingKeyProperty} IN (";
+
+        if (rest.StartsWith(single, StringComparison.Ordinal) && rest.EndsWith('\''))
+            return TryKeys(rest[single.Length..^1], RoutingRuleMode.Keyed, requireQuotes: false, out routing);
+        if (rest.StartsWith(many, StringComparison.Ordinal) && rest.EndsWith(')'))
+            return TryKeys(rest[many.Length..^1], RoutingRuleMode.Keyed, requireQuotes: true, out routing);
+        if (rest.StartsWith(UnmatchedOpen, StringComparison.Ordinal) && rest.EndsWith(UnmatchedClose, StringComparison.Ordinal))
+            return TryKeys(rest[UnmatchedOpen.Length..^UnmatchedClose.Length], RoutingRuleMode.Unmatched, requireQuotes: true, out routing);
+        return false;
+    }
+
+    /// <summary>
+    /// The filter a forward rule holds between the widen and narrow passes of
+    /// <c>nb topology apply</c> (Spec 045 §4): it takes every message either the existing or
+    /// the final filter takes, so no message is unrouted while keys move. A keyed rule takes
+    /// the union of old and new keys; an unmatched rule excludes only the keys excluded both
+    /// before and after. An existing filter not in canonical form, or a change of mode, widens
+    /// to the plain <see cref="ForwardFilter(string)"/>.
+    /// </summary>
+    /// <param name="eventTypeId">The event type the rule forwards.</param>
+    /// <param name="existingFilter">The filter the rule has now.</param>
+    /// <param name="final">The routing shape the rule ends with.</param>
+    public static string WidenedForwardFilter(string eventTypeId, string? existingFilter, RoutingRule final)
+    {
+        ArgumentNullException.ThrowIfNull(final);
+        if (!TryReadRoutingKeys(existingFilter, eventTypeId, out var existing) || existing is null || existing.Mode != final.Mode)
+            return ForwardFilter(eventTypeId);
+
+        if (final.Mode == RoutingRuleMode.Keyed)
+            return KeyedForwardFilter(eventTypeId, existing.Keys.Union(final.Keys, StringComparer.Ordinal));
+
+        return UnmatchedForwardFilter(eventTypeId, existing.Keys.Intersect(final.Keys, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// One error per forward rule whose filter would exceed the Service Bus limit of
+    /// <see cref="MaxFilterLength"/> characters, naming the producer, consumer and event type.
+    /// </summary>
+    /// <param name="platform">The platform to check.</param>
+    public static IReadOnlyList<string> ValidateFilterLengths(IPlatform platform)
+    {
+        ArgumentNullException.ThrowIfNull(platform);
+        var errors = new List<string>();
+        foreach (var endpoint in platform.Endpoints.OrderBy(endpoint => endpoint.Id, StringComparer.Ordinal))
+        {
+            foreach (var subscription in ForEndpointTopic(endpoint, platform))
+            {
+                foreach (var rule in subscription.Rules.Where(rule => rule.Filter.Length > MaxFilterLength))
+                {
+                    errors.Add(
+                        $"The forward rule for '{rule.Name}' from '{endpoint.Id}' to '{subscription.Name}' is " +
+                        $"{rule.Filter.Length} characters; Service Bus allows {MaxFilterLength}. Declare fewer or shorter routing keys.");
+                }
+            }
+        }
+
+        return errors;
+    }
+
+    private static List<string> CheckedKeys(IEnumerable<string> keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        var canonical = RoutingKeys.Canonical(keys).ToList();
+        var invalid = canonical.FirstOrDefault(key => !RoutingKeys.IsValid(key));
+        if (invalid is not null)
+            throw new ArgumentException($"Routing key '{invalid}' is not valid and can't be written into a filter.", nameof(keys));
+        return canonical;
+    }
+
+    private static string KeyList(IEnumerable<string> keys) => string.Join(", ", keys.Select(key => $"'{key}'"));
+
+    private static bool TryKeys(string list, RoutingRuleMode mode, bool requireQuotes, out RoutingRule? routing)
+    {
+        routing = null;
+        var parts = requireQuotes ? list.Split(", ", StringSplitOptions.None) : new[] { $"'{list}'" };
+        var keys = new List<string>();
+        foreach (var part in parts)
+        {
+            if (part.Length < 3 || part[0] != '\'' || part[^1] != '\'')
+                return false;
+            var key = part[1..^1];
+            if (!RoutingKeys.IsValid(key))
+                return false;
+            keys.Add(key);
+        }
+
+        var canonical = RoutingKeys.Canonical(keys);
+        if (!canonical.SequenceEqual(keys, StringComparer.Ordinal))
+            return false;
+
+        routing = new RoutingRule(mode, canonical);
+        return true;
+    }
+
+    /// <summary>
+    /// The routing shape <paramref name="consumer"/> has for <paramref name="eventType"/>, or
+    /// null when it takes every key.
+    /// </summary>
+    /// <param name="consumer">The consuming endpoint.</param>
+    /// <param name="eventType">The event type.</param>
+    /// <param name="platform">The platform, for the keys every consumer claims.</param>
+    public static RoutingRule? RoutingFor(IEndpoint consumer, IEventType eventType, IPlatform platform)
+    {
+        ArgumentNullException.ThrowIfNull(consumer);
+        ArgumentNullException.ThrowIfNull(platform);
+        var keys = consumer.GetRoutingKeys(eventType);
+        if (keys.Count > 0)
+            return new RoutingRule(RoutingRuleMode.Keyed, RoutingKeys.Canonical(keys));
+        if (consumer.IsUnmatchedConsumer(eventType))
+            return new RoutingRule(RoutingRuleMode.Unmatched, RoutingKeys.Canonical(platform.GetClaimedRoutingKeys(eventType)));
+        return null;
+    }
 
     /// <summary>
     /// Action for a forwarder rule: re-stamps the message as coming from the
@@ -246,15 +486,36 @@ public static class TopologyDescriptor
     {
         ArgumentNullException.ThrowIfNull(eventTypeIds);
 
+        return ConsumerForwarderSubscription(
+            producerEndpointId,
+            consumerEndpointId,
+            eventTypeIds.Select(eventTypeId => new ForwardedEventType(eventTypeId)));
+    }
+
+    /// <summary>
+    /// The forwarder subscription a producing topic carries for one consuming endpoint, with
+    /// each event type's routing-key shape (Spec 045). Rule names are the event type ids, so a
+    /// change of keys updates a rule in place.
+    /// </summary>
+    public static ExpectedSubscription ConsumerForwarderSubscription(
+        string producerEndpointId,
+        string consumerEndpointId,
+        IEnumerable<ForwardedEventType> eventTypes)
+    {
+        ArgumentNullException.ThrowIfNull(eventTypes);
+
         return new ExpectedSubscription(
             consumerEndpointId,
             RequiresSession: false,
             ForwardTo: consumerEndpointId,
-            Rules: eventTypeIds
-                .Select(eventTypeId => new ExpectedRule(
-                    eventTypeId,
-                    ForwardFilter(eventTypeId),
-                    ForwardAction(producerEndpointId, consumerEndpointId)))
+            Rules: eventTypes
+                .Select(eventType => new ExpectedRule(
+                    eventType.EventTypeId,
+                    ForwardFilter(eventType.EventTypeId, eventType.Routing),
+                    ForwardAction(producerEndpointId, consumerEndpointId))
+                {
+                    Routing = eventType.Routing,
+                })
                 .ToList());
     }
 
@@ -310,7 +571,8 @@ public static class TopologyDescriptor
         // produces itself is excluded: it would collide with its own terminal
         // subscription above, and Service Bus rejects a subscription forwarding to its
         // own topic anyway.
-        var eventTypesByConsumer = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        // Each rule carries the consumer's routing-key shape for that event type (Spec 045).
+        var eventTypesByConsumer = new Dictionary<string, List<ForwardedEventType>>(StringComparer.Ordinal);
         foreach (var eventType in endpoint.EventTypesProduced.OrderBy(eventType => eventType.Id, StringComparer.Ordinal))
         {
             foreach (var consumer in platform
@@ -319,15 +581,15 @@ public static class TopologyDescriptor
                 .DistinctBy(consumer => consumer.Id)
                 .OrderBy(consumer => consumer.Id, StringComparer.Ordinal))
             {
-                if (!eventTypesByConsumer.TryGetValue(consumer.Id, out var eventTypeIds))
+                if (!eventTypesByConsumer.TryGetValue(consumer.Id, out var forwarded))
                 {
-                    eventTypeIds = new List<string>();
-                    eventTypesByConsumer[consumer.Id] = eventTypeIds;
+                    forwarded = new List<ForwardedEventType>();
+                    eventTypesByConsumer[consumer.Id] = forwarded;
                 }
 
-                if (!eventTypeIds.Contains(eventType.Id, StringComparer.Ordinal))
+                if (!forwarded.Exists(entry => string.Equals(entry.EventTypeId, eventType.Id, StringComparison.Ordinal)))
                 {
-                    eventTypeIds.Add(eventType.Id);
+                    forwarded.Add(new ForwardedEventType(eventType.Id, RoutingFor(consumer, eventType, platform)));
                 }
             }
         }

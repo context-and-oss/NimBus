@@ -43,6 +43,10 @@ public static class McpAccessRules
         NormalizeClients(settings.Clients, errors);
         NormalizeEndpoints(settings.Endpoints, catalogEndpoints, errors);
         CheckLimits(settings.Limits, rateLimits, errors);
+        if (settings.WorkloadResubmitsPerDay is < 0 or > McpAccessSettings.MaximumWorkloadResubmitsPerDay)
+            errors.Add($"Workload resubmits per day must be between 0 and {McpAccessSettings.MaximumWorkloadResubmitsPerDay}.");
+        if (settings.WorkloadResubmitsPerMessage is < 1 or > McpAccessSettings.MaximumWorkloadResubmitsPerMessage)
+            errors.Add($"Unsuccessful workload resubmits per message must be between 1 and {McpAccessSettings.MaximumWorkloadResubmitsPerMessage}.");
         return errors;
     }
 
@@ -77,6 +81,22 @@ public static class McpAccessRules
         if (before.AllowWorkloadClassification != after.AllowWorkloadClassification)
             Add(after.AllowWorkloadClassification ? "Let workloads record failure classifications" : "Stop workloads recording failure classifications",
                 after.AllowWorkloadClassification);
+
+        if (before.AllowWorkloadResubmit != after.AllowWorkloadResubmit)
+            Add(after.AllowWorkloadResubmit ? "Let workloads resubmit failed messages unattended" : "Stop workloads resubmitting messages",
+                after.AllowWorkloadResubmit);
+
+        if (before.AllowWorkloadAnnotation != after.AllowWorkloadAnnotation)
+            Add(after.AllowWorkloadAnnotation ? "Let workloads mark messages reported" : "Stop workloads marking messages reported",
+                after.AllowWorkloadAnnotation);
+
+        if (before.WorkloadResubmitsPerDay != after.WorkloadResubmitsPerDay)
+            Add($"Workload resubmits per day: {before.WorkloadResubmitsPerDay} → {after.WorkloadResubmitsPerDay}",
+                after.WorkloadResubmitsPerDay > before.WorkloadResubmitsPerDay);
+
+        if (before.WorkloadResubmitsPerMessage != after.WorkloadResubmitsPerMessage)
+            Add($"Unsuccessful workload resubmits per message: {before.WorkloadResubmitsPerMessage} → {after.WorkloadResubmitsPerMessage}",
+                after.WorkloadResubmitsPerMessage > before.WorkloadResubmitsPerMessage);
 
         // People
         if (before.People.Mode != after.People.Mode)

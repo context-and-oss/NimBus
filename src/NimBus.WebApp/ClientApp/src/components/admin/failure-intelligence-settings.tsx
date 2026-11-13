@@ -10,6 +10,8 @@ import { PanelFooter, PanelSection, useInPanel, usePanelDirty, usePanelReviewing
 
 type Settings = {
   enabled: boolean; model: string; includeEventPayload: boolean; includeRecentFailureHistory: boolean;
+  /** Spec 044 Phase 3: agents may read the scrubbed stack trace. Optional: older servers omit it. */
+  includeStackTrace?: boolean;
   maximumHistoryItems: number; additionalRedactedKeys: string[]; allowedEndpoints: string[];
   timeoutSeconds: number; minimumCategoryConfidence: number; retryLikely: number; changeRequired: number;
 };
@@ -168,6 +170,8 @@ export default function FailureIntelligenceSettings() {
           <Card><CardHeader><CardTitle>02 · Failure evidence</CardTitle></CardHeader><CardContent className="space-y-4">
             <SettingToggle label="Agents may see redacted payloads" description="Data.IncludeEventPayload — the evidence agents read (nimbus_get_failure_evidence), and the deprecated provider receives, carries the event payload with every value marked sensitive replaced." checked={draft.includeEventPayload} onChange={value => edit("includeEventPayload", value)} />
             {draft.includeEventPayload && <p className="rounded-md border border-status-warning/40 bg-status-warning/10 p-3 text-sm">Event data will leave NimBus. Only values marked sensitive in event metadata and the secret-key rules are redacted; unmarked business data remains and can reach agents, their models and the issues they write. Confirm your organization’s data-sharing policy.</p>}
+            <SettingToggle label="Agents may see stack traces" description="Data.IncludeStackTrace — nimbus_get_failure_evidence with includeStackTrace returns the failing handler's frames (file paths cut to the file name, sensitive values replaced), so an agent can locate an adapter defect. Only subscribers that set IncludeStackTraceInErrorResponses store a trace. Never sent to the deprecated provider." checked={Boolean(draft.includeStackTrace)} onChange={value => edit("includeStackTrace", value)} />
+            {draft.includeStackTrace && <p className="rounded-md border border-status-warning/40 bg-status-warning/10 p-3 text-sm">Stack traces name the adapter's classes, methods and source files. Agents may quote them in issues in the adapter's repository.</p>}
             <SettingToggle label="Include recent failure history" description="Earlier failures for the same event, endpoint and session." checked={draft.includeRecentFailureHistory} onChange={value => edit("includeRecentFailureHistory", value)} />
             <label className="block text-sm">Maximum history items<Input type="number" min={0} max={5} required disabled={!draft.includeRecentFailureHistory} value={draft.maximumHistoryItems} onChange={event => edit("maximumHistoryItems", Number(event.target.value))} /></label>
             <label className="block text-sm">Additional redacted keys<Input value={redactedKeys} maxLength={20100} placeholder="TaxId, AccountId" onChange={event => { setRedactedKeys(event.target.value); setReview(false); }} /><span className="text-xs text-muted-foreground">Comma-separated field names. Unverifiable payloads are omitted.</span></label>

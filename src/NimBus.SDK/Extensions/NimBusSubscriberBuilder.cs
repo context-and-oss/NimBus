@@ -23,6 +23,7 @@ public class NimBusSubscriberBuilder
     internal Action<DefaultRetryPolicyProvider>? RetryPolicyConfigurator;
     internal InboxOptions? InboxConfiguration { get; private set; }
     internal CircuitBreakerOptions? CircuitBreakerConfiguration { get; private set; }
+    internal RoutingKeyEnforcement RoutingKeyEnforcement { get; } = new();
 
     public NimBusSubscriberBuilder(IServiceCollection services)
     {
@@ -296,6 +297,60 @@ public class NimBusSubscriberBuilder
     {
         return scopedProvider ?? throw new InvalidOperationException(
             $"Scoped dynamic handlers require an {nameof(IServiceScopeFactory)}-configured event handler provider.");
+    }
+
+    /// <summary>
+    /// Checks every received message against the routing keys <typeparamref name="TEndpoint"/>
+    /// declares (Spec 045 §5): a message whose payload key the endpoint doesn't take, or whose
+    /// <c>RoutingKey</c> property disagrees with its payload, is dead-lettered instead of handled.
+    /// Without this call the check still runs when an <see cref="Core.IPlatform"/> is registered
+    /// in the container and holds an endpoint whose id is the subscriber's endpoint.
+    /// </summary>
+    /// <typeparam name="TEndpoint">The endpoint class whose declarations are enforced.</typeparam>
+    /// <returns>This builder for chaining.</returns>
+    public NimBusSubscriberBuilder EnforceRoutingKeys<TEndpoint>()
+        where TEndpoint : Core.Endpoints.IEndpoint, new()
+    {
+        if (RoutingKeyEnforcement.Endpoint is not null || RoutingKeyEnforcement.Keys is not null)
+            throw new InvalidOperationException("Routing-key enforcement is already configured for this subscriber.");
+        RoutingKeyEnforcement.Endpoint = new TEndpoint();
+        return this;
+    }
+
+    /// <summary>
+    /// Checks every received message of an event type that provides a routing key against
+    /// <paramref name="routingKeys"/> (Spec 045 §5). Use when no endpoint class is at hand;
+    /// <see cref="EnforceRoutingKeys{TEndpoint}"/> is preferred.
+    /// </summary>
+    /// <param name="routingKeys">The keys this subscriber accepts.</param>
+    /// <returns>This builder for chaining.</returns>
+    public NimBusSubscriberBuilder EnforceRoutingKeys(params string[] routingKeys)
+    {
+        ArgumentNullException.ThrowIfNull(routingKeys);
+        if (routingKeys.Length == 0)
+            throw new ArgumentException("At least one routing key is required.", nameof(routingKeys));
+        var invalid = routingKeys.FirstOrDefault(key => !RoutingKeys.IsValid(key));
+        if (invalid is not null)
+            throw new ArgumentException($"Routing key '{invalid}' is not valid: use 1 to {RoutingKeys.MaxLength} characters from [A-Za-z0-9_.-].", nameof(routingKeys));
+        if (RoutingKeyEnforcement.Endpoint is not null || RoutingKeyEnforcement.Keys is not null)
+            throw new InvalidOperationException("Routing-key enforcement is already configured for this subscriber.");
+        RoutingKeyEnforcement.Keys = RoutingKeys.Canonical(routingKeys);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers the built-in handler of an unmatched consumer for <typeparamref name="TEvent"/>
+    /// (Spec 045 §6): every message it receives has a key no endpoint claims, or none, and is
+    /// dead-lettered with a reason naming the key.
+    /// </summary>
+    /// <typeparam name="TEvent">The keyed event type.</typeparam>
+    /// <returns>This builder for chaining.</returns>
+    public NimBusSubscriberBuilder AddUnmatchedHandler<TEvent>()
+        where TEvent : IEvent
+    {
+        AddHandler<TEvent, UnmatchedRoutingKeyHandler<TEvent>>();
+        RoutingKeyEnforcement.UnmatchedEventTypeIds.Add(new EventType(typeof(TEvent)).Id);
+        return this;
     }
 
     /// <summary>

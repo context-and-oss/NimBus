@@ -173,3 +173,18 @@ public sealed class SqlServerHeartbeatHistoryStoreConformanceTests : HeartbeatHi
     protected override IHeartbeatHistoryStore CreateStore()
         => (IHeartbeatHistoryStore)SqlServerStoreTestHarness.CreateStore(typeof(SqlServerHeartbeatHistoryStoreConformanceTests));
 }
+
+[TestClass]
+public sealed class SqlServerOperatorOperationStoreTests : OperatorOperationStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerOperatorOperationStoreTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerOperatorOperationStoreTests));
+
+    protected override IOperatorOperationStore CreateStore()
+        => (IOperatorOperationStore)SqlServerStoreTestHarness.CreateStore(typeof(SqlServerOperatorOperationStoreTests));
+}

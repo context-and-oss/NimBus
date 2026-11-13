@@ -51,6 +51,7 @@ internal sealed partial class SqlServerSchemaInitializer : IHostedService
         "AgentApiKeyUsage",
         "DashboardTokens",
         "DashboardTokenUsage",
+        "OperatorOperations",
     };
 
     private static readonly string[] RequiredViews =

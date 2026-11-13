@@ -73,3 +73,9 @@ public sealed class InMemoryHeartbeatHistoryStoreConformanceTests : HeartbeatHis
 {
     protected override IHeartbeatHistoryStore CreateStore() => new InMemoryMessageStore();
 }
+
+[TestClass]
+public sealed class InMemoryOperatorOperationStoreTests : OperatorOperationStoreConformanceTests
+{
+    protected override IOperatorOperationStore CreateStore() => new InMemoryMessageStore();
+}

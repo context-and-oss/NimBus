@@ -1786,6 +1786,31 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(0, foreign.Count);
     }
 
+    [TestMethod]
+    public async Task FindEventReports_lists_reported_events_by_ticket_and_endpoint()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rep4");
+        var ticket = Id("TCK");
+        await store.SetEventReport(endpointId, Id("evt-a"), isReported: true, reportedBy: "agent", ticketId: ticket);
+        await store.SetEventReport(endpointId, Id("evt-b"), isReported: true, reportedBy: "agent", ticketId: ticket);
+        await store.SetEventReport(endpointId, Id("evt-c"), isReported: true, reportedBy: "agent", ticketId: Id("OTHER"));
+        await store.SetEventReport(endpointId, Id("evt-d"), isReported: true, reportedBy: "agent", ticketId: ticket);
+        await store.SetEventReport(endpointId, Id("evt-d"), isReported: false, reportedBy: "agent", ticketId: null);
+        await store.SetEventReport(Id("ep-rep4-other"), Id("evt-e"), isReported: true, reportedBy: "agent", ticketId: ticket);
+
+        var byTicket = await store.FindEventReports(endpointId, ticket, 100);
+        var all = await store.FindEventReports(endpointId, null, 100);
+        var limited = await store.FindEventReports(endpointId, null, 1);
+
+        CollectionAssert.AreEquivalent(new[] { Id("evt-a"), Id("evt-b") }, byTicket.Select(r => r.EventId).ToArray(),
+            "only this endpoint's events still reported under the ticket");
+        Assert.IsTrue(byTicket.All(r => r.TicketId == ticket && r.IsReported));
+        Assert.AreEqual(3, all.Count, "a cleared marker is not reported");
+        Assert.AreEqual(1, limited.Count);
+        Assert.AreEqual(0, (await store.FindEventReports(endpointId, Id("NONE"), 100)).Count);
+    }
+
     // ───── Prefix-search semantics (cross-provider contract) ─────
     // ID-like filter fields match by case-insensitive PREFIX on every provider:
     // Cosmos STARTSWITH(x, y, true), SQL Server LIKE 'y%' (CI collation),

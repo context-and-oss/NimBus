@@ -12,4 +12,10 @@ public interface IEventType
     IEnumerable<IProperty> Properties { get; }
     Type GetEventClassType();
     IEvent? GetEventExample();
+
+    /// <summary>
+    /// The payload property that holds the routing key (Spec 045), or null when the event type
+    /// isn't routed by key.
+    /// </summary>
+    string? RoutingKeyProperty => null;
 }

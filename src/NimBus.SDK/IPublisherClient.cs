@@ -15,6 +15,8 @@ public interface IPublisherClient
     /// <summary>
     /// Publishes a pre-built, dynamically-typed message (no compiled IEvent). The caller sets
     /// EventTypeId + MessageContent.EventContent. Used by the agent REST API (spec 022).
+    /// The message is sent as built: to route it by key (Spec 045), the caller sets
+    /// <see cref="Message.RoutingKey"/> itself.
     /// </summary>
     Task Publish(IMessage message, CancellationToken cancellationToken = default);
 

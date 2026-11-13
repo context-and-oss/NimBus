@@ -49,7 +49,7 @@ const parsePeriod = (value: string | null) =>
   PERIODS.find((p) => p.value === value)?.value ?? api.Period._1d;
 
 const parseBy = (value: string | null): InsightsGroupBy =>
-  value === "cause" || value === "guidance" ? value : "patterns";
+  value === "cause" || value === "guidance" || value === "origin" ? value : "patterns";
 
 function parseRange(from: string | null, to: string | null): TimeRange | undefined {
   if (!from || !to) return undefined;
@@ -148,7 +148,8 @@ export default function Insights() {
   // The drill-down asks for exactly the scope the overview was built for, endpoint included.
   const scope: InsightsScope | undefined =
     data?.from && data?.to ? { from: data.from, to: data.to, endpointId: data.endpointId ?? undefined } : undefined;
-  const insightGroups = by === "cause" ? data?.causeGroups : by === "guidance" ? data?.guidanceGroups : undefined;
+  const insightGroups =
+    by === "cause" ? data?.causeGroups : by === "guidance" ? data?.guidanceGroups : by === "origin" ? data?.faultOriginGroups : undefined;
   const total = data?.totalOccurrences ?? data?.totalFailed ?? 0;
 
   const chartData = useMemo(() => {
@@ -506,7 +507,19 @@ function InsightGroupTable({
               </td>
               <td className="py-2 px-3">{g.coverage && <CoverageBar coverage={g.coverage} compact />}</td>
               <td className="py-2 px-3"><Badges values={g.endpoints} variant="default" /></td>
-              <td className="py-2 px-3"><Badges values={g.eventTypes} variant="info" /></td>
+              <td className="py-2 px-3">
+                <Badges values={g.eventTypes} variant="info" />
+                {(g.sources?.length ?? 0) > 0 && (
+                  // Spec 044 Phase 3: who sent the failing data, for the source's owner.
+                  <ul aria-label="Sources" className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                    {g.sources!.slice(0, 5).map((s) => (
+                      <li key={`${s.endpointId}|${s.eventTypeId}`}>
+                        From <span className="font-medium text-foreground">{s.endpointId}</span> · {s.eventTypeId} · {s.count}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </td>
               <td className="py-2 px-3 whitespace-nowrap">{g.latestOccurrence ? formatMoment(g.latestOccurrence, true) : "-"}</td>
               <td className="py-2 px-3">
                 <ul className="space-y-1">

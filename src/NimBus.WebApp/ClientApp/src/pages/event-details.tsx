@@ -3,14 +3,25 @@ import * as api from "api-client";
 import Page from "components/page";
 import MessageListing from "components/event-details/message-listing";
 import DeferredRecovery from "components/event-details/deferred-recovery";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
 import TabSelection from "components/tab-selection";
 import Loading from "components/loading/loading";
+import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
 import BlockedListing from "components/event-details/blocked-listing";
 import AuditListing from "components/event-details/audit-listing";
 import FlowTimeline from "components/event-details/flow-timeline";
-import { parseBlockedByEventId } from "functions/endpoint.functions";
+import EventActions from "components/event-details/event-actions";
+import {
+  formatMoment,
+  formatResolutionStatus,
+  parseBlockedByEventId,
+} from "functions/endpoint.functions";
+import {
+  getRoutingFromTo,
+  isPendingHandoff,
+  statusToBadgeVariant,
+} from "functions/event-details.functions";
 
 const { useEffect, useState, useRef } = React;
 
@@ -27,6 +38,9 @@ export interface PendingEvent {
 type EventDetailsProps = {
   backIndex?: number;
 };
+
+// Position of the Blocked tab in the tab list below.
+const BLOCKED_TAB_INDEX = 3;
 
 // Initial blocked-events page size. Server clamps `take` to [1, 200] so this fits comfortably.
 const BLOCKED_PAGE_SIZE = 20;
@@ -92,6 +106,10 @@ const EventDetails = (props: EventDetailsProps) => {
   const [commandAcceptedFor, setCommandAcceptedFor] = useState<string>();
   // Set when the follow-up gave up before the event settled.
   const [followUpExpired, setFollowUpExpired] = useState(false);
+  // Active tab, controlled so the error card can open the Blocked tab.
+  // Undefined until the operator picks one: the tabs then start from the
+  // back-navigation index, as before.
+  const [activeTab, setActiveTab] = useState<number>();
   const routeGeneration = useRef(0);
   const historyRequest = useRef(0);
 
@@ -120,6 +138,7 @@ const EventDetails = (props: EventDetailsProps) => {
     setBlockedTotal(0);
     setCommandAcceptedFor(undefined);
     setFollowUpExpired(false);
+    setActiveTab(undefined);
 
     const fetchData = async () => {
       // History, audits and event types are keyed off the route params, not the
@@ -360,7 +379,7 @@ const EventDetails = (props: EventDetailsProps) => {
 
     return [
       {
-        name: `Message`,
+        name: "Overview",
         isEnabled: true,
         content: (
           <div className="w-full min-w-0">
@@ -390,30 +409,26 @@ const EventDetails = (props: EventDetailsProps) => {
               </div>
             )}
             <MessageListing
-              resubmitEventWithChanges={resubmitEventWithChanges}
-              resubmitEvent={resubmitEvent}
-              skipEvent={skipEvent}
-              deleteEvent={deleteEvent}
-              reprocessDeferred={reprocessDeferred}
               completeHandoff={completeHandoff}
               failHandoff={failHandoff}
               onCommentAdded={reloadAudits}
-              eventTypes={eventTypes}
               eventDetails={cosmosEvent}
-              commandAcceptedFor={commandAcceptedFor}
               // Spec 005 (FR-016): the same `histories` array already fed to
               // `FlowTimeline` is forwarded here so MessageListing can derive a
               // lifecycle-aware Queue value for deferred / pending-handoff
               // events.
               messages={histories}
               blockedByEventId={blockedByEventId}
+              blockedCount={blockedTotal}
+              onShowBlocked={() => setActiveTab(BLOCKED_TAB_INDEX)}
               key="Message"
             />
           </div>
         ),
       },
       {
-        name: `Flow (${histories.length + audits.length})`,
+        name: "Flow",
+        count: histories.length + audits.length,
         isEnabled: histories.length > 0,
         content: (
           <FlowTimeline messages={histories} audits={audits} key="Flow" />
@@ -424,7 +439,7 @@ const EventDetails = (props: EventDetailsProps) => {
         // page's `audits`: that endpoint carries the Data and Access Denied
         // columns the per-event MessageAudit shape does not, and supports
         // paging past the first 30.
-        name: `Audit`,
+        name: "Audit",
         isEnabled: true,
         content: (
           <AuditListing
@@ -435,7 +450,9 @@ const EventDetails = (props: EventDetailsProps) => {
         ),
       },
       {
-        name: `Blocked (${blockedCount})`,
+        name: "Blocked",
+        count: blockedCount,
+        countTone: blockedTotal > 0 ? ("warning" as const) : ("default" as const),
         isEnabled: blockedTotal > 0,
         content: (
           <BlockedListing
@@ -458,17 +475,89 @@ const EventDetails = (props: EventDetailsProps) => {
         </div>
       ) : (
         <Page
-          title="Event Details"
+          eyebrow="Event"
+          title={cosmosEvent.eventTypeId || "Event Details"}
+          titleAdornment={
+            <span className="inline-flex items-center gap-2">
+              <Badge variant={statusToBadgeVariant(cosmosEvent.resolutionStatus)}>
+                {formatResolutionStatus(
+                  cosmosEvent.resolutionStatus,
+                  cosmosEvent.reason,
+                ) ?? "—"}
+              </Badge>
+              {isPendingHandoff(
+                cosmosEvent.resolutionStatus,
+                cosmosEvent.pendingSubStatus,
+              ) && <Badge variant="info">Awaiting external</Badge>}
+            </span>
+          }
+          subtitle={<EventSubtitle event={cosmosEvent} messages={histories} />}
+          actions={
+            <EventActions
+              eventDetails={cosmosEvent}
+              messages={histories}
+              eventTypes={eventTypes}
+              skipEvent={skipEvent}
+              resubmitEvent={resubmitEvent}
+              resubmitEventWithChanges={resubmitEventWithChanges}
+              deleteEvent={deleteEvent}
+              reprocessDeferred={reprocessDeferred}
+              commandAcceptedFor={commandAcceptedFor}
+            />
+          }
           backbutton={true}
           backUrl={
             fromFailed ? "/Failed" : `/Endpoints/Details/${params.endpointId!}`
           }
           backIndex={params.backindex!}
         >
-          <TabSelection tabs={tabs()} />
+          <TabSelection
+            variant="line"
+            tabs={tabs()}
+            index={activeTab}
+            onTabChange={setActiveTab}
+          />
         </Page>
       )}
     </>
+  );
+};
+
+// Routing and timing line under the page title: publisher -> handling
+// endpoint, then when the event was enqueued.
+const EventSubtitle = ({
+  event,
+  messages,
+}: {
+  event: api.Event;
+  messages: api.Message[];
+}) => {
+  const routing = getRoutingFromTo(event, messages);
+  const endpoint = (name: string) => (
+    <Link
+      to={`/Endpoints/Details/${name}`}
+      className="text-status-info font-semibold no-underline hover:underline"
+    >
+      {name}
+    </Link>
+  );
+  return (
+    <span>
+      {(routing.from || routing.to) && (
+        <>
+          {routing.from ? endpoint(routing.from) : "—"}
+          <span aria-label="to"> → </span>
+          {routing.to ? endpoint(routing.to) : "—"}
+          <span aria-hidden="true" className="mx-2 text-border-strong">
+            ·
+          </span>
+        </>
+      )}
+      Enqueued{" "}
+      <span className="font-mono text-xs">
+        {formatMoment(event.enqueuedTimeUtc)}
+      </span>
+    </span>
   );
 };
 

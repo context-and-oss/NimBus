@@ -244,13 +244,23 @@ public static class AsyncApiExporter
             {
                 // Auto-forward sources are every OTHER producer's topic (the provisioner never
                 // creates a self-forward for an event a single endpoint both produces and consumes).
+                // The routing shape is the descriptor's, so the documented filter is the one
+                // `nb topology apply` lays down (Spec 045).
+                var routing = TopologyDescriptor.RoutingFor(consumer, evt, platform);
                 var forwards = producers
                     .Where(p => !string.Equals(p.Id, consumer.Id, StringComparison.Ordinal))
-                    .Select(p => ForwardSubscription(p.Id, consumer.Id, evt.Id, subscriptionName: consumer.Id))
+                    .Select(p => ForwardSubscription(p.Id, consumer.Id, evt.Id, subscriptionName: consumer.Id, routing))
                     .ToList();
 
-                operations[$"{consumer.Id}_receive_{OpKey(evt.Id)}"] =
-                    ReceiveOperation(consumer, evt.Id, evt.Name, forwards);
+                var operation = ReceiveOperation(consumer, evt.Id, evt.Name, forwards);
+                if (routing is not null)
+                {
+                    operation["x-nimbus-routing"] = routing.Mode == RoutingRuleMode.Keyed
+                        ? new Map { ["routingKeys"] = routing.Keys.Cast<object>().ToList() }
+                        : new Map { ["unmatched"] = true, ["excludedRoutingKeys"] = routing.Keys.Cast<object>().ToList() };
+                }
+
+                operations[$"{consumer.Id}_receive_{OpKey(evt.Id)}"] = operation;
             }
         }
 
@@ -308,7 +318,7 @@ public static class AsyncApiExporter
             },
         };
 
-    private static Map ForwardSubscription(string sourceTopic, string target, string eventId, string subscriptionName) =>
+    private static Map ForwardSubscription(string sourceTopic, string target, string eventId, string subscriptionName, RoutingRule? routing = null) =>
         new()
         {
             ["topic"] = sourceTopic,
@@ -317,7 +327,7 @@ public static class AsyncApiExporter
             ["requiresSession"] = false,
             // The provisioner's own strings, so the documented rule is byte-identical to the
             // one `nb topology apply` lays down.
-            ["filter"] = TopologyDescriptor.ForwardFilter(eventId),
+            ["filter"] = TopologyDescriptor.ForwardFilter(eventId, routing),
             ["action"] = TopologyDescriptor.ForwardAction(sourceTopic, target),
         };
 
@@ -431,6 +441,12 @@ public static class AsyncApiExporter
         if (governance.Count > 0)
         {
             message["x-nimbus-governance"] = governance;
+        }
+
+        // Spec 045: the payload property that routes the message by key.
+        if (!string.IsNullOrEmpty(evt.RoutingKeyProperty))
+        {
+            message["x-nimbus-routing-key"] = evt.RoutingKeyProperty!;
         }
 
         var examples = BuildExamples(evt, resolved);

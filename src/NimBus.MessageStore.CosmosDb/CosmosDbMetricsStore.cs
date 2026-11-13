@@ -154,7 +154,7 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
 
         var sql = "SELECT c.endpointId, c.message.EventTypeId, " +
                   "c.message.MessageContent.ErrorContent.ErrorText, " +
-                  "c.message.EnqueuedTimeUtc, c.message.EventId, c.message.MessageId, c.message.SessionId " +
+                  "c.message.EnqueuedTimeUtc, c.message.EventId, c.message.MessageId, c.message.SessionId, c.message.OriginatingFrom " +
                   "FROM c " +
                   "WHERE c.message.MessageType = 'ErrorResponse' " +
                   "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to";
@@ -180,7 +180,8 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
                     EnqueuedTimeUtc = item.EnqueuedTimeUtc,
                     EventId = item.EventId,
                     MessageId = item.MessageId,
-                    SessionId = item.SessionId
+                    SessionId = item.SessionId,
+                    OriginatingFrom = item.OriginatingFrom,
                 });
             }
         }
@@ -511,6 +512,9 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
 
     private sealed class FailedMessageQueryResult
     {
+        [JsonProperty(nameof(OriginatingFrom))]
+        public string? OriginatingFrom { get; set; }
+
         [JsonProperty("endpointId")]
         public string EndpointId { get; set; } = null!;
 
