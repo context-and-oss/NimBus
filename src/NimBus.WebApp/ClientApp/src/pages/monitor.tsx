@@ -297,9 +297,9 @@ const SummaryRow = ({
         <FleetRing endpoints={endpoints} />
         <div className="flex flex-col gap-[0.3em] text-[0.95em]">
           <Label>Endpoints</Label>
-          <LegendRow swatch="bg-status-danger" count={summary.nogoCount} label="no-go" />
-          <LegendRow swatch="bg-border-strong" count={summary.ackedCount} label="failing, acked" />
-          <LegendRow swatch="bg-status-warning" count={summary.holdCount} label="hold · backlog" />
+          <LegendRow swatch="bg-status-danger" count={summary.nogoCount} label="failing" />
+          <LegendRow swatch="bg-border-strong" count={summary.ackedCount} label="acknowledged" />
+          <LegendRow swatch="bg-status-warning" count={summary.holdCount} label="queued" />
         </div>
       </div>
       <Tile
@@ -412,7 +412,7 @@ const FleetRing = ({ endpoints }: { endpoints: MonitorEndpoint[] }) => {
   const point = (a: number) => `${(50 + r * Math.cos(a)).toFixed(2)} ${(50 + r * Math.sin(a)).toFixed(2)}`;
   return (
     <div className="relative grid place-items-center shrink-0">
-      <svg viewBox="0 0 100 100" className="w-[6.2em] h-[6.2em]" role="img" aria-label={`${go} of ${n} endpoints GO`}>
+      <svg viewBox="0 0 100 100" className="w-[6.2em] h-[6.2em]" role="img" aria-label={`${go} of ${n} endpoints healthy`}>
         {n <= 1 ? (
           <circle
             cx={50}
@@ -441,8 +441,11 @@ const FleetRing = ({ endpoints }: { endpoints: MonitorEndpoint[] }) => {
         )}
       </svg>
       <div className="absolute inset-0 grid place-content-center text-center pointer-events-none">
-        <span className={cn("text-[1.8em] font-extrabold leading-none", SUCCESS_TEXT)}>{go}</span>
-        <span className="font-mono text-[0.7em] tracking-widest text-muted-foreground mt-[0.2em]">/ {n} GO</span>
+        <span className="leading-none">
+          <span className={cn("text-[1.8em] font-extrabold", SUCCESS_TEXT)}>{go}</span>
+          <span className="font-mono text-[0.8em] text-muted-foreground"> / {n}</span>
+        </span>
+        <span className="font-mono text-[0.55em] tracking-widest text-muted-foreground mt-[0.3em]">HEALTHY</span>
       </div>
     </div>
   );
@@ -680,7 +683,6 @@ const EndpointTable = ({
               <th scope="col" className={cn(header, "text-left")}>State</th>
               <th scope="col" className={cn(header, "text-right")}>In</th>
               <th scope="col" className={cn(header, "text-right")}>Out</th>
-              <th scope="col" className={cn(header, "text-right")}>Unresolved</th>
               <th scope="col" className={cn(header, "text-right")}>Fail %</th>
               <th scope="col" className={cn(header, "text-right")}>Pending</th>
               <th scope="col" className={cn(header, "text-right")}>Deferred</th>
@@ -738,6 +740,7 @@ const EndpointRow = ({
 }) => {
   const state = endpointState(endpoint);
   const failing = state === "nogo" || state === "acked";
+  const stateCount = stateBadgeCount(endpoint, state);
   const unavailable = endpoint.status.storageStatus === "unavailable";
   const received = (counts?.handled ?? 0) + (counts?.failed ?? 0);
   const fail = failRate(counts);
@@ -760,10 +763,16 @@ const EndpointRow = ({
         <span className="inline-flex items-center gap-[0.5em]">
           {/* An operator's "✓ acked" button already says the state. */}
           {!(state === "acked" && !readOnly) && (
-            <StateBadge state={state} fresh={endpoint.isFreshFailure && state === "nogo"} />
+            <StateBadge state={state} count={stateCount} fresh={endpoint.isFreshFailure && state === "nogo"} />
           )}
           {failing && !readOnly && (
-            <AckButton acked={state === "acked"} disabled={!canAck} onAck={onAck} onUnack={onUnack} />
+            <AckButton
+              acked={state === "acked"}
+              count={stateCount}
+              disabled={!canAck}
+              onAck={onAck}
+              onUnack={onUnack}
+            />
           )}
           {state === "acked" && endpoint.ack && (
             <span className={cn("font-sans text-[0.8em]", muted)} title={endpoint.ack.reason || undefined}>
@@ -778,9 +787,6 @@ const EndpointRow = ({
       </td>
       <td className={cn(cell, received === 0 && muted)}>{received === 0 ? "–" : formatBigNumber(received)}</td>
       <td className={cn(cell, !counts?.published && muted)}>{counts?.published ? formatBigNumber(counts.published) : "–"}</td>
-      <td className={cn(cell, failing ? cn("text-[1.2em] font-bold", state === "nogo" ? DANGER_TEXT : muted) : muted)}>
-        {formatBigNumber(endpoint.status.failedCount ?? 0)}
-      </td>
       <td className={cn(cell, fail !== undefined && fail > 0 ? cn("font-bold", DANGER_TEXT) : muted)}>
         {fail === undefined ? "–" : formatPercent(fail)}
       </td>
@@ -824,14 +830,15 @@ const HeartbeatCell = ({ heartbeat, now }: { heartbeat?: api.MonitorFeedHeartbea
   }
 };
 
+// Plain words a newcomer can read off the wall; the count in the badge says how much.
 const STATE_BADGE: Record<EndpointState, { label: string; className: string }> = {
-  nogo: { label: "no-go", className: "bg-status-danger text-white" },
+  nogo: { label: "failing", className: "bg-status-danger text-white" },
   acked: { label: "acked", className: "bg-muted text-muted-foreground" },
-  hold: { label: "hold", className: "bg-status-warning text-ink" },
-  go: { label: "go", className: cn("bg-status-success/15", SUCCESS_TEXT) },
+  hold: { label: "queued", className: "bg-status-warning text-ink" },
+  go: { label: "healthy", className: cn("bg-status-success/15", SUCCESS_TEXT) },
 };
 
-const StateBadge = ({ state, fresh }: { state: EndpointState; fresh: boolean }) => (
+const StateBadge = ({ state, count, fresh }: { state: EndpointState; count?: number; fresh: boolean }) => (
   <span
     className={cn(
       "font-mono text-[0.72em] tracking-[0.14em] uppercase font-bold px-[0.7em] py-[0.3em] rounded-nb-sm",
@@ -840,17 +847,21 @@ const StateBadge = ({ state, fresh }: { state: EndpointState; fresh: boolean }) 
     )}
   >
     {STATE_BADGE[state].label}
+    {count !== undefined ? ` · ${formatBigNumber(count)}` : ""}
     {fresh ? " · new" : ""}
   </span>
 );
 
 const AckButton = ({
   acked,
+  count,
   disabled,
   onAck,
   onUnack,
 }: {
   acked: boolean;
+  /** Failed messages; shown once acked, because the button then stands in for the state badge. */
+  count?: number;
   /** Read-only viewers still see the ACK state but cannot change it. */
   disabled: boolean;
   onAck: () => void;
@@ -883,7 +894,7 @@ const AckButton = ({
           : "Acknowledge on every Monitor (auto-expires after 4 h or on recovery)"
     }
   >
-    {acked ? "✓ acked" : "ack"}
+    {acked ? `✓ acked${count !== undefined ? ` · ${formatBigNumber(count)}` : ""}` : "ack"}
   </button>
 );
 
@@ -1018,8 +1029,8 @@ const LogoMark = () => (
    ===================================================================== */
 
 /**
- * NO-GO: failing and not acknowledged. ACKED: failing but silenced. HOLD: no failures, but
- * messages queued. GO: nothing failed or queued.
+ * NO-GO ("failing"): failing and not acknowledged. ACKED: failing but silenced. HOLD ("queued"):
+ * no failures, but messages pending or deferred. GO ("healthy"): nothing failed or queued.
  */
 export function endpointState(endpoint: MonitorEndpoint): EndpointState {
   if ((endpoint.status.failedCount ?? 0) > 0) {
@@ -1057,6 +1068,16 @@ export function failedPerMinuteSeries(telemetry: FleetSample[]): number[] {
 }
 
 /** Pending + deferred: everything queued up in front of an endpoint. */
+/**
+ * The number a state badge shows: failed messages for a failing endpoint, pending plus deferred
+ * for a queued one, nothing for a healthy one.
+ */
+export function stateBadgeCount(endpoint: MonitorEndpoint, state: EndpointState): number | undefined {
+  if (state === "nogo" || state === "acked") return endpoint.status.failedCount ?? 0;
+  if (state === "hold") return backlogTotal(endpoint);
+  return undefined;
+}
+
 export function backlogTotal(endpoint: MonitorEndpoint): number {
   return (endpoint.status.pendingCount ?? 0) + (endpoint.status.deferredCount ?? 0);
 }

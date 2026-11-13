@@ -249,7 +249,7 @@ describe("failedPerMinuteSeries", () => {
 });
 
 describe("Monitor wall", () => {
-  it("summarises the fleet in the GO ring", () => {
+  it("summarises the fleet in the health ring", () => {
     mocks.endpoints = [
       endpoint({ id: "AEndpoint" }),
       endpoint({ id: "BEndpoint", failed: 2, firstFailureAt: Date.now() }),
@@ -258,7 +258,29 @@ describe("Monitor wall", () => {
 
     render(<Monitor />);
 
-    expect(screen.getByRole("img", { name: "2 of 3 endpoints GO" })).toBeDefined();
+    expect(screen.getByRole("img", { name: "2 of 3 endpoints healthy" })).toBeDefined();
+    expect(screen.getByText("failing")).toBeDefined();
+    expect(screen.getByText("queued")).toBeDefined();
+  });
+
+  it("names each endpoint's state in plain words with the count behind it", () => {
+    mocks.token = "nbdt_abc"; // read-only: every row shows its badge
+    mocks.endpoints = [
+      endpoint({ id: "Billing", failed: 7, firstFailureAt: Date.now() }),
+      endpoint({ id: "Orders", failed: 2, firstFailureAt: Date.now(), acked: true }),
+      endpoint({ id: "Agent", pending: 100, deferred: 5 }),
+      endpoint({ id: "Erp" }),
+    ];
+
+    render(<Monitor />);
+
+    const badge = (id: string) => within(screen.getByRole("row", { name: new RegExp(id) }));
+    expect(badge("Billing").getByText("failing · 7")).toBeDefined();
+    expect(badge("Orders").getByText("acked · 2")).toBeDefined();
+    expect(badge("Agent").getByText("queued · 105")).toBeDefined();
+    expect(badge("Erp").getByText("healthy")).toBeDefined();
+    // The badge carries the failed count, so the table no longer repeats it.
+    expect(screen.queryByRole("columnheader", { name: "Unresolved" })).toBeNull();
   });
 
   it("splits unresolved failures into failed, dead-lettered and unsupported", () => {
@@ -376,7 +398,8 @@ describe("Monitor wall", () => {
     render(<Monitor />);
 
     const ack = screen.getByRole("button", { name: "ack" }) as HTMLButtonElement;
-    const acked = screen.getByRole("button", { name: "✓ acked" }) as HTMLButtonElement;
+    // The acked button stands in for the badge, so it carries the count too.
+    const acked = screen.getByRole("button", { name: "✓ acked · 2" }) as HTMLButtonElement;
     expect(ack.disabled).toBe(false);
     expect(acked.disabled).toBe(true);
   });
