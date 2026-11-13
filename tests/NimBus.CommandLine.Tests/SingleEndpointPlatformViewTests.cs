@@ -16,17 +16,17 @@ public sealed class SingleEndpointPlatformViewTests
         public string Instance { get; set; } = "";
     }
 
-    public sealed class ViewInstance01 : Endpoint
+    public sealed class ViewInstance01 : NimBus.Core.Endpoints.Endpoint
     {
         public ViewInstance01() => Consumes<ViewKeyedEvent>("01");
     }
 
-    public sealed class ViewInstance02 : Endpoint
+    public sealed class ViewInstance02 : NimBus.Core.Endpoints.Endpoint
     {
         public ViewInstance02() => Consumes<ViewKeyedEvent>("02");
     }
 
-    public sealed class ViewUnrouted : Endpoint
+    public sealed class ViewUnrouted : NimBus.Core.Endpoints.Endpoint
     {
         public ViewUnrouted() => ConsumesUnmatched<ViewKeyedEvent>();
     }
