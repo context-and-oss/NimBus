@@ -24,7 +24,7 @@ UTC time.
 
 | Tile | Meaning |
 |---|---|
-| GO ring | One segment per endpoint: no-go (failing, not acknowledged), acked (failing, acknowledged), hold (messages queued, nothing failing), go |
+| Health ring | One segment per endpoint, coloured by its state (below); the centre counts the healthy ones |
 | Unresolved failures | Messages that need an operator now: failed, dead-lettered and unsupported |
 | Blocked sessions | An estimate: sessions with a failed, dead-lettered or pending hand-off message, and the two endpoints with most. A message dead-lettered on its first attempt does not block its session but is counted; sessions only waiting for replays are not. The exact state lives on Service Bus and is too slow to read every few seconds |
 | Backlog | Pending plus deferred messages, and how fast that changes per minute |
@@ -41,8 +41,18 @@ UTC time.
   instead.
 
 **Endpoints.** One row per endpoint, failing first (largest first), then acknowledged, then
-backlog (deepest first), then the rest A to Z. In, out and fail % cover the last 60 minutes;
-unresolved, pending and deferred are the current state. Processing shows the last hour's average
+backlog (deepest first), then the rest A to Z. The state badge says what is happening and how
+much:
+
+| State | Meaning |
+|---|---|
+| Failing · n | n unresolved messages (failed, dead-lettered or unsupported) that nobody has acknowledged |
+| Acked · n | Still failing, but someone has acknowledged it; their name shows beside it |
+| Queued · n | Nothing failing; n messages pending or deferred |
+| Healthy | Nothing failed and nothing waiting |
+
+In, out and fail % cover the last 60 minutes; pending and deferred are the current state and
+break down the queued count. Processing shows the last hour's average
 and calls it out when it is 1.5 times its 24-hour average or more. Heartbeat shows when the
 endpoint last answered a probe.
 
