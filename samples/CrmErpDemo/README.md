@@ -310,6 +310,21 @@ samples/CrmErpDemo/
   Erp.Web/                   React + Vite + TS + Tailwind SPA
 ```
 
+### The two web apps
+
+**crm-web** is laid out like a model-driven sales app: a site map on the left (Accounts,
+Contacts, Partner leads), a command bar above every list and form, and account forms with a
+record header, a Contacts tab and the audit log as a timeline. **erp-web** is laid out like a
+role center: a **Home** page with tiles that count customers, credit holds, pending handoffs and
+alerts, customer lists with a details box for the selected row, and customer cards with
+collapsible sections. Both borrow the layout patterns only; the names and styling are the demo's own.
+
+Every demo switch (simulated traffic, CRM API outage, partner leads, service and error mode,
+pending handoff, processing delay, data reset) sits in the **Demo controls** pane on the right
+of each app. The pane is open by default; the gear button in the app bar closes and reopens it,
+and the browser remembers the choice. A mode that is on also shows as a label in the app bar,
+so it stays visible with the pane closed.
+
 ## Prerequisites
 
 - .NET 10 SDK
@@ -429,7 +444,7 @@ nimbus-ops requires sign-in in Azure, so the enrichment agent needs an agent API
 
 ### Smoke test
 
-1. Open the `crm-api` URL from the deploy output. It redirects to the sign-in page. Sign in with the bootstrap admin; crm-web opens and shows "Signed in as" in its header. Create an account.
+1. Open the `crm-api` URL from the deploy output. It redirects to the sign-in page. Sign in with the bootstrap admin; crm-web opens and shows your initials and **Sign out** in its app bar. Create an account.
 2. Open the `erp-api` URL (erp-web) and sign in the same way. The customer appears, and crm-web shows its ERP customer number. The adapters reached both APIs with the service key.
 3. Open the `nimbus-ops` URL and sign in with the bootstrap admin. The account's events are Completed under **Endpoints**, and **Flow** animates new traffic.
 4. A PartnerPortal lead arrives in crm-web's contacts about every 45 seconds.
@@ -487,17 +502,17 @@ For the full classification of error types in an adapter (transient redelivery, 
 
 NimBus's PendingHandoff feature ([ADR-012](../../docs/adr/012-pending-handoff.md)) lets a subscriber handler signal "work is in flight on an external system" via `ctx.MarkPendingHandoff(reason, externalJobId, expectedBy)` and return normally — the inbound message is settled, the session blocks for siblings, the audit row reads `Pending` + `PendingSubStatus = "Handoff"`, and settlement happens later via `IHandoffClient.CompleteAsync` / `FailAsync` without re-invoking the user handler. This demo wires the feature onto the ERP adapter's `CrmAccountCreated` handler so the lifecycle (Pending badge, deferred siblings, completion replay, failure + operator Skip) is visible end-to-end in the AppHost.
 
-The control surface is in **erp-web → Admin**: a toggle plus duration and failure-rate sliders. `Erp.Api/HandoffMode/HandoffJobBackgroundService` simulates the external import, draining expired jobs once a second and rolling against the configured failure rate; on success it applies the upsert and calls `IHandoffClient.CompleteAsync`, on failure it calls `IHandoffClient.FailAsync` with one of a small set of canned `DMF rejected: ...` errors.
+The control surface is the **Pending handoff** section of erp-web's **Demo controls** pane: a switch plus duration and failure-rate sliders, and the in-flight jobs counting down. `Erp.Api/HandoffMode/HandoffJobBackgroundService` simulates the external import, draining expired jobs once a second and rolling against the configured failure rate; on success it applies the upsert and calls `IHandoffClient.CompleteAsync`, on failure it calls `IHandoffClient.FailAsync` with one of a small set of canned `DMF rejected: ...` errors.
 
 ### Manual smoke flow
 
-1. AppHost up → open **erp-web** → Admin → flip handoff mode ON, set ~30 s, 0% failure.
+1. AppHost up → open **erp-web** → Demo controls → flip **Pending-handoff mode** ON, set ~30 s, 0% failure.
 2. Open **crm-web** → create account "Acme".
 3. Open **nimbus-ops** (the operator UI) → navigate to `ErpEndpoint` → see the `CrmAccountCreated` row marked **Pending** with the **Awaiting external** badge. Click it → the detail page shows `HandoffReason`, `ExternalJobId`, `ExpectedBy`.
 4. Back in **crm-web** → update "Acme" twice in quick succession.
 5. **nimbus-ops** → both updates show **Deferred** (queued behind the in-flight create on the same session).
 6. Wait. After ~30 s the create row flips to **Completed**, the deferred updates replay in FIFO order (also Completed), and the ERP customer in **erp-web** reflects the latest update.
-7. Re-flip Erp.Web admin: failure rate = 100%. Create another account.
+7. In erp-web's Demo controls, set the failure rate to 100%. Create another account.
 8. **nimbus-ops** → after ~30 s the row is **Failed** with `ErrorContent.ErrorText` matching one of the canned `DMF rejected: ...` strings verbatim. Click **Skip** → audit row flips to **Skipped**, session unblocks.
 
 ### Automated coverage
@@ -522,7 +537,7 @@ erp-web (Error mode / Service mode toggle)
    └─▶ erp-adapter handler fails  →  NimBus lifecycle: Failed / DeadLettered / SessionBlocked
         └─▶ WebhookChannel POSTs a JSON alert  →  erp-api  /api/webhooks/notifications
              └─▶ AlertsState (last 50, in-memory)
-                  └─▶ erp-web "Notification alerts" panel polls /api/admin/alerts every 3s
+                  └─▶ erp-web Home / Alerts "Notification alerts" part polls /api/admin/alerts every 3s
 ```
 
 - **Emit** — `Erp.Adapter.Functions/Program.cs` registers `AddNimBusNotifications(...)` with a single
@@ -532,8 +547,9 @@ erp-web (Error mode / Service mode toggle)
 - **Receive** — `Erp.Api/Endpoints/AlertsEndpoints.cs` exposes `POST /api/webhooks/notifications`
   (the sink), `GET /api/admin/alerts`, and `DELETE /api/admin/alerts`, backed by the in-memory
   `Erp.Api/AlertsState.cs` (mirrors the other demo state singletons; non-persistent).
-- **Display** — `Erp.Web/src/components/admin/alerts-panel.tsx` renders newest-first,
-  severity-colored cards (Critical → rose, Error → amber).
+- **Display** — `Erp.Web/src/components/admin/alerts-panel.tsx` renders the alerts newest-first
+  with a severity dot, on erp-web's **Home** page (latest five, plus a count tile) and its
+  **Alerts** page (all of them).
 
 > The receiver is unauthenticated by design — it's a local demo sink, and the `WebhookChannel`
 > sends no auth header. Don't copy this receiver verbatim into production.
@@ -542,15 +558,15 @@ erp-web (Error mode / Service mode toggle)
 
 1. AppHost up → open **erp-web**.
 2. Open **crm-web** → create an account (e.g. "Acme GmbH") to start CRM → ERP traffic.
-3. In **erp-web**, flip **Error mode** ON (header toggle): every inbound ERP handler now throws.
-   The dropdown next to it picks *which* failure is simulated (see [Failure reasons](#failure-reasons-integration-intelligence-showcase)).
-4. Within a few seconds the **Notification alerts** panel shows an **Error** alert
+3. In **erp-web**, flip **Error mode** ON in the Demo controls pane: every inbound ERP handler now throws.
+   The dropdown under it picks *which* failure is simulated (see [Failure reasons](#failure-reasons-integration-intelligence-showcase)).
+4. Within a few seconds the **Notification alerts** part on erp-web's Home page shows an **Error** alert
    ("Message failed: …"). Handler failures are not retried: the message is recorded as Failed and
    its session blocks, so the next message on that session (for example an edit to the same
    account) raises a **Critical** **session blocked** alert.
    Flipping **Service mode** ON instead rejects inbound messages in middleware, which dead-letters
    them immediately: each produces an **Error** alert and a **Critical** **dead-lettered** alert.
-5. Turn the toggles OFF to stop new alerts; click **Clear** to empty the panel.
+5. Turn the modes OFF to stop new alerts; click **Clear** to empty the list.
 
 ### Endpoint alert mail (Alerts tab → Mailpit)
 
@@ -621,7 +637,7 @@ crm-web ("CRM API outage" toggle)
         └─▶ failure rate ≥ 50% over 5+ outcomes  →  circuit OPENS  →  both receivers pause
              └─▶ 20s break  →  HALF-OPEN probes at 1 session  →  2 successes  →  CLOSED
                   └─▶ CircuitStateReporter POSTs each transition  →  crm-api  /api/webhooks/circuit-state
-                       └─▶ crm-web "Circuit breaker" panel polls /api/admin/circuit-state every 3s
+                       └─▶ crm-web Demo controls "Circuit breaker" section polls /api/admin/circuit-state every 3s
 ```
 
 - **Fail** — `Crm.Api/ErrorModeState.cs` + `/api/admin/error-mode` (mirrors the ERP toggles);
@@ -632,13 +648,14 @@ crm-web ("CRM API outage" toggle)
   One breaker pauses both receivers — CrmEndpoint *and* the PartnerInbound ingress.
 - **Display** — `Crm.Adapter/Observability/CircuitStateReporter.cs` (a default-implemented
   `IMessageLifecycleObserver`) pushes transitions to `Crm.Api/CircuitStateStore.cs`;
-  `Crm.Web/src/components/admin/circuit-breaker-panel.tsx` shows Closed / Open / Half-open live.
+  `Crm.Web/src/components/admin/circuit-breaker-panel.tsx` shows Closed / Open / Half-open live,
+  and crm-web's app bar shows **Circuit open** / **Circuit half-open** while the circuit isn't closed.
   The `nimbus.circuit_breaker.state` gauge also lands in the Aspire dashboard's Metrics tab.
 
 ### Manual smoke flow
 
-1. AppHost up → open **crm-web** → the Circuit breaker panel reads **Closed**.
-2. Click **Simulate** (or create accounts by hand) to drive steady CRM → ERP → CRM traffic.
+1. AppHost up → open **crm-web** → the Circuit breaker section of Demo controls reads **Circuit closed**.
+2. Switch on **Simulate** (or create accounts by hand) to drive steady CRM → ERP → CRM traffic.
 3. Flip **CRM API outage: ON**. Handlers fail; within ~15–30 s the panel flips to **Open** —
    crm-adapter's log shows "Pausing NimBus receiver …", and **nimbus-ops** shows the few failed
    sessions from before the pause (no flood: the receiver stopped consuming).
@@ -714,7 +731,7 @@ Key mechanics on display:
 ### Turning the partner leads off
 
 A lead every 45 seconds adds up in a demo that runs for days. The **Partner leads** switch in
-**crm-web** (below the circuit-breaker panel) turns the recurring `PartnerLeadSubmitted` leads
+**crm-web**'s Demo controls pane (below the circuit breaker) turns the recurring `PartnerLeadSubmitted` leads
 off and on while the demo runs. crm-api holds the flag and partner-portal asks for it before
 each lead, so a flip takes effect within a few seconds. partner-portal keeps logging the ERP
 CloudEvents it receives, and `PARTNER_SEND_INVALID=true` still sends its one message.

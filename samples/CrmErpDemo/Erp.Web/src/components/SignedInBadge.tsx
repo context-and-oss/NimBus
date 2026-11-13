@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { getCurrentUser, signOut, type CurrentUser } from '../auth';
+import { initials } from './shell/ui';
 
-// "Signed in as … · Sign out". Renders nothing when sign-in is off (local runs).
+// Avatar + "Sign out" for the dark app bar. Renders nothing when sign-in is off (local runs).
 export default function SignedInBadge() {
   const [user, setUser] = useState<CurrentUser | null>(null);
 
@@ -14,11 +15,13 @@ export default function SignedInBadge() {
   }, []);
 
   if (!user?.isAuthenticated) return null;
+  const name = user.displayName || user.email || '';
   return (
-    <span className="text-xs text-slate-500">
-      Signed in as <span className="font-medium text-slate-700">{user.displayName || user.email}</span>
-      {' · '}
-      <button type="button" onClick={() => void signOut()} className="underline hover:text-slate-700">
+    <span className="flex items-center gap-2 text-xs text-white/80">
+      <span title={`Signed in as ${name}`} className="grid h-7 w-7 place-items-center rounded-full bg-white/20 text-[11px] font-semibold text-white">
+        {initials(name.replace(/@.*/, '').replace(/[._-]+/g, ' '))}
+      </span>
+      <button type="button" onClick={() => void signOut()} className="underline-offset-2 hover:underline">
         Sign out
       </button>
     </span>
