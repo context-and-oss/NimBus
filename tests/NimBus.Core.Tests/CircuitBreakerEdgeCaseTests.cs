@@ -1,8 +1,11 @@
 #pragma warning disable CA1707, CA2007
 using System.Collections.Concurrent;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.CircuitBreaker;
 using NimBus.Core.Events;
+using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.Testing;
@@ -66,6 +69,24 @@ public sealed class CircuitBreakerEdgeCaseTests
         breaker.RecordSuccess();
 
         Assert.AreEqual(CircuitState.Closed, breaker.State);
+    }
+
+    [TestMethod]
+    public void Success_never_opens_the_circuit()
+    {
+        // A failed event blocks its session, so the failing sessions fall silent while the
+        // others keep succeeding. Evaluating the window on those successes opened the circuit
+        // once they brought it up to MinimumThroughput, after the dependency had recovered.
+        var breaker = CreateBreaker(new ManualClock(Start), minimumThroughput: 4, failurePercentage: 50);
+
+        breaker.RecordFailure(new TransientException("down"));
+        breaker.RecordFailure(new TransientException("down"));
+        breaker.RecordSuccess();
+        breaker.RecordSuccess();
+        Assert.AreEqual(CircuitState.Closed, breaker.State, "Reaching 50% of 4 outcomes on a success must not open.");
+
+        breaker.RecordFailure(new TransientException("down"));
+        Assert.AreEqual(CircuitState.Open, breaker.State, "The next failure evaluates the window: 3 of 5.");
     }
 
     [TestMethod]
@@ -201,6 +222,82 @@ public sealed class CircuitBreakerEdgeCaseTests
             behavior.Handle(CreateContext(Heartbeat.EventTypeId), (_, _) => throw new TransientException("down")));
 
         Assert.AreEqual(CircuitState.Closed, breaker.State);
+    }
+
+    // ----- a recording failure must not alter message handling ----------------
+
+    [TestMethod]
+    public async Task Recorder_rethrows_the_handler_failure_when_recording_it_throws()
+    {
+        var logger = new WarningCounter();
+        var behavior = new CircuitBreakerRecorderBehavior(CreateBreakerWithThrowingExclusion(), logger);
+        var expected = new EventContextHandlerException(new InvalidOperationException("down"));
+
+        var actual = await Assert.ThrowsExactlyAsync<EventContextHandlerException>(() =>
+            behavior.Handle(CreateContext("OrderPlaced"), (_, _) => throw expected));
+
+        Assert.AreSame(expected, actual);
+        Assert.AreEqual(1, logger.Warnings);
+    }
+
+    [TestMethod]
+    public async Task Recorder_returns_normally_when_recording_a_settled_failure_throws()
+    {
+        var logger = new WarningCounter();
+        var behavior = new CircuitBreakerRecorderBehavior(CreateBreakerWithThrowingExclusion(), logger);
+
+        await behavior.Handle(CreateContext("OrderPlaced"), (context, _) =>
+        {
+            context.HandledFailure = new EventContextHandlerException(new InvalidOperationException("down"));
+            return Task.CompletedTask;
+        });
+
+        Assert.AreEqual(1, logger.Warnings);
+    }
+
+    [TestMethod]
+    public async Task Throwing_exclusion_predicate_does_not_dead_letter_a_failure_that_was_already_settled()
+    {
+        // The predicate's exception used to replace the handler failure on its way out of the
+        // pipeline. The message handler then treated an event it had already answered with an
+        // ErrorResponse and completed as unexpected, and dead-lettered it as well.
+        var breaker = CreateBreakerWithThrowingExclusion();
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var pipeline = new MessagePipeline(
+            new PipelineBehaviorRegistry([]),
+            services,
+            [new CircuitBreakerRecorderBehavior(breaker)]);
+        var bus = new InMemoryMessageBus();
+        var session = new InMemorySessionState();
+        var context = new InMemoryMessageContext(
+            new Message
+            {
+                EventId = "event-1",
+                MessageId = "message-1",
+                SessionId = "session-1",
+                From = "storefront",
+                To = "billing",
+                OriginatingMessageId = "message-1",
+                OriginatingFrom = "storefront",
+                EventTypeId = "OrderPlaced",
+                MessageType = MessageType.EventRequest,
+                MessageContent = new MessageContent
+                {
+                    EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{}" },
+                },
+            },
+            session);
+
+        await new StrictMessageHandler(
+            new FailingEventContextHandler(new InvalidOperationException("dependency down")),
+            new ResponseService(bus),
+            pipeline: pipeline).Handle(context);
+
+        Assert.IsTrue(context.IsCompleted);
+        Assert.IsFalse(context.IsDeadLettered, "A settled failure must not be dead-lettered as well.");
+        Assert.AreEqual("event-1", session.BlockedByEventId);
+        Assert.AreEqual(1, bus.SentMessages.Count, "Only the ErrorResponse may be sent.");
+        Assert.AreEqual(MessageType.ErrorResponse, bus.SentMessages[0].MessageType);
     }
 
     // ----- observers ----------------------------------------------------------
@@ -374,6 +471,42 @@ public sealed class CircuitBreakerEdgeCaseTests
         options.SamplingWindow = samplingWindow ?? TimeSpan.FromMinutes(2);
         options.HalfOpenProbeCount = halfOpenProbeCount;
         return new EndpointCircuitBreaker("billing", options, clock);
+    }
+
+    private static EndpointCircuitBreaker CreateBreakerWithThrowingExclusion()
+    {
+        var options = CreateOptions();
+        options.Exclude(_ => throw new InvalidOperationException("predicate bug"));
+        return new EndpointCircuitBreaker("billing", options, new ManualClock(Start));
+    }
+
+    private sealed class FailingEventContextHandler(Exception failure) : IEventContextHandler
+    {
+        public Task Handle(IMessageContext context, CancellationToken cancellationToken = default) =>
+            Task.FromException(failure);
+    }
+
+    private sealed class WarningCounter : ILogger<CircuitBreakerRecorderBehavior>
+    {
+        private int _warnings;
+
+        public int Warnings => Volatile.Read(ref _warnings);
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning)
+                Interlocked.Increment(ref _warnings);
+        }
     }
 
     private static CircuitBreakerOptions CreateOptions() => new()
