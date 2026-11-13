@@ -444,6 +444,8 @@ public class PublisherClient : IPublisherClient
             SessionId = sessionId,
             CorrelationId = correlationId,
             MessageId = messageId,
+            // Spec 045: forward rules route on this; MessageHelper writes it only when set.
+            RoutingKey = (@event as IRoutingKeyProvider)?.GetRoutingKey(),
             RetryCount = 0,
             MessageType = MessageType.EventRequest,
             MessageContent = new MessageContent

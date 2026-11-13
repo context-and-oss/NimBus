@@ -34,4 +34,8 @@ public enum UserPropertyName
     // The MessageId of the delivery a RetryRequest or a parked copy stands in for, so the
     // inbox can record it when the stand-in succeeds. Absent on every other message.
     InboxMessageId,
+
+    // The routing key a publisher took from the payload (Spec 045). Forward rules filter on
+    // it; absent when the message has no key.
+    RoutingKey,
 }
