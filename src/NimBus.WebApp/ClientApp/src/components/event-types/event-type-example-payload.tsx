@@ -406,16 +406,17 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
         {exampleJson}
       </CodeBlock>
 
-      <Modal isOpen={isOpen} onClose={handleClose} size="xl">
+      <Modal isOpen={isOpen} onClose={handleClose} size="2xl" label="Compose New Event">
         <ModalHeader onClose={handleClose}>
           Compose New Event
         </ModalHeader>
-        <ModalBody className="min-h-[350px]">
+        <ModalBody>
           <p className="font-medium mb-2">Event Type: {eventType.name}</p>
           <Textarea
             value={editedJson}
             onChange={(e) => setEditedJson(e.target.value)}
-            className="min-h-[300px] font-mono text-sm"
+            spellCheck={false}
+            className="min-h-[300px] h-[55vh] font-mono text-sm"
           />
           {responseMessage.text && (
             <p
@@ -426,26 +427,32 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
           )}
           {published && <PublishedResult result={published} />}
         </ModalBody>
-        <ModalFooter>
-          <p className="mr-auto text-xs text-muted-foreground">{footerNote}</p>
-          <Button variant="outline" onClick={handleClose}>
-            Close
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={handleGenerateFakeData}
-            disabled={isGenerating}
-            leftIcon={<SparklesIcon />}
-          >
-            {isGenerating ? "Generating…" : "Generate fake data"}
-          </Button>
-          <Button
-            variant="solid"
-            onClick={handleSendEvent}
-            disabled={!canSend}
-          >
-            Send Event
-          </Button>
+        <ModalFooter className="flex-wrap">
+          <p className="mr-auto min-w-0 flex-1 basis-48 text-xs text-muted-foreground">
+            {footerNote}
+          </p>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={handleGenerateFakeData}
+              disabled={isGenerating}
+              leftIcon={<SparklesIcon />}
+              className="whitespace-nowrap"
+            >
+              {isGenerating ? "Generating…" : "Generate fake data"}
+            </Button>
+            <Button variant="outline" onClick={handleClose} className="whitespace-nowrap">
+              Close
+            </Button>
+            <Button
+              variant="solid"
+              onClick={handleSendEvent}
+              disabled={!canSend}
+              className="whitespace-nowrap"
+            >
+              Send Event
+            </Button>
+          </div>
         </ModalFooter>
       </Modal>
     </>

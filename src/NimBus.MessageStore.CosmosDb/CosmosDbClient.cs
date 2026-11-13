@@ -25,8 +25,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     // round-trip on each call even when the container already exists. Cache the
     // resolved handle (running the one-time "ensure exists" once per container)
     // so steady-state reads/writes skip that round-trip. Keyed by container id,
-    // which is unique per physical container in the database. Entries are evicted
-    // when a container is deleted (PurgeMessages) so the next access recreates it.
+    // which is unique per physical container in the database.
     private readonly ConcurrentDictionary<string, Task<ICosmosContainerAdapter>> _containerCache = new();
 
     private readonly CosmosDbMetricsStore _metrics;
@@ -103,7 +102,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _acknowledgements = new CosmosDbEndpointAcknowledgementStore(GetEndpointAcknowledgementsContainer);
         _operations = new CosmosDbOperatorOperationStore(GetOperatorOperationsContainer);
         _endpointMetadata = new CosmosDbEndpointMetadataStore(GetMetadataContainer, GetSettingsContainer, _logger);
-        _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, endpointId => _containerCache.TryRemove(endpointId, out _), _logger, _unresolvedTtlSeconds);
+        _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, _logger, _unresolvedTtlSeconds);
     }
 
     public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient>? logger = null)
@@ -131,7 +130,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _acknowledgements = new CosmosDbEndpointAcknowledgementStore(GetEndpointAcknowledgementsContainer);
         _operations = new CosmosDbOperatorOperationStore(GetOperatorOperationsContainer);
         _endpointMetadata = new CosmosDbEndpointMetadataStore(GetMetadataContainer, GetSettingsContainer, _logger);
-        _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, endpointId => _containerCache.TryRemove(endpointId, out _), _logger, _unresolvedTtlSeconds);
+        _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, _logger, _unresolvedTtlSeconds);
     }
 
     // ───────── Subscription store — implementation in CosmosDbSubscriptionStore ─────────

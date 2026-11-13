@@ -115,7 +115,9 @@ const Stack: React.FC<StackProps> = ({
       : "text-status-info";
 
   return (
-    <div className="flex flex-col gap-2 min-w-[180px] flex-1">
+    // Centred vertically, so the shorter side (usually the single producer) lines
+    // up with the event type node and the edges meet it at mid-height.
+    <div className="flex flex-col justify-center gap-2 min-w-[180px] flex-1">
       {names.length === 0 ? (
         <div
           className={cn(

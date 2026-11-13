@@ -22,7 +22,6 @@ internal sealed partial class CosmosDbMessageTrackingStore : IMessageTrackingSto
     private readonly Func<Task<ICosmosContainerAdapter>> _getMessagesContainer;
     private readonly Func<Task<ICosmosContainerAdapter>> _getAuditsContainer;
     private readonly Func<Task<ICosmosContainerAdapter>> _getEventReportsContainer;
-    private readonly Action<string> _removeEndpointContainerCache;
     private readonly ILogger _logger;
     private readonly int _unresolvedTtlSeconds;
 
@@ -31,7 +30,6 @@ internal sealed partial class CosmosDbMessageTrackingStore : IMessageTrackingSto
         Func<Task<ICosmosContainerAdapter>> getMessagesContainer,
         Func<Task<ICosmosContainerAdapter>> getAuditsContainer,
         Func<Task<ICosmosContainerAdapter>> getEventReportsContainer,
-        Action<string> removeEndpointContainerCache,
         ILogger? logger,
         int unresolvedTtlSeconds)
     {
@@ -39,7 +37,6 @@ internal sealed partial class CosmosDbMessageTrackingStore : IMessageTrackingSto
         _getMessagesContainer = getMessagesContainer;
         _getAuditsContainer = getAuditsContainer;
         _getEventReportsContainer = getEventReportsContainer;
-        _removeEndpointContainerCache = removeEndpointContainerCache;
         _logger = logger ?? NullLogger.Instance;
         _unresolvedTtlSeconds = unresolvedTtlSeconds;
     }

@@ -65,9 +65,13 @@ public sealed class EndpointCircuitBreaker : IEndpointCircuitBreaker
             change = AdvanceOpenCircuitLocked(now);
             if (change is null && _state == CircuitState.Closed)
             {
+                // Recorded but not evaluated: a success lowers the failure rate and can only
+                // reach the threshold by bringing the window up to MinimumThroughput. A failed
+                // event blocks its session, so after a short blip the failures stop while other
+                // sessions keep succeeding; opening on one of those successes would pause an
+                // endpoint whose dependency has already recovered. Only a failure opens.
                 _outcomes.Enqueue(new Outcome(now, Failed: false));
                 TrimLocked(now);
-                change = EvaluateClosedWindowLocked(now);
             }
             else if (change is null && _state == CircuitState.HalfOpen)
             {
