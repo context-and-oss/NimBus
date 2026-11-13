@@ -280,6 +280,68 @@ public sealed class TestDiagnosticsTests
         }
     }
 
+    // A port probed free can be taken before the emulator binds it, for example by another
+    // emulator's internal HTTP port. The emulator then exits, but the other process still
+    // answers /health on that port; startup must not take that answer for its own emulator.
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task Emulator_startup_ignores_a_health_answer_from_another_process_on_its_port()
+    {
+        if (System.Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_CS") is { Length: > 0 })
+        {
+            Assert.Inconclusive("An external emulator is configured; startup is not exercised.");
+        }
+
+        using var impostor = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        impostor.Start();
+        var stolenPort = ((System.Net.IPEndPoint)impostor.LocalEndpoint).Port;
+        using var stop = new CancellationTokenSource();
+        var answering = AnswerHealthAsync(impostor, stop.Token);
+        var launches = 0;
+
+        try
+        {
+            await using var emulator = await EmulatorProcess.StartAsync(
+                startupDeadline: TimeSpan.FromSeconds(40),
+                portSource: () => Interlocked.Increment(ref launches) == 1 ? stolenPort : FreePort());
+
+            Assert.AreNotEqual(stolenPort, emulator.Port, "Startup accepted another process's /health answer.");
+            Assert.AreEqual(2, launches);
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            impostor.Stop();
+            await answering.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+    }
+
+    private static int FreePort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+
+    /// <summary>Answers every request with a healthy emulator response for another instance.</summary>
+    private static async Task AnswerHealthAsync(System.Net.Sockets.TcpListener listener, CancellationToken cancellationToken)
+    {
+        var body = $$"""{"status":"ok","instance":"{{Guid.NewGuid()}}"}""";
+        var response = System.Text.Encoding.ASCII.GetBytes(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
+            $"Content-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}");
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            using var client = await listener.AcceptTcpClientAsync(cancellationToken);
+            var stream = client.GetStream();
+            var buffer = new byte[4096];
+            _ = await stream.ReadAsync(buffer, cancellationToken);
+            await stream.WriteAsync(response, cancellationToken);
+        }
+    }
+
     [TestMethod]
     [Timeout(30_000)]
     public async Task Emulator_startup_past_its_overall_deadline_fails_with_a_timeout_naming_the_deadline()
