@@ -51,7 +51,7 @@ public partial class OperatorPromptsTests
         AssertArguments(prompts["investigate-message"], ("endpointId", true), ("eventId", true));
         AssertArguments(prompts["recover-message"], ("endpointId", true), ("eventId", true), ("action", false));
         AssertArguments(prompts["failure-report"], ("period", false));
-        AssertArguments(prompts["handle-failures"], ("endpointId", false), ("period", false));
+        AssertArguments(prompts["handle-failures"], ("endpointId", false), ("period", false), ("unattended", false));
     }
 
     [TestMethod]
@@ -196,6 +196,31 @@ public partial class OperatorPromptsTests
         CollectionAssert.DoesNotContain(prompts, "handle-failures");
         CollectionAssert.Contains(prompts, "recover-message");
         StringAssert.Contains(error.Message, "[PermissionDenied] handle-failures is turned off by an administrator.", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void Handle_failures_asks_before_every_retry_unless_it_runs_unattended()
+    {
+        var attended = OperatorPrompts.Render("handle-failures", new Dictionary<string, string?>());
+        var unattended = OperatorPrompts.Render("handle-failures", new Dictionary<string, string?> { ["unattended"] = "true" });
+
+        StringAssert.Contains(attended, "Only after a clear yes", StringComparison.Ordinal);
+        StringAssert.Contains(attended, "unattended: \"false\"", StringComparison.Ordinal);
+        Assert.IsFalse(unattended.Contains("Only after a clear yes", StringComparison.Ordinal));
+        StringAssert.Contains(unattended, "never ask a question", StringComparison.Ordinal);
+        StringAssert.Contains(unattended, "within your budget", StringComparison.Ordinal);
+        StringAssert.Contains(unattended, "nimbus_get_operation", StringComparison.Ordinal);
+        StringAssert.Contains(unattended, "OutcomeUnknown: hand it to a person", StringComparison.Ordinal);
+        StringAssert.Contains(unattended, "Never skip", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void Handle_failures_refuses_an_unattended_value_that_is_not_true_or_false()
+    {
+        var error = Assert.ThrowsExactly<McpProtocolException>(() =>
+            OperatorPrompts.Render("handle-failures", new Dictionary<string, string?> { ["unattended"] = "yes please" }));
+
+        StringAssert.Contains(error.Message, "unattended must be true or false", StringComparison.Ordinal);
     }
 
     [TestMethod]

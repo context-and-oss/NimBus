@@ -39,6 +39,11 @@ internal sealed class SingleEndpointPlatformView : IPlatform
     public IEnumerable<IEndpoint> GetConsumers(IEventType eventType) =>
         _inner.GetConsumers(eventType).Where(e => string.Equals(e.Id, _endpoint.Id, StringComparison.Ordinal));
 
+    // The unmatched consumer's filter excludes the keys every consumer on the platform claims,
+    // not only this endpoint's, so this lookup must not be narrowed like GetConsumers.
+    public IReadOnlyCollection<string> GetClaimedRoutingKeys(IEventType eventType) =>
+        _inner.GetClaimedRoutingKeys(eventType);
+
     public IEnumerable<IEndpoint> GetProducers(IEventType eventType) =>
         _inner.GetProducers(eventType).Where(e => string.Equals(e.Id, _endpoint.Id, StringComparison.Ordinal));
 }

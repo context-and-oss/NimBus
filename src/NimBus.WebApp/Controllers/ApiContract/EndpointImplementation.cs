@@ -948,22 +948,88 @@ public partial class EndpointImplementation : IEndpointApiController
             return new ForbidResult();
         }
 
-        var technicalContacts = body.TechnicalContacts
+        if (body is null)
+        {
+            return new BadRequestObjectResult("A metadata body is required.");
+        }
+
+        var invalid = ValidateMetadata(body, endpointId);
+        if (invalid is not null)
+        {
+            return new BadRequestObjectResult(invalid);
+        }
+
+        var technicalContacts = (body.TechnicalContacts ?? [])
             .Select(technicalContact => new TechnicalContact()
             { Name = technicalContact.Name, Email = technicalContact.Email }).ToList();
 
+        // Read-modify-write: the request edits ownership only, so the heartbeat and subscription
+        // state the store keeps on the same record (and Cosmos keeps in the same document) stays.
+        var existing = await _metadataStore.GetEndpointMetadata(endpointId);
+        var metadata = existing ?? new EndpointMetadata { EndpointId = endpointId };
+        var before = Ownership(existing);
+        metadata.EndpointOwner = body.EndpointOwner;
+        metadata.EndpointOwnerTeam = body.EndpointOwnerTeam;
+        metadata.EndpointOwnerEmail = body.EndpointOwnerEmail;
+        metadata.TechnicalContacts = technicalContacts;
+        metadata.SourceSystem = EndpointCodeLocation.Normalize(body.SourceSystem);
+        metadata.RepositoryUrl = EndpointCodeLocation.Normalize(body.RepositoryUrl);
+        metadata.TicketLinkTemplate = EndpointCodeLocation.Normalize(body.TicketLinkTemplate);
 
-        var metadataStatus = await _metadataStore.SetEndpointMetadata(
-            new EndpointMetadata
-            {
-                EndpointOwner = body.EndpointOwner,
-                EndpointId = body.Id,
-                EndpointOwnerTeam = body.EndpointOwnerTeam,
-                EndpointOwnerEmail = body.EndpointOwnerEmail,
-                TechnicalContacts = technicalContacts,
-            });
+        try
+        {
+            await _auditLogService.LogRequiredAuditAsync(
+                MessageAuditType.UpdateEndpointMetadata,
+                _context,
+                data: System.Text.Json.JsonSerializer.Serialize(new { before, after = Ownership(metadata) }),
+                endpointId: endpointId);
+        }
+        catch (AuditUnavailableException)
+        {
+            return new ObjectResult("The change could not be audited, so it was not made.") { StatusCode = StatusCodes.Status503ServiceUnavailable };
+        }
+
+        var metadataStatus = await _metadataStore.SetEndpointMetadata(metadata);
         return new OkObjectResult(metadataStatus);
     }
+
+    /// <summary>Longest stored owner, team and contact name (SQL <c>NVARCHAR(200)</c>).</summary>
+    internal const int MaximumMetadataNameLength = 200;
+
+    /// <summary>Longest stored email address (SQL <c>NVARCHAR(400)</c>).</summary>
+    internal const int MaximumMetadataEmailLength = 400;
+
+    /// <summary>Most technical contacts one endpoint may list.</summary>
+    internal const int MaximumTechnicalContacts = 50;
+
+    private static string? ValidateMetadata(Metadata body, string endpointId)
+    {
+        if (!string.IsNullOrEmpty(body.Id) && !string.Equals(body.Id, endpointId, StringComparison.OrdinalIgnoreCase))
+            return "The metadata id must match the endpoint in the route.";
+        if (body.EndpointOwner?.Length > MaximumMetadataNameLength || body.EndpointOwnerTeam?.Length > MaximumMetadataNameLength)
+            return $"Owner and team are at most {MaximumMetadataNameLength} characters.";
+        if (body.EndpointOwnerEmail?.Length > MaximumMetadataEmailLength)
+            return $"The owner email is at most {MaximumMetadataEmailLength} characters.";
+        var contacts = body.TechnicalContacts ?? [];
+        if (contacts.Count > MaximumTechnicalContacts)
+            return $"At most {MaximumTechnicalContacts} technical contacts.";
+        if (contacts.Any(c => c is null || c.Name?.Length > MaximumMetadataNameLength || c.Email?.Length > MaximumMetadataEmailLength))
+            return $"Each technical contact needs a name of at most {MaximumMetadataNameLength} and an email of at most {MaximumMetadataEmailLength} characters.";
+        return EndpointCodeLocation.ValidateSourceSystem(body.SourceSystem)
+            ?? EndpointCodeLocation.ValidateRepositoryUrl(body.RepositoryUrl)
+            ?? EndpointCodeLocation.ValidateTicketLinkTemplate(body.TicketLinkTemplate);
+    }
+
+    private static object? Ownership(EndpointMetadata? metadata) => metadata is null ? null : new
+    {
+        owner = metadata.EndpointOwner,
+        team = metadata.EndpointOwnerTeam,
+        email = metadata.EndpointOwnerEmail,
+        technicalContacts = metadata.TechnicalContacts?.Select(c => new { name = c.Name, email = c.Email }),
+        sourceSystem = metadata.SourceSystem,
+        repositoryUrl = metadata.RepositoryUrl,
+        ticketLinkTemplate = metadata.TicketLinkTemplate,
+    };
 
     private async Task SetSubscriptionStatusMetadata(EndpointMetadata metadata)
     {

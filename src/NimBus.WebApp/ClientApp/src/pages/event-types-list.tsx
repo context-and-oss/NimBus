@@ -8,6 +8,7 @@ import { NamespacePill } from "components/ui/namespace-pill";
 import { EmptyState } from "components/ui/empty-state";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import EventTypeSearchToolbar from "components/event-types/event-type-search-toolbar";
+import { routingLabels } from "lib/routing-keys";
 import { useUrlFilters } from "hooks/use-url-filters";
 import { usePlatformPackage } from "hooks/app-status";
 
@@ -151,7 +152,13 @@ const EventTypesList: React.FC = () => {
         [
           TableColumns.consumers,
           {
-            value: <EndpointBadges endpoints={et.consumers} variant="info" />,
+            value: (
+              <EndpointBadges
+                endpoints={et.consumers}
+                variant="info"
+                notes={routingLabels(et.consumerRouting)}
+              />
+            ),
             searchValue: et.consumers?.join(" ") || "",
           },
         ],
@@ -273,9 +280,11 @@ const EventTypesList: React.FC = () => {
 interface EndpointBadgesProps {
   endpoints?: string[];
   variant: "success" | "info";
+  /** Spec 045: a routing label per endpoint name ("keys 01, 02", "unmatched"). */
+  notes?: Record<string, string>;
 }
 
-const EndpointBadges = ({ endpoints, variant }: EndpointBadgesProps) => {
+const EndpointBadges = ({ endpoints, variant, notes }: EndpointBadgesProps) => {
   if (!endpoints?.length) {
     return <span className="text-muted-foreground">—</span>;
   }
@@ -287,7 +296,7 @@ const EndpointBadges = ({ endpoints, variant }: EndpointBadgesProps) => {
           key={endpoint}
           to={`/Endpoints/Details/${encodeURIComponent(endpoint)}`}
           className="no-underline"
-          title={endpoint}
+          title={notes?.[endpoint] ? `${endpoint} (${notes[endpoint]})` : endpoint}
         >
           <Badge
             variant={variant}
@@ -296,6 +305,11 @@ const EndpointBadges = ({ endpoints, variant }: EndpointBadgesProps) => {
             className="rounded-nb-sm font-mono font-medium"
           >
             {endpoint}
+            {notes?.[endpoint] && (
+              <span className="ml-1 font-normal opacity-75">
+                · {notes[endpoint]}
+              </span>
+            )}
           </Badge>
         </Link>
       ))}

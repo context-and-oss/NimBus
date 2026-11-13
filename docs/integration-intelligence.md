@@ -101,6 +101,16 @@ guidance settings, and, for the deprecated provider, its model, timeout and API 
 which it marks deprecated. The provider base URL remains deployment-managed. No secret
 is ever returned by the settings API.
 
+**Stack traces** (`Data.IncludeStackTrace`, **Settings → Failure intelligence → Agents may see stack
+traces**, off by default; Spec 044 Phase 3). A subscriber that sets
+`IncludeStackTraceInErrorResponses` stores the failing exception's frames on its error response.
+With the switch on, `nimbus_get_failure_evidence` returns them when called with
+`includeStackTrace: true`: file paths are cut to the file name, values marked sensitive and
+credential-shaped text are replaced, and the trace is withheld when the payload's sensitive values
+cannot be read. The deprecated provider never receives a trace. Saving the setting from a newer
+WebApp while an older instance is still running is refused by the older instance, which does not
+know the field; finish a rolling deploy before turning it on.
+
 The payload switch (`Data.IncludeEventPayload`) means **agents may see redacted
 payloads**: the evidence `nimbus_get_failure_evidence` returns, and the evidence the
 deprecated provider receives, carries the event payload with every value marked

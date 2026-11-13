@@ -337,6 +337,20 @@ public interface IMessageTrackingStore
     Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds)
         => Task.FromResult<IReadOnlyDictionary<string, EventReport>>(new Dictionary<string, EventReport>());
 
+    /// <summary>
+    /// The events on <paramref name="endpointId"/> currently marked reported, newest report first,
+    /// at most <paramref name="limit"/>; only those reported under <paramref name="ticketId"/> when
+    /// it is given (Spec 044 Phase 3: an agent looks for a ticket to reuse, and resubmits the
+    /// failures linked to one after the fix).
+    /// <para>Default implementation returns an empty list so pre-existing external providers keep
+    /// compiling; nothing is then found by ticket.</para>
+    /// </summary>
+    /// <param name="endpointId">The endpoint.</param>
+    /// <param name="ticketId">Only reports under this ticket; null for every reported event.</param>
+    /// <param name="limit">The most reports to return.</param>
+    Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit)
+        => Task.FromResult<IReadOnlyList<EventReport>>([]);
+
     // Endpoint diagnostics
     Task<string> GetEndpointErrorList(string endpointId);
 }

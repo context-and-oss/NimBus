@@ -100,6 +100,12 @@ public static class McpOperatorServiceCollectionExtensions
         services.AddScoped<OperatorActionAccess>();
         services.AddSingleton<OperatorActionTokens>();
         services.AddSingleton<OperatorMutationLimiter>();
+        // Spec 044 Phase 2: the operator operation journal and its reconciler. Both do nothing
+        // without a registered IOperatorOperationStore (ADR-018). AddSingleton<IHostedService>
+        // with a factory, because a second AddHostedService of a class is silently dropped.
+        services.AddScoped<NimBus.WebApp.Services.Operations.OperatorOperationJournal>();
+        services.AddSingleton<NimBus.WebApp.Services.Operations.OperatorOperationReconciler>();
+        services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(sp => sp.GetRequiredService<NimBus.WebApp.Services.Operations.OperatorOperationReconciler>());
         services.TryAddSingleton(TimeProvider.System);
         services.AddDataProtection();
 

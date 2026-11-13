@@ -68,6 +68,13 @@ public sealed class FailureClassificationOptions
     /// <summary>Whether the event payload may be exported after full PII redaction.</summary>
     public bool IncludeEventPayload { get; set; }
 
+    /// <summary>
+    /// Whether agents may read a failure's scrubbed stack trace in its evidence (Spec 044 Phase 3).
+    /// The trace is stored only by subscribers that opt in; it is never sent to the deprecated
+    /// provider. Off by default.
+    /// </summary>
+    public bool IncludeStackTrace { get; set; }
+
     /// <summary>Maximum recent failure rows included in provider state.</summary>
     public int MaximumHistoryItems { get; set; } = 5;
 
@@ -142,6 +149,7 @@ public sealed class FailureClassificationOptions
         if (TypeSafe.TimeoutSeconds != 20) TimeoutSeconds = TypeSafe.TimeoutSeconds;
 #pragma warning restore CS0618
         IncludeEventPayload = Data.IncludeEventPayload;
+        IncludeStackTrace = Data.IncludeStackTrace;
         MaximumHistoryItems = Data.MaximumHistoryItems;
         MaximumErrorTextLength = Data.MaximumErrorTextLength;
         MaximumStateCharacters = Data.MaximumStateCharacters;
@@ -165,6 +173,7 @@ public sealed class TypeSafeProviderOptions
 public sealed class FailureClassificationDataOptions
 {
     public bool IncludeEventPayload { get; set; }
+    public bool IncludeStackTrace { get; set; }
     public bool IncludeRecentFailureHistory { get; set; } = true;
     public int MaximumHistoryItems { get; set; } = 5;
     public int MaximumErrorTextLength { get; set; } = 4000;
@@ -217,6 +226,12 @@ public sealed record FailureClassificationInput
 
     /// <summary>The endpoint the event originated from, when it differs from <see cref="SourceEndpoint"/>. Never sent to the provider.</summary>
     public string? OriginatingEndpoint { get; init; }
+
+    /// <summary>
+    /// The failing handler's scrubbed stack trace, when the subscriber stored one and an Owner
+    /// allows agents to read it (Spec 044 Phase 3). At most 8,000 characters. Never sent to the provider.
+    /// </summary>
+    public string? StackTrace { get; init; }
 }
 
 /// <summary>Safe exception fields exported as evidence.</summary>

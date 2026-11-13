@@ -49,6 +49,7 @@ internal static class SqlServerStoreTestHarness
             TRUNCATE TABLE [{schema}].[Heartbeats];
             TRUNCATE TABLE [{schema}].[HeartbeatUptimeDays];
             TRUNCATE TABLE [{schema}].[HeartbeatGaps];
+            TRUNCATE TABLE [{schema}].[OperatorOperations];
             -- The seeded singleton/service rows go too: the store must tolerate the
             -- empty tables (settings fall back to defaults, TryClaimServiceProbe
             -- creates the row on first use).

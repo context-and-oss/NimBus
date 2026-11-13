@@ -18,11 +18,16 @@ export const normalizeTicketId = (raw: string): string | null | undefined => {
 // Build a ticket-system deep-link from the configured template (which contains
 // a "{ticket}" placeholder). Returns undefined when no template is configured —
 // callers then render the ticket as plain, non-clickable text.
+// The site template uses {ticket}; an endpoint's own template (Spec 044 Phase 3) uses {ticketId}.
 export const ticketUrl = (
   template: string | undefined | null,
   ticketId: string,
 ): string | undefined =>
-  template ? template.replace("{ticket}", encodeURIComponent(ticketId)) : undefined;
+  template
+    ? template
+        .replace("{ticketId}", encodeURIComponent(ticketId))
+        .replace("{ticket}", encodeURIComponent(ticketId))
+    : undefined;
 
 export type ReportedCellState =
   | { kind: "report" }

@@ -1,0 +1,73 @@
+# Template, not active in this repository: copy it to .github/workflows/ in the repository that
+# holds your copy of FailureAgent.Runner. It runs the NimBus failure-handling agent unattended
+# every 30 minutes (Spec 044 Phase 4; see docs/failure-agent.md).
+#
+# Needs, as repository variables (vars) and secrets:
+#   vars.NIMBUS_MCP_URL          https://<webapp>/mcp
+#   vars.NIMBUS_MCP_SCOPE        api://<mcp-resource-app-id>/.default
+#   vars.RUNNER_CLIENT_ID        the runner's Entra app registration (federated credential for this repo)
+#   vars.AZURE_TENANT_ID         your tenant
+#   vars.ADAPTER_APP_ID          a GitHub App installed on the adapter repositories only
+#   secrets.ADAPTER_APP_KEY      its private key
+#   secrets.ANTHROPIC_API_KEY    the model key for Claude Code (or swap the agent CLI)
+name: NimBus failure agent
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC sign-in to Entra as the runner's workload identity
+  contents: read
+
+concurrency:
+  group: nimbus-failure-agent
+  cancel-in-progress: false
+
+jobs:
+  handle-failures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Claude Code
+        run: npm install --global @anthropic-ai/claude-code
+
+      # The runner's app registration: app roles Nimbus.Observe, Nimbus.Classify, Nimbus.Resubmit
+      # and Nimbus.Annotate on the NimBus MCP resource, and no Azure subscription access.
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.RUNNER_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      # Issues, pull requests and branches in the adapter repositories only. Branch protection on
+      # their default branches keeps the agent from merging or pushing there.
+      - uses: actions/create-github-app-token@v1
+        id: adapter-token
+        with:
+          app-id: ${{ vars.ADAPTER_APP_ID }}
+          private-key: ${{ secrets.ADAPTER_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Run the failure agent
+        env:
+          FailureAgent__McpUrl: ${{ vars.NIMBUS_MCP_URL }}
+          FailureAgent__Scope: ${{ vars.NIMBUS_MCP_SCOPE }}
+          FailureAgent__Period: 1d
+          FailureAgent__MaxBudgetUsd: "5"
+          FailureAgent__MaxRunMinutes: "40"
+          FailureAgent__WorkingDirectory: ${{ runner.temp }}/agent
+          GH_TOKEN: ${{ steps.adapter-token.outputs.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: dotnet run --project FailureAgent.Runner/FailureAgent.Runner.csproj

@@ -5,6 +5,7 @@ import Page from "components/page";
 import { Spinner } from "components/ui/spinner";
 import { NamespacePill } from "components/ui/namespace-pill";
 import { TopologyMiniMap } from "components/ui/topology-mini-map";
+import { routingLabels } from "lib/routing-keys";
 import EventTypePropertiesTable from "components/event-types/event-type-properties-table";
 import EventTypeExamplePayload from "components/event-types/event-type-example-payload";
 
@@ -53,6 +54,7 @@ const EventTypeDetails: React.FC = () => {
   const eventType = details.eventType;
   const producers = details.producers ?? [];
   const consumers = details.consumers ?? [];
+  const consumerNotes = routingLabels(details.consumerRouting);
   const fieldCount = (eventType?.properties ?? []).filter(
     (p) => p.name !== "MessageMetadata",
   ).length;
@@ -76,8 +78,14 @@ const EventTypeDetails: React.FC = () => {
           <TopologyMiniMap
             producers={producers}
             consumers={consumers}
+            consumerNotes={consumerNotes}
             centerLabel={eventType?.name || params.id!}
-            centerMeta={`${fieldCount} field${fieldCount === 1 ? "" : "s"}`}
+            centerMeta={
+              `${fieldCount} field${fieldCount === 1 ? "" : "s"}` +
+              (eventType?.routingKeyProperty
+                ? ` · routed by ${eventType.routingKeyProperty}`
+                : "")
+            }
           />
         </section>
 

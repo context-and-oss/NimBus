@@ -15,6 +15,11 @@ public sealed class IntelligenceAdminSettings
     public string Model { get; set; } = "jev-1.13.0";
     [JsonRequired]
     public bool IncludeEventPayload { get; set; }
+    /// <summary>
+    /// Agents may read a failure's scrubbed stack trace (Spec 044 Phase 3). Optional on save, so
+    /// clients that predate it keep working; it defaults to off.
+    /// </summary>
+    public bool IncludeStackTrace { get; set; }
     [JsonRequired]
     public bool IncludeRecentFailureHistory { get; set; } = true;
     [JsonRequired]
@@ -75,6 +80,7 @@ public sealed class IntelligenceAdminSettings
         // 20 must not leave an older flat override active.
         values[Module + "TimeoutSeconds"] = TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
         values[Module + "Data:IncludeEventPayload"] = IncludeEventPayload.ToString();
+        values[Module + "Data:IncludeStackTrace"] = IncludeStackTrace.ToString();
         values[Module + "Data:IncludeRecentFailureHistory"] = IncludeRecentFailureHistory.ToString();
         values[Module + "Data:MaximumHistoryItems"] = MaximumHistoryItems.ToString(CultureInfo.InvariantCulture);
         values[Module + "Thresholds:MinimumCategoryConfidence"] = MinimumCategoryConfidence.ToString(CultureInfo.InvariantCulture);
@@ -97,6 +103,7 @@ public sealed class IntelligenceAdminSettings
         {
             Enabled = parent.Enabled && options.Enabled, Model = options.Model,
             IncludeEventPayload = options.IncludeEventPayload,
+            IncludeStackTrace = options.IncludeStackTrace,
             IncludeRecentFailureHistory = options.Data.IncludeRecentFailureHistory,
             MaximumHistoryItems = options.MaximumHistoryItems, AdditionalRedactedKeys = options.Data.AdditionalRedactedKeys,
             AllowedEndpoints = options.AllowedEndpoints, TimeoutSeconds = options.TimeoutSeconds,

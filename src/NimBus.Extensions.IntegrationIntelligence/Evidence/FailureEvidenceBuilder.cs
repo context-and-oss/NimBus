@@ -92,6 +92,8 @@ public sealed class FailureEvidenceBuilder
             .ToArray();
 
         input = input with { RecentHistory = priorFailures };
+        if (_options.IncludeStackTrace)
+            input = input with { StackTrace = ScrubStackTrace(target, error?.ExceptionStackTrace) };
         if (_options.IncludeEventPayload && _redactor is not null)
         {
             var payload = target.MessageContent?.EventContent?.EventJson;
@@ -121,6 +123,21 @@ public sealed class FailureEvidenceBuilder
         if (scrubbed.TrimStart().StartsWith('{') || scrubbed.TrimStart().StartsWith('['))
             scrubbed = _secrets.ScrubJson(scrubbed) ?? string.Empty;
         return IntelligenceDataRedactor.ScrubText(scrubbed, maximumLength ?? _options.MaximumErrorTextLength);
+    }
+
+    // Values the event's metadata marks sensitive are replaced in the trace too, failing closed
+    // like error text when they can't be read.
+    private string? ScrubStackTrace(MessageEntity row, string? trace)
+    {
+        if (string.IsNullOrWhiteSpace(trace))
+            return null;
+        var payload = row.MessageContent?.EventContent?.EventJson;
+        if (string.IsNullOrWhiteSpace(payload) || !_masker.TryCollectSensitiveValues(row.EventTypeId, payload, out var values))
+            return null;
+        var scrubbed = trace;
+        foreach (var value in values.Where(value => !string.IsNullOrWhiteSpace(value)).OrderByDescending(value => value.Length))
+            scrubbed = scrubbed.Replace(value, EventJsonMasker.DefaultRedactToken, StringComparison.Ordinal);
+        return IntelligenceDataRedactor.ScrubStackTrace(scrubbed);
     }
 
     /// <summary>

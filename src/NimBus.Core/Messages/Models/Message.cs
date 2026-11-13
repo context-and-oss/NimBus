@@ -158,6 +158,14 @@ public interface IMessage
     /// always a delivery of the same event to the same endpoint.
     /// </summary>
     string? InboxMessageId => null;
+
+    /// <summary>
+    /// The routing key the publisher took from the payload (Spec 045), stamped as the
+    /// <c>RoutingKey</c> application property. Forward rules filter on it and the receiving
+    /// endpoint checks it. Null when the message has no key, and on control messages such as a
+    /// resubmission, which is addressed to the endpoint directly.
+    /// </summary>
+    string? RoutingKey => null;
 }
 
 public class Message : IMessage
@@ -227,4 +235,9 @@ public class Message : IMessage
 
     /// <summary>See <see cref="IMessage.InboxMessageId"/>.</summary>
     public string? InboxMessageId { get; set; }
+
+    /// <summary>
+    /// See <see cref="IMessage.RoutingKey"/>. Serialised, so it survives the outbox round-trip.
+    /// </summary>
+    public string? RoutingKey { get; set; }
 }

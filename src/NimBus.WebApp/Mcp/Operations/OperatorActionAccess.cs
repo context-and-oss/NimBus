@@ -24,9 +24,11 @@ public enum OperatorAction
 /// <summary>
 /// Decides whether the current MCP caller may take an <see cref="OperatorAction"/>. An Entra
 /// caller needs the action's delegated scope; a workload token, which carries app roles and no
-/// <c>scp</c>, qualifies only for <see cref="OperatorAction.Classify"/> (recording), with the
-/// <c>Nimbus.Classify</c> role and the Owner's workload-recording switch (Spec 044 §6.6). Local
-/// development has no scopes. The site Owner's
+/// <c>scp</c>, qualifies for <see cref="OperatorAction.Classify"/> (recording) with the
+/// <c>Nimbus.Classify</c> role and the Owner's workload-recording switch (Spec 044 §6.6), and for
+/// <see cref="OperatorAction.Resubmit"/> with the <c>Nimbus.Resubmit</c> role, the Owner's
+/// workload-resubmit switch and an available operation journal (Spec 044 Phase 2). Never for
+/// skip. Local development has no scopes. The site Owner's
 /// MCP access policy (Spec 037) must also allow the action, the caller's client and the
 /// endpoint. The endpoint role (Contributor) is checked separately, and again against fresh
 /// access-control lists when a command runs.
@@ -38,6 +40,7 @@ public sealed class OperatorActionAccess
     private readonly McpOperatorRuntime _runtime;
     private readonly IMcpAccessPolicyProvider _policies;
     private readonly McpAccessRefusals _refusals;
+    private readonly OperatorOperationJournal _journal;
 
     /// <summary>Creates the check for one request.</summary>
     public OperatorActionAccess(
@@ -45,8 +48,10 @@ public sealed class OperatorActionAccess
         IHttpContextAccessor httpContextAccessor,
         McpOperatorRuntime runtime,
         IMcpAccessPolicyProvider policies,
-        McpAccessRefusals refusals)
+        McpAccessRefusals refusals,
+        OperatorOperationJournal journal)
     {
+        _journal = journal;
         _authorization = authorization;
         _httpContextAccessor = httpContextAccessor;
         _runtime = runtime;
@@ -88,9 +93,13 @@ public sealed class OperatorActionAccess
         if (!HoldsScope(action))
         {
             await RecordAsync(McpRefusalReason.Scope, action, endpointId: null).ConfigureAwait(false);
-            throw OperatorToolErrors.PermissionDenied(action == OperatorAction.Classify
-                ? $"classify requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.ClassifyRole} app role with workload recording allowed by an administrator."
-                : $"{NameOf(action)} requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens cannot change messages.");
+            throw OperatorToolErrors.PermissionDenied(action switch
+            {
+                OperatorAction.Classify => $"classify requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.ClassifyRole} app role with workload recording allowed by an administrator.",
+                OperatorAction.Resubmit => $"resubmit requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.ResubmitRole} app role with unattended resubmits allowed by an administrator.",
+                OperatorAction.Report => $"report requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.AnnotateRole} app role with workload reporting allowed by an administrator.",
+                _ => $"{NameOf(action)} requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens cannot {NameOf(action)} messages.",
+            });
         }
     }
 
@@ -108,6 +117,23 @@ public sealed class OperatorActionAccess
         await RecordAsync(McpRefusalReason.Scope, action, endpointId: null).ConfigureAwait(false);
         throw OperatorToolErrors.PermissionDenied(
             $"{NameOf(action)} through this tool requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens can only record classifications.");
+    }
+
+    /// <summary>
+    /// True when the caller acts as an unattended workload for <paramref name="action"/>: an
+    /// app-only token admitted by its app role, not a delegated scope. Budgets and caps apply.
+    /// </summary>
+    public bool IsWorkloadFor(OperatorAction action) => !HoldsDelegatedScope(action) && HoldsScope(action);
+
+    /// <summary>
+    /// The Owner's limits on unattended resubmits (Spec 044 Phase 2): resubmits per workload
+    /// client in a rolling 24 hours, and unsuccessful workload resubmits per message.
+    /// </summary>
+    public (int PerDay, int PerMessage) WorkloadResubmitLimits()
+    {
+        var settings = _policies.Current?.Settings;
+        return (settings?.WorkloadResubmitsPerDay ?? NimBus.MessageStore.States.McpAccessSettings.DefaultWorkloadResubmitsPerDay,
+            settings?.WorkloadResubmitsPerMessage ?? NimBus.MessageStore.States.McpAccessSettings.DefaultWorkloadResubmitsPerMessage);
     }
 
     /// <summary>True when the access policy allows changes on <paramref name="endpointId"/>.</summary>
@@ -195,13 +221,26 @@ public sealed class OperatorActionAccess
         if (HoldsDelegatedScope(action))
             return true;
 
-        // Spec 044 §6.6: an unattended workload may record classifications when it holds the
-        // Nimbus.Classify app role and the Owner allows workload recording. It changes no message.
         var user = _httpContextAccessor.HttpContext?.User;
-        return action == OperatorAction.Classify
-            && user is not null
-            && _policies.Current?.AllowsWorkloadClassification == true
-            && McpOperatorPermissions.IsWorkloadWithRole(user, McpOperatorPermissions.ClassifyRole);
+        if (user is null)
+            return false;
+
+        return action switch
+        {
+            // Spec 044 §6.6: an unattended workload may record classifications when it holds the
+            // Nimbus.Classify app role and the Owner allows workload recording. It changes no message.
+            OperatorAction.Classify => _policies.Current?.AllowsWorkloadClassification == true
+                && McpOperatorPermissions.IsWorkloadWithRole(user, McpOperatorPermissions.ClassifyRole),
+            // Spec 044 Phase 2: an unattended workload may resubmit with the Nimbus.Resubmit app role
+            // while the Owner allows it and the journal can record, budget and cap the command.
+            OperatorAction.Resubmit => _policies.Current?.AllowsWorkloadResubmit == true
+                && _journal.IsAvailable
+                && McpOperatorPermissions.IsWorkloadWithRole(user, McpOperatorPermissions.ResubmitRole),
+            // Spec 044 Phase 3: marking reported changes nothing on the bus.
+            OperatorAction.Report => _policies.Current?.AllowsWorkloadAnnotation == true
+                && McpOperatorPermissions.IsWorkloadWithRole(user, McpOperatorPermissions.AnnotateRole),
+            _ => false,
+        };
     }
 
     private bool HoldsDelegatedScope(OperatorAction action)

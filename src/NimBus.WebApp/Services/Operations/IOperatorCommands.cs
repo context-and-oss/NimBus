@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using NimBus.MessageStore;
 
@@ -93,11 +94,48 @@ public enum OperatorCommandStatus
 /// <param name="Reason">The operator's reason, when the channel asks for one.</param>
 /// <param name="IdempotencyKey">The caller's idempotency key, recorded for correlation.</param>
 /// <param name="ClientId">The OAuth client application, when known.</param>
+/// <param name="Journal">
+/// The operation journal entry the command reports its progress to (Spec 044 Phase 2), or null
+/// for an unjournaled command (the Web UI, or a deployment without a journal store).
+/// </param>
 public sealed record OperatorCommandContext(
     OperatorChannel Channel,
     string? Reason = null,
     string? IdempotencyKey = null,
-    string? ClientId = null);
+    string? ClientId = null,
+    IOperatorCommandJournal? Journal = null);
+
+/// <summary>
+/// Progress reports from <see cref="IOperatorCommands"/> to a journaled operation. The
+/// coordinator calls them in order; a journal that cannot record a step throws, and the
+/// command stops before the step it guards.
+/// </summary>
+public interface IOperatorCommandJournal
+{
+    /// <summary>The Service Bus message id the command is published under: the operation id.</summary>
+    string CommandMessageId { get; }
+
+    /// <summary>The operation id, for the audit row.</summary>
+    string OperationId { get; }
+
+    /// <summary>The row was claimed; nothing is published yet.</summary>
+    Task ClaimedAsync();
+
+    /// <summary>Publishing starts now. Called before the send, so a crash after it is never mistaken for "not sent".</summary>
+    Task PublishingAsync();
+
+    /// <summary>The broker accepted the command.</summary>
+    Task DispatchedAsync();
+
+    /// <summary>The command stopped before anything was published; the claim, if any, was released.</summary>
+    /// <param name="status">Why.</param>
+    /// <param name="detail">A description.</param>
+    Task NotRunAsync(OperatorCommandStatus status, string? detail);
+
+    /// <summary>The send threw: the command may or may not have reached Service Bus.</summary>
+    /// <param name="exception">The send's exception.</param>
+    Task PublishFailedAsync(Exception exception);
+}
 
 /// <summary>A message an operator command acts on, at the version it was found.</summary>
 /// <param name="EndpointId">The endpoint the row belongs to and commands are sent to.</param>

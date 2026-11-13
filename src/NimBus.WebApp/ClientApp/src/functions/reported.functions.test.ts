@@ -25,6 +25,12 @@ describe("normalizeTicketId", () => {
 });
 
 describe("ticketUrl", () => {
+  it("fills an endpoint template's {ticketId} placeholder (Spec 044)", () => {
+    expect(ticketUrl("https://github.com/example/adapter/issues/{ticketId}", "42")).toBe(
+      "https://github.com/example/adapter/issues/42",
+    );
+  });
+
   it("substitutes the {ticket} placeholder, URL-encoded", () => {
     expect(ticketUrl("https://x/browse/{ticket}", "JIRA-1")).toBe(
       "https://x/browse/JIRA-1",

@@ -258,6 +258,11 @@ public partial class StrictMessageHandler : MessageHandler
             await SendResolutionResponse(messageContext);
             await CompleteMessage(messageContext);
         }
+        catch (PermanentFailureException)
+        {
+            await ReleaseSessionBeforeDeadLetter(messageContext, cancellationToken);
+            throw;
+        }
         catch (EventContextHandlerException exception)
         {
             LogError(messageContext, "Failed to handle event (RetryRequest)", exception);
@@ -341,6 +346,11 @@ public partial class StrictMessageHandler : MessageHandler
             LogError(messageContext, "Failed to handle event (Resubmission)", exception);
             await SendUnsupportedResponse(messageContext);
             await CompleteMessage(messageContext);
+        }
+        catch (PermanentFailureException)
+        {
+            await ReleaseSessionBeforeDeadLetter(messageContext, cancellationToken);
+            throw;
         }
         catch (EventContextHandlerException exception)
         {
@@ -600,6 +610,22 @@ public partial class StrictMessageHandler : MessageHandler
 
     private Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception) =>
         _responseService.SendDeferralResponse(messageContext, exception, SettlementToken);
+
+    /// <summary>
+    /// A permanent failure while retrying or resubmitting an event dead-letters it (the base
+    /// <see cref="MessageHandler"/> does that when the exception propagates). The event then no
+    /// longer owns its session, so a block it holds is released and its deferred siblings are
+    /// drained first; otherwise the session would stay blocked behind a dead-lettered event.
+    /// A permanent failure on first delivery never blocks the session, so this matches it.
+    /// </summary>
+    private async Task ReleaseSessionBeforeDeadLetter(IMessageContext messageContext, CancellationToken cancellationToken)
+    {
+        if (await messageContext.IsSessionBlockedByThis(cancellationToken))
+        {
+            await UnblockSession(messageContext);
+            await ContinueWithAnyDeferredMessages(messageContext);
+        }
+    }
 
     private static Task BlockSession(IMessageContext messageContext) =>
         messageContext.BlockSession(SettlementToken);

@@ -37,6 +37,8 @@ public sealed partial class OperatorMessageTools
     private readonly IOperatorClassificationSource _classifications;
     private readonly ILogger<OperatorMessageTools> _logger;
 
+    private readonly NimBus.MessageStore.Abstractions.IEndpointMetadataStore? _metadata;
+
     /// <summary>Creates the tools for one request.</summary>
     public OperatorMessageTools(
         OperatorEndpointCatalog catalog,
@@ -47,8 +49,10 @@ public sealed partial class OperatorMessageTools
         IOperatorCommands commands,
         OperatorActionAccess actionAccess,
         IOperatorClassificationSource classifications,
-        ILogger<OperatorMessageTools> logger)
+        ILogger<OperatorMessageTools> logger,
+        IEnumerable<NimBus.MessageStore.Abstractions.IEndpointMetadataStore> metadata)
     {
+        _metadata = metadata.LastOrDefault();
         _catalog = catalog;
         _queries = queries;
         _authorization = authorization;
@@ -88,7 +92,7 @@ public sealed partial class OperatorMessageTools
 
     /// <summary>Health of one endpoint.</summary>
     [McpServerTool(Name = "nimbus_get_endpoint", Title = "NimBus endpoint health", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Message counts by status, the oldest failure, subscription status and any active Monitor acknowledgement for one endpoint you can read.")]
+    [Description("Message counts by status, the oldest failure, subscription status and any active Monitor acknowledgement for one endpoint you can read, and its ownership: the owner, team and technical contacts, the source system it integrates, the adapter's repository (where adapter defects are filed) and the issue tracker's link template. Ownership is null when none is recorded; without a repositoryUrl, adapter faults go to a person.")]
     public async Task<EndpointHealthResult> GetEndpointAsync(
         [Description("Endpoint id, as returned by nimbus_list_endpoints.")] string endpointId)
     {
@@ -96,7 +100,40 @@ public sealed partial class OperatorMessageTools
         var count = await _queries.GetStatusCountAsync(endpoint).ConfigureAwait(false);
         var acknowledgements = await AcknowledgementsByEndpointAsync().ConfigureAwait(false);
 
-        return new EndpointHealthResult(_catalog.Environment, DateTimeOffset.UtcNow, ToEndpointHealth(count, acknowledgements));
+        return new EndpointHealthResult(_catalog.Environment, DateTimeOffset.UtcNow, ToEndpointHealth(count, acknowledgements),
+            await OwnershipAsync(endpoint).ConfigureAwait(false));
+    }
+
+    // Read straight from the store: the REST route answers 404 for "nothing recorded", which the
+    // in-process bridge would turn into [EndpointNotFound]. Contact details are shown to every
+    // endpoint Reader, as the Web UI's endpoint page does.
+    private async Task<EndpointOwnership?> OwnershipAsync(string endpoint)
+    {
+        if (_metadata is null)
+            return null;
+
+        NimBus.MessageStore.States.EndpointMetadata? metadata;
+        try
+        {
+            metadata = await _metadata.GetEndpointMetadata(endpoint).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogOwnershipUnavailable(_logger, ex, endpoint);
+            return null;
+        }
+
+        if (metadata is null)
+            return null;
+
+        return new EndpointOwnership(
+            metadata.EndpointOwner,
+            metadata.EndpointOwnerTeam,
+            metadata.EndpointOwnerEmail,
+            (metadata.TechnicalContacts ?? []).Select(c => new TechnicalContactInfo(c.Name, c.Email)).ToList(),
+            metadata.SourceSystem,
+            metadata.RepositoryUrl,
+            metadata.TicketLinkTemplate);
     }
 
     /// <summary>Tracked messages on one endpoint.</summary>
@@ -403,6 +440,9 @@ public sealed partial class OperatorMessageTools
 
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint ownership for {EndpointId} could not be read")]
+    private static partial void LogOwnershipUnavailable(ILogger logger, Exception exception, string endpointId);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "MCP payload read for {EndpointId}/{EventId} by {Caller}")]
     private static partial void LogMcpPayloadRead(ILogger logger, string endpointId, string eventId, string caller);
 }
@@ -423,7 +463,25 @@ public sealed record OverviewResult(
 /// <param name="Environment">The configured NimBus environment name.</param>
 /// <param name="AsOfUtc">When the result was produced.</param>
 /// <param name="Endpoint">The endpoint's health.</param>
-public sealed record EndpointHealthResult(string? Environment, DateTimeOffset AsOfUtc, EndpointHealth Endpoint);
+/// <param name="Ownership">Who owns the endpoint and where its adapter's code and tracker live; null when nothing is recorded.</param>
+public sealed record EndpointHealthResult(string? Environment, DateTimeOffset AsOfUtc, EndpointHealth Endpoint, EndpointOwnership? Ownership = null);
+
+/// <summary>An endpoint's ownership and code location (Spec 044 Phase 3), as an Owner recorded it.</summary>
+/// <param name="Owner">The owner.</param>
+/// <param name="Team">The owning team.</param>
+/// <param name="Email">The owner's email.</param>
+/// <param name="TechnicalContacts">Technical contacts.</param>
+/// <param name="SourceSystem">The business system the adapter integrates.</param>
+/// <param name="RepositoryUrl">The adapter's repository: file adapter defects here, never in the NimBus repository.</param>
+/// <param name="TicketLinkTemplate">The issue tracker's link, with {ticketId} where the ticket id goes.</param>
+public sealed record EndpointOwnership(
+    string? Owner, string? Team, string? Email, IReadOnlyList<TechnicalContactInfo> TechnicalContacts,
+    string? SourceSystem, string? RepositoryUrl, string? TicketLinkTemplate);
+
+/// <summary>A technical contact.</summary>
+/// <param name="Name">Name.</param>
+/// <param name="Email">Email.</param>
+public sealed record TechnicalContactInfo(string? Name, string? Email);
 
 /// <summary>Health of one endpoint.</summary>
 /// <param name="EndpointId">Endpoint id.</param>

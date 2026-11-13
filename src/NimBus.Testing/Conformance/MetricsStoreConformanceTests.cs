@@ -73,13 +73,15 @@ public abstract class MetricsStoreConformanceTests
         var from = DateTime.UtcNow.AddHours(-1);
         var eventId = Id("evt-insight");
         var receiver = Id("receiver");
-        await store.StoreMessage(SampleMessage(
+        var failure = SampleMessage(
             eventId,
             Id("msg-insight"),
             MessageType.ErrorResponse,
             from.AddMinutes(1),
             endpointId: receiver,
-            errorText: "Downstream timeout"));
+            errorText: "Downstream timeout");
+        failure.OriginatingFrom = Id("publisher");
+        await store.StoreMessage(failure);
         await store.UploadFailedMessage(eventId, "session-1", receiver, SampleFailedEvent(eventId, from.AddMinutes(1), "Downstream timeout", receiver));
 
         var insights = await store.GetFailedMessageInsights(from, from.AddHours(2));
@@ -91,6 +93,8 @@ public abstract class MetricsStoreConformanceTests
         Assert.AreEqual(Id("msg-insight"), row.MessageId);
         // With EventId it forms the stored event id ({EventId}_{SessionId}) that GetEventsByIds needs.
         Assert.AreEqual("session-1", row.SessionId);
+        // Spec 044 Phase 3: the publisher, for grouping source-data failures by source.
+        Assert.AreEqual(Id("publisher"), row.OriginatingFrom);
     }
 
     [TestMethod]

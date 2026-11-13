@@ -185,6 +185,22 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
         [NotEligible] = "Not eligible",
     };
 
+    internal const string NotAssessed = "notAssessed";
+
+    private static readonly Dictionary<string, string> OriginLabels = new(StringComparer.Ordinal)
+    {
+        ["source_data"] = "Source data",
+        ["adapter_code"] = "Adapter code",
+        ["target_system"] = "Target system",
+        ["configuration"] = "Configuration",
+        ["platform"] = "Platform",
+        ["unknown"] = "Unknown origin",
+        [NotAssessed] = "Origin not assessed",
+        [Uncertain] = "Uncertain",
+        [NotAnalyzed] = "Not analyzed",
+        [NotEligible] = "Not eligible",
+    };
+
     private static readonly Dictionary<string, string> GuidanceLabels = new(StringComparer.Ordinal)
     {
         [nameof(FailureGuidance.RetryMayHelp)] = "Retry may help",
@@ -250,6 +266,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             Coverage = assessed is null ? null : Coverage(assessed.Values),
             CauseGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.CauseKey, CauseLabels),
             GuidanceGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.GuidanceKey, GuidanceLabels),
+            FaultOriginGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.OriginKey, OriginLabels),
         });
     }
 
@@ -356,10 +373,21 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
         {
             if (scope.Assessed is null)
                 return (BadRequest<T>($"Saved classifications are not available for this scope ({scope.Enrichment})."), null);
-            var cause = request.Perspective == InsightsPerspective.Cause;
-            if (!(cause ? IsCauseKey(request.GroupKey) : IsGuidanceKey(request.GroupKey)))
+            Func<Assessment, string> keyOf = request.Perspective switch
+            {
+                InsightsPerspective.Cause => a => a.CauseKey,
+                InsightsPerspective.FaultOrigin => a => a.OriginKey,
+                _ => a => a.GuidanceKey,
+            };
+            var known = request.Perspective switch
+            {
+                InsightsPerspective.Cause => IsCauseKey(request.GroupKey),
+                InsightsPerspective.FaultOrigin => IsFaultOriginKey(request.GroupKey),
+                _ => IsGuidanceKey(request.GroupKey),
+            };
+            if (!known)
                 return (BadRequest<T>("Unknown groupKey for this perspective."), null);
-            members = scope.Rows.Where(r => (cause ? scope.Assessed[r].CauseKey : scope.Assessed[r].GuidanceKey) == request.GroupKey).ToList();
+            members = scope.Rows.Where(r => keyOf(scope.Assessed[r]) == request.GroupKey).ToList();
             // A known key with no occurrences is not a group of this scope (spec 043 §8.2).
             if (members.Count == 0) return (BadRequest<T>("Unknown groupKey for this window and endpoint."), null);
         }
@@ -374,6 +402,9 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     private static bool IsCauseKey(string key)
         => key is Uncertain or NotAnalyzed or NotEligible
             || (key != "unknown" && FailureClassificationQuestionSet.Categories.Contains(key));
+
+    private static bool IsFaultOriginKey(string key)
+        => key is NotAssessed or Uncertain or NotAnalyzed or NotEligible || FailureClassificationQuestionSet.FaultOrigins.Contains(key);
 
     private static bool IsGuidanceKey(string key)
         => key is NotAnalyzed or NotEligible || Enum.GetNames<FailureGuidance>().Contains(key, StringComparer.Ordinal);
@@ -577,7 +608,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             {
                 var state = _enrichment.IsEligible(row.Info.EndpointId) ? CoverageState.NotAnalyzed : CoverageState.NotEligible;
                 var key = state == CoverageState.NotAnalyzed ? NotAnalyzed : NotEligible;
-                assessed[row] = new Assessment(state, key, key, null, marker);
+                assessed[row] = new Assessment(state, key, key, null, marker, key);
                 continue;
             }
 
@@ -586,7 +617,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             {
                 // A result that names another source is never shown, only counted as uncertain.
                 mismatches++;
-                assessed[row] = new Assessment(CoverageState.Uncertain, Uncertain, nameof(FailureGuidance.Uncertain), null, "identityMismatch");
+                assessed[row] = new Assessment(CoverageState.Uncertain, Uncertain, nameof(FailureGuidance.Uncertain), null, "identityMismatch", Uncertain);
                 continue;
             }
 
@@ -596,9 +627,13 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             var guidanceKey = guidanceKnown ? latest.Guidance.ToString() : nameof(FailureGuidance.Uncertain);
             var classified = guidanceKnown && categoryKnown
                 && latest.Category != "unknown" && latest.Guidance != FailureGuidance.Uncertain;
+            // Version 1 records have no origin (Spec 044 §6.2); an origin outside the set is unknown.
+            var originKey = string.IsNullOrEmpty(latest.FaultOrigin)
+                ? NotAssessed
+                : FailureClassificationQuestionSet.FaultOrigins.Contains(latest.FaultOrigin) ? latest.FaultOrigin : "unknown";
             assessed[row] = classified
-                ? new Assessment(CoverageState.Classified, latest.Category, guidanceKey, latest, marker)
-                : new Assessment(CoverageState.Uncertain, Uncertain, guidanceKey, latest, marker);
+                ? new Assessment(CoverageState.Classified, latest.Category, guidanceKey, latest, marker, originKey)
+                : new Assessment(CoverageState.Uncertain, Uncertain, guidanceKey, latest, marker, originKey);
         }
         if (mismatches > 0) NimBusIntelligenceTelemetry.InsightsIdentityMismatches.Add(mismatches);
         return assessed;
@@ -676,6 +711,12 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
                     Coverage = Coverage(rows.Select(r => assessed[r])),
                     Endpoints = Distinct(rows.Select(r => r.Info.EndpointId)),
                     EventTypes = Distinct(rows.Select(r => r.Info.EventTypeId)),
+                    Sources = rows
+                        .Where(r => !string.IsNullOrEmpty(r.Info.OriginatingFrom))
+                        .GroupBy(r => (Source: r.Info.OriginatingFrom!, r.Info.EventTypeId))
+                        .Select(s => new InsightSourceCount { EndpointId = s.Key.Source, EventTypeId = s.Key.EventTypeId, Count = s.Count() })
+                        .OrderByDescending(s => s.Count).ThenBy(s => s.EndpointId, StringComparer.Ordinal).ThenBy(s => s.EventTypeId, StringComparer.Ordinal)
+                        .ToList(),
                     LatestOccurrence = rows.Max(r => r.Info.EnqueuedTimeUtc),
                     TopPatterns = patterns.Take(_options.TopPatternsPerGroup).Select(p => new InsightGroupPattern
                     {
@@ -724,7 +765,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     internal enum CoverageState { Classified, Uncertain, NotAnalyzed, NotEligible }
 
     /// <summary>One occurrence's coverage state, perspective keys, the result shown in details and its operation marker.</summary>
-    internal sealed record Assessment(CoverageState State, string CauseKey, string GuidanceKey, FailureClassification? Result, string? Marker);
+    internal sealed record Assessment(CoverageState State, string CauseKey, string GuidanceKey, FailureClassification? Result, string? Marker, string OriginKey);
 
     internal sealed record OccurrenceRow(FailedMessageInfo Info, string Category, string CategoryKey, string Pattern, string PatternKey);
 

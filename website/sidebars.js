@@ -36,6 +36,7 @@ const sidebars = {
       label: 'How it works',
       items: [
         { type: 'doc', id: 'message-flows', label: 'Message flows' },
+        { type: 'doc', id: 'routing-keys', label: 'Routing keys' },
         { type: 'doc', id: 'error-handling', label: 'Error handling' },
         { type: 'doc', id: 'deferred-messages', label: 'Deferred messages' },
         { type: 'doc', id: 'inbox-pattern', label: 'Consumer inbox' },
@@ -72,6 +73,7 @@ const sidebars = {
         { type: 'doc', id: 'rate-limiting', label: 'Rate limiting' },
         { type: 'doc', id: 'throughput-tuning', label: 'Throughput tuning' },
         { type: 'doc', id: 'mcp-server', label: 'Operator MCP server' },
+        { type: 'doc', id: 'failure-agent', label: 'Failure-handling agent' },
         { type: 'doc', id: 'stale-pending-reconcile', label: 'Reconciling stale Pending rows' },
         { type: 'doc', id: 'service-bus-subscription-admin', label: 'Service Bus subscriptions' },
       ],

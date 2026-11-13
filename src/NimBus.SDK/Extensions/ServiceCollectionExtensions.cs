@@ -286,7 +286,8 @@ public static class ServiceCollectionExtensions
             var serviceBusSender = client.CreateSender(options.Endpoint);
             ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
                 new Sender(serviceBusSender), MessagingSystem.ServiceBus);
-            var responseService = new ResponseService(sender);
+            var responseService = new ResponseService(sender,
+                new ResponseServiceOptions { IncludeStackTrace = options.IncludeStackTraceInErrorResponses });
             var eventHandlerProvider = new EventHandlerProvider(
                 sp.GetRequiredService<IServiceScopeFactory>());
 
@@ -300,9 +301,12 @@ public static class ServiceCollectionExtensions
             // enabled, wrap the handler provider in the validating decorator so an
             // invalid or unknown-type CloudEvent dead-letters with a clear reason.
             var cloudEventReadOptions = options.CloudEvents?.ToReadOptions();
+            // Spec 045 §5: the routing-key check sits next to the handlers, inside the
+            // CloudEvents and inbox decorators, so only a message that would run is checked.
+            var routedHandler = RoutingKeyGuardContextHandler.Decorate(eventHandlerProvider, builder, sp, options.Endpoint);
             Core.Messages.IEventContextHandler contextHandler = cloudEventReadOptions != null
-                ? new CloudEventValidatingContextHandler(eventHandlerProvider)
-                : eventHandlerProvider;
+                ? new CloudEventValidatingContextHandler(routedHandler)
+                : routedHandler;
             contextHandler = InboxRegistration.Decorate(
                 sp,
                 contextHandler,

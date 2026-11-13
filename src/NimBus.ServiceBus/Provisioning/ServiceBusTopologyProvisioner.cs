@@ -86,7 +86,10 @@ public sealed class ServiceBusTopologyProvisioner
     public async Task ApplyAsync(CancellationToken cancellationToken)
     {
         var platform = _platformFactory();
-        PlatformValidation.EnsureCommandConsumers(platform);
+        PlatformValidation.EnsureValid(platform);
+        var filterErrors = TopologyDescriptor.ValidateFilterLengths(platform);
+        if (filterErrors.Count > 0)
+            throw new InvalidOperationException(string.Join(System.Environment.NewLine, filterErrors));
         await ApplyCoreAsync(_client, platform, _isEmulator, _log, cancellationToken).ConfigureAwait(false);
     }
 
@@ -113,7 +116,13 @@ public sealed class ServiceBusTopologyProvisioner
 
         foreach (var endpoint in platform.Endpoints.OrderBy(endpoint => endpoint.Id, StringComparer.Ordinal))
         {
-            foreach (var expected in TopologyDescriptor.ForEndpointTopic(endpoint, platform, isEmulator))
+            var expectedSubscriptions = TopologyDescriptor.ForEndpointTopic(endpoint, platform, isEmulator);
+
+            // Spec 045 §4: widen every routing-key rule on this topic before narrowing any,
+            // so a key moving between consumers is never matched by nobody.
+            await WidenRoutingRulesAsync(client, endpoint.Id, expectedSubscriptions, isEmulator, log, cancellationToken).ConfigureAwait(false);
+
+            foreach (var expected in expectedSubscriptions)
             {
                 await EnsureSubscriptionAsync(client, endpoint.Id, expected, isEmulator, log, cancellationToken).ConfigureAwait(false);
             }
@@ -243,6 +252,55 @@ public sealed class ServiceBusTopologyProvisioner
         foreach (var rule in expected.Rules)
         {
             await EnsureRuleAsync(client, topicName, expected.Name, rule.Name, rule.Filter, rule.Action, isEmulator, log, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The widen pass of Spec 045 §4. A forwarder subscription that doesn't exist yet is
+    /// created in full: its rules are new, so they only add routes. On an existing one, each
+    /// routing-key rule is set to <see cref="TopologyDescriptor.WidenedForwardFilter"/> (or created
+    /// with its final filter when missing) when that differs from the current filter. The narrow
+    /// pass that follows is the ordinary <see cref="EnsureSubscriptionAsync"/>.
+    /// Rules without a routing shape are left to that pass, so an unkeyed platform makes no extra
+    /// calls here.
+    /// </summary>
+    private static async Task WidenRoutingRulesAsync(
+        ServiceBusAdministrationClient client,
+        string topicName,
+        IReadOnlyList<ExpectedSubscription> expectedSubscriptions,
+        bool isEmulator,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        foreach (var expected in expectedSubscriptions.Where(subscription => subscription.Rules.Any(rule => rule.Routing is not null)))
+        {
+            var existing = await TryGetSubscriptionAsync(client, topicName, expected.Name, cancellationToken).ConfigureAwait(false);
+            if (existing is null)
+            {
+                await EnsureSubscriptionAsync(client, topicName, expected, isEmulator, log, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            foreach (var rule in expected.Rules.Where(rule => rule.Routing is not null))
+            {
+                var current = await TryGetRuleAsync(client, topicName, expected.Name, rule.Name, cancellationToken).ConfigureAwait(false);
+                if (current is null)
+                {
+                    await EnsureRuleAsync(client, topicName, expected.Name, rule.Name, rule.Filter, rule.Action, isEmulator, log, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                var currentFilter = (current.Filter as SqlRuleFilter)?.SqlExpression;
+                // When the final filter is itself the wider one (keys added), it is applied here,
+                // not left to the narrow pass, which could narrow another rule first.
+                var widened = TopologyDescriptor.WidenedForwardFilter(rule.Name, currentFilter, rule.Routing!);
+                if (string.Equals(widened, currentFilter, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                await EnsureRuleAsync(client, topicName, expected.Name, rule.Name, widened, rule.Action, isEmulator, log, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
