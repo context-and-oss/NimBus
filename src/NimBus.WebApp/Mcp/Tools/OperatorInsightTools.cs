@@ -20,7 +20,8 @@ public sealed class OperatorInsightTools
     /// <summary>Most rows returned per metrics list.</summary>
     public const int MaxMetricRows = 200;
 
-    private static readonly Dictionary<string, Period> Periods = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>The periods the tools accept, by name.</summary>
+    internal static readonly IReadOnlyDictionary<string, Period> Periods = new Dictionary<string, Period>(StringComparer.OrdinalIgnoreCase)
     {
         ["1h"] = Period._1h, ["12h"] = Period._12h, ["1d"] = Period._1d,
         ["3d"] = Period._3d, ["7d"] = Period._7d, ["30d"] = Period._30d,

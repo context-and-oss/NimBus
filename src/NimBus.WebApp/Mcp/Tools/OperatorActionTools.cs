@@ -131,7 +131,10 @@ public sealed partial class OperatorActionTools
             deferred,
             impact,
             token,
-            (int)OperatorActionTokens.Lifetime.TotalSeconds);
+            (int)OperatorActionTokens.Lifetime.TotalSeconds)
+        {
+            NextActions = OperatorNextActions.ForPrepared(OperatorActionAccess.NameOf(kind), token, _access.IsWorkloadCaller),
+        };
     }
 
     private async Task<PrepareActionResult> PrepareByTicketAsync(string endpoint, string ticketId)
@@ -187,7 +190,10 @@ public sealed partial class OperatorActionTools
             (int)OperatorActionTokens.Lifetime.TotalSeconds,
             ticketId,
             members.Select(m => m.EventId).ToList(),
-            notEligible);
+            notEligible)
+        {
+            NextActions = OperatorNextActions.ForPrepared(OperatorActionAccess.NameOf(OperatorAction.Resubmit), token, _access.IsWorkloadCaller),
+        };
     }
 
     /// <summary>Runs a prepared resubmit.</summary>
@@ -230,7 +236,8 @@ public sealed partial class OperatorActionTools
         }
 
         operation = await _journal.ReconcileAsync(operation, repair: false).ConfigureAwait(false);
-        return OperationResult.From(_catalog.Environment, operation);
+        return OperationResult.From(_catalog.Environment, operation,
+            OperatorProjection.WebUiUrl(_httpContextAccessor.HttpContext?.Request, operation.EndpointId, operation.EventId));
     }
 
     /// <summary>Most messages one <c>nimbus_set_message_reported</c> call may mark.</summary>
@@ -545,7 +552,10 @@ public sealed partial class OperatorActionTools
             return new OperatorActionResult(_catalog.Environment, DateTimeOffset.UtcNow, OperatorActionAccess.NameOf(kind), endpoint, grant.EventId,
                 "Accepted", true,
                 "The command was audited and sent. Poll nimbus_get_operation with the operationId until it is Succeeded or Failed.",
-                current.OperationId, current.Status.ToString(), Replayed: false);
+                current.OperationId, current.Status.ToString(), Replayed: false)
+            {
+                NextActions = OperatorNextActions.ForSent(current.OperationId),
+            };
         }
 
         return Accepted(kind, endpoint, grant.EventId, commandSent: true);
@@ -693,7 +703,10 @@ public sealed partial class OperatorActionTools
         return new OperatorActionResult(_catalog.Environment, DateTimeOffset.UtcNow, operation.Action.ToString().ToLowerInvariant(),
             operation.EndpointId, operation.EventId, "Accepted", operation.DispatchedAtUtc is not null,
             "This idempotencyKey was used before: nothing was sent again. Poll nimbus_get_operation for the outcome.",
-            operation.OperationId, operation.Status.ToString(), Replayed: true);
+            operation.OperationId, operation.Status.ToString(), Replayed: true)
+        {
+            NextActions = OperatorNextActions.ForSent(operation.OperationId),
+        };
     }
 
     /// <summary>
@@ -830,7 +843,11 @@ public sealed record PrepareActionResult(
     string? Environment, DateTimeOffset AsOfUtc, string Action, string EndpointId, string EventId, string? SessionId,
     string ExpectedStatus, string MessageVersion, int AffectedMessages, int DeferredInSession, string Impact,
     string ActionToken, int ExpiresInSeconds, string? TicketId = null, IReadOnlyList<string>? Members = null,
-    IReadOnlyList<ReportItem>? NotEligible = null);
+    IReadOnlyList<ReportItem>? NotEligible = null)
+{
+    /// <summary>What you can do next: run the prepared action after the user's yes (Spec 046).</summary>
+    public IReadOnlyList<NextAction> NextActions { get; init; } = [];
+}
 
 /// <summary>Result of <c>nimbus_record_classification</c>.</summary>
 /// <param name="Environment">The configured NimBus environment name.</param>
@@ -862,7 +879,11 @@ public sealed record RecordClassificationResult(
 public sealed record OperatorActionResult(
     string? Environment, DateTimeOffset AsOfUtc, string Action, string EndpointId, string EventId, string Status,
     bool CommandSent, string Next, string? OperationId = null, string? OperationStatus = null, bool Replayed = false,
-    IReadOnlyList<ReportItem>? Items = null);
+    IReadOnlyList<ReportItem>? Items = null)
+{
+    /// <summary>What you can do next (Spec 046). Empty for a batch: each item carries its own operationId.</summary>
+    public IReadOnlyList<NextAction> NextActions { get; init; } = [];
+}
 
 /// <summary>One message's result in a batch.</summary>
 /// <param name="EventId">The message's event id.</param>
@@ -911,8 +932,14 @@ public sealed record OperationResult(
     string Status, bool Terminal, bool Unattended, DateTime CreatedAtUtc, DateTime? DispatchedAtUtc,
     string? ObservedResponse, string? EvidenceMessageId, string? Detail, bool SafeToResubmitAutomatically, string Next)
 {
+    /// <summary>What you can do next, by status (Spec 046). Never a resubmit after OutcomeUnknown.</summary>
+    public IReadOnlyList<NextAction> NextActions { get; init; } = [];
+
     /// <summary>Projects <paramref name="operation"/>.</summary>
-    public static OperationResult From(string? environment, OperatorOperation operation)
+    public static OperationResult From(string? environment, OperatorOperation operation) => From(environment, operation, webUiUrl: null);
+
+    /// <summary>Projects <paramref name="operation"/>, with its options; <paramref name="webUiUrl"/> is the message's page.</summary>
+    public static OperationResult From(string? environment, OperatorOperation operation, string? webUiUrl)
     {
         ArgumentNullException.ThrowIfNull(operation);
         var next = operation.Status switch
@@ -930,6 +957,10 @@ public sealed record OperationResult(
             operation.CreatedAtUtc, operation.DispatchedAtUtc, operation.ObservedStatus, operation.EvidenceMessageId,
             OperatorProjection.Truncate(operation.Detail).Text,
             operation.Status is OperatorOperationStatus.NotSent or OperatorOperationStatus.Failed,
-            next);
+            next)
+        {
+            NextActions = OperatorNextActions.ForOperation(operation.Status, operation.ObservedStatus is not null, operation.OperationId,
+                operation.EndpointId, operation.EventId, webUiUrl),
+        };
     }
 }

@@ -58,6 +58,24 @@ public sealed record FailedInsightsPageRequest(DateTime From, DateTime To, strin
 /// <summary>Result of a page query.</summary>
 public sealed record FailedInsightsPageResult<T>(FailedInsightsQueryStatus Status, T? Page, string? Error = null) where T : class;
 
+/// <summary>One failed attempt in a window (Spec 046 §4.1).</summary>
+/// <param name="EndpointId">The endpoint it failed on.</param>
+/// <param name="EventTypeId">Its event type.</param>
+/// <param name="EventId">Its event id.</param>
+/// <param name="SessionId">Its session; with the event id, the stored event id. Null when the store does not project it.</param>
+/// <param name="MessageId">The failed attempt's message id; null when the store does not project it.</param>
+/// <param name="FailedAtUtc">When it failed.</param>
+/// <param name="ErrorPattern">Its error with ids, numbers and quoted values removed. Untrusted.</param>
+public sealed record FailureOccurrence(string EndpointId, string EventTypeId, string EventId, string? SessionId, string? MessageId,
+    DateTime FailedAtUtc, string ErrorPattern);
+
+/// <summary>The failed attempts of a window on some endpoints.</summary>
+/// <param name="From">Window start.</param>
+/// <param name="To">Window end.</param>
+/// <param name="ReadAt">When the shared occurrence read ran.</param>
+/// <param name="Occurrences">The attempts, in no particular order.</param>
+public sealed record FailureOccurrenceSet(DateTime From, DateTime To, DateTimeOffset ReadAt, IReadOnlyList<FailureOccurrence> Occurrences);
+
 /// <summary>
 /// Builds the failed-message insights overview: error patterns from the message store, enriched
 /// with saved failure classifications into likely-cause and recovery-guidance groups and
@@ -73,6 +91,13 @@ public interface IFailedInsightsQuery
 
     /// <summary>One page of a cause or guidance group's error patterns, most frequent first.</summary>
     Task<FailedInsightsPageResult<InsightGroupPatternPage>> GetPatternsAsync(FailedInsightsPageRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The failed attempts of a preset window on <paramref name="endpointIds"/>, from the same cached
+    /// read as the overview (Spec 046 §4.1). Unlike the other members it checks no role: pass only
+    /// endpoints the current user may read. An empty set returns nothing and reads nothing.
+    /// </summary>
+    Task<FailureOccurrenceSet> GetOccurrencesForEndpointsAsync(Period period, IReadOnlyCollection<string> endpointIds, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Limits for failed-insights enrichment, bound from <c>NimBus:Insights</c>.</summary>
@@ -268,6 +293,26 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             GuidanceGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.GuidanceKey, GuidanceLabels),
             FaultOriginGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.OriginKey, OriginLabels),
         });
+    }
+
+    /// <inheritdoc />
+    public async Task<FailureOccurrenceSet> GetOccurrencesForEndpointsAsync(Period period, IReadOnlyCollection<string> endpointIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(endpointIds);
+        cancellationToken.ThrowIfCancellationRequested();
+        var window = (await ResolveWindowAsync(period, null, null).ConfigureAwait(false))!.Value;
+        var wanted = endpointIds.Where(id => !string.IsNullOrWhiteSpace(id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (wanted.Count == 0)
+            return new FailureOccurrenceSet(window.From, window.To, _clock.GetUtcNow(), []);
+
+        // The cached read holds every endpoint's rows; this caller's filter is applied after it.
+        var occurrences = await ReadOccurrencesAsync(window).WaitAsync(cancellationToken).ConfigureAwait(false);
+        var rows = occurrences.Rows
+            .Where(r => r.Info.EndpointId is not null && wanted.Contains(r.Info.EndpointId))
+            .Select(r => new FailureOccurrence(r.Info.EndpointId, r.Info.EventTypeId, r.Info.EventId, r.Info.SessionId, r.Info.MessageId,
+                r.Info.EnqueuedTimeUtc, r.Pattern))
+            .ToList();
+        return new FailureOccurrenceSet(window.From, window.To, occurrences.ReadAt, rows);
     }
 
     /// <inheritdoc />
