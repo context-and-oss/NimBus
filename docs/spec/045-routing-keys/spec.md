@@ -1,7 +1,9 @@
 # Spec 045: Route events on a routing key, not only on event type
 
-Status: draft, revision 2 (2026-11-13). Revised after an adversarial review of revision 1; the
-review log at the end maps each finding to the section that addresses it. Not yet approved.
+Status: phase 1 implemented (2026-11-13), revision 2. Revised after an adversarial review of
+revision 1; the review log at the end maps each finding to the section that addresses it. The
+implementation plan is [docs/plan/2026-11-13-spec-045-routing-keys.md](../../plan/2026-11-13-spec-045-routing-keys.md);
+the user guide is [docs/routing-keys.md](../../routing-keys.md).
 
 ## Problem
 
@@ -124,7 +126,8 @@ public sealed class CustomerCreated : Event
   `IRoutingKeyProvider { string? GetRoutingKey(); }`, which `Event` implements. `Command` derives
   from `Event`, so commands get it too.
 - `IEventType` gets `string? RoutingKeyProperty => null` (default member); `EventType` implements
-  it like `SessionKeyProperty`. It's used by exporters, the simulator and validation.
+  it from the attribute, as the concrete `EventType` exposes `SessionKeyProperty` (which is not on
+  the interface). It's used by exporters, the simulator and validation.
 
 ### 2. Carrying the key on the message
 
@@ -306,8 +309,9 @@ its session) with a reason such as `Routing key '02' is not accepted by endpoint
 - The check runs from the payload because resubmitted messages carry no property (section 2), and
   because it then also covers a payload edited during resubmit.
 - The unmatched consumer accepts every key; rule 2 still applies to it.
-- A handler registered by string key, with no CLR type to derive from, gets rule 2 only and is
-  documented as such.
+- A handler registered by string key has no CLR type to derive a payload key from, so neither
+  rule applies as written. For it the check is that the `RoutingKey` property, when present, is one
+  of the keys the endpoint declares for that event type id. This is documented.
 
 Where the declared keys come from:
 
@@ -400,8 +404,9 @@ too. Each gets its own copy, as with fan-out today.
 ### 10. Tooling
 
 - **AsyncAPI** (`AsyncApiExporter`): emit the filters of section 4, `x-nimbus-routing-key` on the
-  message (the property name) and `x-nimbus-routing-keys` or `x-nimbus-unmatched` on each consuming
-  channel.
+  message (the property name) and `x-nimbus-routing` on each receive operation:
+  `{ routingKeys: [...] }` or `{ unmatched: true, excludedRoutingKeys: [...] }`. It sits on the
+  operation, not the channel, because a channel carries every event type the endpoint consumes.
 - **EventCatalog** (`nb catalog export`): the routing-key property on the event; keys on each
   consumer.
 - **`nb topology export`** (`PlatformConfigExporter`): `RoutingKeyProperty` on event types;
@@ -410,7 +415,9 @@ too. Each gets its own copy, as with fan-out today.
   parallel `consumerRouting` array (`endpoint`, `routingKeys`, `unmatched`); the existing field is
   unchanged. The event-type pages show the keys beside each consumer, so ten consumers no longer
   read as ten deliveries. This is a UI change and needs the PR screenshot.
-- **MCP discovery tool** (`OperatorDiscoveryTools`): keys per consumed event type.
+- **MCP discovery tool** (`OperatorDiscoveryTools`): `nimbus_list_endpoints` adds
+  `routingKeysConsumed` (event type id → keys) and `unmatchedEventTypes`, both omitted or null
+  when empty.
 - **Simulator:** `FakePayloadSimulationEventFactory` fills the routing-key property with one of the
   claimed keys, picked at random, so simulated traffic reaches instance endpoints and not only the
   unmatched one.

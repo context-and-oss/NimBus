@@ -175,3 +175,17 @@ Re-route action (spec §6 phase 2) is out of scope.
   data) pushed to `pr-assets/routing-keys` for the PR body.
 - **Not run, reported as skipped:** the real-namespace manual tests in spec §Testing (case
   sensitivity, live key move, Standard-tier load test) and live Cosmos/SQL conformance (no storage change).
+
+## Changes during implementation
+
+- **AsyncAPI**: the routing shape is `x-nimbus-routing` on each receive operation, not
+  `x-nimbus-routing-keys` / `x-nimbus-unmatched` on the channel; a channel carries every event type
+  the endpoint consumes.
+- **MCP**: `EndpointSummary` gained two init properties, `RoutingKeysConsumed` and
+  `UnmatchedEventTypes`, instead of an `"*unmatched"` marker inside one map.
+- **EventCatalog**: keys are written as a "Routing keys" section in the service body, not as
+  frontmatter, so EventCatalog's schema for `receives` is untouched.
+- **Test transport**: the in-memory transport dead-letters a successful delivery after the handler
+  ("Failed to handle message.", a known pre-existing NullReferenceException), so the receive-check
+  tests assert handler side effects and the presence or absence of a `RoutingKeyRejectedException`
+  reason rather than `IsDeadLettered`.

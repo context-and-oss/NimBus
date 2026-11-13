@@ -36,6 +36,7 @@ const sidebars = {
       label: 'How it works',
       items: [
         { type: 'doc', id: 'message-flows', label: 'Message flows' },
+        { type: 'doc', id: 'routing-keys', label: 'Routing keys' },
         { type: 'doc', id: 'error-handling', label: 'Error handling' },
         { type: 'doc', id: 'deferred-messages', label: 'Deferred messages' },
         { type: 'doc', id: 'inbox-pattern', label: 'Consumer inbox' },

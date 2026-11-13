@@ -74,6 +74,9 @@ Before wiring `Program.cs`, settle these items:
   already has a natural idempotency key.
 - **Topology**: create topics, subscriptions, rules, and deferred subscriptions
   before the adapter runs. The SDK does not auto-provision Service Bus topology.
+- **Several targets of one kind**: when one event must reach one of several
+  instances (one ERP per country, for example), give each instance its own
+  endpoint and route by a payload field. See [Routing keys](routing-keys.md).
 
 Example event:
 
