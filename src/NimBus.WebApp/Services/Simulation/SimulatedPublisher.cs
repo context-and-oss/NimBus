@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using NimBus.Core;
 using NimBus.Core.Events;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
@@ -83,11 +84,23 @@ public interface ISimulationEventFactory
 public sealed class FakePayloadSimulationEventFactory : ISimulationEventFactory
 {
     private readonly FakeEventPayloadGenerator _generator;
+    private readonly IPlatform? _platform;
 
     /// <summary>Creates the factory.</summary>
     public FakePayloadSimulationEventFactory(FakeEventPayloadGenerator generator)
+        : this(generator, platform: null)
+    {
+    }
+
+    /// <summary>
+    /// Creates the factory. With a <paramref name="platform"/>, an event type routed by key
+    /// (Spec 045) gets one of the keys its consumers claim, so simulated traffic reaches the
+    /// instance endpoints rather than only the unmatched one.
+    /// </summary>
+    public FakePayloadSimulationEventFactory(FakeEventPayloadGenerator generator, IPlatform? platform)
     {
         _generator = generator ?? throw new ArgumentNullException(nameof(generator));
+        _platform = platform;
     }
 
     /// <inheritdoc />
@@ -98,6 +111,7 @@ public sealed class FakePayloadSimulationEventFactory : ISimulationEventFactory
             ?? throw new InvalidOperationException($"No payload could be generated for event type '{eventType.Id}'.");
         var @event = JsonConvert.DeserializeObject(json, eventType.GetEventClassType()) as IEvent
             ?? throw new InvalidOperationException($"The generated payload for '{eventType.Id}' did not deserialize to an event.");
+        ApplyClaimedRoutingKey(eventType, @event);
         var validation = @event.TryValidate();
         if (!validation.IsValid)
         {
@@ -107,6 +121,21 @@ public sealed class FakePayloadSimulationEventFactory : ISimulationEventFactory
         }
 
         return @event;
+    }
+
+    private void ApplyClaimedRoutingKey(IEventType eventType, IEvent @event)
+    {
+        if (_platform is null || string.IsNullOrEmpty(eventType.RoutingKeyProperty))
+            return;
+
+        var claimed = _platform.GetClaimedRoutingKeys(eventType).ToList();
+        var property = @event.GetType().GetProperty(eventType.RoutingKeyProperty);
+        if (claimed.Count == 0 || property is null || property.PropertyType != typeof(string) || !property.CanWrite)
+            return;
+
+#pragma warning disable CA5394 // Picking a simulated key needs no cryptographic randomness.
+        property.SetValue(@event, claimed[Random.Shared.Next(claimed.Count)]);
+#pragma warning restore CA5394
     }
 }
 

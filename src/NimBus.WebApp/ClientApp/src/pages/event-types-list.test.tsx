@@ -80,6 +80,36 @@ describe("EventTypesList", () => {
     expect(screen.queryByRole("button", { name: "Table view" })).toBeNull();
   });
 
+  it("shows each consumer's routing keys and the unmatched consumer (Spec 045)", async () => {
+    mocks.getEventTypes.mockResolvedValue([
+      Object.assign(new api.EventType(), {
+        id: "CustomerCreated",
+        name: "CustomerCreated",
+        producers: ["CrmEndpoint"],
+        consumers: ["ErpInstance01", "ErpInstance02", "ErpUnrouted", "Reporting"],
+        routingKeyProperty: "ErpInstance",
+        consumerRouting: [
+          Object.assign(new api.ConsumerRouting(), { endpoint: "ErpInstance01", routingKeys: ["01"], unmatched: false }),
+          Object.assign(new api.ConsumerRouting(), { endpoint: "ErpInstance02", routingKeys: ["02", "03"], unmatched: false }),
+          Object.assign(new api.ConsumerRouting(), { endpoint: "ErpUnrouted", routingKeys: [], unmatched: true }),
+          Object.assign(new api.ConsumerRouting(), { endpoint: "Reporting", routingKeys: [], unmatched: false }),
+        ],
+      }),
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/EventTypes"]}>
+        <EventTypesList />
+      </MemoryRouter>,
+    );
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("· key 01")).toBeDefined();
+    expect(within(table).getByText("· keys 02, 03")).toBeDefined();
+    expect(within(table).getByText("· unmatched")).toBeDefined();
+    expect(within(table).getByTitle("Reporting")).toBeDefined();
+  });
+
   it("names the platform catalog package in the subtitle once the status has loaded", async () => {
     render(
       <MemoryRouter initialEntries={["/EventTypes"]}>

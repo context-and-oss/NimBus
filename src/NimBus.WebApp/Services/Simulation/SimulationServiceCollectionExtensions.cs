@@ -35,7 +35,8 @@ public static class SimulationServiceCollectionExtensions
         services.TryAddSingleton<ISimulationPublisherFactory>(sp => new ServiceBusSimulationPublisherFactory(
             sp.GetRequiredService<Azure.Messaging.ServiceBus.ServiceBusClient>()));
         services.TryAddSingleton<ISimulationEventFactory>(sp => new FakePayloadSimulationEventFactory(
-            sp.GetRequiredService<FakeEventPayloadGenerator>()));
+            sp.GetRequiredService<FakeEventPayloadGenerator>(),
+            sp.GetService<IPlatform>()));
         services.TryAddSingleton<ISimulationService>(sp => new SimulationService(
             sp.GetRequiredService<IPlatform>(),
             sp.GetRequiredService<IOptions<SimulationOptions>>(),

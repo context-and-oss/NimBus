@@ -9,6 +9,7 @@ import EventTypeDetails from "./event-type-details";
 const mocks = vi.hoisted(() => ({
   getEventTypeDetails: vi.fn(),
   examplePayloadMounted: vi.fn(),
+  miniMapProps: vi.fn(),
 }));
 
 vi.mock("api-client", async () => {
@@ -27,7 +28,10 @@ vi.mock("api-client", async () => {
 });
 
 vi.mock("components/ui/topology-mini-map", () => ({
-  TopologyMiniMap: () => <div data-testid="topology" />,
+  TopologyMiniMap: (props: unknown) => {
+    mocks.miniMapProps(props);
+    return <div data-testid="topology" />;
+  },
 }));
 
 vi.mock("components/event-types/event-type-properties-table", () => ({
@@ -81,6 +85,45 @@ describe("EventTypeDetails", () => {
     await waitFor(() => expect(screen.getByText("OrderPlaced")).toBeDefined());
 
     expect(screen.queryByRole("link", { name: /view source/i })).toBeNull();
+  });
+
+  it("shows the routing key and each consumer's keys in the topology (Spec 045)", async () => {
+    mocks.getEventTypeDetails.mockResolvedValue(
+      Object.assign(new api.EventTypeDetails(), {
+        eventType: Object.assign(new api.EventType(), {
+          id: "CustomerCreated",
+          name: "CustomerCreated",
+          properties: [],
+          routingKeyProperty: "ErpInstance",
+        }),
+        producers: ["CrmEndpoint"],
+        consumers: ["ErpInstance01", "ErpUnrouted"],
+        consumerRouting: [
+          Object.assign(new api.ConsumerRouting(), { endpoint: "ErpInstance01", routingKeys: ["01"], unmatched: false }),
+          Object.assign(new api.ConsumerRouting(), { endpoint: "ErpUnrouted", routingKeys: [], unmatched: true }),
+        ],
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/EventTypes/Details/CustomerCreated"]}>
+        <Routes>
+          <Route
+            path="/EventTypes/Details/:id"
+            element={<EventTypeDetails />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(mocks.miniMapProps).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          consumerNotes: { ErpInstance01: "key 01", ErpUnrouted: "unmatched" },
+          centerMeta: "0 fields · routed by ErpInstance",
+        }),
+      ),
+    );
   });
 
   it("remounts the example payload for another event type, so a pending send cannot report into it", async () => {
