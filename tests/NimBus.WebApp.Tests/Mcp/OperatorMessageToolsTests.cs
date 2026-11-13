@@ -25,6 +25,7 @@ public class OperatorMessageToolsTests
     private InterfaceFake<IEndpointApiController> _endpoints = null!;
     private InterfaceFake<IEventApiController> _events = null!;
     private InterfaceFake<IMonitorApiController> _monitor = null!;
+    private readonly NimBus.Testing.Conformance.InMemoryMessageStore _metadata = new();
 
     [TestInitialize]
     public void CreateFakes()
@@ -76,6 +77,41 @@ public class OperatorMessageToolsTests
             Assert.IsTrue(crm.TryGetProperty(member, out var value), $"'{member}' must be written, not omitted.");
             Assert.AreEqual(JsonValueKind.Null, value.ValueKind, member);
         }
+    }
+
+    [TestMethod]
+    public async Task Get_endpoint_returns_the_recorded_ownership_and_code_location()
+    {
+        _endpoints.On(nameof(IEndpointApiController.GetEndpointStatusCountIdAsync), args => Ok(new EndpointStatusCount { EndpointId = (string)args[0]! }));
+        _monitor.On(nameof(IMonitorApiController.GetMonitorAcknowledgementsAsync), _ => Ok<IEnumerable<MonitorAcknowledgement>>([]));
+        await _metadata.SetEndpointMetadata(new NimBus.MessageStore.States.EndpointMetadata
+        {
+            EndpointId = "CrmEndpoint",
+            EndpointOwner = "Alice",
+            EndpointOwnerTeam = "CRM team",
+            TechnicalContacts = [new NimBus.MessageStore.States.TechnicalContact { Name = "Ops", Email = "ops@example.com" }],
+            SourceSystem = "Dynamics 365 Sales",
+            RepositoryUrl = "https://github.com/example/crm-adapter",
+            TicketLinkTemplate = "https://github.com/example/crm-adapter/issues/{ticketId}",
+        });
+
+        var ownership = (await CallAsync("nimbus_get_endpoint", new() { ["endpointId"] = "CrmEndpoint" })).GetProperty("ownership");
+
+        Assert.AreEqual("Alice", ownership.GetProperty("owner").GetString());
+        Assert.AreEqual("Dynamics 365 Sales", ownership.GetProperty("sourceSystem").GetString());
+        Assert.AreEqual("https://github.com/example/crm-adapter", ownership.GetProperty("repositoryUrl").GetString());
+        Assert.AreEqual("Ops", ownership.GetProperty("technicalContacts")[0].GetProperty("name").GetString());
+    }
+
+    [TestMethod]
+    public async Task Get_endpoint_without_recorded_ownership_returns_null_not_an_error()
+    {
+        _endpoints.On(nameof(IEndpointApiController.GetEndpointStatusCountIdAsync), args => Ok(new EndpointStatusCount { EndpointId = (string)args[0]! }));
+        _monitor.On(nameof(IMonitorApiController.GetMonitorAcknowledgementsAsync), _ => Ok<IEnumerable<MonitorAcknowledgement>>([]));
+
+        var json = await CallAsync("nimbus_get_endpoint", new() { ["endpointId"] = "CrmEndpoint" });
+
+        Assert.AreEqual(JsonValueKind.Null, json.GetProperty("ownership").ValueKind);
     }
 
     [TestMethod]
@@ -293,6 +329,7 @@ public class OperatorMessageToolsTests
             services.AddSingleton(_endpoints.Instance);
             services.AddSingleton(_events.Instance);
             services.AddSingleton(_monitor.Instance);
+            services.AddSingleton<NimBus.MessageStore.Abstractions.IEndpointMetadataStore>(_metadata);
         });
         await using var client = await host.CreateClientAsync();
         return await client.CallToolAsync(tool, arguments ?? []);

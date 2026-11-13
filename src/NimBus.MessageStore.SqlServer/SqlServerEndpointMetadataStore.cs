@@ -68,12 +68,17 @@ WHEN MATCHED THEN UPDATE SET
     EndpointHeartbeatStatus = @Status,
     TechnicalContactsJson = @TechnicalContactsJson,
     SubscriptionStatus = @SubscriptionStatus,
+    SourceSystem = @SourceSystem,
+    RepositoryUrl = @RepositoryUrl,
+    TicketLinkTemplate = @TicketLinkTemplate,
     UpdatedAtUtc = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT (
     EndpointId, EndpointOwner, EndpointOwnerTeam, EndpointOwnerEmail,
-    IsHeartbeatEnabled, EndpointHeartbeatStatus, TechnicalContactsJson, SubscriptionStatus)
+    IsHeartbeatEnabled, EndpointHeartbeatStatus, TechnicalContactsJson, SubscriptionStatus,
+    SourceSystem, RepositoryUrl, TicketLinkTemplate)
 VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
-    @IsHeartbeatEnabled, @Status, @TechnicalContactsJson, @SubscriptionStatus);";
+    @IsHeartbeatEnabled, @Status, @TechnicalContactsJson, @SubscriptionStatus,
+    @SourceSystem, @RepositoryUrl, @TicketLinkTemplate);";
         await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(sql, new
         {
@@ -85,6 +90,9 @@ VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
             Status = endpointMetadata.EndpointHeartbeatStatus?.ToString(),
             TechnicalContactsJson = JsonConvert.SerializeObject(endpointMetadata.TechnicalContacts ?? new List<TechnicalContact>()),
             endpointMetadata.SubscriptionStatus,
+            endpointMetadata.SourceSystem,
+            endpointMetadata.RepositoryUrl,
+            endpointMetadata.TicketLinkTemplate,
         }, commandTimeout: _context.CommandTimeout);
         return rows > 0;
     }
@@ -104,6 +112,9 @@ VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
             : JsonConvert.DeserializeObject<List<TechnicalContact>>((string)row.TechnicalContactsJson) ?? new List<TechnicalContact>(),
         Heartbeats = new List<Heartbeat>(),
         SubscriptionStatus = row.SubscriptionStatus,
+        SourceSystem = row.SourceSystem,
+        RepositoryUrl = row.RepositoryUrl,
+        TicketLinkTemplate = row.TicketLinkTemplate,
     };
 
     // ───────── Endpoint heartbeat ─────────

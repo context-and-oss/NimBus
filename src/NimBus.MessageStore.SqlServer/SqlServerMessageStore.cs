@@ -29,7 +29,7 @@ namespace NimBus.MessageStore.SqlServer;
 /// Concurrency: ROWVERSION on UnresolvedEvents enables optimistic conflict
 /// detection if needed by future writers.
 /// </summary>
-public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore
+public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore
 {
     private readonly SqlServerMessageStoreOptions _options;
     private readonly string _schema;
@@ -43,6 +43,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     private readonly SqlServerEndpointAcknowledgementStore _acknowledgements;
     private readonly SqlServerEndpointMetadataStore _endpointMetadata;
     private readonly SqlServerMessageTrackingStore _messageTracking;
+    private readonly SqlServerOperatorOperationStore _operations;
 
     public SqlServerMessageStore(IOptions<SqlServerMessageStoreOptions> options)
     {
@@ -65,6 +66,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
         _acknowledgements = new SqlServerEndpointAcknowledgementStore(context);
         _endpointMetadata = new SqlServerEndpointMetadataStore(context);
         _messageTracking = new SqlServerMessageTrackingStore(context);
+        _operations = new SqlServerOperatorOperationStore(context);
     }
 
     private async Task<SqlConnection> OpenAsync()
@@ -114,6 +116,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetResubmitCounts(endpointId, eventIds);
     public Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId) => _messageTracking.SetEventReport(endpointId, eventId, isReported, reportedBy, ticketId);
     public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetEventReports(endpointId, eventIds);
+    public Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit) => _messageTracking.FindEventReports(endpointId, ticketId, limit);
     public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetPendingEvent(endpointId, eventId, sessionId);
     public Task<UnresolvedEvent?> GetFailedEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetFailedEvent(endpointId, eventId, sessionId);
     public Task<UnresolvedEvent?> GetDeferredEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetDeferredEvent(endpointId, eventId, sessionId);
@@ -188,6 +191,15 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
         => _endpointMetadata.TrySetAgentApiKeySettings(settings, expectedRevision);
     public Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage() => _endpointMetadata.GetAgentApiKeyUsage();
     public Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc) => _endpointMetadata.RecordAgentApiKeyUse(keyId, usedAtUtc);
+
+    // ───────── Operator operation journal (IOperatorOperationStore) — implementation in SqlServerOperatorOperationStore ─────────
+    public Task<OperatorOperationCreateResult> TryCreateOperatorOperation(OperatorOperation operation) => _operations.TryCreateOperatorOperation(operation);
+    public Task<OperatorOperation?> GetOperatorOperation(string operationId) => _operations.GetOperatorOperation(operationId);
+    public Task<bool> TryUpdateOperatorOperation(OperatorOperation operation, string expectedVersion) => _operations.TryUpdateOperatorOperation(operation, expectedVersion);
+    public Task<IReadOnlyList<OperatorOperation>> ListDueOperatorOperations(IReadOnlyCollection<OperatorOperationStatus> statuses, DateTime updatedBeforeUtc, int limit)
+        => _operations.ListDueOperatorOperations(statuses, updatedBeforeUtc, limit);
+    public Task<int> CountOperatorOperations(OperatorOperationQuery query) => _operations.CountOperatorOperations(query);
+    public Task<int> PurgeExpiredOperatorOperations(DateTime nowUtc, int limit) => _operations.PurgeExpiredOperatorOperations(nowUtc, limit);
 
     // ───────── Dashboard tokens (IDashboardTokenStore) — implementation in SqlServerEndpointMetadataStore ─────────
     public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();

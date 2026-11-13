@@ -158,7 +158,8 @@ GROUP BY EndpointId, EventTypeId";
                    EnqueuedTimeUtc,
                    EventId,
                    MessageId,
-                   SessionId
+                   SessionId,
+                   OriginatingFrom
                FROM {T("Messages")}
                WHERE MessageType = 'ErrorResponse'
                  AND EnqueuedTimeUtc >= @From

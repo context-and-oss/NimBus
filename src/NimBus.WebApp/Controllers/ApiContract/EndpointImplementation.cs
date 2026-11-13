@@ -972,6 +972,9 @@ public partial class EndpointImplementation : IEndpointApiController
         metadata.EndpointOwnerTeam = body.EndpointOwnerTeam;
         metadata.EndpointOwnerEmail = body.EndpointOwnerEmail;
         metadata.TechnicalContacts = technicalContacts;
+        metadata.SourceSystem = EndpointCodeLocation.Normalize(body.SourceSystem);
+        metadata.RepositoryUrl = EndpointCodeLocation.Normalize(body.RepositoryUrl);
+        metadata.TicketLinkTemplate = EndpointCodeLocation.Normalize(body.TicketLinkTemplate);
 
         try
         {
@@ -1012,7 +1015,9 @@ public partial class EndpointImplementation : IEndpointApiController
             return $"At most {MaximumTechnicalContacts} technical contacts.";
         if (contacts.Any(c => c is null || c.Name?.Length > MaximumMetadataNameLength || c.Email?.Length > MaximumMetadataEmailLength))
             return $"Each technical contact needs a name of at most {MaximumMetadataNameLength} and an email of at most {MaximumMetadataEmailLength} characters.";
-        return null;
+        return EndpointCodeLocation.ValidateSourceSystem(body.SourceSystem)
+            ?? EndpointCodeLocation.ValidateRepositoryUrl(body.RepositoryUrl)
+            ?? EndpointCodeLocation.ValidateTicketLinkTemplate(body.TicketLinkTemplate);
     }
 
     private static object? Ownership(EndpointMetadata? metadata) => metadata is null ? null : new
@@ -1021,6 +1026,9 @@ public partial class EndpointImplementation : IEndpointApiController
         team = metadata.EndpointOwnerTeam,
         email = metadata.EndpointOwnerEmail,
         technicalContacts = metadata.TechnicalContacts?.Select(c => new { name = c.Name, email = c.Email }),
+        sourceSystem = metadata.SourceSystem,
+        repositoryUrl = metadata.RepositoryUrl,
+        ticketLinkTemplate = metadata.TicketLinkTemplate,
     };
 
     private async Task SetSubscriptionStatusMetadata(EndpointMetadata metadata)

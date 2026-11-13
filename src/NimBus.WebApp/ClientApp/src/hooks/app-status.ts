@@ -129,6 +129,30 @@ export const useStorageProvider = () => {
 // "{ticket}" placeholder URL template for reported-event deep links; undefined
 // or empty when no ticket system is configured (the Reported column then
 // renders a plain badge without a link).
+/**
+ * The ticket link for one endpoint (Spec 044 Phase 3): its own template from its ownership
+ * metadata when an Owner set one, else the site's. Undefined while loading or when neither is set.
+ */
+export const useEndpointTicketLinkTemplate = (endpointId: string | undefined) => {
+  const site = useTicketLinkTemplate();
+  const [own, setOwn] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!endpointId) return;
+    let active = true;
+    import("api-client")
+      .then((apiMod) => new apiMod.Client(apiMod.CookieAuth()).getMetadataEndpoint(endpointId))
+      .then((metadata) => {
+        if (active) setOwn(metadata?.ticketLinkTemplate ?? undefined);
+      })
+      // No metadata recorded (404) or not readable: the site's template applies.
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [endpointId]);
+  return own ?? site;
+};
+
 export const useTicketLinkTemplate = () => {
   const [result, setResult] = useState<string | undefined>(undefined);
   useEffect(() => {

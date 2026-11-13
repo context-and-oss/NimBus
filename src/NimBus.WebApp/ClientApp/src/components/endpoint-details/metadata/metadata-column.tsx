@@ -104,6 +104,26 @@ const MetadataColumn = (props: IMetadataColumnProps) => {
         >
           {endpointMetadata?.endpointOwnerEmail!}
         </div>
+        <div className="col-span-3 text-center border-0 text-foreground font-bold py-2 mt-2">
+          Code location
+        </div>
+
+        <span className="font-bold py-1">Source system</span>
+        <div className="col-span-2 py-1 truncate">{endpointMetadata?.sourceSystem || "Not set"}</div>
+
+        <span className="font-bold py-1">Adapter repository</span>
+        <div className="col-span-2 py-1 truncate">
+          {endpointMetadata?.repositoryUrl ? (
+            <a className="text-primary hover:underline" href={endpointMetadata.repositoryUrl} target="_blank" rel="noopener noreferrer">
+              {endpointMetadata.repositoryUrl}
+            </a>
+          ) : (
+            "Not set: agents hand adapter faults to a person"
+          )}
+        </div>
+
+        <span className="font-bold py-1">Ticket link</span>
+        <div className="col-span-2 py-1 truncate font-mono text-xs">{endpointMetadata?.ticketLinkTemplate || "Site default"}</div>
       </div>
       <br />
       <hr className="border-border" />

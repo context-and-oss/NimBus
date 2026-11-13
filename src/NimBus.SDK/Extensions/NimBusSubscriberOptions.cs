@@ -18,6 +18,13 @@ public class NimBusSubscriberOptions
     public string? EntityPath { get; set; }
 
     /// <summary>
+    /// Store the failing handler exception's stack trace on its error response (Spec 044 Phase 3),
+    /// so operators and, when a site Owner allows it, failure-handling agents can locate the
+    /// defect in the adapter's code. Frames only, cut at 8,000 characters. Off by default.
+    /// </summary>
+    public bool IncludeStackTraceInErrorResponses { get; set; }
+
+    /// <summary>
     /// Opt-in CloudEvents consume configuration, or <c>null</c> when the
     /// subscriber only handles native NimBus messages (the default). Set via
     /// <see cref="UseCloudEvents"/>.

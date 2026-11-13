@@ -273,6 +273,9 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds) =>
         InstrumentAsync(nameof(GetEventReports), () => _inner.GetEventReports(endpointId, eventIds));
 
+    public Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit) =>
+        InstrumentAsync(nameof(FindEventReports), () => _inner.FindEventReports(endpointId, ticketId, limit));
+
     // ── Endpoint diagnostics ────────────────────────────────────────────
 
     public Task<string> GetEndpointErrorList(string endpointId) =>

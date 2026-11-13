@@ -44,6 +44,7 @@ skip blocked work.
 - [Storage providers](storage-providers.md) covers Cosmos DB and SQL Server.
 - [Rate limiting](rate-limiting.md) and [Throughput tuning](throughput-tuning.md) cover load.
 - [Operator MCP server](mcp-server.md) covers operating NimBus from an AI agent.
+- [Failure-handling agent](failure-agent.md) sets up an unattended agent that retries, reports and fixes failed messages.
 - [Reconciling stale Pending rows](stale-pending-reconcile.md) and
   [Service Bus subscriptions](service-bus-subscription-admin.md) are incident runbooks.
 

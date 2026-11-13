@@ -420,6 +420,9 @@ public static class Mapper
             EndpointOwnerTeam = endpointMetadata.EndpointOwnerTeam,
             EndpointOwnerEmail = endpointMetadata.EndpointOwnerEmail,
             TechnicalContacts = technicalContacts,
+            SourceSystem = endpointMetadata.SourceSystem,
+            RepositoryUrl = endpointMetadata.RepositoryUrl,
+            TicketLinkTemplate = endpointMetadata.TicketLinkTemplate,
         };
     }
 

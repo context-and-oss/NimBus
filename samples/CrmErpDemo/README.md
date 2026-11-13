@@ -589,11 +589,21 @@ The catalog lives in `CrmErpDemo.Contracts/Demo/ErpFailureReasons.cs` and is sha
 `GET /api/admin/error-mode/reasons`), `Erp.Adapter.Functions` (`ErrorModeGuard` throws the
 matching exception from every handler) and the erp-web dropdown, so the three cannot drift.
 
-To run the showcase: enable Integration Intelligence in the WebApp (user secrets, see the guide),
-pick a reason, flip error mode ON, create or edit a CRM account or contact, open the failed
-message in the NimBus WebApp and click **Analyze failure**. Switch reasons and repeat to compare
-categories and guidance. `PUT /api/admin/error-mode` still accepts a bare `{ "enabled": true }`,
-so the e2e suite and the demo film keep the generic failure.
+The AppHost turns on failure classification (`Provider: None`) and the operator MCP endpoint at
+`https://localhost:18443/mcp`. NimBus calls no model: an agent connected to `/mcp` reads each
+failure's evidence and records its classification (see the
+[MCP server guide](../../docs/mcp-server.md)). To run the showcase:
+
+1. Pick a reason, flip error mode ON, and create or edit a CRM account or contact. Use a
+   different account per reason: a Failed message blocks its session.
+2. Connect an agent, for example `claude mcp add --transport http nimbus https://localhost:18443/mcp`
+   (no sign-in under Aspire), and run the `handle-failures` prompt.
+3. Open the failed message in the NimBus WebApp: the intelligence card shows the agent's category,
+   guidance, fault origin and rationale, and **Insights** groups the failures by cause.
+
+Switch reasons and repeat to compare categories and guidance. `PUT /api/admin/error-mode` still
+accepts a bare `{ "enabled": true }`, so the e2e suite and the demo film keep the generic failure.
+The [failure agent sample](../FailureAgent/README.md) runs the same prompt unattended.
 
 ## Showcase: Circuit breaker (outage → pause → probe → recover)
 

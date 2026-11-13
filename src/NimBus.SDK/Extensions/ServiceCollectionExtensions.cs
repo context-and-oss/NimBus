@@ -286,7 +286,8 @@ public static class ServiceCollectionExtensions
             var serviceBusSender = client.CreateSender(options.Endpoint);
             ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
                 new Sender(serviceBusSender), MessagingSystem.ServiceBus);
-            var responseService = new ResponseService(sender);
+            var responseService = new ResponseService(sender,
+                new ResponseServiceOptions { IncludeStackTrace = options.IncludeStackTraceInErrorResponses });
             var eventHandlerProvider = new EventHandlerProvider(
                 sp.GetRequiredService<IServiceScopeFactory>());
 

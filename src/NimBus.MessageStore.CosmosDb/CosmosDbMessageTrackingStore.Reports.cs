@@ -27,6 +27,39 @@ internal sealed partial class CosmosDbMessageTrackingStore
         await container.UpsertItemAsync(report, new PartitionKey(report.EndpointId));
     }
 
+    public async Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit)
+    {
+        if (string.IsNullOrEmpty(endpointId) || limit <= 0)
+            return [];
+
+        // Single partition (EndpointId). Ordered in memory: a partition holds one endpoint's
+        // markers, and ORDER BY would need a composite index the emulator ignores.
+        var text = $"SELECT * FROM c WHERE c.{nameof(EventReport.EndpointId)} = @endpointId AND c.{nameof(EventReport.IsReported)} = true";
+        var query = new QueryDefinition(ticketId is null ? text : text + $" AND c.{nameof(EventReport.TicketId)} = @ticketId")
+            .WithParameter("@endpointId", endpointId);
+        if (ticketId is not null)
+            query = query.WithParameter("@ticketId", ticketId);
+
+        var container = await _getEventReportsContainer();
+        var results = new List<EventReport>();
+        var iterator = container.GetItemQueryIterator<EventReport>(query, null, new QueryRequestOptions { PartitionKey = new PartitionKey(endpointId) });
+        while (iterator.HasMoreResults)
+        {
+            foreach (var report in await iterator.ReadNextAsync())
+            {
+                if (report.ReportedAtUtc is { Kind: DateTimeKind.Unspecified } at)
+                    report.ReportedAtUtc = DateTime.SpecifyKind(at, DateTimeKind.Utc);
+                results.Add(report);
+            }
+        }
+
+        return results
+            .OrderByDescending(r => r.ReportedAtUtc)
+            .ThenBy(r => r.EventId, StringComparer.Ordinal)
+            .Take(limit)
+            .ToList();
+    }
+
     public async Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds)
     {
         var ids = (eventIds ?? Array.Empty<string>())

@@ -72,6 +72,7 @@ const sidebars = {
         { type: 'doc', id: 'rate-limiting', label: 'Rate limiting' },
         { type: 'doc', id: 'throughput-tuning', label: 'Throughput tuning' },
         { type: 'doc', id: 'mcp-server', label: 'Operator MCP server' },
+        { type: 'doc', id: 'failure-agent', label: 'Failure-handling agent' },
         { type: 'doc', id: 'stale-pending-reconcile', label: 'Reconciling stale Pending rows' },
         { type: 'doc', id: 'service-bus-subscription-admin', label: 'Service Bus subscriptions' },
       ],

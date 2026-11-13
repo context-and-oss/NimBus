@@ -9397,6 +9397,9 @@ namespace NimBus.WebApp.ManagementApi
         private string _endpointOwnerEmail;
         private System.Collections.Generic.List<TechnicalContact> _technicalContacts;
         private string _subscriptionStatus;
+        private string _sourceSystem;
+        private string _repositoryUrl;
+        private string _ticketLinkTemplate;
 
         [Newtonsoft.Json.JsonProperty("id", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string Id    {
@@ -9471,6 +9474,54 @@ namespace NimBus.WebApp.ManagementApi
                 if (_subscriptionStatus != value)
                 {
                     _subscriptionStatus = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The business system the endpoint's adapter integrates, at most 200 characters (Spec 044 Phase 3).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("sourceSystem", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SourceSystem    {
+            get { return _sourceSystem; }
+            set
+            {
+                if (_sourceSystem != value)
+                {
+                    _sourceSystem = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The https address of the adapter's repository, where agents file adapter defects (Spec 044 Phase 3). No credentials, query string or fragment.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("repositoryUrl", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string RepositoryUrl    {
+            get { return _repositoryUrl; }
+            set
+            {
+                if (_repositoryUrl != value)
+                {
+                    _repositoryUrl = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The issue tracker as an https link template containing {ticketId}. Overrides the site's ticket link for this endpoint (Spec 044 Phase 3).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("ticketLinkTemplate", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TicketLinkTemplate    {
+            get { return _ticketLinkTemplate; }
+            set
+            {
+                if (_ticketLinkTemplate != value)
+                {
+                    _ticketLinkTemplate = value;
                     RaisePropertyChanged();
                 }
             }
@@ -14823,6 +14874,7 @@ namespace NimBus.WebApp.ManagementApi
         private InsightsCoverage _coverage;
         private System.Collections.Generic.List<InsightGroup> _causeGroups;
         private System.Collections.Generic.List<InsightGroup> _guidanceGroups;
+        private System.Collections.Generic.List<InsightGroup> _faultOriginGroups;
 
         [Newtonsoft.Json.JsonProperty("groups", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<ErrorPatternGroup> Groups    {
@@ -15040,6 +15092,22 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// Occurrences grouped by the fault origin agents recorded (Spec 044 Phase 3) - source_data, adapter_code, target_system, configuration, platform, unknown - plus notAssessed (question set version 1), uncertain, notAnalyzed and notEligible. Null unless enrichment is available.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("faultOriginGroups", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightGroup> FaultOriginGroups    {
+            get { return _faultOriginGroups; }
+            set
+            {
+                if (_faultOriginGroups != value)
+                {
+                    _faultOriginGroups = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -15238,6 +15306,7 @@ namespace NimBus.WebApp.ManagementApi
         private InsightsCoverage _coverage;
         private System.Collections.Generic.List<string> _endpoints;
         private System.Collections.Generic.List<string> _eventTypes;
+        private System.Collections.Generic.List<InsightSourceCount> _sources;
         private System.DateTime _latestOccurrence;
         private System.Collections.Generic.List<InsightGroupPattern> _topPatterns;
         private int _morePatterns;
@@ -15323,6 +15392,22 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// The publishing endpoints of the group's failures with their counts, most first (Spec 044 Phase 3) - the data-quality view for a source's owner.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("sources", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<InsightSourceCount> Sources    {
+            get { return _sources; }
+            set
+            {
+                if (_sources != value)
+                {
+                    _sources = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         [Newtonsoft.Json.JsonProperty("latestOccurrence", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.DateTime LatestOccurrence    {
             get { return _latestOccurrence; }
@@ -15400,6 +15485,83 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class InsightSourceCount : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpointId;
+        private string _eventTypeId;
+        private int _count;
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Count    {
+            get { return _count; }
+            set
+            {
+                if (_count != value)
+                {
+                    _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static InsightSourceCount FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<InsightSourceCount>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public enum InsightsPerspective
     {
 
@@ -15411,6 +15573,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"guidance")]
         Guidance = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"faultOrigin")]
+        FaultOrigin = 3,
 
     }
 
@@ -19165,6 +19330,10 @@ namespace NimBus.WebApp.ManagementApi
         private McpCapabilities _capabilities;
         private bool _allowWorkloads;
         private bool _allowWorkloadClassification;
+        private bool _allowWorkloadResubmit;
+        private bool _allowWorkloadAnnotation;
+        private int? _workloadResubmitsPerDay;
+        private int? _workloadResubmitsPerMessage;
         private McpPeople _people;
         private McpClients _clients;
         private McpEndpointRules _endpoints;
@@ -19268,6 +19437,70 @@ namespace NimBus.WebApp.ManagementApi
                 if (_allowWorkloadClassification != value)
                 {
                     _allowWorkloadClassification = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether workloads with the Nimbus.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("allowWorkloadResubmit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AllowWorkloadResubmit    {
+            get { return _allowWorkloadResubmit; }
+            set
+            {
+                if (_allowWorkloadResubmit != value)
+                {
+                    _allowWorkloadResubmit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether workloads with the Nimbus.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("allowWorkloadAnnotation", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AllowWorkloadAnnotation    {
+            get { return _allowWorkloadAnnotation; }
+            set
+            {
+                if (_allowWorkloadAnnotation != value)
+                {
+                    _allowWorkloadAnnotation = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("workloadResubmitsPerDay", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? WorkloadResubmitsPerDay    {
+            get { return _workloadResubmitsPerDay; }
+            set
+            {
+                if (_workloadResubmitsPerDay != value)
+                {
+                    _workloadResubmitsPerDay = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Unsuccessful workload resubmits of one message, across agents, after which NimBus refuses another; 1-5. Null on a save keeps the default (2).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("workloadResubmitsPerMessage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? WorkloadResubmitsPerMessage    {
+            get { return _workloadResubmitsPerMessage; }
+            set
+            {
+                if (_workloadResubmitsPerMessage != value)
+                {
+                    _workloadResubmitsPerMessage = value;
                     RaisePropertyChanged();
                 }
             }

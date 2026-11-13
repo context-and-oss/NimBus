@@ -45,6 +45,43 @@ public class McpAccessSettings
     /// </summary>
     public bool AllowWorkloadClassification { get; set; }
 
+    /// <summary>
+    /// Let workloads holding the <c>Nimbus.Resubmit</c> app role resubmit failed messages
+    /// unattended (Spec 044 Phase 2), within <see cref="WorkloadResubmitsPerDay"/> and
+    /// <see cref="WorkloadResubmitsPerMessage"/>. Effective only while <see cref="AllowWorkloads"/>
+    /// is on and the operation journal is available. There is no workload switch for skip.
+    /// Default false.
+    /// </summary>
+    public bool AllowWorkloadResubmit { get; set; }
+
+    /// <summary>
+    /// Let workloads holding the <c>Nimbus.Annotate</c> app role mark messages reported with a
+    /// ticket id (Spec 044 Phase 3). It changes nothing on the bus. Effective only while
+    /// <see cref="AllowWorkloads"/> is on. Default false.
+    /// </summary>
+    public bool AllowWorkloadAnnotation { get; set; }
+
+    /// <summary>Resubmits each workload client may make in a rolling 24 hours, 0-500. Default 20.</summary>
+    public int WorkloadResubmitsPerDay { get; set; } = DefaultWorkloadResubmitsPerDay;
+
+    /// <summary>
+    /// Unsuccessful workload resubmits of one message, across all agents, after which NimBus
+    /// refuses another and the message stays with a person; 1-5. Default 2.
+    /// </summary>
+    public int WorkloadResubmitsPerMessage { get; set; } = DefaultWorkloadResubmitsPerMessage;
+
+    /// <summary>Default for <see cref="WorkloadResubmitsPerDay"/>.</summary>
+    public const int DefaultWorkloadResubmitsPerDay = 20;
+
+    /// <summary>Highest <see cref="WorkloadResubmitsPerDay"/>.</summary>
+    public const int MaximumWorkloadResubmitsPerDay = 500;
+
+    /// <summary>Default for <see cref="WorkloadResubmitsPerMessage"/>.</summary>
+    public const int DefaultWorkloadResubmitsPerMessage = 2;
+
+    /// <summary>Highest <see cref="WorkloadResubmitsPerMessage"/>.</summary>
+    public const int MaximumWorkloadResubmitsPerMessage = 5;
+
     /// <summary>Who may connect.</summary>
     public McpPeopleSettings People { get; set; } = new();
 

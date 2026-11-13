@@ -15,10 +15,20 @@ namespace NimBus.Core.Messages;
 public class ResponseService : IResponseService
 {
     private readonly ISender _sender;
+    private readonly ResponseServiceOptions _options;
 
     public ResponseService(ISender sender)
+        : this(sender, new ResponseServiceOptions())
+    {
+    }
+
+    /// <summary>Creates the service with <paramref name="options"/>.</summary>
+    /// <param name="sender">Sends the responses.</param>
+    /// <param name="options">Response options, such as whether stack traces are stored.</param>
+    public ResponseService(ISender sender, ResponseServiceOptions options)
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
     public async Task SendResolutionResponse(IMessageContext messageContext, CancellationToken cancellationToken = default)
@@ -134,7 +144,7 @@ public class ResponseService : IResponseService
 
     public async Task SendErrorResponse(IMessageContext messageContext, Exception exception, CancellationToken cancellationToken = default)
     {
-        IMessage response = CreateResponse(messageContext, MessageType.ErrorResponse, CreateErrorContent(exception, messageContext));
+        IMessage response = CreateResponse(messageContext, MessageType.ErrorResponse, CreateErrorContent(exception, messageContext, _options.IncludeStackTrace));
         await _sender.Send(response, cancellationToken: cancellationToken);
     }
 
@@ -144,7 +154,7 @@ public class ResponseService : IResponseService
         // populated. The Resolver short-circuits on DeadLetterErrorDescription and
         // classifies the audit record as DeadLettered regardless of MessageType.
         var content = exception != null
-            ? CreateErrorContent(exception, messageContext)
+            ? CreateErrorContent(exception, messageContext, _options.IncludeStackTrace)
             : new MessageContent { EventContent = messageContext.MessageContent?.EventContent };
         var response = (Message)CreateResponse(messageContext, MessageType.ErrorResponse, content);
         response.DeadLetterReason = reason;
@@ -157,7 +167,7 @@ public class ResponseService : IResponseService
 
     public async Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default)
     {
-        IMessage response = CreateResponse(messageContext, MessageType.DeferralResponse, CreateErrorContent(exception, messageContext));
+        IMessage response = CreateResponse(messageContext, MessageType.DeferralResponse, CreateErrorContent(exception, messageContext, _options.IncludeStackTrace));
         await _sender.Send(response, cancellationToken: cancellationToken);
     }
 
@@ -287,7 +297,12 @@ public class ResponseService : IResponseService
         };
 
 
-    private static MessageContent CreateErrorContent(Exception exception, IMessageContext messageContext)
+    private static string? Bound(string? stackTrace)
+        => string.IsNullOrEmpty(stackTrace) || stackTrace.Length <= ResponseServiceOptions.MaximumStackTraceLength
+            ? stackTrace
+            : stackTrace[..ResponseServiceOptions.MaximumStackTraceLength];
+
+    private static MessageContent CreateErrorContent(Exception exception, IMessageContext messageContext, bool includeStackTrace)
     {
         // For ErrorType the operator wants the actual handler exception
         // (e.g. SampleApiException) — not the generic
@@ -303,7 +318,8 @@ public class ResponseService : IResponseService
             {
                 ErrorText = exception.Message,
                 ErrorType = reported.GetType().Name,
-                ExceptionStackTrace = null,
+                // Frames only: the message is already in ErrorText. Opt-in (ResponseServiceOptions).
+                ExceptionStackTrace = includeStackTrace ? Bound(reported.StackTrace) : null,
                 ExceptionSource = null,
             },
             EventContent = messageContext.MessageContent.EventContent

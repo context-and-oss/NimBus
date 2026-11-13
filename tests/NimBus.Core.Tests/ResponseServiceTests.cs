@@ -200,6 +200,62 @@ public class ResponseServiceTests
         Assert.AreEqual("handler blew up", msg.MessageContent.ErrorContent.ErrorText);
     }
 
+    [TestMethod]
+    public async Task SendErrorResponse_StoresNoStackTraceByDefault()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+
+        await sut.SendErrorResponse(CreateContext(), Thrown(new InvalidOperationException("boom")));
+
+        Assert.IsNull(sender.SentMessages.Single().MessageContent.ErrorContent!.ExceptionStackTrace);
+    }
+
+    [TestMethod]
+    public async Task SendErrorResponse_StoresTheHandlerExceptionsFramesWhenAskedTo()
+    {
+        // Spec 044 Phase 3: opt-in, so failure-handling agents can locate the defect.
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender, new ResponseServiceOptions { IncludeStackTrace = true });
+        var inner = Thrown(new SomeCustomException("handler blew up"));
+
+        await sut.SendErrorResponse(CreateContext(), new EventContextHandlerException(inner));
+
+        var trace = sender.SentMessages.Single().MessageContent.ErrorContent!.ExceptionStackTrace;
+        Assert.IsNotNull(trace);
+        StringAssert.Contains(trace, nameof(Thrown), StringComparison.Ordinal);
+        Assert.IsFalse(trace.Contains("handler blew up", StringComparison.Ordinal), "Frames only: the message is in ErrorText.");
+    }
+
+    [TestMethod]
+    public async Task SendErrorResponse_CutsALongStackTrace()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender, new ResponseServiceOptions { IncludeStackTrace = true });
+
+        await sut.SendErrorResponse(CreateContext(), new LongTraceException());
+
+        Assert.AreEqual(ResponseServiceOptions.MaximumStackTraceLength,
+            sender.SentMessages.Single().MessageContent.ErrorContent!.ExceptionStackTrace!.Length);
+    }
+
+    private static Exception Thrown(Exception exception)
+    {
+        try
+        {
+            throw exception;
+        }
+        catch (Exception caught)
+        {
+            return caught;
+        }
+    }
+
+    private sealed class LongTraceException : Exception
+    {
+        public override string StackTrace => new('f', ResponseServiceOptions.MaximumStackTraceLength + 500);
+    }
+
     // ── SendDeadLetterResponse ──────────────────────────────────────────
 
     [TestMethod]

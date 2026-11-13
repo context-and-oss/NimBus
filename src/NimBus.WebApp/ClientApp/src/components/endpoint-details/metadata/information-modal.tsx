@@ -9,6 +9,7 @@ import {
   ModalBody,
   ModalFooter,
 } from "components/ui/modal";
+import { validateRepositoryUrl, validateSourceSystem, validateTicketLinkTemplate } from "./code-location";
 
 // Icons
 const AddIcon = () => (
@@ -72,6 +73,13 @@ export default function MetadataButton(props: IInformationButtonProps) {
       : "",
   );
 
+  // Spec 044 Phase 3: where agents file adapter defects and how tickets link.
+  const [sourceSystem, setSourceSystem] = useState(props.metaData?.sourceSystem ?? "");
+  const [repositoryUrl, setRepositoryUrl] = useState(props.metaData?.repositoryUrl ?? "");
+  const [ticketLinkTemplate, setTicketLinkTemplate] = useState(props.metaData?.ticketLinkTemplate ?? "");
+  const codeLocationError =
+    validateSourceSystem(sourceSystem) ?? validateRepositoryUrl(repositoryUrl) ?? validateTicketLinkTemplate(ticketLinkTemplate);
+
   const [technicalContacts, setTechnicalContacts] = useState<
     api.TechnicalContact[]
   >(
@@ -89,7 +97,7 @@ export default function MetadataButton(props: IInformationButtonProps) {
 
   React.useEffect(() => {
     validate();
-  }, [endpointOwner, endpointOwnerTeam, technicalContacts, endpointOwnerEmail]);
+  }, [endpointOwner, endpointOwnerTeam, technicalContacts, endpointOwnerEmail, codeLocationError]);
 
   const handleOwnerInputChange = (e: React.FormEvent<HTMLInputElement>) => {
     setEndpointOwner(e.currentTarget.value);
@@ -172,7 +180,8 @@ export default function MetadataButton(props: IInformationButtonProps) {
       endpointOwner === "" ||
       endpointOwnerTeam === "" ||
       !pattern.test(endpointOwnerEmail) ||
-      !technicalContactValidation
+      !technicalContactValidation ||
+      codeLocationError !== undefined
     ) {
       setValidation(false);
     } else {
@@ -212,6 +221,9 @@ export default function MetadataButton(props: IInformationButtonProps) {
       endpointOwnerTeam: endpointOwnerTeam,
       endpointOwnerEmail: endpointOwnerEmail,
       technicalContacts: technicalContacts,
+      sourceSystem: sourceSystem.trim() || undefined,
+      repositoryUrl: repositoryUrl.trim() || undefined,
+      ticketLinkTemplate: ticketLinkTemplate.trim() || undefined,
     });
     client
       .postMetadataEndpoint(params.id!, body)
@@ -296,6 +308,37 @@ export default function MetadataButton(props: IInformationButtonProps) {
             value={endpointOwnerEmail}
             onChange={handleOwnerEmailInputChange}
           />
+          <br />
+          <p className="font-bold mt-2">Source system</p>
+          <Input
+            aria-label="Source system"
+            placeholder="Dynamics 365 Sales"
+            value={sourceSystem}
+            onChange={(e) => setSourceSystem(e.currentTarget.value)}
+          />
+          <p className="font-bold mt-2">Adapter repository</p>
+          <p className="text-xs text-muted-foreground">
+            Where agents open issues and draft pull requests for this adapter's defects. Leave empty to hand adapter faults to a person.
+          </p>
+          <Input
+            aria-label="Adapter repository"
+            placeholder="https://github.com/your-org/your-adapter"
+            value={repositoryUrl}
+            onChange={(e) => setRepositoryUrl(e.currentTarget.value)}
+          />
+          <p className="font-bold mt-2">Ticket link</p>
+          <p className="text-xs text-muted-foreground">
+            The issue tracker, with {"{ticketId}"} where the ticket id goes. Overrides the site's ticket link for this endpoint.
+          </p>
+          <Input
+            aria-label="Ticket link"
+            placeholder="https://github.com/your-org/your-adapter/issues/{ticketId}"
+            value={ticketLinkTemplate}
+            onChange={(e) => setTicketLinkTemplate(e.currentTarget.value)}
+          />
+          {codeLocationError && (
+            <p role="alert" className="mt-1 text-sm text-status-danger">{codeLocationError}</p>
+          )}
           <br />
 
           <div className="overflow-x-auto mt-4">

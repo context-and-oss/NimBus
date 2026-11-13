@@ -67,6 +67,9 @@
     <Project Path="../samples/CrmErpDemo/Erp.Adapter.Functions/Erp.Adapter.Functions.csproj" />
     <Project Path="../samples/CrmErpDemo/Erp.Api/Erp.Api.csproj" />
   </Folder>
+  <Folder Name="/Samples/FailureAgent/">
+    <Project Path="../samples/FailureAgent/FailureAgent.Runner/FailureAgent.Runner.csproj" />
+  </Folder>
   <Folder Name="/Samples/DynamicsBcDemo/">
     <Project Path="../samples/DynamicsBcDemo/BusinessCentral.Adapter/BusinessCentral.Adapter.csproj" />
     <Project Path="../samples/DynamicsBcDemo/BusinessCentral.Api/BusinessCentral.Api.csproj" />
@@ -87,6 +90,9 @@
   </Folder>
   <Folder Name="/Tests/CrmErpDemo/">
     <Project Path="../tests/CrmErpDemo.AppHost.Tests/CrmErpDemo.AppHost.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Tests/FailureAgent/">
+    <Project Path="../tests/FailureAgent.Runner.Tests/FailureAgent.Runner.Tests.csproj" />
   </Folder>
   <Folder Name="/Tests/DynamicsBcDemo/">
     <Project Path="../tests/DynamicsBcDemo.Tests/DynamicsBcDemo.Tests.csproj" />
