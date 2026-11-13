@@ -11,6 +11,7 @@ import {
 } from "components/ui/modal";
 import { emitToast, useToast } from "components/ui/toast";
 import * as api from "api-client";
+import { errorMessage } from "api-client/problem";
 
 // A composed event is a real event: the producing endpoint publishes it and every
 // consumer processes it. Send therefore waits this long, with an Undo in a toast,
@@ -22,15 +23,8 @@ export type SendOutcome =
   | { kind: "failed"; message: string }
   | { kind: "undone" };
 
-// SwaggerException carries the server's response body on .response, which is
-// far more useful than the bare "Bad Request" reason phrase.
-const composeErrorMessage = (err: unknown): string => {
-  const swaggerResponse =
-    api.SwaggerException.isSwaggerException(err) && err.response
-      ? err.response
-      : null;
-  return swaggerResponse ?? (err instanceof Error ? err.message : String(err));
-};
+// The server's problem detail is far more useful than the bare "Bad Request" reason phrase.
+const composeErrorMessage = (err: unknown): string => errorMessage(err);
 
 /**
  * Publishes a composed event once the undo window has passed, unless Undo is

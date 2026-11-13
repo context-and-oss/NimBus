@@ -1,32 +1,6 @@
 // Turns a rejected Operations API call into a message for the card (#285).
 
-const MAX_DETAIL_LENGTH = 500;
-
-/**
- * The server's explanation in an error response body: a ProblemDetails `detail`, then its
- * `title`, then a JSON string or plain-text body. Undefined when the body says nothing.
- */
-function bodyDetail(body: unknown): string | undefined {
-  if (typeof body !== "string" || body.trim() === "") return undefined;
-
-  let text: string | undefined;
-  try {
-    const parsed: unknown = JSON.parse(body);
-    if (typeof parsed === "string") {
-      text = parsed;
-    } else if (parsed && typeof parsed === "object") {
-      const problem = parsed as { detail?: unknown; title?: unknown };
-      if (typeof problem.detail === "string" && problem.detail.trim()) text = problem.detail;
-      else if (typeof problem.title === "string" && problem.title.trim()) text = problem.title;
-    }
-  } catch {
-    text = body;
-  }
-
-  text = text?.trim();
-  if (!text) return undefined;
-  return text.length > MAX_DETAIL_LENGTH ? `${text.slice(0, MAX_DETAIL_LENGTH)}…` : text;
-}
+import { problemDetail } from "api-client/problem";
 
 /**
  * True when the storage provider is known and isn't Cosmos DB, so a Cosmos-only operation can't
@@ -50,7 +24,7 @@ export function describeOperationError(error: unknown): string {
     return message ? `The request failed: ${message}` : "The request failed.";
   }
 
-  const detail = bodyDetail(candidate?.response) ?? message;
+  const detail = problemDetail(candidate?.response) ?? message;
   let text = `The request failed (HTTP ${status})`;
   if (detail) text += `: ${detail}`;
   if (status === 403) text += `${detail ? " —" : ":"} this operation requires the site Owner role.`;

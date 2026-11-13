@@ -162,6 +162,29 @@ public class RateLimitEnforcementTests
     }
 
     [TestMethod]
+    public async Task An_api_rejection_is_a_problem_naming_the_policy_and_the_retry_delay()
+    {
+        await using var host = await Host(new() { ["RateLimiting:Admin:PermitLimit"] = "1" });
+        using var client = host.AuthenticatedClient();
+
+        using (var first = await client.PostAsync("/api/admin/endpoint/ep-1/purge", EmptyJson()))
+        {
+            Assert.AreNotEqual(HttpStatusCode.TooManyRequests, first.StatusCode);
+        }
+
+        using var rejected = await client.PostAsync("/api/admin/endpoint/ep-1/purge", EmptyJson());
+        var body = await rejected.Content.ReadAsStringAsync();
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.AreEqual("application/problem+json", rejected.Content.Headers.ContentType?.MediaType, body);
+        using var problem = System.Text.Json.JsonDocument.Parse(body);
+        Assert.AreEqual(429, problem.RootElement.GetProperty("status").GetInt32());
+        Assert.AreEqual(RateLimitPolicyNames.Admin, problem.RootElement.GetProperty("policy").GetString());
+        Assert.IsTrue(problem.RootElement.GetProperty("retryAfterSeconds").GetInt32() > 0);
+        Assert.IsNotNull(rejected.Headers.RetryAfter, "The Retry-After header stays.");
+    }
+
+    [TestMethod]
     public async Task Admin_budgets_are_per_user_not_shared()
     {
         // Without this a single shared bucket would still pass AC-6 while
@@ -278,6 +301,86 @@ public class RateLimitEnforcementTests
 
         host.Agent.Release();
         (await blocked).Dispose();
+    }
+
+    [TestMethod]
+    public async Task The_global_limit_throttles_an_otherwise_unlisted_api_route_per_caller()
+    {
+        await using var host = await Host(new() { ["RateLimiting:Global:PermitLimit"] = "2" });
+        using var userA = host.AuthenticatedClient("user-a");
+        using var userB = host.AuthenticatedClient("user-b");
+
+        for (var i = 0; i < 2; i++)
+        {
+            using var allowed = await userA.GetAsync("/api/agent/catalog");
+            Assert.AreEqual(HttpStatusCode.OK, allowed.StatusCode, $"Request {i + 1} is under the global allowance.");
+        }
+
+        using (var rejected = await userA.GetAsync("/api/agent/catalog"))
+        {
+            Assert.AreEqual(HttpStatusCode.TooManyRequests, rejected.StatusCode, "The third request exceeds the global allowance.");
+            using var problem = System.Text.Json.JsonDocument.Parse(await rejected.Content.ReadAsStringAsync());
+            Assert.AreEqual(RateLimitPolicyNames.Global, problem.RootElement.GetProperty("policy").GetString());
+            Assert.IsNotNull(rejected.Headers.RetryAfter);
+        }
+
+        using var other = await userB.GetAsync("/api/agent/catalog");
+        Assert.AreEqual(HttpStatusCode.OK, other.StatusCode, "Each caller has its own global budget.");
+    }
+
+    [TestMethod]
+    public async Task The_global_limit_reports_itself_even_on_a_route_with_its_own_policy()
+    {
+        await using var host = await Host(new()
+        {
+            ["RateLimiting:Global:PermitLimit"] = "1",
+            ["RateLimiting:Search:PermitLimit"] = "100",
+        });
+        using var client = host.AuthenticatedClient();
+
+        using (var first = await client.PostAsync("/api/messages/search", EmptyJson()))
+        {
+            Assert.AreEqual(HttpStatusCode.OK, first.StatusCode);
+        }
+
+        using var rejected = await client.PostAsync("/api/messages/search", EmptyJson());
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        using var problem = System.Text.Json.JsonDocument.Parse(await rejected.Content.ReadAsStringAsync());
+        Assert.AreEqual(RateLimitPolicyNames.Global, problem.RootElement.GetProperty("policy").GetString(),
+            "The search policy had room; the global limit rejected the request.");
+    }
+
+    [TestMethod]
+    public async Task The_global_limit_leaves_health_and_the_hub_alone()
+    {
+        await using var host = await Host(new() { ["RateLimiting:Global:PermitLimit"] = "1" });
+        using var client = host.AuthenticatedClient();
+
+        for (var i = 0; i < 3; i++)
+        {
+            using var health = await client.GetAsync("/health");
+            Assert.AreEqual(HttpStatusCode.OK, health.StatusCode, "Health probes are outside /api.");
+
+            using var negotiate = await client.PostAsync($"{AppEndpoints.GridEventHub}/negotiate?negotiateVersion=1", content: null);
+            Assert.AreEqual(HttpStatusCode.OK, negotiate.StatusCode, "The hub is outside /api.");
+        }
+    }
+
+    [TestMethod]
+    public async Task The_kill_switch_turns_the_global_limit_off()
+    {
+        await using var host = await Host(new()
+        {
+            ["RateLimiting:Enabled"] = "false",
+            ["RateLimiting:Global:PermitLimit"] = "1",
+        });
+        using var client = host.AuthenticatedClient();
+
+        for (var i = 0; i < 3; i++)
+        {
+            using var response = await client.GetAsync("/api/agent/catalog");
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        }
     }
 
     [TestMethod]

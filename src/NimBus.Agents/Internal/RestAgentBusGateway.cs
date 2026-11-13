@@ -9,6 +9,12 @@ namespace NimBus.Agents.Internal;
 /// <see cref="HttpClient"/> whose base address resolves the nimbus-ops resource via service
 /// discovery and whose default headers carry the agent identity (<c>X-Agent-Id</c>). All bodies
 /// are camelCase JSON (Newtonsoft) to match the API contract.
+/// <para>
+/// It calls the unversioned <c>/api/agent/*</c> routes on purpose: they are deprecated in
+/// favour of <c>/api/v1/agent/*</c>, but a WebApp older than API 1.0.0 serves only them, and
+/// this client must keep working against those. Move to <c>/api/v1</c> in the next major, when
+/// the unversioned routes are removed.
+/// </para>
 /// </summary>
 internal sealed class RestAgentBusGateway : IAgentBusGateway
 {

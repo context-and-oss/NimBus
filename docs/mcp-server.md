@@ -287,8 +287,8 @@ before the policy existed.
 
 The policy is one record in shared storage (`IEndpointMetadataStore.GetMcpAccessSettings`;
 SQL Server migration `0023_McpAccessSettings.sql`, a fixed-id document in the Cosmos settings
-container). The API is `GET`/`PUT /api/admin/mcp/settings`, `POST /api/admin/mcp/turn-off` and
-`GET /api/admin/mcp/activity`.
+container). The API is `GET`/`PUT /api/v1/admin/mcp/settings`, `POST /api/v1/admin/mcp/turn-off` and
+`GET /api/v1/admin/mcp/activity`.
 
 ## Local development (Aspire)
 
@@ -450,4 +450,4 @@ Owner can lower both limits in Settings → MCP access, but not raise them. See
   `nimbus_find_messages`, `nimbus_search_messages` and `nimbus_get_message_history`.
 - **Bus participation:** `define_event_type`, `subscribe`, `receive_messages`, `publish_event` and
   `settle_message` are not operator tools. Agents that take part on the bus use the `NimBus.Agents`
-  REST SDK against `/api/agent/*`.
+  REST SDK against `/api/v1/agent/*`.

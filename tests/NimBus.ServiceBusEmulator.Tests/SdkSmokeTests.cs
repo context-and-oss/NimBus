@@ -90,37 +90,67 @@ public sealed class SdkSmokeTests
     [Timeout(60_000)]
     public async Task Stock_sdk_subscription_created_with_an_initial_rule_has_only_that_rule_and_receives_nothing()
     {
-        await using var emulator = await EmulatorProcess.StartAsync();
+        // Every awaited step is bounded, and the bounds sum to less than the 60 s [Timeout]:
+        // startup has a 20 s deadline, each later step 10 s, all capped by a 50 s overall
+        // budget, and emulator disposal waits at most 5 s for the process to exit. A hang
+        // therefore fails naming its step, with the emulator's protocol trace (AF-9).
+        // The protocol order is the original one: send, receive, then delete the topic while
+        // the SDK links are still open, and only then dispose receiver, sender and client (the
+        // reverse `await using` order), then the emulator. The disposals run as cleanups that
+        // always run, even after an earlier failure; a failing cleanup is reported after the
+        // body's first failure, never instead of it.
+        var clock = Stopwatch.StartNew();
+        var emulator = await EmulatorProcess.StartAsync(startupDeadline: TimeSpan.FromSeconds(20));
+        var steps = new TestSteps(emulator, clock, TimeSpan.FromSeconds(50));
+        var step = TimeSpan.FromSeconds(10);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var entityName = $"initial-{Guid.NewGuid():N}";
-        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
-        await admin.CreateTopicAsync(entityName, timeout.Token);
+        ServiceBusClient? client = null;
+        ServiceBusSender? sender = null;
+        ServiceBusReceiver? receiver = null;
+        await TestSteps.RunWithCleanupsAsync(
+            async () =>
+            {
+                var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+                await steps.RunAsync("create topic", step, () => admin.CreateTopicAsync(entityName, timeout.Token));
 
-        await admin.CreateSubscriptionAsync(
-            new CreateSubscriptionOptions(entityName, "closed"),
-            new CreateRuleOptions("$Default", new FalseRuleFilter()),
-            timeout.Token);
+                await steps.RunAsync("create subscription with initial rule", step, () => admin.CreateSubscriptionAsync(
+                    new CreateSubscriptionOptions(entityName, "closed"),
+                    new CreateRuleOptions("$Default", new FalseRuleFilter()),
+                    timeout.Token));
 
-        var rules = new List<RuleProperties>();
-        await foreach (var rule in admin.GetRulesAsync(entityName, "closed", timeout.Token))
-        {
-            rules.Add(rule);
-        }
+                var rules = await steps.RunAsync("list rules", step, async () =>
+                {
+                    var list = new List<RuleProperties>();
+                    await foreach (var rule in admin.GetRulesAsync(entityName, "closed", timeout.Token))
+                    {
+                        list.Add(rule);
+                    }
 
-        Assert.HasCount(1, rules);
-        Assert.AreEqual("$Default", rules[0].Name);
-        Assert.AreEqual("1=0", ((SqlRuleFilter)rules[0].Filter).SqlExpression);
-        Assert.IsFalse(rules.Any(rule => rule.Filter is SqlRuleFilter { SqlExpression: "1=1" }));
+                    return list;
+                });
 
-        // A publish straight after creation lands in the provisioning window.
-        await using var client = new ServiceBusClient(emulator.ConnectionString);
-        await using var sender = client.CreateSender(entityName);
-        await sender.SendMessageAsync(new ServiceBusMessage("window"), timeout.Token).WaitAsync(TimeSpan.FromSeconds(10));
-        await using var receiver = client.CreateReceiver(entityName, "closed");
-        var received = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token).WaitAsync(TimeSpan.FromSeconds(10));
+                Assert.HasCount(1, rules);
+                Assert.AreEqual("$Default", rules[0].Name);
+                Assert.AreEqual("1=0", ((SqlRuleFilter)rules[0].Filter).SqlExpression);
+                Assert.IsFalse(rules.Any(rule => rule.Filter is SqlRuleFilter { SqlExpression: "1=1" }));
 
-        Assert.IsNull(received);
-        await admin.DeleteTopicAsync(entityName, timeout.Token);
+                // A publish straight after creation lands in the provisioning window.
+                client = new ServiceBusClient(emulator.ConnectionString);
+                var createdSender = sender = client.CreateSender(entityName);
+                await steps.RunAsync("send", step, () => createdSender.SendMessageAsync(new ServiceBusMessage("window"), timeout.Token));
+
+                var createdReceiver = receiver = client.CreateReceiver(entityName, "closed");
+                var received = await steps.RunAsync("receive", step, () => createdReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token));
+                Assert.IsNull(received);
+
+                // Deleted while the sender and receiver links are still open, as at 1821c42e.
+                await steps.RunAsync("delete topic", step, () => admin.DeleteTopicAsync(entityName, timeout.Token));
+            },
+            () => receiver is null ? Task.CompletedTask : steps.DisposeAsync("receiver", receiver, step),
+            () => sender is null ? Task.CompletedTask : steps.DisposeAsync("sender", sender, step),
+            () => client is null ? Task.CompletedTask : steps.DisposeAsync("client", client, step),
+            () => emulator.DisposeOrThrowAsync().AsTask());
     }
 
     [TestMethod]

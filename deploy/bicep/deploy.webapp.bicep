@@ -276,11 +276,12 @@ var templateManagedKeys = map(webappsettings, managed => managed.name)
 // The operator MCP endpoint's settings (NimBus__Mcp__*: Enabled, the MCP resource's
 // Entra app registration, allowed origins) follow the same rule: this template
 // creates no app registration, so they are set out of band once it exists and
-// must survive a redeploy. None of them is a secret.
+// must survive a redeploy. None of them is a secret. So does the REST API's CORS
+// allow-list (Cors__AllowedOrigins__*), which only the operator knows.
 var preservedOperatorAppSettings = map(
   filter(
     items(existingAppSettings),
-    setting => (startsWith(setting.key, 'RateLimiting__') || startsWith(setting.key, 'NimBus__Mcp__')) && !contains(templateManagedKeys, setting.key)),
+    setting => (startsWith(setting.key, 'RateLimiting__') || startsWith(setting.key, 'NimBus__Mcp__') || startsWith(setting.key, 'Cors__')) && !contains(templateManagedKeys, setting.key)),
   preserved => {
     name: preserved.key
     value: preserved.value

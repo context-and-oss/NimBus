@@ -45,7 +45,7 @@ function looksLikeId(input: string): boolean {
  *    palette opens and substring-filtered against the input. For site Owners
  *    (`canManage`), the Manage pages, operations and settings come first.
  * 2. **GUID lookup (remote)** — when the input looks like an ID we hit the
- *    `/api/messages/search` endpoint twice in parallel (by eventId, by sessionId)
+ *    `/api/v1/messages/search` endpoint twice in parallel (by eventId, by sessionId)
  *    and surface the hits as `event` / `session` rows.
  *
  * Catalog requests run once per page load (the catalog rarely changes during

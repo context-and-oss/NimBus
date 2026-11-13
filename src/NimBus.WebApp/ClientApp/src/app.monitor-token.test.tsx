@@ -62,9 +62,9 @@ describe("App on the Monitor with a dashboard token", () => {
 
     const paths = new Set(requests.map((r) => new URL(r.url, "https://localhost").pathname));
     expect([...paths].sort()).toEqual([
-      "/api/monitor/feed/history",
-      "/api/monitor/feed/metrics",
-      "/api/monitor/feed/status",
+      "/api/v1/monitor/feed/history",
+      "/api/v1/monitor/feed/metrics",
+      "/api/v1/monitor/feed/status",
     ]);
     expect(requests.every((r) => r.token === "nbdt_wall" && r.credentials === "omit")).toBe(true);
   });

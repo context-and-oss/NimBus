@@ -125,7 +125,10 @@ describe("SessionStateCard", () => {
 
   it("shows the current state when it changed since it was read", async () => {
     getMock.mockResolvedValue(view());
-    postMock.mockRejectedValue(view({ blockedByEventId: "evt-2", stateVersion: "v9" }));
+    // The 409 is a problem whose members are the SessionStateView; the client parses it onto .result.
+    postMock.mockRejectedValue(
+      new api.SwaggerException("Conflict", 409, "", {}, view({ blockedByEventId: "evt-2", stateVersion: "v9" })),
+    );
 
     await lookUp();
     await userEvent.click(screen.getByRole("button", { name: "Reset state" }));

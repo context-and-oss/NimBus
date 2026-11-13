@@ -158,7 +158,7 @@ export interface UseMonitorDataResult {
 }
 
 /**
- * Polls the Monitor status feed (`/api/monitor/feed/status`: counts, acknowledgements, blocked
+ * Polls the Monitor status feed (`/api/v1/monitor/feed/status`: counts, acknowledgements, blocked
  * sessions and heartbeat for every endpoint) on a fixed cadence, with the session or with the
  * dashboard token, and decorates each endpoint with the derived data the Monitor page needs:
  *  - rolling sample history (drives sparklines + rate / min)

@@ -70,11 +70,6 @@ function renderAt(url: string) {
       <MessageListing
         eventDetails={event}
         messages={failures}
-        eventTypes={[]}
-        skipEvent={vi.fn()}
-        resubmitEvent={vi.fn()}
-        resubmitEventWithChanges={vi.fn()}
-        deleteEvent={vi.fn()}
       />
     </MemoryRouter>,
   );

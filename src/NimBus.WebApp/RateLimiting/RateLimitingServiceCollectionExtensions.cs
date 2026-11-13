@@ -93,10 +93,17 @@ public static partial class RateLimitingServiceCollectionExtensions
                     new RateLimitOptions.WindowLimits { PermitLimit = permits, WindowSeconds = options.Mcp.WindowSeconds });
             });
 
-            // GlobalLimiter stays null on purpose: everything not explicitly
-            // listed above — the SignalR hub, health probes, static files, the
-            // SPA fallback, every other /api route — carries no rate-limiting
-            // metadata and is therefore not throttled at all (AC-10).
+            // A per-caller ceiling over every /api request, so no route is unthrottled. It runs
+            // ahead of the named policies above, which stay tighter on their routes. Everything
+            // outside /api — the SignalR hub, health probes, static files, the SPA, /mcp (which
+            // has its own policy) — gets no limiter (AC-10). The kill switch removes it too.
+            if (options.Enabled)
+            {
+                limiter.GlobalLimiter = new GlobalApiRateLimiter(PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                    NimBus.WebApp.Problems.ApiProblems.IsApiPath(context.Request.Path)
+                        ? FixedWindow("global:" + UserPartitionKey(context, options), options.Global)
+                        : RateLimitPartition.GetNoLimiter("outside-api")));
+            }
         });
 
         services.AddSingleton<IConfigureOptions<MvcOptions>, ConfigureRateLimitConventions>();
@@ -112,8 +119,11 @@ public static partial class RateLimitingServiceCollectionExtensions
             QueueLimit = 0,
         });
 
+    // A verified agent key or dashboard token (RateLimitCallers) first: those authenticate only
+    // inside MVC, after the limiter picks a partition, so context.User is still anonymous here.
     private static string UserPartitionKey(HttpContext context, RateLimitOptions options)
-        => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+        => RateLimitCallers.Resolve(context)
+           ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier)
            ?? context.User.Identity?.Name
            ?? "ip:" + ClientIpPartitionKey.Resolve(context, options);
 
@@ -135,7 +145,9 @@ public static partial class RateLimitingServiceCollectionExtensions
     private static ValueTask OnRejectedAsync(OnRejectedContext context, CancellationToken cancellationToken)
     {
         var http = context.HttpContext;
-        var policy = http.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "unknown";
+        var policy = GlobalApiRateLimiter.Rejected(http)
+            ? RateLimitPolicyNames.Global
+            : http.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "unknown";
 
         string? retryAfter = null;
         if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var delay))
@@ -152,6 +164,18 @@ public static partial class RateLimitingServiceCollectionExtensions
         LogRateLimitRejectedARequest(http.RequestServices
             .GetRequiredService<ILoggerFactory>()
             .CreateLogger(typeof(RateLimitingServiceCollectionExtensions).FullName!), policy, http.Request.Path, retryAfter ?? "n/a");
+
+        // The REST API answers with the same problem schema as every other /api error.
+        if (NimBus.WebApp.Problems.ApiProblems.IsApiPath(http.Request.Path))
+        {
+            var problem = NimBus.WebApp.Problems.ApiProblems.Create(http, StatusCodes.Status429TooManyRequests, retryAfter is null
+                ? $"Too many requests ({policy}). Retry shortly."
+                : $"Too many requests ({policy}). Retry in {retryAfter} seconds.");
+            problem.Extensions["policy"] = policy;
+            if (retryAfter is not null)
+                problem.Extensions["retryAfterSeconds"] = int.Parse(retryAfter, CultureInfo.InvariantCulture);
+            return new ValueTask(NimBus.WebApp.Problems.ApiProblems.WriteAsync(http, problem));
+        }
 
         // POST /account/login is a browser form surface — a bodyless 429 shows a
         // human nothing at all.

@@ -73,7 +73,7 @@ public sealed partial class AuditLogService : IAuditLogService
         }
         catch (Exception ex)
         {
-            LogAuditWriteToMessageStoreFailed(_logger, ex, entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
+            LogAuditWriteToMessageStoreFailed(_logger, ex, entity.AuditType, ForLog(entity.EventId), ForLog(entity.EndpointId), ForLog(entity.AuditorName)!);
         }
 
         EmitStructuredLog(entity);
@@ -98,7 +98,7 @@ public sealed partial class AuditLogService : IAuditLogService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            LogRequiredAuditWriteFailedForAuditType(_logger, ex, entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
+            LogRequiredAuditWriteFailedForAuditType(_logger, ex, entity.AuditType, ForLog(entity.EventId), ForLog(entity.EndpointId), ForLog(entity.AuditorName)!);
             throw new AuditUnavailableException("The audit row could not be recorded, so the command was not run.", ex);
         }
 
@@ -125,6 +125,13 @@ public sealed partial class AuditLogService : IAuditLogService
         EndpointId = endpointId,
     };
 
+    /// <summary>
+    /// Escapes CR and LF in a caller-supplied value bound for the log sink, so it cannot start a
+    /// forged log entry. The durable audit row keeps the original value.
+    /// </summary>
+    private static string? ForLog(string? value) =>
+        value?.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
+
     // Short-term sink: App Insights via structured ILogger. The BeginScope dictionary keys
     // MUST match the entity property names so KQL queries can pivot on
     // customDimensions.<FieldName>.
@@ -134,14 +141,14 @@ public sealed partial class AuditLogService : IAuditLogService
         {
             var scope = new Dictionary<string, object?>
             {
-                [nameof(MessageAuditEntity.AuditorName)] = entity.AuditorName,
+                [nameof(MessageAuditEntity.AuditorName)] = ForLog(entity.AuditorName),
                 [nameof(MessageAuditEntity.AuditTimestamp)] = entity.AuditTimestamp,
                 [nameof(MessageAuditEntity.AuditType)] = entity.AuditType.ToString(),
-                [nameof(MessageAuditEntity.Comment)] = entity.Comment,
+                [nameof(MessageAuditEntity.Comment)] = ForLog(entity.Comment),
                 [nameof(MessageAuditEntity.AccessDenied)] = entity.AccessDenied,
-                [nameof(MessageAuditEntity.Data)] = entity.Data,
-                [nameof(MessageAuditEntity.EventId)] = entity.EventId,
-                [nameof(MessageAuditEntity.EndpointId)] = entity.EndpointId,
+                [nameof(MessageAuditEntity.Data)] = ForLog(entity.Data),
+                [nameof(MessageAuditEntity.EventId)] = ForLog(entity.EventId),
+                [nameof(MessageAuditEntity.EndpointId)] = ForLog(entity.EndpointId),
             };
 
             using (_logger.BeginScope(scope))
@@ -151,7 +158,7 @@ public sealed partial class AuditLogService : IAuditLogService
         }
         catch (Exception ex)
         {
-            LogAuditAppInsightsEmitFailed(_logger, ex, entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
+            LogAuditAppInsightsEmitFailed(_logger, ex, entity.AuditType, ForLog(entity.EventId), ForLog(entity.EndpointId), ForLog(entity.AuditorName)!);
         }
     }
 
