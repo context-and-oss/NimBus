@@ -33,6 +33,8 @@ npm --prefix website ci && npm --prefix website run build   # docs portal
 dotnet run --project src/NimBus.AppHost        # local Aspire stack
 ```
 
+- `global.json` pins the SDK to 10.0.4xx (latest patch). A newer SDK, such as a .NET 11 preview
+  on a hosted runner, applies stricter code-style defaults and fails the build with IDE errors.
 - Release promotes **compiler (CS) warnings** to errors; analyzer warnings (CA/S/SA) stay
   non-fatal. **CS8767** (nullability mismatch on an interface implementation) fails Release
   while Debug stays green.
