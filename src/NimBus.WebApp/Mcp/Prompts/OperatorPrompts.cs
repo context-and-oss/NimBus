@@ -34,10 +34,11 @@ public static class OperatorPrompts
         - Do not request payloads (includePayload) unless the user asks for them.
         - Timestamps are UTC. Link to a message with the webUiUrl that nimbus_get_message returns.
         - Tool errors start with a code in brackets, for example [EndpointNotFound] or [PermissionDenied]. Report them plainly; do not guess around them.
+        - When a result has nextActions, offer them to the user as a short numbered choice in the order given. Run none whose confirm is true without the user's explicit yes.
         """;
 
     private const string ReadOnlyRule = """
-        - This workflow is read-only. Do not resubmit, skip, classify or mark any message reported, and do not prepare an action. To recover a message, suggest the recover-message prompt.
+        - This workflow is read-only. Do not resubmit, skip, classify or mark any message reported, and do not prepare an action. Offer only nextActions of kind read. To recover a message, suggest the recover-message prompt.
         """;
 
     /// <summary>Finds and groups failures on one or every readable endpoint.</summary>
@@ -149,7 +150,7 @@ public static class OperatorPrompts
     private static string RecoverText(string endpointId, string eventId, string? action)
     {
         var choose = action is null
-            ? "2. Recommend resubmit or skip from eligibleActions, with your reasons, and let the user choose."
+            ? "2. Recommend resubmit or skip from eligibleActions, with your reasons, and let the user choose: offer the nextActions of nimbus_get_message as a numbered choice."
             : "2. The user asked for the action in Inputs. Check that it is in eligibleActions; if it is not, explain why and stop.";
 
         return Compose(

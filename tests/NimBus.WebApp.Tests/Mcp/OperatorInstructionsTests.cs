@@ -47,6 +47,16 @@ public class OperatorInstructionsTests
     }
 
     [TestMethod]
+    public void The_instructions_tell_the_agent_to_offer_next_actions_under_the_confirmation_rule()
+    {
+        // Spec 046 §3.4: a new rule after the safety rules, which keep their place.
+        var rule = OperatorInstructions.Text.IndexOf("7. When a result has nextActions", StringComparison.Ordinal);
+
+        Assert.IsGreaterThan(OperatorInstructions.Text.IndexOf("6. Give the user", StringComparison.Ordinal), rule);
+        StringAssert.Contains(OperatorInstructions.Text[rule..], "confirm true means rule 2 applies", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
     public void Every_tool_the_instructions_name_is_registered()
     {
         var registered = OperatorPromptsTests.RegisteredToolNames();
