@@ -85,11 +85,13 @@ public static class McpOperatorServiceCollectionExtensions
             .WithTools<OperatorActionTools>(ToolSerializerOptions)
             .WithTools<OperatorWorklistTools>(ToolSerializerOptions)
             .WithPrompts([typeof(OperatorPrompts)])
+            .WithCompleteHandler(OperatorPromptCompletions.HandleAsync)
             .WithRequestFilters(filters => filters
                 .AddListToolsFilter(McpToolAccess.FilterList)
                 .AddCallToolFilter(McpToolAccess.FilterCall)
                 .AddListPromptsFilter(McpPromptAccess.FilterList)
-                .AddGetPromptFilter(McpPromptAccess.FilterGet));
+                .AddGetPromptFilter(McpPromptAccess.FilterGet)
+                .AddCompleteFilter(McpPromptAccess.FilterComplete));
 
         services.AddScoped<OperatorEndpointCatalog>();
         services.AddScoped<OperatorQueries>();

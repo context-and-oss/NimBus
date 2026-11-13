@@ -24,8 +24,8 @@ public static class OperatorPrompts
 
     private const string DefaultPeriod = "1d";
 
-    private static readonly string[] Periods = ["1h", "12h", "1d", "3d", "7d", "30d"];
-    private static readonly string[] Actions = ["resubmit", "skip"];
+    internal static readonly string[] Periods = ["1h", "12h", "1d", "3d", "7d", "30d"];
+    internal static readonly string[] Actions = ["resubmit", "skip"];
 
     private const string CommonRules = """
         Rules:
