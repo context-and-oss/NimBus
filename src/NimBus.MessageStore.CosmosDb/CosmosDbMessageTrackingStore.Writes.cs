@@ -267,14 +267,34 @@ internal sealed partial class CosmosDbMessageTrackingStore
         {
             var container = await _getEndpointContainer(endpointId);
 
-            await container.DeleteContainerAsync();
-            // Drop the cached handle so the next access re-runs "ensure exists"
-            // and recreates the now-deleted container instead of reusing a stale
-            // handle that would only throw NotFound.
-            _removeEndpointContainerCache(endpointId);
-            LogCosmosPurgeDeletedAllMessagesOn2(_logger, endpointId);
+            // Delete the documents, not the container. Deleting a container is a control-plane
+            // operation Cosmos refuses for an Entra ID token, so the WebApp's managed identity
+            // could never run it; and every other process holding a cached handle to the
+            // container would be left writing to one that no longer exists.
+            var result = container.GetItemQueryIterator<IdProjection>(new QueryDefinition("SELECT c.id FROM c"));
 
-            return true;
+            var deleted = 0;
+            var deleteOptions = new ParallelOptions { MaxDegreeOfParallelism = 8 };
+            while (result.HasMoreResults)
+            {
+                var page = await result.ReadNextAsync();
+                await Parallel.ForEachAsync(page, deleteOptions, async (item, _) =>
+                {
+                    try
+                    {
+                        await container.DeleteItemAsync<EventDbo>(item.Id, new PartitionKey(item.Id));
+                        Interlocked.Increment(ref deleted);
+                    }
+                    catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        // Expired by TTL or deleted concurrently — nothing left to remove.
+                    }
+                });
+            }
+
+            LogCosmosPurgeDeletedAllMessagesOn2(_logger, deleted, endpointId);
+
+            return deleted > 0;
         }
         catch (Exception e)
         {
@@ -457,8 +477,8 @@ internal sealed partial class CosmosDbMessageTrackingStore
     [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS PURGE: Couldn't delete all messages on endpoint {EndpointId} in session {SessionId}")]
     private static partial void LogCosmosPurgeCouldNotDeleteSession(ILogger logger, Exception exception, string endpointId, string sessionId);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS PURGE: Deleted all messages on endpoint {EndpointId}")]
-    private static partial void LogCosmosPurgeDeletedAllMessagesOn2(ILogger logger, string endpointId);
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS PURGE: Deleted all {Count} messages on endpoint {EndpointId}")]
+    private static partial void LogCosmosPurgeDeletedAllMessagesOn2(ILogger logger, int count, string endpointId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS PURGE: Couldn't delete all messages on endpoint {EndpointId}")]
     private static partial void LogCosmosPurgeCouldNotDeleteEndpoint(ILogger logger, Exception exception, string endpointId);

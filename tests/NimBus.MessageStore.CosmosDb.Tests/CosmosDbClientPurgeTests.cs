@@ -40,6 +40,37 @@ public sealed class CosmosDbClientPurgeTests
             $"Expected deletes to overlap, but max observed concurrency was {container.MaxObservedDeleteConcurrency} (serial execution).");
     }
 
+    // Deleting a container is a control-plane operation that Cosmos refuses for an Entra ID
+    // (managed identity) token, so the deployed WebApp could never purge an endpoint. The
+    // endpoint-wide purge deletes the documents instead and leaves the container in place.
+    [TestMethod]
+    public async Task PurgeMessages_for_endpoint_deletes_every_document_and_keeps_the_container()
+    {
+        var container = new RecordingContainerAdapter(
+            Enumerable.Range(1, 8).Select(i => $"{{\"id\": \"event-{i}_session-{i}\"}}").ToList());
+        var client = new CosmosDbClient(new SingleContainerClientAdapter(container));
+
+        var purged = await client.PurgeMessages("endpoint-1");
+
+        Assert.IsTrue(purged);
+        Assert.AreEqual(0, container.DeleteContainerCalls, "The purge must not delete the container.");
+        CollectionAssert.AreEquivalent(
+            Enumerable.Range(1, 8).Select(i => $"event-{i}_session-{i}").ToList(),
+            container.DeletedIds.ToList());
+        StringAssert.Contains(container.LastQueryText, "SELECT c.id");
+        StringAssert.DoesNotMatch(container.LastQueryText!, new System.Text.RegularExpressions.Regex("WHERE"),
+            "Every document goes, whatever its status or session.");
+    }
+
+    [TestMethod]
+    public async Task PurgeMessages_for_endpoint_reports_nothing_deleted_on_an_empty_endpoint()
+    {
+        var container = new RecordingContainerAdapter(new List<string>());
+        var client = new CosmosDbClient(new SingleContainerClientAdapter(container));
+
+        Assert.IsFalse(await client.PurgeMessages("endpoint-1"));
+    }
+
     private sealed class SingleContainerClientAdapter : ICosmosClientAdapter, ICosmosDatabaseAdapter
     {
         private readonly ICosmosContainerAdapter _container;
@@ -131,8 +162,13 @@ public sealed class CosmosDbClientPurgeTests
         public Task<ItemResponse<T>> PatchItemAsync<T>(string id, PartitionKey partitionKey, IReadOnlyList<PatchOperation> patchOperations)
             => throw new NotSupportedException();
 
+        public int DeleteContainerCalls { get; private set; }
+
         public Task<ContainerResponse> DeleteContainerAsync()
-            => throw new NotSupportedException();
+        {
+            DeleteContainerCalls++;
+            return Task.FromResult<ContainerResponse>(null!);
+        }
 
         public Task<FeedResponse<T>> ReadManyItemsAsync<T>(IReadOnlyList<(string id, PartitionKey partitionKey)> items)
             => throw new NotSupportedException();
