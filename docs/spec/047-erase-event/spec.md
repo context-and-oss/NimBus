@@ -6,7 +6,7 @@ consistent with #298 (keep the event that blocks its session, merged as 39843a06
 
 Convention: anything marked **(new)** is proposed by this spec and does not exist on master.
 Everything else cited (files, types, methods, enum values, API paths, CLI commands) exists on
-master as of `d162c683`.
+master as of `5556ea82`.
 
 ## Problem
 
@@ -33,7 +33,7 @@ reports an event as erased while a copy remains.
 
 | Topic | Decision |
 |---|---|
-| Spec number | **047.** On master the `docs/spec/` folders run to 045 (`045-routing-keys`); 041 is taken by the open PR #275 (`docs/spec/041-on-prem-rabbitmq-transport`), and 042–045 are on master. 046 is free on master but a `046-mcp-guided-actions` draft is in progress elsewhere, so this spec takes 047 to avoid a collision. 047 is free on master and on every open PR when this PR is opened. |
+| Spec number | **047.** On master the `docs/spec/` folders run to 045 (`045-routing-keys`); 041 is taken by the open PR #275 (`docs/spec/041-on-prem-rabbitmq-transport`), and 042–045 are on master. 046 is free on master but taken by the open PR #380 (Spec 046, MCP guided actions), so this spec takes 047 to avoid a collision. 047 is free on master and on every open PR when this PR is opened. |
 | "auditData" | The issue's `auditData` is a local variable name in WebApp controllers (for example `PostResubmitWithChangesEventIdsAsync` in `EventImplementation.OperatorActions.cs`). The stored field is **`MessageAuditEntity.Data`**, and this spec uses that name. `MessageAuditEntity.Comment` is a second free-text field and is covered too. |
 | Dependency on #290 | Spec 042 (`docs/spec/042-message-recall/spec.md`) is on master and defines the selection (event types + sender + enqueued window + session prefix). It is not implemented yet. Erase **does not wait** for it: phases 1–5 take explicit ids only. Phase 6 adds the Recall selection as a *picker* that resolves into ids, and is gated on Spec 042's selection code landing. Erase does not define its own filter. |
 | SearchEvents filter `Data` | **Out of scope.** See [Audit type inventory](#audit-type-inventory). |
@@ -74,8 +74,9 @@ event copies the operator previewed. The *places* are re-read at execution time:
 appeared after the preview (a retry, a late Resolver write) is found and erased, because erasing
 it is the point.
 
-**Batch size.** 100 event copies per request. Execution per copy touches up to 11 Service Bus
-entities and five stores, and needs session locks (Decision 3), so 100 keeps a request within the
+**Batch size.** 100 event copies per request. Execution per copy touches about 15 Service Bus
+entities per producer (subscriptions, their dead-letter and transfer dead-letter queues, and the
+scheduled messages of three topics) and up to seven stores, and needs session locks (Decision 3), so 100 keeps a request within the
 WebApp's request timeout. Larger erasures are run as several requests from the same card.
 
 Rejected:
@@ -107,13 +108,14 @@ that can hold payload bytes is overwritten in storage. Masking in the UI or API 
 | P3 | **Message history**: every `MessageEntity` with the event id | SQL `Messages`; Cosmos DB messages container (partition `eventId`); in-memory | **Delete** | Each entry carries `MessageContent` (`EventContent.EventJson`, or `ErrorContent` whose `ErrorText`, `ExceptionStackTrace`, `DeadLetterErrorDescription` can quote payload). An entry stripped of content has no value in the Flow tab; the erasure audit keeps the count. |
 | P4 | **Audit entries tied to the event** whose type is on the [payload list](#audit-type-inventory), plus every entry's `Comment` | SQL `MessageAudits`; Cosmos DB audits container (partition `eventId`); in-memory | **Redact** | The audit trail is the record of who did what. Deleting the rows would erase operator accountability and change `GetResubmitCounts`. See the field list below. |
 | P5 | **Compose audit entries** whose `Data` holds the event's payload | Same as P4, but stored with an empty event id (`AuditLogService` passes `eventId ?? string.Empty`; `PostComposeNewEventAsync` passes none) | **Redact** | Same as P4. Matched by content, see below. |
-| P6 | **Failure classifications** for the event (when Integration Intelligence is registered) | SQL `dbo.FailureClassifications` (`StateJson`); Cosmos DB classification container (`CosmosClassificationStore`) | **Delete** | Found by this spec: `FailureClassification.Rationale` is agent free text, and when `EventPayloadIncluded` is true it was derived from the payload. A classification of an erased event has no use. |
-| P7 | **Endpoint subscription** `<E>/<E>` (`TopologyDescriptor.EndpointSubscription`): active and scheduled messages | Service Bus | **Delete** | Queued copies, retries and continuation requests carry the content. |
+| P6 | **Failure classifications** for the event (when Integration Intelligence is registered) | SQL `dbo.FailureClassifications` (`StateJson`); Cosmos DB classification container (`CosmosClassificationStore`) | **Delete** | Found by this spec: `FailureClassification.Rationale` is agent free text, and when `EventPayloadIncluded` is true it was derived from the payload. A classification of an erased event has no use. A registered store that cannot be searched (`UnavailableClassificationStore`, the fail-closed sentinel for missing or invalid storage configuration) makes the place outstanding, never absent (Decision 4). |
+| P7 | **Endpoint subscription** `<E>/<E>` (`TopologyDescriptor.EndpointSubscription`): active and deferred messages | Service Bus | **Delete** | Queued copies, retries and continuation requests carry the content. A subscription never holds a *scheduled* message: those stay on the topic until their enqueue time, see P13. |
 | P8 | **Deferred subscription** `<E>/Deferred` (`TopologyDescriptor.DeferredSubscription`) | Service Bus | **Delete** | Parked copies keep `EventId`, `SessionId` and content (`ResponseService.SendToDeferredSubscription`). |
 | P9 | **Dead-letter queues** `<E>/<E>/$deadletterqueue` and `<E>/Deferred/$deadletterqueue` | Service Bus | **Delete** | Dead-lettered copies keep their body. |
-| P10 | **Resolver entities** (found by this spec): `<E>/Resolver` forwarder DLQ (`ResolverFanoutSubscription`), `Resolver/Resolver` (`ResolverSubscription`) and its DLQ | Service Bus | **Delete** | The fan-out rule `to-<E>` forwards a copy of every message addressed to the endpoint to the Resolver, payload included, and the Resolver writes P1 and P3 from it. A copy left there re-creates the rows after erasure. |
-| P11 | **Producer-side forwarder DLQ** (found by this spec): `<P>/<E>/$deadletterqueue` (`ConsumerForwarderSubscription`, `DynamicForwardSubscription`) | Service Bus | **Delete** | A forward that failed leaves the original publish there. It carries the publisher's event id, not the copy's, so it is matched by broker `MessageId` + `EventTypeId` + `SessionId` from the copy's `EventRequest`. |
+| P10 | **Resolver entities** (found by this spec): the `<E>/Resolver` forwarder's dead-letter queue **and transfer dead-letter queue** (`ResolverFanoutSubscription`, `ForwardTo: Resolver`), `Resolver/Resolver` (`ResolverSubscription`) and its DLQ | Service Bus | **Delete** | The fan-out rule `to-<E>` forwards a copy of every message addressed to the endpoint to the Resolver, payload included, and the Resolver writes P1 and P3 from it. A copy left there re-creates the rows after erasure. A failed auto-forward leaves the message in the forwarding subscription's transfer dead-letter subqueue (`<topic>/Subscriptions/<sub>/$Transfer/$DeadLetterQueue`, `SubQueue.TransferDeadLetter`), which is separate from `$deadletterqueue`; master already reads both (`SubscriptionAdminService.PurgeDeadLetterQueueAsync`, `DeferredMessageInspector`). |
+| P11 | **Producer-side forwarder dead-letter queues** (found by this spec): for every producer `<P>` of the event type, the dead-letter queue **and transfer dead-letter queue** of `<P>/<E>` (`ConsumerForwarderSubscription`, `ForwardTo: <E>`) and of `<P>/AgentDyn-<E>` (`DynamicForwardSubscription`, `TopologyDescriptor.DynamicForwardPrefix`) | Service Bus | **Delete** | A forward that failed leaves the original publish there; a failed auto-forward specifically lands in the transfer dead-letter queue. It carries the publisher's event id, not the copy's, so it is matched by broker `MessageId` + `EventTypeId` + `SessionId` from the copy's `EventRequest`. Those identifiers are kept in the erasure's started record (Decision 7), so a rerun can still match after history is gone. |
 | P12 | **Operator operation journal** (found by this spec, Spec 044 phase 2): every `OperatorOperation` with the copy's `EndpointId` and `EventId`, when an `IOperatorOperationStore` is registered | SQL `SqlServerOperatorOperationStore`; Cosmos DB `CosmosDbOperatorOperationStore`; in-memory `InMemoryOperatorOperationStore` | **Redact** | `OperatorOperation.Reason` is the operator's or agent's free text about the event, which can quote the payload, and `Detail` can carry refusal or error text. The rest of the row is ids, hashes and status. Deleting it would reset the per-day and per-message workload budgets (`McpAccessSettings.WorkloadResubmitsPerDay`, `WorkloadResubmitsPerMessage`) that count journaled operations, and the row expires anyway (`ExpiresAtUtc`). A **non-terminal** operation (`IsTerminal` false) is not redacted: `OperatorOperationReconciler` may still restore or confirm its row. It is outstanding with reason `OperationInFlight`, and a rerun after the operation settles redacts it. |
+| P13 | **Scheduled messages on topics** (found by this spec): messages scheduled but not yet enqueued on the endpoint topic `<E>`, on every producer topic `<P>` of the event type, and on the `Resolver` topic | Service Bus | **Delete** (cancel) | A scheduled message stays on the **topic** until its scheduled enqueue time and only then materialises in the subscriptions, so peeking a subscription can't find it, and a missed one re-creates P7–P10 copies later. On master, NimBus schedules on topics: `ResponseService.SendRetryResponse(IMessageContext, TimeSpan, …)` calls `ISender.ScheduleMessage` (a delayed retry carrying `MessageContent`), `Sender.Send` with `messageEnqueueDelay > 0` sets `ScheduledEnqueueTime` (`MessageHelper.ToServiceBusMessage`), `ServiceBusSession.SendScheduledMessageAsync` schedules on the topic, and publishers schedule through `PublisherClient.ScheduleMessage` and the outbox dispatcher (`OutboxDispatcher`, `ScheduledEnqueueTimeUtc`). Cancelling deletes the message. |
 
 ### Redaction fields (P4, P5)
 
@@ -150,6 +152,34 @@ definition, redacting it is correct even if it came from a different publish. Th
 one shared helper, `ErasureRules.ComposeDataMatches` **(new)** in
 `NimBus.MessageStore.Abstractions`, next to `BlockedEventRules`, so every provider applies it the
 same way.
+
+### Source retention
+
+Two places are matched by data that other places hold: Compose audits (P5) need the payload,
+which only the tracking row (P1) and history (P3) hold, and the producer-side places (P11, the
+producer topics in P13) need the `EventRequest` identifiers, which history holds. Deleting the
+sources while those places are still outstanding would make a rerun unable to finish them.
+
+- **Payload (P5).** The store deletes P3 and P1 only after P5 ended `Redacted` or
+  `AlreadyAbsent` in the same call. If P5 is outstanding (`WriteFailed`), P3 and P1 are left
+  untouched and reported `Outstanding` with reason `RetainedForRetry`. The rerun reads the payload
+  from them again. The erasure never stores the payload, or a hash of it, anywhere else.
+- **Identifiers (P11, P13).** The producer, `EventTypeId`, `SessionId` and broker `MessageId`s are
+  written to the started record before anything is deleted (Decision 7), so history can be
+  deleted while a P11 or P13 search is outstanding. They are existing broker identifiers that
+  kept places already hold (P12 keeps `SourceMessageId`, inbox records are keyed by message id),
+  not data the erasure derives from the payload.
+- **Missing context.** If a rerun finds no payload source (no row, no history) and P5 is not yet
+  confirmed, P5 is `Outstanding` with reason `RetryContextMissing`; it is never reported
+  `AlreadyAbsent` without a search. P5 counts as confirmed only when an earlier finished
+  `EraseEvent` record for the pair recorded it `Redacted` or `AlreadyAbsent`, which source
+  retention guarantees happened before the sources were deleted. A Compose entry written *after*
+  that confirmation is a new event the operator composed, with its own event and its own erasure.
+  The same rule applies to P11 and producer-topic P13 when neither history nor an earlier started
+  record yields the identifiers (for example a copy whose history never held an `EventRequest`).
+  For P5 the only way to reach `RetryContextMissing` is a crash between the store call and the
+  finished record. Either way the copy stays Incomplete, which is honest, and the
+  result tells the operator which producer and event type to review by hand.
 
 ### Places checked and left off the list
 
@@ -219,33 +249,73 @@ so the Resolver can't re-create a row after it was deleted.
    within 5 s makes every place of the copy outstanding with reason `SessionBusy`, and nothing else
    is done for it. Locking `Resolver/Resolver` pauses resolver writes for that session id on every
    endpoint for the duration, which is seconds.
-3. **Service Bus search and removal** (P7–P11), defined below.
-4. **Session state.** If parked copies were removed from `<E>/Deferred`, rewrite the session state
+3. **Retry context.** Resolve the copy's non-payload identifiers needed to match places that
+   don't carry the copy's event id: the producer endpoint, `EventTypeId`, `SessionId` and the
+   broker `MessageId` of every `EventRequest` for the copy. They are read from the tracking row
+   and message history and, when those are gone (a rerun), from the copy's earlier `EraseEvent`
+   started records (Decision 7), merged as a union. They were already written to this run's
+   started record (a precondition), so a later run can resume. When no source yields them, P11 and
+   the producer-topic part of P13 are outstanding with reason `RetryContextMissing`: their absence
+   cannot be confirmed without the identifiers.
+4. **Scheduled-message search and cancellation** (P13), defined below. It runs before the
+   subscription search so a scheduled copy can't activate behind it unseen.
+5. **Service Bus search and removal** (P7–P11), defined below.
+6. **Session state.** If parked copies were removed from `<E>/Deferred`, rewrite the session state
    under the lock as Spec 042 does: `DeferredCount -= removed`, floored at 0, and
    `SessionState.MarkAllReplayed()` when nothing is left parked for the session. The block is
    never cleared here.
-5. **Store erasure** (P1–P6, P12): one call to `EraseEventCopyAsync` **(new)** per copy
-   (Decision 4), one to the classification store and one to the operator operation journal.
-6. **Verify.** Call `EraseEventCopyAsync` again. Every place must now report `AlreadyAbsent` (or
-   `Redacted` for an entry redacted in step 5). Anything else is outstanding with reason
+7. **Store erasure** (P1–P6, P12): one call to `EraseEventCopyAsync` **(new)** per copy
+   (Decision 4), one to the classification store and one to the operator operation journal. The
+   store keeps the payload sources (tracking row and history) while the place that needs them to
+   match, Compose audits (P5), is outstanding; see [Source retention](#source-retention).
+8. **Verify.** Call `EraseEventCopyAsync` again and repeat the P13 topic scan for the copy. Every
+   store place must now report `AlreadyAbsent` (or `Redacted` for an entry redacted in step 7),
+   and the scan must find no scheduled match. Anything else is outstanding with reason
    `ReappearedDuringErasure`.
-7. Release the locks.
+9. Release the locks.
 
 ### Service Bus search
 
 A Service Bus copy matches when its `EventId` application property equals the erased id, or, on
-P11, when `MessageId`, `EventTypeId` and `SessionId` equal those of the copy's `EventRequest`.
+P11 and on producer topics in P13, when `MessageId`, `EventTypeId` and `SessionId` equal those of
+one of the copy's `EventRequest`s (from the retry context, step 3).
 
+- **Scheduled messages on topics** (P13). Subscriptions never show scheduled messages; they stay
+  on the topic until their enqueue time. For each of the topics `<E>`, every producer `<P>` and
+  `Resolver`: create a peek-only `ServiceBusReceiver` on the **topic name**
+  (`ServiceBusClient.CreateReceiver(topicName)`; Service Bus allows only peeking on such a
+  receiver) and peek the whole topic from sequence number 1, up to 100,000 messages. A message
+  whose `State` is `ServiceBusMessageState.Scheduled` and which matches is cancelled by its
+  `SequenceNumber` through a `ServiceBusSender` on the **same topic**
+  (`CancelScheduledMessageAsync`). The scan is not session-scoped, so it does not depend on the
+  session locks. After cancelling, the topic is peeked again from the cancelled sequence numbers:
+  - a cancelled message no longer appears: `Removed`;
+  - cancellation failed with *message not found* because the message activated between peek and
+    cancel: the copy is now in a subscription, so the subscription search (step 5) runs after this
+    step and removes it there; if that search can't confirm it, the copy is outstanding with reason
+    `ScheduledActivated`;
+  - cancellation failed for any other reason, or the message still appears as scheduled:
+    outstanding with reason `CancelFailed`;
+  - the scan hit the bound, timed out or failed: outstanding with reason `SearchIncomplete`;
+  - no match in a complete scan: `AlreadyAbsent`.
+
+  Absence is confirmed only by a complete scan. The topic peek and cancel run on real Service
+  Bus; the NimBus emulator gains topic peek in phase 3 so the same path is testable locally.
 - **Session entities** (P7, P8, `Resolver/Resolver`): with the session lock held, peek the whole
-  session from the first sequence number, including scheduled messages. A scheduled match is
-  cancelled (`ServiceBusSender.CancelScheduledMessageAsync` on the topic). An active match is
-  removed by receiving up to the last match, completing the matches and abandoning the rest, as
+  session from the first sequence number. An active match is removed by receiving up to the last
+  match, completing the matches and abandoning the rest, as
   Spec 042 does, with the same at-risk rule: if a message that would be abandoned has a delivery
   count at or above `ServiceBusMaxDeliveryCount - 2`, the copy is not received and is outstanding
   with reason `SessionAtRisk`.
-- **Non-session entities** (P9, P10 DLQs, P11): peek the whole entity, up to 100,000 messages. A
-  match is received in peek-lock and completed; non-matches received on the way are abandoned
-  (dead-letter queues don't apply `MaxDeliveryCount`).
+- **Non-session entities** (P9, P10 and P11 dead-letter queues): peek the whole entity, up to
+  100,000 messages. A match is received in peek-lock and completed; non-matches received on the
+  way are abandoned (dead-letter queues don't apply `MaxDeliveryCount`). Every **forwarding**
+  subscription (`<E>/Resolver`, `<P>/<E>`, `<P>/AgentDyn-<E>`, the subscriptions whose expected
+  `ForwardTo` is set) is searched twice: its dead-letter queue (`SubQueue.DeadLetter`) and its
+  transfer dead-letter queue (`SubQueue.TransferDeadLetter`). Each subqueue is its own entity in
+  the result (`entity` names `$deadletterqueue` or `$Transfer/$DeadLetterQueue`), in the preview
+  counts and in the outstanding list. A missing transfer dead-letter queue search makes the
+  place outstanding (`SearchIncomplete`), like any other incomplete search.
 - **Confirmed absent** means the search covered the whole session or entity and found no match. A
   search that hit the 100,000 bound, timed out, or failed on the entity makes the copy outstanding
   with reason `SearchIncomplete`, because its absence is not confirmed.
@@ -279,7 +349,9 @@ nothing is outstanding. The three outcomes cover every request and never overlap
 
 Every step re-reads current state, so a rerun on the same pairs is safe. Copies removed earlier
 report `AlreadyAbsent`, redacted entries report `AlreadyAbsent` for P4/P5 (their `Data` no longer
-matches), and outstanding copies are either finished or reported outstanding again.
+matches), and outstanding copies are either finished or reported outstanding again. A rerun has
+what it needs to finish them: source retention keeps the payload while P5 is outstanding, and the
+started records keep the identifiers for P11 and P13 ([Source retention](#source-retention)).
 
 **Retry is operator-driven.** The result card offers *Retry outstanding*, which reruns the
 erasure on the copies that had an outstanding place. Rejected: **automatic background retry.** The
@@ -297,7 +369,8 @@ One new member on `IMessageTrackingStore` **(new)**:
 /// and soft-deleted included) unless the row blocks its session, deletes its event report marker
 /// and every message-history entry for the event id on the endpoint, and redacts the
 /// payload-carrying audit entries for the event id and the Compose audit entries that hold
-/// <paramref name="payloadJson"/>. Never touches <see cref="MessageAuditType.EraseEvent"/>
+/// the event's payload. Keeps the tracking row and history while the Compose audits are
+/// outstanding (source retention). Never touches <see cref="MessageAuditType.EraseEvent"/>
 /// records. Idempotent: a call that finds nothing left reports every place as AlreadyAbsent.
 /// A failed write is reported as Outstanding for its place, never thrown, so the caller can
 /// aggregate; cancellation throws <see cref="OperationCanceledException"/>.
@@ -314,9 +387,12 @@ public sealed record EventErasureRequest(
     string EndpointId,
     string EventId,
     string ErasureId,
-    string? ProducerEndpointId,   // for Compose matching (P5); null skips it
+    string? ProducerEndpointId,   // for Compose matching (P5), from the retry context
     string? EventTypeId,
-    string? PayloadJson);         // the EventJson to match Compose entries against
+    bool ComposeConfirmed);       // an earlier finished EraseEvent record confirmed P5
+// The store reads the payload for Compose matching itself, from the tracking row or history.
+// When it finds none: ComposeConfirmed → P5 AlreadyAbsent; otherwise P5 Outstanding /
+// RetryContextMissing (null producer or type likewise). P5 is never skipped silently.
 
 public enum ErasurePlace { TrackingRow, EventReport, MessageHistory, EventAudits, ComposeAudits }
 
@@ -326,7 +402,8 @@ public sealed record ErasurePlaceResult(
     ErasurePlace Place,
     ErasurePlaceState State,
     int Count,                    // items removed or redacted; 0 for AlreadyAbsent
-    string? OutstandingReason);   // BlocksSession, WriteFailed; null unless Outstanding
+    string? OutstandingReason);   // BlocksSession, WriteFailed, RetainedForRetry,
+                                  // RetryContextMissing; null unless Outstanding
 
 public sealed record EventErasureResult(
     string EndpointId,
@@ -355,6 +432,10 @@ Shared by every provider (pinned by the conformance suite):
   and the service reports Incomplete. Only cancellation and argument errors throw.
 - **Order.** Audits, then history, then the report marker, then the tracking row last, so a failure
   part-way leaves the row in place and the event stays visible and known.
+- **Source retention.** The payload is read before any write. If the Compose place (P5) ends
+  `Outstanding`, history and the tracking row are not deleted and are reported `Outstanding` /
+  `RetainedForRetry`, so the next call can still match P5. Event audits (P4) and the report marker
+  are still processed: they don't feed any other place.
 
 Per provider:
 
@@ -380,9 +461,19 @@ Per provider:
 The classification store (P6) gets its own member on `IFailureClassificationStore` **(new)**:
 `Task<int> DeleteForEventAsync(string endpointId, string eventId, CancellationToken
 cancellationToken = default)`, returning the number removed, implemented by
-`SqlClassificationStore`, `CosmosClassificationStore`, `AtomicClassificationStore` (forwarding) and
-`UnavailableClassificationStore` (returns 0). The erasure service maps an exception to `Outstanding`
-/ `WriteFailed` for place `FailureClassifications`, and 0 to `AlreadyAbsent`.
+`SqlClassificationStore`, `CosmosClassificationStore` and `AtomicClassificationStore`
+(forwarding). `UnavailableClassificationStore` implements it like its other members: it throws
+its `ClassificationStorageNotConfigured` `ClassificationServiceException`. It does **not** return
+0, because the sentinel means the configured storage can't be reached, not that it is empty;
+classifications stored before the configuration was lost may still exist. The erasure service
+maps that exception to `Outstanding` / `StoreUnavailable` and any other exception to
+`Outstanding` / `WriteFailed`, for place `FailureClassifications`. `AlreadyAbsent` is reported
+only when a call on a real store succeeded and removed nothing. When Integration Intelligence is
+not registered in the WebApp at all (no `IFailureClassificationStore` service), the place is not
+part of this deployment's boundary: it is left out of the copy's places and the *Not covered*
+list says "Failure classifications: Integration Intelligence is not registered in this WebApp;
+classifications stored by an earlier registration are not checked" ([Erasure
+boundary](#erasure-boundary)). It is never reported as `AlreadyAbsent`.
 
 The operator operation journal (P12) gets its own member on `IOperatorOperationStore` **(new)**:
 
@@ -403,8 +494,11 @@ public sealed record OperatorOperationRedaction(int Redacted, int InFlight);   /
 
 Implemented by `SqlServerOperatorOperationStore`, `CosmosDbOperatorOperationStore` and
 `InMemoryOperatorOperationStore` (`src/NimBus.Testing/Conformance/`), with no default
-implementation, for the same reason as above. When no journal is registered the place is
-`AlreadyAbsent`, because nothing can be stored there. The service maps `Redacted > 0` to
+implementation, for the same reason as above. The SQL Server and Cosmos DB message store
+registrations (`SqlServerMessageStoreBuilderExtensions`, `CosmosDbMessageStoreBuilderExtensions`)
+always register a journal. When none is registered (a custom host), the place is handled like an
+unregistered classification store: left out of the places and named in *Not covered*, never
+`AlreadyAbsent`. The service maps `Redacted > 0` to
 `Redacted`, `InFlight > 0` to `Outstanding` / `OperationInFlight`, an exception to `Outstanding` /
 `WriteFailed`, and `(0, 0)` to `AlreadyAbsent`. A version conflict on one operation is re-read once,
 then counted as `InFlight`, so the copy stays outstanding and a rerun finishes it. New tests in
@@ -433,12 +527,25 @@ New tests, run against every provider:
 9. `EraseEventCopy_SecondCallReportsAlreadyAbsent`.
 10. `EraseEventCopy_UnknownPairReportsAlreadyAbsent`.
 11. `EraseEventCopy_DeletesEventReportMarker`.
+12. `EraseEventCopy_ComposeConfirmedWithoutSources_ReportsAlreadyAbsent` and
+    `EraseEventCopy_ComposeUnconfirmedWithoutSources_ReportsRetryContextMissing` (row and history
+    already gone; nothing else changes).
 
 Failure mapping (`WriteFailed`) is tested per provider with the existing fault seams (the
 Cosmos adapter fakes in `NimBus.MessageStore.CosmosDb.Tests`, a failing `DbConnection` in the SQL
 tests, a throwing in-memory subclass), not in the conformance suite, which runs on healthy stores.
+The same seams test source retention: a failing Compose write leaves history and the tracking row
+in place (`RetainedForRetry`) while P4 and the report marker are still processed, and a second
+call on the healed store redacts the Compose entry and then deletes history and the row.
 
 Rejected contract shapes:
+
+- **The service passes the payload in the request, and the store deletes everything in one go.**
+  A rerun after the sources were deleted would have no payload to match Compose entries, so an
+  outstanding P5 could never be finished or confirmed. Source retention keeps the store the only
+  reader of the payload.
+- **Keeping a payload hash in the erasure record for later Compose matching.** It is data derived
+  from the erased payload; a hash of a short secret can be brute-forced.
 
 - **`Task<bool>`, like `RemoveMessage`.** It can't tell removed from already absent from
   outstanding, so it can't feed the outcome model.
@@ -595,12 +702,12 @@ EraseResult:               # new; returned with 200 for every outcome, Refused i
           eventId: { type: string }
           place: { $ref: '#/components/schemas/ErasurePlace' }
           entity: { type: string, nullable: true }   # Service Bus entity path
-          reason: { type: string, enum: [BlocksSession, SessionBusy, SessionAtRisk, MessageLocked, SearchIncomplete, WriteFailed, OperationInFlight, ReappearedDuringErasure] }
+          reason: { type: string, enum: [BlocksSession, SessionBusy, SessionAtRisk, MessageLocked, SearchIncomplete, ScheduledActivated, CancelFailed, WriteFailed, StoreUnavailable, RetainedForRetry, RetryContextMissing, OperationInFlight, ReappearedDuringErasure] }
     notCovered: { type: array, items: { type: string } }
 ErasurePlace:              # new
   type: string
   enum: [TrackingRow, EventReport, MessageHistory, EventAudits, ComposeAudits, FailureClassifications,
-         OperatorOperations, EndpointSubscription, DeferredSubscription, DeadLetterQueues, ResolverEntities, ProducerForwarderDeadLetter]
+         OperatorOperations, EndpointSubscription, DeferredSubscription, DeadLetterQueues, ResolverEntities, ProducerForwarderDeadLetter, ScheduledMessages]
 ```
 
 Every outcome returns 200 with an `EraseResult`, so the client reads one shape. A `Forbidden`
@@ -676,12 +783,24 @@ Per event copy and per run, two records, each with `EventId` = the copy's event 
   "places": { "TrackingRow": { "state": "Removed", "count": 1 }, "MessageHistory": { "state": "Removed", "count": 4 } },
   "outstanding": [ { "place": "DeadLetterQueues", "entity": "Billing/Billing/$deadletterqueue", "reason": "MessageLocked" } ],
   "eventTypeId": "CustomerUpdated",
-  "sessionId": "<session id>"
+  "sessionId": "<session id>",
+  "retryContext": {                              // started (always) and finished
+    "producerEndpointIds": ["Crm"],
+    "eventTypeId": "CustomerUpdated",
+    "sessionId": "<session id>",
+    "requestMessageIds": ["<broker MessageId of each EventRequest>"]
+  }
 }
 ```
 
-It records identifiers, counts per place, the outcome and the outstanding copies. It never records
-the payload, a payload hash or the matched Compose content. `AuditorName` is the Owner.
+It records identifiers, counts per place, the outcome and the outstanding copies. The finished
+record's `places` holds every place's state, which is what `ComposeConfirmed` (Decision 4) reads
+on a rerun. `retryContext` holds the non-payload identifiers a rerun needs to match P11 and the
+producer topics in P13 after history is gone ([Source retention](#source-retention)); it is
+written in the started record, before anything is deleted. It never records the payload, a hash
+the erasure computes over the payload, or the matched Compose content. The broker `MessageId` is
+an existing identifier, already kept in places the erasure leaves (P12 `SourceMessageId`, inbox
+records). `AuditorName` is the Owner.
 
 A refused request writes one record with `EventId` empty and `Data` = `{ "outcome": "Refused",
 "precondition": "…", "copies": [ { "endpointId", "eventId" } ] }` — except `AuditUnavailable`,
@@ -744,8 +863,9 @@ reason, free text) and Reconcile stale pending (`AdminService.Reconcile.cs`, a f
 
 **Inside** (the operation removes copies here and reports on them): the NimBus message store
 (tracking rows, event reports, message history, audits) for the configured provider, Service Bus
-(P7–P11), the operator operation journal (P12) when one is registered, and the Integration
-Intelligence classification store when the extension is registered.
+(P7–P11, P13), the operator operation journal (P12) when one is registered, and the Integration
+Intelligence classification store when the extension is registered (including when it is
+registered but its storage is unavailable: then the place is outstanding, not absent).
 
 **Outside** (not covered; listed in the preview's and result's *Not covered* panel):
 
@@ -761,6 +881,9 @@ Intelligence classification store when the extension is registered.
 - **Exports** downloaded by operators (for example Spec 042's CSV) and backups / point-in-time
   restore of Cosmos DB and SQL Server.
 - **SearchEvents audit entries** (see the inventory).
+- **A classification store or operator journal that this WebApp doesn't register** (see Decision
+  4): classifications or operations stored under an earlier registration are not checked, and
+  the panel says so for that deployment.
 
 ## Implementation phases
 
@@ -775,13 +898,16 @@ Each phase is one PR.
 
 Acceptance:
 
-1. The 11 conformance tests in Decision 4 exist and pass on in-memory, and on SQL Server and Cosmos
-   DB in CI (no skipped conformance tests).
+1. The conformance tests 1–12 in Decision 4 exist and pass on in-memory, and on SQL Server and
+   Cosmos DB in CI (no skipped conformance tests).
 2. A per-provider test shows a failed write maps to `Outstanding`/`WriteFailed` and the other
    places still run, including a test where every write fails.
-3. `StoreDecoratorTests` (`tests/NimBus.OpenTelemetry.Tests`) asserts the decorator calls the inner store for the new
+3. A per-provider test shows source retention: with the Compose write failing, history and the
+   tracking row stay and report `RetainedForRetry`; a second call on the healed store redacts the
+   Compose entry and deletes history and the row.
+4. `StoreDecoratorTests` (`tests/NimBus.OpenTelemetry.Tests`) asserts the decorator calls the inner store for the new
    member.
-4. `dotnet build src/NimBus.slnx -c Release` has no new CS warnings.
+5. `dotnet build src/NimBus.slnx -c Release` has no new CS warnings.
 
 ### Phase 2 — Classification store and operator operation journal
 
@@ -794,26 +920,49 @@ Acceptance:
 1. Tests in `NimBus.Extensions.IntegrationIntelligence.Tests` show every revision and operation
    for the event on the endpoint is deleted, another endpoint's are kept, and a second call
    returns 0.
-2. The four journal conformance tests in Decision 4 pass on in-memory, and on SQL Server and
+2. A missing-configuration test: with Integration Intelligence registered but no storage
+   configured (`UnavailableClassificationStore`), `DeleteForEventAsync` throws
+   `ClassificationStorageNotConfigured`, and an erasure service test shows the place is
+   `Outstanding`/`StoreUnavailable` and the outcome `Incomplete`, never `AlreadyAbsent`. With the
+   extension not registered, the place is absent from the result and listed in `notCovered`.
+3. The four journal conformance tests in Decision 4 pass on in-memory, and on SQL Server and
    Cosmos DB in CI (no skipped conformance tests).
 
 ### Phase 3 — Service Bus search and removal
 
 - An erasure Service Bus component (new) in `NimBus.WebApp` that locks the three sessions, searches
-  and removes per Decision 3, cancels scheduled matches, applies the at-risk rule and corrects
-  session state. If Spec 042 has landed it reuses 042's session remover; otherwise this phase
-  builds it so 042 can reuse it.
+  and removes per Decision 3, scans the topics for scheduled matches (P13) and cancels them,
+  searches the dead-letter and transfer dead-letter queue of every forwarding subscription,
+  applies the at-risk rule and corrects session state. If Spec 042 has landed it reuses 042's
+  session remover; otherwise this phase builds it so 042 can reuse it.
+- `NimBus.ServiceBusEmulator` gains peek on a topic receiver (returning the topic's scheduled
+  messages) and receive from a forwarding subscription's transfer dead-letter queue, so the
+  emulator tests below can run. Neither exists on master.
 
 Acceptance:
 
 1. Unit tests over a session-aware fake bus: match on `EventId`; P11 match on
-   `MessageId`+`EventTypeId`+`SessionId`; scheduled match cancelled; `SessionBusy`, `MessageLocked`,
-   `SessionAtRisk`, `SearchIncomplete` (bound reached) each yield the right outstanding reason;
+   `MessageId`+`EventTypeId`+`SessionId`, also from a retry context with no history; a scheduled
+   match on the topic is found by the topic peek and cancelled, and is never searched for on a
+   subscription; a cancellation that races activation is found and removed on the subscription,
+   or reported `ScheduledActivated`; `CancelFailed`, `SessionBusy`, `MessageLocked`,
+   `SessionAtRisk`, `SearchIncomplete` (bound reached, topic peek failed, transfer dead-letter
+   queue unreadable) each yield the right outstanding reason; a match in the transfer dead-letter
+   queue of `<E>/Resolver` and of `<P>/<E>` is removed and reported with its subqueue entity path;
    missing entity is `AlreadyAbsent`; `DeferredCount` corrected and `MarkAllReplayed` only when
    nothing is parked; the block is never cleared.
 2. An emulator test (`[TestCategory("Emulator")]`) erases a parked copy and a dead-lettered copy
    and confirms both are gone and the session's other messages are untouched and still processed
    in order.
+3. A broker test tagged `[TestCategory("CommonFidelity")]` (it runs on the emulator and on real
+   Azure, Spec 027 TST-3) schedules a retry of the copy one hour ahead
+   (`ResponseService.SendRetryResponse` with a `TimeSpan`), runs the erasure, and asserts the
+   scheduled message is cancelled (`P13 Removed`), a second topic peek finds nothing, and no copy
+   appears on `<E>/<E>` after the original enqueue time is advanced past (emulator) or a
+   short-delay variant elapses (Azure).
+4. An emulator test dead-letters a forward into the transfer dead-letter queue of `<P>/<E>` and
+   shows the erasure removes it and reports `ProducerForwarderDeadLetter` `Removed` with the
+   `$Transfer/$DeadLetterQueue` entity path.
 
 ### Phase 4 — Erase service and API
 
@@ -829,12 +978,20 @@ Acceptance (API tests in `NimBus.WebApp.Tests`):
 3. A rerun on fully erased pairs → `Completed`, every place `AlreadyAbsent`, not `UnknownEvent`.
 4. A blocking copy in a batch → that copy `BlocksSession`, the others erased, outcome
    `Incomplete`; after Skip and a rerun → `Completed`.
-5. A row re-created between step 5 and 6 → `ReappearedDuringErasure`.
-6. Started and finished `EraseEvent` records are written, contain no payload (asserted by
+5. A row re-created between step 7 and 8, or a scheduled match that appears on the topic before
+   the verify scan → `ReappearedDuringErasure`.
+6. Retry after a partial failure: (i) the Compose redaction fails while P4 and the Service Bus
+   places succeed → `Incomplete` with P5 `WriteFailed` and history and the row
+   `RetainedForRetry`; a rerun redacts the Compose entry, deletes history and the row, and is
+   `Completed`. (ii) The P11 search fails (`SearchIncomplete`) while the store places are
+   deleted → `Incomplete`; a rerun with history gone takes the identifiers from the started
+   record's `retryContext`, removes the P11 copy and is `Completed`. (iii) With no started record
+   and no history, P11 is `RetryContextMissing`, never `AlreadyAbsent`.
+7. Started and finished `EraseEvent` records are written, contain no payload (asserted by
    searching `Data` for the test payload), and a rerun writes new records linked by
    `previousErasureId`.
-7. A non-Owner gets `Refused`/`Forbidden` with an access-denied audit row.
-8. The build with NSwag generation enabled succeeds.
+8. A non-Owner gets `Refused`/`Forbidden` with an access-denied audit row.
+9. The build with NSwag generation enabled succeeds.
 
 ### Phase 5 — WebApp card
 
