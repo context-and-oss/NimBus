@@ -1211,6 +1211,72 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(0, ctx.UnblockSessionCalls, "Should not unblock on failure");
     }
 
+    // ── Permanent failure while retrying or resubmitting (Spec 045 §5) ──
+
+    // A permanent failure during a retry or a resubmission — such as a resubmit-with-changes
+    // that moved the payload to another routing key — dead-letters the event. The event no
+    // longer owns its session then, so the session must be unblocked and its deferred siblings
+    // released, as a permanent failure on first delivery never blocks the session at all.
+
+    [TestMethod]
+    public async Task HandleResubmissionRequest_PermanentFailure_UnblocksTheSessionAndDeadLetters()
+    {
+        var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = true;
+        ctx.DeferredCountResult = 2;
+        var handler = new FakeEventContextHandler
+        {
+            ThrowOnHandle = new PermanentFailureException(new RoutingKeyRejectedException("Routing key '02' is not accepted")),
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, response.ProcessDeferredCalls);
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.AreEqual(1, response.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleResubmissionRequest_PermanentFailure_NotBlockedByThis_LeavesTheBlockAlone()
+    {
+        var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = false;
+        var handler = new FakeEventContextHandler
+        {
+            ThrowOnHandle = new PermanentFailureException(new FormatException("Malformed payload.")),
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleRetryRequest_PermanentFailure_UnblocksTheSessionAndDeadLetters()
+    {
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = true;
+        ctx.DeferredCountResult = 1;
+        var handler = new FakeEventContextHandler
+        {
+            ThrowOnHandle = new PermanentFailureException(new FormatException("Malformed payload.")),
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, response.ProcessDeferredCalls);
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+    }
+
     // ── HandleResubmissionRequest ───────────────────────────────────────
 
     [TestMethod]
