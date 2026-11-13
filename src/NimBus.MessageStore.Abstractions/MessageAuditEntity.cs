@@ -217,4 +217,10 @@ public enum MessageAuditType
 
     /// <summary>A site Owner removed a revoked or expired Monitor dashboard token. Always recorded.</summary>
     DashboardTokenRemoved,
+
+    /// <summary>
+    /// An endpoint Owner changed the endpoint's ownership metadata (owner, team, email and
+    /// technical contacts). Data carries the values before and after. Always recorded.
+    /// </summary>
+    UpdateEndpointMetadata,
 }

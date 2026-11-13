@@ -68,6 +68,7 @@ public sealed partial class AuditSettingsProvider : IAuditSettingsProvider
         MessageAuditType.DashboardTokenCreated,
         MessageAuditType.DashboardTokenRevoked,
         MessageAuditType.DashboardTokenRemoved,
+        MessageAuditType.UpdateEndpointMetadata,
     };
 
     /// <summary>

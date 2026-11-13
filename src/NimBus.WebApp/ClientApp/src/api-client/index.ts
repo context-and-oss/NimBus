@@ -23956,6 +23956,7 @@ export enum MessageAuditAuditType {
     DashboardTokenCreated = "dashboardTokenCreated",
     DashboardTokenRevoked = "dashboardTokenRevoked",
     DashboardTokenRemoved = "dashboardTokenRemoved",
+    UpdateEndpointMetadata = "updateEndpointMetadata",
 }
 
 export class MessageContent implements IMessageContent {
@@ -24120,6 +24121,7 @@ export enum AuditSearchFilterAuditType {
     DashboardTokenCreated = "dashboardTokenCreated",
     DashboardTokenRevoked = "dashboardTokenRevoked",
     DashboardTokenRemoved = "dashboardTokenRemoved",
+    UpdateEndpointMetadata = "updateEndpointMetadata",
 }
 
 export enum StalePendingRowVerdict {
@@ -24207,6 +24209,7 @@ export enum AuditEntryAuditType {
     DashboardTokenCreated = "dashboardTokenCreated",
     DashboardTokenRevoked = "dashboardTokenRevoked",
     DashboardTokenRemoved = "dashboardTokenRemoved",
+    UpdateEndpointMetadata = "updateEndpointMetadata",
 }
 
 export enum AgentSettleRequestOutcome {
