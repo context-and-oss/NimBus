@@ -1,7 +1,7 @@
 # Plan: Spec 046 — Guided actions for the operator MCP server, phase 1
 
 Spec: [docs/spec/046-mcp-guided-actions/spec.md](../spec/046-mcp-guided-actions/spec.md)
-(revision 2, not yet approved). Baseline: master `5556ea82`; the latest release is v4.13.0. Branch
+(revision 2, not yet approved). Status: P1 to P4 implemented on this branch (#380); P0, the client pilot, is not done. Baseline: master `5556ea82`; the latest release is v4.13.0. Branch
 for this plan: `docs/spec-046-mcp-guided-actions` (#380).
 
 This plan covers phase 1 of the spec (§3 to §6). Phase 2, the confirmation form (§7), gets its own
@@ -39,7 +39,7 @@ amended in the implementation PR.
 
 | # | Topic | Proposal | Why |
 |---|---|---|---|
-| D1 | Where a group's `ticketId` comes from (§4.2) **(fills a gap)** | One `IMessageTrackingStore.FindEventReports(endpoint, null, 50)` call per endpoint that has a returned group, joined on event id. | `UnresolvedEvent`, which `GetEventsByIds` returns, has no reported flag or ticket. Reports live in their own table (Spec 044 D4). `nimbus_find_reports` already reads them this way. |
+| D1 | Where a group's `ticketId` comes from (§4.2) **(fills a gap)** | One batched `IMessageTrackingStore.GetEventReports(endpoint, openEventIds)` call per endpoint that has a returned group (amended from `FindEventReports` during implementation: an exact lookup can't miss a report past a page limit). | `UnresolvedEvent`, which `GetEventsByIds` returns, has no reported flag or ticket. Reports live in their own table (Spec 044 D4). `nimbus_find_reports` already reads them this way. |
 | D2 | The example's `messageVersion` (§4.1) **(fills a gap)** | `IOperatorCommands.FindCurrentAsync` on the example, not `OperatorMessageVersion.From` on the status row. | `FindCurrentAsync` also checks that commands for the message go to this endpoint. The option must rest on the same lookup `nimbus_prepare_action` uses. It costs two reads per returned group, at most 40 per call. |
 | D3 | Occurrence rows without a session id (§4.1) **(fills a gap)** | Leave them out of the status check and count them in a new group member, `unchecked`. | `GetEventsByIds` needs the stored id `{EventId}_{SessionId}`. All three providers project the session id today (`MetricsStoreConformanceTests`), so this is a guard, not a case that occurs. |
 | D4 | Shape of the new Insights method (§4.1) **(fills a gap)** | `IFailedInsightsQuery.GetOccurrencesForEndpointsAsync(Period, IReadOnlyCollection<string> endpointIds, CancellationToken)`. It returns the normalized rows and their read time, checks no role, and returns nothing for an empty set. Its doc comment says the caller must pass only endpoints the user may read. | The existing methods authorize site Reader in `LoadScopeAsync`. The worklist authorizes per endpoint through `OperatorEndpointCatalog`. The name keeps the difference visible at the call site. |

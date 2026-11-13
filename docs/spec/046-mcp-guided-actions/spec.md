@@ -2,7 +2,8 @@
 
 Status: draft, revision 2 (2026-11-13). Revised after a review of revision 1 against the code; the
 review log at the end maps each finding to the section that addresses it. Not yet approved.
-Plan for phase 1: [2026-11-13-spec-046-mcp-guided-actions.md](../../plan/2026-11-13-spec-046-mcp-guided-actions.md).
+Phase 1 (§3 to §6) is implemented on the same branch (#380), with the amendments listed at the end;
+the client pilot and the per-client connect steps are not done. Plan for phase 1: [2026-11-13-spec-046-mcp-guided-actions.md](../../plan/2026-11-13-spec-046-mcp-guided-actions.md).
 Baseline: master `5556ea82`. Builds on [Spec 035](../035-mcp-operator-access/spec.md),
 [Spec 037](../037-mcp-admin-access/spec.md),
 [Spec 040](../040-mcp-operator-prompts-and-plugin/spec.md),
@@ -104,7 +105,7 @@ message's state. Without a saved classification, `investigate` comes first.
 | `nimbus_get_worklist` (§4) | Per group: `investigate` the example, `resubmit` the example, `resubmit_ticket` when the group is reported under one ticket, `report`, `classify`. |
 | `nimbus_prepare_action` | `run` (`nimbus_resubmit_message` or `nimbus_skip_message` with the `actionToken`, `needs` `reason` and `idempotencyKey`). |
 | `nimbus_resubmit_message`, `nimbus_skip_message` | `check` (`nimbus_get_operation` with the `operationId`). A batch result has none at the top; each item already carries its `operationId`. |
-| `nimbus_get_operation` | By status: `check` again while not terminal; `classify` after `Failed`; `resubmit` after `NotSent`; none after `Succeeded`; `open_web_ui` after `OutcomeUnknown`. Never `resubmit` after `OutcomeUnknown`. |
+| `nimbus_get_operation` | By status: `check` again while not terminal; `investigate` (read the message again with `nimbus_get_message`, which offers what may be done now) after `Failed` or `NotSent`; none after `Succeeded` or `Refused`; `open_web_ui` after `OutcomeUnknown`. Never `resubmit` after `OutcomeUnknown`. |
 
 `eligibleActions` and the `next` text stay, so existing agents and the prompts keep working.
 
@@ -176,7 +177,7 @@ group:
 | `blockedSessions` | Distinct sessions among the open Failed ones, which hold later messages back. |
 | `exampleEventId`, `exampleMessageVersion` | The newest open message, to act on without another read. |
 | `classification` | The example's saved classification summary, when classification is enabled. Advisory. |
-| `ticketId` | Set when every reported open message checked shares one ticket. |
+| `ticketId` | Set when every reported open message checked shares one ticket. Read with one batched `GetEventReports` call per endpoint. |
 | `acknowledged` | The endpoint's Monitor acknowledgement, when someone is already looking. |
 | `nextActions` | As §3.2. |
 
@@ -368,3 +369,13 @@ Acceptance: in each client that passed the pilot, connected to a deployment with
 | 9 | A batch resubmit result had no defined options. | §3.2. |
 | 10 | `arguments` can carry a producer-chosen event id. | §3.1. |
 | 11 | No implementation plan was called for, though the change spans more than five files. | §8 Delivery. |
+
+## Amendments from the phase 1 implementation (2026-11-14)
+
+| # | Change | Why |
+|---|---|---|
+| A1 | `nimbus_get_operation` offers `investigate` (read the message again) after `Failed` or `NotSent`, in place of `classify` and `resubmit` (§3.2). | The operation result can't tell whether the caller may classify or resubmit now without repeating the eligibility checks; the message read makes exactly those checks (§3.3). |
+| A2 | A group's `ticketId` comes from `GetEventReports` on the open event ids, not from `FindEventReports` (plan D1). | It is an exact batched lookup by event id, so a ticket on an older report can't be missed past a page limit. |
+| A3 | The worklist result also carries `moreGroups` (more groups exist than were examined) and per group `unchecked` (events without a session id, which can't be status-checked). | §4.1 bounds the scan; the result now says when it was cut. |
+| A4 | `nextActions` is an init-only member on each result record, always an array, so existing constructors are unchanged. | Additive (§2), and the derived output schemas require every member. |
+| A5 | The Connect card is unchanged: no client has passed the pilot (plan D6). The docs give Claude Code steps and say Claude Desktop and Codex follow. | §6.1. |

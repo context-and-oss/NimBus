@@ -23,6 +23,7 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_get_capabilities` | Environment, caller, readable endpoints, limits and features. Call it first | Signed in |
 | `nimbus_list_endpoints` | Readable endpoints with the event types each produces and consumes | Endpoint Reader |
 | `nimbus_get_overview` | Counts by status, oldest failure and Monitor acknowledgements across readable endpoints | Endpoint Reader |
+| `nimbus_get_worklist` | "What needs me?": open failed and dead-lettered messages grouped by endpoint, event type and error pattern, each with the newest open message, the sessions it blocks, its saved classification, a shared ticket and [options](#options-in-results) | Endpoint Reader |
 | `nimbus_get_endpoint` | The same for one endpoint, with its ownership: owner, team, contacts, source system, adapter repository and ticket link | Endpoint Reader |
 | `nimbus_find_messages` | Tracked messages on one endpoint, filtered by status, event type, session, event id and time. With `includeClassification`, whether each failed message's latest attempt is classified, and how | Endpoint Reader |
 | `nimbus_get_message` | Status, latest attempt, latest error, Web UI link, `messageVersion` and the `eligibleActions` you may take; the payload only with `includePayload=true` | Endpoint Reader; payloads also need PiiReader (and, with Entra, the `nimbus.payload.read` scope) |
@@ -47,6 +48,44 @@ when the adapter stores one and an Owner allows it (see
 data from the failing handler. Timestamps are UTC. Errors start with a code in brackets, for example
 `[EndpointNotFound]` or `[PermissionDenied]`. A resource the caller cannot read is reported exactly
 like one that does not exist.
+
+## Options in results
+
+So that a person can pick "resubmit this failed message" from a list instead of naming tools and
+ids, several results carry `nextActions` ([Spec 046](spec/046-mcp-guided-actions/spec.md)): the
+options the caller may take now, recommended first. The server instructions tell the agent to offer
+them as a numbered choice, with the client's own question UI where it has one.
+
+```json
+{
+  "id": "resubmit",
+  "label": "Resubmit this message",
+  "kind": "change",
+  "tool": "nimbus_prepare_action",
+  "arguments": { "action": "resubmit", "endpointId": "ErpEndpoint", "eventId": "…", "messageVersion": "…" },
+  "needs": [],
+  "confirm": true
+}
+```
+
+| Result | Options |
+| --- | --- |
+| `nimbus_get_message` | Look at its history, resubmit, classify, mark reported, skip, or open it in the Web UI (deferred messages and pending handoffs) |
+| `nimbus_get_worklist` | Per group: investigate the example, resubmit it, resubmit every failure under the group's ticket, classify, mark reported |
+| `nimbus_prepare_action` | Run the prepared action; `needs` lists `reason` and `idempotencyKey` |
+| `nimbus_resubmit_message`, `nimbus_skip_message` | Check the operation. A resubmit by ticket has none: each item carries its own `operationId` |
+| `nimbus_get_operation` | Check again while it runs; read the message again after `Failed` or `NotSent`; the Web UI after `OutcomeUnknown`; nothing after `Succeeded` |
+
+- An option is offered only when the caller could run it now: it comes from the same checks as
+  `eligibleActions` (role, scope, the access policy and the message's state). Each tool it names
+  still authorizes, audits and rate-limits the call.
+- `kind` is `read`, `change` or `destructive` (skip). `confirm` is true when a person present must say
+  yes first. A workload is never offered skip, and its options have `confirm` false.
+- A label is fixed text chosen by NimBus and never contains error text, log text or payload values.
+  `arguments` hold ids, versions and tokens from the same result; ids are data.
+- A saved classification with guidance `RetryMayHelp` puts the resubmit first. Without one, looking
+  at the message comes first.
+- `nextActions` is always an array, empty when there is nothing to offer.
 
 ## Server instructions
 
@@ -73,7 +112,7 @@ for a server added as `nimbus`, and takes the arguments space-separated, in the 
 
 | Prompt | Arguments | What it does | Changes anything? |
 | --- | --- | --- | --- |
-| `triage` | `endpointId` (optional), `period` (optional: `1h`, `12h`, `1d` (default), `3d`, `7d`, `30d`) | Finds failed, dead-lettered and unsupported messages on every readable endpoint (or one), groups them by cause, and suggests which one to investigate first | No |
+| `triage` | `endpointId` (optional), `period` (optional: `1h`, `12h`, `1d` (default), `3d`, `7d`, `30d`) | Starts from `nimbus_get_worklist`: the open failures on every readable endpoint (or one), grouped by cause, then offers the read options of the group to look at first | No |
 | `investigate-message` | `endpointId`, `eventId` | Explains why one message failed and what it blocks in its session, and recommends resubmit, skip, fix first, report, or Web UI recovery | No |
 | `recover-message` | `endpointId`, `eventId`, `action` (optional: `resubmit` or `skip`) | Investigates, previews the action with `nimbus_prepare_action`, and runs it only after the user confirms and agrees the audit reason | Yes, after confirmation |
 | `failure-report` | `period` (optional, as `triage`) | A short incident-style summary of failures across the site. Without a site-wide Reader role it covers only the endpoints you can read | No |
@@ -87,6 +126,12 @@ refused tool. `handle-failures` follows `nimbus_record_classification` the same 
 **Classify failures**, or denying the client changes, removes it. An invalid argument (an id longer than 200 characters or with control characters, an
 unknown period or action) answers `[InvalidArgument]`. An endpoint you cannot read surfaces as
 `[EndpointNotFound]` from the first tool the agent calls.
+
+Clients that support argument completion offer a list while you fill in a prompt: `period`,
+`action` and `unattended` from their allowed values, and `endpointId` from the endpoints you can
+read. Event ids are not completed; use `nimbus_get_worklist` to find a message. A prompt you cannot
+list completes nothing. Completions count against the request limit (see [Limits](#limits)) and are
+not audited.
 
 ## Changing messages
 
@@ -290,6 +335,39 @@ SQL Server migration `0023_McpAccessSettings.sql`, a fixed-id document in the Co
 container). The API is `GET`/`PUT /api/v1/admin/mcp/settings`, `POST /api/v1/admin/mcp/turn-off` and
 `GET /api/v1/admin/mcp/activity`.
 
+## Connect a client
+
+The quickest way is to let the assistant set itself up while you do the sign-in. Paste this into
+it, with your deployment's URL and the client id from
+[step 1.7](#1-register-the-mcp-resource) (for local development, leave out the client id):
+
+> Add the NimBus operator MCP server at `https://<webapp>/mcp` with client id `<client-id>`. Don't
+> sign in for me: tell me when to do it in the browser. Then call `nimbus_get_capabilities` and
+> tell me which endpoints I can read and what I may do.
+
+Never type a password or token into the chat. The sign-in happens in your browser.
+
+| Client | Status |
+| --- | --- |
+| Claude Code | Supported. Local development: see [the next section](#local-development-aspire). Entra: `claude mcp add --transport http --client-id <mcp-client-app-id> --callback-port <port> nimbus https://<webapp>/mcp`, then `/mcp` to sign in ([Verify](#3-verify)) |
+| Claude Desktop, Codex | Not yet documented. They need a pre-registered Entra client id and a registered redirect URI, and a client that connects from its vendor's cloud cannot reach a local stack or a [private network](spec/034-private-networking/spec.md). Steps follow once each has been connected end to end ([Spec 046 §6.1](spec/046-mcp-guided-actions/spec.md)) |
+
+### Example flows
+
+These show the order of tool calls, not literal transcripts.
+
+**"What needs me?"** `nimbus_get_capabilities`, then `nimbus_get_worklist`. The agent shows a table
+of groups and offers the first group's `nextActions` as a numbered choice: "1. Investigate an
+example 2. Resubmit the example 3. Mark it reported under a ticket".
+
+**"Resubmit it."** `nimbus_get_message` (its `messageVersion`), `nimbus_prepare_action`, then the
+preview and a question: "Resubmit message … to ErpEndpoint? Reason for the audit log?" After a yes,
+`nimbus_resubmit_message` with the reason and a new GUID, then `nimbus_get_operation` until it
+reads `Succeeded` or `Failed`.
+
+**A Reader.** The same worklist, but every option has `kind` `read`, so the agent offers only to
+look further and says who can make changes.
+
 ## Local development (Aspire)
 
 With the NimBus Aspire AppHost (`src/NimBus.AppHost`) no setup is needed: it sets
@@ -429,6 +507,22 @@ can reach `/mcp`. Cloud-hosted agents need a path through the Application Gatewa
 | `nimbus_get_capabilities` lists no readable endpoints | The user holds no NimBus role on any endpoint |
 | An action you expected is missing from `permittedActions` | The token lacks the action's scope (sign in again after adding it), the user isn't Contributor on the endpoint, or a site Owner switched the action off |
 | New tools or prompts don't appear after an upgrade | Claude Code reads the tool list when it connects. Reconnect the server in `/mcp` or start a new session |
+
+Tool errors start with a code in brackets. What to do about each:
+
+| Code | Meaning and what to do |
+| --- | --- |
+| `[EndpointNotFound]`, `[MessageNotFound]` | Missing, or not readable by you; the two look the same on purpose. Check the id with `nimbus_list_endpoints` or `nimbus_get_worklist` |
+| `[PermissionDenied]` | Your role, scope or the access policy doesn't allow it. Don't retry; ask a site Owner, or sign in again after a scope was added |
+| `[StaleMessage]` | The message changed since it was read, or the action token expired. Nothing was sent. Read it again and confirm again |
+| `[ActionNotAllowed]` | Its state doesn't allow the action, or a workload's budget or per-message cap is used up. Hand it to a person |
+| `[OutcomeUnknown]` | The send may or may not have reached Service Bus. Read the operation; never resend it. A person decides in the Web UI |
+| `[RateLimited]` | Too many changes in the window. Wait and try again |
+| `[AuditUnavailable]` | The audit log couldn't record the action, so nothing was sent. Try again later |
+| `[FeatureUnavailable]` | The feature, for example failure classification or the operation journal, isn't enabled in this deployment |
+| `[SourceUnavailable]` | Storage couldn't answer. Try again; if it persists, check the WebApp's logs |
+| `[InvalidCursor]` | The cursor belongs to another query. Repeat the query without it |
+| `[InvalidArgument]` | An argument is missing or invalid; the message says which |
 
 ## Limits
 
