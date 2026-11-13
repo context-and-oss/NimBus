@@ -37,6 +37,9 @@ internal sealed class EmulatorProcess : IAsyncDisposable
 
     public string ConnectionString { get; }
 
+    /// <summary>The port the emulator was started on; 0 for an external emulator.</summary>
+    public int Port { get; private init; }
+
     public Uri HttpEndpoint { get; }
 
     /// <summary>
@@ -52,16 +55,19 @@ internal sealed class EmulatorProcess : IAsyncDisposable
     /// <paramref name="startupDeadline"/> (default <see cref="DefaultStartupDeadline"/>).
     /// <paramref name="environment"/> adds environment variables to the emulator process.
     /// A failure carries the emulator output of the last launch attempt.
+    /// <paramref name="portSource"/> is a test seam that chooses the port for each launch
+    /// attempt; by default a free loopback port is probed.
     /// </summary>
     public static async Task<EmulatorProcess> StartAsync(
         string? journalPath = null,
         bool deleteJournalOnDispose = true,
         IReadOnlyDictionary<string, string>? environment = null,
-        TimeSpan? startupDeadline = null)
+        TimeSpan? startupDeadline = null,
+        Func<int>? portSource = null)
     {
         if (System.Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_CS") is { Length: > 0 } existing)
         {
-            return new EmulatorProcess(null, 0, existing);
+            return new EmulatorProcess(null, 0, existing) { Port = 0 };
         }
 
         var deadline = startupDeadline ?? DefaultStartupDeadline;
@@ -75,7 +81,7 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         while (launches < MaxLaunches && (launches == 0 || clock.Elapsed < deadline))
         {
             launches++;
-            var attempt = await StartOnceAsync(journalPath, deleteJournalOnDispose, environment, clock, deadline);
+            var attempt = await StartOnceAsync(journalPath, deleteJournalOnDispose, environment, clock, deadline, portSource ?? GetAvailablePort);
             if (attempt.Instance is { } instance)
             {
                 Console.WriteLine($"[step] emulator startup: {clock.ElapsedMilliseconds} ms ({launches} launch attempt(s))");
@@ -109,9 +115,10 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         bool deleteJournalOnDispose,
         IReadOnlyDictionary<string, string>? environment,
         Stopwatch clock,
-        TimeSpan deadline)
+        TimeSpan deadline,
+        Func<int> portSource)
     {
-        var port = GetAvailablePort();
+        var port = portSource();
         var project = FindProject();
         var ownsJournal = journalPath is null;
         journalPath ??= Path.Combine(Path.GetTempPath(), $"nimbus-sbemulator-test-{Guid.NewGuid():N}", "topology.json");
@@ -126,6 +133,11 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         };
         startInfo.Environment["NIMBUS_SBEMULATOR_TOPOLOGY_PATH"] = journalPath;
         startInfo.Environment["NIMBUS_SBEMULATOR_DIAGNOSTICS"] = "1";
+        // The emulator echoes this id from /health. A port probed free can be taken before the
+        // emulator binds it; the emulator then exits while the other process answers /health
+        // on that port, so only an answer carrying this id proves this emulator is up.
+        var instanceId = Guid.NewGuid();
+        startInfo.Environment["NIMBUS_SBEMULATOR_INSTANCE_ID"] = instanceId.ToString();
         foreach (var (name, value) in environment ?? new Dictionary<string, string>())
         {
             startInfo.Environment[name] = value;
@@ -141,7 +153,10 @@ internal sealed class EmulatorProcess : IAsyncDisposable
             process,
             port,
             journalPath: journalPath,
-            deleteJournalOnDispose: deleteJournalOnDispose);
+            deleteJournalOnDispose: deleteJournalOnDispose)
+        {
+            Port = port,
+        };
         process.OutputDataReceived += (_, args) => instance.CaptureOutput(args.Data);
         process.ErrorDataReceived += (_, args) => instance.CaptureOutput(args.Data);
         process.BeginOutputReadLine();
@@ -160,7 +175,8 @@ internal sealed class EmulatorProcess : IAsyncDisposable
             try
             {
                 using var response = await client.GetAsync(new Uri($"http://127.0.0.1:{port}/health"), probe.Token);
-                if (response.StatusCode == HttpStatusCode.OK)
+                if (response.StatusCode == HttpStatusCode.OK
+                    && IsInstance(await response.Content.ReadAsStringAsync(probe.Token), instanceId))
                 {
                     return new StartAttempt(instance, null, string.Empty);
                 }
@@ -200,6 +216,22 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         }
 
         return new StartAttempt(null, failure, instance.DumpOutput());
+    }
+
+    /// <summary>True when a /health body names <paramref name="instanceId"/>.</summary>
+    private static bool IsInstance(string healthBody, Guid instanceId)
+    {
+        try
+        {
+            using var health = System.Text.Json.JsonDocument.Parse(healthBody);
+            return health.RootElement.TryGetProperty("instance", out var instance)
+                && Guid.TryParse(instance.GetString(), out var answered)
+                && answered == instanceId;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
     }
 
     public string DumpOutput() => string.Join(System.Environment.NewLine, _output);
@@ -266,6 +298,15 @@ internal sealed class EmulatorProcess : IAsyncDisposable
         if (_process is null)
         {
             return null;
+        }
+
+        // An emulator that died during the test explains failures such as a refused
+        // connection, so say so, with its exit code and output.
+        if (_process.HasExited)
+        {
+            Console.WriteLine(
+                $"[step] the emulator had already exited with code {_process.ExitCode}. " +
+                $"Emulator output:{System.Environment.NewLine}{DumpOutput()}");
         }
 
         var watch = Stopwatch.StartNew();

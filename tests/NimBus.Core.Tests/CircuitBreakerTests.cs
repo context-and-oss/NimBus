@@ -35,10 +35,11 @@ public sealed class CircuitBreakerTests
     {
         var breaker = CreateBreaker(minimumThroughput: 4, failurePercentage: 50);
 
+        breaker.RecordSuccess();
         breaker.RecordFailure(new EventContextHandlerException(new InvalidOperationException("down")));
         breaker.RecordSuccess();
+        Assert.AreEqual(CircuitState.Closed, breaker.State);
         breaker.RecordFailure(new TransientException("transport"));
-        breaker.RecordSuccess();
 
         Assert.AreEqual(CircuitState.Open, breaker.State);
     }

@@ -77,9 +77,28 @@ public partial class NimBusReceiverHostedService : BackgroundService
             // Closed->Open ran the processor at full concurrency through
             // the entire break, and a missed HalfOpen->Closed stranded the
             // receiver at probe concurrency until the next open.
+            //
+            // A wait that has already completed when State is sampled holds a
+            // transition the sample reflects (or one that fired right after
+            // it). Arming performs a due Open->HalfOpen advance itself, so
+            // this is the normal case when stopping the processor outlasted
+            // the break. Acting on that transition later would stop the
+            // processor about to be started for the very state it led to,
+            // cancelling whatever it had received. Arm and sample again until
+            // the wait is pending: every later transition then completes it.
             using var circuitWaitCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            var circuitStateChanged = _circuitBreaker?.WaitForStateChangeAsync(circuitWaitCancellation.Token);
-            var circuitState = _circuitBreaker?.State ?? CircuitState.Closed;
+            Task<CircuitStateChange>? circuitStateChanged = null;
+            var circuitState = CircuitState.Closed;
+            if (_circuitBreaker is not null)
+            {
+                do
+                {
+                    circuitStateChanged = _circuitBreaker.WaitForStateChangeAsync(circuitWaitCancellation.Token);
+                    circuitState = _circuitBreaker.State;
+                }
+                while (circuitStateChanged.IsCompletedSuccessfully);
+            }
+
             if (circuitState == CircuitState.Open)
             {
                 _startupCompletion.TrySetResult(true);

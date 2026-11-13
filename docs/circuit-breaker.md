@@ -39,7 +39,9 @@ services.AddNimBusSubscriber(options =>
 | `HalfOpenProbeCount` | 3 | Consecutive successful probes required to close |
 | `CountPermanentFailures` | `false` | Include poison/permanent failures in breaker failure counting |
 
-`Exclude<TException>()` and `Exclude(predicate)` inspect the exception and its inner-exception chain.
+The failure rate is evaluated when a failure is recorded. A success is added to the window and lowers the rate, but never opens the circuit: a failed event blocks its session, so after a short blip the failures stop while other sessions keep succeeding, and those successes must not pause an endpoint whose dependency has recovered.
+
+`Exclude<TException>()` and `Exclude(predicate)` inspect the exception and its inner-exception chain. A predicate must not throw. If one does, the message is handled as usual, the outcome is not counted, and a warning is logged.
 
 For how an adapter chooses what to exclude (throttling and rejected requests, but not outages), and how to test the breaker with a manual `TimeProvider`, see [building-adapters.md#resilience](building-adapters.md#resilience) and [building-adapters.md#adapter-testing](building-adapters.md#adapter-testing).
 

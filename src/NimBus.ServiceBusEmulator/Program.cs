@@ -43,7 +43,11 @@ using var topologyJournal = new TopologyJournal(topologyPath);
 await topologyJournal.ReplayAsync(broker, CancellationToken.None).ConfigureAwait(false);
 builder.Services.AddSingleton(broker);
 var app = builder.Build();
-var instanceId = Guid.NewGuid();
+// A launcher may choose the instance id, so it can tell this emulator's /health answer apart
+// from another process that holds the port this emulator failed to bind.
+var instanceId = Guid.TryParse(builder.Configuration["NIMBUS_SBEMULATOR_INSTANCE_ID"], out var configuredInstanceId)
+    ? configuredInstanceId
+    : Guid.NewGuid();
 app.MapServiceBusAdmin(broker, instanceId, topologyJournal);
 
 await app.StartAsync().ConfigureAwait(false);
