@@ -57,6 +57,46 @@ public partial class NimBusReceiverHostedServiceTests
     }
 
     [TestMethod]
+    public async Task Break_that_ends_while_the_processor_is_still_stopping_starts_a_single_probe_processor()
+    {
+        // Stopping waits for in-flight handlers, so it can outlast a short break. The loop then
+        // comes back to a breaker whose wait performs the Open->HalfOpen advance itself and
+        // completes at once. Acting on that transition after starting the half-open processor
+        // stopped it again straight away, cancelling whatever it had just received.
+        var clock = new ManualClock(CircuitStart);
+        var breaker = CreateRealBreaker(clock);
+        var client = new RecordingServiceBusClient();
+        var service = CreateCircuitReceiver(client, breaker, maxConcurrentSessions: 8);
+
+        using var cts = new CancellationTokenSource();
+        var runTask = service.RunProcessorLoopAsync(cts.Token);
+        try
+        {
+            await WaitUntilAsync(() => client.Processors.Count == 1, () => $"ProcessorCount={client.Processors.Count}");
+            client.Processors[0].BlockStop();
+
+            breaker.RecordFailure(new TransientException("down"));
+            await WaitUntilAsync(() => client.Processors[0].StopCalls == 1, () => $"StopCalls={client.Processors[0].StopCalls}");
+            clock.Advance(CircuitBreak);
+            client.Processors[0].ReleaseStop();
+
+            await WaitUntilAsync(() => client.Processors.Count >= 2, () => $"ProcessorCount={client.Processors.Count}");
+            await Task.Delay(200);
+            Assert.AreEqual(2, client.Processors.Count, "The half-open processor must not be recreated.");
+            Assert.AreEqual(1, client.ProcessorOptions[1].MaxConcurrentSessions);
+            Assert.AreEqual(0, client.Processors[1].StopCalls);
+
+            breaker.RecordSuccess();
+            await WaitUntilAsync(() => client.Processors.Count == 3, () => $"ProcessorCount={client.Processors.Count}");
+            Assert.AreEqual(8, client.ProcessorOptions[2].MaxConcurrentSessions);
+        }
+        finally
+        {
+            await StopServiceAsync(cts, runTask);
+        }
+    }
+
+    [TestMethod]
     public async Task Failed_probe_pauses_the_receiver_again_for_a_fresh_break()
     {
         var clock = new ManualClock(CircuitStart);
