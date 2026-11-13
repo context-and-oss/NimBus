@@ -2,6 +2,7 @@
 
 Status: draft, revision 2 (2026-11-13). Revised after a review of revision 1 against the code; the
 review log at the end maps each finding to the section that addresses it. Not yet approved.
+Plan for phase 1: [2026-11-13-spec-046-mcp-guided-actions.md](../../plan/2026-11-13-spec-046-mcp-guided-actions.md).
 Baseline: master `5556ea82`. Builds on [Spec 035](../035-mcp-operator-access/spec.md),
 [Spec 037](../037-mcp-admin-access/spec.md),
 [Spec 040](../040-mcp-operator-prompts-and-plugin/spec.md),
