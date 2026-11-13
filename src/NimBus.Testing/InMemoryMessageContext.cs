@@ -37,6 +37,7 @@ public class InMemoryMessageContext : IMessageContext
     public string? ReplyTo => _message.ReplyTo;
     public string? ReplyToSessionId => _message.ReplyToSessionId;
     public string? InboxMessageId => _message.InboxMessageId;
+    public string? RoutingKey => _message.RoutingKey;
 
     // IReceivedMessage
     public DateTime EnqueuedTimeUtc { get; }

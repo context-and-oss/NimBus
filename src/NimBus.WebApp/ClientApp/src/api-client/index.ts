@@ -10391,6 +10391,10 @@ export class EventType implements IEventType {
     consumerCount?: number;
     producers?: string[];
     consumers?: string[];
+    /** The payload property that holds the routing key (Spec 045), or null when the event type isn't routed by key. */
+    routingKeyProperty?: string | undefined;
+    /** How each consumer takes the event type (Spec 045), one entry per consumer in the order of `consumers`. `consumers` is unchanged. */
+    consumerRouting?: ConsumerRouting[];
 
     [key: string]: any;
 
@@ -10431,6 +10435,12 @@ export class EventType implements IEventType {
                 for (let item of _data["consumers"])
                     this.consumers!.push(item);
             }
+            this.routingKeyProperty = _data["routingKeyProperty"];
+            if (Array.isArray(_data["consumerRouting"])) {
+                this.consumerRouting = [] as any;
+                for (let item of _data["consumerRouting"])
+                    this.consumerRouting!.push(ConsumerRouting.fromJS(item));
+            }
         }
     }
 
@@ -10469,6 +10479,12 @@ export class EventType implements IEventType {
             for (let item of this.consumers)
                 data["consumers"].push(item);
         }
+        data["routingKeyProperty"] = this.routingKeyProperty;
+        if (Array.isArray(this.consumerRouting)) {
+            data["consumerRouting"] = [];
+            for (let item of this.consumerRouting)
+                data["consumerRouting"].push(item ? item.toJSON() : undefined as any);
+        }
         return data;
     }
 
@@ -10492,6 +10508,90 @@ export interface IEventType {
     consumerCount?: number;
     producers?: string[];
     consumers?: string[];
+    /** The payload property that holds the routing key (Spec 045), or null when the event type isn't routed by key. */
+    routingKeyProperty?: string | undefined;
+    /** How each consumer takes the event type (Spec 045), one entry per consumer in the order of `consumers`. `consumers` is unchanged. */
+    consumerRouting?: ConsumerRouting[];
+
+    [key: string]: any;
+}
+
+/** The routing-key declaration of one consumer of an event type: the keys it takes, the unmatched role, or neither (every key). */
+export class ConsumerRouting implements IConsumerRouting {
+    endpoint!: string;
+    /** The keys the consumer takes; empty means every key. */
+    routingKeys!: string[];
+    /** True for the unmatched consumer: messages whose key no consumer claims, or with no key. */
+    unmatched!: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IConsumerRouting) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+        if (!data) {
+            this.routingKeys = [];
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpoint = _data["endpoint"];
+            if (Array.isArray(_data["routingKeys"])) {
+                this.routingKeys = [] as any;
+                for (let item of _data["routingKeys"])
+                    this.routingKeys!.push(item);
+            }
+            this.unmatched = _data["unmatched"];
+        }
+    }
+
+    static fromJS(data: any): ConsumerRouting {
+        data = typeof data === 'object' ? data : {};
+        let result = new ConsumerRouting();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpoint"] = this.endpoint;
+        if (Array.isArray(this.routingKeys)) {
+            data["routingKeys"] = [];
+            for (let item of this.routingKeys)
+                data["routingKeys"].push(item);
+        }
+        data["unmatched"] = this.unmatched;
+        return data;
+    }
+
+    clone(): ConsumerRouting {
+        const json = this.toJSON();
+        let result = new ConsumerRouting();
+        result.init(json);
+        return result;
+    }
+}
+
+/** The routing-key declaration of one consumer of an event type: the keys it takes, the unmatched role, or neither (every key). */
+export interface IConsumerRouting {
+    endpoint: string;
+    /** The keys the consumer takes; empty means every key. */
+    routingKeys: string[];
+    /** True for the unmatched consumer: messages whose key no consumer claims, or with no key. */
+    unmatched: boolean;
 
     [key: string]: any;
 }
@@ -10572,6 +10672,8 @@ export class EventTypeDetails implements IEventTypeDetails {
     codeRepoLink?: string;
     producers?: string[];
     consumers?: string[];
+    /** How each consumer takes the event type (Spec 045); see EventType.consumerRouting. */
+    consumerRouting?: ConsumerRouting[];
 
     [key: string]: any;
 
@@ -10602,6 +10704,11 @@ export class EventTypeDetails implements IEventTypeDetails {
                 for (let item of _data["consumers"])
                     this.consumers!.push(item);
             }
+            if (Array.isArray(_data["consumerRouting"])) {
+                this.consumerRouting = [] as any;
+                for (let item of _data["consumerRouting"])
+                    this.consumerRouting!.push(ConsumerRouting.fromJS(item));
+            }
         }
     }
 
@@ -10630,6 +10737,11 @@ export class EventTypeDetails implements IEventTypeDetails {
             for (let item of this.consumers)
                 data["consumers"].push(item);
         }
+        if (Array.isArray(this.consumerRouting)) {
+            data["consumerRouting"] = [];
+            for (let item of this.consumerRouting)
+                data["consumerRouting"].push(item ? item.toJSON() : undefined as any);
+        }
         return data;
     }
 
@@ -10646,6 +10758,8 @@ export interface IEventTypeDetails {
     codeRepoLink?: string;
     producers?: string[];
     consumers?: string[];
+    /** How each consumer takes the event type (Spec 045); see EventType.consumerRouting. */
+    consumerRouting?: ConsumerRouting[];
 
     [key: string]: any;
 }

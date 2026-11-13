@@ -115,6 +115,9 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
 
     public string ParentMessageId => _sbMessage.GetUserProperty(UserPropertyName.ParentMessageId) ?? Constants.Self;
 
+    /// <summary>The <c>RoutingKey</c> application property (Spec 045), or null when absent.</summary>
+    public string? RoutingKey => _sbMessage.GetUserProperty(UserPropertyName.RoutingKey);
+
     public string? InboxMessageId
     {
         get { try { return GetUserProperty(UserPropertyName.InboxMessageId); } catch (InvalidMessageException) { return null; } }

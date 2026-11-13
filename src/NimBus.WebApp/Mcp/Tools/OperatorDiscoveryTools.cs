@@ -120,10 +120,33 @@ public sealed class OperatorDiscoveryTools
                 endpoint.Name,
                 endpoint.Description,
                 endpoint.EventTypesProduced.Select(eventType => eventType.Id).Order(StringComparer.Ordinal).ToList(),
-                endpoint.EventTypesConsumed.Select(eventType => eventType.Id).Order(StringComparer.Ordinal).ToList()))
+                endpoint.EventTypesConsumed.Select(eventType => eventType.Id).Order(StringComparer.Ordinal).ToList())
+            {
+                RoutingKeysConsumed = RoutingKeysOf(endpoint),
+                UnmatchedEventTypes = UnmatchedOf(endpoint),
+            })
             .ToList();
 
         return new EndpointListResult(_catalog.Environment, DateTimeOffset.UtcNow, endpoints);
+    }
+
+    internal static Dictionary<string, IReadOnlyList<string>>? RoutingKeysOf(NimBus.Core.Endpoints.IEndpoint endpoint)
+    {
+        var keyed = endpoint.EventTypesConsumed
+            .Select(eventType => (eventType.Id, Keys: endpoint.GetRoutingKeys(eventType)))
+            .Where(entry => entry.Keys.Count > 0)
+            .ToDictionary(entry => entry.Id, entry => (IReadOnlyList<string>)entry.Keys.ToList(), StringComparer.Ordinal);
+        return keyed.Count == 0 ? null : keyed;
+    }
+
+    internal static List<string>? UnmatchedOf(NimBus.Core.Endpoints.IEndpoint endpoint)
+    {
+        var unmatched = endpoint.EventTypesConsumed
+            .Where(endpoint.IsUnmatchedConsumer)
+            .Select(eventType => eventType.Id)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        return unmatched.Count == 0 ? null : unmatched;
     }
 }
 
@@ -193,4 +216,17 @@ public sealed record EndpointSummary(
     string Name,
     string? Description,
     IReadOnlyList<string> EventTypesProduced,
-    IReadOnlyList<string> EventTypesConsumed);
+    IReadOnlyList<string> EventTypesConsumed)
+{
+    /// <summary>
+    /// Consumed event type ids the endpoint takes only for some routing keys (Spec 045), with
+    /// those keys. Null when the endpoint takes every key of everything it consumes.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>>? RoutingKeysConsumed { get; init; }
+
+    /// <summary>
+    /// Consumed event type ids the endpoint is the unmatched consumer of (Spec 045): it receives
+    /// the messages whose routing key no endpoint claims. Null when none.
+    /// </summary>
+    public IReadOnlyList<string>? UnmatchedEventTypes { get; init; }
+}

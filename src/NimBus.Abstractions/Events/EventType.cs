@@ -31,6 +31,9 @@ public class EventType : IEventType
 
     public string? SessionKeyProperty => _type.GetCustomAttribute<SessionKeyAttribute>()?.PropertyName;
 
+    /// <inheritdoc />
+    public string? RoutingKeyProperty => RoutingKeys.GetAttribute(_type)?.PropertyName;
+
     public IEnumerable<IProperty> Properties =>
         _type.GetProperties()
         .Select(p => new Property(p));

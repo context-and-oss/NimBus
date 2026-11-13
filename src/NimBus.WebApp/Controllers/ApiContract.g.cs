@@ -6396,6 +6396,8 @@ namespace NimBus.WebApp.ManagementApi
         private int _consumerCount;
         private System.Collections.Generic.List<string> _producers;
         private System.Collections.Generic.List<string> _consumers;
+        private string _routingKeyProperty;
+        private System.Collections.Generic.List<ConsumerRouting> _consumerRouting;
 
         [Newtonsoft.Json.JsonProperty("id", Required = Newtonsoft.Json.Required.Always)]
         [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
@@ -6531,6 +6533,38 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// The payload property that holds the routing key (Spec 045), or null when the event type isn't routed by key.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("routingKeyProperty", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string RoutingKeyProperty    {
+            get { return _routingKeyProperty; }
+            set
+            {
+                if (_routingKeyProperty != value)
+                {
+                    _routingKeyProperty = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// How each consumer takes the event type (Spec 045), one entry per consumer in the order of `consumers`. `consumers` is unchanged.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("consumerRouting", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<ConsumerRouting> ConsumerRouting    {
+            get { return _consumerRouting; }
+            set
+            {
+                if (_consumerRouting != value)
+                {
+                    _consumerRouting = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -6550,6 +6584,94 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<EventType>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// The routing-key declaration of one consumer of an event type: the keys it takes, the unmatched role, or neither (every key).
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ConsumerRouting : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpoint;
+        private System.Collections.Generic.List<string> _routingKeys = new System.Collections.Generic.List<string>();
+        private bool _unmatched;
+
+        [Newtonsoft.Json.JsonProperty("endpoint", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string Endpoint    {
+            get { return _endpoint; }
+            set
+            {
+                if (_endpoint != value)
+                {
+                    _endpoint = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The keys the consumer takes; empty means every key.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("routingKeys", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required]
+        public System.Collections.Generic.List<string> RoutingKeys    {
+            get { return _routingKeys; }
+            set
+            {
+                if (_routingKeys != value)
+                {
+                    _routingKeys = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True for the unmatched consumer: messages whose key no consumer claims, or with no key.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("unmatched", Required = Newtonsoft.Json.Required.Always)]
+        public bool Unmatched    {
+            get { return _unmatched; }
+            set
+            {
+                if (_unmatched != value)
+                {
+                    _unmatched = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static ConsumerRouting FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<ConsumerRouting>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
@@ -6674,6 +6796,7 @@ namespace NimBus.WebApp.ManagementApi
         private string _codeRepoLink;
         private System.Collections.Generic.List<string> _producers;
         private System.Collections.Generic.List<string> _consumers;
+        private System.Collections.Generic.List<ConsumerRouting> _consumerRouting;
 
         [Newtonsoft.Json.JsonProperty("eventType", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public EventType EventType    {
@@ -6722,6 +6845,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_consumers != value)
                 {
                     _consumers = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// How each consumer takes the event type (Spec 045); see EventType.consumerRouting.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("consumerRouting", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<ConsumerRouting> ConsumerRouting    {
+            get { return _consumerRouting; }
+            set
+            {
+                if (_consumerRouting != value)
+                {
+                    _consumerRouting = value;
                     RaisePropertyChanged();
                 }
             }

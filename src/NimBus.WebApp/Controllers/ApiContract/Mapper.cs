@@ -3,6 +3,7 @@ using System.Linq;
 using NimBus.MessageStore;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services.ApplicationInsights;
+using NimBus.Core;
 using NimBus.Core.Events;
 using Event = NimBus.WebApp.ManagementApi.Event;
 using NimBus.MessageStore.States;
@@ -142,8 +143,23 @@ public static class Mapper
                 .Select(x => EventPropertyFromEventTypeProperty(x))
                 .ToList(),
             ExamplePayload = includeExamplePayload ? ExamplePayloadFromIEventType(eventType) : null,
+            RoutingKeyProperty = eventType.RoutingKeyProperty,
         };
     }
+
+    /// <summary>
+    /// How each consumer of <paramref name="eventType"/> takes it (Spec 045), in the order of
+    /// <see cref="IPlatform.GetConsumers"/>, so it lines up with the <c>consumers</c> names.
+    /// </summary>
+    public static List<ConsumerRouting> ConsumerRoutingFor(IPlatform platform, IEventType eventType) =>
+        platform.GetConsumers(eventType)
+            .Select(consumer => new ConsumerRouting
+            {
+                Endpoint = consumer.Name,
+                RoutingKeys = consumer.GetRoutingKeys(eventType).ToList(),
+                Unmatched = consumer.IsUnmatchedConsumer(eventType),
+            })
+            .ToList();
 
     /// <summary>
     /// The authored <c>static Example</c> on the event class as indented JSON, or null when
@@ -188,6 +204,7 @@ public static class Mapper
             ConsumerCount = consumerCount,
             Producers = (producers ?? Enumerable.Empty<string>()).ToList(),
             Consumers = (consumers ?? Enumerable.Empty<string>()).ToList(),
+            RoutingKeyProperty = eventType.RoutingKeyProperty,
         };
     }
 

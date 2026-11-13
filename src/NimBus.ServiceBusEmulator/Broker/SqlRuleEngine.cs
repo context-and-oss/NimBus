@@ -103,7 +103,66 @@ internal static partial class SqlRuleEngine
                 string.Equals(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture), expected, StringComparison.Ordinal);
         }
 
+        // Spec 045: `user.X IN ('a', 'b')` and `user.X NOT IN (...)`. NOT IN on a missing
+        // property is false, as SQL-92 defines it; NimBus pairs it with an IS NULL branch.
+        var inList = Regex.Match(
+            expression,
+            "^user\\.([A-Za-z_][A-Za-z0-9_]*)\\s+(NOT\\s+)?IN\\s*\\(((?:\\s*'(?:''|[^'])*'\\s*,)*\\s*'(?:''|[^'])*'\\s*)\\)$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+            RegexTimeout);
+        if (inList.Success)
+        {
+            var key = inList.Groups[1].Value;
+            var negate = inList.Groups[2].Success;
+            var values = Regex.Matches(inList.Groups[3].Value, "'((?:''|[^'])*)'", RegexOptions.CultureInvariant, RegexTimeout)
+                .Select(match => match.Groups[1].Value.Replace("''", "'", StringComparison.Ordinal))
+                .ToHashSet(StringComparer.Ordinal);
+            return properties =>
+            {
+                if (!properties.TryGetValue(key, out var value) || value is null)
+                    return false;
+                var contained = values.Contains(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
+                return negate ? !contained : contained;
+            };
+        }
+
+        // Spec 045: one parenthesised group of predicates joined by OR.
+        if (expression.Length > 2 && expression[0] == '(' && expression[^1] == ')')
+        {
+            var alternatives = SplitOutsideStrings(expression[1..^1], " OR ").Select(ParsePredicate).ToArray();
+            if (alternatives.Length > 1)
+            {
+                return properties => alternatives.Any(alternative => alternative(properties));
+            }
+        }
+
         throw new FormatException($"Unsupported SQL filter expression '{expression}'.");
+    }
+
+    private static List<string> SplitOutsideStrings(string expression, string separator)
+    {
+        var result = new List<string>();
+        var start = 0;
+        var inString = false;
+        for (var index = 0; index < expression.Length; index++)
+        {
+            if (expression[index] == '\'')
+            {
+                inString = !inString;
+                continue;
+            }
+
+            if (!inString && index + separator.Length <= expression.Length &&
+                expression.AsSpan(index, separator.Length).Equals(separator, StringComparison.OrdinalIgnoreCase))
+            {
+                result.Add(expression[start..index].Trim());
+                start = index + separator.Length;
+                index += separator.Length - 1;
+            }
+        }
+
+        result.Add(expression[start..].Trim());
+        return result;
     }
 
     private static Action<IDictionary<string, object?>> ParseAction(string expression)

@@ -295,6 +295,9 @@ sequenceDiagram
     Bill->>BillSub: billingendpoint sub (handles independently)
 ```
 
+A consumer can also take an event type only for some values of a payload field. The forward rule
+then filters on the message's `RoutingKey` property too; see [Routing keys](routing-keys.md).
+
 ### 11. Transient Failure → Abandon → Redeliver
 
 When the handler throws `TransientException` (an infrastructure fault where redelivering the identical message is enough, such as a lost session lock), NimBus **does not** call SB Abandon explicitly — `MessageContext.Abandon` is a deliberate no-op. The peek-lock simply expires after ~30 seconds and Service Bus redelivers the same message. No notification is sent to the Resolver, so audit visibility is intentionally minimal for this path. Each attempt counts toward the subscription's max delivery count. Downstream outages and throttling belong on the [scheduled retry](#6-retry-automatic) path instead, through typed exceptions and `AddExceptionRule<T>` (see [error-handling.md](error-handling.md#when-to-throw-what)).
