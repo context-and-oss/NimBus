@@ -1,4 +1,4 @@
-# Spec 045: Erase event
+# Spec 047: Erase event
 
 Status: proposed (2026-11-13). Issue: context-and-oss/NimBus#291, part of the Operations cleanup
 gap analysis (#292). Builds on Spec 042 (Recall wrongly published messages, #290) and stays
@@ -6,7 +6,7 @@ consistent with #298 (keep the event that blocks its session, merged as 39843a06
 
 Convention: anything marked **(new)** is proposed by this spec and does not exist on master.
 Everything else cited (files, types, methods, enum values, API paths, CLI commands) exists on
-master as of `c9b5e4a6`.
+master as of `d162c683`.
 
 ## Problem
 
@@ -33,11 +33,11 @@ reports an event as erased while a copy remains.
 
 | Topic | Decision |
 |---|---|
-| Spec number | **045.** On master the `docs/spec/` folders run to 044; 041 is taken by the open PR #275 (`docs/spec/041-on-prem-rabbitmq-transport`), 042–044 are on master. 045 is free on master and on every open PR when this PR is opened. |
+| Spec number | **047.** On master the `docs/spec/` folders run to 045 (`045-routing-keys`); 041 is taken by the open PR #275 (`docs/spec/041-on-prem-rabbitmq-transport`), and 042–045 are on master. 046 is free on master but a `046-mcp-guided-actions` draft is in progress elsewhere, so this spec takes 047 to avoid a collision. 047 is free on master and on every open PR when this PR is opened. |
 | "auditData" | The issue's `auditData` is a local variable name in WebApp controllers (for example `PostResubmitWithChangesEventIdsAsync` in `EventImplementation.OperatorActions.cs`). The stored field is **`MessageAuditEntity.Data`**, and this spec uses that name. `MessageAuditEntity.Comment` is a second free-text field and is covered too. |
 | Dependency on #290 | Spec 042 (`docs/spec/042-message-recall/spec.md`) is on master and defines the selection (event types + sender + enqueued window + session prefix). It is not implemented yet. Erase **does not wait** for it: phases 1–5 take explicit ids only. Phase 6 adds the Recall selection as a *picker* that resolves into ids, and is gated on Spec 042's selection code landing. Erase does not define its own filter. |
 | SearchEvents filter `Data` | **Out of scope.** See [Audit type inventory](#audit-type-inventory). |
-| Erasure boundary | Message store, Service Bus and the Integration Intelligence classification store are inside. The SDK outbox (`IOutbox`) and the other stores in [Erasure boundary](#erasure-boundary) are outside, and the preview and result name them. |
+| Erasure boundary | Message store, Service Bus, the operator operation journal and the Integration Intelligence classification store are inside. The SDK outbox (`IOutbox`) and the other stores in [Erasure boundary](#erasure-boundary) are outside, and the preview and result name them. |
 
 ## Terms
 
@@ -75,7 +75,7 @@ appeared after the preview (a retry, a late Resolver write) is found and erased,
 it is the point.
 
 **Batch size.** 100 event copies per request. Execution per copy touches up to 11 Service Bus
-entities and four stores, and needs session locks (Decision 3), so 100 keeps a request within the
+entities and five stores, and needs session locks (Decision 3), so 100 keeps a request within the
 WebApp's request timeout. Larger erasures are run as several requests from the same card.
 
 Rejected:
@@ -113,6 +113,7 @@ that can hold payload bytes is overwritten in storage. Masking in the UI or API 
 | P9 | **Dead-letter queues** `<E>/<E>/$deadletterqueue` and `<E>/Deferred/$deadletterqueue` | Service Bus | **Delete** | Dead-lettered copies keep their body. |
 | P10 | **Resolver entities** (found by this spec): `<E>/Resolver` forwarder DLQ (`ResolverFanoutSubscription`), `Resolver/Resolver` (`ResolverSubscription`) and its DLQ | Service Bus | **Delete** | The fan-out rule `to-<E>` forwards a copy of every message addressed to the endpoint to the Resolver, payload included, and the Resolver writes P1 and P3 from it. A copy left there re-creates the rows after erasure. |
 | P11 | **Producer-side forwarder DLQ** (found by this spec): `<P>/<E>/$deadletterqueue` (`ConsumerForwarderSubscription`, `DynamicForwardSubscription`) | Service Bus | **Delete** | A forward that failed leaves the original publish there. It carries the publisher's event id, not the copy's, so it is matched by broker `MessageId` + `EventTypeId` + `SessionId` from the copy's `EventRequest`. |
+| P12 | **Operator operation journal** (found by this spec, Spec 044 phase 2): every `OperatorOperation` with the copy's `EndpointId` and `EventId`, when an `IOperatorOperationStore` is registered | SQL `SqlServerOperatorOperationStore`; Cosmos DB `CosmosDbOperatorOperationStore`; in-memory `InMemoryOperatorOperationStore` | **Redact** | `OperatorOperation.Reason` is the operator's or agent's free text about the event, which can quote the payload, and `Detail` can carry refusal or error text. The rest of the row is ids, hashes and status. Deleting it would reset the per-day and per-message workload budgets (`McpAccessSettings.WorkloadResubmitsPerDay`, `WorkloadResubmitsPerMessage`) that count journaled operations, and the row expires anyway (`ExpiresAtUtc`). A **non-terminal** operation (`IsTerminal` false) is not redacted: `OperatorOperationReconciler` may still restore or confirm its row. It is outstanding with reason `OperationInFlight`, and a rerun after the operation settles redacts it. |
 
 ### Redaction fields (P4, P5)
 
@@ -125,6 +126,19 @@ Kept, so the audit trail and session history stay consistent: `AuditorName`, `Au
 `AuditType`, `AccessDenied`, `EventId`, `EndpointId`, the stored `EventTypeId`, the document or row
 id and `CreatedAt`, and the CloudEvents attributes (`CloudEventId`, `CloudEventSource`,
 `CloudEventType`, `CloudEventSubject`), which are envelope identifiers rather than payload.
+
+### Redaction fields (P12)
+
+Cleared or replaced in storage: `OperatorOperation.Reason` is replaced with `[erased <erasureId>]`
+and `OperatorOperation.Detail` is set to null.
+
+Kept: `OperationId`, `TenantId`, `Caller`, `ClientId`, `IsWorkload`, `ActorName`, `IdempotencyKey`,
+`ArgumentsHash`, `Action`, `EndpointId`, `EventId`, `SessionId`, `SourceMessageId`,
+`MessageVersion`, `Status`, `ObservedStatus`, `EvidenceMessageId`, the timestamps and
+`ExpiresAtUtc`/`TimeToLiveSeconds`. `ArgumentsHash` is a SHA-256 over the arguments, not the
+arguments, so it keeps no payload bytes. Because the hash is kept, a retry with the old
+idempotency key still finds the stored, now redacted operation (`TryCreateOperatorOperation`
+returns the existing one) and does not run the command again.
 
 **Compose matching (P5).** A Compose entry is a copy of the erased payload when its `EndpointId`
 is the event's producer (`UnresolvedEvent.From`, or the history `From`), its `EventTypeId` matches,
@@ -210,8 +224,8 @@ so the Resolver can't re-create a row after it was deleted.
    under the lock as Spec 042 does: `DeferredCount -= removed`, floored at 0, and
    `SessionState.MarkAllReplayed()` when nothing is left parked for the session. The block is
    never cleared here.
-5. **Store erasure** (P1–P6): one call to `EraseEventCopyAsync` **(new)** per copy (Decision 4) and
-   one to the classification store.
+5. **Store erasure** (P1–P6, P12): one call to `EraseEventCopyAsync` **(new)** per copy
+   (Decision 4), one to the classification store and one to the operator operation journal.
 6. **Verify.** Call `EraseEventCopyAsync` again. Every place must now report `AlreadyAbsent` (or
    `Redacted` for an entry redacted in step 5). Anything else is outstanding with reason
    `ReappearedDuringErasure`.
@@ -369,6 +383,35 @@ cancellationToken = default)`, returning the number removed, implemented by
 `SqlClassificationStore`, `CosmosClassificationStore`, `AtomicClassificationStore` (forwarding) and
 `UnavailableClassificationStore` (returns 0). The erasure service maps an exception to `Outstanding`
 / `WriteFailed` for place `FailureClassifications`, and 0 to `AlreadyAbsent`.
+
+The operator operation journal (P12) gets its own member on `IOperatorOperationStore` **(new)**:
+
+```csharp
+/// <summary>
+/// Redacts every terminal operation for the event on the endpoint (Reason replaced with
+/// <paramref name="reasonMarker"/>, Detail cleared) under optimistic concurrency, and counts the
+/// non-terminal ones it left alone. Idempotent: an already redacted operation is not counted.
+/// </summary>
+Task<OperatorOperationRedaction> RedactOperatorOperationsForEventAsync(
+    string endpointId,
+    string eventId,
+    string reasonMarker,
+    CancellationToken cancellationToken = default);
+
+public sealed record OperatorOperationRedaction(int Redacted, int InFlight);   // new
+```
+
+Implemented by `SqlServerOperatorOperationStore`, `CosmosDbOperatorOperationStore` and
+`InMemoryOperatorOperationStore` (`src/NimBus.Testing/Conformance/`), with no default
+implementation, for the same reason as above. When no journal is registered the place is
+`AlreadyAbsent`, because nothing can be stored there. The service maps `Redacted > 0` to
+`Redacted`, `InFlight > 0` to `Outstanding` / `OperationInFlight`, an exception to `Outstanding` /
+`WriteFailed`, and `(0, 0)` to `AlreadyAbsent`. A version conflict on one operation is re-read once,
+then counted as `InFlight`, so the copy stays outstanding and a rerun finishes it. New tests in
+`OperatorOperationStoreConformanceTests` (`src/NimBus.Testing/Conformance/`):
+`RedactForEvent_RedactsTerminalOperations_KeepsIdsAndHash`,
+`RedactForEvent_LeavesNonTerminalOperations_CountsThemInFlight`,
+`RedactForEvent_OnlyTouchesTheEndpointAndEvent` and `RedactForEvent_SecondCallRedactsNothing`.
 
 ### Conformance tests (`NimBus.Testing/Conformance/MessageTrackingStoreConformanceTests.cs`)
 
@@ -552,12 +595,12 @@ EraseResult:               # new; returned with 200 for every outcome, Refused i
           eventId: { type: string }
           place: { $ref: '#/components/schemas/ErasurePlace' }
           entity: { type: string, nullable: true }   # Service Bus entity path
-          reason: { type: string, enum: [BlocksSession, SessionBusy, SessionAtRisk, MessageLocked, SearchIncomplete, WriteFailed, ReappearedDuringErasure] }
+          reason: { type: string, enum: [BlocksSession, SessionBusy, SessionAtRisk, MessageLocked, SearchIncomplete, WriteFailed, OperationInFlight, ReappearedDuringErasure] }
     notCovered: { type: array, items: { type: string } }
 ErasurePlace:              # new
   type: string
   enum: [TrackingRow, EventReport, MessageHistory, EventAudits, ComposeAudits, FailureClassifications,
-         EndpointSubscription, DeferredSubscription, DeadLetterQueues, ResolverEntities, ProducerForwarderDeadLetter]
+         OperatorOperations, EndpointSubscription, DeferredSubscription, DeadLetterQueues, ResolverEntities, ProducerForwarderDeadLetter]
 ```
 
 Every outcome returns 200 with an `EraseResult`, so the client reads one shape. A `Forbidden`
@@ -688,19 +731,21 @@ reason, free text) and Reconcile stale pending (`AdminService.Reconcile.cs`, a f
 | UpdateSimulationSettings, ControlSimulation, UpdateSimulationConfig | No | `SimulationImplementation` | Simulator configuration and actions. |
 | AcknowledgeEndpoint, ClearEndpointAcknowledgement | No | `MonitorImplementation` | Endpoint-level reason, not tied to an event. |
 | UpdateAuditSettings | No | `AdminImplementation` | Disabled types. |
-| CommandNotSent | No | `OperatorCommandCoordinator` | Command name and exception type name only. |
+| CommandNotSent | No | `OperatorCommandCoordinator`, `OperatorOperationJournal` | Command name and exception type name only. |
 | UpdateMcpSettings, McpAccessRefused | No | `McpAccessImplementation`, `McpAccessRefusals`, `McpActivityService` | Policy revisions, tool, client, reason code. |
 | AgentApiKeyCreated, AgentApiKeyRevoked, AgentApiKeyRemoved | No | `AgentKeysImplementation` | Key id, agent id, name. |
 | CopyEndpointData | No | `AdminImplementation` | Time window, statuses, counts. |
 | ChangeSessionState | No | `AdminImplementation.SessionState.cs` | Session id, action, state before/after (ids and counters). |
 | DashboardTokenCreated, DashboardTokenRevoked, DashboardTokenRemoved | No | `DashboardTokensImplementation` | Token id, name, expiry. |
+| UpdateEndpointMetadata | No | `EndpointImplementation` | Ownership metadata before and after (owner, team, email, contacts, source system, repository and ticket link): endpoint-level, not tied to an event. |
 | EraseEvent **(new)** | No | Erase service (new) | Decision 7: never payload. Never redacted by erasure. |
 
 ## Erasure boundary
 
 **Inside** (the operation removes copies here and reports on them): the NimBus message store
 (tracking rows, event reports, message history, audits) for the configured provider, Service Bus
-(P7–P11), and the Integration Intelligence classification store when the extension is registered.
+(P7–P11), the operator operation journal (P12) when one is registered, and the Integration
+Intelligence classification store when the extension is registered.
 
 **Outside** (not covered; listed in the preview's and result's *Not covered* panel):
 
@@ -738,13 +783,19 @@ Acceptance:
    member.
 4. `dotnet build src/NimBus.slnx -c Release` has no new CS warnings.
 
-### Phase 2 — Classification store
+### Phase 2 — Classification store and operator operation journal
 
 - `IFailureClassificationStore.DeleteForEventAsync` in SQL, Cosmos, Atomic and Unavailable stores.
+- `IOperatorOperationStore.RedactOperatorOperationsForEventAsync` in the SQL Server, Cosmos DB and
+  in-memory journals.
 
-Acceptance: tests in `NimBus.Extensions.IntegrationIntelligence.Tests` show every revision and
-operation for the event on the endpoint is deleted, another endpoint's are kept, and a second call
-returns 0.
+Acceptance:
+
+1. Tests in `NimBus.Extensions.IntegrationIntelligence.Tests` show every revision and operation
+   for the event on the endpoint is deleted, another endpoint's are kept, and a second call
+   returns 0.
+2. The four journal conformance tests in Decision 4 pass on in-memory, and on SQL Server and
+   Cosmos DB in CI (no skipped conformance tests).
 
 ### Phase 3 — Service Bus search and removal
 
