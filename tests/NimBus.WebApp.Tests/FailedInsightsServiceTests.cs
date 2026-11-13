@@ -748,6 +748,12 @@ public sealed partial class FailedInsightsServiceTests
             Tokens.Add(cancellationToken);
             return Task.FromResult(new FailedInsightsPageResult<InsightGroupPatternPage>(FailedInsightsQueryStatus.Forbidden, null));
         }
+
+        public Task<FailureOccurrenceSet> GetOccurrencesForEndpointsAsync(Period period, IReadOnlyCollection<string> endpointIds, CancellationToken cancellationToken = default)
+        {
+            Tokens.Add(cancellationToken);
+            return Task.FromResult(new FailureOccurrenceSet(Now, Now, DateTimeOffset.UtcNow, []));
+        }
     }
 
     private sealed class FixedClock(DateTime now) : TimeProvider

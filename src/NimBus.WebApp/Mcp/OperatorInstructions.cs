@@ -30,6 +30,6 @@ public static class OperatorInstructions
 
         Errors start with a code in brackets: [EndpointNotFound] and [MessageNotFound] (missing or not readable; the two look the same on purpose), [PermissionDenied] (role, scope or administrator; don't retry), [StaleMessage] (changed since you read it: read it again and ask again), [ActionNotAllowed] (its state doesn't allow the action), [OutcomeUnknown] (read the operation; never resend), [RateLimited] (at most 5 changes per minute), [AuditUnavailable] (nothing was sent), [InvalidArgument].
 
-        Prompts for common workflows: triage, investigate-message, recover-message (offered only while you may change messages), failure-report and handle-failures (offered only while you may record classifications).
+        For "what needs me?" call nimbus_get_worklist. Prompts for common workflows: triage, investigate-message, recover-message (offered only while you may change messages), failure-report and handle-failures (offered only while you may record classifications).
         """.ReplaceLineEndings("\n");
 }

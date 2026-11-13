@@ -83,6 +83,7 @@ public static class McpOperatorServiceCollectionExtensions
             .WithTools<OperatorMessageTools>(ToolSerializerOptions)
             .WithTools<OperatorInsightTools>(ToolSerializerOptions)
             .WithTools<OperatorActionTools>(ToolSerializerOptions)
+            .WithTools<OperatorWorklistTools>(ToolSerializerOptions)
             .WithPrompts([typeof(OperatorPrompts)])
             .WithRequestFilters(filters => filters
                 .AddListToolsFilter(McpToolAccess.FilterList)
@@ -98,6 +99,7 @@ public static class McpOperatorServiceCollectionExtensions
             sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationService>(),
             sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationRecorder>()));
         services.AddScoped<OperatorActionAccess>();
+        services.AddScoped<OperatorWorklist>();
         services.AddSingleton<OperatorActionTokens>();
         services.AddSingleton<OperatorMutationLimiter>();
         // Spec 044 Phase 2: the operator operation journal and its reconciler. Both do nothing

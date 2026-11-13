@@ -105,20 +105,18 @@ public static class OperatorPrompts
     private static string TriageText(string? endpointId, string period)
     {
         var scope = endpointId is null
-            ? "2. Call nimbus_get_overview. Work on every endpoint with failed, dead-lettered or unsupported messages, most first. Note any Monitor acknowledgement: someone is already looking at that endpoint."
-            : "2. Call nimbus_get_endpoint for the endpoint in Inputs. Note any Monitor acknowledgement: someone is already looking at it.";
+            ? "2. Call nimbus_get_worklist with the period in Inputs. It groups the open failed and dead-lettered messages on every endpoint you can read by endpoint, event type and error pattern, most first, each with an example, its saved classification and any Monitor acknowledgement (someone is already looking)."
+            : "2. Call nimbus_get_worklist with the endpointId and period in Inputs. It groups the endpoint's open failed and dead-lettered messages by event type and error pattern, most first, each with an example, its saved classification and any Monitor acknowledgement (someone is already looking).";
 
         return Compose(
             "Triage failed messages in NimBus.",
             $"""
             1. Call nimbus_get_capabilities.
             {scope}
-            3. Call nimbus_get_metrics with view failures and the period in Inputs. It groups failures by error pattern, with an example. It needs a site-wide Reader role; if it answers [PermissionDenied], skip this step.
-            4. For each endpoint with failures, call nimbus_find_messages with statuses Failed, DeadLettered and Unsupported and updatedFrom set to now minus the period. Page with nextCursor only as far as you need to see the patterns.
-            5. Group the messages by event type and cause. Without metrics, call nimbus_get_message on two or three messages per event type to read their latest errors.
-            6. For one example message per group, call nimbus_get_message for its latest error and webUiUrl and, if the capabilities list classification as enabled, nimbus_get_classification. A classification is advisory.
-            7. Report a table: endpoint, event type, cause, count, oldest failure, example (with link). Then list the endpoints that look healthy on one line.
-            8. Suggest the investigate-message prompt for the example to look at first, and say why.
+            3. If olderFailuresLikely is true, say so and offer to look again with a longer period. If moreGroups is true, say that the list is not complete. Unsupported messages appear only in totals: call nimbus_find_messages with status Unsupported when there are any.
+            4. For the example of each of the first groups, call nimbus_get_message for its latest error and webUiUrl.
+            5. Report a table: endpoint, event type, cause, open, blocked sessions, last seen, example (with link). Then list the readable endpoints with no group on one line.
+            6. Offer the nextActions of the group to look at first as a numbered choice, say why, and suggest the investigate-message prompt for it.
             """,
             ReadOnlyRule,
             ("endpointId", endpointId, "(all readable endpoints)"),
