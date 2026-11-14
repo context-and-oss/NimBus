@@ -153,6 +153,7 @@ api.MapContactEndpoints();
 api.MapAuditEndpoints();
 api.MapErpIntegrationEndpoints();
 api.MapAdminEndpoints();
+api.MapRegionalHubEndpoints();
 
 api.MapFallbackToFile("index.html");
 

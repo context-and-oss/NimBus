@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Account, Contact, CreditCheckResult, api } from '../api';
 import { randomCompany } from '../fakeData';
 import AuditLog from '../components/AuditLog';
+import RegionalHubHint from '../components/RegionalHubHint';
 import { BackIcon, PlusIcon, SaveIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
 import {
   Chip, CommandBar, CommandButton, CommandLink, CommandSeparator, ErrorBar, FieldRow, OriginChip, Panel,
@@ -125,7 +126,10 @@ export default function AccountForm() {
                   <input required disabled={deleted} value={form.legalName ?? ''} onChange={e => setForm({ ...form, legalName: e.target.value })} className={inputClass} />
                 </FieldRow>
                 <FieldRow label="Country code (ISO-2)" required>
-                  <input required disabled={deleted} value={form.countryCode ?? ''} onChange={e => setForm({ ...form, countryCode: e.target.value.toUpperCase().slice(0, 2) })} className={inputClass} />
+                  <div>
+                    <input required disabled={deleted} value={form.countryCode ?? ''} onChange={e => setForm({ ...form, countryCode: e.target.value.toUpperCase().slice(0, 2) })} className={inputClass} />
+                    {!deleted && <RegionalHubHint countryCode={form.countryCode} />}
+                  </div>
                 </FieldRow>
                 <FieldRow label="Tax ID">
                   <input disabled={deleted} value={form.taxId ?? ''} onChange={e => setForm({ ...form, taxId: e.target.value })} className={inputClass} />

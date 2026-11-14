@@ -7,6 +7,8 @@ namespace CrmErpDemo.Contracts.Events;
 
 [Description("Published by CRM when an Account is updated.")]
 [SessionKey(nameof(AccountId))]
+// Routing-keys showcase (Spec 045): the country routes the account to its regional hub.
+[RoutingKey(nameof(CountryCode))]
 public class CrmAccountUpdated : Event
 {
     public static readonly CrmAccountUpdated Example = new()

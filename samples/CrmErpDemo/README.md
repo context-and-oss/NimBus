@@ -68,6 +68,7 @@ graph TB
 - **Operator surface** — reuses the existing `NimBus.WebApp` + Resolver from the main repo for full audit trail and resubmit/skip.
 - **Inbox deduplication on CRM** — `Crm.Adapter` opts into platform-level dedup (`UseInbox`, SQL store in the crm DB); redelivery of the same broker `MessageId` is skipped as `DuplicateDetected`, contrasting with ERP's application-level idempotent upserts. Operator resubmit uses a new message identity.
 - **Request/reply (synchronous credit check)** — CRM asks ERP for a customer's credit standing via `PublisherClient.Request` and gets a typed answer back over the `CrmEndpoint-reply` session subscription.
+- **Routing keys (regional hubs)** — CRM account events carry their country as a routing key, and three hub endpoints served by one adapter each receive only their own countries; an account in a country no hub claims is dead-lettered on the unmatched consumer with a reason naming the key. See [Showcase: Routing keys](#showcase-routing-keys-regional-hubs).
 - **Commands (imperative, exactly one consumer)** — `PlaceCustomerOnCreditHold : Command` is fire-and-forget with a single declared consumer (`ErpEndpoint`); platform validation fails provisioning if anyone adds a second consumer (ADR-014).
 
 ## Domains in v1
@@ -308,6 +309,7 @@ samples/CrmErpDemo/
   Erp.Api/                   ASP.NET Core minimal API + EF Core; hosts ERP outbox dispatcher
   Erp.Adapter.Functions/     Azure Functions isolated worker
   Erp.Web/                   React + Vite + TS + Tailwind SPA
+  RegionalHub/               Worker run once per regional hub endpoint (routing keys)
 ```
 
 ### The two web apps
@@ -866,6 +868,76 @@ credit check returning **On hold**, which is also how the two showcases prove ea
 ### Automated coverage
 
 `tests/NimBus.Core.Tests/PlatformValidationTests.cs` + `tests/CrmErpDemo.AppHost.Tests/CommandCatalogTests.cs` (core/catalog) and `e2e/tests/10-credit-hold-command.spec.ts` (demo).
+
+## Showcase: Routing keys (regional hubs)
+
+By default an event goes to every endpoint that consumes its type. A
+[routing key](../../docs/routing-keys.md) (Spec 045, preview) routes by data as well: one
+source, several targets of the same kind, each receiving only its own share.
+
+Here the key is the account's country. `CrmAccountCreated` and `CrmAccountUpdated` name it, and
+three hub endpoints declare which countries they take:
+
+```csharp
+[SessionKey(nameof(AccountId))]
+[RoutingKey(nameof(CountryCode))]
+public class CrmAccountCreated : Event { ... }
+
+public sealed class NordicHubEndpoint : RegionalHubEndpoint
+{
+    public NordicHubEndpoint() : base("Nordic hub", "DK", "SE", "NO", "FI") { }
+}
+```
+
+| Endpoint | Aspire resource | Receives |
+|---|---|---|
+| `NordicHubEndpoint` | `hub-nordic` | Accounts in DK, SE, NO, FI |
+| `DachHubEndpoint` | `hub-dach` | Accounts in DE, AT, CH |
+| `UnroutedHubEndpoint` | `hub-unrouted` | Every other country, and accounts with none |
+| `ErpEndpoint` | `erp-adapter` | Every account, as before: it declares no keys |
+
+The filter runs on Service Bus. The provisioner writes one forward rule per consumer on the
+`CrmEndpoint` topic, and a hub's rule adds `user.RoutingKey IN ('DK', 'FI', 'NO', 'SE')`, so
+the Nordic hub never receives a German account.
+
+- **One adapter, three endpoints.** `RegionalHub/` is one worker project. The AppHost starts it
+  three times and tells each instance which endpoint it serves (`RegionalHub__Endpoint`). Each
+  hub has its own subscription, sessions and failures.
+- **The receive check.** A regional hub calls `EnforceRoutingKeys(...)`: before a handler runs,
+  the country in the payload must be one the hub claims. A message that fails is dead-lettered
+  and does not block its session.
+- **The unmatched consumer.** Service Bus silently drops a message no rule matches, so platform
+  validation refuses a keyed event type without an unmatched consumer. `UnroutedHubEndpoint`
+  is that consumer and uses the built-in `AddUnmatchedHandler<T>()`, which dead-letters each
+  message with a reason naming the key. An account in a country without a hub becomes
+  something an operator sees, not a message that disappeared.
+
+**crm-web** shows the routing under the **Country code** field while you type, from
+`GET /api/regional-hubs`, which reads the hub list from the same endpoint declarations.
+**Generate fake data** and the simulator only produce hub countries, so the unrouted
+dead-letter happens when you ask for it.
+
+### Manual smoke flow
+
+1. In **crm-web**, create an account with country `DK`. In **nimbus-ops**, **Endpoints →
+   NordicHubEndpoint** shows `CrmAccountCreated` Completed; **DachHubEndpoint** shows nothing,
+   and **ErpEndpoint** shows it too. The `hub-nordic` log reads "Nordic hub received new account".
+2. Create one with `DE`: it reaches **DachHubEndpoint** only.
+3. Change the first account's country to `AT` and save: `CrmAccountUpdated` reaches the DACH
+   hub, because the key travels with each message.
+4. Create one with `FR`. The form says no hub claims it. **UnroutedHubEndpoint** shows the
+   message dead-lettered: `No endpoint consumes CrmAccountCreated with routing key 'FR'`.
+   Resubmitting returns it to the same endpoint; **Skip** it. The ERP round-trip for that
+   account is unaffected.
+5. **Event Types → CrmAccountCreated** shows each consumer's keys, `unmatched` on the unrouted
+   hub, and "routed by CountryCode" on the event type.
+
+### Automated coverage
+
+`tests/CrmErpDemo.AppHost.Tests/RegionalHubRoutingTests.cs` (the catalog passes routing-key
+validation, each hub's keys, and the forward rules the provisioner writes on the `CrmEndpoint`
+topic) and `tests/NimBus.ServiceBusEmulator.Tests/RoutingKeyForwardingTests.cs` (core: the
+rules send each key to exactly one consumer on the in-process broker).
 
 ## Demo video
 
