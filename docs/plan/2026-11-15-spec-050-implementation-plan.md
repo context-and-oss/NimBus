@@ -1,7 +1,7 @@
-# Spec 049 (retention settings): implementation plan
+# Spec 050 (retention settings): implementation plan
 
 Status: **draft** (2026-11-15). Nothing is implemented. Implements
-[Spec 049](../spec/049-retention-settings/spec.md). Planned against master `3cd73dad`. Where this
+[Spec 050](../spec/050-retention-settings/spec.md). Planned against master `3cd73dad`. Where this
 plan and the spec disagree, the spec wins.
 
 ## Delivery
@@ -12,10 +12,10 @@ The PR includes a screenshot of Settings → Retention (AGENTS.md).
 
 | Step | Content | Commit |
 |---|---|---|
-| 0 | Phase 0 checks (spec §14) | `docs(spec): record Spec 049 phase 0 results` |
+| 0 | Phase 0 checks (spec §14) | `docs(spec): record Spec 050 phase 0 results` |
 | 1 | `RetentionSettings`, storage members in all providers, conformance | `feat(store): store retention settings` |
 | 2 | `RetentionPolicy`; Cosmos stamping | `feat(store): stamp retention periods on Cosmos writes` |
-| 3 | SQL cleanup: contract, indexes, service | `feat(store): delete expired SQL Server data` |
+| 3 | SQL cleanup on AF-199's job: policy-driven periods, the resolved-period rule, the seam, the metric | `feat(store): drive SQL Server retention from the retention settings` |
 | 4 | API and page | `feat(webapp): set retention in Settings` |
 | 5 | Pins in templates and CLI; carry-forward; mismatch; `nb container` | `feat(cli): pin retention at deployment` |
 | 6 | Docs and release notes | `docs: retention settings` |
@@ -27,11 +27,12 @@ On a temporary resource group per provider in the non-production subscription, d
 - **Spec §14 item 1.** Use the Data Explorer, or a small console against a throwaway Cosmos account.
 - **Items 2 and 3.**
   - Seed a million rows each into `UnresolvedEvents`, `Messages` and `MessageAudits` on S0.
-  - Create the three indexes, timing them and noting whether `ONLINE = ON` is accepted.
-  - Run the step 3 cleanup SQL by hand in 2,000-row batches while Simulation traffic runs.
+  - Apply AF-199's index script, timing it and noting whether `ONLINE = ON` is accepted.
+  - Run the step 3 rules by hand in AF-199's 5,000-row batches while Simulation traffic runs.
+    That includes the widened resolved-period rule, and its query plan shows a seek.
   - Record the batch time, `dtu_consumption_percent` and `sys.dm_tran_locks` waits.
 - **Item 4.** Read `ServiceHealth`'s shape in both providers.
-- Record everything in `docs/spec/049-retention-settings/phase0-results.md`. Adjust the spec's
+- Record everything in `docs/spec/050-retention-settings/phase0-results.md`. Adjust the spec's
   batch size, pause and index options to the results.
 
 ## Step 1: storage
@@ -64,25 +65,31 @@ On a temporary resource group per provider in the non-production subscription, d
 - **Tests.** `RetentionPolicyTests`. Replace the TTL-constant tests in the Cosmos test project with
   stamping tests per period, and add a refresh test.
 
-## Step 3: SQL cleanup
+## Step 3: SQL cleanup on AF-199's job
+
+**Prerequisite.** AF-199 (GH#291) has merged, with its DbUp script renumbered past `0028` and its
+`RetentionEnabled` default set according to spec §13. If AF-199 is closed instead, this step
+builds its `SqlServerRetentionService` and `SqlServerRetentionRunner` first, from the AF-199
+branch.
 
 - **Contract.** `IMessageTrackingStore.PurgeExpiredData(RetentionPeriods, DateTime, int)` returns
-  `RetentionPurgeResult` (one count per period).
-  - SQL Server: four `DELETE TOP (@Batch)` statements (spec §5.4).
+  `RetentionPurgeResult`, one count per period.
+  - SQL Server: AF-199's runner statements move here, as the four rules of spec §5.4. The
+    resolved-period rule also covers Completed and Skipped.
   - In-memory: the same logic over its dictionaries.
   - Cosmos: zeros.
   - Forwarded by the decorator.
-- **Indexes.** A DbUp script with the three indexes. Use `ONLINE = ON` if step 0 showed it
-  works on every tier, otherwise a plain create, and say so in the release notes.
-- **`RetentionCleanupService`** in `NimBus.WebApp/Services/Retention/`, registered with
-  `AddSingleton<IHostedService>(factory)`; a second `AddHostedService` of the same class is
-  dropped.
-  - 15-minute interval, 2,000-row batches, a pause and a five-minute budget, from options.
-  - No-op on Cosmos and when every period is unlimited.
-  - Logs each run and records the `nimbus.retention.deleted` metric.
+- **Runner.**
+  - `SqlServerRetentionRunner` reads `RetentionPolicy.Current` at the start of each run, replacing
+    its constants and `UnresolvedRetentionDays`.
+  - It calls `PurgeExpiredData` in 5,000-row batches until a batch comes back short, as now.
+  - `NimBus:SqlServer:UnresolvedRetentionDays` is read as a legacy pin by `RetentionPolicy`.
+- **Indexes.** Widen or add an index only if step 0 showed that the resolved-period rule scans.
+- **Metric.** `nimbus.retention.deleted`, tagged by period, next to the existing per-run log entry.
 - **Tests.**
   - Conformance `PurgeExpiredData` cases (spec §8), run live for SQL under the gate.
-  - Service tests with a fake clock and store.
+  - Extend AF-199's `SqlServerRetentionTests`: periods taken from the policy, Completed and Skipped
+    under the resolved period, a saved change applied at the next run.
 
 ## Step 4: API and page
 
