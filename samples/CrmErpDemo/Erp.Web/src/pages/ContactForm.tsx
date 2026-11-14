@@ -16,8 +16,30 @@ export default function ContactForm() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listCustomers().then(setCustomers);
-    if (id) api.getContact(id).then(setForm);
+    let cancelled = false;
+    (async () => {
+      const [recent, contact] = await Promise.all([
+        api.listCustomers({ deleted: false }),
+        id ? api.getContact(id) : Promise.resolve(null),
+      ]);
+      // The dropdown offers the 100 most recent customers. Keep the contact's own customer
+      // in it, however old it is.
+      let options = recent.items;
+      const own = contact?.customerId;
+      if (own && !options.some(c => c.id === own)) {
+        try {
+          options = [await api.getCustomer(own), ...options];
+        } catch {
+          /* the customer is gone; the contact keeps its id */
+        }
+      }
+      if (cancelled) return;
+      setCustomers(options);
+      if (contact) setForm(contact);
+    })().catch(() => { /* the form stays empty */ });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   async function submit(e: FormEvent) {

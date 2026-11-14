@@ -12,8 +12,45 @@ public static class ContactEndpoints
     {
         var group = app.MapGroup("/api/contacts");
 
-        group.MapGet("/", async (CrmDbContext db) =>
-            Results.Ok(await db.Contacts.OrderByDescending(c => c.CreatedAt).ToListAsync()));
+        // Paged like /api/accounts. Each row carries its account's name, so the Contacts list
+        // does not have to load every account to show it.
+        group.MapGet("/", async (
+            int? page, int? pageSize, string? q, bool? deleted, string? origin, Guid? accountId,
+            HttpResponse response, CrmDbContext db, CancellationToken cancellationToken) =>
+        {
+            IQueryable<Contact> contacts = db.Contacts;
+            if (deleted is { } isDeleted)
+            {
+                contacts = contacts.Where(c => c.IsDeleted == isDeleted);
+            }
+
+            if (!string.IsNullOrWhiteSpace(origin))
+            {
+                contacts = contacts.Where(c => c.Origin == origin);
+            }
+
+            if (accountId is { } account)
+            {
+                contacts = contacts.Where(c => c.AccountId == account);
+            }
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var term = q.Trim();
+                contacts = contacts.Where(c =>
+                    c.FirstName.Contains(term) || c.LastName.Contains(term) ||
+                    (c.Email != null && c.Email.Contains(term)) ||
+                    (c.Phone != null && c.Phone.Contains(term)));
+            }
+
+            return await contacts
+                .OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
+                .Select(c => new ContactListItem(
+                    c.Id, c.AccountId, c.FirstName, c.LastName, c.Email, c.Phone,
+                    c.CreatedAt, c.UpdatedAt, c.Origin, c.IsDeleted,
+                    db.Accounts.Where(a => a.Id == c.AccountId).Select(a => a.LegalName).FirstOrDefault()))
+                .ToListResultAsync(page, pageSize, response, cancellationToken);
+        });
 
         group.MapGet("/{id:guid}", async (Guid id, CrmDbContext db) =>
             await db.Contacts.FindAsync(id) is { } c ? Results.Ok(c) : Results.NotFound());
@@ -147,3 +184,8 @@ public static class ContactEndpoints
 // honored on insert (null keeps the historical "Erp" default); updates never
 // rewrite an existing contact's origin.
 public record ContactUpsertRequest(Guid? ErpCustomerId, string FirstName, string LastName, string? Email, string? Phone, string? Origin = null);
+
+/// <summary>A contact as the list returns it: the contact, plus the name of its account.</summary>
+public sealed record ContactListItem(
+    Guid Id, Guid? AccountId, string FirstName, string LastName, string? Email, string? Phone,
+    DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt, string Origin, bool IsDeleted, string? AccountLegalName);

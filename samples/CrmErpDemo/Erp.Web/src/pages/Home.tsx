@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Customer, HandoffJob, api } from '../api';
+import { Customer, CustomerSummary, HandoffJob, api } from '../api';
 import AlertsPanel, { useAlerts } from '../components/admin/alerts-panel';
 import { PlusIcon } from '../components/shell/icons';
 import { CommandBar, CommandLink, OriginChip, Panel, formatDate, grid } from '../components/shell/ui';
@@ -10,17 +10,32 @@ import { CommandBar, CommandLink, OriginChip, Panel, formatDate, grid } from '..
 
 const POLL_MS = 3000;
 
+/** Midnight today in the browser's time zone, which is the day the "today" tile means. */
+function startOfToday() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  return start.toISOString();
+}
+
 export default function Home() {
-  const [customers, setCustomers] = useState<Customer[] | null>(null);
+  const [summary, setSummary] = useState<CustomerSummary | null>(null);
+  const [recent, setRecent] = useState<Customer[]>([]);
   const [jobs, setJobs] = useState<HandoffJob[]>([]);
   const { alerts, clear } = useAlerts();
 
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      const [c, j] = await Promise.allSettled([api.listCustomers(), api.getHandoffJobs()]);
+      // The server counts the customers and returns the six newest, where this page used to
+      // load every customer every three seconds to do both itself.
+      const [s, r, j] = await Promise.allSettled([
+        api.getCustomerSummary(startOfToday()),
+        api.listCustomers({ deleted: false, pageSize: 6 }),
+        api.getHandoffJobs(),
+      ]);
       if (cancelled) return;
-      if (c.status === 'fulfilled') setCustomers(c.value);
+      if (s.status === 'fulfilled') setSummary(s.value);
+      if (r.status === 'fulfilled') setRecent(r.value.items);
       if (j.status === 'fulfilled') setJobs(j.value);
     };
     void tick();
@@ -28,12 +43,9 @@ export default function Home() {
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
-  const active = (customers ?? []).filter(c => !c.isDeleted);
-  const today = new Date().toDateString();
-  const fromCrmToday = active.filter(c => c.origin === 'Crm' && new Date(c.createdAt).toDateString() === today).length;
-  const onHold = active.filter(c => c.creditHold).length;
-  const recent = [...active].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6);
-  const loading = customers === null;
+  const fromCrmToday = summary?.fromCrmSince ?? 0;
+  const onHold = summary?.onCreditHold ?? 0;
+  const loading = summary === null;
 
   return (
     <>
@@ -52,7 +64,7 @@ export default function Home() {
         <section aria-label="Integration activities" className="flex flex-col gap-2">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Integration activities</h2>
           <div className="flex flex-wrap gap-3">
-            <Cue to="/customers" label="Customers" value={loading ? '…' : active.length} />
+            <Cue to="/customers" label="Customers" value={loading ? '…' : summary.active} />
             <Cue to="/customers?view=from-crm" label="From CRM today" value={loading ? '…' : fromCrmToday} />
             <Cue to="/customers?view=credit-hold" label="On credit hold" value={loading ? '…' : onHold} tone={onHold > 0 ? 'warn' : 'accent'} />
             <Cue label="Pending handoffs" value={jobs.length} tone={jobs.length > 0 ? 'warn' : 'idle'} hint="In-flight jobs; see Demo controls" />

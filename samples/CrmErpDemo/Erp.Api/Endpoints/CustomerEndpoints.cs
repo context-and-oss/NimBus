@@ -11,8 +11,52 @@ public static class CustomerEndpoints
     {
         var group = app.MapGroup("/api/customers");
 
-        group.MapGet("/", async (ErpDbContext db) =>
-            Results.Ok(await db.Customers.OrderByDescending(c => c.CreatedAt).ToListAsync()));
+        // ?page= (1-based, 100 rows unless ?pageSize= asks for fewer) answers one page and puts
+        // the number of matching rows in X-Total-Count. Without it the whole list comes back.
+        group.MapGet("/", async (
+            int? page, int? pageSize, string? q, bool? deleted, string? origin, bool? creditHold,
+            HttpResponse response, ErpDbContext db, CancellationToken cancellationToken) =>
+        {
+            IQueryable<Customer> customers = db.Customers;
+            if (deleted is { } isDeleted)
+            {
+                customers = customers.Where(c => c.IsDeleted == isDeleted);
+            }
+
+            if (!string.IsNullOrWhiteSpace(origin))
+            {
+                customers = customers.Where(c => c.Origin == origin);
+            }
+
+            if (creditHold is { } onHold)
+            {
+                customers = customers.Where(c => c.CreditHold == onHold);
+            }
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var term = q.Trim();
+                customers = customers.Where(c =>
+                    c.CustomerNumber.Contains(term) || c.LegalName.Contains(term) || c.CountryCode.Contains(term) ||
+                    (c.TaxId != null && c.TaxId.Contains(term)));
+            }
+
+            return await customers
+                .OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
+                .ToListResultAsync(page, pageSize, response, cancellationToken);
+        });
+
+        // The counts on the erp-web Home page, so it does not load every customer to count
+        // them. `since` is the start of the caller's day; it defaults to midnight UTC.
+        group.MapGet("/summary", async (DateTimeOffset? since, ErpDbContext db, CancellationToken cancellationToken) =>
+        {
+            var from = since ?? new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
+            var active = db.Customers.Where(c => !c.IsDeleted);
+            return Results.Ok(new CustomerSummary(
+                await active.CountAsync(cancellationToken),
+                await active.CountAsync(c => c.Origin == "Crm" && c.CreatedAt >= from, cancellationToken),
+                await active.CountAsync(c => c.CreditHold, cancellationToken)));
+        });
 
         group.MapGet("/{id:guid}", async (Guid id, ErpDbContext db) =>
             await db.Customers.FindAsync(id) is { } c ? Results.Ok(c) : Results.NotFound());
@@ -160,3 +204,6 @@ public static class CustomerEndpoints
 public record CustomerUpsertRequest(Guid? ErpCustomerId, string LegalName, string? TaxId, string CountryCode);
 
 public record CreditHoldRequest(string? Reason);
+
+/// <summary>The customer counts on the erp-web Home page. Deleted customers are left out.</summary>
+public sealed record CustomerSummary(int Active, int FromCrmSince, int OnCreditHold);

@@ -11,8 +11,40 @@ public static class ErpContactEndpoints
     {
         var group = app.MapGroup("/api/contacts");
 
-        group.MapGet("/", async (ErpDbContext db) =>
-            Results.Ok(await db.Contacts.OrderByDescending(c => c.CreatedAt).ToListAsync()));
+        // Paged like /api/customers. Each row carries its customer's name, so the Contacts list
+        // does not have to load every customer to show it.
+        group.MapGet("/", async (
+            int? page, int? pageSize, string? q, bool? deleted, Guid? customerId,
+            HttpResponse response, ErpDbContext db, CancellationToken cancellationToken) =>
+        {
+            IQueryable<ErpContact> contacts = db.Contacts;
+            if (deleted is { } isDeleted)
+            {
+                contacts = contacts.Where(c => c.IsDeleted == isDeleted);
+            }
+
+            if (customerId is { } customer)
+            {
+                contacts = contacts.Where(c => c.CustomerId == customer);
+            }
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var term = q.Trim();
+                contacts = contacts.Where(c =>
+                    c.FirstName.Contains(term) || c.LastName.Contains(term) ||
+                    (c.Email != null && c.Email.Contains(term)) ||
+                    (c.Phone != null && c.Phone.Contains(term)));
+            }
+
+            return await contacts
+                .OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
+                .Select(c => new ErpContactListItem(
+                    c.Id, c.CustomerId, c.FirstName, c.LastName, c.Email, c.Phone,
+                    c.CreatedAt, c.UpdatedAt, c.Origin, c.IsDeleted,
+                    db.Customers.Where(x => x.Id == c.CustomerId).Select(x => x.LegalName).FirstOrDefault()))
+                .ToListResultAsync(page, pageSize, response, cancellationToken);
+        });
 
         group.MapGet("/{id:guid}", async (Guid id, ErpDbContext db) =>
             await db.Contacts.FindAsync(id) is { } c ? Results.Ok(c) : Results.NotFound());
@@ -132,3 +164,8 @@ public static class ErpContactEndpoints
 // the API resolves it to a local Customer.Id via Customers.CrmAccountId so the
 // ERP contact is FK-linked to the correct local customer row.
 public record ErpContactUpsertRequest(Guid? CrmAccountId, string FirstName, string LastName, string? Email, string? Phone);
+
+/// <summary>A contact as the list returns it: the contact, plus the name of its customer.</summary>
+public sealed record ErpContactListItem(
+    Guid Id, Guid? CustomerId, string FirstName, string LastName, string? Email, string? Phone,
+    DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt, string Origin, bool IsDeleted, string? CustomerLegalName);

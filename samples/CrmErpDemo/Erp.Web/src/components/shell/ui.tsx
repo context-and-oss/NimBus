@@ -154,6 +154,36 @@ export function FilterBox({ value, onChange, placeholder }: { value: string; onC
   );
 }
 
+/**
+ * Previous / Next under a paged list. Hidden while everything fits on one page. It sticks to
+ * the bottom of the list, so it is in reach without scrolling past a hundred rows.
+ */
+export function Pager({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage: (page: number) => void }) {
+  if (total <= pageSize) return null;
+  const pages = Math.ceil(total / pageSize);
+  const first = (page - 1) * pageSize + 1;
+  const last = Math.min(total, page * pageSize);
+  const button = 'rounded border border-line bg-white px-2.5 py-1 hover:bg-nav disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white';
+  // Go back to the top of the list with the new page, or the reader lands on its last rows.
+  // The list box usually scrolls by itself; inside a taller page it is the page that does.
+  const go = (next: number, from: HTMLElement) => {
+    onPage(next);
+    const list = from.closest('nav')?.parentElement;
+    list?.scrollTo({ top: 0 });
+    list?.scrollIntoView({ block: 'start' });
+  };
+  return (
+    <nav aria-label="Pages" className="sticky bottom-0 left-0 flex items-center gap-3 border-t border-line bg-white px-3 py-2 text-[13px]">
+      <span className="text-ink-muted">{first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}</span>
+      <div className="ml-auto flex items-center gap-2">
+        <button type="button" className={button} disabled={page <= 1} onClick={e => go(page - 1, e.currentTarget)}>Previous</button>
+        <span className="text-ink-muted">Page {page} of {pages}</span>
+        <button type="button" className={button} disabled={page >= pages} onClick={e => go(page + 1, e.currentTarget)}>Next</button>
+      </div>
+    </nav>
+  );
+}
+
 export function Panel({ title, actions, children, className }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={`rounded border border-line bg-white ${className ?? ''}`}>
