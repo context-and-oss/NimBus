@@ -6,8 +6,11 @@ are two implementations:
 
 | Provider | Package | When to use |
 |---|---|---|
-| Cosmos DB | `NimBus.MessageStore.CosmosDb` | Greenfield Azure deployments where Cosmos is approved |
-| SQL Server | `NimBus.MessageStore.SqlServer` | Organizations whose approved infrastructure does not include Cosmos DB |
+| SQL Server | `NimBus.MessageStore.SqlServer` | Most deployments: the lowest cost at small and medium load, and the same price however many endpoints you add |
+| Cosmos DB | `NimBus.MessageStore.CosmosDb` | High or bursty load, a managed-identity-only data path today, or an organization that standardizes on Cosmos |
+
+[Choosing a provider](#choosing-a-provider) compares them, including what each costs at different
+loads.
 
 The Cosmos provider used to ship as `NimBus.MessageStore`. Update your
 package reference to `NimBus.MessageStore.CosmosDb` and your registration
@@ -21,6 +24,85 @@ and `IHeartbeatHistoryStore`. The facade delegates to provider-internal stores
 for message tracking, subscriptions, endpoint metadata, heartbeat history, and
 service health; this keeps registration and public construction compatibility
 while allowing each persistence concern to evolve independently.
+
+## Choosing a provider
+
+Both providers implement the same contracts and pass the same conformance suite, so the
+Resolver, the WebApp, the MCP server and the SDK behave the same on either. They differ in price,
+in how they scale, in how the apps authenticate, and in a few operator tools.
+
+### At a glance
+
+| | SQL Server (Azure SQL) | Cosmos DB |
+|---|---|---|
+| What `nb` deploys | One Azure SQL database at **S0** (10 DTUs, 250 GB included) | One Cosmos account: 13 platform containers plus one container per endpoint, each at **400 RU/s** manual throughput |
+| Fixed monthly cost | ~$15, whatever the endpoint count | ~$304, plus ~$23 per endpoint |
+| Adding an endpoint | No storage change | `nb topology apply` creates the endpoint's container |
+| Scaling | Change the database tier. `nb` deploys S0, and every `nb infra apply` sets it back to S0, so scale up in the portal again after each run | Raise a container's throughput; each container scales separately |
+| App authentication | SQL login and password in the `SqlConnection` app setting | Managed identity only; no secrets |
+| Bring your own store | Not usable yet: `--sql-mode external` configures the WebApp but not the Resolver ([known gap](#sql-only-deployment)) | No: `nb` always creates the account |
+| Cosmos-only tools | — | `nb container` commands, Copy Endpoint Data, Topology → Storage ([details](#operator-tools-that-are-cosmos-only-in-v1)) |
+| Deploy pipelines (`deploy.yml`, `pipelines/azure-pipelines-deploy.yml`) | Not yet: neither passes `--storage-provider`, so both deploy Cosmos | Yes |
+
+### Price at different loads
+
+The table estimates the monthly bill for storage and throughput in four scenarios. A *delivery* is
+one event processed for one subscribing endpoint, so an event that two endpoints subscribe to
+counts twice. The Service Bus, App Service and Function App costs are the same for both providers
+and aren't included.
+
+| Scenario | Deliveries a day | Endpoints | Stored data | Cosmos load (average) | Cosmos DB as `nb` deploys it | SQL Server, suggested starting tier |
+|---|---|---|---|---|---|---|
+| Dev / test | 1,000 | 5 | 1 GB | ~1 RU/s | **~$421** (18 containers) | **~$15** (S0) |
+| Small | 50,000 | 10 | 10 GB | ~29 RU/s | **~$540** (23 containers) | **~$15** (S0) |
+| Medium | 500,000 | 20 | 50 GB | ~290 RU/s | **~$783** (33 containers) | **~$29–$74** (S1–S2) |
+| Large | 5,000,000 | 50 | 200 GB | ~2,900 RU/s | **~$1,522**, plus raising the shared `messages` container above 400 RU/s ($5.84 a month per extra 100 RU/s) | **~$147–$294** (S3–S4), scaled in the portal |
+
+How the numbers are worked out:
+
+- **Prices** are US list prices for one region. Azure SQL DTU tiers: Basic $4.90 (2 GB), S0
+  $14.72, S1 $29.43, S2 $73.61, S3 $147.19, S4 $294.38 a month, each S tier with 250 GB included.
+  Cosmos: manual throughput at $0.008 per 100 RU/s-hour, so 400 RU/s is $23.36 a month, and
+  storage at $0.25 per GB-month. Check the
+  [Azure pricing calculator](https://azure.microsoft.com/pricing/calculator/) for your region.
+- **Cosmos load** assumes about **50 RU per delivery**. That is an estimate from counting the
+  Resolver's store calls: each delivery is at least two messages (the event and its response),
+  each stored in `messages` and written to the endpoint's tracking row. It has not been measured.
+  The WebApp's own reads come on top.
+- **Cosmos cost** is the throughput floor plus storage. Up to the Medium scenario the floor
+  covers the load. In the Large scenario, about half the load lands on the shared `messages`
+  container, which then needs more than its 400 RU/s.
+- **SQL tiers are a starting point, not a measurement.** How many deliveries a DTU carries for
+  NimBus has not been benchmarked. Start at the suggested tier, watch the database's **DTU
+  percentage** in the portal or Azure Monitor, and move up a tier when it stays above about 80%.
+  `nb` deploys S0 only, and every `nb infra apply` sets the database back to S0. For a larger tier,
+  scale the database in the portal or with `az sql db update --service-objective`, and again after
+  each `nb infra apply`.
+
+### Which to choose
+
+Choose **SQL Server** when:
+
+- the load is small or medium. It costs a fraction of Cosmos's fixed floor, and endpoints add
+  nothing;
+- your organization already runs Azure SQL or SQL Server, or doesn't allow Cosmos DB.
+
+Bringing your own SQL database (`--sql-mode external`) will also be a reason to choose SQL Server,
+once the Resolver gap described under [SQL-only deployment](#sql-only-deployment) is fixed.
+
+Choose **Cosmos DB** when:
+
+- the load is high or very bursty and you would rather raise throughput per container than size
+  and change a database tier;
+- you need a data path with no secrets today. The provisioned SQL path puts the SQL admin password
+  in an app setting;
+- your operators depend on the [Cosmos-only tools](#operator-tools-that-are-cosmos-only-in-v1);
+- you deploy through the `deploy.yml` workflow or the Azure Pipelines template, which support only
+  Cosmos so far. SQL deployments run `nb` directly, passing `--storage-provider sqlserver` to
+  `infra apply`, `topology apply` and `setup` on every run.
+
+Switching an existing deployment between providers isn't supported in place: NimBus doesn't
+migrate data between them. Choose at the first deployment.
 
 ## Status writes: the stale-write guard
 
@@ -327,6 +409,12 @@ nb infra apply \
 unset NIMBUS_SQL_CONNECTION_STRING
 ```
 
+**Known gap in external mode.** The connection string reaches only the WebApp. The core template
+sets the Resolver's `SqlConnection` only for `--sql-mode provision`. So the Resolver starts with no
+storage setting, falls back to Cosmos and fails. Adding the setting by hand doesn't last, because
+the next `nb infra apply` replaces the Resolver's app settings. Until this is fixed, use
+`--sql-mode provision`.
+
 The Bicep templates skip Cosmos provisioning entirely when `storageProvider == 'sqlserver'`.
 
 ## Local development with Aspire
@@ -334,12 +422,12 @@ The Bicep templates skip Cosmos provisioning entirely when `storageProvider == '
 The AppHost reads `NIMBUS_STORAGE_PROVIDER`:
 
 ```bash
-# Cosmos (default — requires ConnectionStrings:cosmos in user-secrets)
+# SQL Server (default) — Aspire pulls the mssql container, creates the 'nimbusdb' database,
+# and wires the connection string into the WebApp/Resolver automatically.
 dotnet run --project src/NimBus.AppHost
 
-# SQL Server — Aspire pulls the mssql container, creates the 'nimbusdb' database,
-# and wires the connection string into the WebApp/Resolver automatically.
-NIMBUS_STORAGE_PROVIDER=sqlserver dotnet run --project src/NimBus.AppHost
+# Cosmos — requires a Cosmos connection string in the 'cosmos' parameter
+NIMBUS_STORAGE_PROVIDER=cosmos dotnet run --project src/NimBus.AppHost
 ```
 
 The SQL Server container is provisioned with a persistent data volume,
@@ -412,8 +500,13 @@ resolution and validation block) and
 
 ## Operator tools that are Cosmos-only in v1
 
-Two operator workflows currently work only with the Cosmos provider:
+These operator tools currently work only with the Cosmos provider:
 
+- **`nb container` commands** (`delete`, `resubmit`, `skip`, `copy`, `event delete`,
+  `message delete`) connect to the Cosmos account directly. On SQL deployments, use the WebApp's
+  operations or the MCP tools, which work on either provider.
+- **Topology → Storage** lists and deletes Cosmos containers. The WebApp hides it on SQL
+  deployments.
 - **Copy Endpoint Data** (WebApp Advanced Operations + `nb` CLI) — uses Cosmos
   cross-account container copy. SQL deployments should use SQL-native
   backup/restore tools instead. The WebApp surfaces a clear error when the
