@@ -1,10 +1,26 @@
 # ADR-017: One Cosmos DB Tracking Container, Partitioned by Endpoint
 
 ## Status
-Proposed (2026-09). Supersedes [ADR-008](008-per-endpoint-cosmos-containers.md) when accepted.
-Target release: v5.0.0. The repo owner settled the open questions on 2026-09-28 (Spec 036 §13).
-The spec was revised on 2026-10-05 after a review. The design, migration and evaluation are in
-[Spec 036](../spec/036-cosmos-single-tracking-container/spec.md).
+Deferred (2026-11-14). [ADR-008](008-per-endpoint-cosmos-containers.md) stays in force.
+
+Proposed in 2026-09 for v5.0.0. On 2026-11-14 the repo owner re-evaluated it against v4.16.0 and
+deferred it. By then the problems it targeted had mostly been solved another way or turned out
+small:
+
+- Purge under data-plane RBAC shipped in v4.16.0 (#375), which deletes documents, not the container.
+- Per-endpoint provisioning runs inside `nb topology apply`, which every new endpoint needs anyway
+  for its Service Bus subscriptions.
+- The 500-resource limit doesn't bind.
+
+What remained was the 400 RU/s minimum per container. That applies to the platform containers
+too, and [Spec 047](../spec/047-cosmos-capacity-modes/spec.md) addresses it for every container
+with serverless accounts and autoscale, with no migration or major release. Against that, this
+decision needs a v5.0.0 major, an offline migration of existing Cosmos deployments, a shared
+throughput budget and divergence from DIS.
+[Spec 036 §0](../spec/036-cosmos-single-tracking-container/spec.md) records the evaluation, the
+stale points for a revival, and the conditions that would reopen this decision.
+
+The rest of this record is the decision as proposed.
 
 ## Context
 

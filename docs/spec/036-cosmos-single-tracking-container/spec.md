@@ -1,6 +1,111 @@
 # Spec 036 — One Cosmos DB tracking container for all endpoints
 
-Status: **proposed** (2026-09-26). The repo owner decided its open questions on 2026-09-28 (§13).
+Status: **deferred** (2026-11-14). Not scheduled; §0 says why and what would reopen it. The cost
+problem it set out to solve is addressed by
+[Spec 047](../047-cosmos-capacity-modes/spec.md) instead. The rest of this document is the design
+as it stood on 2026-10-08, kept as a record. It was not refreshed against later code: §0.4 lists
+what is known to be stale.
+
+## 0. Deferral (2026-11-14)
+
+### 0.1 Decision
+
+The repo owner deferred this spec on 2026-11-14 after re-evaluating it against master `d19894f1`
+(v4.16.0). Per-endpoint containers (ADR-008) stay. ADR-017 is deferred with it.
+
+### 0.2 What the spec would still buy
+
+Most of the problems in the "Why" paragraph below have been solved or turned out smaller than
+they looked:
+
+| Reason given (§2.2, ADR-017) | State on master `d19894f1` |
+|---|---|
+| Purge needs container management rights, which data-plane RBAC lacks | **Solved.** #375 (`c4426f6e`, v4.16.0) purges an endpoint by deleting its documents. The container stays, and the cache-eviction callback is gone |
+| A control-plane provisioning step per endpoint; under managed identity the first message on an unprovisioned endpoint fails | **Small.** `nb topology apply` creates the endpoint container (`EndpointContainerProvisioner`) in the same run that creates the endpoint's Service Bus subscriptions. Every new endpoint already needs that run, because only `ServiceBusTopologyProvisioner` creates topology. An endpoint whose container is missing is also missing its subscription |
+| Endpoint ids double as container names (14 reserved ids today) | Real, minor. `CosmosContainerDefaults.EnsureNotReservedEndpointId` runs wherever an endpoint container is created |
+| 500 databases and containers per account cap the endpoint count | Doesn't bind: about 485 endpoints |
+| One fan-out query per endpoint for the Failed page | Works: eight containers at a time, merged by `FailedEventPageCursor` |
+| **Cost: every endpoint container carries a 400 RU/s minimum** | **Real**, about $23 a month per endpoint at US list prices. But the account's 13 platform containers carry the same minimum, about $300 a month, and this spec leaves them alone |
+
+Only cost remains, and this spec addresses only part of it. A capacity-mode change addresses all of
+it: serverless accounts for new deployments, and autoscale for existing provisioned accounts
+([Spec 047](../047-cosmos-capacity-modes/spec.md)). That change touches Bicep and the CLI, not the
+store, and ships in a 4.x minor.
+
+### 0.3 What the spec costs
+
+- A major release (v5.0.0) and a 4.x maintenance branch, which NimBus doesn't have yet.
+- A one-shot offline migration for every existing Cosmos deployment, and such deployments exist.
+  It brings a migration command, a layout guard, a deploy preflight, a rollback runbook and a
+  planned outage (§6).
+- A background purge worker with a lease, because a row-by-row purge outlasts an HTTP request (§5.5).
+- Priority-based execution and an account API version move (§5.10).
+- Noisy neighbours: one endpoint's burst or purge throttles the Resolver for every endpoint (§7.2).
+- CI depends on the emulator's hierarchical-key support, which kept changing through 2026 (§7.4).
+- Cosmos store changes from DIS stop porting mechanically.
+- Phase 0 needs a live NimBus Cosmos deployment for its baselines. None exists today; one would have
+  to be built and seeded first.
+
+The benefit doesn't justify this.
+
+### 0.4 Known stale points, for a revival
+
+A review of PR #220 on 2026-11-14 found these against master `d19894f1`. A revival starts by
+fixing them:
+
+1. **Prerequisite (b).** v4.7.0 through v4.16.0 shipped without reserving `unresolvedevents`.
+   The reserving release has to be a new 4.x minor, and §6.2 step 1, §6.3 and the plan's PR 0a
+   need updating to match.
+2. **Purge lease (§5.5).** Only the instance running the purge renews the lease, and the queue
+   runs purges one at a time. A purge waiting behind another loses its lease after three minutes,
+   and a second instance can then purge the same endpoint at the same time. The lease has to be
+   renewed from the moment it is taken, or taken again just before the purge runs.
+3. **Clock skew (§5.5).** `purgeStart` comes from the WebApp host's clock but is compared with the
+   server-stamped `_ts`. It should come from Cosmos, for example the `_ts` of the lease document.
+4. **The deploy gate runs too late.** `deploy.yml` runs `nb infra apply` before `nb deploy apps`,
+   so a 4.x environment deployed from master by mistake gets its infrastructure changed before the
+   preflight refuses. The gate has to run before `infra apply`.
+5. **The lease exists only on Cosmos.** The 202/409/503 contract applies to every provider, but
+   the lease is a document in the Cosmos `settings` container. The spec doesn't say how SQL
+   Server and in-memory provide the 409.
+6. **Today's purge flows changed.** Delete all events recreates the endpoint and Deferred
+   subscriptions, keeps going when a step fails, and writes a `PurgeMessages` audit entry
+   (`AdminService.Purge.cs`, `AdminImplementation.cs`). The endpoint purge deletes rows first,
+   then calls `DeleteSubscription` and `ITopologyRebuilder.EnsureSubscriptionAsync`;
+   `ClearEndpoint` is no longer called. #375 changed `PurgeMessages(endpointId)` to delete row by
+   row inside the request.
+7. **CS0618 suppressions (§5.9).** `CosmosContainerDefaultsTests.cs` also calls
+   `EnsureNotReservedEndpointId` at lines 66, 72, 73, 79 and 80.
+8. **No Phase 0 environment.** `rg-nbdemo-dev` no longer exists, and no NimBus Cosmos deployment
+   does.
+9. **Solution file.** The plan's gate builds `src/NimBus.sln`; master has `src/NimBus.slnx`.
+10. **API references.** The routes are versioned (`/api/v1/admin/storage/cosmos/containers`),
+    the `api-spec.yaml` line numbers have moved, and the `advanced-operations.tsx` wording
+    "Delete the entire endpoint container" is gone.
+
+### 0.5 What would reopen it
+
+Any one of these:
+
+- A deployment comes within reach of the 500-resource limit, or plans to (300 endpoints or more).
+- After Spec 047, per-container cost still binds for a real deployment. That would be a
+  provisioned account whose endpoint containers' autoscale floor dominates its bill.
+- DIS moves to a single tracking container, so the divergence cost disappears.
+- A feature needs cross-endpoint queries that the per-endpoint fan-out can't serve.
+
+### 0.6 Independent of this spec
+
+Since #375, `PurgeMessages(endpointId)` deletes row by row inside the HTTP request, at parallelism
+8, on every Cosmos deployment. An endpoint with a few hundred thousand rows can outlast App
+Service's request timeout of about 230 seconds. Until then, the delete competes with the
+Resolver's writes for that endpoint's container. This needs its own issue; it doesn't depend on the
+container layout.
+
+---
+
+The original status follows.
+
+Status as of 2026-10-08: **proposed** (2026-09-26). The repo owner decided its open questions on 2026-09-28 (§13).
 Revised on 2026-10-05 after a review
 ([2026-10-04-spec-036-review.md](../../plan/2026-10-04-spec-036-review.md)); §16 lists the changes.
 Revised again on 2026-10-08 after a second review of the spec and a review of its implementation
@@ -1614,6 +1719,9 @@ Repo:
     minimum, including storage. §6.1 no longer claims the emulator lacks bulk support. §14 item 9
     splits into a Phase 0 half and a release-gate half. §10 adds the stale per-endpoint wording in
     the API schema and the Admin UI. Line references are refreshed.
-  - **Decided by the repo owner:** §13 item 5 retired Topology → Storage and its API route
+  - **Decided by the repo owner (2026-10-08):** §13 item 5 retired Topology → Storage and its API route
     in a 5.x minor, but `docs/versioning.md` reserves removing observable behavior for a major. The
     page and its API are now deprecated in a 5.x minor and removed in v6.0.0 (§5.8, §9, §10, §13).
+- 2026-11-14: a review of PR #220 against master `d19894f1` found ten problems (§0.4). The repo
+  owner then deferred the spec: by v4.16.0 the purge and provisioning problems were solved or
+  turned out small, and cost is addressed by Spec 047 (§0).

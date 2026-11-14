@@ -1,6 +1,13 @@
 # Spec 036 (one Cosmos tracking container): implementation plan
 
-Status: **draft, revised** (2026-10-08). Nothing is implemented yet. Implements
+Status: **withdrawn** (2026-11-14). Spec 036 is deferred
+([§0](../spec/036-cosmos-single-tracking-container/spec.md#0-deferral-2026-11-14)), so none of
+this plan is scheduled. The cost work moved to
+[Spec 047](../spec/047-cosmos-capacity-modes/spec.md) and its
+[plan](2026-11-14-spec-047-implementation-plan.md). This plan is kept as a record. It refers to
+master `7403c596` and wasn't refreshed. Spec 036 §0.4 lists what changed since.
+
+Previous status: **draft, revised** (2026-10-08). Nothing is implemented yet. Implements
 [Spec 036](../spec/036-cosmos-single-tracking-container/spec.md) as revised on 2026-10-08. Decision
 record: [ADR-017](../adr/017-single-cosmos-tracking-container.md) (proposed). Target release:
 v5.0.0. Planned against master `7403c596` (v4.6.0 + 1). Reviewed by Codex on 2026-10-07
