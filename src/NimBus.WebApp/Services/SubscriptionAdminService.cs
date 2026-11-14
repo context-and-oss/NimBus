@@ -134,9 +134,12 @@ public partial class SubscriptionAdminService : ISubscriptionAdminService
         await foreach (var settings in _sbManagement.ListSubscriptionsAsync(topicName))
         {
             var ruleNames = new List<string>();
+            var ruleRouting = new List<SubscriptionRuleRouting>();
             await foreach (var rule in _sbManagement.ListRulesAsync(topicName, settings.SubscriptionName))
             {
                 ruleNames.Add(rule.Name);
+                if (RoutingOf(rule) is { } routing)
+                    ruleRouting.Add(routing);
             }
 
             var expected = FindExpected(topicName, settings.SubscriptionName);
@@ -167,6 +170,7 @@ public partial class SubscriptionAdminService : ISubscriptionAdminService
                 RuleNames = ruleNames,
                 MissingRuleNames = missingRules,
                 DetachableRuleNames = detachableRules,
+                RuleRouting = ruleRouting,
                 CanRecreate = expected is not null,
                 ActiveMessageCount = counts?.ActiveMessageCount ?? 0,
                 DeadLetterMessageCount = counts?.DeadLetterMessageCount ?? 0,
@@ -181,6 +185,29 @@ public partial class SubscriptionAdminService : ISubscriptionAdminService
             .OrderByDescending(subscription => subscription.ActiveMessageCount + subscription.TransferMessageCount)
             .ThenBy(subscription => subscription.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// The routing-key shape (Spec 045) of a forward rule, read back from its live SQL filter,
+    /// or null for a rule that takes every key or isn't a NimBus forward rule. A forward rule
+    /// is named after the event type it forwards, which is what the filter is checked against.
+    /// </summary>
+    private static SubscriptionRuleRouting? RoutingOf(RuleProperties rule)
+    {
+        if (rule.Filter is not SqlRuleFilter sql
+            || !TopologyDescriptor.TryReadRoutingKeys(sql.SqlExpression, rule.Name, out var routing)
+            || routing is null)
+        {
+            return null;
+        }
+
+        return new SubscriptionRuleRouting
+        {
+            RuleName = rule.Name,
+            RoutingKeys = routing.Keys.ToList(),
+            Unmatched = routing.Mode == RoutingRuleMode.Unmatched,
+            Filter = sql.SqlExpression,
+        };
     }
 
     // ───────────────────────── Pause / resume ─────────────────────────

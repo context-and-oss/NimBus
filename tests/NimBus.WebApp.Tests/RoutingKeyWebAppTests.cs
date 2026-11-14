@@ -18,10 +18,16 @@ namespace NimBus.WebApp.Tests;
 public sealed class RoutingKeyWebAppTests
 {
     [RoutingKey(nameof(Instance))]
+    [SessionKey(nameof(CustomerNo))]
     public sealed class WebRoutedEvent : Event
     {
         public string Instance { get; set; } = "";
         public string CustomerNo { get; set; } = "C-1";
+    }
+
+    public sealed class WebUnkeyedEvent : Event
+    {
+        public string Name { get; set; } = "";
     }
 
     public sealed class WebCrm : NimBus.Core.Endpoints.Endpoint
@@ -86,6 +92,14 @@ public sealed class RoutingKeyWebAppTests
     {
         Assert.AreEqual(nameof(WebRoutedEvent.Instance), Mapper.EventTypeFromIEventType(Routed).RoutingKeyProperty);
         Assert.AreEqual(nameof(WebRoutedEvent.Instance), Mapper.EventTypeFromIEventType(Routed, 1, 4).RoutingKeyProperty);
+    }
+
+    [TestMethod]
+    public void EventTypeMapping_CarriesTheSessionKeyProperty()
+    {
+        Assert.AreEqual(nameof(WebRoutedEvent.CustomerNo), Mapper.EventTypeFromIEventType(Routed).SessionKeyProperty);
+        Assert.AreEqual(nameof(WebRoutedEvent.CustomerNo), Mapper.EventTypeFromIEventType(Routed, 1, 4).SessionKeyProperty);
+        Assert.IsNull(Mapper.EventTypeFromIEventType(new EventType<WebUnkeyedEvent>()).SessionKeyProperty);
     }
 
     [TestMethod]

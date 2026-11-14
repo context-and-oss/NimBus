@@ -4,6 +4,10 @@ import * as api from "api-client";
 
 interface IEventTypePropertiesTableProps {
   properties: api.EventTypeProperty[];
+  /** The property named by the class's [SessionKey]: its value is the default session key. */
+  sessionKeyProperty?: string;
+  /** The property named by the class's [RoutingKey] (Spec 045). */
+  routingKeyProperty?: string;
 }
 
 /**
@@ -13,6 +17,8 @@ interface IEventTypePropertiesTableProps {
  */
 const EventTypePropertiesTable: React.FC<IEventTypePropertiesTableProps> = ({
   properties,
+  sessionKeyProperty,
+  routingKeyProperty,
 }) => {
   // Filter out internal MessageMetadata property
   const displayProperties = properties.filter(
@@ -44,7 +50,21 @@ const EventTypePropertiesTable: React.FC<IEventTypePropertiesTableProps> = ({
                 key={prop.name ?? `prop-${index}`}
                 className="border-t border-border align-top"
               >
-                <td className="px-3.5 py-2.5 font-bold">{prop.name || "—"}</td>
+                <td className="px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-bold">{prop.name || "—"}</span>
+                    {prop.name && prop.name === sessionKeyProperty && (
+                      <KeyTag tooltip="The default session key: events with the same value are processed in order, one at a time.">
+                        Session key
+                      </KeyTag>
+                    )}
+                    {prop.name && prop.name === routingKeyProperty && (
+                      <KeyTag tooltip="The routing key: consumers that declare keys receive only events whose value they claim.">
+                        Routing key
+                      </KeyTag>
+                    )}
+                  </div>
+                </td>
                 <td className="px-3.5 py-2.5">
                   {prop.typeFullName && prop.typeFullName !== prop.typeName ? (
                     <Tooltip content={prop.typeFullName} position="top">
@@ -94,6 +114,22 @@ const TypeTag: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   >
     {children}
   </span>
+);
+
+const KeyTag: React.FC<{ children: React.ReactNode; tooltip: string }> = ({
+  children,
+  tooltip,
+}) => (
+  <Tooltip content={tooltip} position="top">
+    <span
+      className={cn(
+        "font-mono text-[10.5px] uppercase tracking-[0.06em] px-1.5 py-0.5",
+        "rounded-nb-sm border border-border text-muted-foreground cursor-help",
+      )}
+    >
+      {children}
+    </span>
+  </Tooltip>
 );
 
 const RequiredCell: React.FC<{ required: boolean }> = ({ required }) => {

@@ -5379,6 +5379,13 @@ components:
           type: array
           items:
             type: string
+        sessionKeyProperty:
+          type: string
+          nullable: true
+          description: >-
+            The payload property named by the class's [SessionKey] attribute, whose
+            value is the default session key. Null when the class has no attribute
+            (it overrides GetSessionId, or each event gets its own session).
         routingKeyProperty:
           type: string
           nullable: true
@@ -5415,6 +5422,36 @@ components:
           description: >-
             True for the unmatched consumer: messages whose key no consumer
             claims, or with no key.
+    SubscriptionRuleRouting:
+      title: SubscriptionRuleRouting
+      type: object
+      description: >-
+        The routing-key filter of one forward rule on a subscription (Spec 045),
+        read back from the rule's live SQL filter.
+      required:
+        - ruleName
+        - routingKeys
+        - unmatched
+        - filter
+      properties:
+        ruleName:
+          type: string
+          description: The rule's name, which is the event type it forwards.
+        routingKeys:
+          type: array
+          description: >-
+            For a keyed rule, the keys it takes. For the unmatched rule, the keys
+            it excludes because other consumers claim them.
+          items:
+            type: string
+        unmatched:
+          type: boolean
+          description: >-
+            True for the unmatched consumer's rule: messages with no key, or a key
+            no consumer claims.
+        filter:
+          type: string
+          description: The rule's SQL filter as Service Bus holds it.
     EventTypeProperty:
       title: EventTypeProperty
       type: object
@@ -6622,6 +6659,13 @@ components:
           description: >-
             Rules the platform topology can put back, and therefore the only ones
             safe to offer as a reversible detach.
+        ruleRouting:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubscriptionRuleRouting'
+          description: >-
+            The routing-key filter (Spec 045) of each forward rule that has one,
+            read back from the live rule. Rules that take every key are absent.
         canRecreate:
           type: boolean
           description: Whether the platform has a recipe to rebuild this subscription after deletion

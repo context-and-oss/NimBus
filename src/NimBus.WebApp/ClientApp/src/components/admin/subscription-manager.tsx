@@ -16,6 +16,7 @@ import { Tooltip } from "components/ui/tooltip";
 import ConfirmDestructiveAction from "./confirm-destructive-action";
 import ResolverDeadLetterDialog from "./resolver-dead-letter-dialog";
 import { cn } from "lib/utils";
+import { ruleRoutingLabel } from "lib/routing-keys";
 
 const AUTO_REFRESH_MS = 10_000;
 
@@ -959,6 +960,35 @@ function SubscriptionTable({
               sub.requiresSession === true &&
               !sub.forwardTo &&
               (sub.deadLetterMessageCount ?? 0) > 0;
+            // Detach is only offered where Restore rules can put it back. A
+            // $Default that is a subscription's whole routing, or any rule on a
+            // hand-made subscription, would be a one-way removal — show it,
+            // don't arm it.
+            const renderRuleChip = (rule: string) =>
+              (sub.detachableRuleNames ?? []).includes(rule) ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    onRequest({
+                      kind: "detach-rule",
+                      subscription: sub,
+                      ruleName: rule,
+                    })
+                  }
+                  title={`Detach rule "${rule}" so no new messages enter through it. Reversible with Restore rules.`}
+                  className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 whitespace-nowrap hover:bg-status-danger-50 hover:text-status-danger-ink disabled:opacity-50"
+                >
+                  {rule} ✕
+                </button>
+              ) : (
+                <span
+                  title="Not part of the platform topology, so NimBus can't restore it — remove it from Topology → Catalog drift if it really is deprecated."
+                  className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 whitespace-nowrap text-muted-foreground"
+                >
+                  {rule}
+                </span>
+              );
 
             return (
               <Fragment key={name}>
@@ -970,40 +1000,34 @@ function SubscriptionTable({
                       {!sub.canRecreate && " · not in platform topology"}
                     </div>
                   </td>
-                  <td className="px-3 py-2">
+                  <td
+                    className={cn(
+                      "px-3 py-2",
+                      // Routing labels need room beside their chips.
+                      (sub.ruleRouting?.length ?? 0) > 0 && "min-w-[22rem]",
+                    )}
+                  >
                     <div className="flex flex-wrap gap-1">
-                      {(sub.ruleNames ?? []).map((rule) =>
-                        // Detach is only offered where Restore rules can put it
-                        // back. A $Default that is a subscription's whole
-                        // routing, or any rule on a hand-made subscription,
-                        // would be a one-way removal — show it, don't arm it.
-                        (sub.detachableRuleNames ?? []).includes(rule) ? (
-                          <button
-                            key={rule}
-                            type="button"
-                            disabled={busy}
-                            onClick={() =>
-                              onRequest({
-                                kind: "detach-rule",
-                                subscription: sub,
-                                ruleName: rule,
-                              })
-                            }
-                            title={`Detach rule "${rule}" so no new messages enter through it. Reversible with Restore rules.`}
-                            className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 hover:bg-status-danger-50 hover:text-status-danger-ink disabled:opacity-50"
-                          >
-                            {rule} ✕
-                          </button>
-                        ) : (
-                          <span
-                            key={rule}
-                            title="Not part of the platform topology, so NimBus can't restore it — remove it from Topology → Catalog drift if it really is deprecated."
-                            className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 text-muted-foreground"
-                          >
-                            {rule}
+                      {(sub.ruleNames ?? []).map((rule) => {
+                        // Spec 045: a keyed forward rule is named after its
+                        // event type like any other, so its keys sit beside it.
+                        const routing = sub.ruleRouting?.find(
+                          (entry) => entry.ruleName === rule,
+                        );
+                        return (
+                          <span key={rule} className="inline-flex items-baseline gap-1 min-w-0">
+                            {renderRuleChip(rule)}
+                            {routing && (
+                              <span
+                                title={routing.filter}
+                                className="font-mono text-xs text-muted-foreground cursor-help"
+                              >
+                                {ruleRoutingLabel(routing)}
+                              </span>
+                            )}
                           </span>
-                        ),
-                      )}
+                        );
+                      })}
                       {(sub.ruleNames ?? []).length === 0 && (
                         <span className="text-xs text-muted-foreground">
                           none — receives nothing

@@ -18,4 +18,10 @@ public interface IEventType
     /// isn't routed by key.
     /// </summary>
     string? RoutingKeyProperty => null;
+
+    /// <summary>
+    /// The payload property named by <see cref="SessionKeyAttribute"/>, whose value is the default
+    /// session key, or null when the class has no attribute.
+    /// </summary>
+    string? SessionKeyProperty => null;
 }

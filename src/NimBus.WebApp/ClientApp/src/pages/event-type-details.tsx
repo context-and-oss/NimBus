@@ -91,7 +91,11 @@ const EventTypeDetails: React.FC = () => {
 
         <section>
           <SectionTitle>Properties</SectionTitle>
-          <EventTypePropertiesTable properties={eventType?.properties || []} />
+          <EventTypePropertiesTable
+            properties={eventType?.properties || []}
+            sessionKeyProperty={eventType?.sessionKeyProperty}
+            routingKeyProperty={eventType?.routingKeyProperty}
+          />
         </section>
 
         {eventType && (
