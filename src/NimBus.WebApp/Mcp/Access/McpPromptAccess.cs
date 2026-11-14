@@ -33,6 +33,23 @@ public static class McpPromptAccess
             return result;
         };
 
+    /// <summary>
+    /// The <c>completion/complete</c> filter (Spec 046 §5): nothing for a prompt the caller can't
+    /// list. No refusal is audited: the caller was refused nothing it could see.
+    /// </summary>
+    public static McpRequestHandler<CompleteRequestParams, CompleteResult> FilterComplete(McpRequestHandler<CompleteRequestParams, CompleteResult> next)
+        => async (request, cancellationToken) =>
+        {
+            if (request.Params?.Ref is PromptReference prompt)
+            {
+                var (policy, caller, _) = McpToolAccess.Resolve(request.Services);
+                if (policy is null || !IsAvailable(prompt.Name, policy, caller))
+                    return OperatorPromptCompletions.Empty();
+            }
+
+            return await next(request, cancellationToken).ConfigureAwait(false);
+        };
+
     /// <summary>The <c>prompts/get</c> filter.</summary>
     public static McpRequestHandler<GetPromptRequestParams, GetPromptResult> FilterGet(McpRequestHandler<GetPromptRequestParams, GetPromptResult> next)
         => async (request, cancellationToken) =>

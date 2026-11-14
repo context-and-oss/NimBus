@@ -239,6 +239,18 @@ public partial class OperatorPromptsTests
     }
 
     [TestMethod]
+    public void Triage_starts_from_the_worklist_and_offers_only_reads()
+    {
+        // Spec 046 §4: one call in place of overview, metrics and per-endpoint searches.
+        var text = OperatorPrompts.Render("triage", new Dictionary<string, string?>());
+
+        StringAssert.Contains(text, "2. Call nimbus_get_worklist", StringComparison.Ordinal);
+        StringAssert.Contains(text, "olderFailuresLikely", StringComparison.Ordinal);
+        StringAssert.Contains(text, "Offer only nextActions of kind read", StringComparison.Ordinal);
+        Assert.IsFalse(text.Contains("nimbus_get_metrics", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void Every_tool_a_prompt_names_is_registered()
     {
         var registered = RegisteredToolNames();
