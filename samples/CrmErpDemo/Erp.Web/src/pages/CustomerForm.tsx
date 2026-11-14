@@ -15,13 +15,17 @@ export default function CustomerForm() {
   const nav = useNavigate();
   const [form, setForm] = useState<Partial<Customer>>({ legalName: '', countryCode: 'DE' });
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactTotal, setContactTotal] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     api.getCustomer(id).then(setForm);
-    api.listContacts().then(all => setContacts(all.filter(c => c.customerId === id))).catch(() => { /* tab shows none */ });
+    // The server returns this customer's contacts: the first 100, and how many there are.
+    api.listContacts({ customerId: id })
+      .then(found => { setContacts(found.items); setContactTotal(found.total); })
+      .catch(() => { /* tab shows none */ });
   }, [id]);
 
   async function submit(e: FormEvent) {
@@ -114,7 +118,7 @@ export default function CustomerForm() {
                 : 'No credit hold. CRM can place one with the PlaceCustomerOnCreditHold command from the account form.'}
             </p>
           </FastTab>
-          <FastTab title="Contacts" summary={`${contacts.length} ${contacts.length === 1 ? 'contact' : 'contacts'}`} defaultOpen={false}>
+          <FastTab title="Contacts" summary={`${contactTotal} ${contactTotal === 1 ? 'contact' : 'contacts'}`} defaultOpen={false}>
             {contacts.length === 0 ? (
               <p className="text-[13px] text-ink-muted">No contacts for this customer.</p>
             ) : (
@@ -125,6 +129,9 @@ export default function CustomerForm() {
                     {c.email && <span className="text-ink-muted"> · {c.email}</span>}
                   </li>
                 ))}
+                {contactTotal > contacts.length && (
+                  <li className="text-ink-muted">Showing the newest {contacts.length} of {contactTotal}. The Contacts page has the rest.</li>
+                )}
               </ul>
             )}
           </FastTab>

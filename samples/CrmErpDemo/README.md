@@ -327,6 +327,15 @@ of each app. The pane is open by default; the gear button in the app bar closes 
 and the browser remembers the choice. A mode that is on also shows as a label in the app bar,
 so it stays visible with the pane closed.
 
+The four lists (accounts and contacts in crm-web, customers and contacts in erp-web) are paged
+by the server, 100 rows a page, with **Previous** and **Next** under the list. The keyword
+filter and the erp-web views are applied by the server too, so they search every row, not only
+the page in view. A list request takes `?page=` (1-based), an optional `?pageSize=` up to 100,
+`?q=` and `?deleted=false`, plus `origin`, `accountId`, `customerId` or `creditHold` where they
+apply. It answers with that page as a JSON array and the number of matching rows in the
+`X-Total-Count` header. A request without `page` still returns the whole list, which the
+end-to-end helpers use to search it.
+
 ## Prerequisites
 
 - .NET 10 SDK

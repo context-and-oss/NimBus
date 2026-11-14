@@ -11,8 +11,31 @@ public static class AccountEndpoints
     {
         var group = app.MapGroup("/api/accounts");
 
-        group.MapGet("/", async (CrmDbContext db) =>
-            Results.Ok(await db.Accounts.OrderByDescending(a => a.CreatedAt).ToListAsync()));
+        // ?page= (1-based, 100 rows unless ?pageSize= asks for fewer) answers one page and puts
+        // the number of matching rows in X-Total-Count. Without it the whole list comes back.
+        group.MapGet("/", async (
+            int? page, int? pageSize, string? q, bool? deleted,
+            HttpResponse response, CrmDbContext db, CancellationToken cancellationToken) =>
+        {
+            IQueryable<Account> accounts = db.Accounts;
+            if (deleted is { } isDeleted)
+            {
+                accounts = accounts.Where(a => a.IsDeleted == isDeleted);
+            }
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var term = q.Trim();
+                accounts = accounts.Where(a =>
+                    a.LegalName.Contains(term) || a.CountryCode.Contains(term) ||
+                    (a.TaxId != null && a.TaxId.Contains(term)) ||
+                    (a.ErpCustomerNumber != null && a.ErpCustomerNumber.Contains(term)));
+            }
+
+            return await accounts
+                .OrderByDescending(a => a.CreatedAt).ThenBy(a => a.Id)
+                .ToListResultAsync(page, pageSize, response, cancellationToken);
+        });
 
         group.MapGet("/{id:guid}", async (Guid id, CrmDbContext db) =>
             await db.Accounts.FindAsync(id) is { } a ? Results.Ok(a) : Results.NotFound());

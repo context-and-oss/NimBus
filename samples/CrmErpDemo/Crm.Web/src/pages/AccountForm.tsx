@@ -7,8 +7,9 @@ import RegionalHubHint from '../components/RegionalHubHint';
 import { BackIcon, PlusIcon, SaveIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
 import {
   Chip, CommandBar, CommandButton, CommandLink, CommandSeparator, ErrorBar, FieldRow, OriginChip, Panel,
-  RecordHeader, RecordTabs, formatDate, grid, inputClass,
+  Pager, RecordHeader, RecordTabs, formatDate, grid, inputClass,
 } from '../components/shell/ui';
+import { PAGE_SIZE, usePagedList } from '../usePagedList';
 
 type Tab = 'summary' | 'contacts';
 
@@ -186,10 +187,9 @@ export default function AccountForm() {
 }
 
 function AccountContacts({ accountId }: { accountId: string }) {
-  const [rows, setRows] = useState<Contact[] | null>(null);
-  useEffect(() => {
-    api.listContacts().then(all => setRows(all.filter(c => c.accountId === accountId))).catch(() => setRows([]));
-  }, [accountId]);
+  // The server returns this account's contacts, a page at a time.
+  const list = usePagedList<Contact>(page => api.listContacts({ page, accountId }), accountId);
+  const rows = list.loading ? null : list.rows;
 
   return (
     <div className="pt-5">
@@ -218,6 +218,7 @@ function AccountContacts({ accountId }: { accountId: string }) {
             ))}
           </tbody>
         </table>
+        <Pager page={list.page} pageSize={PAGE_SIZE} total={list.total} onPage={list.setPage} />
       </div>
     </div>
   );

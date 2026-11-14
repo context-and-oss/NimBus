@@ -1,4 +1,5 @@
 import { apiFetch } from './auth';
+import type { Page } from './usePagedList';
 
 export interface Account {
   id: string;
@@ -36,6 +37,8 @@ export interface Contact {
   updatedAt?: string | null;
   origin?: string;
   isDeleted?: boolean;
+  /** The account's name. Only on rows from the list. */
+  accountLegalName?: string | null;
 }
 
 export interface CreditCheckResult {
@@ -66,8 +69,30 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Paging and filters every list takes. The server defaults to page 1 here and 100 rows. */
+export interface ListQuery {
+  page?: number;
+  pageSize?: number;
+  /** Keyword, matched by the server. */
+  q?: string;
+  /** false leaves deleted rows out; true returns only those. */
+  deleted?: boolean;
+}
+
+/** One page of a list. The server returns the rows and puts the match count in X-Total-Count. */
+async function listPage<T>(path: string, query: object): Promise<Page<T>> {
+  const params = new URLSearchParams({ page: '1' });
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+  }
+  const res = await apiFetch(`${path}?${params}`);
+  const items = await json<T[]>(res);
+  const total = res.headers.get('X-Total-Count');
+  return { items, total: total === null ? items.length : Number(total) };
+}
+
 export const api = {
-  listAccounts: () => apiFetch('/api/accounts').then(json<Account[]>),
+  listAccounts: (query: ListQuery = {}) => listPage<Account>('/api/accounts', query),
   getAccount: (id: string) => apiFetch(`/api/accounts/${id}`).then(json<Account>),
   createAccount: (a: Partial<Account>) =>
     apiFetch('/api/accounts', {
@@ -85,7 +110,8 @@ export const api = {
   deleteAccount: (id: string) =>
     apiFetch(`/api/accounts/${id}`, { method: 'DELETE' }).then(json<Account>),
 
-  listContacts: () => apiFetch('/api/contacts').then(json<Contact[]>),
+  listContacts: (query: ListQuery & { origin?: string; accountId?: string } = {}) =>
+    listPage<Contact>('/api/contacts', query),
   getContact: (id: string) => apiFetch(`/api/contacts/${id}`).then(json<Contact>),
   createContact: (c: Partial<Contact>) =>
     apiFetch('/api/contacts', {

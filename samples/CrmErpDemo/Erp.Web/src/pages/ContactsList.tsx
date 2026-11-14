@@ -1,37 +1,23 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Contact, Customer, api } from '../api';
+import { Contact, api } from '../api';
 import { PlusIcon, RefreshIcon } from '../components/shell/icons';
-import { Chip, CommandBar, CommandButton, CommandLink, FilterBox, OriginChip, ViewHeader, formatDate, grid } from '../components/shell/ui';
+import { Chip, CommandBar, CommandButton, CommandLink, FilterBox, OriginChip, Pager, ViewHeader, formatDate, grid } from '../components/shell/ui';
+import { PAGE_SIZE, usePagedList } from '../usePagedList';
 
 export default function ContactsList() {
-  const [rows, setRows] = useState<Contact[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('');
-
-  async function load() {
-    const [contacts, custs] = await Promise.allSettled([api.listContacts(), api.listCustomers()]);
-    if (contacts.status === 'fulfilled') setRows(contacts.value);
-    if (custs.status === 'fulfilled') setCustomers(custs.value);
-  }
-
-  useEffect(() => {
-    load().finally(() => setLoading(false));
-  }, []);
-
-  const customerName = new Map(customers.map(c => [c.id, c.legalName]));
-  const q = filter.trim().toLowerCase();
-  const visible = q ? rows.filter(r => [r.firstName, r.lastName, r.email, r.phone].some(v => v?.toLowerCase().includes(q))) : rows;
+  // The server pages and filters the list, and each row carries its customer's name, so this
+  // page no longer loads every contact and every customer.
+  const list = usePagedList<Contact>((page, q) => api.listContacts({ page, q }));
+  const { rows, total, loading, q } = list;
 
   return (
     <>
       <CommandBar>
         <CommandLink to="/contacts/new" icon={<PlusIcon />} primary>New contact</CommandLink>
-        <CommandButton icon={<RefreshIcon />} onClick={() => void load()}>Refresh</CommandButton>
+        <CommandButton icon={<RefreshIcon />} onClick={list.refresh}>Refresh</CommandButton>
       </CommandBar>
-      <ViewHeader title="Contacts" count={loading ? undefined : visible.length}>
-        <FilterBox value={filter} onChange={setFilter} placeholder="Search contacts" />
+      <ViewHeader title="Contacts" count={loading ? undefined : total}>
+        <FilterBox value={list.filter} onChange={list.setFilter} placeholder="Search contacts" />
       </ViewHeader>
       <div className={grid.wrap}>
         <table className={grid.table}>
@@ -49,15 +35,15 @@ export default function ContactsList() {
           </thead>
           <tbody>
             {loading && <tr><td colSpan={8} className={grid.empty}>Loading…</td></tr>}
-            {!loading && visible.length === 0 && <tr><td colSpan={8} className={grid.empty}>No contacts yet.</td></tr>}
-            {visible.map(r => (
+            {!loading && rows.length === 0 && <tr><td colSpan={8} className={grid.empty}>{q ? 'No contacts match the search.' : 'No contacts yet.'}</td></tr>}
+            {rows.map(r => (
               <tr key={r.id} className={`${grid.row} ${r.isDeleted ? 'text-ink-muted line-through' : ''}`}>
                 <td className={grid.td}><Link to={`/contacts/${r.id}`} className={grid.link}>{r.firstName} {r.lastName}</Link></td>
                 <td className={`${grid.td} text-ink-muted`}>{r.email ?? '—'}</td>
                 <td className={`${grid.td} text-ink-muted`}>{r.phone ?? '—'}</td>
                 <td className={grid.td}>
                   {r.customerId
-                    ? <Link to={`/customers/${r.customerId}`} className={grid.link}>{customerName.get(r.customerId) ?? r.customerId}</Link>
+                    ? <Link to={`/customers/${r.customerId}`} className={grid.link}>{r.customerLegalName ?? r.customerId}</Link>
                     : <span className="text-ink-muted">—</span>}
                 </td>
                 <td className={grid.td}><OriginChip origin={r.origin} /></td>
@@ -68,6 +54,7 @@ export default function ContactsList() {
             ))}
           </tbody>
         </table>
+        <Pager page={list.page} pageSize={PAGE_SIZE} total={total} onPage={list.setPage} />
       </div>
     </>
   );
