@@ -388,19 +388,27 @@ internal sealed class BrokerLinkProcessor(
         private static readonly System.Reflection.FieldInfo SequenceNumberValueField =
             DeliveryCountField.FieldType.GetFields(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Single();
 
+        // The accessor binds to the exact internal signature, which a patch release can change
+        // without notice: AMQPNetLite.Core 2.5.5 added the Link parameter, and the 2.5.3
+        // signature then failed with MissingMethodException the first time an echo flow was
+        // due, closing the link and losing every lock on it. A null link sends the flow as
+        // built here, with only the session's window fields filled in, as 2.5.3 did.
         [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "SendFlow")]
-        private static extern void SessionSendFlow(Session session, Flow flow);
+        private static extern void SessionSendFlow(Session session, Flow flow, Link? link);
 
         private static void SendEchoFlow(ListenerLink link)
         {
             var deliveryCount = SequenceNumberValueField.GetValue(DeliveryCountField.GetValue(link))!;
-            SessionSendFlow(link.Session, new Flow
-            {
-                Handle = link.Handle,
-                DeliveryCount = unchecked((uint)Convert.ToInt64(deliveryCount, System.Globalization.CultureInfo.InvariantCulture)),
-                LinkCredit = 0,
-                Echo = true,
-            });
+            SessionSendFlow(
+                link.Session,
+                new Flow
+                {
+                    Handle = link.Handle,
+                    DeliveryCount = unchecked((uint)Convert.ToInt64(deliveryCount, System.Globalization.CultureInfo.InvariantCulture)),
+                    LinkCredit = 0,
+                    Echo = true,
+                },
+                link: null);
         }
 
         public void DisposeMessage(ReceiveContext receiveContext, DispositionContext dispositionContext)
