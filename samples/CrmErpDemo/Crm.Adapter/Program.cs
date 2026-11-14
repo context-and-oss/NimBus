@@ -17,7 +17,7 @@ var builder = Host.CreateApplicationBuilder(args);
 // resilience handler, failures surface as plain HttpRequestException, and it has a circuit breaker
 // but no NimBus retry rules. The e2e suite is tuned to that timing. For the shape a production
 // adapter should follow (typed failures, AddExceptionRule<T>, Retry-After, no hidden HTTP retries),
-// see samples/DynamicsBcDemo/BusinessCentral.Adapter and docs/building-adapters.md#resilience.
+// see docs/building-adapters.md#resilience and the template in akakaule/nimbus-adapter-kit.
 builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 builder.AddAzureServiceBusClient("servicebus");
 

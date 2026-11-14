@@ -23,7 +23,7 @@ Deploy the platform into your own environment and integrate applications through
 
 ## Try locally
 
-Start with the [CRM/ERP sample](samples/CrmErpDemo/README.md#running-locally--sql-server-default). It runs the emulator and SQL Server locally, without an Azure account. For Dynamics 365 Sales with Business Central, where CRM owns the pipeline and ERP owns the buying customer, see the [Dynamics 365 Sales ↔ Business Central demo](samples/DynamicsBcDemo/README.md).
+Start with the [CRM/ERP sample](samples/CrmErpDemo/README.md#running-locally--sql-server-default). It runs the emulator and SQL Server locally, without an Azure account.
 
 You need the .NET 10 SDK, Node.js 22+, and a running Docker-compatible container runtime. The sample guide includes dependency installation and startup commands.
 

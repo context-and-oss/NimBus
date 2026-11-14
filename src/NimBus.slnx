@@ -44,7 +44,6 @@
   </Folder>
   <Folder Name="/Samples/" />
   <Folder Name="/Samples/AspirePubSub/">
-    <Project Path="../samples/AspirePubSub/AspirePubSub.AppHost/AspirePubSub.AppHost.csproj" />
     <Project Path="../samples/AspirePubSub/AspirePubSub.Provisioner/AspirePubSub.Provisioner.csproj" />
     <Project Path="../samples/AspirePubSub/AspirePubSub.Publisher/AspirePubSub.Publisher.csproj" />
     <Project Path="../samples/AspirePubSub/AspirePubSub.ResolverWorker/AspirePubSub.ResolverWorker.csproj" />
@@ -70,15 +69,6 @@
   <Folder Name="/Samples/FailureAgent/">
     <Project Path="../samples/FailureAgent/FailureAgent.Runner/FailureAgent.Runner.csproj" />
   </Folder>
-  <Folder Name="/Samples/DynamicsBcDemo/">
-    <Project Path="../samples/DynamicsBcDemo/BusinessCentral.Adapter/BusinessCentral.Adapter.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/BusinessCentral.Api/BusinessCentral.Api.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/D365Sales.Adapter/D365Sales.Adapter.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/D365Sales.Api/D365Sales.Api.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/DynamicsBcDemo.AppHost/DynamicsBcDemo.AppHost.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/DynamicsBcDemo.Contracts/DynamicsBcDemo.Contracts.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/DynamicsBcDemo.Provisioner/DynamicsBcDemo.Provisioner.csproj" />
-  </Folder>
   <Folder Name="/Tests/" />
   <Folder Name="/Tests/CommandLine/">
     <Project Path="../tests/NimBus.CommandLine.Tests/NimBus.CommandLine.Tests.csproj" />
@@ -93,9 +83,6 @@
   </Folder>
   <Folder Name="/Tests/FailureAgent/">
     <Project Path="../tests/FailureAgent.Runner.Tests/FailureAgent.Runner.Tests.csproj" />
-  </Folder>
-  <Folder Name="/Tests/DynamicsBcDemo/">
-    <Project Path="../tests/DynamicsBcDemo.Tests/DynamicsBcDemo.Tests.csproj" />
   </Folder>
   <Folder Name="/Tests/EndToEnd/">
     <Project Path="../tests/NimBus.EndToEnd.Tests/NimBus.EndToEnd.Tests.csproj" />

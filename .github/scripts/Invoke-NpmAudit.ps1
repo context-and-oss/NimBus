@@ -5,8 +5,8 @@
     non-breaking fixes npm can make on its own.
 
 .DESCRIPTION
-    Every tracked package-lock.json is one audit root (today: the WebApp ClientApp plus
-    the CrmErpDemo and DynamicsBcDemo sample apps and CrmErpDemo's Playwright suite).
+    Every tracked package-lock.json is one audit root (today: the WebApp ClientApp, the
+    CrmErpDemo sample apps and Playwright suite, and the documentation website).
 
     Both the audit and the fix run with --package-lock-only, so nothing is installed and
     no postinstall script runs (which also keeps Playwright from downloading browsers).
