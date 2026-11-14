@@ -516,6 +516,46 @@ public sealed class SubscriptionAdminServiceTests
     }
 
     [TestMethod]
+    public async Task GetSubscriptions_ReadsTheRoutingKeysOfEachForwardRule()
+    {
+        // Spec 045: a keyed forward rule is named after its event type like an unkeyed one,
+        // so the rule name alone doesn't say which keys a subscription takes. The keys are
+        // read back from the live filter, which is what actually routes.
+        var management = new FakeServiceBusManagement();
+        management.SeedTopic(Topic);
+        management.SeedSubscription(Topic, "DachHub", forwardTo: "DachHub",
+            rules: ("AccountCreated", TopologyDescriptor.KeyedForwardFilter("AccountCreated", ["DE", "AT", "CH"]), null));
+        management.SeedSubscription(Topic, "NordicHub", forwardTo: "NordicHub",
+            rules: ("AccountCreated", TopologyDescriptor.KeyedForwardFilter("AccountCreated", ["DK"]), null));
+        management.SeedSubscription(Topic, "UnroutedHub", forwardTo: "UnroutedHub",
+            rules: ("AccountCreated", TopologyDescriptor.UnmatchedForwardFilter("AccountCreated", ["DK", "DE"]), null));
+        management.SeedSubscription(Topic, "Erp", forwardTo: "Erp",
+            rules: [
+                ("AccountCreated", TopologyDescriptor.ForwardFilter("AccountCreated"), null),
+                ("$Default", "1=1", null),
+            ]);
+        var service = CreateService(management);
+
+        var subscriptions = (await service.GetSubscriptionsAsync(Topic)).ToDictionary(subscription => subscription.Name);
+
+        var dach = subscriptions["DachHub"].RuleRouting.Single();
+        Assert.AreEqual("AccountCreated", dach.RuleName);
+        CollectionAssert.AreEqual(new[] { "AT", "CH", "DE" }, dach.RoutingKeys.ToArray());
+        Assert.IsFalse(dach.Unmatched);
+        Assert.AreEqual(TopologyDescriptor.KeyedForwardFilter("AccountCreated", ["AT", "CH", "DE"]), dach.Filter);
+
+        CollectionAssert.AreEqual(new[] { "DK" }, subscriptions["NordicHub"].RuleRouting.Single().RoutingKeys.ToArray());
+
+        // The unmatched rule lists the keys it excludes: the ones the other consumers claim.
+        var unrouted = subscriptions["UnroutedHub"].RuleRouting.Single();
+        Assert.IsTrue(unrouted.Unmatched);
+        CollectionAssert.AreEqual(new[] { "DE", "DK" }, unrouted.RoutingKeys.ToArray());
+
+        // A rule that doesn't filter on a key has no routing entry.
+        Assert.AreEqual(0, subscriptions["Erp"].RuleRouting.Count);
+    }
+
+    [TestMethod]
     public async Task GetTopicOverview_CountsBothDeadLetterQueuesSeparately()
     {
         // A failed auto-forward strands messages in the transfer DLQ, not the regular one.

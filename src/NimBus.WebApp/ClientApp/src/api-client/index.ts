@@ -10391,6 +10391,8 @@ export class EventType implements IEventType {
     consumerCount?: number;
     producers?: string[];
     consumers?: string[];
+    /** The payload property named by the class's [SessionKey] attribute, whose value is the default session key. Null when the class has no attribute (it overrides GetSessionId, or each event gets its own session). */
+    sessionKeyProperty?: string | undefined;
     /** The payload property that holds the routing key (Spec 045), or null when the event type isn't routed by key. */
     routingKeyProperty?: string | undefined;
     /** How each consumer takes the event type (Spec 045), one entry per consumer in the order of `consumers`. `consumers` is unchanged. */
@@ -10435,6 +10437,7 @@ export class EventType implements IEventType {
                 for (let item of _data["consumers"])
                     this.consumers!.push(item);
             }
+            this.sessionKeyProperty = _data["sessionKeyProperty"];
             this.routingKeyProperty = _data["routingKeyProperty"];
             if (Array.isArray(_data["consumerRouting"])) {
                 this.consumerRouting = [] as any;
@@ -10479,6 +10482,7 @@ export class EventType implements IEventType {
             for (let item of this.consumers)
                 data["consumers"].push(item);
         }
+        data["sessionKeyProperty"] = this.sessionKeyProperty;
         data["routingKeyProperty"] = this.routingKeyProperty;
         if (Array.isArray(this.consumerRouting)) {
             data["consumerRouting"] = [];
@@ -10508,6 +10512,8 @@ export interface IEventType {
     consumerCount?: number;
     producers?: string[];
     consumers?: string[];
+    /** The payload property named by the class's [SessionKey] attribute, whose value is the default session key. Null when the class has no attribute (it overrides GetSessionId, or each event gets its own session). */
+    sessionKeyProperty?: string | undefined;
     /** The payload property that holds the routing key (Spec 045), or null when the event type isn't routed by key. */
     routingKeyProperty?: string | undefined;
     /** How each consumer takes the event type (Spec 045), one entry per consumer in the order of `consumers`. `consumers` is unchanged. */
@@ -10592,6 +10598,94 @@ export interface IConsumerRouting {
     routingKeys: string[];
     /** True for the unmatched consumer: messages whose key no consumer claims, or with no key. */
     unmatched: boolean;
+
+    [key: string]: any;
+}
+
+/** The routing-key filter of one forward rule on a subscription (Spec 045), read back from the rule's live SQL filter. */
+export class SubscriptionRuleRouting implements ISubscriptionRuleRouting {
+    /** The rule's name, which is the event type it forwards. */
+    ruleName!: string;
+    /** For a keyed rule, the keys it takes. For the unmatched rule, the keys it excludes because other consumers claim them. */
+    routingKeys!: string[];
+    /** True for the unmatched consumer's rule: messages with no key, or a key no consumer claims. */
+    unmatched!: boolean;
+    /** The rule's SQL filter as Service Bus holds it. */
+    filter!: string;
+
+    [key: string]: any;
+
+    constructor(data?: ISubscriptionRuleRouting) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+        if (!data) {
+            this.routingKeys = [];
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.ruleName = _data["ruleName"];
+            if (Array.isArray(_data["routingKeys"])) {
+                this.routingKeys = [] as any;
+                for (let item of _data["routingKeys"])
+                    this.routingKeys!.push(item);
+            }
+            this.unmatched = _data["unmatched"];
+            this.filter = _data["filter"];
+        }
+    }
+
+    static fromJS(data: any): SubscriptionRuleRouting {
+        data = typeof data === 'object' ? data : {};
+        let result = new SubscriptionRuleRouting();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["ruleName"] = this.ruleName;
+        if (Array.isArray(this.routingKeys)) {
+            data["routingKeys"] = [];
+            for (let item of this.routingKeys)
+                data["routingKeys"].push(item);
+        }
+        data["unmatched"] = this.unmatched;
+        data["filter"] = this.filter;
+        return data;
+    }
+
+    clone(): SubscriptionRuleRouting {
+        const json = this.toJSON();
+        let result = new SubscriptionRuleRouting();
+        result.init(json);
+        return result;
+    }
+}
+
+/** The routing-key filter of one forward rule on a subscription (Spec 045), read back from the rule's live SQL filter. */
+export interface ISubscriptionRuleRouting {
+    /** The rule's name, which is the event type it forwards. */
+    ruleName: string;
+    /** For a keyed rule, the keys it takes. For the unmatched rule, the keys it excludes because other consumers claim them. */
+    routingKeys: string[];
+    /** True for the unmatched consumer's rule: messages with no key, or a key no consumer claims. */
+    unmatched: boolean;
+    /** The rule's SQL filter as Service Bus holds it. */
+    filter: string;
 
     [key: string]: any;
 }
@@ -14870,6 +14964,8 @@ export class ServiceBusSubscriptionInfo implements IServiceBusSubscriptionInfo {
     missingRuleNames?: string[];
     /** Rules the platform topology can put back, and therefore the only ones safe to offer as a reversible detach. */
     detachableRuleNames?: string[];
+    /** The routing-key filter (Spec 045) of each forward rule that has one, read back from the live rule. Rules that take every key are absent. */
+    ruleRouting?: SubscriptionRuleRouting[];
     /** Whether the platform has a recipe to rebuild this subscription after deletion */
     canRecreate?: boolean;
     activeMessageCount?: number;
@@ -14917,6 +15013,11 @@ export class ServiceBusSubscriptionInfo implements IServiceBusSubscriptionInfo {
                 for (let item of _data["detachableRuleNames"])
                     this.detachableRuleNames!.push(item);
             }
+            if (Array.isArray(_data["ruleRouting"])) {
+                this.ruleRouting = [] as any;
+                for (let item of _data["ruleRouting"])
+                    this.ruleRouting!.push(SubscriptionRuleRouting.fromJS(item));
+            }
             this.canRecreate = _data["canRecreate"];
             this.activeMessageCount = _data["activeMessageCount"];
             this.deadLetterMessageCount = _data["deadLetterMessageCount"];
@@ -14961,6 +15062,11 @@ export class ServiceBusSubscriptionInfo implements IServiceBusSubscriptionInfo {
             for (let item of this.detachableRuleNames)
                 data["detachableRuleNames"].push(item);
         }
+        if (Array.isArray(this.ruleRouting)) {
+            data["ruleRouting"] = [];
+            for (let item of this.ruleRouting)
+                data["ruleRouting"].push(item ? item.toJSON() : undefined as any);
+        }
         data["canRecreate"] = this.canRecreate;
         data["activeMessageCount"] = this.activeMessageCount;
         data["deadLetterMessageCount"] = this.deadLetterMessageCount;
@@ -14994,6 +15100,8 @@ export interface IServiceBusSubscriptionInfo {
     missingRuleNames?: string[];
     /** Rules the platform topology can put back, and therefore the only ones safe to offer as a reversible detach. */
     detachableRuleNames?: string[];
+    /** The routing-key filter (Spec 045) of each forward rule that has one, read back from the live rule. Rules that take every key are absent. */
+    ruleRouting?: SubscriptionRuleRouting[];
     /** Whether the platform has a recipe to rebuild this subscription after deletion */
     canRecreate?: boolean;
     activeMessageCount?: number;
