@@ -1,6 +1,23 @@
-import type { APIRequestContext } from "@playwright/test";
+import type { APIRequestContext, APIResponse } from "@playwright/test";
 import { request } from "@playwright/test";
 import { ServiceUrls } from "./service-urls.js";
+
+/**
+ * "<status> <text>" for a failed call. Since NimBus 4.12.0 every /api error is an RFC 7807
+ * problem response, so the text a test matches on is in its `detail`. A body that is not a
+ * problem is reported as it is.
+ */
+export async function describeFailure(res: APIResponse): Promise<string> {
+  const text = await res.text();
+  try {
+    const problem = JSON.parse(text) as { detail?: unknown; title?: unknown };
+    const reason = typeof problem.detail === "string" ? problem.detail
+      : typeof problem.title === "string" ? problem.title : text;
+    return `${res.status()} ${reason}`;
+  } catch {
+    return `${res.status()} ${text}`;
+  }
+}
 
 export interface EndpointStatusCount {
   endpointId: string;
@@ -82,7 +99,7 @@ export class NimBusApiClient {
   /** Bulk endpoint state counts. Pass the endpoint IDs you care about. */
   async getStatusCounts(endpointIds: string[]): Promise<EndpointStatusCount[]> {
     const res = await this.api.post("/api/v1/endpoint/status/count", { data: endpointIds });
-    if (!res.ok()) throw new Error(`NimBus POST status/count → ${res.status()} ${await res.text()}`);
+    if (!res.ok()) throw new Error(`NimBus POST status/count → ${await describeFailure(res)}`);
     return (await res.json()) as EndpointStatusCount[];
   }
 
@@ -102,7 +119,7 @@ export class NimBusApiClient {
         maxSearchItemsCount: max,
       },
     });
-    if (!res.ok()) throw new Error(`NimBus search → ${res.status()} ${await res.text()}`);
+    if (!res.ok()) throw new Error(`NimBus search → ${await describeFailure(res)}`);
     const body = (await res.json()) as SearchResponse;
     return body.events ?? [];
   }
@@ -110,19 +127,19 @@ export class NimBusApiClient {
   /** Resubmit a single failed event by (eventId, lastMessageId). */
   async resubmit(eventId: string, messageId: string): Promise<void> {
     const res = await this.api.post(`/api/v1/event/resubmit/${eventId}/${messageId}`);
-    if (!res.ok()) throw new Error(`NimBus resubmit → ${res.status()} ${await res.text()}`);
+    if (!res.ok()) throw new Error(`NimBus resubmit → ${await describeFailure(res)}`);
   }
 
   /** Skip a single event (terminal — flips Failed → Skipped, unblocks the session). */
   async skipMessage(eventId: string, messageId: string): Promise<void> {
     const res = await this.api.post(`/api/v1/event/skip/${eventId}/${messageId}`);
-    if (!res.ok()) throw new Error(`NimBus skip → ${res.status()} ${await res.text()}`);
+    if (!res.ok()) throw new Error(`NimBus skip → ${await describeFailure(res)}`);
   }
 
   async settleHandoff(endpoint: string, event: NimBusEvent, outcome: "complete" | "fail", reason = "E2E external rejection"): Promise<void> {
     const res = await this.api.post(`/api/v1/event/handoff/${outcome}/${endpoint}/${event.eventId}/${event.lastMessageId}`,
       { data: outcome === "fail" ? { reason } : {} });
-    if (!res.ok()) throw new Error(`NimBus handoff ${outcome} → ${res.status()} ${await res.text()}`);
+    if (!res.ok()) throw new Error(`NimBus handoff ${outcome} → ${await describeFailure(res)}`);
   }
 
   async channelState(endpoint: string, channel: "send" | "subscription"): Promise<string> {
@@ -141,12 +158,12 @@ export class NimBusApiClient {
     const res = await this.api.post(`/api/v1/endpoint/${endpoint}/${channel}status`, {
       data: JSON.stringify(enabled ? "enable" : "disable"), headers: { "Content-Type": "application/json" },
     });
-    if (!res.ok()) throw new Error(`NimBus change channel status: ${res.status()} ${await res.text()}`);
+    if (!res.ok()) throw new Error(`NimBus change channel status: ${await describeFailure(res)}`);
   }
 
   /** Trigger reprocessing of all Deferred messages on a (endpoint, session). */
   async reprocessDeferred(endpointId: string, sessionId: string): Promise<void> {
     const res = await this.api.post(`/api/v1/event/reprocess-deferred/${endpointId}/${sessionId}`);
-    if (!res.ok()) throw new Error(`NimBus reprocess-deferred → ${res.status()} ${await res.text()}`);
+    if (!res.ok()) throw new Error(`NimBus reprocess-deferred → ${await describeFailure(res)}`);
   }
 }
