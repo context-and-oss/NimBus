@@ -139,10 +139,20 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }).then(json<ModeState>),
 
+  // Routing-keys showcase: which regional hub takes which countries.
+  getRegionalHubs: () => apiFetch('/api/regional-hubs').then(json<RegionalHub[]>),
+
   // Demo reset: wipes all CRM business data (no delete events published).
   deleteAllData: () =>
     apiFetch('/api/admin/data', { method: 'DELETE' }).then(json<DataResetResult>),
 };
+
+export interface RegionalHub {
+  endpointId: string;
+  name: string;
+  countries: string[];
+  isUnrouted: boolean;
+}
 
 export interface DataResetResult {
   accounts: number;

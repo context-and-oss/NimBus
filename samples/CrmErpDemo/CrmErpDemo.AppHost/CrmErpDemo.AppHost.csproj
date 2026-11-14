@@ -32,6 +32,7 @@
     <ProjectReference Include="..\CrmErpDemo.AgentZone\CrmErpDemo.AgentZone.csproj" />
     <ProjectReference Include="..\EnrichmentAgent\EnrichmentAgent.csproj" />
     <ProjectReference Include="..\PartnerPortal\PartnerPortal.csproj" />
+    <ProjectReference Include="..\RegionalHub\RegionalHub.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.WebApp\NimBus.WebApp.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.ServiceBusEmulator\NimBus.ServiceBusEmulator.csproj" />

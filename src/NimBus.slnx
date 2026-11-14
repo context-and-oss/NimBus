@@ -118,6 +118,7 @@
   <Project Path="../samples/AspirePubSub/AspirePubSub.WarehouseSubscriber/AspirePubSub.WarehouseSubscriber.csproj" />
   <Project Path="../samples/CrmErpDemo/CrmErpDemo.AgentZone/CrmErpDemo.AgentZone.csproj" />
   <Project Path="../samples/CrmErpDemo/EnrichmentAgent/EnrichmentAgent.csproj" />
+  <Project Path="../samples/CrmErpDemo/RegionalHub/RegionalHub.csproj" />
   <Project Path="../tests/EnrichmentAgent.Tests/EnrichmentAgent.Tests.csproj" />
   <Project Path="../tests/NimBus.Agents.Tests/NimBus.Agents.Tests.csproj" />
   <Project Path="../tests/NimBus.AspireHosting.Tests/NimBus.AspireHosting.Tests.csproj" />
