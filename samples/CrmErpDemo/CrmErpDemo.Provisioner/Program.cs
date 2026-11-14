@@ -1,3 +1,4 @@
+using Azure.Identity;
 using Azure.Messaging.ServiceBus.Administration;
 using CrmErpDemo.Contracts;
 using NimBus.ServiceBus.Provisioning;
@@ -16,16 +17,28 @@ const string partnerInboundSubscription = "CrmEndpoint";
 const string erpTopic = "ErpEndpoint";
 const string partnerCaptureSubscription = "PartnerPortalCapture";
 
-var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__servicebus")
+// A connection string locally (emulator or user-secrets). In the Azure deployment the
+// namespace has local auth disabled, so Aspire supplies its endpoint URL and the job
+// authenticates with its managed identity.
+var serviceBus = Environment.GetEnvironmentVariable("ConnectionStrings__servicebus")
     ?? throw new InvalidOperationException("ConnectionStrings__servicebus is required.");
 
-var provisioner = new ServiceBusTopologyProvisioner(connectionString, () => new CrmErpPlatformConfiguration());
+ServiceBusAdministrationClient adminClient;
+ServiceBusTopologyProvisioner provisioner;
+if (serviceBus.Contains("Endpoint=", StringComparison.OrdinalIgnoreCase))
+{
+    adminClient = new ServiceBusAdministrationClient(serviceBus);
+    provisioner = new ServiceBusTopologyProvisioner(serviceBus, () => new CrmErpPlatformConfiguration());
+}
+else
+{
+    adminClient = new ServiceBusAdministrationClient(new Uri(serviceBus).Host, new DefaultAzureCredential());
+    provisioner = new ServiceBusTopologyProvisioner(adminClient, () => new CrmErpPlatformConfiguration());
+}
 
 Console.WriteLine("Provisioning CRM/ERP demo Service Bus topology...");
 await provisioner.ApplyAsync(CancellationToken.None);
 Console.WriteLine("Topology provisioning complete.");
-
-var adminClient = new ServiceBusAdministrationClient(connectionString);
 
 // Keep broker-redelivery regressions bounded in the isolated E2E profile.
 // This changes neither normal demo provisioning nor the NimBus retry policy.

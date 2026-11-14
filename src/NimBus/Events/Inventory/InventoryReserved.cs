@@ -27,7 +27,7 @@ public class InventoryReserved : Event
 
     [Required]
     [Description("The warehouse that reserved the stock.")]
-    public string WarehouseCode { get; set; }
+    public string WarehouseCode { get; set; } = null!;
 
     [Range(1, int.MaxValue)]
     [Description("The number of order lines successfully reserved.")]

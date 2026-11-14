@@ -97,8 +97,8 @@ public sealed class NimBusSubscriberBuilderScanningTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
             builder.AddHandlersFromAssembly(duplicateAssembly));
 
-        StringAssert.Contains(ex.Message, nameof(DuplicateScannedEvent));
-        StringAssert.Contains(ex.Message, "Multiple handlers");
+        StringAssert.Contains(ex.Message, nameof(DuplicateScannedEvent), StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "Multiple handlers", StringComparison.Ordinal);
     }
 
     [TestMethod]

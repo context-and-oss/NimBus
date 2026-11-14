@@ -1,18 +1,21 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore;
 
-internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
+internal sealed partial class CosmosDbSubscriptionStore : ISubscriptionStore, ISubscriptionNotificationStore
 {
     private readonly Func<Task<ICosmosContainerAdapter>> _getSubscriptionsContainer;
     private readonly Func<string, Task<string>> _getEndpointErrorList;
@@ -28,22 +31,22 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
     public CosmosDbSubscriptionStore(
         Func<Task<ICosmosContainerAdapter>> getSubscriptionsContainer,
         Func<string, Task<string>> getEndpointErrorList,
-        ILogger logger)
+        ILogger? logger)
     {
         _getSubscriptionsContainer = getSubscriptionsContainer;
         _getEndpointErrorList = getEndpointErrorList;
-        _logger = logger;
+        _logger = logger ?? NullLogger.Instance;
     }
-    public async Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail,
+    public async Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail,
         string type, string author, string url, List<string> eventTypes, string payload, int frequency)
     {
         var formattedType = string.Equals(type, "mail", StringComparison.OrdinalIgnoreCase) ||
                             string.Equals(type, "teams", StringComparison.OrdinalIgnoreCase) ||
                             string.Equals(type, "mail;teams", StringComparison.OrdinalIgnoreCase)
-            ? type.ToLower()
-            : throw new Exception($"Invalid type.{type} valid: mail or teams ");
+            ? type.ToLowerInvariant()
+            : throw new ArgumentException($"Invalid type.{type} valid: mail or teams ", nameof(type));
 
-        if (!ValidateEmail(mail)) throw new Exception($"Invalid email: {mail}");
+        if (!ValidateEmail(mail)) throw new ArgumentException($"Invalid email: {mail}", nameof(mail));
 
         var subscriptionContainer = await _getSubscriptionsContainer();
         var subscription = new EndpointSubscription
@@ -64,13 +67,11 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
 
         if (response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.Created)
         {
-            _logger?.LogTrace(
-                "COSMOS SUBSCRIPTION: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}", subscription.EndpointId, subscription.Id, response.StatusCode);
+            LogCosmosSubscriptionEndpointId(_logger, subscription.EndpointId, subscription.Id, response.StatusCode);
             return subscription;
         }
 
-        _logger?.LogError(
-            "COSMOS SUBSCRIPTION ERROR: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}", subscription.EndpointId, subscription.Id, response.StatusCode);
+        LogCosmosSubscriptionErrorEndpointId(_logger, subscription.EndpointId, subscription.Id, response.StatusCode);
         return null; //Return error?
     }
 
@@ -151,14 +152,12 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
         try
         {
             var response = await subscriptionContainer.DeleteItemAsync<SubscriptionDbo>(subscriptionId, new PartitionKey(subscriptionId));
-            _logger?.LogTrace(
-                "COSMOS REMOVE-SUBSCRIPTION: SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}", subscriptionId, response.StatusCode);
+            LogCosmosRemoveSubscription(_logger, subscriptionId, response.StatusCode);
             return true;
         }
         catch (Exception e)
         {
-            _logger?.LogError(e,
-                "COSMOS REMOVE-SUBSCRIPTION: SubscriptionId: {SubscriptionId}", subscriptionId);
+            LogCosmosRemoveSubscriptionSubscriptionId(_logger, e, subscriptionId);
             return false;
         }
     }
@@ -171,14 +170,12 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
         try
         {
             var response = await subscriptionContainer.DeleteItemAsync<SubscriptionDbo>(id, new PartitionKey(id));
-            _logger?.LogTrace(
-                "COSMOS REMOVE-SUBSCRIPTION: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}", endpointId, id, response.StatusCode);
+            LogCosmosRemoveSubscriptionEndpointIdSubscriptionIdHttpStatusCode(_logger, endpointId, id, response.StatusCode);
             return true;
         }
         catch (Exception e)
         {
-            _logger?.LogError(e,
-                "COSMOS REMOVE-SUBSCRIPTION: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}", endpointId, id);
+            LogCosmosRemoveSubscriptionEndpointIdSubscriptionId(_logger, e, endpointId, id);
             return false;
         }
     }
@@ -201,7 +198,7 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
     public async Task<bool> UpdateSubscription(EndpointSubscription subscription)
     {
         subscription.ErrorList = await _getEndpointErrorList(subscription.EndpointId);
-        subscription.NotifiedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm");
+        subscription.NotifiedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
         try
         {
             var subscriberContainer = await _getSubscriptionsContainer();
@@ -210,19 +207,68 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
         }
         catch (Exception e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPDATE-SUBSCRIPTION: Endpoint: {EndpointId}, SubscriptionId: {SubscriptionId}", subscription.EndpointId, subscription.Id);
+            LogCosmosUpdateSubscription(_logger, e, subscription.EndpointId, subscription.Id);
             return false;
         }
     }
 
-    private sealed class SubscriptionDbo
+    public async Task<bool> TrySetNotifiedAtAsync(string subscriptionId, string? expectedNotifiedAt, string? notifiedAt, CancellationToken cancellationToken)
     {
-        [JsonProperty(PropertyName = "id")] public string Id { get; set; }
-        [JsonProperty(PropertyName = "type")] public string Type { get; set; }
-        [JsonProperty(PropertyName = "severity")] public string Severity { get; set; }
-        [JsonProperty(PropertyName = "mail")] public string Mail { get; set; }
-        [JsonProperty(PropertyName = "endpointId")] public string EndpointId { get; set; }
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var container = await _getSubscriptionsContainer();
+        var partitionKey = new PartitionKey(subscriptionId);
+        try
+        {
+            // Pin the write to the version that passed the compare: a concurrent writer
+            // changes the ETag and this replace fails with 412.
+            var current = await container.ReadItemAsync<EndpointSubscription>(subscriptionId, partitionKey);
+            if (!string.Equals(NullIfEmpty(current.Resource.NotifiedAt), NullIfEmpty(expectedNotifiedAt), StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            current.Resource.NotifiedAt = notifiedAt;
+            await container.ReplaceItemAsync(current.Resource, subscriptionId, partitionKey,
+                new ItemRequestOptions { IfMatchEtag = current.ETag, EnableContentResponseOnWrite = false });
+            return true;
+        }
+        catch (CosmosException exception) when (exception.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
     }
 
+    private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    private sealed class SubscriptionDbo
+    {
+        [JsonProperty(PropertyName = "id")] public string Id { get; set; } = null!;
+        [JsonProperty(PropertyName = "type")] public string Type { get; set; } = null!;
+        [JsonProperty(PropertyName = "severity")] public string Severity { get; set; } = null!;
+        [JsonProperty(PropertyName = "mail")] public string Mail { get; set; } = null!;
+        [JsonProperty(PropertyName = "endpointId")] public string EndpointId { get; set; } = null!;
+    }
+
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS SUBSCRIPTION: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosSubscriptionEndpointId(ILogger logger, string endpointId, string subscriptionId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS SUBSCRIPTION ERROR: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosSubscriptionErrorEndpointId(ILogger logger, string endpointId, string subscriptionId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS REMOVE-SUBSCRIPTION: SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosRemoveSubscription(ILogger logger, string subscriptionId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS REMOVE-SUBSCRIPTION: SubscriptionId: {SubscriptionId}")]
+    private static partial void LogCosmosRemoveSubscriptionSubscriptionId(ILogger logger, Exception exception, string subscriptionId);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS REMOVE-SUBSCRIPTION: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosRemoveSubscriptionEndpointIdSubscriptionIdHttpStatusCode(ILogger logger, string endpointId, string subscriptionId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS REMOVE-SUBSCRIPTION: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}")]
+    private static partial void LogCosmosRemoveSubscriptionEndpointIdSubscriptionId(ILogger logger, Exception exception, string endpointId, string subscriptionId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPDATE-SUBSCRIPTION: Endpoint: {EndpointId}, SubscriptionId: {SubscriptionId}")]
+    private static partial void LogCosmosUpdateSubscription(ILogger logger, Exception exception, string endpointId, string subscriptionId);
 }

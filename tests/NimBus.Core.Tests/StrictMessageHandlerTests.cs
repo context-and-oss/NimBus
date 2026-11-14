@@ -1,5 +1,7 @@
 #pragma warning disable CA1707, CA1515, CA2007
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using NimBus.Core.Pipeline;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Extensions;
@@ -12,6 +14,67 @@ namespace NimBus.Core.Tests;
 [TestClass]
 public class StrictMessageHandlerTests
 {
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task HandlerFailure_LogsOneError_WithOrWithoutLoggingMiddleware(bool withPipeline)
+    {
+        var logger = new OperatorRecordingLogger();
+        using var services = new ServiceCollection().AddSingleton(new LoggingMiddleware(logger)).BuildServiceProvider();
+        var pipeline = withPipeline ? new MessagePipeline(new PipelineBehaviorRegistry([typeof(LoggingMiddleware)]), services) : null;
+        var response = new FakeResponseService();
+        var sut = new StrictMessageHandler(new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("handler failure") }, response, logger, pipeline: pipeline);
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, logger.Entries.Count(e => e.Level == LogLevel.Error));
+        Assert.IsTrue(logger.Entries.Single(e => e.Level == LogLevel.Error).Message.Contains(ctx.EventId, StringComparison.Ordinal));
+        Assert.AreEqual(1, response.ErrorCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SessionDeferral_LogsNoWarningOrErrorOrStackTrace(bool withPipeline)
+    {
+        var logger = new OperatorRecordingLogger();
+        using var services = new ServiceCollection().AddSingleton(new LoggingMiddleware(logger)).BuildServiceProvider();
+        var pipeline = withPipeline ? new MessagePipeline(new PipelineBehaviorRegistry([typeof(LoggingMiddleware)]), services) : null;
+        var response = new FakeResponseService();
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        ctx.BlockedByEventId = "blocking-event";
+        var sut = new StrictMessageHandler(new FakeEventContextHandler(), response, logger, pipeline: pipeline);
+
+        await sut.Handle(ctx);
+
+        Assert.IsFalse(logger.Entries.Any(e => e.Level >= LogLevel.Warning || e.Exception != null));
+        Assert.IsTrue(logger.Entries.Any(e => e.Level == LogLevel.Information && e.Message.Contains("blocking-event", StringComparison.Ordinal)));
+        Assert.AreEqual(1, response.DeferralCalls);
+        Assert.AreEqual(1, response.SendToDeferredSubscriptionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task LoggingMiddleware_UnexpectedFailure_StillLogsErrorAndRethrows()
+    {
+        var logger = new OperatorRecordingLogger();
+        var failure = new InvalidOperationException("pipeline failed");
+        var middleware = new LoggingMiddleware(logger);
+        var caught = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => middleware.Handle(CreateContext(MessageType.EventRequest), (_, _) => throw failure));
+        Assert.AreSame(failure, caught);
+        Assert.AreSame(failure, logger.Entries.Single(e => e.Level == LogLevel.Error).Exception);
+    }
+
+    private sealed class OperatorRecordingLogger : ILogger<LoggingMiddleware>
+    {
+        public List<(LogLevel Level, Exception? Exception, string Message)> Entries { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, exception, formatter(state, exception)));
+    }
+
     // ── HandleEventRequest ──────────────────────────────────────────────
 
     [TestMethod]
@@ -354,6 +417,28 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(0, retryProvider.GetRetryPolicyCalls);
     }
 
+    [TestMethod]
+    public async Task HandleEventRequest_UnsupportedDisposition_DeadLettersWithOriginalExceptionAsInner()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var failure = new InvalidOperationException("handler failure");
+        var observer = new RecordingLifecycleObserver();
+        var sut = new StrictMessageHandler(
+            new FakeEventContextHandler { ThrowOnHandle = failure },
+            new FakeResponseService(),
+            NullLogger.Instance,
+            retryPolicyProvider: null,
+            pipeline: null,
+            lifecycleNotifier: new MessageLifecycleNotifier([observer]),
+            failureDispositionClassifier: new FakeFailureDispositionClassifier((FailureDisposition)42));
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.IsInstanceOfType<InvalidOperationException>(observer.LastFailure);
+        Assert.AreSame(failure, observer.LastFailure.InnerException);
+    }
+
     // ── PendingHandoff outcome ──────────────────────────────────────────
 
     [TestMethod]
@@ -626,17 +711,21 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
-    [DataRow(null, 1)]
-    [DataRow("newer-blocking-event", 0)]
+    [DataRow(null, true, 1)]
+    [DataRow(null, false, 0)]
+    [DataRow("newer-blocking-event", true, 0)]
     public async Task HandleHandoffCompletedRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock(
-        string? blockedBy, int expectedDrainCalls)
+        string? blockedBy, bool hasUnreplayed, int expectedDrainCalls)
     {
         // The first delivery lost its lock after clearing the block but before
-        // sending ProcessDeferredRequest. Redelivery must repair that gap.
+        // sending ProcessDeferredRequest. Redelivery must repair that gap, but only while a
+        // parked message awaits its replay: the deferred count only grows, so it alone must not
+        // trigger a drain.
         var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "Manager");
         ctx.IsSessionBlockedByThisResult = false;
         ctx.BlockedByEventId = blockedBy;
         ctx.DeferredCountResult = 2;
+        ctx.HasUnreplayedResult = hasUnreplayed;
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
 
@@ -802,7 +891,7 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.DeadLetterCalls);
         Assert.AreEqual(1, response.DeadLetterCalls);
         Assert.AreEqual("Failed to handle message.", response.LastDeadLetterReason);
-        Assert.IsInstanceOfType(response.LastDeadLetterException, typeof(UnauthorizedAccessException));
+        Assert.IsInstanceOfType<UnauthorizedAccessException>(response.LastDeadLetterException);
     }
 
     [TestMethod]
@@ -972,7 +1061,7 @@ public class StrictMessageHandlerTests
         // authoritative value, NOT off the deserialized body's
         // MessageContent.EventContent.EventTypeId. Here the two intentionally differ.
         var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "UserPropEventType");
-        ctx.MessageContent.EventContent.EventTypeId = "BodyEventType"; // must NOT be used
+        ctx.MessageContent.EventContent!.EventTypeId = "BodyEventType"; // must NOT be used
         var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
         var response = new FakeResponseService();
         var retryProvider = new FakeRetryPolicyProvider();
@@ -1066,6 +1155,47 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
+    [DataRow(null, true, 1)]
+    [DataRow(null, false, 0)]
+    [DataRow("newer-blocking-event", true, 0)]
+    public async Task HandleRetryRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock(
+        string? blockedBy, bool hasUnreplayed, int expectedDrainCalls)
+    {
+        // The first delivery handled the event and unblocked the session, but stopped before
+        // sending ProcessDeferredRequest. With no inbox configured, the redelivery reaches the
+        // blocked-by-this guard and must repair that gap, as Skip and handoff completion do.
+        // A stale retry for an event resolved some other way, on a session whose parked
+        // messages were all replayed, must not drain: the deferred count stays above zero
+        // after the replays, so it alone must not trigger one.
+        var trace = new OperationTrace();
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.Trace = trace;
+        ctx.TraceName = "event-1";
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = blockedBy;
+        ctx.DeferredCountResult = 2;
+        ctx.HasUnreplayedResult = hasUnreplayed;
+        var handler = new FakeEventContextHandler(trace);
+        var response = new FakeResponseService(trace);
+
+        await CreateHandler(handler, response).Handle(ctx);
+
+        Assert.AreEqual(expectedDrainCalls, response.ProcessDeferredCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, response.ResolutionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+        if (expectedDrainCalls > 0)
+        {
+            // The drain comes before completion, or a crash after completing loses the repair.
+            trace.AssertInOrder(
+                "event-1.response-process-deferred",
+                "event-1.response-resolution",
+                "event-1.complete");
+        }
+    }
+
+    [TestMethod]
     public async Task HandleRetryRequest_HandlerThrows_SendsErrorAndCompletes()
     {
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
@@ -1079,6 +1209,72 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, response.ErrorCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
         Assert.AreEqual(0, ctx.UnblockSessionCalls, "Should not unblock on failure");
+    }
+
+    // ── Permanent failure while retrying or resubmitting (Spec 045 §5) ──
+
+    // A permanent failure during a retry or a resubmission — such as a resubmit-with-changes
+    // that moved the payload to another routing key — dead-letters the event. The event no
+    // longer owns its session then, so the session must be unblocked and its deferred siblings
+    // released, as a permanent failure on first delivery never blocks the session at all.
+
+    [TestMethod]
+    public async Task HandleResubmissionRequest_PermanentFailure_UnblocksTheSessionAndDeadLetters()
+    {
+        var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = true;
+        ctx.DeferredCountResult = 2;
+        var handler = new FakeEventContextHandler
+        {
+            ThrowOnHandle = new PermanentFailureException(new RoutingKeyRejectedException("Routing key '02' is not accepted")),
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, response.ProcessDeferredCalls);
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.AreEqual(1, response.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleResubmissionRequest_PermanentFailure_NotBlockedByThis_LeavesTheBlockAlone()
+    {
+        var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = false;
+        var handler = new FakeEventContextHandler
+        {
+            ThrowOnHandle = new PermanentFailureException(new FormatException("Malformed payload.")),
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleRetryRequest_PermanentFailure_UnblocksTheSessionAndDeadLetters()
+    {
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = true;
+        ctx.DeferredCountResult = 1;
+        var handler = new FakeEventContextHandler
+        {
+            ThrowOnHandle = new PermanentFailureException(new FormatException("Malformed payload.")),
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, response.ProcessDeferredCalls);
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
     }
 
     // ── HandleResubmissionRequest ───────────────────────────────────────
@@ -1224,6 +1420,33 @@ public class StrictMessageHandlerTests
 
         await sut.Handle(ctx);
 
+        Assert.AreEqual(1, response.SkipCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    [DataRow(null, true, 1)]
+    [DataRow(null, false, 0)]
+    [DataRow("newer-blocking-event", true, 0)]
+    public async Task HandleSkipRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock(
+        string? blockedBy, bool hasUnreplayed, int expectedDrainCalls)
+    {
+        // The first delivery unblocked the session but stopped before sending
+        // ProcessDeferredRequest. Redelivery must repair that gap, as handoff completion does,
+        // but only while a parked message awaits its replay.
+        var ctx = CreateContext(messageType: MessageType.SkipRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = blockedBy;
+        ctx.DeferredCountResult = 2;
+        ctx.HasUnreplayedResult = hasUnreplayed;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+
+        await CreateHandler(handler, response).Handle(ctx);
+
+        Assert.AreEqual(expectedDrainCalls, response.ProcessDeferredCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, handler.HandleCalls);
         Assert.AreEqual(1, response.SkipCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
     }
@@ -1409,15 +1632,20 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
-    public async Task HandleRetryRequest_RecordedDuplicate_WithUnblockedSession_DrainsDeferredSiblings()
+    [DataRow(true, 1)]
+    [DataRow(false, 0)]
+    public async Task HandleRetryRequest_RecordedDuplicate_WithUnblockedSession_DrainsDeferredSiblings(
+        bool hasUnreplayed, int expectedDrainCalls)
     {
         // Crash window: the first attempt recorded and unblocked, then died before the
         // deferred drain. The redelivered duplicate is the only remaining drain trigger —
-        // completing it without draining would park deferred siblings indefinitely.
+        // completing it without draining would park deferred siblings indefinitely. Once every
+        // parked message has been replayed there is nothing to drain, whatever the count says.
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
         ctx.IsSessionBlockedByThisResult = false;
         ctx.BlockedByEventId = null!;
         ctx.DeferredCountResult = 2;
+        ctx.HasUnreplayedResult = hasUnreplayed;
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
         var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore { HasProcessed = true });
@@ -1426,7 +1654,7 @@ public class StrictMessageHandlerTests
 
         Assert.AreEqual(0, handler.HandleCalls);
         Assert.AreEqual(0, ctx.UnblockSessionCalls);
-        Assert.AreEqual(1, response.ProcessDeferredCalls);
+        Assert.AreEqual(expectedDrainCalls, response.ProcessDeferredCalls);
         Assert.AreEqual(1, response.DuplicateCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
     }
@@ -1826,8 +2054,8 @@ public class StrictMessageHandlerTests
         }
 
         public bool HasProcessed { get; set; }
-        public Exception CheckException { get; set; }
-        public Exception RecordException { get; set; }
+        public Exception? CheckException { get; set; }
+        public Exception? RecordException { get; set; }
 
         public Task<bool> HasProcessedAsync(
             string endpointId,
@@ -1958,8 +2186,8 @@ public class StrictMessageHandlerTests
         }
 
         public int HandleCalls { get; private set; }
-        public Exception ThrowOnHandle { get; set; }
-        public Action<IMessageContext> OnHandle { get; set; }
+        public Exception? ThrowOnHandle { get; set; }
+        public Action<IMessageContext>? OnHandle { get; set; }
 
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
@@ -1994,12 +2222,12 @@ public class StrictMessageHandlerTests
         public int DiscardCalls { get; private set; }
         public int PendingHandoffCalls { get; private set; }
         public int DuplicateCalls { get; private set; }
-        public HandoffMetadata LastPendingHandoffMetadata { get; private set; }
-        public string LastDeadLetterReason { get; private set; }
-        public Exception LastDeadLetterException { get; private set; }
-        public Exception LastErrorException { get; private set; }
-        public Exception LastDiscardException { get; private set; }
-        public string LastDiscardClassifierName { get; private set; }
+        public HandoffMetadata? LastPendingHandoffMetadata { get; private set; }
+        public string? LastDeadLetterReason { get; private set; }
+        public Exception? LastDeadLetterException { get; private set; }
+        public Exception? LastErrorException { get; private set; }
+        public Exception? LastDiscardException { get; private set; }
+        public string? LastDiscardClassifierName { get; private set; }
         public int? LastRetryDelayMinutes { get; private set; }
 
         public Task SendResolutionResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-resolution", ct); ResolutionCalls++; return Task.CompletedTask; }
@@ -2014,7 +2242,7 @@ public class StrictMessageHandlerTests
             return Task.CompletedTask;
         }
         public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-error", ct); ErrorCalls++; LastErrorException = ex; return Task.CompletedTask; }
-        public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception ex, CancellationToken ct = default)
+        public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception? ex, CancellationToken ct = default)
         {
             _trace?.Record($"{GetTraceName(mc)}.response-dead-letter", ct);
             DeadLetterCalls++;
@@ -2040,14 +2268,14 @@ public class StrictMessageHandlerTests
     private sealed class FakeRetryPolicyProvider : IRetryPolicyProvider
     {
         public int GetRetryPolicyCalls { get; private set; }
-        public string LastEventTypeId { get; private set; }
-        public RetryPolicy PolicyToReturn { get; set; }
+        public string? LastEventTypeId { get; private set; }
+        public RetryPolicy? PolicyToReturn { get; set; }
 
         public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null)
         {
             GetRetryPolicyCalls++;
             LastEventTypeId = eventTypeId;
-            return PolicyToReturn;
+            return PolicyToReturn!;
         }
     }
 
@@ -2078,8 +2306,8 @@ public class StrictMessageHandlerTests
             _disposition = disposition;
         }
 
-        public Exception LastException { get; private set; }
-        public string LastEventTypeId { get; private set; }
+        public Exception? LastException { get; private set; }
+        public string? LastEventTypeId { get; private set; }
         public string? LastEndpointName { get; private set; }
 
         public FailureDisposition Classify(Exception exception, string eventTypeId, string? endpointName)
@@ -2121,8 +2349,8 @@ public class StrictMessageHandlerTests
     private sealed class FakeDeferredMessageProcessor : IDeferredMessageProcessor
     {
         public int ProcessCalls { get; private set; }
-        public string LastSessionId { get; private set; }
-        public string LastTopicName { get; private set; }
+        public string? LastSessionId { get; private set; }
+        public string? LastTopicName { get; private set; }
 
         public Task ProcessDeferredMessagesAsync(string sessionId, string topicName, CancellationToken ct = default)
         {
@@ -2153,10 +2381,10 @@ public class StrictMessageHandlerTests
         public int? DeferralSequence { get; set; }
         public DateTime EnqueuedTimeUtc { get; set; }
         public string From { get; set; } = string.Empty;
-        public string DeadLetterReason { get; set; }
-        public string DeadLetterErrorDescription { get; set; }
-        public string HandoffReason { get; set; }
-        public string ExternalJobId { get; set; }
+        public string? DeadLetterReason { get; set; }
+        public string? DeadLetterErrorDescription { get; set; }
+        public string? HandoffReason { get; set; }
+        public string? ExternalJobId { get; set; }
         public DateTime? ExpectedBy { get; set; }
         public bool IsDeferred { get; set; }
         public int ThrottleRetryCount { get; set; }
@@ -2164,12 +2392,13 @@ public class StrictMessageHandlerTests
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
-        public HandoffMetadata HandoffMetadata { get; set; }
+        public HandoffMetadata? HandoffMetadata { get; set; }
 
         // Configurable behavior
-        public string BlockedByEventId { get; set; }
+        public string? BlockedByEventId { get; set; }
         public bool IsSessionBlockedByThisResult { get; set; }
         public int DeferredCountResult { get; set; }
+        public bool HasUnreplayedResult { get; set; }
 
         // Call counters
         public int CompletedCalls { get; private set; }
@@ -2188,12 +2417,13 @@ public class StrictMessageHandlerTests
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
         public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) { Trace?.Record($"{TraceName}.verify-owner", ct); return Task.FromResult(IsSessionBlockedByThisResult); }
         public Task<bool> IsSessionBlockedByEventId(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
-        public Task<string> GetBlockedByEventId(CancellationToken ct = default) { Trace?.Record($"{TraceName}.session-guard", ct); return Task.FromResult(BlockedByEventId); }
+        public Task<string?> GetBlockedByEventId(CancellationToken ct = default) { Trace?.Record($"{TraceName}.session-guard", ct); return Task.FromResult(BlockedByEventId); }
         public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferral-sequence", ct); return Task.FromResult(0); }
         public Task IncrementDeferredCount(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferred-count-increment", ct); IncrementDeferredCountCalls++; return Task.CompletedTask; }
         public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
         public Task<int> GetDeferredCount(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferred-count-read", ct); return Task.FromResult(DeferredCountResult); }
         public Task<bool> HasDeferredMessages(CancellationToken ct = default) => Task.FromResult(DeferredCountResult > 0);
+        public Task<bool> HasUnreplayedDeferredMessages(CancellationToken ct = default) => Task.FromResult(HasUnreplayedResult);
         public Task ResetDeferredCount(CancellationToken ct = default) { ResetDeferredCountCalls++; return Task.CompletedTask; }
         public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken ct = default) => Task.CompletedTask;
     }

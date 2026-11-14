@@ -116,7 +116,7 @@ public static class NotificationsBuilderExtensions
     private static void RegisterChannelsAndRouter(
         IServiceCollection services,
         Action<NotificationChannelBuilder> configureChannels,
-        Action<NotificationOptions> configureOptions)
+        Action<NotificationOptions>? configureOptions)
     {
         var options = new NotificationOptions { NotifyOnSessionBlock = true };
         configureOptions?.Invoke(options);

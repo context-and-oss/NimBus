@@ -232,11 +232,11 @@ public interface IMessageTrackingStore
     Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId);
     Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId);
     Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds);
-    Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken);
+    Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken);
 
     // Session views
     Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take);
-    Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId);
+    Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId);
     Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId);
 
     // Lifecycle / cleanup
@@ -265,6 +265,12 @@ public interface IMessageTrackingStore
     /// <summary>Returns the newest message for the event on the endpoint, or null.</summary>
     Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId);
     Task RemoveStoredMessage(string eventId, string messageId);
+    /// <summary>
+    /// Hard-deletes every per-message history record stored for the endpoint
+    /// (matched on <see cref="MessageEntity.EndpointId"/>) and returns how many were
+    /// removed. Audit records are kept. Used by the WebApp's "Delete all events".
+    /// </summary>
+    Task<int> PurgeStoredMessages(string endpointId);
 
     /// <summary>
     /// Filtered message search. ID-like string filters (endpoint id, event id,
@@ -330,6 +336,20 @@ public interface IMessageTrackingStore
     /// </summary>
     Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds)
         => Task.FromResult<IReadOnlyDictionary<string, EventReport>>(new Dictionary<string, EventReport>());
+
+    /// <summary>
+    /// The events on <paramref name="endpointId"/> currently marked reported, newest report first,
+    /// at most <paramref name="limit"/>; only those reported under <paramref name="ticketId"/> when
+    /// it is given (Spec 044 Phase 3: an agent looks for a ticket to reuse, and resubmits the
+    /// failures linked to one after the fix).
+    /// <para>Default implementation returns an empty list so pre-existing external providers keep
+    /// compiling; nothing is then found by ticket.</para>
+    /// </summary>
+    /// <param name="endpointId">The endpoint.</param>
+    /// <param name="ticketId">Only reports under this ticket; null for every reported event.</param>
+    /// <param name="limit">The most reports to return.</param>
+    Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit)
+        => Task.FromResult<IReadOnlyList<EventReport>>([]);
 
     // Endpoint diagnostics
     Task<string> GetEndpointErrorList(string endpointId);

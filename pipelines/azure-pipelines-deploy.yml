@@ -30,7 +30,7 @@ parameters:
     type: string
     default: ""
   - name: location
-    displayName: "Azure region for new resources (empty = westeurope; existing resources keep their region)"
+    displayName: "Azure region for new resources (empty = the resource group's region; existing resources keep theirs)"
     type: string
     default: ""
   # Private networking (docs/private-networking.md). All optional: nb records the setup on

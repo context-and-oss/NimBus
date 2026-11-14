@@ -4,12 +4,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
+using NimBus.ServiceBus.Provisioning;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.ManagementApi;
 using System.Threading;
@@ -29,6 +31,7 @@ public sealed class SubscriptionAdminServiceTests
     // `using Constants = NimBus.Core.Messages.Constants` alias. Name the ids directly.
     private const string ResolverSubscription = "Resolver";
     private const string DeferredProcessorSubscription = "DeferredProcessor";
+    private static readonly SubQueue[] BothDeadLetterQueues = { SubQueue.DeadLetter, SubQueue.TransferDeadLetter };
 
     [TestMethod]
     public async Task Pause_DetachesForwardingInTheSameUpdate()
@@ -127,6 +130,270 @@ public sealed class SubscriptionAdminServiceTests
         // that the failed restore is reported and not swallowed by the drain's own error.
         Assert.IsTrue(result.Errors.Any(error => error.Contains("is now Active", StringComparison.Ordinal)),
             $"Expected a restore-failure error, got: {string.Join(" | ", result.Errors)}");
+        Assert.IsNull(result.RowsDeleted, "only Operations → Purge subscription reports deleted rows");
+    }
+
+    // ───── Purge marker (AF-7) ─────
+    // While a purge drains a paused subscription it is Active with ForwardTo detached, which
+    // `nb topology apply` would otherwise read as a forwarder to re-attach. The purge marks it
+    // in the same update that activates it and puts the original UserMetadata back after.
+
+    private const string Marker = SubscriptionMarkers.PurgeInProgress;
+    private const string OwnerMetadata = "owner: team-a";
+
+    [TestMethod]
+    public async Task Purge_MarksThePausedSubscriptionWhileDrainingAndRestoresItsMetadata()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription, status: EntityStatus.ReceiveDisabled, userMetadata: OwnerMetadata);
+        var bus = new FakeSubscriptionBus();
+        bus.Messages.Add("evt-1");
+        var service = CreateService(management, sbClient: bus);
+
+        var result = await service.PurgeSubscriptionAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.AreEqual(0, result.Failed, string.Join(" | ", result.Errors));
+        AssertMarkedThenRestored(management, EntityStatus.ReceiveDisabled, expectedRestore: OwnerMetadata);
+    }
+
+    [TestMethod]
+    public async Task Purge_RestoresTheMetadataWhenTheDrainThrows()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription, status: EntityStatus.ReceiveDisabled, userMetadata: OwnerMetadata);
+        var service = CreateService(management, sbClient: FailingBus());
+
+        var result = await service.PurgeSubscriptionAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.IsTrue(result.Failed > 0, "the drain was set up to fail");
+        AssertMarkedThenRestored(management, EntityStatus.ReceiveDisabled, expectedRestore: OwnerMetadata);
+    }
+
+    [TestMethod]
+    public async Task Purge_ClearsTheMarkerWhenTheOriginalMetadataWasNull()
+    {
+        // A provisioned subscription has no metadata, and null means "leave unchanged", so
+        // restoring it verbatim would leave the marker set after a normal purge.
+        // The fake can't return a null read (the SDK model factory rejects null), so the
+        // service receives string.Empty here: this exercises the empty-original path that a
+        // null read reaches after ServiceBusManagement.GetSubscription normalises it. The
+        // null read itself is proven by ServiceBusManagementGetSubscriptionTests.
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription, status: EntityStatus.ReceiveDisabled, userMetadata: null);
+        Assert.IsNull(management.SeededUserMetadata(Topic, DeferredProcessorSubscription));
+        var service = CreateService(management, sbClient: new FakeSubscriptionBus());
+
+        var result = await service.PurgeSubscriptionAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.AreEqual(0, result.Failed, string.Join(" | ", result.Errors));
+        AssertMarkedThenRestored(management, EntityStatus.ReceiveDisabled, expectedRestore: string.Empty);
+    }
+
+    [TestMethod]
+    public async Task Purge_ClearsTheMarkerWhenTheOriginalMetadataWasNullAndTheDrainThrows()
+    {
+        // As above: the service receives the normalised string.Empty, not a null read.
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription, status: EntityStatus.ReceiveDisabled, userMetadata: null);
+        var service = CreateService(management, sbClient: FailingBus());
+
+        var result = await service.PurgeSubscriptionAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.IsTrue(result.Failed > 0, "the drain was set up to fail");
+        AssertMarkedThenRestored(management, EntityStatus.ReceiveDisabled, expectedRestore: string.Empty);
+    }
+
+    [TestMethod]
+    public async Task Purge_DoesNotRestoreALeftoverMarker()
+    {
+        // A marker an earlier, interrupted purge left behind is not the operator's metadata.
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription, status: EntityStatus.ReceiveDisabled, userMetadata: Marker);
+        var service = CreateService(management, sbClient: new FakeSubscriptionBus());
+
+        await service.PurgeSubscriptionAsync(Topic, DeferredProcessorSubscription);
+
+        AssertMarkedThenRestored(management, EntityStatus.ReceiveDisabled, expectedRestore: string.Empty);
+    }
+
+    [TestMethod]
+    public async Task Purge_TellsTheOperatorHowToClearTheMarkerWhenTheRestoreFails()
+    {
+        var management = new FakeServiceBusManagement { FailUpdateToStatus = EntityStatus.ReceiveDisabled };
+        management.SeedSubscription(Topic, DeferredProcessorSubscription, status: EntityStatus.ReceiveDisabled);
+        var service = CreateService(management, sbClient: new FakeSubscriptionBus());
+
+        var result = await service.PurgeSubscriptionAsync(Topic, DeferredProcessorSubscription);
+
+        var error = result.Errors.SingleOrDefault(e => e.Contains("is now Active", StringComparison.Ordinal));
+        Assert.IsNotNull(error, $"Expected a restore-failure error, got: {string.Join(" | ", result.Errors)}");
+        StringAssert.Contains(error, "the purge marker may still be set", StringComparison.Ordinal);
+        StringAssert.Contains(error,
+            "Pause clears the purge marker and restores the pause. Resume afterwards only if forwarding should be re-attached.",
+            StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public async Task Purge_OfAnActiveSubscriptionChangesNoMetadata()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription, userMetadata: OwnerMetadata);
+        var service = CreateService(management, sbClient: new FakeSubscriptionBus());
+
+        await service.PurgeSubscriptionAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.IsTrue(management.Updates.All(update => update.UserMetadata is null),
+            $"Expected no metadata change, got: {string.Join(" | ", management.Updates.Select(update => update.UserMetadata ?? "<null>"))}");
+    }
+
+    [TestMethod]
+    public async Task Resume_ClearsALeftoverPurgeMarker()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, ResolverSubscription, forwardTo: null, status: EntityStatus.ReceiveDisabled, userMetadata: Marker);
+        var service = CreateService(management);
+
+        var result = await service.SetSubscriptionStatusAsync(Topic, ResolverSubscription, enable: true);
+
+        Assert.IsTrue(result.Succeeded, result.Message);
+        var update = management.Updates.Single();
+        Assert.AreEqual(EntityStatus.Active, update.Status);
+        Assert.AreEqual(ResolverSubscription, update.ForwardTo);
+        Assert.AreEqual(string.Empty, update.UserMetadata);
+    }
+
+    [TestMethod]
+    [DataRow(OwnerMetadata)]
+    [DataRow("")]
+    [DataRow(null)]
+    public async Task Resume_LeavesOtherMetadataUnchanged(string? userMetadata)
+    {
+        // The null row seeds null, but the fake reads it back as string.Empty (the SDK model
+        // factory rejects null), so it exercises the same path as the "" row: the read the
+        // service gets after ServiceBusManagement.GetSubscription normalises a null read.
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, ResolverSubscription, forwardTo: null, status: EntityStatus.ReceiveDisabled, userMetadata: userMetadata);
+        var service = CreateService(management);
+
+        await service.SetSubscriptionStatusAsync(Topic, ResolverSubscription, enable: true);
+
+        Assert.IsNull(management.Updates.Single().UserMetadata);
+    }
+
+    [TestMethod]
+    public async Task Pause_ClearsALeftoverPurgeMarker()
+    {
+        // An interrupted purge leaves the subscription Active, detached and marked, and the UI
+        // only offers Pause on an Active row: Pause must be enough to get back to a plain pause.
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, ResolverSubscription, forwardTo: null, status: EntityStatus.Active, userMetadata: Marker);
+        var service = CreateService(management);
+
+        var result = await service.SetSubscriptionStatusAsync(Topic, ResolverSubscription, enable: false);
+
+        Assert.IsTrue(result.Succeeded, result.Message);
+        var update = management.Updates.Single();
+        Assert.AreEqual(EntityStatus.ReceiveDisabled, update.Status);
+        Assert.AreEqual(string.Empty, update.UserMetadata);
+    }
+
+    [TestMethod]
+    [DataRow(OwnerMetadata)]
+    [DataRow("")]
+    [DataRow(null)]
+    public async Task Pause_LeavesOtherMetadataUnchanged(string? userMetadata)
+    {
+        // As in Resume_LeavesOtherMetadataUnchanged, the null row reaches the service as
+        // string.Empty, the same as the "" row.
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, ResolverSubscription, forwardTo: ResolverSubscription, userMetadata: userMetadata);
+        var service = CreateService(management);
+
+        await service.SetSubscriptionStatusAsync(Topic, ResolverSubscription, enable: false);
+
+        var update = management.Updates.Single();
+        Assert.AreEqual(EntityStatus.ReceiveDisabled, update.Status);
+        Assert.IsNull(update.UserMetadata);
+    }
+
+    private static void AssertMarkedThenRestored(FakeServiceBusManagement management, EntityStatus originalStatus, string expectedRestore)
+    {
+        var updates = management.Updates.Select(update => (update.Status, update.ChangeForwardTo, update.UserMetadata)).ToArray();
+        var described = string.Join(" | ", updates.Select(update => $"{update.Status}/{update.ChangeForwardTo}/{update.UserMetadata ?? "<null>"}"));
+
+        Assert.AreEqual(2, updates.Length, described);
+        Assert.AreEqual((EntityStatus.Active, false, (string?)Marker), updates[0], $"activation: {described}");
+        Assert.AreEqual((originalStatus, false, (string?)expectedRestore), updates[1], $"restore: {described}");
+    }
+
+    private static FakeSubscriptionBus FailingBus()
+    {
+        var bus = new FakeSubscriptionBus();
+        bus.Messages.Failure = new ServiceBusException("Receive refused", ServiceBusFailureReason.GeneralError);
+        return bus;
+    }
+
+    // Issue #286: nothing used to empty a subscription's dead-letter queues, and Service Bus never
+    // does on its own.
+    [TestMethod]
+    public async Task PurgeDeadLetters_DrainsBothDeadLetterQueues()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription);
+        var bus = new FakeDeadLetterBus();
+        bus.DeadLetters.Add("evt-1", "evt-2");
+        bus.TransferDeadLetters.Add("evt-3");
+        var service = CreateService(management, sbClient: bus);
+
+        var result = await service.PurgeDeadLetterQueueAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.AreEqual(3, result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.AreEqual(0, result.Failed);
+        Assert.AreEqual(0, bus.DeadLetters.RemainingEventIds.Count);
+        Assert.AreEqual(0, bus.TransferDeadLetters.RemainingEventIds.Count);
+        CollectionAssert.AreEqual(
+            BothDeadLetterQueues,
+            bus.Receivers.Select(receiver => receiver.SubQueue).ToArray());
+    }
+
+    [TestMethod]
+    public async Task PurgeDeadLetters_CountsWhatItRemovedBeforeAFailure()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription);
+        var bus = new FakeDeadLetterBus();
+        bus.DeadLetters.Add("evt-1", "evt-2");
+        bus.DeadLetters.FailCompletion = 2;
+        var service = CreateService(management, sbClient: bus);
+
+        var result = await service.PurgeDeadLetterQueueAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.AreEqual(1, result.Succeeded, "The message completed before the failure is gone and must be counted.");
+        Assert.AreEqual(1, result.Failed);
+        StringAssert.Contains(result.Errors.Single(), "dead-letter queue", StringComparison.Ordinal);
+    }
+
+    // Unlike Purge, this never makes a paused subscription receivable: that would hand the
+    // paused backlog to its consumers, which is not what an operator purging dead letters asked.
+    [TestMethod]
+    public async Task PurgeDeadLetters_LeavesAPausedSubscriptionPaused()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription(Topic, DeferredProcessorSubscription, status: EntityStatus.ReceiveDisabled);
+        var service = CreateService(management, sbClient: new FakeDeadLetterBus());
+
+        await service.PurgeDeadLetterQueueAsync(Topic, DeferredProcessorSubscription);
+
+        Assert.AreEqual(0, management.Updates.Count);
+    }
+
+    [TestMethod]
+    public async Task PurgeDeadLetters_RefusesAnUnknownSubscription()
+    {
+        var service = CreateService(new FakeServiceBusManagement(), sbClient: new FakeDeadLetterBus());
+
+        await Assert.ThrowsExactlyAsync<SubscriptionNotFoundException>(
+            () => service.PurgeDeadLetterQueueAsync(Topic, "missing"));
     }
 
     [TestMethod]
@@ -249,6 +516,46 @@ public sealed class SubscriptionAdminServiceTests
     }
 
     [TestMethod]
+    public async Task GetSubscriptions_ReadsTheRoutingKeysOfEachForwardRule()
+    {
+        // Spec 045: a keyed forward rule is named after its event type like an unkeyed one,
+        // so the rule name alone doesn't say which keys a subscription takes. The keys are
+        // read back from the live filter, which is what actually routes.
+        var management = new FakeServiceBusManagement();
+        management.SeedTopic(Topic);
+        management.SeedSubscription(Topic, "DachHub", forwardTo: "DachHub",
+            rules: ("AccountCreated", TopologyDescriptor.KeyedForwardFilter("AccountCreated", ["DE", "AT", "CH"]), null));
+        management.SeedSubscription(Topic, "NordicHub", forwardTo: "NordicHub",
+            rules: ("AccountCreated", TopologyDescriptor.KeyedForwardFilter("AccountCreated", ["DK"]), null));
+        management.SeedSubscription(Topic, "UnroutedHub", forwardTo: "UnroutedHub",
+            rules: ("AccountCreated", TopologyDescriptor.UnmatchedForwardFilter("AccountCreated", ["DK", "DE"]), null));
+        management.SeedSubscription(Topic, "Erp", forwardTo: "Erp",
+            rules: [
+                ("AccountCreated", TopologyDescriptor.ForwardFilter("AccountCreated"), null),
+                ("$Default", "1=1", null),
+            ]);
+        var service = CreateService(management);
+
+        var subscriptions = (await service.GetSubscriptionsAsync(Topic)).ToDictionary(subscription => subscription.Name);
+
+        var dach = subscriptions["DachHub"].RuleRouting.Single();
+        Assert.AreEqual("AccountCreated", dach.RuleName);
+        CollectionAssert.AreEqual(new[] { "AT", "CH", "DE" }, dach.RoutingKeys.ToArray());
+        Assert.IsFalse(dach.Unmatched);
+        Assert.AreEqual(TopologyDescriptor.KeyedForwardFilter("AccountCreated", ["AT", "CH", "DE"]), dach.Filter);
+
+        CollectionAssert.AreEqual(new[] { "DK" }, subscriptions["NordicHub"].RuleRouting.Single().RoutingKeys.ToArray());
+
+        // The unmatched rule lists the keys it excludes: the ones the other consumers claim.
+        var unrouted = subscriptions["UnroutedHub"].RuleRouting.Single();
+        Assert.IsTrue(unrouted.Unmatched);
+        CollectionAssert.AreEqual(new[] { "DE", "DK" }, unrouted.RoutingKeys.ToArray());
+
+        // A rule that doesn't filter on a key has no routing entry.
+        Assert.AreEqual(0, subscriptions["Erp"].RuleRouting.Count);
+    }
+
+    [TestMethod]
     public async Task GetTopicOverview_CountsBothDeadLetterQueuesSeparately()
     {
         // A failed auto-forward strands messages in the transfer DLQ, not the regular one.
@@ -313,12 +620,13 @@ public sealed class SubscriptionAdminServiceTests
     private static SubscriptionAdminService CreateService(
         FakeServiceBusManagement management,
         FakeTopologyRebuilder? rebuilder = null,
-        IResolverDeadLetterClient? replayClient = null) =>
+        IResolverDeadLetterClient? replayClient = null,
+        Azure.Messaging.ServiceBus.ServiceBusClient? sbClient = null) =>
         new(
             new TestPlatform(new TestEndpoint(Topic)),
             management,
             rebuilder ?? new FakeTopologyRebuilder(),
-            sbClient: null!,
+            sbClient: sbClient!,
             NullLogger<SubscriptionAdminService>.Instance,
             resolverDeadLetterClient: replayClient);
 
@@ -360,7 +668,7 @@ public sealed class SubscriptionAdminServiceTests
         public string Description => string.Empty;
         public string Namespace => "Tests";
         public string SecurityGroupName => string.Empty;
-        public ISystem System => null;
+        public ISystem System => null!;
         public IEnumerable<IEventType> EventTypesProduced => Array.Empty<IEventType>();
         public IEnumerable<IEventType> EventTypesConsumed => Array.Empty<IEventType>();
         public IEnumerable<IRoleAssignment> RoleAssignments => Array.Empty<IRoleAssignment>();

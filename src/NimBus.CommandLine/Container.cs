@@ -3,7 +3,9 @@ using McMaster.Extensions.CommandLineUtils;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json.Linq;
 using NimBus.Core.Messages;
+using NimBus.Manager;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using NimBus.ServiceBus;
 using Spectre.Console;
@@ -17,22 +19,22 @@ static class Container
 
     public static async Task DeleteDocuments(CosmosDbClient dbClient, CommandArgument nameArg, List<string> statuses)
     {
-        await RemoveMessagesFromCosmosDB(dbClient, nameArg.Value, statuses);
+        await RemoveMessagesFromCosmosDB(dbClient, nameArg.Value!, statuses);
     }
 
     public static async Task DeleteDocument(CosmosDbClient dbClient, CommandArgument nameArg, CommandArgument eventIdArg)
     {
-        await RemoveMessageFromCosmosDB(dbClient, nameArg.Value, eventIdArg.Value);
+        await RemoveMessageFromCosmosDB(dbClient, nameArg.Value!, eventIdArg.Value!);
     }
 
     public static async Task ResubmitMessages(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, CommandArgument nameArg)
     {
-        await UpdateMessagesAndResubmit(serviceBusClient, dbClient, nameArg.Value, ResolutionStatus.Failed);
+        await UpdateMessagesAndResubmit(serviceBusClient, dbClient, nameArg.Value!, ResolutionStatus.Failed);
     }
 
-    public static async Task SkipMessages(CosmosDbClient dbClient, CommandArgument nameArg, List<string> statuses, DateTime? before)
+    public static async Task SkipMessages(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, CommandArgument nameArg, List<string> statuses, DateTime? before)
     {
-        await UpdateMessagesAsSkipped(dbClient, nameArg.Value, statuses, before);
+        await SendSkipRequests(new ManagerClient(serviceBusClient), dbClient, nameArg.Value!, statuses, before);
     }
 
     public static async Task DeleteMessages(CosmosClient cosmosClient, string to)
@@ -119,11 +121,23 @@ static class Container
         AnsiConsole.MarkupLine($"[green]Copy complete: {eventCount} events + {messageCount} messages[/]");
     }
 
-    static async Task RemoveMessagesFromCosmosDB(CosmosDbClient dbClient, string endpoint, List<string> statuses)
+    // Deleting the event a session is blocked on (a failure, or a pending hand-off) would leave the
+    // session blocked by an event no one can see, with nothing left to skip (#288).
+    static bool KeepsBlockingEvent(UnresolvedEvent @event)
     {
+        if (!BlockedEventRules.BlocksItsSession(@event))
+            return false;
+
+        AnsiConsole.MarkupLine($"[yellow]Keeping {@event.EventId.EscapeMarkup()}: it blocks its session. Skip it first (nb container skip), then delete it as Skipped.[/]");
+        return true;
+    }
+
+    internal static async Task<int> RemoveMessagesFromCosmosDB(IMessageTrackingStore dbClient, string endpoint, List<string> statuses)
+    {
+        int kept = 0;
         AnsiConsole.MarkupLine("[blue]Removing messages in CosmosDB...[/]");
 
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
         SearchResponse searchResponse;
 
@@ -136,8 +150,14 @@ static class Container
 
             foreach (var @event in searchResponse.Events)
             {
+                if (KeepsBlockingEvent(@event))
+                {
+                    kept++;
+                    continue;
+                }
+
                 AnsiConsole.MarkupLine($"[dim]Removing message with EventId {@event.EventId.EscapeMarkup()} from DB[/]");
-                bool messageRemovedFromDb = await dbClient.RemoveMessage(@event.EventId, @event.SessionId, endpoint);
+                bool messageRemovedFromDb = await dbClient.RemoveMessage(@event.EventId, @event.SessionId!, endpoint);
                 if (messageRemovedFromDb)
                 {
                     AnsiConsole.MarkupLine("[green]Removed message from DB[/]");
@@ -145,6 +165,8 @@ static class Container
             }
         }
         while (continuationToken != null);
+
+        return kept;
     }
 
     static async Task UpdateMessagesAndResubmit(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, string endpoint, ResolutionStatus resolutionStatus)
@@ -153,7 +175,7 @@ static class Container
 
         AnsiConsole.MarkupLine("[blue]Updating status for messages in CosmosDB...[/]");
 
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
         SearchResponse searchResponse;
 
@@ -171,11 +193,11 @@ static class Container
                     @event.ResolutionStatus = resolutionStatus;
                     @event.MessageType = MessageType.EventRequest;
                     AnsiConsole.MarkupLine($"[dim]Updating message with EventId {@event.EventId.EscapeMarkup()} from DB[/]");
-                    bool messageUpdated = await dbClient.UploadFailedMessage(@event.EventId, @event.SessionId, endpoint, @event);
+                    bool messageUpdated = await dbClient.UploadFailedMessage(@event.EventId, @event.SessionId!, endpoint, @event);
                     if (messageUpdated)
                     {
                         AnsiConsole.MarkupLine($"[green]Updated message as Failed[/]");
-                        await Resubmit(sender, @event, @event.EndpointId, @event.EventTypeId, @event.MessageContent.EventContent.EventJson);
+                        await Resubmit(sender, @event, @event.EndpointId, @event.EventTypeId!, @event.MessageContent.EventContent!.EventJson);
                     }
                 }
                 else
@@ -187,14 +209,14 @@ static class Container
         while (continuationToken != null);
     }
 
-    static Task Resubmit(Sender sender, UnresolvedEvent errorResponse, string endpoint, string eventTypeId, string eventJson)
+    static Task Resubmit(Sender sender, UnresolvedEvent errorResponse, string endpoint, string eventTypeId, string? eventJson)
     {
         AnsiConsole.MarkupLine($"[dim]MANAGER RESUBMIT EVENT: EventId: {errorResponse.EventId.EscapeMarkup()} EventtypeId: {eventTypeId.EscapeMarkup()}[/]");
         return sender.Send(new Message
         {
             CorrelationId = errorResponse.CorrelationId,
             EventId = errorResponse.EventId,
-            SessionId = errorResponse.SessionId,
+            SessionId = errorResponse.SessionId!,
             To = endpoint,
             OriginatingMessageId = errorResponse.OriginatingMessageId,
             ParentMessageId = errorResponse.LastMessageId,
@@ -211,48 +233,79 @@ static class Container
         });
     }
 
-    static async Task UpdateMessagesAsSkipped(CosmosDbClient dbClient, string endpoint, List<string> resolutionStatus, DateTime? before)
+    // Sends the endpoint a SkipRequest per matching event, as the WebApp's Skip does: only the
+    // endpoint can clear a session's block, so writing Skipped to the store would leave the
+    // session blocked (#287). The Resolver records Skipped from the endpoint's SkipResponse.
+    internal static async Task<int> SendSkipRequests(IManagerClient manager, IMessageTrackingStore dbClient, string endpoint, List<string> resolutionStatus, DateTime? before)
     {
         if (before.HasValue)
-            AnsiConsole.MarkupLine($"[blue]Skipping messages updated before {before.Value:u} in CosmosDB...[/]");
+            AnsiConsole.MarkupLine($"[blue]Finding messages updated before {before.Value:u} to skip...[/]");
         else
-            AnsiConsole.MarkupLine("[blue]Skipping messages in CosmosDB...[/]");
+            AnsiConsole.MarkupLine("[blue]Finding messages to skip...[/]");
 
-        string continuationToken = string.Empty;
+        // Read every match before sending any skip: the Resolver moves skipped rows out of the
+        // filter while it is still being paged.
+        var events = new List<UnresolvedEvent>();
+        string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
-        SearchResponse searchResponse;
 
         do
         {
-            AnsiConsole.MarkupLine("[blue]Retrieving messages[/]");
-            searchResponse = await dbClient.GetEventsByFilter(new EventFilter() { EndPointId = endpoint, ResolutionStatus = resolutionStatus }, continuationToken, maxSearchItemsCount);
+            var searchResponse = await dbClient.GetEventsByFilter(new EventFilter() { EndPointId = endpoint, ResolutionStatus = resolutionStatus }, continuationToken, maxSearchItemsCount);
             continuationToken = searchResponse.ContinuationToken;
-            AnsiConsole.MarkupLine($"[blue]Retrieved {searchResponse.Events.Count()} messages[/]");
 
             foreach (var @event in searchResponse.Events)
             {
                 if (before.HasValue && @event.UpdatedAt >= before.Value)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Skipping message {@event.EventId.EscapeMarkup()} - updated at {@event.UpdatedAt:u}, not before cutoff[/]");
+                    AnsiConsole.MarkupLine($"[yellow]Leaving message {@event.EventId.EscapeMarkup()} - updated at {@event.UpdatedAt:u}, not before cutoff[/]");
                     continue;
                 }
 
-                AnsiConsole.MarkupLine($"[dim]Skipping message with EventId {@event.EventId.EscapeMarkup()}[/]");
-                bool messageUpdated = await dbClient.UploadSkippedMessage(@event.EventId, @event.SessionId, endpoint, @event);
-                if (messageUpdated)
-                {
-                    AnsiConsole.MarkupLine($"[green]Skipped message {@event.EventId.EscapeMarkup()}[/]");
-                }
+                events.Add(@event);
             }
         }
         while (continuationToken != null);
+
+        AnsiConsole.MarkupLine($"[blue]Sending skips for {events.Count} messages[/]");
+
+        int sent = 0;
+        foreach (var @event in events)
+        {
+            try
+            {
+                // Parent the skip to the row's latest message, as the WebApp does.
+                var message = (string.IsNullOrEmpty(@event.LastMessageId) ? null : await dbClient.GetMessage(@event.EventId, @event.LastMessageId))
+                    ?? new MessageEntity
+                    {
+                        EventId = @event.EventId,
+                        MessageId = @event.LastMessageId!,
+                        SessionId = @event.SessionId!,
+                        OriginatingMessageId = @event.OriginatingMessageId!,
+                        EventTypeId = @event.EventTypeId!,
+                    };
+                var eventTypeId = string.IsNullOrEmpty(message.EventTypeId) ? @event.EventTypeId! : message.EventTypeId;
+
+                await manager.Skip(message, endpoint, eventTypeId);
+                sent++;
+                AnsiConsole.MarkupLine($"[green]Sent skip for message {@event.EventId.EscapeMarkup()}[/]");
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Could not skip message {@event.EventId.EscapeMarkup()}: {ex.Message.EscapeMarkup()}[/]");
+            }
+        }
+
+        AnsiConsole.MarkupLine($"[blue]Sent {sent} of {events.Count} skips. Each shows as Skipped once the endpoint has handled it.[/]");
+        return sent;
     }
 
-    static async Task RemoveMessageFromCosmosDB(CosmosDbClient dbClient, string endpoint, string eventId)
+    internal static async Task<int> RemoveMessageFromCosmosDB(IMessageTrackingStore dbClient, string endpoint, string eventId)
     {
+        int kept = 0;
         AnsiConsole.MarkupLine("[blue]Removing messages in CosmosDB...[/]");
 
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
         SearchResponse searchResponse;
 
@@ -265,8 +318,14 @@ static class Container
 
             foreach (var @event in searchResponse.Events)
             {
+                if (KeepsBlockingEvent(@event))
+                {
+                    kept++;
+                    continue;
+                }
+
                 AnsiConsole.MarkupLine($"[dim]Removing message with EventId {@event.EventId.EscapeMarkup()} from DB[/]");
-                bool messageRemovedFromDb = await dbClient.RemoveMessage(@event.EventId, @event.SessionId, endpoint);
+                bool messageRemovedFromDb = await dbClient.RemoveMessage(@event.EventId, @event.SessionId!, endpoint);
                 if (messageRemovedFromDb)
                 {
                     AnsiConsole.MarkupLine("[green]Removed message from DB[/]");
@@ -274,6 +333,8 @@ static class Container
             }
         }
         while (continuationToken != null);
+
+        return kept;
     }
 
     static QueryDefinition BuildEventQuery(DateTime? from, DateTime? to, List<string> statuses)

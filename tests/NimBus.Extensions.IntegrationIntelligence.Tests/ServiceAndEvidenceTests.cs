@@ -1,4 +1,4 @@
-#pragma warning disable CA1707, CA2007
+#pragma warning disable CA1707, CA2007, CS0618 // CS0618: these tests cover the deprecated provider (Spec 044 §6.10).
 using System.Reflection;
 using Microsoft.AspNetCore.Mvc;
 using NimBus.Core.Messages;
@@ -62,12 +62,70 @@ public sealed class ServiceAndEvidenceTests
     {
         var fixture = new ServiceFixture();
         fixture.Options.MaximumErrorTextLength = 8;
-        fixture.Source.Message.MessageContent.ErrorContent.ErrorText = "sensitive-long-value";
+        fixture.Source.Message.MessageContent.ErrorContent!.ErrorText = "sensitive-long-value";
         var input = await fixture.Evidence.BuildAsync("event", "failure");
         Assert.IsFalse(input!.Exception.Message!.Contains("sensitiv", StringComparison.Ordinal));
         fixture.Source.Message.MessageContent.EventContent = null!;
         input = await fixture.Evidence.BuildAsync("event", "failure");
         Assert.IsNull(input!.Exception.Message);
+    }
+
+    private const string StoredTrace =
+        @"   at Crm.Adapter.CustomerMapper.MapAddress(CustomerDto dto) in C:\agent\_work\1\s\src\Crm.Adapter\CustomerMapper.cs:line 42" + "\n" +
+        "   at Crm.Adapter.Handlers.Upsert(String id) in /home/runner/work/crm/src/Handlers.cs:line 7 with sensitive-long-value Password=hunter2";
+
+    [TestMethod]
+    public async Task Evidence_Carries_No_Stack_Trace_Unless_An_Owner_Allows_It()
+    {
+        var fixture = new ServiceFixture();
+        fixture.Source.Message.MessageContent.ErrorContent!.ExceptionStackTrace = StoredTrace;
+
+        var input = await fixture.Evidence.BuildAsync("event", "failure");
+
+        Assert.IsNull(input!.StackTrace);
+    }
+
+    [TestMethod]
+    public async Task An_Allowed_Stack_Trace_Keeps_Frames_And_File_Names_And_Drops_Paths_And_Secrets()
+    {
+        // Spec 044 Phase 3: frames are what the agent needs; build paths, sensitive values and
+        // credentials are not.
+        var fixture = new ServiceFixture();
+        fixture.Options.IncludeStackTrace = true;
+        fixture.Source.Message.MessageContent.ErrorContent!.ExceptionStackTrace = StoredTrace;
+
+        var trace = (await fixture.Evidence.BuildAsync("event", "failure"))!.StackTrace!;
+
+        StringAssert.Contains(trace, "Crm.Adapter.CustomerMapper.MapAddress(CustomerDto dto) in CustomerMapper.cs:line 42", StringComparison.Ordinal);
+        StringAssert.Contains(trace, "in Handlers.cs:line 7", StringComparison.Ordinal);
+        Assert.IsFalse(trace.Contains("_work", StringComparison.Ordinal) || trace.Contains("/home/runner", StringComparison.Ordinal), trace);
+        Assert.IsFalse(trace.Contains("sensitive-long-value", StringComparison.Ordinal), trace);
+        Assert.IsFalse(trace.Contains("hunter2", StringComparison.Ordinal), trace);
+    }
+
+    [TestMethod]
+    public async Task A_Stack_Trace_Is_Never_Sent_To_The_Provider()
+    {
+        var fixture = new ServiceFixture();
+        fixture.Options.IncludeStackTrace = true;
+        fixture.Source.Message.MessageContent.ErrorContent!.ExceptionStackTrace = StoredTrace;
+
+        var input = await fixture.Evidence.BuildAsync("event", "failure");
+        var outbound = System.Text.Json.JsonSerializer.Serialize(NimBus.Extensions.IntegrationIntelligence.Evidence.OutboundFailureState.Create(input!));
+
+        Assert.IsNotNull(input!.StackTrace);
+        Assert.IsFalse(outbound.Contains("MapAddress", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task A_Stack_Trace_Whose_Sensitive_Values_Cannot_Be_Read_Is_Withheld()
+    {
+        var fixture = new ServiceFixture();
+        fixture.Options.IncludeStackTrace = true;
+        fixture.Source.Message.MessageContent.ErrorContent!.ExceptionStackTrace = StoredTrace;
+        fixture.Source.Message.MessageContent.EventContent = null!;
+
+        Assert.IsNull((await fixture.Evidence.BuildAsync("event", "failure"))!.StackTrace);
     }
 
     [TestMethod]
@@ -118,7 +176,7 @@ public sealed class ServiceAndEvidenceTests
         Assert.AreEqual(403, error.StatusCode);
         fixture.Host.Reader = true;
         fixture.Source.Throw = true;
-        var response = await new IntegrationIntelligenceController(fixture.Service).GetClassification("event", "failure", default);
+        var response = await new IntegrationIntelligenceReadController(fixture.Reader).GetClassification("event", "failure", default);
         Assert.AreEqual(503, ((ObjectResult)response).StatusCode);
         Assert.DoesNotContain("credential", System.Text.Json.JsonSerializer.Serialize(((ObjectResult)response).Value));
     }
@@ -199,11 +257,14 @@ internal sealed class ServiceFixture
     public MessageSource Source => (MessageSource)(object)Messages;
     public FailureEvidenceBuilder Evidence { get; }
     public FailureClassificationService Service { get; }
+    public FailureClassificationReader Reader { get; }
     public ServiceFixture(IFailureClassificationStore? store = null)
     {
+        store ??= new InMemoryClassificationStore();
         Messages = DispatchProxy.Create<IMessageTrackingStore, MessageSource>();
         Evidence = new(Messages, new TestMasker(), null, new IntelligenceDataRedactor(), Options);
-        Service = new(Options, Host, store ?? new InMemoryClassificationStore(), Evidence, Provider, Messages);
+        Service = new(Options, Host, store, Evidence, Provider, Messages);
+        Reader = new(Host, store, Messages);
     }
 }
 
@@ -218,12 +279,13 @@ public class MessageSource : DispatchProxy
     public bool Throw { get; set; }
     public bool Deleted { get; set; }
     public int HistoryReads { get; private set; }
+    public List<MessageEntity> History { get; } = [];
     protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
     {
         if (Throw) throw new InvalidOperationException("credential must never leak");
         if (targetMethod!.Name == "GetMessage") return Task.FromResult(Message);
         if (targetMethod.Name == "GetEvent") return Task.FromResult(Deleted ? null! : Current);
-        if (targetMethod.Name == "GetEventHistory") { HistoryReads++; return Task.FromResult<IEnumerable<MessageEntity>>([]); }
+        if (targetMethod.Name == "GetEventHistory") { HistoryReads++; return Task.FromResult<IEnumerable<MessageEntity>>(History.ToList()); }
         throw new NotSupportedException(targetMethod.Name);
     }
 }

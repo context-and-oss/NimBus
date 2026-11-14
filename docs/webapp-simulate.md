@@ -30,7 +30,7 @@ environment (`appsettings.json` defaults it to `dev`). The gate does not use
 
 The production names are hard-coded and no setting can allow them. Putting one in
 `AllowedEnvironments` fails options validation at startup, so the WebApp does not start.
-Outside the gate every simulation endpoint except `GET /api/admin/simulation` returns 403,
+Outside the gate every simulation endpoint except `GET /api/v1/admin/simulation` returns 403,
 and the `GET` reports `allowed: false` with the reason.
 
 All simulation endpoints require the site Owner role and share the admin rate limit (60

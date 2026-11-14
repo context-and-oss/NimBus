@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
@@ -16,7 +17,7 @@ namespace NimBus.Extensions.Notifications;
 /// error details as facts, colour-coded by severity. A custom
 /// <see cref="NotificationChannelOptions.Template"/> overrides the card body.
 /// </summary>
-public class TeamsChannel : INotificationChannel
+public partial class TeamsChannel : INotificationChannel
 {
     // Teams Incoming Webhooks reject payloads beyond ~28 KB; keep the long fields well under that.
     private const int MaxFieldLength = 24 * 1024;
@@ -45,9 +46,7 @@ public class TeamsChannel : INotificationChannel
         using var response = await _httpClient.PostAsync(_options.ConnectorUrl, content, timeoutCts.Token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogWarning(
-                "Teams notification to {Host} returned non-success status {StatusCode}.",
-                SafeHost(_options.ConnectorUrl), (int)response.StatusCode);
+            LogTeamsNotificationToReturnedNonSuccess(_logger, SafeHost(_options.ConnectorUrl), (int)response.StatusCode);
 
             throw new NotificationDeliveryException(
                 $"Teams delivery failed with status {(int)response.StatusCode}.");
@@ -111,10 +110,10 @@ public class TeamsChannel : INotificationChannel
         };
 
         // "$schema" is not a valid C# identifier; serialize then fix the key name.
-        return JsonConvert.SerializeObject(envelope).Replace("\"schema\":", "\"$schema\":");
+        return JsonConvert.SerializeObject(envelope).Replace("\"schema\":", "\"$schema\":", StringComparison.Ordinal);
     }
 
-    private static void AddFact(List<object> facts, string title, string value)
+    private static void AddFact(List<object> facts, string title, string? value)
     {
         if (!string.IsNullOrEmpty(value))
         {
@@ -122,14 +121,15 @@ public class TeamsChannel : INotificationChannel
         }
     }
 
-    private static string Truncate(string value)
+    [return: NotNullIfNotNull(nameof(value))]
+    private static string? Truncate(string? value)
     {
         if (string.IsNullOrEmpty(value) || value.Length <= MaxFieldLength)
         {
             return value;
         }
 
-        return value.Substring(0, MaxFieldLength) + "… (truncated)";
+        return string.Concat(value.AsSpan(0, MaxFieldLength), "… (truncated)");
     }
 
     private static string SeverityColor(NotificationSeverity severity) => severity switch
@@ -142,4 +142,7 @@ public class TeamsChannel : INotificationChannel
 
     private static string SafeHost(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "(invalid-url)";
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Teams notification to {Host} returned non-success status {StatusCode}.")]
+    private static partial void LogTeamsNotificationToReturnedNonSuccess(ILogger logger, string host, int statusCode);
 }

@@ -3,8 +3,6 @@
   <PropertyGroup>
     <TargetFrameworks>net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
-    <EnableNETAnalyzers>false</EnableNETAnalyzers>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <IsPackable>true</IsPackable>
     <Description>Core abstractions and interfaces for the NimBus messaging platform.</Description>
   </PropertyGroup>

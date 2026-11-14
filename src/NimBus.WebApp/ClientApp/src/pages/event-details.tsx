@@ -3,13 +3,25 @@ import * as api from "api-client";
 import Page from "components/page";
 import MessageListing from "components/event-details/message-listing";
 import DeferredRecovery from "components/event-details/deferred-recovery";
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
 import TabSelection from "components/tab-selection";
 import Loading from "components/loading/loading";
+import { Badge } from "components/ui/badge";
+import { Button } from "components/ui/button";
 import BlockedListing from "components/event-details/blocked-listing";
 import AuditListing from "components/event-details/audit-listing";
 import FlowTimeline from "components/event-details/flow-timeline";
-import { parseBlockedByEventId } from "functions/endpoint.functions";
+import EventActions from "components/event-details/event-actions";
+import {
+  formatMoment,
+  formatResolutionStatus,
+  parseBlockedByEventId,
+} from "functions/endpoint.functions";
+import {
+  getRoutingFromTo,
+  isPendingHandoff,
+  statusToBadgeVariant,
+} from "functions/event-details.functions";
 
 const { useEffect, useState, useRef } = React;
 
@@ -27,8 +39,28 @@ type EventDetailsProps = {
   backIndex?: number;
 };
 
+// Position of the Blocked tab in the tab list below.
+const BLOCKED_TAB_INDEX = 3;
+
 // Initial blocked-events page size. Server clamps `take` to [1, 200] so this fits comfortably.
 const BLOCKED_PAGE_SIZE = 20;
+
+// An accepted resubmit or skip archives the row until the Resolver records the
+// next attempt, so the event 404s for a moment and then passes through Pending.
+// The page follows it until it settles: quick checks first, then every 10
+// seconds, about two minutes in all, after which it offers a manual refresh.
+const COMMAND_FOLLOW_UP_DELAYS_MS = [
+  300,
+  700,
+  1500,
+  3000,
+  5000,
+  ...Array<number>(11).fill(10_000),
+];
+
+const isInFlight = (event: api.Event) =>
+  event.resolutionStatus?.toLowerCase() === "pending" &&
+  event.pendingSubStatus?.toLowerCase() !== "handoff";
 
 // Resolve the BlockedEvent ID list into displayable rows (one detail fetch per ID).
 // The server returns only the requested page, so the number of fetches is bounded by
@@ -56,6 +88,8 @@ const EventDetails = (props: EventDetailsProps) => {
   const client = new api.Client(api.CookieAuth());
   const params = useParams();
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const fromFailed = new URLSearchParams(search).get("from") === "failed";
 
   const [cosmosEvent, setCosmosEvent] = useState<api.Event>();
   const [eventTypes, setEventTypes] = useState<api.EventType[]>([]);
@@ -67,7 +101,29 @@ const EventDetails = (props: EventDetailsProps) => {
   // its own data, so remounting it on this key is what makes a just-added
   // comment appear without a page reload.
   const [auditReloadKey, setAuditReloadKey] = useState(0);
+  // The attempt (by message id) an accepted resubmit or skip acted on. Kept
+  // here, not in MessageListing, because switching tabs remounts the listing.
+  const [commandAcceptedFor, setCommandAcceptedFor] = useState<string>();
+  // Set when the follow-up gave up before the event settled.
+  const [followUpExpired, setFollowUpExpired] = useState(false);
+  // Active tab, controlled so the error card can open the Blocked tab.
+  // Undefined until the operator picks one: the tabs then start from the
+  // back-navigation index, as before.
+  const [activeTab, setActiveTab] = useState<number>();
   const routeGeneration = useRef(0);
+  const historyRequest = useRef(0);
+
+  // Every history fetch goes through here, and only the newest may land: an
+  // older one (the page's first, or an earlier follow-up) can answer late.
+  const loadHistory = (current: () => boolean) => {
+    const request = ++historyRequest.current;
+    client
+      .getEventDetailsHistoryId(params.id!, params.endpointId!)
+      .then((res) => {
+        if (current() && request === historyRequest.current) setHistories(res);
+      })
+      .catch(() => {});
+  };
 
   useEffect(() => {
     const generation = ++routeGeneration.current;
@@ -80,16 +136,15 @@ const EventDetails = (props: EventDetailsProps) => {
     setAudits([]);
     setBlockedEvents([]);
     setBlockedTotal(0);
+    setCommandAcceptedFor(undefined);
+    setFollowUpExpired(false);
+    setActiveTab(undefined);
 
     const fetchData = async () => {
       // History, audits and event types are keyed off the route params, not the
       // resolved event, so start them immediately — they run concurrently with
       // the event fetch instead of waiting for it to resolve first.
-      client
-        .getEventDetailsHistoryId(params.id!, params.endpointId!)
-        .then((res) => {
-          if (current()) setHistories(res);
-        });
+      loadHistory(current);
 
       client.getMessageAuditsEventId(params.id!).then((res) => {
         if (current()) setAudits(res);
@@ -158,15 +213,76 @@ const EventDetails = (props: EventDetailsProps) => {
     if (generation === routeGeneration.current) setCosmosEvent(updated);
   };
 
-  const skipEvent = async (eventId: string, messageId: string) => {
-    await client.postSkipEventIds(eventId, messageId);
-    await reloadEvent();
+  // Sends an operator command for the attempt on screen. Once the server accepts
+  // it, the actions stay closed for that attempt and the page follows the event.
+  // The route is captured before the POST so a late answer cannot act on the
+  // event the operator moved to.
+  const runCommand = async (
+    actedOnMessageId: string,
+    send: () => Promise<void>,
+  ) => {
+    const generation = routeGeneration.current;
+    await send();
+    if (generation !== routeGeneration.current) return;
+    setCommandAcceptedFor(actedOnMessageId);
+    setFollowUpExpired(false);
+    followCommand(generation, actedOnMessageId);
   };
 
-  const resubmitEvent = async (eventId: string, messageId: string) => {
-    await client.postResubmitEventIds(eventId, messageId);
-    await reloadEvent();
+  // Runs after the command's promise has resolved, so a refresh that fails here
+  // never reads as a failed command. Stops when the operator leaves the event.
+  const followCommand = async (
+    generation: number,
+    actedOnMessageId: string,
+  ) => {
+    const current = () => generation === routeGeneration.current;
+    for (const delay of COMMAND_FOLLOW_UP_DELAYS_MS) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (!current()) return;
+      let updated: api.Event;
+      try {
+        updated = await client.getEventId(params.id!, params.endpointId!);
+      } catch {
+        continue; // still archived
+      }
+      if (!current()) return;
+      if (updated.lastMessageId === actedOnMessageId) continue;
+      setCosmosEvent(updated);
+      loadHistory(current);
+      if (!isInFlight(updated)) {
+        reloadAudits();
+        return;
+      }
+    }
+    if (current()) setFollowUpExpired(true);
   };
+
+  // The manual refresh offered once the follow-up has given up. The notice stays
+  // until the event shows a settled attempt other than the one acted on.
+  const refreshEvent = async () => {
+    const generation = routeGeneration.current;
+    const current = () => generation === routeGeneration.current;
+    let updated: api.Event;
+    try {
+      updated = await client.getEventId(params.id!, params.endpointId!);
+    } catch {
+      return; // still archived
+    }
+    if (!current()) return;
+    setCosmosEvent(updated);
+    loadHistory(current);
+    reloadAudits();
+    if (updated.lastMessageId !== commandAcceptedFor && !isInFlight(updated))
+      setFollowUpExpired(false);
+  };
+
+  const skipEvent = (eventId: string, messageId: string) =>
+    runCommand(messageId, () => client.postSkipEventIds(eventId, messageId));
+
+  const resubmitEvent = (eventId: string, messageId: string) =>
+    runCommand(messageId, () =>
+      client.postResubmitEventIds(eventId, messageId),
+    );
 
   const reprocessDeferred = async () => {
     if (!cosmosEvent?.endpointId || !cosmosEvent?.sessionId) return;
@@ -195,14 +311,14 @@ const EventDetails = (props: EventDetailsProps) => {
     navigate(`/Endpoints/Details/${params.endpointId!}`);
   };
 
-  const resubmitEventWithChanges = async (
+  const resubmitEventWithChanges = (
     eventId: string,
     messageId: string,
     body: api.ResubmitWithChanges,
-  ) => {
-    await client.postResubmitWithChangesEventIds(eventId, messageId, body);
-    await reloadEvent();
-  };
+  ) =>
+    runCommand(messageId, () =>
+      client.postResubmitWithChangesEventIds(eventId, messageId, body),
+    );
 
   // Settle a pending handoff on the operator's behalf. The Pending → Completed/
   // Failed transition itself is asynchronous (the owning subscriber processes
@@ -263,7 +379,7 @@ const EventDetails = (props: EventDetailsProps) => {
 
     return [
       {
-        name: `Message`,
+        name: "Overview",
         isEnabled: true,
         content: (
           <div className="w-full min-w-0">
@@ -278,16 +394,24 @@ const EventDetails = (props: EventDetailsProps) => {
                 }}
               />
             )}
+            {followUpExpired && (
+              <div
+                role="status"
+                className="my-4 flex items-center justify-between gap-4 rounded-nb-lg border border-border bg-surface p-4 text-sm"
+              >
+                <span>
+                  This event is still being processed. Refresh to see its latest
+                  state.
+                </span>
+                <Button size="xs" variant="outline" onClick={refreshEvent}>
+                  Refresh
+                </Button>
+              </div>
+            )}
             <MessageListing
-              resubmitEventWithChanges={resubmitEventWithChanges}
-              resubmitEvent={resubmitEvent}
-              skipEvent={skipEvent}
-              deleteEvent={deleteEvent}
-              reprocessDeferred={reprocessDeferred}
               completeHandoff={completeHandoff}
               failHandoff={failHandoff}
               onCommentAdded={reloadAudits}
-              eventTypes={eventTypes}
               eventDetails={cosmosEvent}
               // Spec 005 (FR-016): the same `histories` array already fed to
               // `FlowTimeline` is forwarded here so MessageListing can derive a
@@ -295,13 +419,16 @@ const EventDetails = (props: EventDetailsProps) => {
               // events.
               messages={histories}
               blockedByEventId={blockedByEventId}
+              blockedCount={blockedTotal}
+              onShowBlocked={() => setActiveTab(BLOCKED_TAB_INDEX)}
               key="Message"
             />
           </div>
         ),
       },
       {
-        name: `Flow (${histories.length + audits.length})`,
+        name: "Flow",
+        count: histories.length + audits.length,
         isEnabled: histories.length > 0,
         content: (
           <FlowTimeline messages={histories} audits={audits} key="Flow" />
@@ -312,7 +439,7 @@ const EventDetails = (props: EventDetailsProps) => {
         // page's `audits`: that endpoint carries the Data and Access Denied
         // columns the per-event MessageAudit shape does not, and supports
         // paging past the first 30.
-        name: `Audit`,
+        name: "Audit",
         isEnabled: true,
         content: (
           <AuditListing
@@ -323,7 +450,9 @@ const EventDetails = (props: EventDetailsProps) => {
         ),
       },
       {
-        name: `Blocked (${blockedCount})`,
+        name: "Blocked",
+        count: blockedCount,
+        countTone: blockedTotal > 0 ? ("warning" as const) : ("default" as const),
         isEnabled: blockedTotal > 0,
         content: (
           <BlockedListing
@@ -346,15 +475,89 @@ const EventDetails = (props: EventDetailsProps) => {
         </div>
       ) : (
         <Page
-          title="Event Details"
+          eyebrow="Event"
+          title={cosmosEvent.eventTypeId || "Event Details"}
+          titleAdornment={
+            <span className="inline-flex items-center gap-2">
+              <Badge variant={statusToBadgeVariant(cosmosEvent.resolutionStatus)}>
+                {formatResolutionStatus(
+                  cosmosEvent.resolutionStatus,
+                  cosmosEvent.reason,
+                ) ?? "—"}
+              </Badge>
+              {isPendingHandoff(
+                cosmosEvent.resolutionStatus,
+                cosmosEvent.pendingSubStatus,
+              ) && <Badge variant="info">Awaiting external</Badge>}
+            </span>
+          }
+          subtitle={<EventSubtitle event={cosmosEvent} messages={histories} />}
+          actions={
+            <EventActions
+              eventDetails={cosmosEvent}
+              messages={histories}
+              eventTypes={eventTypes}
+              skipEvent={skipEvent}
+              resubmitEvent={resubmitEvent}
+              resubmitEventWithChanges={resubmitEventWithChanges}
+              deleteEvent={deleteEvent}
+              reprocessDeferred={reprocessDeferred}
+              commandAcceptedFor={commandAcceptedFor}
+            />
+          }
           backbutton={true}
-          backUrl={`/Endpoints/Details/${params.endpointId!}`}
+          backUrl={
+            fromFailed ? "/Failed" : `/Endpoints/Details/${params.endpointId!}`
+          }
           backIndex={params.backindex!}
         >
-          <TabSelection tabs={tabs()} />
+          <TabSelection
+            variant="line"
+            tabs={tabs()}
+            index={activeTab}
+            onTabChange={setActiveTab}
+          />
         </Page>
       )}
     </>
+  );
+};
+
+// Routing and timing line under the page title: publisher -> handling
+// endpoint, then when the event was enqueued.
+const EventSubtitle = ({
+  event,
+  messages,
+}: {
+  event: api.Event;
+  messages: api.Message[];
+}) => {
+  const routing = getRoutingFromTo(event, messages);
+  const endpoint = (name: string) => (
+    <Link
+      to={`/Endpoints/Details/${name}`}
+      className="text-status-info font-semibold no-underline hover:underline"
+    >
+      {name}
+    </Link>
+  );
+  return (
+    <span>
+      {(routing.from || routing.to) && (
+        <>
+          {routing.from ? endpoint(routing.from) : "—"}
+          <span aria-label="to"> → </span>
+          {routing.to ? endpoint(routing.to) : "—"}
+          <span aria-hidden="true" className="mx-2 text-border-strong">
+            ·
+          </span>
+        </>
+      )}
+      Enqueued{" "}
+      <span className="font-mono text-xs">
+        {formatMoment(event.enqueuedTimeUtc)}
+      </span>
+    </span>
   );
 };
 

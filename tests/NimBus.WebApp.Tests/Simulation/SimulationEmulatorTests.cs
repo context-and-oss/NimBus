@@ -136,7 +136,7 @@ public sealed class SimulationEmulatorTests
             var errorResponse = await fixture.Store.GetFailedMessage(failedEvent.EventId, SimulationTestPlatform.Warehouse);
             Assert.IsNotNull(errorResponse, $"No failed message stored for {failedEvent.EventId}.");
             await manager.Resubmit(errorResponse, SimulationTestPlatform.Warehouse, errorResponse.EventTypeId,
-                errorResponse.MessageContent.EventContent.EventJson);
+                errorResponse.MessageContent.EventContent!.EventJson!);
         }
 
         await WaitUntilAsync(
@@ -149,6 +149,78 @@ public sealed class SimulationEmulatorTests
             fixture.Describe);
 
         await fixture.Service.StopAsync();
+    }
+
+    /// <summary>
+    /// Operations → Session state reads the state the real pipeline writes: a session blocked by
+    /// a failed event, with later events parked behind it, shows its blocking event, deferred
+    /// count and parked messages, and the guarded actions treat it as in use.
+    /// </summary>
+    [TestMethod]
+    [Timeout(120_000, CooperativeCancellation = true)]
+    public async Task Session_state_lookup_reads_a_session_the_pipeline_blocked()
+    {
+        await using var fixture = await Fixture.StartAsync();
+        fixture.Configure(speed: 1, ratePerMinute: 120, warehouse: new SimulatedFailure
+        {
+            Mode = SimulatedFailureMode.Random,
+            Rate = 100,
+            SessionPattern = WarehouseSession,
+            ExceptionMessage = "simulated warehouse outage",
+        });
+        await fixture.Service.StartAsync();
+        await WaitUntilAsync(
+            async () =>
+            {
+                var events = await fixture.SessionEventsAsync(SimulationTestPlatform.Warehouse, WarehouseSession);
+                return events.Any(e => e.ResolutionStatus == ResolutionStatus.Failed)
+                    && events.Any(e => e.ResolutionStatus == ResolutionStatus.Deferred);
+            },
+            TimeSpan.FromSeconds(90),
+            fixture.Describe);
+        Assert.AreEqual(SimulationCommandStatus.Ok, (await fixture.Service.StopAsync()).Status);
+
+        var sessions = new SessionStateService(fixture.Client, fixture.Store, NullLogger<SessionStateService>.Instance);
+        // The Resolver records parked events asynchronously, so let the store catch up with the
+        // session state before comparing the two.
+        NimBus.WebApp.ManagementApi.SessionStateView view = null!;
+        await WaitUntilAsync(
+            async () =>
+            {
+                view = await sessions.GetAsync(SimulationTestPlatform.Warehouse, WarehouseSession);
+                return !view.Locked && view.DeferredCount > 0
+                    && view.StoreDeferredCount == view.DeferredCount
+                    && view.DeferredSubscriptionCount == view.DeferredCount;
+            },
+            TimeSpan.FromSeconds(30),
+            async () => $"Last view: {view?.StateJson} store deferred {view?.StoreDeferredCount}, Deferred subscription {view?.DeferredSubscriptionCount}. {await fixture.Describe()}");
+
+        var events = await fixture.SessionEventsAsync(SimulationTestPlatform.Warehouse, WarehouseSession);
+        Assert.IsTrue(view.Readable, view.StateJson);
+        Assert.IsTrue(view.Blocked, view.StateJson);
+        var blocking = events.SingleOrDefault(e => e.EventId == view.BlockedByEventId);
+        Assert.IsNotNull(blocking, $"The blocking event {view.BlockedByEventId} isn't stored on the session.");
+        Assert.AreEqual(ResolutionStatus.Failed, blocking.ResolutionStatus);
+        Assert.AreEqual(nameof(ResolutionStatus.Failed), view.BlockingEventStatus);
+        Assert.AreEqual(events.Count(e => e.ResolutionStatus == ResolutionStatus.Deferred), view.DeferredCount, view.StateJson);
+        Assert.IsTrue(view.HasUnreplayedMessages);
+
+        // The guarded actions see a session in use: cleanup won't touch it, and marking its
+        // parked messages replayed is refused while they still wait.
+        var preview = await sessions.PreviewCleanupAsync(SimulationTestPlatform.Warehouse,
+            new NimBus.WebApp.ManagementApi.SessionCleanupPreviewRequest { IncludeStaleBlocks = true });
+        Assert.AreEqual(NimBus.WebApp.ManagementApi.SessionCleanupCandidateClassification.InUse,
+            preview.Sessions.Single(s => s.SessionId == WarehouseSession).Classification);
+        var markReplayed = await sessions.ChangeAsync(SimulationTestPlatform.Warehouse, WarehouseSession,
+            new NimBus.WebApp.ManagementApi.SessionStateChangeRequest
+            {
+                Action = NimBus.WebApp.ManagementApi.SessionStateChangeRequestAction.MarkReplayed,
+                ExpectedVersion = view.StateVersion,
+            },
+            _ => Task.CompletedTask);
+        Assert.AreEqual(SessionStateChangeStatus.Invalid, markReplayed.Status);
+        Assert.AreEqual(view.StateVersion, (await sessions.GetAsync(SimulationTestPlatform.Warehouse, WarehouseSession)).StateVersion,
+            "A refused action leaves the state as it was.");
     }
 
     [TestMethod]

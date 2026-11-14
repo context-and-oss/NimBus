@@ -29,14 +29,17 @@ dotnet test src/NimBus.slnx -c Release --no-build
 npm --prefix src/NimBus.WebApp/ClientApp install   # Node.js 22
 npm --prefix src/NimBus.WebApp/ClientApp run test:ci
 npm --prefix src/NimBus.WebApp/ClientApp run build
+npm --prefix website ci && npm --prefix website run build   # docs portal
 dotnet run --project src/NimBus.AppHost        # local Aspire stack
 ```
 
+- `global.json` pins the SDK to 10.0.4xx (latest patch). A newer SDK, such as a .NET 11 preview
+  on a hosted runner, applies stricter code-style defaults and fails the build with IDE errors.
 - Release promotes **compiler (CS) warnings** to errors; analyzer warnings (CA/S/SA) stay
   non-fatal. **CS8767** (nullability mismatch on an interface implementation) fails Release
   while Debug stays green.
-- Several src projects opt out of `EnforceCodeStyleInBuild`. Tightening them is a backlog
-  item, not something to "fix" in passing.
+- Every project runs the .NET analyzers and `EnforceCodeStyleInBuild`. Don't opt a project
+  out; suppress a specific rule where it doesn't fit (see the test-file pragma below).
 - Use `npm run test:ci` (or `npm test -- --run`) for a terminating frontend test run;
   `npm test` can enter watch mode.
 - Live SQL Server conformance tests require `NIMBUS_SQL_TEST_CONNECTION`. Live Cosmos DB
@@ -54,10 +57,12 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
   React 19, TypeScript, Vite 8, Tailwind, Vitest), `NimBus.CommandLine` (`nb` CLI),
   `NimBus.Testing` (in-memory transport and storage conformance suite), `NimBus.Extensions.*`.
 - `tests/` — one `*.Tests` project per library (MSTest). `samples/` — AspirePubSub,
-  CloudEventsInterop, CrmErpDemo, DynamicsBcDemo.
+  CloudEventsInterop, CrmErpDemo (the showcase demo), FailureAgent.
 - `docs/` — guides, `docs/adr/` for design rationale, `docs/spec/` for specs and designs,
   `docs/plan/` for implementation plans and plan reviews. Do not create `docs/superpowers/`
   or `docs/specs/`.
+- `website/` — the Docusaurus documentation portal. It renders `docs/` (not `plan/` or `spec/`)
+  and is published with `site/` by `.github/workflows/pages.yml`.
 
 ## Conventions
 
@@ -88,6 +93,9 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
   interface method silently bypasses the real store.
 - `EventTypeId` is the unqualified class name and is global to the Service Bus namespace:
   two event classes with the same name collide.
+- A new page under `docs/` must be added to `website/sidebars.js`, or to `unpublishedFiles` in
+  `website/docs-scope.js`; the portal build fails otherwise. It also fails on broken links, so
+  keep docs links relative: links to repository files are rewritten to GitHub at build time.
 - Service Bus topology is created only by `ServiceBusTopologyProvisioner`
   (`nb topology apply`).
 - Releases follow `docs/versioning.md#cutting-a-release` exactly, including the

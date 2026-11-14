@@ -81,6 +81,13 @@ Deploying your own event catalog rather than the built-in demo one means adding 
 
 To deploy unreleased changes from a working tree, add `--from-source --repo-root .` from a clone.
 
+New resources go to the resource group's region unless you pass `--location`; resources that already exist keep their region.
+
+**Configure WebApp sign-in.** The deployment creates no Entra app registration, and the WebApp refuses to start until it has a sign-in method. Choose one:
+
+- **Username and password** (SQL Server storage): add `--identity-admin-email <email>` with `NIMBUS_IDENTITY_ADMIN_PASSWORD` set ([details](authentication.md#on-azure-via-the-nb-cli)).
+- **Microsoft Entra ID**: register an app with the web redirect URI `https://<webapp-host>/.auth/login/aad/callback` (the WebApp's default `AzureAd:CallbackPath`), then set the WebApp app settings `AzureAd__TenantId`, `AzureAd__ClientId`, `AzureAd__Domain` and, for a confidential client, `AzureAd__ClientSecret` ([reference](authentication.md#configuration-reference)). Later `nb setup` runs keep these settings.
+
 ## Path 2: GitHub Actions
 
 The repository ships [.github/workflows/deploy.yml](../.github/workflows/deploy.yml) — a manually triggered (`workflow_dispatch`) workflow that logs in with OIDC (no stored secrets) and runs `infra apply` → `topology apply` → `deploy apps`.
@@ -160,6 +167,7 @@ Parameter notes (see the comments in the sample files):
 - `solutionId`/`environment` are woven into every resource name; the storage account `st{solutionId}{environment}func` must stay ≤ 24 characters, lowercase alphanumeric.
 - Defaults: `storageProvider=cosmos`, `resolverPlan=FlexConsumption`, `managementPlanSku` empty → B1 for dev/development, S1 otherwise. **ElasticPremium ↔ FlexConsumption cannot be converted in place** — to switch, delete the resolver Function App *and* the core App Service Plan first.
 - Resolver capacity: `resolverMaxConcurrentSessions` (default 16, range 1–200) is applied as a template-owned host override that wins over the Resolver's `host.json`. `resolverMaxInstances` (Elastic Premium `functionAppScaleLimit`; default 0 = no per-app cap, max 10; 0 is written explicitly, so it also clears a cap set by an earlier deployment) and `resolverFlexMaximumInstanceCount` (Flex Consumption `maximumInstanceCount`; default 100, range 1–1000) cap the instance count for their respective plan. Through the CLI these are `--resolver-max-sessions` and `--resolver-max-instances`.
+- Endpoint alert mail (the WebApp's Alerts tab, see [notifications](notifications.md#endpoint-alerts-alerts-tab)): set `alertMailSmtpHost` and `alertMailFrom` to turn it on; `alertMailSmtpPort` (default 587), `alertMailSmtpUseSsl` (default true), `alertMailSmtpUsername` and the secure `alertMailSmtpPassword` are optional. `alertMailWebAppUrl` defaults to `https://webapp-{solutionId}-{environment}-management.azurewebsites.net`; set it when the WebApp has a custom domain. Through the CLI these are the `--alert-mail-*` options, with the password in `NIMBUS_ALERT_MAIL_SMTP_PASSWORD`. The Resolver's app settings are replaced on every deploy, so pass them on every deploy; a deploy without them turns alert mail off.
 - **Brownfield note.** An unmodified `nb setup` now applies 16 sessions per instance to the Resolver through a template-owned app setting (previously 200 from `host.json`). The other consumer bounds (1 s session idle timeout, prefetch 0, dynamic concurrency off) ship in the Resolver's `host.json` with the binary. No instance cap is applied unless `--resolver-max-instances` is passed. Sessions and the instance cap roll back with another `nb setup`; changing the `host.json` values needs a Resolver redeploy.
 
 ### 4.2 WebApp infrastructure
@@ -207,9 +215,9 @@ The Service Bus namespace follows the convention `sb-{solutionId}-{environment}.
 
 For Cosmos deployments, the template also configures `CosmosAccountResourceId` and grants the WebApp's managed identity Cosmos DB Operator on `MessageDatabase`. The **Topology → Storage** view uses that ARM access to list and delete containers outside the current platform catalog; Cosmos data-plane Entra authentication cannot perform container deletion.
 
-The template also grants the WebApp's managed identity Reader on the Application Insights component (`ai-{solutionId}-{environment}-global-tracelog`), because the event logs endpoint (`GET /api/event/details/{endpointId}/{id}/logs`) queries Application Insights with that identity ([details](authentication.md#application-insights-log-queries)). No API key is involved: the `apiKey` parameter is deprecated and ignored, so leave it out.
+The template also grants the WebApp's managed identity Reader on the Application Insights component (`ai-{solutionId}-{environment}-global-tracelog`), because the event logs endpoint (`GET /api/v1/event/details/{endpointId}/{id}/logs`) queries Application Insights with that identity ([details](authentication.md#application-insights-log-queries)). No API key is involved: the `apiKey` parameter is deprecated and ignored, so leave it out.
 
-**Re-running against an existing WebApp?** Pass `webAppExists=true`. The app-settings deployment is a full replace, and several settings are configured out of band — `webAppExists=true` makes the template read the site's current settings and carry those keys forward instead of wiping them (which, for the auth settings, takes authentication down). Four prefixes are preserved:
+**Re-running against an existing WebApp?** Pass `webAppExists=true`. The app-settings deployment is a full replace, and several settings are configured out of band — `webAppExists=true` makes the template read the site's current settings and carry those keys forward instead of wiping them (which, for the auth settings, takes authentication down). Six prefixes are preserved:
 
 | Prefix | Why it is set out of band |
 |---|---|
@@ -217,6 +225,8 @@ The template also grants the WebApp's managed identity Reader on the Application
 | `ServiceBusManagement__` | Optional portal deep-link config |
 | `Authorization__` | Platform-admin grants |
 | `RateLimiting__` | Operator-tuned request-rate limits ([Rate Limiting](rate-limiting.md)) |
+| `NimBus__Mcp__` | The operator MCP endpoint's switch and Entra app registration ([MCP server](mcp-server.md)) |
+| `Cors__` | The REST API's browser origin allow-list ([CORS](webapp-rest-api.md#cors)) |
 
 The one exception is `RateLimiting__TrustForwardedForHeader`, which the template owns and sets itself — it describes deployment topology rather than a tuning preference, so a portal edit to it does **not** survive a re-run. The numeric limits and `RateLimiting__Enabled` do survive.
 
@@ -236,6 +246,7 @@ Neither needs a repository clone: `nb deploy apps` deploys the Resolver and WebA
 | Symptom | Cause / fix |
 |---|---|
 | `The existing core App Service Plan is X but --resolver-plan requested Y` | Azure cannot convert ElasticPremium ↔ FlexConsumption in place. Delete the resolver Function App **and** the core plan, then redeploy. |
+| WebApp fails to start: `No sign-in method is configured for the NimBus WebApp` | No Entra or username/password sign-in is configured. See [Configure WebApp sign-in](#path-1-one-command). |
 | `InvalidResourceLocation` / region errors | A same-named resource exists in another region. The CLI pins existing resources automatically; raw-Bicep users must pass the per-resource `*Location` override params. To actually move a resource, delete it first. |
 | `Failed to register Azure provider` warning | The identity lacks subscription-level `/register` permission. Harmless unless you use Event Grid storage hooks — then pre-register once per subscription (see Prerequisites). |
 | SQL server name conflict after deleting an environment | Azure SQL server DNS names are held globally for 24–72 h after deletion. Use `--sql-server-name` (or the `sqlServerName` param) to pick a fresh name. |

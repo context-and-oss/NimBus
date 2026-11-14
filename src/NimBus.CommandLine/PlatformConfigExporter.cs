@@ -5,16 +5,43 @@ using NimBus.Core.Messages;
 
 namespace NimBus.CommandLine;
 
-internal sealed class PlatformConfigExporter
+internal static class PlatformConfigExporter
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+    };
+
     /// <param name="platformFactory">
     /// Catalog to export. Null keeps the built-in platform; callers pass a factory to
     /// export a customer's own catalog from --assembly or --platform-package.
     /// </param>
-    public async Task ExportAsync(string outputPath, CancellationToken cancellationToken, Func<IPlatform>? platformFactory = null)
+    public static async Task ExportAsync(string outputPath, CancellationToken cancellationToken, Func<IPlatform>? platformFactory = null)
     {
         var platform = platformFactory?.Invoke() ?? new PlatformConfiguration();
-        var config = new PlatformConfigJson
+        var config = Build(platform);
+
+        var fullPath = Path.GetFullPath(outputPath);
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var json = Serialize(config);
+        await File.WriteAllTextAsync(fullPath, json, cancellationToken).ConfigureAwait(false);
+        CliOutput.WriteLine($"Platform configuration exported to '{fullPath}'.");
+    }
+
+    /// <summary>Serialises <paramref name="config"/> as the exported file writes it.</summary>
+    internal static string Serialize(PlatformConfigJson config) => JsonSerializer.Serialize(config, SerializerOptions);
+
+    /// <summary>The export model for <paramref name="platform"/>.</summary>
+    internal static PlatformConfigJson Build(IPlatform platform)
+    {
+        return new PlatformConfigJson
         {
             BrokerId = Constants.ManagerId,
             ResolverId = Constants.ResolverId,
@@ -36,35 +63,24 @@ internal sealed class PlatformConfigExporter
                     Id = endpoint.Id,
                     Name = endpoint.Name,
                     EventTypesConsumed = endpoint.EventTypesConsumed
-                        .Select(eventType => new EventTypeJson { Id = eventType.Id, Name = eventType.Name })
+                        .Select(eventType => new EventTypeJson
+                        {
+                            Id = eventType.Id,
+                            Name = eventType.Name,
+                            RoutingKeyProperty = eventType.RoutingKeyProperty,
+                            RoutingKeys = endpoint.GetRoutingKeys(eventType) is { Count: > 0 } keys ? keys.ToList() : null,
+                            Unmatched = endpoint.IsUnmatchedConsumer(eventType) ? true : null,
+                        })
                         .OrderBy(eventType => eventType.Id, StringComparer.Ordinal)
                         .ToList(),
                     EventTypesProduced = endpoint.EventTypesProduced
-                        .Select(eventType => new EventTypeJson { Id = eventType.Id, Name = eventType.Name })
+                        .Select(eventType => new EventTypeJson { Id = eventType.Id, Name = eventType.Name, RoutingKeyProperty = eventType.RoutingKeyProperty })
                         .OrderBy(eventType => eventType.Id, StringComparer.Ordinal)
                         .ToList(),
                 })
                 .OrderBy(endpoint => endpoint.Id, StringComparer.Ordinal)
                 .ToList(),
         };
-
-        var options = new JsonSerializerOptions
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true,
-        };
-
-        var fullPath = Path.GetFullPath(outputPath);
-        var directory = Path.GetDirectoryName(fullPath);
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        var json = JsonSerializer.Serialize(config, options);
-        await File.WriteAllTextAsync(fullPath, json, cancellationToken).ConfigureAwait(false);
-        CliOutput.WriteLine($"Platform configuration exported to '{fullPath}'.");
     }
 }
 
@@ -101,4 +117,13 @@ internal sealed class EventTypeJson
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>The payload property that holds the routing key (Spec 045); omitted when none.</summary>
+    public string? RoutingKeyProperty { get; set; }
+
+    /// <summary>The keys a consumer takes the type for; omitted for every key.</summary>
+    public List<string>? RoutingKeys { get; set; }
+
+    /// <summary>True for the unmatched consumer of the type; omitted otherwise.</summary>
+    public bool? Unmatched { get; set; }
 }

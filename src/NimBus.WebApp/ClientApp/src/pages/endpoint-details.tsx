@@ -2,12 +2,13 @@ import * as React from "react";
 const { useEffect, useMemo, useState } = React;
 
 import * as api from "api-client";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import Page from "components/page";
 import EventsPanel from "components/endpoint-details/events-panel";
 import EventTypesPanel from "components/endpoint-details/event-types-panel";
 import SubscriptionsTab from "components/endpoint-details/tabs/subscriptions-tab";
 import AuditTab from "components/endpoint-details/tabs/audit-tab";
+import MetadataTab from "components/endpoint-details/tabs/metadata-tab";
 import NotFoundPage from "components/not-found-page";
 import { cn } from "lib/utils";
 
@@ -20,7 +21,7 @@ type EndpointDetailsProps = {
   endpointState?: api.EndpointStatus;
 };
 
-type DetailTab = "messages" | "event-types" | "alerts" | "audit";
+type DetailTab = "messages" | "event-types" | "alerts" | "ownership" | "audit";
 
 const EndpointDetails = (props: EndpointDetailsProps) => {
   const { id } = useParams();
@@ -42,6 +43,9 @@ const EndpointDetailsContent = (
   const [alertSubscriptions, setAlertSubscriptions] = useState<
     api.EndpointSubscription[]
   >([]);
+  const [alertProbe, setAlertProbe] = useState<"loading" | "loaded" | "failed">(
+    "loading",
+  );
   const [isSubscriptionTabEnabled, setIsSubscriptionTabEnabled] =
     useState(false);
 
@@ -53,11 +57,12 @@ const EndpointDetailsContent = (
       .getEndpointSubscribe(endpointId)
       .then((subscriptions) => {
         if (!active) return;
+        setAlertProbe("loaded");
         setAlertSubscriptions(subscriptions);
         setIsSubscriptionTabEnabled(subscriptions.length > 0);
       })
       .catch(() => {
-        // Match the existing behavior: an unavailable probe leaves Alerts disabled.
+        if (active) setAlertProbe("failed");
       });
     return () => {
       active = false;
@@ -100,6 +105,7 @@ const EndpointDetailsContent = (
       { id: "messages", label: "Messages", enabled: true },
       { id: "event-types", label: "Event Types", enabled: true },
       { id: "alerts", label: "Alerts", enabled: isSubscriptionTabEnabled },
+      { id: "ownership", label: "Ownership", enabled: true },
       { id: "audit", label: "Audit", enabled: true },
     ],
     [isSubscriptionTabEnabled],
@@ -115,6 +121,18 @@ const EndpointDetailsContent = (
     <Page title={endpointId} subtitle="Endpoint details">
       <div className="flex flex-col gap-4 w-full">
         <TabStrip tabs={tabs} activeTab={activeTab} onChange={selectTab} />
+        {!isSubscriptionTabEnabled && alertProbe !== "loading" && (
+          <p id="alerts-help" className="text-sm text-muted-foreground">
+            {alertProbe === "failed"
+              ? "Alert subscriptions could not be loaded."
+              : "No alert subscriptions are configured for this endpoint."}{" "}
+            Configure alerts from this endpoint's menu on the{" "}
+            <Link to="/Endpoints" className="text-primary hover:underline">
+              endpoint list
+            </Link>
+            .
+          </p>
+        )}
         {/* Mount on first visit; retain visited panels to preserve filters and pages. */}
         <div className={activeTab === "messages" ? "" : "hidden"}>
           <EventsPanel endpointId={endpointId} />
@@ -130,6 +148,11 @@ const EndpointDetailsContent = (
               initialSubscriptions={alertSubscriptions}
               setIsTabEnabled={setIsSubscriptionTabEnabled}
             />
+          </div>
+        )}
+        {visitedTabs.has("ownership") && (
+          <div className={activeTab === "ownership" ? "" : "hidden"}>
+            <MetadataTab />
           </div>
         )}
         {visitedTabs.has("audit") && (
@@ -161,6 +184,14 @@ const TabStrip: React.FC<TabStripProps> = ({ tabs, activeTab, onChange }) => (
           aria-selected={isActive}
           aria-disabled={isDisabled || undefined}
           disabled={isDisabled}
+          title={
+            isDisabled && t.id === "alerts"
+              ? "Alerts require subscriptions. Configure them from the endpoint list menu."
+              : undefined
+          }
+          aria-describedby={
+            isDisabled && t.id === "alerts" ? "alerts-help" : undefined
+          }
           onClick={() => onChange(t.id)}
           className={cn(
             "bg-transparent border-0 px-[18px] py-[11px] text-[13.5px] font-semibold cursor-pointer",

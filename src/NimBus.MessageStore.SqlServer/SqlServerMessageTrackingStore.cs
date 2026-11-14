@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.SqlClient;
 using Newtonsoft.Json;
 using NimBus.Core.Messages;
@@ -39,12 +40,12 @@ internal sealed partial class SqlServerMessageTrackingStore : IMessageTrackingSt
     private static int DecodeOffset(string? token)
     {
         if (string.IsNullOrEmpty(token)) return 0;
-        try { return int.Parse(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(token!))); }
+        try { return int.Parse(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(token!)), CultureInfo.InvariantCulture); }
         catch { return 0; }
     }
 
     private static string EncodeOffset(int offset)
-        => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(offset.ToString()));
+        => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(offset.ToString(CultureInfo.InvariantCulture)));
 
     private static UnresolvedEvent MapUnresolvedEventRow(dynamic row)
     {
@@ -90,7 +91,7 @@ internal sealed partial class SqlServerMessageTrackingStore : IMessageTrackingSt
     // Dapper exposes rows as DapperRow, which is dictionary-like. Reading a column that
     // does not exist throws — guard with the dictionary view so old rows / older callers
     // don't break when the new nullable columns aren't projected.
-    private static string TryReadString(dynamic row, string columnName)
+    private static string? TryReadString(dynamic row, string columnName)
     {
         var dict = (IDictionary<string, object>)row;
         return dict.TryGetValue(columnName, out var value) ? value as string : null;

@@ -20,7 +20,7 @@ public abstract class NotificationChannelOptions
     /// <see cref="Notification"/> properties (e.g. <c>{Severity}</c>, <c>{Title}</c>, <c>{Message}</c>,
     /// <c>{EventId}</c>, <c>{ErrorDetails}</c>). When <c>null</c>, the channel uses its default body.
     /// </summary>
-    public string Template { get; set; }
+    public string? Template { get; set; }
 
     /// <summary>
     /// Per-send timeout for network delivery (HTTP/SendGrid). Default: 10 seconds.

@@ -6,6 +6,8 @@ export interface TopologyMiniMapProps {
   producers: string[];
   /** Consumer endpoint names; rendered as a vertical stack on the right. */
   consumers: string[];
+  /** Spec 045: a routing label per consumer name ("keys 01, 02", "unmatched"). */
+  consumerNotes?: Record<string, string>;
   /** Center node label (e.g. the event type name). */
   centerLabel: string;
   /** Center node sub-meta (e.g. "v1.0 · 3 fields"). */
@@ -28,6 +30,7 @@ export interface TopologyMiniMapProps {
 export const TopologyMiniMap: React.FC<TopologyMiniMapProps> = ({
   producers,
   consumers,
+  consumerNotes,
   centerLabel,
   centerMeta,
   endpointRoute = (name) => `/Endpoints/Details/${name}`,
@@ -76,6 +79,7 @@ export const TopologyMiniMap: React.FC<TopologyMiniMapProps> = ({
       <Stack
         role="Consumer"
         names={consumers}
+        notes={consumerNotes}
         emptyLabel="No consumers"
         accent="info"
         endpointRoute={endpointRoute}
@@ -87,6 +91,7 @@ export const TopologyMiniMap: React.FC<TopologyMiniMapProps> = ({
 interface StackProps {
   role: "Producer" | "Consumer";
   names: string[];
+  notes?: Record<string, string>;
   emptyLabel: string;
   accent: "success" | "info";
   endpointRoute: (name: string) => string;
@@ -95,6 +100,7 @@ interface StackProps {
 const Stack: React.FC<StackProps> = ({
   role,
   names,
+  notes,
   emptyLabel,
   accent,
   endpointRoute,
@@ -109,7 +115,9 @@ const Stack: React.FC<StackProps> = ({
       : "text-status-info";
 
   return (
-    <div className="flex flex-col gap-2 min-w-[180px] flex-1">
+    // Centred vertically, so the shorter side (usually the single producer) lines
+    // up with the event type node and the edges meet it at mid-height.
+    <div className="flex flex-col justify-center gap-2 min-w-[180px] flex-1">
       {names.length === 0 ? (
         <div
           className={cn(
@@ -136,6 +144,11 @@ const Stack: React.FC<StackProps> = ({
             <div className={cn("font-bold text-[14px]", linkColor)}>
               {name}
             </div>
+            {notes?.[name] && (
+              <div className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                {notes[name]}
+              </div>
+            )}
           </Link>
         ))
       )}

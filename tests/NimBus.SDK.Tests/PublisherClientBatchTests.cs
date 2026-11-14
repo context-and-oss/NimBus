@@ -150,7 +150,7 @@ public class PublisherClientBatchTests
         foreach (var message in sender.Pages.SelectMany(p => p))
         {
             var sbMessage = MessageHelper.ToServiceBusMessage(message);
-            StringAssert.Contains(sbMessage.Body.ToString(), "EventJson");
+            StringAssert.Contains(sbMessage.Body.ToString(), "EventJson", StringComparison.Ordinal);
         }
 
         foreach (var @event in events)
@@ -165,7 +165,7 @@ public class PublisherClientBatchTests
     {
         // Control: property reads for exactly one measurement.
         var control = new CountingEvent { Id = "control", Padding = "p" };
-        PublisherClient.GetBatchesStatic(new List<IEvent> { control }).SelectMany(b => b).ToList();
+        _ = PublisherClient.GetBatchesStatic(new List<IEvent> { control }).SelectMany(b => b).ToList();
         var readsPerMeasure = control.GetterReads;
         Assert.IsTrue(readsPerMeasure >= 1, "Sanity: measuring an event reads its properties.");
 
@@ -193,7 +193,7 @@ public class PublisherClientBatchTests
 
     private sealed class SmallEvent : Event
     {
-        public string Value { get; set; }
+        public string Value { get; set; } = null!;
 
         public override string GetSessionId() => "session-1";
     }
@@ -201,7 +201,7 @@ public class PublisherClientBatchTests
     private sealed class CountingEvent : Event
     {
         private int _getterReads;
-        private string _id;
+        private string _id = null!;
 
         public string Id
         {
@@ -213,7 +213,7 @@ public class PublisherClientBatchTests
             set => _id = value;
         }
 
-        public string Padding { get; set; }
+        public string Padding { get; set; } = null!;
 
         [JsonIgnore]
         public int GetterReads => Volatile.Read(ref _getterReads);

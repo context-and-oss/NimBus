@@ -4,7 +4,6 @@ import {
   Button,
   DropdownItem,
   DropdownMenu,
-  DropdownSeparator,
   Modal,
   ModalBody,
   ModalFooter,
@@ -20,7 +19,6 @@ import {
   MoreHorizontalIcon,
   PowerIcon,
   ShieldCheckIcon,
-  TrashIcon,
 } from "./icons";
 
 interface IEndpointRowActionsProps {
@@ -31,15 +29,13 @@ interface IEndpointRowActionsProps {
   deferred: number;
   pending: number;
   storageAvailable: boolean;
-  /** Deployment environment, from /api/app/stats. Gates purge outside dev. */
-  env?: string;
   refreshEndpoint: (endpointId: string) => unknown;
   startLoading: () => void;
   stopLoading: () => void;
 }
 
 // Per-row endpoint controls: an enable/disable switch plus the overflow menu
-// (alerts, access, purge). Every action here is Owner-gated server side, so the
+// (alerts, access). Every action here is Owner-gated server side, so the
 // row only offers what the current user may actually do.
 export default function EndpointRowActions(props: IEndpointRowActionsProps) {
   const [client] = useState(() => new api.Client(api.CookieAuth()));
@@ -47,16 +43,14 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
   const { access } = useAccess();
 
   const [disableOpen, setDisableOpen] = useState(false);
-  const [purgeOpen, setPurgeOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
-  const [purgeConfirmText, setPurgeConfirmText] = useState("");
 
   const { endpointId, subscriptionStatus, storageAvailable } = props;
   const subscriptionMissing = subscriptionStatus === "not-found";
   const enabled = subscriptionStatus !== "disabled" && !subscriptionMissing;
 
-  // PostEndpointSubscriptionstatus / Purge / Subscribe all require Owner on the
+  // PostEndpointSubscriptionstatus / Subscribe both require Owner on the
   // endpoint (site Owners hold it implicitly), so mirror that rule rather than
   // offering controls that would come back 403.
   const isSiteOwner = isOwnerRole(access?.siteRole);
@@ -71,13 +65,8 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
         role.endpointId?.toLowerCase() === endpointId.toLowerCase() &&
         isOwnerRole(role.role),
     );
-  // Purge is refused in prod/stag unless the caller is a site Owner — the same
-  // rule PostEndpointPurgeAsync applies.
-  const envIsProtected = props.env === "prod" || props.env === "stag";
-  const purgeAllowed = canManage && (isSiteOwner || !envIsProtected);
 
   const fmt = (n: number) => (storageAvailable ? n.toLocaleString() : "—");
-  const totalMessages = props.failed + props.deferred + props.pending;
 
   // The mutation has already landed by the time this runs, so a failed read-back
   // is only a stale row — but it must still clear the spinner. Left unawaited the
@@ -150,31 +139,6 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
     });
   };
 
-  const confirmPurge = () => {
-    setPurgeOpen(false);
-    setPurgeConfirmText("");
-    props.startLoading();
-    client
-      .postEndpointPurge(endpointId)
-      .then(async () => {
-        await refreshRow();
-        addToast({
-          variant: "warning",
-          title: `Purged all data from ${endpointId}.`,
-          duration: 4000,
-        });
-      })
-      .catch(() => {
-        props.stopLoading();
-        addToast({
-          variant: "error",
-          title: `Could not purge ${endpointId}.`,
-          duration: 6000,
-        });
-      });
-  };
-
-  const purgeArmed = purgeConfirmText.trim() === endpointId;
 
   const impactRow = (label: string, value: string, danger = false) => (
     <div className="flex justify-between font-mono text-[11.5px]">
@@ -214,20 +178,6 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
           >
             Manage access…
           </DropdownItem>
-          {purgeAllowed && <DropdownSeparator />}
-          {purgeAllowed && (
-            <DropdownItem
-              destructive
-              icon={<TrashIcon />}
-              trailing={envIsProtected ? undefined : "dev only"}
-              onSelect={() => {
-                setPurgeConfirmText("");
-                setPurgeOpen(true);
-              }}
-            >
-              Purge data…
-            </DropdownItem>
-          )}
         </DropdownMenu>
       )}
 
@@ -264,63 +214,6 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
           </Button>
           <Button colorScheme="primary" onClick={confirmDisable}>
             Disable endpoint
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      {/* Purge confirmation — armed by typing the endpoint name */}
-      <Modal isOpen={purgeOpen} onClose={() => setPurgeOpen(false)}>
-        <ModalHeader onClose={() => setPurgeOpen(false)}>
-          <span className="inline-flex items-center gap-2">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-nb-sm bg-status-danger-50 text-status-danger">
-              <TrashIcon className="h-4 w-4" />
-            </span>
-            Purge all data on {endpointId}
-          </span>
-        </ModalHeader>
-        <ModalBody>
-          <p className="text-sm text-muted-foreground m-0">
-            Deletes every queued, deferred and failed message. Endpoint
-            configuration is preserved.{" "}
-            <b className="text-status-danger">This action cannot be undone.</b>
-          </p>
-          <div className="mt-3 flex flex-col gap-1 rounded-nb-md border border-border bg-background px-3 py-2.5">
-            {impactRow("Messages to be deleted", fmt(totalMessages), true)}
-            {impactRow("Includes", "failed, deferred, pending")}
-            {props.env &&
-              impactRow(
-                "Environment",
-                `${props.env.toUpperCase()} — purge allowed`,
-              )}
-          </div>
-          <label
-            htmlFor={`purge-confirm-${endpointId}`}
-            className="mt-3.5 block text-xs font-semibold"
-          >
-            Type{" "}
-            <code className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[12px]">
-              {endpointId}
-            </code>{" "}
-            to confirm
-          </label>
-          <input
-            id={`purge-confirm-${endpointId}`}
-            autoComplete="off"
-            value={purgeConfirmText}
-            onChange={(e) => setPurgeConfirmText(e.currentTarget.value)}
-            className="mt-1.5 w-full rounded-nb-md border-[1.5px] border-border-strong bg-background px-3 py-2.5 font-mono text-sm focus:border-status-danger focus:outline-hidden focus:ring-[3px] focus:ring-status-danger-50"
-          />
-        </ModalBody>
-        <ModalFooter>
-          <Button
-            variant="ghost"
-            colorScheme="gray"
-            onClick={() => setPurgeOpen(false)}
-          >
-            Cancel
-          </Button>
-          <Button colorScheme="red" disabled={!purgeArmed} onClick={confirmPurge}>
-            Purge data
           </Button>
         </ModalFooter>
       </Modal>

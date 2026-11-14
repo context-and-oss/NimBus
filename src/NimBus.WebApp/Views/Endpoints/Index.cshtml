@@ -26,7 +26,7 @@
             </tr>
         </thead>
         <tbody>
-            @foreach (var epm in Model.Where(epModel => epModel.Endpoint.Namespace.Equals(namespaceName, StringComparison.OrdinalIgnoreCase)).OrderBy(epModel => epModel.Endpoint.Name))
+            @foreach (var epm in Model.Where(epModel => epModel.Endpoint.Namespace!.Equals(namespaceName, StringComparison.OrdinalIgnoreCase)).OrderBy(epModel => epModel.Endpoint.Name))
             {
                 var failedEvents = epm.EndpointState.FailedEvents;
                 var pendingEvents = epm.EndpointState.PendingEvents;

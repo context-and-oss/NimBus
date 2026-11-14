@@ -103,6 +103,7 @@ public sealed class TopologyAuditDynamicForwardTests
             sbAdmin: admin,
             sbClient: null!,
             managerClient: null!,
+            subscriptionAdmin: null!,
             logger: NullLogger<AdminService>.Instance,
             rawCosmosClient: null);
 

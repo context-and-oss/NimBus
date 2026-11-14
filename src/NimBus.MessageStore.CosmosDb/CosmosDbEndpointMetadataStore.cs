@@ -5,12 +5,13 @@ using System.Net;
 using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore;
 
-internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
+internal sealed partial class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
 {
     private readonly Func<Task<ICosmosContainerAdapter>> _getMetadataContainer;
     private readonly Func<Task<ICosmosContainerAdapter>> _getSettingsContainer;
@@ -19,11 +20,11 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
     public CosmosDbEndpointMetadataStore(
         Func<Task<ICosmosContainerAdapter>> getMetadataContainer,
         Func<Task<ICosmosContainerAdapter>> getSettingsContainer,
-        ILogger logger)
+        ILogger? logger)
     {
         _getMetadataContainer = getMetadataContainer;
         _getSettingsContainer = getSettingsContainer;
-        _logger = logger;
+        _logger = logger ?? NullLogger.Instance;
     }
     public async Task<EndpointMetadata?> GetEndpointMetadata(string endpointId)
     {
@@ -43,22 +44,22 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         }
     }
 
-    public async Task<List<EndpointMetadata>>? GetMetadatas(IEnumerable<string> endpointIds)
+    public async Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds)
     {
         var container = await _getMetadataContainer();
         try
         {
             var rel = await container.ReadManyItemsAsync<EndpointMetadata>(endpointIds.Select(x => (x, new PartitionKey(x))).ToList());
-            return rel.Any() ? rel.Resource.ToList() : null;
+            return rel.Count != 0 ? rel.Resource.ToList() : null;
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger?.LogInformation("COSMOS METADATAS: Some endpoints not found in metadata container");
+            LogCosmosMetadatasSomeEndpointsNotFound(_logger);
             return null;
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "COSMOS METADATAS-ERROR: Failed to get metadatas for endpoints");
+            LogCosmosMetadatasError(_logger, e);
             throw;
         }
     }
@@ -96,14 +97,12 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         {
             var response =
                 await container.UpsertItemAsync(endpointMetadata, new PartitionKey(endpointMetadata.EndpointId));
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, response.StatusCode);
+            LogCosmosUpsertResponse(_logger, endpointMetadata.EndpointId, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, e.StatusCode);
+            LogCosmosUpsertError(_logger, e, endpointMetadata.EndpointId, e.StatusCode);
             throw;
         }
     }
@@ -169,14 +168,12 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         try
         {
             var response = await container.UpsertItemAsync(metadata, new PartitionKey(endpointId));
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: Heartbeat upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointId, response.StatusCode);
+            LogCosmosUpsertResponseHeartbeatUpsertId(_logger, endpointId, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: Heartbeat upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointId, e.StatusCode);
+            LogCosmosUpsertErrorHeartbeatUpsertId(_logger, e, endpointId, e.StatusCode);
             throw;
         }
     }
@@ -207,8 +204,7 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
             }
             catch (CosmosException e)
             {
-                _logger?.LogError(e,
-                    "COSMOS UPSERT-ERROR: Heartbeat sweep. Id: {EndpointId}, HttpStatusCode: {StatusCode}", metadata.EndpointId, e.StatusCode);
+                LogCosmosUpsertErrorHeartbeatSweepId(_logger, e, metadata.EndpointId, e.StatusCode);
                 throw;
             }
         }
@@ -250,14 +246,12 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         try
         {
             var response = await container.UpsertItemAsync(settings, new PartitionKey(settings.Id));
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: HeartbeatSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, response.StatusCode);
+            LogCosmosUpsertResponseHeartbeatSettingsUpsertId(_logger, settings.Id, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: HeartbeatSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, e.StatusCode);
+            LogCosmosUpsertErrorHeartbeatSettingsUpsertId(_logger, e, settings.Id, e.StatusCode);
             throw;
         }
     }
@@ -288,14 +282,12 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         try
         {
             var response = await container.UpsertItemAsync(settings, new PartitionKey(settings.Id));
-            _logger?.LogTrace(
-                "COSMOS UPSERT-RESPONSE: AuditSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, response.StatusCode);
+            LogCosmosUpsertResponseAuditSettingsUpsertId(_logger, settings.Id, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.LogError(e,
-                "COSMOS UPSERT-ERROR: AuditSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, e.StatusCode);
+            LogCosmosUpsertErrorAuditSettingsUpsertId(_logger, e, settings.Id, e.StatusCode);
             throw;
         }
     }
@@ -348,6 +340,186 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         }
     }
 
+    public async Task<AgentApiKeySettings> GetAgentApiKeySettings()
+    {
+        var container = await _getSettingsContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<AgentApiKeySettings>(
+                AgentApiKeySettings.SingletonId,
+                new PartitionKey(AgentApiKeySettings.SingletonId));
+            return response.Resource ?? new AgentApiKeySettings();
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new AgentApiKeySettings();
+        }
+    }
+
+    public async Task<bool> TrySetAgentApiKeySettings(AgentApiKeySettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The keys must carry their new revision.", nameof(settings));
+        settings.Id = AgentApiKeySettings.SingletonId;
+        var partitionKey = new PartitionKey(AgentApiKeySettings.SingletonId);
+
+        // Same compare-and-set shape as TrySetMcpAccessSettings.
+        var container = await _getSettingsContainer();
+        try
+        {
+            if (expectedRevision is null)
+            {
+                await container.CreateItemAsync(settings, partitionKey);
+                return true;
+            }
+
+            var current = await container.ReadItemAsync<AgentApiKeySettings>(AgentApiKeySettings.SingletonId, partitionKey);
+            if (!string.Equals(current.Resource?.Revision, expectedRevision, StringComparison.Ordinal))
+                return false;
+
+            await container.UpsertItemAsync(settings, partitionKey, new ItemRequestOptions { IfMatchEtag = current.ETag });
+            return true;
+        }
+        catch (CosmosException e) when (e.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
+    public async Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage()
+    {
+        var container = await _getSettingsContainer();
+        var query = new QueryDefinition("SELECT * FROM c WHERE STARTSWITH(c.id, @prefix)")
+            .WithParameter("@prefix", AgentApiKeyUsageDocument.IdPrefix);
+        var usage = new List<AgentApiKeyUsage>();
+        using var iterator = container.GetItemQueryIterator<AgentApiKeyUsageDocument>(query);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var document in await iterator.ReadNextAsync())
+            {
+                usage.Add(new AgentApiKeyUsage { KeyId = document.KeyId, LastUsedAtUtc = document.LastUsedAtUtc });
+            }
+        }
+        return usage;
+    }
+
+    public async Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyId);
+        // One small document per key in the settings container (partitioned on /id).
+        var document = new AgentApiKeyUsageDocument
+        {
+            Id = AgentApiKeyUsageDocument.IdPrefix + keyId,
+            KeyId = keyId,
+            LastUsedAtUtc = usedAtUtc,
+        };
+        var container = await _getSettingsContainer();
+        await container.UpsertItemAsync(document, new PartitionKey(document.Id));
+    }
+
+    private sealed class AgentApiKeyUsageDocument
+    {
+        public const string IdPrefix = "AgentApiKeyUsage-";
+
+        [Newtonsoft.Json.JsonProperty("id")]
+        public string Id { get; set; } = string.Empty;
+
+        public string KeyId { get; set; } = string.Empty;
+
+        public DateTime LastUsedAtUtc { get; set; }
+    }
+
+    public async Task<DashboardTokenSettings> GetDashboardTokenSettings()
+    {
+        var container = await _getSettingsContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<DashboardTokenSettings>(
+                DashboardTokenSettings.SingletonId,
+                new PartitionKey(DashboardTokenSettings.SingletonId));
+            return response.Resource ?? new DashboardTokenSettings();
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new DashboardTokenSettings();
+        }
+    }
+
+    public async Task<bool> TrySetDashboardTokenSettings(DashboardTokenSettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The tokens must carry their new revision.", nameof(settings));
+        settings.Id = DashboardTokenSettings.SingletonId;
+        var partitionKey = new PartitionKey(DashboardTokenSettings.SingletonId);
+
+        // Same compare-and-set shape as TrySetAgentApiKeySettings.
+        var container = await _getSettingsContainer();
+        try
+        {
+            if (expectedRevision is null)
+            {
+                await container.CreateItemAsync(settings, partitionKey);
+                return true;
+            }
+
+            var current = await container.ReadItemAsync<DashboardTokenSettings>(DashboardTokenSettings.SingletonId, partitionKey);
+            if (!string.Equals(current.Resource?.Revision, expectedRevision, StringComparison.Ordinal))
+                return false;
+
+            await container.UpsertItemAsync(settings, partitionKey, new ItemRequestOptions { IfMatchEtag = current.ETag });
+            return true;
+        }
+        catch (CosmosException e) when (e.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
+    public async Task<List<DashboardTokenUsage>> GetDashboardTokenUsage()
+    {
+        var container = await _getSettingsContainer();
+        var query = new QueryDefinition("SELECT * FROM c WHERE STARTSWITH(c.id, @prefix)")
+            .WithParameter("@prefix", DashboardTokenUsageDocument.IdPrefix);
+        var usage = new List<DashboardTokenUsage>();
+        using var iterator = container.GetItemQueryIterator<DashboardTokenUsageDocument>(query);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var document in await iterator.ReadNextAsync())
+            {
+                usage.Add(new DashboardTokenUsage { TokenId = document.TokenId, LastUsedAtUtc = document.LastUsedAtUtc });
+            }
+        }
+        return usage;
+    }
+
+    public async Task RecordDashboardTokenUse(string tokenId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tokenId);
+        // One small document per token in the settings container (partitioned on /id).
+        var document = new DashboardTokenUsageDocument
+        {
+            Id = DashboardTokenUsageDocument.IdPrefix + tokenId,
+            TokenId = tokenId,
+            LastUsedAtUtc = usedAtUtc,
+        };
+        var container = await _getSettingsContainer();
+        await container.UpsertItemAsync(document, new PartitionKey(document.Id));
+    }
+
+    private sealed class DashboardTokenUsageDocument
+    {
+        public const string IdPrefix = "DashboardTokenUsage-";
+
+        [Newtonsoft.Json.JsonProperty("id")]
+        public string Id { get; set; } = string.Empty;
+
+        public string TokenId { get; set; } = string.Empty;
+
+        public DateTime LastUsedAtUtc { get; set; }
+    }
+
     public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         // The ETag precondition is what makes at most one scaled-out instance send
@@ -394,4 +566,37 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
     }
 
 
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS METADATAS: Some endpoints not found in metadata container")]
+    private static partial void LogCosmosMetadatasSomeEndpointsNotFound(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS METADATAS-ERROR: Failed to get metadatas for endpoints")]
+    private static partial void LogCosmosMetadatasError(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS UPSERT-RESPONSE: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertResponse(ILogger logger, string endpointId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertError(ILogger logger, Exception exception, string endpointId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS UPSERT-RESPONSE: Heartbeat upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertResponseHeartbeatUpsertId(ILogger logger, string endpointId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: Heartbeat upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertErrorHeartbeatUpsertId(ILogger logger, Exception exception, string endpointId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: Heartbeat sweep. Id: {EndpointId}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertErrorHeartbeatSweepId(ILogger logger, Exception exception, string endpointId, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS UPSERT-RESPONSE: HeartbeatSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertResponseHeartbeatSettingsUpsertId(ILogger logger, string id, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: HeartbeatSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertErrorHeartbeatSettingsUpsertId(ILogger logger, Exception exception, string id, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "COSMOS UPSERT-RESPONSE: AuditSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertResponseAuditSettingsUpsertId(ILogger logger, string id, HttpStatusCode statusCode);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS UPSERT-ERROR: AuditSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}")]
+    private static partial void LogCosmosUpsertErrorAuditSettingsUpsertId(ILogger logger, Exception exception, string id, HttpStatusCode statusCode);
 }

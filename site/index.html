@@ -9,6 +9,17 @@
       content="Connect business systems with Azure Service Bus, ordered processing, message history, and an operator console for recovery."
     />
     <link rel="stylesheet" href="overview.css" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="NimBus" />
+    <meta property="og:title" content="NimBus — Ordered integrations. Visible recovery." />
+    <meta property="og:description" content="Connect business systems with Azure Service Bus, ordered processing, message history, and an operator console for recovery." />
+    <meta property="og:url" content="https://context-and-oss.github.io/NimBus/" />
+    <meta property="og:image" content="https://context-and-oss.github.io/NimBus/social-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="NimBus: keep integrations in order, recover when they fail" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
@@ -19,7 +30,8 @@
           <a href="platform.html">How it works</a
           ><a href="features.html">Features</a
           ><a href="getting-started.html">Try locally</a
-          ><a href="https://github.com/akakaule/NimBus">GitHub</a>
+          ><a href="docs/">Docs</a
+          ><a href="https://github.com/context-and-oss/NimBus">GitHub</a>
         </div>
       </div>
     </nav>
@@ -77,7 +89,9 @@
           <figure>
             <img
               src="screenshots/event%20details.png"
-              alt="NimBus event details showing message information and operator recovery actions"
+              alt="NimBus WebApp event details for a failed message, with resubmit and skip actions, its error, and two later messages blocked in the same session"
+              width="2000"
+              height="1318"
               loading="lazy"
             />
             <figcaption>
@@ -117,7 +131,7 @@
               </p>
             </article>
           </div>
-          <p style="margin-top: 24px">
+          <p class="more">
             <a href="features.html">Explore the feature catalog →</a>
           </p>
         </div>
@@ -147,7 +161,7 @@
               allowfullscreen
             ></iframe>
           </div>
-          <p style="margin-top: 20px">
+          <p class="more">
             <a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=153s"
               >Jump to failure and recovery (2:33)</a
             >
@@ -206,10 +220,12 @@
       <div class="wrap">
         <span>NimBus · Open-source .NET integration on Azure Service Bus</span>
         <div>
-          <a
-            href="https://github.com/akakaule/NimBus/blob/master/docs/deployment.md"
+          <a href="docs/"
+            >Documentation</a
+          ><a
+            href="docs/deployment"
             >Deploy to Azure</a
-          ><a href="https://github.com/akakaule/NimBus/blob/master/LICENSE"
+          ><a href="https://github.com/context-and-oss/NimBus/blob/master/LICENSE"
             >MIT License</a
           >
         </div>

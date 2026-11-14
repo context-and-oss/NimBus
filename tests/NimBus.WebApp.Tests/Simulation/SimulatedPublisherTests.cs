@@ -106,7 +106,7 @@ public sealed class SimulatedPublisherTests
         var messages = run.Sender.Sent;
         Assert.IsTrue(messages.Count > 50);
         Assert.IsTrue(messages.All(m => m.SessionId.StartsWith("sim-", StringComparison.Ordinal)));
-        Assert.IsTrue(messages.All(m => m.CorrelationId.StartsWith("sim-", StringComparison.Ordinal)));
+        Assert.IsTrue(messages.All(m => m.CorrelationId!.StartsWith("sim-", StringComparison.Ordinal)));
         Assert.AreEqual(5, messages.Select(m => m.SessionId).Distinct().Count(), "Both event types rotate through one pool of five.");
     }
 

@@ -36,6 +36,24 @@ GROUP BY Status";
         };
     }
 
+    /// <summary>
+    /// Distinct non-empty sessions held by a failed, dead-lettered or pending hand-off event
+    /// (<c>IMonitorMetricsStore.GetBlockedSessionCount</c>).
+    /// </summary>
+    public async Task<int> GetBlockedSessionCount(string endpointId)
+    {
+        var sql = $@"
+SELECT COUNT(DISTINCT SessionId)
+FROM {T("UnresolvedEvents")}
+WHERE EndpointId = @EndpointId AND Deleted = 0
+  AND SessionId IS NOT NULL AND SessionId <> ''
+  AND (Status IN ('Failed','DeadLettered') OR (Status = 'Pending' AND PendingSubStatus = 'Handoff'))";
+        await using var conn = await OpenAsync();
+        // QuerySingleAsync, not ExecuteScalarAsync: only the former has the SqlConnection overload
+        // that translates transient SQL errors (SqlConnectionTransientExtensions).
+        return await conn.QuerySingleAsync<int>(sql, new { EndpointId = endpointId }, commandTimeout: _context.CommandTimeout);
+    }
+
     public async Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId)
     {
         var sql = $@"
@@ -92,7 +110,7 @@ ORDER BY SessionId, UpdatedAtUtc DESC, Id DESC";
         }).ToList();
     }
 
-    public async Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
+    public async Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
     {
         var offset = DecodeOffset(continuationToken);
         var effectivePageSize = pageSize > 0 ? pageSize : 100;

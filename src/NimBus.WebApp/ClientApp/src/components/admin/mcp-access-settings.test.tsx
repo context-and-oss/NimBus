@@ -132,7 +132,7 @@ describe("MCP access settings", () => {
 
     await screen.findByText(/Saved revision 99999999/);
     const [url, request] = fetchMock.mock.calls[2];
-    expect(url).toBe("/api/admin/mcp/settings");
+    expect(url).toBe("/api/v1/admin/mcp/settings");
     expect(request.method).toBe("PUT");
     expect(request.headers["X-NimBus-CSRF"]).toBe("csrf-test");
     expect(JSON.parse(request.body)).toMatchObject({
@@ -167,7 +167,7 @@ describe("MCP access settings", () => {
   });
 
   it("explains an expired security token", async () => {
-    mockFetch(Response.json(state()), Response.json(activity), new Response(null, { status: 400 }));
+    mockFetch(Response.json(state()), Response.json(activity), Response.json({ status: 400, title: "Bad Request", code: "InvalidAntiforgeryToken" }, { status: 400 }));
     render(<McpAccessSettings />);
 
     await userEvent.click(await screen.findByRole("switch", { name: "Mark reported" }));
@@ -186,7 +186,7 @@ describe("MCP access settings", () => {
     await userEvent.click(screen.getByRole("button", { name: "Turn off MCP access" }));
 
     await screen.findByText(/MCP access is off. Agents get 503/);
-    expect(fetchMock.mock.calls[2][0]).toBe("/api/admin/mcp/turn-off");
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/v1/admin/mcp/turn-off");
     expect(fetchMock.mock.calls[2][1].headers["X-NimBus-CSRF"]).toBe("csrf-test");
     expect(screen.queryByRole("button", { name: "Turn off now" })).toBeNull();
   });
@@ -241,5 +241,58 @@ describe("MCP access model", () => {
     expect(workload.slice(1).every(r => !r.allowed)).toBe(true);
     expect(reader.find(r => r.name === "nimbus_resubmit_message")?.why).toBe("needs Contributor");
     expect(previewAccess({ ...s, allowWorkloads: false }, deployment(), "workload", true)[0].why).toBe("workloads off");
+  });
+
+  it("lets a workload record classifications only when the switch is on", () => {
+    // Spec 044 §6.6: the Nimbus.Classify app role admits recording, nothing else.
+    const s = { ...settings(), allowWorkloadClassification: true };
+    const on = previewAccess(s, deployment(), "workload", true);
+    const off = previewAccess({ ...s, allowWorkloadClassification: false }, deployment(), "workload", true);
+
+    expect(on.find(r => r.name === "nimbus_record_classification")).toEqual(
+      { name: "nimbus_record_classification", allowed: true, why: "Nimbus.Classify role + Contributor" });
+    expect(on.filter(r => r.allowed).map(r => r.name)).toEqual(["14 read tools", "nimbus_record_classification"]);
+    expect(off.find(r => r.name === "nimbus_record_classification")?.why).toBe("workload recording off");
+    expect(describeChanges(settings(), s)).toEqual([{ text: "Let workloads record failure classifications", widens: true }]);
+  });
+
+  it("lets a workload resubmit, never skip, only when unattended resubmits are on", () => {
+    // Spec 044 Phase 2: the Nimbus.Resubmit app role admits resubmit within a budget; skip stays with a person.
+    const s = { ...settings(), allowWorkloadResubmit: true, capabilities: { ...settings().capabilities, skip: true } };
+    const on = previewAccess(s, deployment(), "workload", true);
+    const off = previewAccess({ ...s, allowWorkloadResubmit: false }, deployment(), "workload", true);
+
+    expect(on.find(r => r.name === "nimbus_resubmit_message")?.allowed).toBe(true);
+    expect(on.find(r => r.name === "nimbus_skip_message")).toEqual({ name: "nimbus_skip_message", allowed: false, why: "workloads never skip" });
+    expect(off.find(r => r.name === "nimbus_resubmit_message")?.why).toBe("unattended resubmits off");
+    expect(describeChanges({ ...s, allowWorkloadResubmit: false }, s)).toEqual([{ text: "Let workloads resubmit failed messages unattended", widens: true }]);
+  });
+
+  it("reviews raising the unattended limits as widening and lowering them as narrowing", () => {
+    expect(describeChanges(settings(), { ...settings(), workloadResubmitsPerDay: 50 })).toEqual(
+      [{ text: "Workload resubmits per day: 20 → 50", widens: true }]);
+    expect(describeChanges(settings(), { ...settings(), workloadResubmitsPerMessage: 1 })).toEqual(
+      [{ text: "Unsuccessful workload resubmits per message: 2 → 1", widens: false }]);
+  });
+
+  it("shows the unattended limits only while workloads may resubmit", async () => {
+    const allowed = { ...settings(), allowWorkloadResubmit: true, workloadResubmitsPerDay: 7 };
+    mockFetch(Response.json(state({ saved: allowed, effective: allowed })), Response.json(activity));
+    render(<McpAccessSettings />);
+
+    const perDay = await screen.findByRole("spinbutton", { name: "Resubmits per agent per day" });
+
+    expect((perDay as HTMLInputElement).value).toBe("7");
+    expect(screen.getByRole("spinbutton", { name: "Unsuccessful resubmits per message" })).toBeTruthy();
+  });
+
+  it("disables the workload recording switch while workload tokens are refused", async () => {
+    const refused = { ...settings(), allowWorkloads: false };
+    mockFetch(Response.json(state({ saved: refused, effective: refused })), Response.json(activity));
+    render(<McpAccessSettings />);
+
+    const toggle = await screen.findByRole("switch", { name: "Allow workloads to record classifications" });
+
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
   });
 });

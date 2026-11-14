@@ -24,8 +24,8 @@ public class WebhookIntegrationTests
         listener.Prefixes.Add(prefix);
         listener.Start();
 
-        string receivedBody = null;
-        string receivedContentType = null;
+        string? receivedBody = null;
+        string? receivedContentType = null;
         var receiveTask = Task.Run(async () =>
         {
             var context = await listener.GetContextAsync();
@@ -59,11 +59,11 @@ public class WebhookIntegrationTests
             await receiveTask.WaitAsync(TimeSpan.FromSeconds(10));
 
             Assert.IsNotNull(receivedBody, "The webhook receiver should have received a POST body.");
-            StringAssert.Contains(receivedContentType, "application/json");
+            StringAssert.Contains(receivedContentType, "application/json", StringComparison.Ordinal);
             var json = JObject.Parse(receivedBody);
-            Assert.AreEqual("Integration", (string)json["title"]);
-            Assert.AreEqual("Critical", (string)json["severity"]);
-            Assert.AreEqual("e-int", (string)json["event"]);
+            Assert.AreEqual("Integration", (string?)json["title"]);
+            Assert.AreEqual("Critical", (string?)json["severity"]);
+            Assert.AreEqual("e-int", (string?)json["event"]);
         }
         finally
         {

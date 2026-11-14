@@ -153,14 +153,22 @@ public sealed partial class HeartbeatService : IHeartbeatService
         var sweptEndpoints = await _store.SweepTimedOutHeartbeats(cutoff);
         if (sweptEndpoints.Count > 0)
         {
-            LogSweptEndpoints(sweptEndpoints.Count, string.Join(", ", sweptEndpoints));
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                var endpoints = string.Join(", ", sweptEndpoints);
+                LogSweptEndpoints(sweptEndpoints.Count, endpoints);
+            }
             await BroadcastHeartbeatUpdateAsync();
         }
 
         var sweptServices = await _serviceHealthStore.SweepTimedOutServiceProbes(cutoff);
         if (sweptServices.Count > 0)
         {
-            LogSweptServices(sweptServices.Count, string.Join(", ", sweptServices));
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                var services = string.Join(", ", sweptServices);
+                LogSweptServices(sweptServices.Count, services);
+            }
             await BroadcastServiceHealthUpdateAsync();
         }
 

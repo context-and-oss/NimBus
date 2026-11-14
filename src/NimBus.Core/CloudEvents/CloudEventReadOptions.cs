@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace NimBus.Core.CloudEvents;
 
@@ -41,14 +42,15 @@ public sealed class CloudEventReadOptions
     public CloudEventMapping Mapping { get; set; } = new CloudEventMapping();
 
     /// <summary>Resolves the NimBus dispatch key for a CloudEvents <c>type</c>.</summary>
-    public string MapType(string cloudEventType) =>
+    [return: NotNullIfNotNull(nameof(cloudEventType))]
+    public string? MapType(string? cloudEventType) =>
         cloudEventType is null ? null : (TypeToEventTypeId ?? DefaultTypeToEventTypeId)(cloudEventType);
 
     /// <summary>Reads the mapped <c>CorrelationId</c> from a CloudEvent.</summary>
-    public string MapCorrelationId(CloudEvent cloudEvent) => Mapping.ReadCorrelationId(cloudEvent);
+    public string? MapCorrelationId(CloudEvent cloudEvent) => Mapping.ReadCorrelationId(cloudEvent);
 
     /// <summary>Reads the mapped <c>SessionId</c> from a CloudEvent.</summary>
-    public string MapSessionId(CloudEvent cloudEvent) => Mapping.ReadSessionId(cloudEvent);
+    public string? MapSessionId(CloudEvent cloudEvent) => Mapping.ReadSessionId(cloudEvent);
 
     private static string DefaultTypeToEventTypeId(string cloudEventType)
     {

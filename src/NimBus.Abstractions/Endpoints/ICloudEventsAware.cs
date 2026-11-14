@@ -23,5 +23,5 @@ public interface ICloudEventsAware
     /// Recommended CloudEvents <c>source</c> convention for this endpoint, or
     /// <c>null</c> when not declared.
     /// </summary>
-    string CloudEventsSource { get; }
+    string? CloudEventsSource { get; }
 }

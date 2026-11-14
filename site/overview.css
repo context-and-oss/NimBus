@@ -60,6 +60,10 @@ nav a {
   gap: 22px;
   flex-wrap: wrap;
 }
+.links a[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 650;
+}
 .skip {
   position: absolute;
   left: 12px;
@@ -81,12 +85,32 @@ header p {
   max-width: 720px;
   font-size: 1.15rem;
 }
+header.compact {
+  padding: 40px 0 36px;
+}
+header.compact h1 {
+  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  margin: 12px 0 14px;
+}
+header a:not(.button) {
+  color: #8eceff;
+}
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.12em;
   font-size: 0.8rem;
   font-weight: 700;
   color: #8eceff;
+}
+section .eyebrow {
+  color: var(--blue);
+  margin-bottom: 10px;
+}
+.jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-top: 26px;
 }
 h1 {
   font-size: clamp(2.2rem, 5vw, 3.8rem);
@@ -127,6 +151,10 @@ p {
 }
 .button.secondary {
   background: transparent;
+  color: var(--blue);
+  border-color: #b9c7d6;
+}
+header .button.secondary {
   color: #d7eaff;
   border-color: #8096af;
 }
@@ -140,12 +168,24 @@ section {
   max-width: 760px;
   color: var(--muted);
 }
+.more {
+  margin-top: 24px;
+}
 .grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 28px;
 }
+.grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.grid.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+}
 .card {
+  display: flex;
+  flex-direction: column;
   padding: 26px;
   background: white;
   border: 1px solid var(--line);
@@ -154,6 +194,28 @@ section {
 .card p {
   color: var(--muted);
   margin: 0;
+}
+.grid.four .card {
+  padding: 22px;
+}
+.pkgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 16px;
+}
+.pkg {
+  font: 0.75rem/1.4 Consolas, monospace;
+  color: #0b4f8a;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 7px;
+  overflow-wrap: anywhere;
+}
+.soft .pkg {
+  background: white;
 }
 .steps {
   counter-reset: step;
@@ -172,6 +234,46 @@ section {
 .steps h3:before {
   content: counter(step) ". ";
   color: var(--blue);
+}
+.steps.five {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 20px;
+}
+.paths {
+  list-style: none;
+  padding: 0;
+  margin: 30px 0;
+  display: grid;
+  gap: 12px;
+}
+.paths li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 24px;
+  align-items: start;
+  margin: 0;
+  padding: 18px 22px;
+  background: white;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--blue);
+  border-radius: 8px;
+}
+.paths h3 {
+  margin: 0 0 4px;
+}
+.paths p {
+  margin: 0;
+  color: var(--muted);
+}
+.status {
+  justify-self: end;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 650;
+  padding: 3px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--soft);
 }
 figure {
   margin: 30px 0 0;
@@ -230,6 +332,13 @@ pre {
 code {
   font-family: Consolas, monospace;
 }
+:not(pre) > code {
+  font-size: 0.9em;
+  padding: 0.05em 0.35em;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
 li {
   margin-bottom: 8px;
 }
@@ -253,10 +362,22 @@ footer .wrap {
 footer a {
   margin-right: 18px;
 }
+@media (max-width: 980px) {
+  .grid.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 @media (max-width: 700px) {
   .grid,
-  .steps {
+  .grid.two,
+  .grid.four,
+  .steps,
+  .steps.five,
+  .paths li {
     grid-template-columns: 1fr;
+  }
+  .status {
+    justify-self: start;
   }
   header {
     padding: 46px 0;

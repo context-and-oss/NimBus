@@ -51,7 +51,7 @@ public static class MessageContextIdentity
     public static string? GetFromOrDefault(this IMessage? message)
     {
         if (message is null) return null;
-        string from;
+        string? from;
         try { from = message.From; }
         catch (InvalidMessageException) { return null; }
 
@@ -83,7 +83,7 @@ public static class MessageContextIdentity
     public static string? GetInboxMessageIdOrDefault(this IMessage? message)
     {
         if (message is null) return null;
-        string inboxMessageId;
+        string? inboxMessageId;
         try { inboxMessageId = message.InboxMessageId; }
         catch (InvalidMessageException) { return null; }
 

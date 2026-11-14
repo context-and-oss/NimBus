@@ -27,7 +27,7 @@ public sealed class EndpointCountQueryTests
             .Select(value => value.StartsWith('@') ? (string)parameters[value] : value.Trim('\''))
             .ToArray();
         CollectionAssert.AreEquivalent(CountedStatuses, statuses);
-        StringAssert.Contains(query.QueryText, "c.deleted");
-        StringAssert.Contains(query.QueryText, "GROUP BY c.status");
+        StringAssert.Contains(query.QueryText, "c.deleted", StringComparison.Ordinal);
+        StringAssert.Contains(query.QueryText, "GROUP BY c.status", StringComparison.Ordinal);
     }
 }

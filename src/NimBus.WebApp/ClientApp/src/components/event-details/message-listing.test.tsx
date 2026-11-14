@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import moment from "moment";
 import * as api from "api-client";
@@ -18,9 +18,17 @@ import MessageListing, {
 vi.mock("components/ui/toast", () => ({
   useToast: () => ({ addToast: () => {} }),
 }));
+vi.mock("functions/notifications.functions", () => ({
+  notifySuccess: vi.fn(),
+  notifyError: vi.fn(),
+  notifyWarning: vi.fn(),
+  notifyInfo: vi.fn(),
+  notifyWithUndo: vi.fn(),
+}));
 
 vi.mock("api-client", async () => {
-  const actual = await vi.importActual<typeof import("api-client")>("api-client");
+  const actual =
+    await vi.importActual<typeof import("api-client")>("api-client");
   class MockClient {
     getMe() {
       return Promise.resolve(undefined);
@@ -67,7 +75,9 @@ function msg(
 describe("getHistoryQueueTimeMs (spec 005)", () => {
   it("case 1 - returns undefined for empty / undefined messages", () => {
     expect(getHistoryQueueTimeMs(undefined)).toBeUndefined();
-    expect(getHistoryQueueTimeMs(null as unknown as api.Message[])).toBeUndefined();
+    expect(
+      getHistoryQueueTimeMs(null as unknown as api.Message[]),
+    ).toBeUndefined();
     expect(getHistoryQueueTimeMs([])).toBeUndefined();
   });
 
@@ -134,7 +144,10 @@ describe("getHistoryQueueTimeMs (spec 005)", () => {
   it("ignores unknown forward-compat messageType values without throwing", () => {
     const history: api.Message[] = [
       msg("eventRequest", "2026-05-28T16:00:00.000Z"),
-      msg("someFutureUnknownType" as api.MessageType, "2026-05-28T16:00:01.000Z"),
+      msg(
+        "someFutureUnknownType" as api.MessageType,
+        "2026-05-28T16:00:01.000Z",
+      ),
       msg("deferralResponse", "2026-05-28T16:00:02.000Z"),
     ];
     expect(getHistoryQueueTimeMs(history)).toBe(2_000);
@@ -143,10 +156,23 @@ describe("getHistoryQueueTimeMs (spec 005)", () => {
 
 describe("getFailureOccurrences (Spec 033)", () => {
   it("returns each stored failure row, including a dead-letter row without error content", () => {
-    const event = { eventId: "event-1", lastMessageId: "last" } as unknown as api.Event;
+    const event = {
+      eventId: "event-1",
+      lastMessageId: "last",
+    } as unknown as api.Event;
     const rows = [
-      { eventId: "event-1", messageId: "failure-1", messageType: "ErrorResponse", errorContent: "details" },
-      { eventId: "event-1", messageId: "failure-2", messageType: "DeadLetter", deadLetterReason: "expired" },
+      {
+        eventId: "event-1",
+        messageId: "failure-1",
+        messageType: "ErrorResponse",
+        errorContent: "details",
+      },
+      {
+        eventId: "event-1",
+        messageId: "failure-2",
+        messageType: "DeadLetter",
+        deadLetterReason: "expired",
+      },
     ] as unknown as api.Message[];
 
     expect(getFailureOccurrences(event, rows)).toEqual([
@@ -156,10 +182,16 @@ describe("getFailureOccurrences (Spec 033)", () => {
   });
 
   it("falls back to the event last message only when no failure row is available", () => {
-    expect(getFailureOccurrences(
-      { eventId: "event-1", lastMessageId: "last", resolutionStatus: "DeadLettered" } as unknown as api.Event,
-      [],
-    )).toEqual([{ eventId: "event-1", messageId: "last" }]);
+    expect(
+      getFailureOccurrences(
+        {
+          eventId: "event-1",
+          lastMessageId: "last",
+          resolutionStatus: "DeadLettered",
+        } as unknown as api.Event,
+        [],
+      ),
+    ).toEqual([{ eventId: "event-1", messageId: "last" }]);
   });
 });
 
@@ -193,10 +225,6 @@ describe("MessageListing timing bar (spec 005)", () => {
         <MessageListing
           eventDetails={event}
           messages={messages}
-          eventTypes={[]}
-          skipEvent={async () => {}}
-          resubmitEvent={async () => {}}
-          resubmitEventWithChanges={async () => {}}
         />
       </MemoryRouter>,
     );
@@ -232,7 +260,7 @@ describe("MessageListing timing bar (spec 005)", () => {
     expect(screen.getByText(/Queue\s+0ms/)).toBeTruthy();
   });
 
-  it("labels an exact duplicate skip in both visible status locations", () => {
+  it("labels an exact duplicate skip in the timing summary", () => {
     stubMe();
     renderListing(
       eventFixture({
@@ -242,7 +270,7 @@ describe("MessageListing timing bar (spec 005)", () => {
       [],
     );
 
-    expect(screen.getAllByText("Skipped (duplicate)")).toHaveLength(2);
+    expect(screen.getAllByText("Skipped (duplicate)")).toHaveLength(1);
   });
 
   it("leaves an ordinary skipped status unchanged", () => {
@@ -255,7 +283,7 @@ describe("MessageListing timing bar (spec 005)", () => {
       [],
     );
 
-    expect(screen.getAllByText("Skipped")).toHaveLength(2);
+    expect(screen.getAllByText("Skipped")).toHaveLength(1);
     expect(screen.queryByText("Skipped (duplicate)")).toBeNull();
   });
 });
@@ -295,15 +323,14 @@ function spec006BuildEvent(overrides: Partial<api.Event>): api.Event {
   } as unknown as api.Event;
 }
 
-function spec006RenderListing(eventDetails: api.Event, blockedByEventId?: string) {
+function spec006RenderListing(
+  eventDetails: api.Event,
+  blockedByEventId?: string,
+) {
   return render(
     <MemoryRouter>
       <MessageListing
         eventDetails={eventDetails}
-        eventTypes={[]}
-        skipEvent={vi.fn()}
-        resubmitEvent={vi.fn()}
-        resubmitEventWithChanges={vi.fn()}
         blockedByEventId={blockedByEventId}
       />
     </MemoryRouter>,
@@ -338,12 +365,18 @@ describe("MessageListing — Blocked by row (spec 006)", () => {
   });
 
   it("does not render 'Blocked by' for a deferred event when blockedByEventId is omitted", () => {
-    spec006RenderListing(spec006BuildEvent({ resolutionStatus: "Deferred" }), undefined);
+    spec006RenderListing(
+      spec006BuildEvent({ resolutionStatus: "Deferred" }),
+      undefined,
+    );
     expect(screen.queryByText("Blocked by")).toBeNull();
   });
 
   it("does not render 'Blocked by' for a non-deferred event even when blockedByEventId is provided", () => {
-    spec006RenderListing(spec006BuildEvent({ resolutionStatus: "Completed" }), SPEC_006_BLOCKED_BY);
+    spec006RenderListing(
+      spec006BuildEvent({ resolutionStatus: "Completed" }),
+      SPEC_006_BLOCKED_BY,
+    );
     expect(screen.queryByText("Blocked by")).toBeNull();
   });
 });
@@ -714,10 +747,6 @@ describe("MessageListing payload blocks", () => {
         <MessageListing
           eventDetails={event}
           messages={messages}
-          eventTypes={[]}
-          skipEvent={async () => {}}
-          resubmitEvent={async () => {}}
-          resubmitEventWithChanges={async () => {}}
         />
       </MemoryRouter>,
     );
@@ -805,10 +834,6 @@ describe("MessageListing memoised payload derivations", () => {
               eventContent: maskedPayload,
             }),
           ]}
-          eventTypes={[]}
-          skipEvent={async () => {}}
-          resubmitEvent={async () => {}}
-          resubmitEventWithChanges={async () => {}}
         />
       </MemoryRouter>
     );
@@ -846,5 +871,63 @@ describe("MessageListing memoised payload derivations", () => {
     } finally {
       parseSpy.mockRestore();
     }
+  });
+});
+
+describe("MessageListing error card", () => {
+  const show = (stack?: string, extra: Record<string, unknown> = {}) =>
+    render(
+      <MemoryRouter>
+        <MessageListing
+          eventDetails={
+            new api.Event({
+              eventId: "edit-event",
+              sessionId: "edit-session",
+              lastMessageId: "edit-message",
+              eventTypeId: "Order",
+              resolutionStatus: api.ResolutionStatus.Failed,
+              messageContent: new api.MessageContent({
+                eventContent: new api.EventContent({
+                  eventJson: '{"amount":1}',
+                }),
+                errorContent: new api.ErrorContent({
+                  errorText: "failure",
+                  exceptionStackTrace: stack,
+                }),
+              }),
+            })
+          }
+          messages={[]}
+          {...extra}
+        />
+      </MemoryRouter>,
+    );
+  it("tells the operator how many events wait behind the failure and links to them", () => {
+    const onShowBlocked = vi.fn();
+    show(undefined, { blockedCount: 2, onShowBlocked });
+    expect(screen.getByText(/2 later events are waiting behind it/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View blocked events" }));
+    expect(onShowBlocked).toHaveBeenCalled();
+  });
+  it("shows no blocked notice when nothing waits behind the failure", () => {
+    show(undefined, { blockedCount: 0 });
+    expect(
+      screen.queryByRole("button", { name: "View blocked events" }),
+    ).toBeNull();
+  });
+  it("offers a copy button for each identifier", () => {
+    show();
+    expect(screen.getByRole("button", { name: "Copy eventid" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy sessionid" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy messageid" })).toBeTruthy();
+  });
+  it("omits the Exception heading when no stack trace is stored", () => {
+    show();
+    expect(screen.queryByText("Exception")).toBeNull();
+  });
+  it("keeps an available stack trace", () => {
+    show("at OrderHandler.Handle()");
+    expect(screen.getByText("Exception")).toBeTruthy();
+    expect(screen.getByText("at OrderHandler.Handle()")).toBeTruthy();
   });
 });

@@ -10,7 +10,7 @@ public class SqlServerOutboxOptions
     /// <summary>
     /// The SQL Server connection string.
     /// </summary>
-    public string ConnectionString { get; set; }
+    public string ConnectionString { get; set; } = null!;
 
     /// <summary>
     /// The schema for the outbox table. Default: "nimbus".

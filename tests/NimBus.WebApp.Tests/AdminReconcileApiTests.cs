@@ -187,6 +187,7 @@ public sealed class AdminReconcileApiTests
         public Task<BulkResubmitPreview> PreviewFailedMessagesAsync(string endpointId) => Unexpected<BulkResubmitPreview>();
         public Task<BulkOperationResult> BulkResubmitFailedAsync(string endpointId) => Unexpected<BulkOperationResult>();
         public Task<int> GetDeadLetteredCountAsync(string endpointId) => Unexpected<int>();
+        public Task<DeadLetterQueueCounts?> GetDeadLetterQueueCountsAsync(string endpointId) => Unexpected<DeadLetterQueueCounts?>();
         public Task<BulkOperationResult> DeleteDeadLetteredAsync(string endpointId) => Unexpected<BulkOperationResult>();
         public Task<SessionPurgePreview> PreviewSessionPurgeAsync(string endpointId, string sessionId) => Unexpected<SessionPurgePreview>();
         public Task<SessionPurgeResult> PurgeSessionAsync(string endpointId, string sessionId) => Unexpected<SessionPurgeResult>();
@@ -196,6 +197,7 @@ public sealed class AdminReconcileApiTests
         public Task<int> DeleteMessagesByToPreviewAsync(string toField) => Unexpected<int>();
         public Task<BulkOperationResult> DeleteMessagesByToAsync(string toField) => Unexpected<BulkOperationResult>();
         public Task<int> DeleteByStatusPreviewAsync(string endpointId, List<string> statuses) => Unexpected<int>();
+        public Task<int> CountSessionBlockingEventsAsync(string endpointId, List<string> statuses) => Unexpected<int>();
         public Task<BulkOperationResult> DeleteByStatusAsync(string endpointId, List<string> statuses) => Unexpected<BulkOperationResult>();
         public Task<int> SkipMessagesPreviewAsync(string endpointId, List<string> statuses, DateTime? before) => Unexpected<int>();
         public Task<BulkOperationResult> SkipMessagesAsync(string endpointId, List<string> statuses, DateTime? before) => Unexpected<BulkOperationResult>();

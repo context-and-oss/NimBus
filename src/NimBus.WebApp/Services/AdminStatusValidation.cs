@@ -1,20 +1,20 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 
 namespace NimBus.WebApp.Services;
 
 internal static class AdminStatusValidation
 {
-    private static readonly IReadOnlyDictionary<string, string> ResolutionStatusNames =
+    private static readonly Dictionary<string, string> ResolutionStatusNames =
         CreateResolutionStatusNames();
 
-    private static readonly HashSet<string> TerminalStatusNames = new(
-        new[]
-        {
-            nameof(ResolutionStatus.Completed),
-            nameof(ResolutionStatus.Skipped),
-        },
+    // Bulk skip sends each skip to the endpoint, so it accepts only the statuses a skip settles;
+    // see SkipRules.BulkSkipSourceStatuses for why the others are refused.
+    private static readonly HashSet<string> SkipSourceStatusNames = new(
+        SkipRules.BulkSkipSourceStatuses.Select(status => status.ToString()),
         StringComparer.Ordinal);
 
     public static bool TryNormalizeDeleteStatuses(
@@ -74,9 +74,10 @@ internal static class AdminStatusValidation
                 return false;
             }
 
-            if (skippableOnly && TerminalStatusNames.Contains(canonicalStatus))
+            if (skippableOnly && !SkipSourceStatusNames.Contains(canonicalStatus))
             {
-                error = $"Resolution status '{canonicalStatus}' cannot be used as a source for skip.";
+                error = $"Resolution status '{canonicalStatus}' cannot be used as a source for skip. " +
+                    $"Skippable statuses: {string.Join(", ", SkipSourceStatusNames.Order(StringComparer.Ordinal))}.";
                 return false;
             }
 
@@ -95,7 +96,7 @@ internal static class AdminStatusValidation
         return true;
     }
 
-    private static IReadOnlyDictionary<string, string> CreateResolutionStatusNames()
+    private static Dictionary<string, string> CreateResolutionStatusNames()
     {
         var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in Enum.GetNames<ResolutionStatus>())

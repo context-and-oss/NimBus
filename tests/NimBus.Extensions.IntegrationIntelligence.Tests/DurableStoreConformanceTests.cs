@@ -59,6 +59,103 @@ public sealed class DurableStoreConformanceTests
         await Assert.ThrowsExactlyAsync<ClassificationServiceException>(() => firstStore.ReserveAsync(id, Guid.NewGuid().ToString("D"), true, fixture.Clock.Now, scope));
     }
 
+    [TestMethod]
+    [DataRow("memory")]
+    [DataRow("sql")]
+    [DataRow("cosmos")]
+    public async Task Bulk_Read_Returns_Latest_Completed_Result_And_Normalized_Operation_State(string provider)
+    {
+        // Spec 043 §5 and §8.1: one bulk read returns, per failure, the latest completed result,
+        // the latest operation's state (expired active normalizes to an unknown outcome), and
+        // tombstones; absent ids are simply missing from the result.
+        await using var fixture = await StoreFixture.CreateAsync(provider);
+        var store = fixture.First;
+        var now = fixture.Clock.Now;
+        var completed = await CompleteAsync(store, Guid.NewGuid().ToString("D"), now);
+        var newerRunning = await CompleteAsync(store, Guid.NewGuid().ToString("D"), now);
+        await store.ReserveAsync(newerRunning, Guid.NewGuid().ToString("D"), true, now, Scope(newerRunning));
+        var newerExpired = await CompleteAsync(store, Guid.NewGuid().ToString("D"), now);
+        // Reserved two minutes ago with a 60 s lease: the store clock now reads it as expired.
+        await store.ReserveAsync(newerExpired, Guid.NewGuid().ToString("D"), true, now.AddSeconds(-120), Scope(newerExpired));
+        var tombstoned = await CompleteAsync(store, Guid.NewGuid().ToString("D"), now);
+        await ((IClassificationRetentionStore)store).DeleteFailureAsync(tombstoned);
+        var absent = Enumerable.Range(0, 600).Select(_ => Guid.NewGuid().ToString("D")).ToList();
+
+        var snapshots = await ((IFailureClassificationBulkReader)store).ReadLatestAsync(
+            [completed, newerRunning, newerExpired, tombstoned, .. absent, completed]);
+
+        Assert.HasCount(4, snapshots);
+        Assert.AreEqual(1, snapshots[completed].Latest!.Revision);
+        Assert.AreEqual("Completed", snapshots[completed].LatestOperationStatus);
+        Assert.IsFalse(snapshots[completed].Deleted);
+        Assert.AreEqual(1, snapshots[newerRunning].Latest!.Revision, "A newer running analysis keeps the earlier completed result.");
+        Assert.AreEqual("Active", snapshots[newerRunning].LatestOperationStatus);
+        Assert.AreEqual(1, snapshots[newerExpired].Latest!.Revision);
+        Assert.AreEqual("Failed", snapshots[newerExpired].LatestOperationStatus);
+        Assert.AreEqual("AnalysisOutcomeUnknown", snapshots[newerExpired].LatestOperationErrorCode);
+        Assert.IsTrue(snapshots[tombstoned].Deleted);
+        Assert.IsNull(snapshots[tombstoned].Latest);
+        Assert.IsFalse(absent.Any(snapshots.ContainsKey));
+    }
+
+    [TestMethod]
+    [DataRow("sql")]
+    [DataRow("cosmos")]
+    public async Task Bulk_Read_Reports_Missing_Storage_As_Unavailable_Not_Empty(string provider)
+    {
+        // A missing table or container is "unavailable", never "no classifications" (spec 043 §8.1).
+        await using var fixture = await StoreFixture.CreateAsync(provider, provisionStorage: false);
+        var reader = new FailureClassificationReader(new TestIntelligenceHost(), fixture.First,
+            System.Reflection.DispatchProxy.Create<NimBus.MessageStore.Abstractions.IMessageTrackingStore, MessageSource>());
+
+        var result = await reader.ReadLatestInBulkAsync([Guid.NewGuid().ToString("D")], new ClassificationBulkReadOptions(), default);
+
+        Assert.AreEqual(ClassificationBulkReadStatus.Unavailable, result.Status);
+        Assert.HasCount(0, result.Snapshots);
+    }
+
+    [TestMethod]
+    [DataRow("memory")]
+    [DataRow("sql")]
+    [DataRow("cosmos")]
+    public async Task Agent_Recordings_Round_Trip_Their_New_Fields_Beside_Version_One_Results(string provider)
+    {
+        // Spec 044 §6.4: the new fields are optional members of the JSON document; no migration.
+        await using var fixture = await StoreFixture.CreateAsync(provider);
+        var store = fixture.First;
+        var id = Guid.NewGuid().ToString("D");
+        var first = await store.ReserveAsync(id, Guid.NewGuid().ToString("D"), false, fixture.Clock.Now, Scope(id));
+        await store.CompleteAsync(first.OperationId, Result(id, first.Revision));
+        var second = await store.ReserveAsync(id, Guid.NewGuid().ToString("D"), true, fixture.Clock.Now, Scope(id));
+        var agent = Result(id, second.Revision) with
+        {
+            Provider = "Agent", Model = "unspecified", QuestionSetVersion = 2, FaultOrigin = "source_data",
+            FaultOriginConfidence = 0.75, ClientId = "44444444-4444-4444-4444-444444444444", Rationale = "Field customerId is empty.",
+        };
+        await store.CompleteAsync(second.OperationId, agent);
+
+        var history = await fixture.Second.GetHistoryAsync(id);
+
+        Assert.HasCount(2, history);
+        Assert.AreEqual("Agent", history[0].Provider);
+        Assert.AreEqual("source_data", history[0].FaultOrigin);
+        Assert.AreEqual(0.75, history[0].FaultOriginConfidence);
+        Assert.AreEqual(agent.ClientId, history[0].ClientId);
+        Assert.AreEqual(agent.Rationale, history[0].Rationale);
+        Assert.AreEqual("TypeSafe", history[1].Provider);
+        Assert.IsNull(history[1].FaultOrigin);
+        Assert.IsNull(history[1].Rationale);
+    }
+
+    private static ClassificationScope Scope(string id) => new(id, "event", "endpoint", "session");
+
+    private static async Task<string> CompleteAsync(IFailureClassificationStore store, string id, DateTimeOffset now)
+    {
+        var reservation = await store.ReserveAsync(id, Guid.NewGuid().ToString("D"), false, now, Scope(id));
+        await store.CompleteAsync(reservation.OperationId, Result(id, reservation.Revision));
+        return id;
+    }
+
     internal static FailureClassification Result(string id, int revision) => new()
     {
         Id = $"{id}:{revision}", FailureMessageId = id, Revision = revision, EventId = "event", EventTypeId = "type", EndpointId = "endpoint",
@@ -84,7 +181,7 @@ internal sealed class StoreFixture : IAsyncDisposable
     private string? _database;
     private string? _sql;
 
-    public static async Task<StoreFixture> CreateAsync(string provider)
+    public static async Task<StoreFixture> CreateAsync(string provider, bool provisionStorage = true)
     {
         var fixture = new StoreFixture();
         if (provider == "memory")
@@ -105,8 +202,11 @@ internal sealed class StoreFixture : IAsyncDisposable
             await command.ExecuteNonQueryAsync();
             var builder = new SqlConnectionStringBuilder(fixture._sql) { InitialCatalog = fixture._database };
             var store = new SqlClassificationStore(builder.ConnectionString, fixture.Clock);
-            await store.EnsureSchemaAsync();
-            await store.EnsureSchemaAsync();
+            if (provisionStorage)
+            {
+                await store.EnsureSchemaAsync();
+                await store.EnsureSchemaAsync();
+            }
             fixture.First = store;
             fixture.Second = new SqlClassificationStore(builder.ConnectionString, fixture.Clock);
         }
@@ -120,7 +220,7 @@ internal sealed class StoreFixture : IAsyncDisposable
             }
             fixture._cosmos = new CosmosClient(connection, new CosmosClientOptions { ConnectionMode = ConnectionMode.Gateway, LimitToEndpoint = true });
             var database = await fixture._cosmos.CreateDatabaseAsync(fixture._database);
-            await database.Database.CreateContainerAsync("failureclassifications", "/failureMessageId");
+            if (provisionStorage) await database.Database.CreateContainerAsync("failureclassifications", "/failureMessageId");
             fixture.First = new CosmosClassificationStore(fixture._cosmos, fixture._database, clock: fixture.Clock);
             fixture.Second = new CosmosClassificationStore(fixture._cosmos, fixture._database, clock: fixture.Clock);
         }

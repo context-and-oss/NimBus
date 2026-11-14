@@ -24,7 +24,7 @@ internal static class OperatorCommandTestRows
     {
         var message = await store.GetMessage(eventId, messageId)
             ?? throw new InvalidOperationException($"Store message {messageId} before seeding its row.");
-        return await SeedFailedRowAsync(store, OperatorCommandCoordinator.TargetEndpoint(message), eventId,
+        return await SeedFailedRowAsync(store, OperatorCommandCoordinator.TargetEndpoint(message)!, eventId,
             message.SessionId!, messageId);
     }
 

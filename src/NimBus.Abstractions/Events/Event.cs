@@ -5,7 +5,7 @@ using System.Reflection;
 
 namespace NimBus.Core.Events;
 
-public abstract class Event : IEvent
+public abstract class Event : IEvent, IRoutingKeyProvider
 {
     public EventValidationResult TryValidate()
     {
@@ -32,5 +32,23 @@ public abstract class Event : IEvent
                 $"[SessionKey(\"{attr.PropertyName}\")] on {GetType().Name} references a property that does not exist.");
 
         return prop.GetValue(this)?.ToString() ?? Guid.NewGuid().ToString();
+    }
+
+    /// <summary>
+    /// The routing key (Spec 045): the value of the property <see cref="RoutingKeyAttribute"/>
+    /// names, or null when the class has no attribute or the value is null or empty. Override
+    /// to compute a key from other properties.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The attribute names a property that is missing, not a string, or sensitive.
+    /// </exception>
+    public virtual string? GetRoutingKey()
+    {
+        var property = RoutingKeys.ResolveProperty(GetType());
+        if (property is null)
+            return null;
+
+        var value = property.GetValue(this) as string;
+        return string.IsNullOrEmpty(value) ? null : value;
     }
 }

@@ -201,6 +201,25 @@ public class ResolverHeartbeatTests
     }
 
     [TestMethod]
+    public async Task Handle_HeartbeatResponse_CosmosThrottle_RetriesInPlaceInsteadOfRescheduling()
+    {
+        // A rescheduled copy lands minutes later and would overwrite a newer heartbeat; the next
+        // heartbeat supersedes this one anyway, so the session simply redelivers it.
+        var store = new FakeCosmosDbClient
+        {
+            SetHeartbeatException = new RequestLimitException(TimeSpan.FromSeconds(1)),
+        };
+        var message = CreateHeartbeatContext(MessageType.ResolutionResponse, to: Constants.ResolverId, from: "BillingEndpoint");
+        var service = CreateService(store);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(0, message.ScheduleRedeliveryCalls, "Heartbeats skip the scheduled-redelivery path.");
+        Assert.AreEqual(0, message.CompletedCalls, "The session must redeliver the answer.");
+        Assert.AreEqual(0, message.DeadLetterCalls);
+    }
+
+    [TestMethod]
     public async Task Handle_HeartbeatResponse_FinalCosmosThrottle_UsesStableDeadLetterReason()
     {
         var store = new FakeCosmosDbClient
@@ -291,7 +310,7 @@ public class ResolverHeartbeatTests
         var store = new FakeCosmosDbClient();
         var message = CreateHeartbeatContext(MessageType.ResolutionResponse, to: Constants.ResolverId, from: "BillingEndpoint");
         message.EventTypeId = "OrderPlaced";
-        message.MessageContent.EventContent.EventTypeId = "OrderPlaced";
+        message.MessageContent.EventContent!.EventTypeId = "OrderPlaced";
         var service = CreateService(store);
 
         await service.Handle(message);

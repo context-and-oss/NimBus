@@ -21,5 +21,5 @@ public class HandoffFailedException : Exception
     /// <c>ErrorContent.ErrorType</c>. Preserved on the exception for
     /// observability; not currently round-tripped to the response.
     /// </summary>
-    public string OriginalErrorType { get; }
+    public string? OriginalErrorType { get; }
 }

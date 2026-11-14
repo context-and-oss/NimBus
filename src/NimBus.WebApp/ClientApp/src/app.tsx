@@ -8,6 +8,7 @@ import { Navigation } from "models/navigation";
 import { ToastProvider } from "components/ui/toast";
 import { CommandPaletteProvider } from "components/command-palette";
 import { ThemeProvider } from "hooks/use-theme";
+import { isDashboardTokenMode } from "lib/monitor-access";
 
 // Pages are route-level code-split: the initial bundle carries only the shell
 // (sidebar/topbar/footer) and whichever route the user lands on. Each page —
@@ -169,10 +170,13 @@ const navigation: Navigation = [
 const FULLSCREEN_ROUTES = ["/Monitor"];
 
 function App() {
+  // A wall opened with a dashboard token may call the Monitor feed and nothing else, so the
+  // palette (which loads the caller's access on mount) stays off.
+  const tokenMode = isDashboardTokenMode();
   return (
     <ThemeProvider>
       <ToastProvider>
-        <CommandPaletteProvider>
+        <CommandPaletteProvider disabled={tokenMode}>
           <AppShell />
         </CommandPaletteProvider>
       </ToastProvider>

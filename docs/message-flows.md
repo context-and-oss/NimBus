@@ -45,7 +45,7 @@ Each endpoint topic has these subscriptions:
 | `Retry` | OFF | self topic | `user.To = 'Retry'` | `SET user.To = '{endpointId}'; SET user.From = 'Retry'` | (forwarded back to main sub) |
 | `Deferred` | ON | — | `user.To = 'Deferred'` | — | **DeferredMessageProcessor** (reads via AcceptSession) |
 | `DeferredProcessor` | OFF | — | `user.To = 'DeferredProcessor'` | — | **DeferredProcessorFunction** |
-| `{eventTypeId}` | OFF | consuming endpoint topic | `user.EventTypeId = '{eventTypeId}'` | `SET user.From = '{endpointId}'; SET user.EventId = newid(); SET user.To = '{consumerId}'` | (forwarded to consumer) |
+| `{eventTypeId}` | OFF | consuming endpoint topic | `user.EventTypeId = '{eventTypeId}' AND user.MessageType = 'EventRequest' AND user.From IS NULL` | `SET user.From = '{endpointId}'; SET user.EventId = newid(); SET user.To = '{consumerId}'` | (forwarded to consumer) |
 
 ### Key Design Points
 
@@ -53,6 +53,7 @@ Each endpoint topic has these subscriptions:
 - **Forward subscriptions** (`Continuation`, `Retry`): catch messages, rewrite properties, forward back to the same topic — the rewritten `To` then matches the main subscription
 - **DeferredProcessor**: NOT session-enabled — it can trigger independently of the main function's session lock
 - **Resolver subscription has two rules**: catches both responses (`To = 'Resolver'`) and original EventRequests (`To = '{endpointId}'`) so the Resolver sees the full message history
+- **Forwarder rules match only original publishes**: `MessageType = 'EventRequest'` keeps the endpoint's own control traffic about an event (responses, RetryRequest, ProcessDeferredRequest, resubmissions) off the forwarder, and `From IS NULL` keeps forwarded, parked and Manager copies off it
 
 ---
 
@@ -294,6 +295,9 @@ sequenceDiagram
     Bill->>BillSub: billingendpoint sub (handles independently)
 ```
 
+A consumer can also take an event type only for some values of a payload field. The forward rule
+then filters on the message's `RoutingKey` property too; see [Routing keys](routing-keys.md).
+
 ### 11. Transient Failure → Abandon → Redeliver
 
 When the handler throws `TransientException` (an infrastructure fault where redelivering the identical message is enough, such as a lost session lock), NimBus **does not** call SB Abandon explicitly — `MessageContext.Abandon` is a deliberate no-op. The peek-lock simply expires after ~30 seconds and Service Bus redelivers the same message. No notification is sent to the Resolver, so audit visibility is intentionally minimal for this path. Each attempt counts toward the subscription's max delivery count. Downstream outages and throttling belong on the [scheduled retry](#6-retry-automatic) path instead, through typed exceptions and `AddExceptionRule<T>` (see [error-handling.md](error-handling.md#when-to-throw-what)).
@@ -302,9 +306,14 @@ Resolver treats Cosmos DB 429s more deliberately. Scheduled replacements and
 broker redeliveries consume one shared ten-attempt budget
 (`ThrottleRetryCount + DeliveryCount`). On the final attempt Resolver explicitly
 dead-letters with the stable reason `CosmosDbThrottled`; generic storage
-transients retain the existing redelivery behavior. Owners can inspect and
-atomically replay these regular Resolver dead letters from Topology → Subscriptions;
-see [the subscription incident-response guide](service-bus-subscription-admin.md#replaying-resolver-dead-letters).
+transients retain the existing redelivery behavior. If the replacement can't be
+scheduled at all (no sender, or the broker refuses it), the original is left for
+the session to redeliver instead. Heartbeats never get a scheduled replacement:
+a throttled heartbeat is retried in place, because a copy arriving minutes later
+could overwrite a newer heartbeat. Owners can inspect and atomically replay
+these regular Resolver dead letters from Topology → Subscriptions; a replay keeps
+the `MessageId` and drops `ThrottleRetryCount`, so it starts a fresh budget. See
+[the subscription incident-response guide](service-bus-subscription-admin.md#replaying-resolver-dead-letters).
 
 ```mermaid
 sequenceDiagram
@@ -400,7 +409,7 @@ sequenceDiagram
 
 The Resolver projects the `HandoffCompletedRequest` itself as a plain Pending row (the handoff sub-status is cleared) so that the agent zone's non-claiming receive loop stops handing the event out and a second settlement is rejected; the subscriber's `ResolutionResponse` then flips the row to Completed. See the 2026-09-15 note in [ADR-012](adr/012-pending-handoff.md) for why the history-only alternative was not adopted.
 
-The failure path is symmetrical: `IHandoffClient.FailAsync(coords, errorText, errorType)` (which the WebApp's `POST /api/event/handoff/fail/{endpointId}/{eventId}/{messageId}` also calls) issues a `HandoffFailedRequest`, the subscriber's `HandleHandoffFailedRequest` synthesises an `EventContextHandlerException` that wraps a `HandoffFailedException(errorText, errorType)`, sends an `ErrorResponse` to the Resolver (status flips Pending to Failed with `errorText` preserved verbatim), and leaves the session blocked. The operator chooses Resubmit or Skip from the WebApp — both follow today's existing flows.
+The failure path is symmetrical: `IHandoffClient.FailAsync(coords, errorText, errorType)` (which the WebApp's `POST /api/v1/event/handoff/fail/{endpointId}/{eventId}/{messageId}` also calls) issues a `HandoffFailedRequest`, the subscriber's `HandleHandoffFailedRequest` synthesises an `EventContextHandlerException` that wraps a `HandoffFailedException(errorText, errorType)`, sends an `ErrorResponse` to the Resolver (status flips Pending to Failed with `errorText` preserved verbatim), and leaves the session blocked. The operator chooses Resubmit or Skip from the WebApp — both follow today's existing flows.
 
 `MarkPendingHandoff` is idempotent — calling it twice from the same handler invocation overwrites the metadata (last call wins). If the handler calls it AND then throws, the failure path takes precedence: an `ErrorResponse` is sent and the PendingHandoff metadata is discarded.
 

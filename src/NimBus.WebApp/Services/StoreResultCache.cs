@@ -23,9 +23,25 @@ public interface IStoreResultCache
     /// <paramref name="factory"/> (single-flight: concurrent callers share one
     /// in-flight invocation) and caches its result for <paramref name="ttl"/>.
     /// Faulted factory results are evicted immediately — exceptions propagate
-    /// to every awaiting caller but are never cached.
+    /// to every awaiting caller but are never cached. A zero or negative
+    /// <paramref name="ttl"/> caches nothing: the factory runs for every call.
     /// </summary>
     Task<T> GetOrCreateAsync<T>(string key, TimeSpan ttl, Func<Task<T>> factory);
+
+    /// <summary>
+    /// Returns a value whose read began after this call, and caches it for <paramref name="ttl"/>
+    /// like <see cref="GetOrCreateAsync"/>. A completed value is replaced. While a read is still
+    /// running, one follow-up read is queued behind it and shared by every refresh that arrives
+    /// before the follow-up starts, so concurrent refreshes cost at most one extra read instead
+    /// of one each; the running read still completes for the callers already awaiting it.
+    /// </summary>
+    Task<T> RefreshAsync<T>(string key, TimeSpan ttl, Func<Task<T>> factory);
+
+    /// <summary>
+    /// Drops the cached value for <paramref name="key"/> so the next <see cref="GetOrCreateAsync"/>
+    /// runs its factory. An in-flight creation already awaited by other callers completes for them.
+    /// </summary>
+    void Remove(string key);
 }
 
 /// <summary>
@@ -46,29 +62,111 @@ public sealed class StoreResultCache : IStoreResultCache
     {
         ArgumentNullException.ThrowIfNull(key);
         ArgumentNullException.ThrowIfNull(factory);
+        // IMemoryCache rejects a non-positive lifetime; "cache for no time" means don't cache.
+        if (ttl <= TimeSpan.Zero) return await factory();
 
-        // Lazy<Task<T>> gives single-flight semantics: the first caller creates
-        // and starts the task, concurrent callers await the same instance. The
+        // A Flight gives single-flight semantics: the first caller creates and
+        // starts the read, concurrent callers await the same instance. The
         // lock only guards cache-entry creation, never the factory itself.
-        Lazy<Task<T>> lazy;
+        Flight<T> flight;
         lock (_creationLock)
         {
-            lazy = _cache.GetOrCreate(key, entry =>
+            flight = _cache.GetOrCreate(key, entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = ttl;
-                return new Lazy<Task<T>>(factory);
-            });
+                return new Flight<T>(factory, null);
+            })!;
         }
 
+        return await AwaitAsync(key, flight);
+    }
+
+    public async Task<T> RefreshAsync<T>(string key, TimeSpan ttl, Func<Task<T>> factory)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(factory);
+        if (ttl <= TimeSpan.Zero) return await factory();
+
+        Flight<T> flight;
+        lock (_creationLock)
+        {
+            var current = _cache.TryGetValue(key, out Flight<T>? cached) ? cached : null;
+            if (current is { ReadStarted: false })
+            {
+                // Not reading yet (just created, or queued behind a running read): its read
+                // begins after this call, so it is fresh enough to share.
+                flight = current;
+            }
+            else
+            {
+                // Replace a completed value; queue behind a read that is still running.
+                flight = new Flight<T>(factory, current is { IsCompleted: false } ? current : null);
+                _cache.Set(key, flight, ttl);
+            }
+        }
+
+        return await AwaitAsync(key, flight);
+    }
+
+    public void Remove(string key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        lock (_creationLock) _cache.Remove(key);
+    }
+
+    private async Task<T> AwaitAsync<T>(string key, Flight<T> flight)
+    {
         try
         {
-            return await lazy.Value;
+            return await flight.Task;
         }
         catch
         {
-            // Never cache failures — the next caller must retry the store.
-            _cache.Remove(key);
+            // Never cache failures — the next caller must retry the store. Only this flight is
+            // evicted: a follow-up queued behind it is a separate read.
+            lock (_creationLock)
+            {
+                if (_cache.TryGetValue(key, out Flight<T>? cached) && ReferenceEquals(cached, flight))
+                    _cache.Remove(key);
+            }
             throw;
+        }
+    }
+
+    /// <summary>One shared factory invocation, optionally queued behind the read it replaces.</summary>
+    private sealed class Flight<T>
+    {
+        private readonly Func<Task<T>> _factory;
+        private readonly Lazy<Task<T>> _task;
+        private Flight<T>? _after;
+        private volatile bool _readStarted;
+
+        public Flight(Func<Task<T>> factory, Flight<T>? after)
+        {
+            _factory = factory;
+            _after = after;
+            _task = new Lazy<Task<T>>(RunAsync);
+        }
+
+        /// <summary>The shared invocation; the first access starts it. Never read it under the creation lock.</summary>
+        public Task<T> Task => _task.Value;
+
+        /// <summary>True once the factory has been called; a refresh may no longer join.</summary>
+        public bool ReadStarted => _readStarted;
+
+        public bool IsCompleted => _task.IsValueCreated && _task.Value.IsCompleted;
+
+        private async Task<T> RunAsync()
+        {
+            if (_after is { } running)
+            {
+                // Its outcome belongs to its own callers; this read runs either way.
+                await ((Task)running.Task).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                _after = null;
+            }
+
+            _readStarted = true;
+            return await _factory().ConfigureAwait(false);
         }
     }
 }

@@ -15,6 +15,7 @@ using NimBus.MessageStore.States;
 using NimBus.SDK;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.AgentApiKeys;
 // Aliased to disambiguate from the NSwag-generated NimBus.WebApp.ManagementApi.* types.
 using CoreMessage = NimBus.Core.Messages.Message;
 using CoreMessageType = NimBus.Core.Messages.MessageType;
@@ -23,11 +24,11 @@ using CoreEventContent = NimBus.Core.Messages.EventContent;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
-public class AgentImplementation : IAgentApiController
+public partial class AgentImplementation : IAgentApiController
 {
-    // Header carrying a demo-grade agent identity. Full API-key auth is deferred;
-    // an X-Agent-Id header is the stand-in for v1 (spec 022).
-    private const string AgentIdHeader = "X-Agent-Id";
+    // The agent identity a signed-in caller may claim. A caller with an agent API key is
+    // identified by the key instead (Spec 039).
+    private const string AgentIdHeader = AgentIdBindingFilter.HeaderName;
     private const string DefaultAgentId = "demo-agent";
 
     // The pending sub-status discriminator the Agent Zone subscriber parks events under.
@@ -40,7 +41,7 @@ public class AgentImplementation : IAgentApiController
     private readonly IHandoffSettlementService _settlement;
     private readonly IAgentSubscriptionRegistry _subscriptions;
     private readonly IConfiguration _config;
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
     private readonly ILogger<AgentImplementation> _logger;
 
     public AgentImplementation(
@@ -52,7 +53,7 @@ public class AgentImplementation : IAgentApiController
         IHandoffSettlementService settlement,
         IAgentSubscriptionRegistry subscriptions,
         IConfiguration config,
-        IHttpContextAccessor httpContextAccessor,
+        IHttpContextAccessor? httpContextAccessor,
         ILogger<AgentImplementation> logger)
     {
         _schemas = schemas;
@@ -109,7 +110,7 @@ public class AgentImplementation : IAgentApiController
         // (JsonReaderException, InvalidOperationException, etc.) — catch-all is intentional.
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Rejected event type {EventTypeId}: jsonSchema is not valid JSON Schema", body.EventTypeId);
+            LogRejectedEventTypeJsonSchemaIsNot(_logger, ex, body.EventTypeId);
             return new BadRequestObjectResult($"jsonSchema is not a valid JSON Schema: {ex.Message}");
         }
 
@@ -145,7 +146,7 @@ public class AgentImplementation : IAgentApiController
         }
         catch (SchemaConflictException)
         {
-            _logger.LogWarning("Schema conflict for event type {EventTypeId}", body.EventTypeId);
+            LogSchemaConflictForEventType(_logger, body.EventTypeId);
             return new ConflictResult();
         }
     }
@@ -159,7 +160,7 @@ public class AgentImplementation : IAgentApiController
 
         var agentId = CurrentAgentId();
         _subscriptions.Subscribe(agentId, body.EventTypeId);
-        _logger.LogInformation("Agent {AgentId} subscribed to {EventTypeId}", agentId, body.EventTypeId);
+        LogAgentSubscribed(_logger, agentId, body.EventTypeId);
         return Task.FromResult<IActionResult>(new OkResult());
     }
 
@@ -172,6 +173,13 @@ public class AgentImplementation : IAgentApiController
     // losing /settle then 400s on the Pending+Handoff status guard. This is
     // acceptable for the v1 demo-grade flow; a claim/lease is flagged for the spec's
     // deferred-recovery section.
+    //
+    // After a settle, the row still reads Pending+Handoff until the Resolver projects
+    // the settlement. Receive skips a row whose settlement this instance has in flight
+    // (HandoffSettlementTracker) and keeps polling until the projection moves it out of
+    // the query; otherwise an agent that loops straight back to receive gets the event
+    // it just settled. The record is per process, so across scaled-out instances that
+    // window stays at-least-once.
     public async Task<ActionResult<AgentReceivedMessage>> GetAgentReceiveAsync(string eventTypeId, int? waitSeconds)
     {
         var zoneId = AgentZone.ResolveEndpointId(_config);
@@ -201,7 +209,7 @@ public class AgentImplementation : IAgentApiController
             // (throttling, connectivity) are left to propagate as 500.
             var parked = await _store.GetNextPendingHandoffEvent(zoneId, eventTypeIds);
 
-            if (parked != null)
+            if (parked != null && !_settlement.IsSettlementInFlight(zoneId, parked))
             {
                 return new OkObjectResult(new AgentReceivedMessage
                 {
@@ -259,7 +267,7 @@ public class AgentImplementation : IAgentApiController
         // (JsonReaderException, InvalidOperationException, etc.) — catch-all is intentional.
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Registered schema for {EventTypeId} is not valid JSON Schema", body.EventTypeId);
+            LogRegisteredSchemaForIsNotValid(_logger, ex, body.EventTypeId);
             return new BadRequestObjectResult($"Registered schema for '{body.EventTypeId}' is not valid JSON Schema: {ex.Message}");
         }
 
@@ -310,7 +318,7 @@ public class AgentImplementation : IAgentApiController
             return new BadRequestObjectResult("coordinates.eventId is required.");
         if (string.IsNullOrWhiteSpace(coords.MessageId))
             return new BadRequestObjectResult("coordinates.messageId is required.");
-        if (body.Outcome is not AgentSettleRequestOutcome.Complete
+        if (body!.Outcome is not AgentSettleRequestOutcome.Complete
             and not AgentSettleRequestOutcome.Fail)
         {
             return new BadRequestObjectResult("outcome must be 'complete' or 'fail'.");
@@ -394,16 +402,37 @@ public class AgentImplementation : IAgentApiController
         // degrade to the GUID fallback, not 500. Catch-all matches this file's style.
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not derive session key via '{Path}' for {EventTypeId}; using a random session", sessionKeyPath, eventTypeId);
+            LogCouldNotDeriveSessionKey(_logger, ex, sessionKeyPath, eventTypeId);
             return null;
         }
     }
 
-    // Demo-grade agent identity: read the X-Agent-Id header, defaulting to
-    // "demo-agent" when absent. Full API-key auth is deferred (spec 022).
+    // A caller that authenticated with an agent API key is the key's agent (Spec 039); a
+    // mismatched X-Agent-Id never reaches here (AgentIdBindingFilter returns 403). Signed-in
+    // people keep the header, defaulting to "demo-agent" when absent.
     private string CurrentAgentId()
     {
-        var header = _httpContextAccessor?.HttpContext?.Request?.Headers[AgentIdHeader].ToString();
+        var context = _httpContextAccessor?.HttpContext;
+        var keyAgent = context?.User.FindFirst(AgentApiKeyDefaults.AgentIdClaim)?.Value;
+        if (!string.IsNullOrEmpty(keyAgent))
+            return keyAgent;
+
+        var header = context?.Request?.Headers[AgentIdHeader].ToString();
         return string.IsNullOrWhiteSpace(header) ? DefaultAgentId : header.Trim();
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rejected event type {EventTypeId}: jsonSchema is not valid JSON Schema")]
+    private static partial void LogRejectedEventTypeJsonSchemaIsNot(ILogger logger, Exception exception, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Schema conflict for event type {EventTypeId}")]
+    private static partial void LogSchemaConflictForEventType(ILogger logger, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Agent {AgentId} subscribed to {EventTypeId}")]
+    private static partial void LogAgentSubscribed(ILogger logger, string agentId, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Registered schema for {EventTypeId} is not valid JSON Schema")]
+    private static partial void LogRegisteredSchemaForIsNotValid(ILogger logger, Exception exception, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not derive session key via '{Path}' for {EventTypeId}; using a random session")]
+    private static partial void LogCouldNotDeriveSessionKey(ILogger logger, Exception exception, string path, string eventTypeId);
 }

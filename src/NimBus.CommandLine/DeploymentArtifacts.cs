@@ -127,6 +127,8 @@ internal sealed class PackagedArtifactSource : IDeploymentArtifactSource
 /// </summary>
 internal sealed class SourceBuildArtifactSource : IDeploymentArtifactSource
 {
+    private static readonly string[] LatestTagArguments = ["describe", "--tags", "--abbrev=0"];
+
     private readonly CommandContext _context;
     private readonly string _configuration;
     private readonly ProcessRunner _processRunner = new();
@@ -199,7 +201,7 @@ internal sealed class SourceBuildArtifactSource : IDeploymentArtifactSource
             // base version — the tag is the release marker.
             var result = await _processRunner.RunAsync(
                 "git",
-                new[] { "describe", "--tags", "--abbrev=0" },
+                LatestTagArguments,
                 _context.RepositoryRoot,
                 echoStandardOutput: false,
                 cancellationToken).ConfigureAwait(false);

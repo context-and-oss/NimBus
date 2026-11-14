@@ -37,7 +37,7 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
-    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.2" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
     <PackageReference Include="McMaster.Extensions.CommandLineUtils" Version="5.1.0" />
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
@@ -46,6 +46,7 @@
   <ItemGroup>
     <ProjectReference Include="..\NimBus\NimBus.csproj" />
     <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\NimBus.Manager\NimBus.Manager.csproj" />
     <ProjectReference Include="..\NimBus.MessageStore.CosmosDb\NimBus.MessageStore.CosmosDb.csproj" />
     <ProjectReference Include="..\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
   </ItemGroup>

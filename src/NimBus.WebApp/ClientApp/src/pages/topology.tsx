@@ -6,7 +6,7 @@ import TopologyAudit from "components/admin/topology-audit";
 import AsyncApiExport from "components/admin/asyncapi-export";
 import CosmosContainerManager from "components/admin/cosmos-container-manager";
 import { useStorageProvider } from "hooks/app-status";
-import { TOPOLOGY_VIEWS } from "models/manage-pages";
+import { availableTopologyViews, TOPOLOGY_VIEWS } from "models/manage-pages";
 
 /**
  * The live Service Bus namespace and storage, compared with the declared catalog.
@@ -17,10 +17,7 @@ export default function Topology() {
   const { view } = useParams();
   const navigate = useNavigate();
   const storageProvider = useStorageProvider();
-  // Storage manages Cosmos DB containers, so it exists only on that provider.
-  const views = TOPOLOGY_VIEWS.filter(
-    (v) => v.id !== "storage" || storageProvider === "Cosmos DB",
-  );
+  const views = availableTopologyViews(storageProvider);
   const requested = (view ?? TOPOLOGY_VIEWS[0].id).toLowerCase();
   const index = views.findIndex((v) => v.id === requested);
 

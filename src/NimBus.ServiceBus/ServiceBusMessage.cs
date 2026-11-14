@@ -8,8 +8,8 @@ namespace NimBus.ServiceBus;
 
 public interface IServiceBusMessage
 {
-    string GetUserProperty(UserPropertyName name);
-    string GetUserProperty(string name);
+    string? GetUserProperty(UserPropertyName name);
+    string? GetUserProperty(string name);
 
     /// <summary>
     /// All application-property names present on the inbound message. Used to
@@ -33,20 +33,20 @@ public interface IServiceBusMessage
     /// structured CloudEvents envelope (<c>application/cloudevents+json</c>).
     /// Defaults to <c>null</c> so existing implementers are forward-compatible.
     /// </summary>
-    string ContentType => null;
+    string? ContentType => null;
 
     /// <summary>
     /// The AMQP reply-to address of the inbound message (the requesting endpoint's
     /// topic for request/reply). Defaults to <c>null</c> so existing implementers
     /// are forward-compatible.
     /// </summary>
-    string ReplyTo => null;
+    string? ReplyTo => null;
 
     /// <summary>
     /// The AMQP reply-to session id correlating a request to its awaited reply.
     /// Defaults to <c>null</c> so existing implementers are forward-compatible.
     /// </summary>
-    string ReplyToSessionId => null;
+    string? ReplyToSessionId => null;
 
     internal ServiceBusReceivedMessage Message { get; }
 }
@@ -85,12 +85,12 @@ public class ServiceBusMessage : IServiceBusMessage
 
     ServiceBusReceivedMessage IServiceBusMessage.Message => _message;
 
-    public string GetUserProperty(UserPropertyName name)
+    public string? GetUserProperty(UserPropertyName name)
     {
         return GetUserProperty(name.ToString());
     }
 
-    public string GetUserProperty(string name)
+    public string? GetUserProperty(string name)
     {
         if (!_message.ApplicationProperties.ContainsKey(name))
             return null;

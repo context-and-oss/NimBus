@@ -35,7 +35,8 @@ public interface IHandoffSettlementService
     /// <returns>
     /// 200 on success; 404 when the event is genuinely absent (endpoint container
     /// missing or Cosmos reports it not found); 400 when the event exists but is not
-    /// a PendingHandoff. Transient/unexpected store faults are NOT swallowed — they
+    /// a PendingHandoff, or when this instance already sent a settlement for it that the
+    /// Resolver has not projected yet (no second control message or audit row). Transient/unexpected store faults are NOT swallowed — they
     /// propagate so callers see a 500 rather than a misleading "handoff gone" 404.
     /// </returns>
     Task<IActionResult> SettleAsync(
@@ -48,4 +49,14 @@ public interface IHandoffSettlementService
         HttpContext? httpContext,
         Func<MessageEntity, string, Task> settle,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether this instance has sent a settlement for <paramref name="parkedEvent"/> that
+    /// the Resolver has not projected yet. The parked row still reads Pending+Handoff in that
+    /// window, so receive uses this to avoid handing the same hand-off out again.
+    /// </summary>
+    /// <param name="endpointId">Endpoint (zone) the parked event lives on.</param>
+    /// <param name="parkedEvent">The Pending+Handoff row as read from the store.</param>
+    /// <returns><c>true</c> while a settlement of this parked message is in flight.</returns>
+    bool IsSettlementInFlight(string endpointId, UnresolvedEvent parkedEvent) => false;
 }

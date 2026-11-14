@@ -43,7 +43,7 @@ public class AccessControlImplementation : IAccessControlApiController
         _snapshotProvider = snapshotProvider;
         _auditLogService = auditLogService;
         _platform = platform;
-        _context = contextAccessor.HttpContext;
+        _context = contextAccessor.HttpContext!;
     }
 
     public async Task<ActionResult<AccessControlSet>> GetAccessControlAsync()

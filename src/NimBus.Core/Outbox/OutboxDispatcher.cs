@@ -15,7 +15,7 @@ namespace NimBus.Core.Outbox;
 /// Dispatches pending outbox messages to the real message sender.
 /// This is the core polling logic; wrap in a hosted service for background execution.
 /// </summary>
-public class OutboxDispatcher
+public partial class OutboxDispatcher
 {
     private static readonly TimeSpan DefaultCompensatingCheckpointTimeout = TimeSpan.FromSeconds(5);
     private readonly IOutbox _outbox;
@@ -44,8 +44,7 @@ public class OutboxDispatcher
     {
         _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
-        if (compensatingCheckpointTimeout <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(compensatingCheckpointTimeout));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(compensatingCheckpointTimeout, TimeSpan.Zero);
 
         _compensatingCheckpointTimeout = compensatingCheckpointTimeout;
         _logger = logger ?? NullLogger<OutboxDispatcher>.Instance;
@@ -63,7 +62,7 @@ public class OutboxDispatcher
         if (pending.Count == 0)
             return 0;
 
-        _logger.LogDebug("Outbox dispatch poll found {PendingCount} pending message(s)", pending.Count);
+        LogOutboxDispatchPollFoundPendingMessage(_logger, pending.Count);
 
         var dispatched = new List<string>();
         // NimBus's ordering guarantee is FIFO per session (ADR-001), not global.
@@ -79,7 +78,7 @@ public class OutboxDispatcher
                 var sessionId = outboxMessage.SessionId;
                 var hasSession = !string.IsNullOrEmpty(sessionId);
 
-                if (hasSession && failedSessions.Contains(sessionId))
+                if (hasSession && failedSessions.Contains(sessionId!))
                 {
                     // A prior row on this session failed this poll; keep it strictly
                     // ordered behind its stuck row instead of dispatching out of order.
@@ -91,7 +90,7 @@ public class OutboxDispatcher
                     // Block only this session; session-less rows fail independently.
                     // The failed message will be retried on the next poll.
                     if (hasSession)
-                        failedSessions.Add(sessionId);
+                        failedSessions.Add(sessionId!);
                     continue;
                 }
 
@@ -114,7 +113,7 @@ public class OutboxDispatcher
                 try
                 {
                     checkpointTask = _outbox.MarkAsDispatchedAsync(dispatched, CancellationToken.None);
-                    await checkpointTask.WaitAsync(_compensatingCheckpointTimeout);
+                    await checkpointTask.WaitAsync(_compensatingCheckpointTimeout, CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
@@ -127,10 +126,7 @@ public class OutboxDispatcher
                     // pending rows may be sent again under the outbox's at-least-once
                     // delivery contract, but shutdown must not be reported as a
                     // dispatch failure because bookkeeping also became unavailable.
-                    _logger.LogWarning(
-                        ex,
-                        "Could not checkpoint {DispatchedCount} outbox message(s) sent before cancellation",
-                        dispatched.Count);
+                    LogCouldNotCheckpointOutboxMessage(_logger, ex, dispatched.Count);
                 }
             }
 
@@ -148,10 +144,7 @@ public class OutboxDispatcher
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(
-                ex,
-                "Outbox checkpoint completed with an error after shutdown stopped waiting for {DispatchedCount} message(s)",
-                dispatchedCount);
+            LogOutboxCheckpointCompletedWithAnError(_logger, ex, dispatchedCount);
         }
     }
 
@@ -163,11 +156,11 @@ public class OutboxDispatcher
         Activity.Current = null;
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        Message message = null;
+        Message? message = null;
         // Endpoint comes from the persisted column so dispatch metrics are
         // tagged even when payload deserialization fails on a malformed row.
         var endpoint = outboxMessage.To;
-        Activity activity = null;
+        Activity? activity = null;
 
         try
         {
@@ -205,7 +198,7 @@ public class OutboxDispatcher
 
             message = JsonConvert.DeserializeObject<Message>(
                 outboxMessage.Payload,
-                Constants.CreateSafeJsonSettings());
+                Constants.CreateSafeJsonSettings())!;
 
             if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
             {
@@ -222,9 +215,7 @@ public class OutboxDispatcher
             NimBusMeters.OutboxDispatched.Add(1, tags);
             activity?.SetStatus(ActivityStatusCode.Ok);
 
-            _logger.LogDebug(
-                "Outbox dispatched message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId})",
-                outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
+            LogOutboxDispatchedMessage(_logger, outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -253,10 +244,7 @@ public class OutboxDispatcher
                 }));
             }
 
-            _logger.LogError(
-                ex,
-                "Outbox dispatch failed for message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId}). Halting this poll; will retry next interval.",
-                outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
+            LogOutboxDispatchFailedForMessage(_logger, ex, outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
             return false;
         }
         finally
@@ -266,7 +254,7 @@ public class OutboxDispatcher
         }
     }
 
-    private static ActivityLink? TryBuildLink(string traceParent, string traceState)
+    private static ActivityLink? TryBuildLink(string? traceParent, string? traceState)
     {
         var context = W3CMessagePropagator.TryParse(traceParent, traceState);
         return context == default ? (ActivityLink?)null : new ActivityLink(context);
@@ -284,4 +272,19 @@ public class OutboxDispatcher
             tags.Add(new KeyValuePair<string, object?>(MessagingAttributes.ErrorType, errorType));
         return tags.ToArray();
     }
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Outbox dispatch poll found {PendingCount} pending message(s)")]
+    private static partial void LogOutboxDispatchPollFoundPendingMessage(ILogger logger, int pendingCount);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not checkpoint {DispatchedCount} outbox message(s) sent before cancellation")]
+    private static partial void LogCouldNotCheckpointOutboxMessage(ILogger logger, Exception exception, int dispatchedCount);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Outbox checkpoint completed with an error after shutdown stopped waiting for {DispatchedCount} message(s)")]
+    private static partial void LogOutboxCheckpointCompletedWithAnError(ILogger logger, Exception exception, int dispatchedCount);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Outbox dispatched message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId})")]
+    private static partial void LogOutboxDispatchedMessage(ILogger logger, string outboxId, string? eventTypeId, string? sessionId, string? messageId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Outbox dispatch failed for message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId}). Halting this poll; will retry next interval.")]
+    private static partial void LogOutboxDispatchFailedForMessage(ILogger logger, Exception exception, string outboxId, string? eventTypeId, string? sessionId, string? messageId);
 }

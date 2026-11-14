@@ -10,7 +10,7 @@ namespace NimBus.MessageStore.Abstractions;
 /// </summary>
 public interface ISubscriptionStore
 {
-    Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type,
+    Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail, string type,
         string author, string url, List<string> eventTypes, string payload, int frequency);
 
     Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId);

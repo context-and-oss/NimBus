@@ -9,7 +9,7 @@ This guide walks you through creating your first publisher and subscriber, runni
 - A running Docker-compatible container runtime for SQL Server and local storage resources
 - Optional: an Azure Service Bus namespace (Standard or Premium) instead of the local emulator; Cosmos DB instead of SQL Server
 
-For a ready-to-run integration, start with the [CRM/ERP sample](../samples/CrmErpDemo/README.md#running-locally--sql-server-default). The [Dynamics 365 Sales ↔ Business Central demo](../samples/DynamicsBcDemo/README.md) shows a CRM and an ERP that each own part of the customer lifecycle.
+For a ready-to-run integration, start with the [CRM/ERP sample](../samples/CrmErpDemo/README.md#running-locally--sql-server-default).
 
 ## 1. Define an Event
 
@@ -266,6 +266,7 @@ You can then **Resubmit** or **Skip** the failed message from the Event Details 
 
 ## Next Steps
 
+- [Onboarding a Customer Project](onboarding.md) — From prerequisites to production for a delivery team
 - [Azure Functions Hosting](azure-functions-hosting.md) — Production hosting with Service Bus session triggers
 - [Message Flows](message-flows.md) — All 10 message flow patterns
 - [Application-Level Orchestration](orchestration.md) — Durable multi-step workflows, timeouts, and compensation

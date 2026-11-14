@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Account, api } from '../api';
+import { PlusIcon, RefreshIcon } from '../components/shell/icons';
+import { Chip, CommandBar, CommandButton, CommandLink, FilterBox, OriginChip, ViewHeader, formatDate, grid } from '../components/shell/ui';
 
 export default function AccountsList() {
   const [rows, setRows] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('');
 
   // initial=true on the first mount shows the loading placeholder; background
   // polls re-fetch silently so the table doesn't flash "Loading…" every 3s.
@@ -13,69 +16,66 @@ export default function AccountsList() {
     try { setRows(await api.listAccounts()); } finally { if (initial) setLoading(false); }
   }
   useEffect(() => {
-    load(true);
-    const t = setInterval(() => load(false), 3000);
+    void load(true);
+    const t = setInterval(() => void load(false), 3000);
     return () => clearInterval(t);
   }, []);
 
+  const q = filter.trim().toLowerCase();
+  const visible = q
+    ? rows.filter(r => [r.legalName, r.countryCode, r.taxId, r.erpCustomerNumber].some(v => v?.toLowerCase().includes(q)))
+    : rows;
+
   return (
-    <section>
-      <header className="flex items-center mb-4">
-        <h1 className="text-2xl font-semibold">Accounts</h1>
-        <Link to="/accounts/new" className="ml-auto px-3 py-2 bg-blue-600 text-white rounded-md text-sm">New account</Link>
-      </header>
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-100 text-slate-600 text-left">
+    <>
+      <CommandBar>
+        <CommandLink to="/accounts/new" icon={<PlusIcon />} primary>New account</CommandLink>
+        <CommandButton icon={<RefreshIcon />} onClick={() => void load(false)}>Refresh</CommandButton>
+      </CommandBar>
+      <ViewHeader title="Accounts" count={loading ? undefined : visible.length}>
+        <FilterBox value={filter} onChange={setFilter} placeholder="Filter by keyword" />
+      </ViewHeader>
+      <div className={grid.wrap}>
+        <table className={grid.table}>
+          <thead>
             <tr>
-              <th className="px-4 py-2">Legal name</th>
-              <th className="px-4 py-2">Country</th>
-              <th className="px-4 py-2">Tax ID</th>
-              <th className="px-4 py-2">Origin</th>
-              <th className="px-4 py-2">ERP sync</th>
-              <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2">Created</th>
-              <th className="px-4 py-2">Updated</th>
+              <th className={grid.th}>Account name</th>
+              <th className={grid.th}>Country</th>
+              <th className={grid.th}>Tax ID</th>
+              <th className={grid.th}>Origin</th>
+              <th className={grid.th}>ERP customer</th>
+              <th className={grid.th}>Status</th>
+              <th className={grid.th}>Created on</th>
+              <th className={grid.th}>Modified on</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400">Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400">No accounts yet.</td></tr>}
-            {rows.map(r => (
-              <tr key={r.id} className={`border-t border-slate-100 ${r.isDeleted ? 'opacity-60 line-through' : ''}`}>
-                <td className="px-4 py-2"><Link to={`/accounts/${r.id}`} className="text-blue-700 hover:underline">{r.legalName}</Link></td>
-                <td className="px-4 py-2">{r.countryCode}</td>
-                <td className="px-4 py-2 text-slate-500">{r.taxId ?? '—'}</td>
-                <td className="px-4 py-2"><OriginBadge origin={r.origin} /></td>
-                <td className="px-4 py-2">{r.erpCustomerNumber ? <span className="text-green-700">✓ {r.erpCustomerNumber}</span> : <span className="text-amber-600">pending…</span>}</td>
-                <td className="px-4 py-2"><StatusBadge isDeleted={r.isDeleted} /></td>
-                <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">{formatDate(r.createdAt)}</td>
-                <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">{formatDate(r.updatedAt)}</td>
+            {loading && <tr><td colSpan={8} className={grid.empty}>Loading…</td></tr>}
+            {!loading && visible.length === 0 && (
+              <tr><td colSpan={8} className={grid.empty}>{q ? 'No accounts match the filter.' : 'No accounts yet. Create one, or turn on Simulate in Demo controls.'}</td></tr>
+            )}
+            {visible.map(r => (
+              <tr key={r.id} className={`${grid.row} ${r.isDeleted ? 'text-ink-muted line-through' : ''}`}>
+                <td className={grid.td}><Link to={`/accounts/${r.id}`} className={grid.link}>{r.legalName}</Link></td>
+                <td className={grid.td}>{r.countryCode}</td>
+                <td className={`${grid.td} text-ink-muted`}>{r.taxId ?? '—'}</td>
+                <td className={grid.td}><OriginChip origin={r.origin} /></td>
+                <td className={grid.td}><ErpSync account={r} /></td>
+                <td className={grid.td}>{r.isDeleted ? <Chip tone="bad">Deleted</Chip> : <Chip tone="ok">Active</Chip>}</td>
+                <td className={`${grid.td} text-ink-muted`}>{formatDate(r.createdAt)}</td>
+                <td className={`${grid.td} text-ink-muted`}>{formatDate(r.updatedAt)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </section>
+    </>
   );
 }
 
-function OriginBadge({ origin }: { origin?: string }) {
-  if (!origin) return <span className="text-slate-400">—</span>;
-  const styles = origin === 'Crm'
-    ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
-    : origin === 'Erp'
-      ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-      : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200';
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${styles}`}>{origin}</span>;
-}
-
-function StatusBadge({ isDeleted }: { isDeleted?: boolean }) {
-  return isDeleted
-    ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 ring-1 ring-rose-200">Deleted</span>
-    : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">Active</span>;
-}
-
-function formatDate(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : '—';
+/** "✓ C-…" once ERP has linked a customer; the demo scripts wait for the ✓. */
+function ErpSync({ account }: { account: Account }) {
+  if (account.erpCustomerNumber) return <Chip tone="ok">✓ {account.erpCustomerNumber}</Chip>;
+  if (account.isDeleted) return <span className="text-ink-muted">—</span>;
+  return <Chip tone="warn" dot pulse>pending…</Chip>;
 }

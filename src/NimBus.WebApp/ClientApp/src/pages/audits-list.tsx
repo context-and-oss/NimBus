@@ -3,6 +3,8 @@ import * as api from "api-client";
 import { formatMoment } from "functions/endpoint.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import Page from "components/page";
+import { SettingsLink } from "components/settings/settings-link";
+import { useAccess } from "hooks/use-access";
 import TruncatedGuid from "components/common/truncated-guid";
 import { Badge } from "components/ui/badge";
 import { notifyInfo } from "functions/notifications.functions";
@@ -148,6 +150,8 @@ const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const DEFAULT_PAGE_SIZE = 50;
 
 export default function AuditsList() {
+  // Only site Owners can change what is recorded (Spec 038 §9.3).
+  const canManageSite = useAccess().access?.canManageAccessControl ?? false;
   // URL is the source of truth for the applied filter; browser Back/forward restores it for free.
   const { applied, applyFilters, resetFilters } =
     useUrlFilters<AuditFilterValues>(EMPTY_AUDIT_FILTER);
@@ -219,7 +223,14 @@ export default function AuditsList() {
   const rows = audits.map(mapAuditToRow);
 
   return (
-    <Page title="Audit Log">
+    <Page
+      title="Audit Log"
+      actions={
+        canManageSite ? (
+          <SettingsLink to="/Settings/audit">Configure recording</SettingsLink>
+        ) : undefined
+      }
+    >
       <div className="flex flex-col w-full">
         <AuditFilterBar
           value={applied}

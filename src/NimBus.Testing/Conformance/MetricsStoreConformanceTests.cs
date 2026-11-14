@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -72,13 +73,15 @@ public abstract class MetricsStoreConformanceTests
         var from = DateTime.UtcNow.AddHours(-1);
         var eventId = Id("evt-insight");
         var receiver = Id("receiver");
-        await store.StoreMessage(SampleMessage(
+        var failure = SampleMessage(
             eventId,
             Id("msg-insight"),
             MessageType.ErrorResponse,
             from.AddMinutes(1),
             endpointId: receiver,
-            errorText: "Downstream timeout"));
+            errorText: "Downstream timeout");
+        failure.OriginatingFrom = Id("publisher");
+        await store.StoreMessage(failure);
         await store.UploadFailedMessage(eventId, "session-1", receiver, SampleFailedEvent(eventId, from.AddMinutes(1), "Downstream timeout", receiver));
 
         var insights = await store.GetFailedMessageInsights(from, from.AddHours(2));
@@ -87,6 +90,60 @@ public abstract class MetricsStoreConformanceTests
         Assert.AreEqual(receiver, row.EndpointId);
         Assert.AreEqual("OrderPlaced", row.EventTypeId);
         Assert.AreEqual("Downstream timeout", row.ErrorText);
+        Assert.AreEqual(Id("msg-insight"), row.MessageId);
+        // With EventId it forms the stored event id ({EventId}_{SessionId}) that GetEventsByIds needs.
+        Assert.AreEqual("session-1", row.SessionId);
+        // Spec 044 Phase 3: the publisher, for grouping source-data failures by source.
+        Assert.AreEqual(Id("publisher"), row.OriginatingFrom);
+    }
+
+    [TestMethod]
+    public async Task GetFailedMessageInsights_rows_resolve_their_current_event_through_the_stored_id()
+    {
+        // Spec 043 §4.3: the drill-down reads current status with GetEventsByIds, which is only
+        // guaranteed for stored ids ({EventId}_{SessionId}); a bare EventId finds nothing on Cosmos.
+        var store = CreateStore();
+        var from = DateTime.UtcNow.AddHours(-1);
+        var eventId = Id("evt-status");
+        var receiver = Id("receiver");
+        await store.StoreMessage(SampleMessage(eventId, Id("msg-status"), MessageType.ErrorResponse, from.AddMinutes(1),
+            endpointId: receiver, errorText: "Downstream timeout"));
+        await store.UploadFailedMessage(eventId, "session-1", receiver, SampleFailedEvent(eventId, from.AddMinutes(1), "Downstream timeout", receiver));
+
+        var row = (await store.GetFailedMessageInsights(from, from.AddHours(2))).Single(i => i.EventId == eventId);
+        var events = await store.GetEventsByIds(row.EndpointId, [$"{row.EventId}_{row.SessionId}"]);
+
+        Assert.AreEqual(eventId, events.Single().EventId);
+        Assert.AreEqual(ResolutionStatus.Failed, events.Single().ResolutionStatus);
+    }
+
+    [TestMethod]
+    public async Task GetFailedMessageInsights_returns_one_row_per_failed_attempt_with_its_message_id()
+    {
+        // Spec 043 §4.1: the counting unit is a failed attempt, identified by its exact MessageId,
+        // so an event that failed twice yields two rows that classifications can join to.
+        var store = CreateStore();
+        var from = DateTime.UtcNow.AddHours(-1);
+        var eventId = Id("evt-attempts");
+        var receiver = Id("receiver");
+        var firstAttempt = Id("msg-attempt-1");
+        var secondAttempt = Id("msg-attempt-2");
+        await store.StoreMessage(SampleMessage(eventId, firstAttempt, MessageType.ErrorResponse, from.AddMinutes(1),
+            endpointId: receiver, errorText: "First failure"));
+        await store.StoreMessage(SampleMessage(eventId, secondAttempt, MessageType.ErrorResponse, from.AddMinutes(2),
+            endpointId: receiver, errorText: "Second failure"));
+
+        var rows = (await store.GetFailedMessageInsights(from, from.AddHours(2)))
+            .Where(i => i.EventId == eventId)
+            .OrderBy(i => i.EnqueuedTimeUtc)
+            .ToList();
+
+        Assert.HasCount(2, rows);
+        Assert.AreEqual(firstAttempt, rows[0].MessageId);
+        Assert.AreEqual("First failure", rows[0].ErrorText);
+        Assert.AreEqual(secondAttempt, rows[1].MessageId);
+        Assert.AreEqual("Second failure", rows[1].ErrorText);
+        Assert.IsTrue(rows.All(r => r.SessionId == "session-1"));
     }
 
     [TestMethod]

@@ -1,31 +1,76 @@
 name: Deploy site to GitHub Pages
 
+# Publishes two things as one GitHub Pages site:
+#   /NimBus/       the hand-written landing site in site/
+#   /NimBus/docs/  the documentation portal, built by website/ from docs/
+#
+# Pull requests build the portal (broken links fail the build) but do not deploy.
+
 on:
   push:
     branches: ["master"]
-    paths: ["site/**"]
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "website/**"
+      - ".github/workflows/pages.yml"
+      # Plans and specs are not published.
+      - "!docs/plan/**"
+      - "!docs/spec/**"
+  pull_request:
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "website/**"
+      - ".github/workflows/pages.yml"
+      - "!docs/plan/**"
+      - "!docs/spec/**"
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/setup-node@v4
         with:
-          path: site
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Install portal dependencies
+        run: npm ci
+        working-directory: website
+      - name: Build the documentation portal
+        run: npm run build
+        working-directory: website
+      - name: Assemble the site
+        run: |
+          mkdir _site
+          cp -r site/. _site/
+          cp -r website/build _site/docs
+      - uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request'
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4

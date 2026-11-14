@@ -99,14 +99,14 @@ public class HeartbeatServiceTests
         Assert.AreEqual(WorkerA, message.To);
         Assert.AreEqual("Heartbeat", message.SessionId);
         Assert.AreEqual("NimBus.Platform.Heartbeat", message.EventTypeId);
-        Assert.AreEqual("NimBus.Platform.Heartbeat", message.MessageContent.EventContent.EventTypeId);
+        Assert.AreEqual("NimBus.Platform.Heartbeat", message.MessageContent.EventContent!.EventTypeId);
         Assert.AreEqual(CoreConstants.Self, message.ParentMessageId);
         Assert.AreEqual(CoreConstants.Self, message.OriginatingMessageId);
         Assert.AreEqual(CoreConstants.ManagerId, message.OriginatingFrom);
         Assert.AreEqual(message.MessageId, message.CorrelationId);
         Assert.IsFalse(string.IsNullOrEmpty(message.EventId));
 
-        var content = JsonConvert.DeserializeObject<CoreHeartbeat>(message.MessageContent.EventContent.EventJson);
+        var content = JsonConvert.DeserializeObject<CoreHeartbeat>(message.MessageContent.EventContent.EventJson!);
         Assert.IsNotNull(content);
         Assert.AreNotEqual(default(DateTime), content.ForwardSendTime);
 
@@ -118,7 +118,7 @@ public class HeartbeatServiceTests
         Assert.AreEqual(300, pending.IntervalSeconds);
 
         var optedOut = await store.GetEndpointMetadata(WorkerB);
-        Assert.IsNull(optedOut.Heartbeats, "The opted-out endpoint must not get a Pending row either.");
+        Assert.IsNull(optedOut!.Heartbeats, "The opted-out endpoint must not get a Pending row either.");
         // Sweeping is owned by the background tick, not the send path — a fresh
         // send must not race its own sweep.
         Assert.AreEqual(0, store.HeartbeatSweepCutoffs.Count);
@@ -134,7 +134,7 @@ public class HeartbeatServiceTests
         StoreHeartbeat? rowAtSendTime = null;
         var sender = new RecordingSender
         {
-            OnSend = async (_, message) => rowAtSendTime = await FindHeartbeatAsync(store, message.To, message.MessageId),
+            OnSend = async (_, message) => rowAtSendTime = await FindHeartbeatAsync(store, message.To, message.MessageId!),
         };
         var service = CreateService(store, sender);
 
@@ -393,7 +393,7 @@ public class HeartbeatServiceTests
         Assert.AreEqual(CoreConstants.ResolverId, claimed.ServiceId);
         Assert.AreEqual(message.MessageId, claimed.LastProbeMessageId);
 
-        var content = JsonConvert.DeserializeObject<CoreHeartbeat>(message.MessageContent.EventContent.EventJson);
+        var content = JsonConvert.DeserializeObject<CoreHeartbeat>(message.MessageContent.EventContent!.EventJson!);
         Assert.IsNotNull(content);
         Assert.AreNotEqual(default(DateTime), content.ForwardSendTime);
         // Nothing was fanned out to the endpoints on the back of a probe.
@@ -436,7 +436,7 @@ public class HeartbeatServiceTests
 
         await service.SetEndpointEnabledAsync(WorkerB, enabled: false);
 
-        Assert.AreEqual(false, (await store.GetEndpointMetadata(WorkerB)).IsHeartbeatEnabled);
+        Assert.AreEqual(false, (await store.GetEndpointMetadata(WorkerB))!.IsHeartbeatEnabled);
         CollectionAssert.AreEqual(new[] { SignalNames.HeartbeatUpdate }, proxy.SentMethods);
         Assert.AreEqual(1, await service.SendHeartbeatsAsync(force: true), "The opted-out endpoint drops out of the fan-out.");
     }

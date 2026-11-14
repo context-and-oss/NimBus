@@ -24,7 +24,7 @@ public class PublisherClientPublishOverloadTests
 {
     private sealed class FixedEvent : Event
     {
-        public string Name { get; set; }
+        public string Name { get; set; } = null!;
 
         public int Count { get; set; }
 

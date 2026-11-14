@@ -28,14 +28,14 @@ public class OrderPlaced : Event
 
     [Required]
     [Description("The ISO currency code for the order total.")]
-    public string CurrencyCode { get; set; }
+    public string CurrencyCode { get; set; } = null!;
 
     [Range(0.01, 1000000)]
     [Description("The total amount of the order.")]
     public decimal TotalAmount { get; set; }
 
     [Description("The sales channel where the order was placed.")]
-    public string SalesChannel { get; set; }
+    public string SalesChannel { get; set; } = null!;
 
     [Description("When true, the subscriber handler will simulate a failure for testing error flows.")]
     public bool SimulateFailure { get; set; }

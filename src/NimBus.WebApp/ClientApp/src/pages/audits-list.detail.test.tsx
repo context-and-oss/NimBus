@@ -12,6 +12,9 @@ const { postAuditsSearchMock } = vi.hoisted(() => ({
   postAuditsSearchMock: vi.fn(),
 }));
 
+// No site-Owner lookup in these tests (the page asks to show its settings link).
+vi.mock("hooks/use-access", () => ({ useAccess: () => ({ access: null }) }));
+
 vi.mock("components/ui/toast", () => ({
   useToast: () => ({ addToast: () => {} }),
 }));

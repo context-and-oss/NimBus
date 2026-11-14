@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Inbox;
 

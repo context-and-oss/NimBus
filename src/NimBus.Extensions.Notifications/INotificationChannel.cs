@@ -28,37 +28,37 @@ public class Notification
     /// <summary>
     /// Short title/subject for the notification.
     /// </summary>
-    public string Title { get; init; }
+    public string Title { get; init; } = null!;
 
     /// <summary>
     /// Detailed message body.
     /// </summary>
-    public string Message { get; init; }
+    public string Message { get; init; } = null!;
 
     /// <summary>
     /// The event ID that triggered this notification.
     /// </summary>
-    public string EventId { get; init; }
+    public string? EventId { get; init; }
 
     /// <summary>
     /// The event type ID.
     /// </summary>
-    public string EventTypeId { get; init; }
+    public string? EventTypeId { get; init; }
 
     /// <summary>
     /// The message ID.
     /// </summary>
-    public string MessageId { get; init; }
+    public string? MessageId { get; init; }
 
     /// <summary>
     /// Correlation ID for tracing.
     /// </summary>
-    public string CorrelationId { get; init; }
+    public string? CorrelationId { get; init; }
 
     /// <summary>
     /// Exception details, if applicable.
     /// </summary>
-    public string ErrorDetails { get; init; }
+    public string? ErrorDetails { get; init; }
 }
 
 public enum NotificationSeverity

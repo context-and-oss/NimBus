@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { cn } from "lib/utils";
 import { Spinner } from "components/ui/spinner";
+import { useAccess } from "hooks/use-access";
 import { usePaletteSearch, type PaletteResult } from "./use-palette-search";
 
 interface CommandPaletteProps {
@@ -17,13 +18,20 @@ interface CommandPaletteProps {
 }
 
 const SECTION_LABELS: Record<PaletteResult["kind"], string> = {
+  page: "Pages",
+  operation: "Operations",
+  setting: "Settings",
   endpoint: "Endpoints",
   eventType: "Event Types",
   event: "Events",
   session: "Sessions",
 };
 
+// Must match the order usePaletteSearch pushes results in (see there).
 const SECTION_ORDER: Array<PaletteResult["kind"]> = [
+  "page",
+  "operation",
+  "setting",
   "endpoint",
   "eventType",
   "event",
@@ -31,6 +39,29 @@ const SECTION_ORDER: Array<PaletteResult["kind"]> = [
 ];
 
 const KIND_ICON: Record<PaletteResult["kind"], React.ReactNode> = {
+  page: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <rect x="2.5" y="2" width="11" height="12" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5 5.5h6M5 8h6M5 10.5h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  ),
+  operation: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M13 8a5 5 0 1 1-1.5-3.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M13 2v3h-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  setting: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.3 3.3l1.4 1.4M11.3 11.3l1.4 1.4M3.3 12.7l1.4-1.4M11.3 4.7l1.4-1.4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  ),
   endpoint: (
     <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" aria-hidden>
       <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
@@ -72,8 +103,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
+  // Operations and settings are site-Owner surfaces (Spec 038 §10); everyone
+  // else keeps today's endpoint, event type, event and session results.
+  const canManage = useAccess().access?.canManageAccessControl ?? false;
   const { results, catalogLoading, remoteSearching, remoteError } =
-    usePaletteSearch(query, isOpen);
+    usePaletteSearch(query, isOpen, canManage);
 
   // Reset when the palette opens so the previous gesture's state isn't sticky.
   useEffect(() => {
@@ -114,6 +148,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   const grouped = useMemo(() => {
     const map: Record<PaletteResult["kind"], PaletteResult[]> = {
+      page: [],
+      operation: [],
+      setting: [],
       endpoint: [],
       eventType: [],
       event: [],

@@ -4,7 +4,7 @@ namespace NimBus.WebApp.Services;
 
 /// <summary>
 /// The access ladder (spec 026, mirroring DIS): each level implies everything
-/// below it. <see cref="PiiReader"/> is deliberately NOT part of this ladder —
+/// below it. <c>PiiReader</c> is deliberately NOT part of this ladder —
 /// it is an orthogonal, separately-granted capability.
 /// </summary>
 public enum AccessRole

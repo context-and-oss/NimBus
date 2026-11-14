@@ -41,8 +41,8 @@ public class ResolverLoggingTests
         await service.Handle(CreateMessageContext(MessageType.EventRequest, to: Endpoint, throttleRetryCount: 2, deliveryCount: 3));
 
         var entry = logger.Entries.Single(e => e.Level == LogLevel.Warning && e.Message.Contains("Ignored stale", StringComparison.Ordinal));
-        StringAssert.Contains(entry.Message, "ThrottleRetryCount:2");
-        StringAssert.Contains(entry.Message, "DeliveryCount:3");
+        StringAssert.Contains(entry.Message, "ThrottleRetryCount:2", StringComparison.Ordinal);
+        StringAssert.Contains(entry.Message, "DeliveryCount:3", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -147,7 +147,7 @@ public class ResolverLoggingTests
         await withoutStores.Handle(ResolverHeartbeatTests.CreateHeartbeatContext(MessageType.ResolutionResponse, to: Constants.ResolverId, from: Endpoint));
         await withoutStores.Handle(ResolverHeartbeatTests.CreateHeartbeatContext(MessageType.EventRequest, to: Constants.ResolverId, from: Constants.ManagerId));
         var anonymous = ResolverHeartbeatTests.CreateHeartbeatContext(MessageType.ResolutionResponse, to: Constants.ResolverId, from: "");
-        anonymous.MessageContent.EventContent.EventJson = "{}";
+        anonymous.MessageContent.EventContent!.EventJson = "{}";
         await withStores.Handle(anonymous);
 
         Assert.IsTrue(logger.Has(LogLevel.Information, "Updated Heartbeat"));

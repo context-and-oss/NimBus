@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
@@ -6,6 +7,7 @@ using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
+using NimBus.Resolver.Alerts;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -17,13 +19,14 @@ using CoreHeartbeat = NimBus.Core.Events.Heartbeat;
 
 namespace NimBus.Resolver.Services;
 
-public class ResolverService : IMessageHandler
+public partial class ResolverService : IMessageHandler
 {
     private readonly IMessageTrackingStore _store;
     private readonly IMessageStateChangeNotifier _notifier;
     private readonly ILogger _logger;
-    private readonly IEndpointMetadataStore _metadataStore;
-    private readonly IServiceHealthStore _serviceHealthStore;
+    private readonly IEndpointMetadataStore? _metadataStore;
+    private readonly IServiceHealthStore? _serviceHealthStore;
+    private readonly IEndpointAlertNotifier _alertNotifier;
 
     private const string CosmosThrottleDeadLetterReason = "CosmosDbThrottled";
     private const int BaseDelaySeconds = 5;
@@ -77,25 +80,29 @@ public class ResolverService : IMessageHandler
     /// Optional service-liveness store backing the Resolver's own probe. Same graceful
     /// degradation as <paramref name="metadataStore"/> when absent.
     /// </param>
+    /// <param name="alertNotifier">
+    /// Optional endpoint alert notifier (the Alerts tab). Told about every applied
+    /// <see cref="ResolutionStatus.Failed"/> or <see cref="ResolutionStatus.DeadLettered"/>
+    /// outcome after the message is settled; nothing is sent when omitted.
+    /// </param>
     public ResolverService(
         IMessageTrackingStore store,
         IMessageStateChangeNotifier? notifier = null,
         ILogger<ResolverService>? logger = null,
         IEndpointMetadataStore? metadataStore = null,
-        IServiceHealthStore? serviceHealthStore = null)
+        IServiceHealthStore? serviceHealthStore = null,
+        IEndpointAlertNotifier? alertNotifier = null)
     {
         _store = store;
         _notifier = notifier ?? new NoopMessageStateChangeNotifier();
-        _logger = logger;
+        _logger = logger ?? NullLogger<ResolverService>.Instance;
         _metadataStore = metadataStore;
         _serviceHealthStore = serviceHealthStore;
+        _alertNotifier = alertNotifier ?? new NoopEndpointAlertNotifier();
     }
 
     public async Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
-        _logger?.LogTrace("Resolver: Handle {EventTypeId} EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-            messageContext.MessageContent.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
-
         // The consumer span is owned by the transport boundary
         // (ServiceBusAdapter → NimBusConsumerInstrumentation). When invoked
         // through ServiceBusAdapter (the Azure Function `Functions.cs` path),
@@ -106,6 +113,10 @@ public class ResolverService : IMessageHandler
         // a transport span when there isn't one.
         try
         {
+            // Identity is read through the non-throwing helpers: a message missing EventId or a
+            // readable body is still logged here and dead-lettered below, never left unsettled.
+            LogResolverHandleEventId(_logger, GetEventTypeIdOrDefault(messageContext), messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
+
             // Platform heartbeat traffic is diverted before anything touches the
             // tracking store: it is infrastructure chatter, not integration events,
             // so it must never appear on the Events / Flow / Monitor pages nor in
@@ -132,8 +143,7 @@ public class ResolverService : IMessageHandler
 
             if (applied)
             {
-                _logger?.LogInformation("Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                    messageEntity.EndpointId, status, messageEntity.EventId, messageContext.MessageId, messageEntity.SessionId);
+                LogResolverUpdatedEndpointEndpointId(_logger, messageEntity.EndpointId, status, messageEntity.EventId, messageContext.MessageId, messageEntity.SessionId);
 
                 await NotifyEndpointStateChanged(messageEntity.EndpointId, cancellationToken);
             }
@@ -146,6 +156,14 @@ public class ResolverService : IMessageHandler
             // keeps showing the late copy after the response — the forensic trail that made
             // the Spec 030 incident diagnosable.
             await messageContext.Complete(cancellationToken);
+
+            // After settlement, so a slow or failing mail server can neither hold the lock nor
+            // turn a recorded failure into a dead-letter. Only outcomes that changed the
+            // endpoint's state alert: a stale copy would mail about nothing new.
+            if (applied && status is ResolutionStatus.Failed or ResolutionStatus.DeadLettered)
+            {
+                await NotifyAlertSubscribers(messageEntity, status, cancellationToken);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -163,12 +181,12 @@ public class ResolverService : IMessageHandler
         }
         catch (TransientException transientException)
         {
-            _logger?.LogError(transientException, "Resolver: Transient exception EventId:{EventId}", messageContext.EventId);
+            LogResolverTransientExceptionEventId(_logger, transientException, messageContext.GetEventIdOrDefault());
             await messageContext.Abandon(transientException);
         }
         catch (Exception unexpectedException)
         {
-            _logger?.LogError(unexpectedException, "Resolver: Failed to handle message, add to DeadLetter. EventId:{EventId}", messageContext.EventId);
+            LogResolverFailedToHandleMessage(_logger, unexpectedException, messageContext.GetEventIdOrDefault());
             await messageContext.DeadLetter("Failed to handle message.", unexpectedException, cancellationToken);
         }
     }
@@ -200,28 +218,33 @@ public class ResolverService : IMessageHandler
             ? Math.Max(1, deliveryContext.DeliveryCount)
             : 1;
         var logicalAttempt = messageContext.ThrottleRetryCount + deliveryCount;
-        var (endpointId, _) = DetermineEndpoint(messageContext);
+        // Every identity read on this path is non-throwing so it always reaches a settlement call.
+        var endpointId = DetermineEndpointOrDefault(messageContext);
+        var eventId = messageContext.GetEventIdOrDefault();
+        var sessionId = messageContext.GetSessionIdOrDefault();
 
-        _logger?.LogWarning(
-            exception,
-            "Resolver: Store write failed ({Reason}). EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}, DeliveryCount:{DeliveryCount}",
-            reason,
-            messageContext.EventId,
-            messageContext.SessionId,
-            logicalAttempt,
-            Constants.ServiceBusMaxDeliveryCount,
-            deliveryCount);
+        LogResolverStoreWriteFailed(_logger, exception, reason, eventId, sessionId, logicalAttempt, Constants.ServiceBusMaxDeliveryCount, deliveryCount);
 
         if (logicalAttempt >= Constants.ServiceBusMaxDeliveryCount)
         {
-            _logger?.LogError(
-                "Resolver: Store failures ({Reason}) exhausted the delivery budget ({MaxAttempts}). Dead-lettering. EventId:{EventId}, SessionId:{SessionId}",
-                reason,
-                Constants.ServiceBusMaxDeliveryCount,
-                messageContext.EventId,
-                messageContext.SessionId);
+            LogResolverStoreFailures(_logger, reason, Constants.ServiceBusMaxDeliveryCount, eventId, sessionId);
             await messageContext.DeadLetter(deadLetterReason, null, cancellationToken);
             RecordStoreRetry(endpointId, reason, RetryAction.DeadLettered);
+            return;
+        }
+
+        // Heartbeats retry in place, like their transient failures do: a rescheduled copy lands
+        // minutes later and would overwrite a newer heartbeat (or report the backoff as a probe's
+        // round trip), and the next heartbeat supersedes this one anyway. Abandon leaves the
+        // message unsettled, so the session redelivers it and DeliveryCount carries the budget.
+        if (IsHeartbeat(messageContext))
+        {
+            LogResolverHeartbeatStoreWriteFailed(_logger, exception, reason, eventId, sessionId);
+            var heartbeatFailure = $"Heartbeat store write failed ({reason}).";
+            await messageContext.Abandon(exception is null
+                ? new TransientException(heartbeatFailure)
+                : new TransientException(heartbeatFailure, exception));
+            RecordStoreRetry(endpointId, reason, RetryAction.Abandoned);
             return;
         }
 
@@ -229,17 +252,9 @@ public class ResolverService : IMessageHandler
         // Providers such as SQL Server may not supply one.
         var backoff = StoreBackoff.GetDelay(logicalAttempt - 1);
         var useProviderRetryAfter = retryAfter.HasValue && retryAfter.Value > backoff;
-        var delay = useProviderRetryAfter ? retryAfter.Value : backoff;
+        var delay = useProviderRetryAfter ? retryAfter.GetValueOrDefault() : backoff;
 
-        _logger?.LogInformation(
-            "Resolver: Store write failed ({Reason}). Scheduling redelivery in {DelaySeconds}s ({DelaySource}). EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}",
-            reason,
-            delay.TotalSeconds,
-            useProviderRetryAfter ? DelaySource.Provider : DelaySource.Backoff,
-            messageContext.EventId,
-            messageContext.SessionId,
-            logicalAttempt,
-            Constants.ServiceBusMaxDeliveryCount);
+        LogResolverStoreWriteFailedSchedulingRedelivery(_logger, reason, delay.TotalSeconds, useProviderRetryAfter ? DelaySource.Provider : DelaySource.Backoff, eventId, sessionId, logicalAttempt, Constants.ServiceBusMaxDeliveryCount);
 
         try
         {
@@ -247,8 +262,7 @@ public class ResolverService : IMessageHandler
         }
         catch (TransientException ex)
         {
-            _logger?.LogInformation(ex, "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
-                messageContext.EventId, messageContext.SessionId);
+            LogResolverFailedToScheduleRedelivery(_logger, ex, eventId, sessionId);
             await messageContext.Abandon(ex);
             RecordStoreRetry(endpointId, reason, RetryAction.Abandoned);
             return;
@@ -274,16 +288,7 @@ public class ResolverService : IMessageHandler
         // ThrottleRetryCount > 0 attributes the copy to ScheduleRedelivery; a zero count with
         // DeliveryCount 1 to fan-out lag or a dead-letter replay; DeliveryCount > 1 to a
         // broker redelivery.
-        _logger?.LogWarning(
-            "Resolver: Ignored stale {MessageType}; audit row already reflects a later state. EndpointId:{EndpointId}, EventId:{EventId}, SessionId:{SessionId}, MessageId:{MessageId}, EnqueuedTimeUtc:{EnqueuedTimeUtc}, ThrottleRetryCount:{ThrottleRetryCount}, DeliveryCount:{DeliveryCount}",
-            messageEntity.MessageType,
-            messageEntity.EndpointId,
-            messageEntity.EventId,
-            messageEntity.SessionId,
-            messageContext.MessageId,
-            messageEntity.EnqueuedTimeUtc,
-            messageContext.ThrottleRetryCount,
-            deliveryCount);
+        LogResolverIgnoredStale(_logger, messageEntity.MessageType, messageEntity.EndpointId, messageEntity.EventId, messageEntity.SessionId, messageContext.MessageId, messageEntity.EnqueuedTimeUtc, messageContext.ThrottleRetryCount, deliveryCount);
 
         // Best effort. The audit shows in the WebApp audit listing with no UI change and
         // gives SQL deployments an attribution the store itself cannot log; failing to write
@@ -307,20 +312,51 @@ public class ResolverService : IMessageHandler
         }
         catch (Exception auditException)
         {
-            _logger?.LogWarning(auditException,
-                "Resolver: Failed to record the stale-copy audit (non-fatal). EventId:{EventId}, MessageId:{MessageId}",
-                messageEntity.EventId, messageContext.MessageId);
+            LogResolverFailedToRecordTheStale(_logger, auditException, messageEntity.EventId, messageContext.MessageId);
         }
     }
 
     // Fire the state-change notification (provider-neutral). Webhook is no longer
     // the only way for the WebApp to learn about updates; this works for any
     // storage provider including SQL Server which has no Change Feed.
+    /// <summary>
+    /// Hands an applied failure to the endpoint alert notifier. The message is already settled,
+    /// so every exception, including cancellation on host shutdown, is logged and dropped.
+    /// </summary>
+    private async Task NotifyAlertSubscribers(MessageEntity message, ResolutionStatus status, CancellationToken cancellationToken)
+    {
+        var context = new EndpointAlertContext
+        {
+            EndpointId = message.EndpointId,
+            EventId = message.EventId,
+            EventTypeId = message.EventTypeId,
+            SessionId = message.SessionId,
+            Status = status,
+            ErrorText = status == ResolutionStatus.DeadLettered
+                ? message.DeadLetterErrorDescription ?? message.MessageContent?.ErrorContent?.ErrorText
+                : message.MessageContent?.ErrorContent?.ErrorText,
+            OccurredAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        try
+        {
+            await _alertNotifier.NotifyAsync(context, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            LogResolverEndpointAlertNotificationCancelled(_logger, message.EventId);
+        }
+        catch (Exception ex)
+        {
+            LogResolverEndpointAlertNotificationFailed(_logger, ex, message.EndpointId, message.EventId);
+        }
+    }
+
     private async Task NotifyEndpointStateChanged(string endpointId, CancellationToken cancellationToken)
     {
         try { await _notifier.NotifyEndpointStateChangedAsync(endpointId, cancellationToken); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch (Exception notifyEx) { _logger?.LogWarning(notifyEx, "Resolver: state-change notification failed (non-fatal)"); }
+        catch (Exception notifyEx) { LogResolverStateChangeNotificationFailed(_logger, notifyEx); }
     }
 
     private static void RecordStoreRetry(string? endpoint, string reason, string action) =>
@@ -354,8 +390,9 @@ public class ResolverService : IMessageHandler
     /// </summary>
     /// <remarks>
     /// Generic transient storage failures remain unsettled and may eventually be
-    /// broker-dead-lettered as MaxDeliveryCountExceeded. Cosmos DB throttling uses
-    /// the shared logical delivery budget and the stable CosmosDbThrottled reason.
+    /// broker-dead-lettered as MaxDeliveryCountExceeded. Cosmos DB throttling is also
+    /// retried in place (never rescheduled: a late copy could overwrite a newer heartbeat),
+    /// within the delivery budget, then dead-lettered with the stable CosmosDbThrottled reason.
     /// </remarks>
     private async Task HandleHeartbeatMessage(IMessageContext messageContext, CancellationToken cancellationToken)
     {
@@ -370,8 +407,7 @@ public class ResolverService : IMessageHandler
                 return;
             }
 
-            _logger?.LogTrace("Resolver: Dropped Heartbeat request copy. EventId:{EventId}, MessageId:{MessageId}",
-                messageContext.EventId, messageContext.MessageId);
+            LogResolverDroppedHeartbeatRequestCopy(_logger, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault());
             await messageContext.Complete(cancellationToken);
             return;
         }
@@ -379,16 +415,14 @@ public class ResolverService : IMessageHandler
         var endpointId = GetHeartbeatEndpointId(messageContext);
         if (string.IsNullOrWhiteSpace(endpointId))
         {
-            _logger?.LogWarning("Resolver: Heartbeat response without endpoint. EventId:{EventId}, MessageId:{MessageId}",
-                messageContext.EventId, messageContext.MessageId);
+            LogResolverHeartbeatResponseWithoutEndpoint(_logger, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault());
             await messageContext.Complete(cancellationToken);
             return;
         }
 
         if (_metadataStore is null)
         {
-            _logger?.LogWarning("Resolver: heartbeat store not configured; completing without recording. EndpointId:{EndpointId}, EventId:{EventId}",
-                endpointId, messageContext.EventId);
+            LogResolverHeartbeatStoreNotConfigured(_logger, endpointId, messageContext.GetEventIdOrDefault());
             await messageContext.Complete(cancellationToken);
             return;
         }
@@ -408,17 +442,15 @@ public class ResolverService : IMessageHandler
             // Return without settling: the session redelivers the message. Heartbeats
             // deliberately skip the scheduled-redelivery path used for event traffic —
             // the next probe supersedes this one anyway.
-            _logger?.LogInformation(ex, "Resolver: Storage temporarily unavailable, will reprocess heartbeat. EndpointId:{EndpointId}, EventId:{EventId}",
-                endpointId, messageContext.EventId);
+            LogResolverStorageTemporarilyUnavailable(_logger, ex, endpointId, messageContext.GetEventIdOrDefault());
             return;
         }
 
-        _logger?.LogInformation("Resolver: Updated Heartbeat EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}",
-            endpointId, heartbeat.EndpointHeartbeatStatus, messageContext.EventId, messageContext.MessageId);
+        LogResolverUpdatedHeartbeatEndpointId(_logger, endpointId, heartbeat.EndpointHeartbeatStatus, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault());
 
         try { await _notifier.NotifyHeartbeatChangedAsync(endpointId, cancellationToken); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch (Exception notifyEx) { _logger?.LogWarning(notifyEx, "Resolver: heartbeat notification failed (non-fatal)"); }
+        catch (Exception notifyEx) { LogResolverHeartbeatNotificationFailed(_logger, notifyEx); }
 
         await messageContext.Complete(cancellationToken);
     }
@@ -434,8 +466,7 @@ public class ResolverService : IMessageHandler
     {
         if (_serviceHealthStore is null)
         {
-            _logger?.LogWarning("Resolver: service health store not configured; completing liveness probe without recording. MessageId:{MessageId}",
-                messageContext.MessageId);
+            LogResolverServiceHealthStoreNotConfigured(_logger, messageContext.GetMessageIdOrDefault());
             await messageContext.Complete(cancellationToken);
             return;
         }
@@ -463,17 +494,15 @@ public class ResolverService : IMessageHandler
         }
         catch (StorageProviderTransientException ex)
         {
-            _logger?.LogInformation(ex, "Resolver: Storage temporarily unavailable, will reprocess liveness probe. EventId:{EventId}",
-                messageContext.EventId);
+            LogResolverStorageTemporarilyUnavailableWillReprocess2(_logger, ex, messageContext.GetEventIdOrDefault());
             return;
         }
 
-        _logger?.LogInformation("Resolver: Answered liveness probe. RoundTripMs:{RoundTripMs}, Version:{Version}, MessageId:{MessageId}",
-            health.RoundTripMs, health.Version, messageContext.MessageId);
+        LogResolverAnsweredLivenessProbe(_logger, health.RoundTripMs, health.Version, messageContext.GetMessageIdOrDefault());
 
         try { await _notifier.NotifyServiceHealthChangedAsync(Constants.ResolverId, cancellationToken); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch (Exception notifyEx) { _logger?.LogWarning(notifyEx, "Resolver: service health notification failed (non-fatal)"); }
+        catch (Exception notifyEx) { LogResolverServiceHealthNotificationFailed(_logger, notifyEx); }
 
         await messageContext.Complete(cancellationToken);
     }
@@ -506,7 +535,7 @@ public class ResolverService : IMessageHandler
     /// emitter can arrive with it blank while the payload always carries the endpoint
     /// the SDK answered for.
     /// </summary>
-    private static string GetHeartbeatEndpointId(IReceivedMessage message)
+    private static string? GetHeartbeatEndpointId(IReceivedMessage message)
     {
         var content = DeserializeHeartbeat(message);
         return !string.IsNullOrWhiteSpace(content.Endpoint)
@@ -561,7 +590,7 @@ public class ResolverService : IMessageHandler
     private static DateTime TimestampOrDefault(DateTime value, DateTime fallback) =>
         value == default ? fallback : value;
 
-    private MessageEntity CreateMessageEntity(IReceivedMessage message)
+    private static MessageEntity CreateMessageEntity(IReceivedMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
@@ -589,15 +618,18 @@ public class ResolverService : IMessageHandler
             EnqueuedTimeUtc = message.EnqueuedTimeUtc,
             MessageContent = message.MessageContent,
             MessageType = message.MessageType,
-            EndpointId = endpointId,
+            EndpointId = endpointId!,
             EndpointRole = endpointRole,
             DeadLetterErrorDescription = message.DeadLetterErrorDescription,
             DeadLetterReason = message.DeadLetterReason,
-            EventTypeId = message.EventTypeId ?? message?.MessageContent?.EventContent?.EventTypeId,
+            EventTypeId = message.EventTypeId ?? message.MessageContent?.EventContent?.EventTypeId!,
             // Per-message timings carried on the response message by the
             // subscriber. Null on EventRequest / original publishes.
             QueueTimeMs = message.QueueTimeMs,
             ProcessingTimeMs = message.ProcessingTimeMs,
+            // SDK retry attempt stamped on the wire (RetryRequest and the responses
+            // that echo it); CreateUnresolvedEvent copies it onto the audit row.
+            RetryCount = message.RetryCount,
             // PendingHandoff metadata. Sub-status is set only on the
             // PendingHandoffResponse audit row (the original Pending+Handoff
             // entry); the Manager-issued HandoffCompleted/HandoffFailed
@@ -620,29 +652,26 @@ public class ResolverService : IMessageHandler
     /// Determines the endpoint ID and role based on message properties.
     /// </summary>
     /// <remarks>
-    /// Endpoint determination rules:
-    /// 1. If message is from Broker with ErrorResponse type → Publisher role, use OriginatingFrom as endpoint
-    /// 2. If message is from Broker → use To as endpoint (Subscriber role)
-    /// 3. If message is a request type (EventRequest, ContinuationRequest, RetryRequest, ResubmissionRequest, SkipRequest) → use To as endpoint
-    /// 4. Otherwise → use From as endpoint (response from subscriber)
+    /// A request (see <see cref="IsRequest"/>) is addressed to the subscriber, so its endpoint
+    /// is <c>To</c>; anything else is a response from the subscriber, so its endpoint is
+    /// <c>From</c>. The role is always <see cref="EndpointRole.Subscriber"/>.
     /// </remarks>
-    internal (string endpointId, EndpointRole role) DetermineEndpoint(IReceivedMessage message)
+    internal static (string? endpointId, EndpointRole role) DetermineEndpoint(IReceivedMessage message) =>
+        (IsRequest(message.MessageType) ? message.To : message.From, EndpointRole.Subscriber);
+
+    // Failure-path variant of DetermineEndpoint: To, From or the message type may be absent on
+    // the wire, and a missing endpoint only drops the metric tag.
+    private static string? DetermineEndpointOrDefault(IReceivedMessage message)
     {
-        var endpointRole = EndpointRole.Subscriber;
-        string endpointId;
+        try { return DetermineEndpoint(message).endpointId; }
+        catch (InvalidMessageException) { return null; }
+    }
 
-        // Request types are directed to the subscriber (use To)
-        if (IsRequest(message.MessageType))
-        {
-            endpointId = message.To;
-        }
-        // Response types come from the subscriber (use From)
-        else
-        {
-            endpointId = message.From;
-        }
-
-        return (endpointId, endpointRole);
+    // The entry log's event type: the property, else the body's, else null when neither is readable.
+    private static string? GetEventTypeIdOrDefault(IReceivedMessage message)
+    {
+        try { return message.EventTypeId ?? message.MessageContent?.EventContent?.EventTypeId; }
+        catch (InvalidMessageException) { return null; }
     }
 
     private static bool IsRequest(MessageType messageType) =>
@@ -685,7 +714,7 @@ public class ResolverService : IMessageHandler
             EventTypeId = message.EventTypeId,
             To = message.To,
             From = message.From,
-            MessageContent = message.MessageContent,
+            MessageContent = message.MessageContent!,
             QueueTimeMs = message.QueueTimeMs,
             // For terminal settlement of an event that went through async
             // handoff, override the per-hop handler duration with the
@@ -811,7 +840,7 @@ public class ResolverService : IMessageHandler
         }
     }
 
-    private async Task<bool> InstrumentOutcomeWrite(string endpointId, ResolutionStatus status, Func<Task<bool>> handler)
+    private static async Task<bool> InstrumentOutcomeWrite(string endpointId, ResolutionStatus status, Func<Task<bool>> handler)
     {
         var outcome = status.ToString().ToLowerInvariant();
         var startTimestamp = Stopwatch.GetTimestamp();
@@ -905,7 +934,79 @@ public class ResolverService : IMessageHandler
             return status;
         }
 
-        throw new ArgumentException($"Unexpected {nameof(MessageType)}", nameof(message.MessageType));
+        throw new ArgumentException($"Unexpected {nameof(MessageType)} {message.MessageType}", nameof(message));
     }
 
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Resolver: Handle {EventTypeId} EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogResolverHandleEventId(ILogger logger, string? eventTypeId, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogResolverUpdatedEndpointEndpointId(ILogger logger, string endpointId, ResolutionStatus status, string eventId, string messageId, string sessionId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Resolver: Transient exception EventId:{EventId}")]
+    private static partial void LogResolverTransientExceptionEventId(ILogger logger, Exception exception, string? eventId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Resolver: Failed to handle message, add to DeadLetter. EventId:{EventId}")]
+    private static partial void LogResolverFailedToHandleMessage(ILogger logger, Exception exception, string? eventId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: Store write failed ({Reason}). EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}, DeliveryCount:{DeliveryCount}")]
+    private static partial void LogResolverStoreWriteFailed(ILogger logger, Exception? exception, string reason, string? eventId, string? sessionId, int logicalAttempt, int maxAttempts, int deliveryCount);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Resolver: Store failures ({Reason}) exhausted the delivery budget ({MaxAttempts}). Dead-lettering. EventId:{EventId}, SessionId:{SessionId}")]
+    private static partial void LogResolverStoreFailures(ILogger logger, string reason, int maxAttempts, string? eventId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Heartbeat store write failed ({Reason}); leaving it for the session to redeliver. EventId:{EventId}, SessionId:{SessionId}")]
+    private static partial void LogResolverHeartbeatStoreWriteFailed(ILogger logger, Exception? exception, string reason, string? eventId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Store write failed ({Reason}). Scheduling redelivery in {DelaySeconds}s ({DelaySource}). EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}")]
+    private static partial void LogResolverStoreWriteFailedSchedulingRedelivery(ILogger logger, string reason, double delaySeconds, string delaySource, string? eventId, string? sessionId, int logicalAttempt, int maxAttempts);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}")]
+    private static partial void LogResolverFailedToScheduleRedelivery(ILogger logger, Exception exception, string? eventId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: Ignored stale {MessageType}; audit row already reflects a later state. EndpointId:{EndpointId}, EventId:{EventId}, SessionId:{SessionId}, MessageId:{MessageId}, EnqueuedTimeUtc:{EnqueuedTimeUtc}, ThrottleRetryCount:{ThrottleRetryCount}, DeliveryCount:{DeliveryCount}")]
+    private static partial void LogResolverIgnoredStale(ILogger logger, MessageType messageType, string endpointId, string eventId, string sessionId, string messageId, DateTime enqueuedTimeUtc, int throttleRetryCount, int deliveryCount);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: Failed to record the stale-copy audit (non-fatal). EventId:{EventId}, MessageId:{MessageId}")]
+    private static partial void LogResolverFailedToRecordTheStale(ILogger logger, Exception exception, string eventId, string messageId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Endpoint alert notification cancelled by shutdown. EventId:{EventId}")]
+    private static partial void LogResolverEndpointAlertNotificationCancelled(ILogger logger, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Resolver: Endpoint alert notification failed (non-fatal). EndpointId:{EndpointId}, EventId:{EventId}")]
+    private static partial void LogResolverEndpointAlertNotificationFailed(ILogger logger, Exception exception, string endpointId, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: state-change notification failed (non-fatal)")]
+    private static partial void LogResolverStateChangeNotificationFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Resolver: Dropped Heartbeat request copy. EventId:{EventId}, MessageId:{MessageId}")]
+    private static partial void LogResolverDroppedHeartbeatRequestCopy(ILogger logger, string? eventId, string? messageId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: Heartbeat response without endpoint. EventId:{EventId}, MessageId:{MessageId}")]
+    private static partial void LogResolverHeartbeatResponseWithoutEndpoint(ILogger logger, string? eventId, string? messageId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: heartbeat store not configured; completing without recording. EndpointId:{EndpointId}, EventId:{EventId}")]
+    private static partial void LogResolverHeartbeatStoreNotConfigured(ILogger logger, string endpointId, string? eventId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Storage temporarily unavailable, will reprocess heartbeat. EndpointId:{EndpointId}, EventId:{EventId}")]
+    private static partial void LogResolverStorageTemporarilyUnavailable(ILogger logger, Exception exception, string endpointId, string? eventId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Updated Heartbeat EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}")]
+    private static partial void LogResolverUpdatedHeartbeatEndpointId(ILogger logger, string endpointId, HeartbeatStatus status, string? eventId, string? messageId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: heartbeat notification failed (non-fatal)")]
+    private static partial void LogResolverHeartbeatNotificationFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: service health store not configured; completing liveness probe without recording. MessageId:{MessageId}")]
+    private static partial void LogResolverServiceHealthStoreNotConfigured(ILogger logger, string? messageId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Storage temporarily unavailable, will reprocess liveness probe. EventId:{EventId}")]
+    private static partial void LogResolverStorageTemporarilyUnavailableWillReprocess2(ILogger logger, Exception exception, string? eventId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolver: Answered liveness probe. RoundTripMs:{RoundTripMs}, Version:{Version}, MessageId:{MessageId}")]
+    private static partial void LogResolverAnsweredLivenessProbe(ILogger logger, long? roundTripMs, string version, string? messageId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Resolver: service health notification failed (non-fatal)")]
+    private static partial void LogResolverServiceHealthNotificationFailed(ILogger logger, Exception exception);
 }

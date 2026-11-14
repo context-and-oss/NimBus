@@ -20,19 +20,18 @@ import AdvancedFiltersPopover, {
 } from "./filter/advanced-filters-popover";
 import FilterContext, { IFilterContext } from "./filter/filtering-context";
 import TruncatedGuid from "components/common/truncated-guid";
-import ErrorGroupedView from "./error-grouped-view";
 import { useUrlFilters } from "hooks/use-url-filters";
 import { Badge } from "components/ui/badge";
 import { Tooltip } from "components/ui/tooltip";
 import { Checkbox } from "components/ui/checkbox";
-import { StatTile, StatRow } from "components/ui/stat-tile";
 import { EmptyState } from "components/ui/empty-state";
 import { cn } from "lib/utils";
 import ReportPopover from "./report-popover";
 import { notifyWithUndo, notifyError } from "functions/notifications.functions";
 import { describeCommandError } from "functions/operator-command.functions";
+import { failureBacklog } from "functions/failed-messages.functions";
 import { reportedCellState } from "functions/reported.functions";
-import { useTicketLinkTemplate } from "hooks/app-status";
+import { useEndpointTicketLinkTemplate } from "hooks/app-status";
 import { useCurrentUser } from "hooks/use-current-user";
 
 const isHandoffEvent = (event: api.Event): boolean =>
@@ -78,6 +77,14 @@ interface EventsPanelProps {
 
 interface SessionState {
   deferredCount: number;
+}
+
+// Values behind the status summary line: Failed (Failed + DeadLettered +
+// Unsupported), Deferred and Pending.
+interface SummaryCounts {
+  failed: number;
+  deferred: number;
+  pending: number;
 }
 
 const ACTIONABLE_STATUSES = [
@@ -132,7 +139,6 @@ type EndpointFilterParams = {
   addedFrom: string;
   addedTo: string;
   payload: string;
-  viewMode: string;
   maxResults: string;
 };
 
@@ -146,7 +152,6 @@ export const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
   addedFrom: "",
   addedTo: "",
   payload: "",
-  viewMode: "list",
   maxResults: "100",
 };
 
@@ -277,7 +282,6 @@ function paramsFromEventFilter(
     addedFrom: formatLocalDateTime(filter.enqueuedAtFrom),
     addedTo: formatLocalDateTime(filter.enqueuedAtTo),
     payload: filter.payload ?? "",
-    viewMode: current.viewMode,
     maxResults: current.maxResults,
   };
 }
@@ -313,6 +317,11 @@ const EventsPanel = (props: EventsPanelProps) => {
     string | undefined
   >();
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
+  // Endpoint-wide Failed/Deferred/Pending totals; undefined until read (or when
+  // the read fails), in which case the summary line falls back to the loaded page.
+  const [endpointTotals, setEndpointTotals] = React.useState<SummaryCounts>();
+  // Same ordering guard as fetchTicket, for the totals request.
+  const totalsTicket = React.useRef(0);
   const [searchError, setSearchError] = React.useState<string>();
   const [currentFilter, setCurrentFilter] = React.useState<
     api.EventFilter | undefined
@@ -323,7 +332,7 @@ const EventsPanel = (props: EventsPanelProps) => {
   // template ("…/{ticket}"); undefined → ticket chips render as plain text.
   // currentUser names the operator on optimistic marks so the who/when tooltip
   // is populated before the next refetch.
-  const ticketLinkTemplate = useTicketLinkTemplate();
+  const ticketLinkTemplate = useEndpointTicketLinkTemplate(endpointId);
   const { user: currentUser } = useCurrentUser();
   const [reportTarget, setReportTarget] = React.useState<{
     event: api.Event;
@@ -368,9 +377,6 @@ const EventsPanel = (props: EventsPanelProps) => {
     React.useState<Set<string>>(loadHiddenColumns);
 
   const maxResults = Number(applied.maxResults) || 100;
-  const viewMode = (applied.viewMode === "grouped" ? "grouped" : "list") as
-    | "list"
-    | "grouped";
 
   // EventFilter (draft) is derived from URL on mount and on URL change. Sub-filters
   // mutate this via the FilterContext as the user types; URL only updates on Search.
@@ -402,8 +408,31 @@ const EventsPanel = (props: EventsPanelProps) => {
     if (!endpointId) return;
     setSessions({});
     fetchEvents(buildEventFilterFromParams(applied, endpointId));
+    void fetchEndpointTotals();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applied, endpointId, searchNonce]);
+
+  // Endpoint-wide totals for the summary line. Refreshed with every result-set
+  // load, so a Search, Reset or row action updates them too.
+  const fetchEndpointTotals = async (): Promise<void> => {
+    const ticket = ++totalsTicket.current;
+    let totals: SummaryCounts | undefined;
+    try {
+      const count = await client.getEndpointStatusCountId(endpointId);
+      if (count) {
+        totals = {
+          failed: failureBacklog([count]),
+          deferred: count.deferredCount ?? 0,
+          pending: count.pendingCount ?? 0,
+        };
+      }
+    } catch {
+      // Unreadable totals leave the summary line on the loaded page's counts.
+    }
+    if (ticket === totalsTicket.current) {
+      setEndpointTotals(totals);
+    }
+  };
 
   const isActionableStatus = (status: string | undefined): boolean => {
     if (!status) return false;
@@ -592,7 +621,9 @@ const EventsPanel = (props: EventsPanelProps) => {
     removeFromTable(event);
     client
       .postSkipEventIds(event.eventId!, event.lastMessageId!)
-      .catch((caught: unknown) => notifyError(describeCommandError(caught, "skip")));
+      .catch((caught: unknown) =>
+        notifyError(describeCommandError(caught, "skip")),
+      );
   };
 
   const resubmitSingleEvent = (event: api.Event): void => {
@@ -816,7 +847,7 @@ const EventsPanel = (props: EventsPanelProps) => {
   };
 
   // Events actually shown — optionally hiding the ones already reported. The
-  // KPI tiles still count over all loaded events.
+  // status summary line counts the endpoint, not the visible rows.
   const visibleEvents = React.useMemo(
     () => (hideReported ? events.filter((e) => !e.isReported) : events),
     [events, hideReported],
@@ -865,7 +896,7 @@ const EventsPanel = (props: EventsPanelProps) => {
               value: (
                 <TruncatedGuid
                   guid={item.eventId}
-                  onClick={(g) => handleFilterById("eventId", g)}
+                  linkTo={`/Message/Index/${endpointId}/${item.eventId}/0`}
                 />
               ),
               searchValue: item.eventId!,
@@ -1034,10 +1065,6 @@ const EventsPanel = (props: EventsPanelProps) => {
     applyFilters({ ...applied, maxResults: String(next) });
   };
 
-  const setViewMode = (next: "list" | "grouped"): void => {
-    applyFilters({ ...applied, viewMode: next });
-  };
-
   // Commit the advanced filters from the popover (Updated/Added ranges +
   // Payload), leaving the basic filters untouched. Changing these applied
   // params triggers the fetch effect, so no extra refresh nonce is needed.
@@ -1106,10 +1133,10 @@ const EventsPanel = (props: EventsPanelProps) => {
   // from `initialValue` props whenever the URL changes (e.g. browser Back/forward).
   const filterRemountKey = `${applied.status.join(",")}|${applied.eventTypeId.join(",")}|${applied.eventId}|${applied.sessionId}`;
 
-  // Counts derived from the currently-loaded page. Server-wide totals would
-  // need a dedicated stats endpoint — this gives an honest "what's on screen"
-  // summary that matches the operator's mental model of the result set.
-  const counts = React.useMemo(() => {
+  // Counts derived from the currently-loaded page. Only a fallback: the summary
+  // line reads as endpoint totals (Failed opens the endpoint's whole backlog), and a
+  // page holds at most maxResults rows of every status.
+  const pageCounts = React.useMemo((): SummaryCounts => {
     let failed = 0;
     let deferred = 0;
     let pending = 0;
@@ -1130,6 +1157,7 @@ const EventsPanel = (props: EventsPanelProps) => {
     }
     return { failed, deferred, pending };
   }, [events]);
+  const counts = endpointTotals ?? pageCounts;
 
   // Applied advanced filters, surfaced through the Advanced-filters popover
   // (next to the column chooser) and the chip row below the view controls.
@@ -1152,60 +1180,44 @@ const EventsPanel = (props: EventsPanelProps) => {
     applied.addedTo.length > 0 ||
     applied.payload.length > 0;
 
-  const segBtn = (active: boolean) =>
-    cn(
-      "px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
-      active
-        ? "bg-primary text-white"
-        : "text-muted-foreground hover:text-foreground",
-    );
+  // Status summary line: endpoint-wide counts that stay put whatever the list
+  // is filtered to. Failed opens the Failed page (its error grouping covers the
+  // whole backlog); Deferred and Pending narrow the list to that status.
+  const summaryItems = [
+    {
+      key: "failed",
+      count: counts.failed,
+      label: "failed",
+      tone: "text-status-danger",
+      title:
+        "Failed + DeadLettered + Unsupported. Opens this endpoint's failures on the Failed page.",
+      onClick: () =>
+        navigate(`/Failed?endpointId=${encodeURIComponent(endpointId)}`),
+    },
+    {
+      key: "deferred",
+      count: counts.deferred,
+      label: "deferred",
+      tone: "text-status-warning",
+      title:
+        "Waiting behind a failed message in the same session. Shows them in the list.",
+      onClick: () =>
+        applyFilters({ ...applied, status: [api.ResolutionStatus.Deferred] }),
+    },
+    {
+      key: "pending",
+      count: counts.pending,
+      label: "pending",
+      tone: "text-status-warning",
+      title: "In flight. Shows them in the list.",
+      onClick: () =>
+        applyFilters({ ...applied, status: [api.ResolutionStatus.Pending] }),
+    },
+  ];
 
   return (
     <FilterContext.Provider value={context}>
       <div className="flex flex-col gap-4 w-full">
-        {/* Promote summary metrics above the table — design rec §03.
-            Status-coloured tiles answer "how is this endpoint doing?"
-            before the operator scans rows. */}
-        <StatRow columns={3}>
-          <StatTile
-            label="Failed"
-            // Opens the cross-endpoint Failed page scoped to this endpoint:
-            // its chart and error grouping cover the whole backlog, not one page.
-            onClick={() =>
-              navigate(`/Failed?endpointId=${encodeURIComponent(endpointId)}`)
-            }
-            value={isLoading ? "—" : counts.failed.toLocaleString()}
-            tone={counts.failed > 0 ? "danger" : "muted"}
-            delta={
-              isLoading
-                ? "…"
-                : counts.failed === 0
-                  ? "all clear"
-                  : "Failed + DeadLettered + Unsupported"
-            }
-          />
-          <StatTile
-            label="Deferred"
-            value={isLoading ? "—" : counts.deferred.toLocaleString()}
-            tone={counts.deferred > 0 ? "warning" : "muted"}
-            delta={
-              isLoading
-                ? "…"
-                : counts.deferred === 0
-                  ? "none"
-                  : "awaiting retry"
-            }
-          />
-          <StatTile
-            label="Pending"
-            value={isLoading ? "—" : counts.pending.toLocaleString()}
-            tone={counts.pending > 0 ? "warning" : "muted"}
-            delta={
-              isLoading ? "…" : counts.pending === 0 ? "none" : "in-flight"
-            }
-          />
-        </StatRow>
-
         <EventFiltering
           key={filterRemountKey}
           handleFilterClicked={handleFilterClicked}
@@ -1220,47 +1232,50 @@ const EventsPanel = (props: EventsPanelProps) => {
           onMaxResultsChange={setMaxResults}
         />
 
-        {/* View-mode segmented control — matches design `.seg` button group.
-            Single role per hue: coral is "active selection", not a status. */}
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground font-semibold text-[13px]">
-            View:
-          </span>
-          <div className="inline-flex items-center bg-card border border-border rounded-nb-md p-[3px] gap-[2px]">
-            <button
-              type="button"
-              className={segBtn(viewMode === "list")}
-              onClick={() => setViewMode("list")}
-            >
-              List
-            </button>
-            <button
-              type="button"
-              className={segBtn(viewMode === "grouped")}
-              onClick={() => setViewMode("grouped")}
-            >
-              Grouped by Error
-            </button>
-          </div>
+          <nav
+            aria-label="Endpoint status summary"
+            className="flex items-center gap-1"
+          >
+            {summaryItems.map((item, index) => (
+              <React.Fragment key={item.key}>
+                {index > 0 && (
+                  <span aria-hidden="true" className="text-muted-foreground">
+                    ·
+                  </span>
+                )}
+                <button
+                  type="button"
+                  title={item.title}
+                  disabled={isLoading || item.count === 0}
+                  onClick={item.onClick}
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 font-semibold tabular-nums transition-colors enabled:hover:bg-muted disabled:cursor-default",
+                    !isLoading && item.count > 0
+                      ? item.tone
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {isLoading ? "—" : item.count.toLocaleString()} {item.label}
+                </button>
+              </React.Fragment>
+            ))}
+          </nav>
           <div className="ml-auto flex items-center gap-3">
-            {viewMode === "list" && (
-              <>
-                <label className="inline-flex cursor-pointer select-none items-center gap-2 text-muted-foreground">
-                  <Checkbox
-                    checked={hideReported}
-                    onChange={(e) => setHideReported(e.target.checked)}
-                    aria-label="Hide reported events"
-                  />
-                  Hide reported
-                </label>
-                <ColumnChooser
-                  columns={EVENT_COLUMNS}
-                  hidden={hiddenCols}
-                  onToggle={toggleColumn}
-                  onReset={resetColumns}
-                />
-              </>
-            )}
+            <label className="inline-flex cursor-pointer select-none items-center gap-2 text-muted-foreground">
+              <Checkbox
+                checked={hideReported}
+                onChange={(e) => setHideReported(e.target.checked)}
+                aria-label="Hide reported events"
+              />
+              Hide reported
+            </label>
+            <ColumnChooser
+              columns={EVENT_COLUMNS}
+              hidden={hiddenCols}
+              onToggle={toggleColumn}
+              onReset={resetColumns}
+            />
             <AdvancedFiltersPopover
               value={advancedValue}
               onApply={handleApplyAdvanced}
@@ -1281,13 +1296,6 @@ const EventsPanel = (props: EventsPanelProps) => {
             <p className="font-semibold">Search failed</p>
             <p className="text-sm text-muted-foreground">{searchError}</p>
           </div>
-        ) : viewMode === "grouped" ? (
-          <ErrorGroupedView
-            events={events}
-            onResubmitEvent={resubmitSingleEvent}
-            onSkipEvent={skipSingleEvent}
-            isActionableStatus={isActionableStatus}
-          />
         ) : !isLoading && events.length === 0 ? (
           <EmptyState
             icon="◌"

@@ -36,7 +36,7 @@ public class ResolverLivenessProbeTests
         Assert.AreEqual(Constants.ResolverId, written.ServiceId);
         Assert.AreEqual(HeartbeatStatus.On, written.Status);
         Assert.IsFalse(string.IsNullOrWhiteSpace(written.Version), "The Resolver reports its own assembly version.");
-        Assert.IsFalse(written.Version.Contains('+'), "Version must be the bare package version without the '+<sha>' build suffix");
+        Assert.IsFalse(written.Version.Contains('+', StringComparison.Ordinal), "Version must be the bare package version without the '+<sha>' build suffix");
         Assert.IsNotNull(written.LastSeenUtc);
         Assert.IsNotNull(written.RoundTripMs);
         Assert.IsTrue(written.RoundTripMs >= 0 && written.RoundTripMs <= 60_000,
@@ -85,6 +85,25 @@ public class ResolverLivenessProbeTests
 
         Assert.AreEqual(0, message.CompletedCalls, "The session must redeliver the probe.");
         Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
+        Assert.AreEqual(0, message.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_SelfProbe_CosmosThrottle_RetriesInPlaceInsteadOfRescheduling()
+    {
+        // A rescheduled probe would report the backoff as round-trip time, and a later probe
+        // supersedes it anyway.
+        var store = new FakeCosmosDbClient
+        {
+            SetServiceHealthException = new RequestLimitException(TimeSpan.FromSeconds(1)),
+        };
+        var service = CreateService(store);
+        var message = CreateProbeContext(Constants.ResolverId, DateTime.UtcNow);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
+        Assert.AreEqual(0, message.CompletedCalls, "The session must redeliver the probe.");
         Assert.AreEqual(0, message.DeadLetterCalls);
     }
 

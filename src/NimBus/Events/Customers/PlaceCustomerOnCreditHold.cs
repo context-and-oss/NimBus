@@ -36,20 +36,20 @@ public class PlaceCustomerOnCreditHold : Command
 
     [Sensitive(Mode = MaskMode.Hash)]
     [Description("The customer's email address, carried so billing can notify them of the hold.")]
-    public string CustomerEmail { get; set; }
+    public string CustomerEmail { get; set; } = null!;
 
     [Required]
     [Description("Coded reason for the hold. Not free text, so it is safe to read without PII access.")]
-    public string Reason { get; set; }
+    public string Reason { get; set; } = null!;
 
     // Free-text written by caseworkers; in practice it quotes names, phone numbers and
     // dispute details, so it is redacted wholesale rather than trusted to stay clean.
     [Sensitive]
     [Description("Free-text case notes recorded by the reviewing agent.")]
-    public string CaseNotes { get; set; }
+    public string CaseNotes { get; set; } = null!;
 
     [Description("Identifier of the process or team that requested the hold.")]
-    public string RequestedBy { get; set; }
+    public string RequestedBy { get; set; } = null!;
 
     [Description("When the hold takes effect.")]
     public DateTimeOffset EffectiveFrom { get; set; }

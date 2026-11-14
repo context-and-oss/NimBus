@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 // land in the eager entry chunk — the runtime module is loaded on demand
 // inside the effects below via dynamic import.
 import type * as api from "api-client";
+import { useStorageProvider } from "hooks/app-status";
+import { manageResults } from "./manage-results";
 
 // 8-4-4-4-12 hex layout OR 32 contiguous hex chars (Service Bus session keys).
 const GUID_DASHED = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -14,7 +16,7 @@ const MAX_REMOTE_RESULTS = 25;
 export interface PaletteResult {
   /** Stable key for React reconciliation. */
   key: string;
-  kind: "endpoint" | "eventType" | "event" | "session";
+  kind: "page" | "operation" | "setting" | "endpoint" | "eventType" | "event" | "session";
   title: string;
   /** Mono secondary line; usually a namespace or "Session …" descriptor. */
   subtitle?: string;
@@ -40,9 +42,10 @@ function looksLikeId(input: string): boolean {
  * Aggregates command-palette results from two sources:
  *
  * 1. **Catalog (local)** — endpoint names + event types fetched once when the
- *    palette opens and substring-filtered against the input.
+ *    palette opens and substring-filtered against the input. For site Owners
+ *    (`canManage`), the Manage pages, operations and settings come first.
  * 2. **GUID lookup (remote)** — when the input looks like an ID we hit the
- *    `/api/messages/search` endpoint twice in parallel (by eventId, by sessionId)
+ *    `/api/v1/messages/search` endpoint twice in parallel (by eventId, by sessionId)
  *    and surface the hits as `event` / `session` rows.
  *
  * Catalog requests run once per page load (the catalog rarely changes during
@@ -52,7 +55,10 @@ function looksLikeId(input: string): boolean {
 export function usePaletteSearch(
   query: string,
   enabled: boolean,
+  canManage = false,
 ): PaletteSearchState {
+  // Cached app status, already loaded by the footer; decides the Storage view.
+  const storageProvider = useStorageProvider();
   const [endpoints, setEndpoints] = useState<string[] | undefined>(undefined);
   const [eventTypes, setEventTypes] = useState<api.EventType[] | undefined>(
     undefined,
@@ -156,7 +162,9 @@ export function usePaletteSearch(
   return useMemo<PaletteSearchState>(() => {
     const trimmed = query.trim();
     const lower = trimmed.toLowerCase();
-    const results: PaletteResult[] = [];
+    // Results are pushed in section order: the palette highlights by index into
+    // this array but draws it grouped, so the two orders must agree.
+    const results: PaletteResult[] = canManage ? manageResults(trimmed, storageProvider) : [];
 
     // Local matches — only when there's actual input (empty input shows hint).
     if (trimmed) {
@@ -236,6 +244,8 @@ export function usePaletteSearch(
     };
   }, [
     query,
+    canManage,
+    storageProvider,
     endpoints,
     eventTypes,
     remoteEvents,

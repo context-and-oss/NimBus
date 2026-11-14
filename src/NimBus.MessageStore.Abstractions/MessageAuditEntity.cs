@@ -6,7 +6,7 @@ namespace NimBus.MessageStore;
 
 public class MessageAuditEntity
 {
-    public string AuditorName { get; set; }
+    public string AuditorName { get; set; } = null!;
     public DateTime AuditTimestamp { get; set; }
     public MessageAuditType AuditType { get; set; }
     public string? Comment { get; set; }
@@ -22,7 +22,7 @@ public class MessageAuditEntity
     /// Optional structured context for the action: search filter JSON,
     /// ResubmitWithChanges body, or any other payload the caller wants
     /// preserved alongside the audit row. Truncated to ~4 KB by the
-    /// <see cref="NimBus.WebApp.Services"/> audit writer to stay within
+    /// <c>NimBus.WebApp.Services</c> audit writer to stay within
     /// every provider's column / document size budget.
     /// </summary>
     public string? Data { get; set; }
@@ -179,4 +179,48 @@ public enum MessageAuditType
     /// client are recorded as Data. Always recorded, deduplicated per caller and reason.
     /// </summary>
     McpAccessRefused,
+
+    /// <summary>
+    /// A site Owner issued an agent API key (Spec 039). The key id, agent id and name are
+    /// recorded as Data, never the key. Always recorded.
+    /// </summary>
+    AgentApiKeyCreated,
+
+    /// <summary>A site Owner revoked an agent API key (Spec 039). Always recorded.</summary>
+    AgentApiKeyRevoked,
+
+    /// <summary>A site Owner removed a revoked or expired agent API key (Spec 039). Always recorded.</summary>
+    AgentApiKeyRemoved,
+
+    /// <summary>
+    /// A site Owner copied an endpoint's stored events and messages to another store
+    /// (Operations → Copy endpoint data). Data carries the time window, statuses and counts,
+    /// never the target connection string.
+    /// </summary>
+    CopyEndpointData,
+
+    /// <summary>
+    /// A site Owner changed or reset Service Bus session state (Operations → Session state, or
+    /// Clean up session state). Data carries the session, the action and the state before and
+    /// after. Always recorded: the change is refused when the record can't be written.
+    /// </summary>
+    ChangeSessionState,
+
+    /// <summary>
+    /// A site Owner issued a Monitor dashboard token. The token id, name and expiry are recorded
+    /// as Data, never the token. Always recorded.
+    /// </summary>
+    DashboardTokenCreated,
+
+    /// <summary>A site Owner revoked a Monitor dashboard token. Always recorded.</summary>
+    DashboardTokenRevoked,
+
+    /// <summary>A site Owner removed a revoked or expired Monitor dashboard token. Always recorded.</summary>
+    DashboardTokenRemoved,
+
+    /// <summary>
+    /// An endpoint Owner changed the endpoint's ownership metadata (owner, team, email and
+    /// technical contacts). Data carries the values before and after. Always recorded.
+    /// </summary>
+    UpdateEndpointMetadata,
 }

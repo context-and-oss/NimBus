@@ -28,11 +28,11 @@ public class ShipmentDispatched : Event
 
     [Required]
     [Description("The delivery carrier.")]
-    public string Carrier { get; set; }
+    public string Carrier { get; set; } = null!;
 
     [Required]
     [Description("The carrier tracking number.")]
-    public string TrackingNumber { get; set; }
+    public string TrackingNumber { get; set; } = null!;
 
     [Description("The UTC timestamp when the shipment left the warehouse.")]
     public DateTime DispatchedAt { get; set; }

@@ -36,6 +36,29 @@ public class IdentityInitializerHostedServiceTests
     }
 
     [TestMethod]
+    public async Task FirstRun_BootstrapAdminIsPlatformAdmin()
+    {
+        // Without the platform-admin role the bootstrap admin can sign in but is denied
+        // everywhere on a fresh store, and has no way to grant anyone access.
+        await using var scope = IdentityTestScope.Create(o =>
+        {
+            o.Bootstrap.Email = "admin@local";
+            o.Bootstrap.Password = "Local!Admin123";
+        });
+
+        await RunInitializerAsync(scope);
+
+        using var serviceScope = scope.Services.CreateScope();
+        var userManager = serviceScope.ServiceProvider.GetRequiredService<UserManager<NimBusUser>>();
+        var admin = await userManager.FindByEmailAsync("admin@local");
+        Assert.IsNotNull(admin);
+        CollectionAssert.Contains(
+            (await userManager.GetRolesAsync(admin)).ToList(),
+            "EIP_Management",
+            "bootstrap admin must hold the platform-admin role");
+    }
+
+    [TestMethod]
     public async Task SecondRun_IsIdempotent_NoSecondAdminCreated()
     {
         await using var scope = IdentityTestScope.Create(o =>

@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
   history: vi.fn(),
   audits: vi.fn(),
   blocked: vi.fn(),
+  resubmit: vi.fn(),
+  eventTypes: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("api-client", async () => {
@@ -29,6 +31,8 @@ vi.mock("api-client", async () => {
     getEventDetailsHistoryId = mocks.history;
     getMessageAuditsEventId = mocks.audits;
     getEventBlockedId = mocks.blocked;
+    postResubmitWithChangesEventIds = mocks.resubmit;
+    getEventTypes = mocks.eventTypes;
   }
   return { ...actual, Client: FakeClient, CookieAuth: () => ({}) };
 });
@@ -52,7 +56,9 @@ const failed = new api.Event({
   processingTimeMs: 1020,
   updatedAt: moment("2026-09-28T18:06:31Z"),
   messageContent: new api.MessageContent({
-    errorContent: new api.ErrorContent({ errorText: "503 Service Unavailable" }),
+    errorContent: new api.ErrorContent({
+      errorText: "503 Service Unavailable",
+    }),
     eventContent: new api.EventContent({ eventJson: '{"LeadId":"4d3c"}' }),
   }),
 });
@@ -109,7 +115,9 @@ beforeEach(() => {
   mocks.audits.mockResolvedValue([]);
   mocks.blocked.mockResolvedValue(
     new api.BlockedEventsPage({
-      items: [new api.BlockedEvent({ eventId: "0f3e91c2-x", status: "Deferred" })],
+      items: [
+        new api.BlockedEvent({ eventId: "0f3e91c2-x", status: "Deferred" }),
+      ],
       total: 2,
     }),
   );
@@ -202,4 +210,38 @@ describe("FailureDetailPanel", () => {
     fireEvent.click(screen.getByLabelText("Next failure"));
     expect(props.onNext).toHaveBeenCalledTimes(1);
   });
+});
+
+it("edits and resubmits in the drawer without leaving the page", async () => {
+  mocks.resubmit.mockResolvedValue(undefined);
+  const props = renderPanel();
+  await screen.findByRole("region", { name: "Properties" });
+  fireEvent.click(
+    screen.getByRole("button", { name: /Resubmit with changes/ }),
+  );
+  const dialog = screen.getByRole("dialog");
+  const editor = within(dialog).getByRole("textbox", {
+    name: "Modified event:",
+  });
+  expect((editor as HTMLTextAreaElement).value).toContain("\n");
+  fireEvent.change(editor, {
+    target: { value: '{\n  "LeadId": "changed"\n}' },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Resubmit" }));
+  await waitFor(() =>
+    expect(mocks.resubmit).toHaveBeenCalledWith(
+      "b5ec63b6",
+      "m-last",
+      expect.objectContaining({
+        eventContent: '{\n  "LeadId": "changed"\n}',
+        eventTypeId: "PartnerLeadSubmitted",
+      }),
+    ),
+  );
+  expect(await screen.findByText(/Resubmission accepted/)).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: "Resubmit" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(props.onClose).not.toHaveBeenCalled();
 });

@@ -10,6 +10,14 @@ public sealed class AgentOptions
     public string AgentId { get; set; } = "";
 
     /// <summary>
+    /// Agent API key issued in nimbus-ops under Settings → Agent keys, sent as the
+    /// <c>X-NimBus-Agent-Key</c> header. Required when nimbus-ops requires sign-in; optional
+    /// against a local-development WebApp. The key's agent must match <see cref="AgentId"/>.
+    /// Treat it as a secret: load it from configuration or a secret store, never source code.
+    /// </summary>
+    public string? ApiKey { get; set; }
+
+    /// <summary>
     /// Base address of the NimBus agent REST API (nimbus-ops). Defaults to the Aspire
     /// service-discovery scheme <c>https+http://nimbus-ops</c>; set an absolute URL for
     /// non-Aspire hosts.

@@ -37,22 +37,22 @@ public sealed class CloudEventMapping
     public string SessionIdAttribute { get; set; } = "sessionid";
 
     /// <summary>Writes <c>CorrelationId</c> onto the CloudEvent per the configured mapping.</summary>
-    public void WriteCorrelationId(CloudEvent cloudEvent, string value) =>
+    public void WriteCorrelationId(CloudEvent cloudEvent, string? value) =>
         Write(cloudEvent, CorrelationIdAttribute, value);
 
     /// <summary>Writes <c>SessionId</c> onto the CloudEvent per the configured mapping.</summary>
-    public void WriteSessionId(CloudEvent cloudEvent, string value) =>
+    public void WriteSessionId(CloudEvent cloudEvent, string? value) =>
         Write(cloudEvent, SessionIdAttribute, value);
 
     /// <summary>Reads <c>CorrelationId</c> from the CloudEvent per the configured mapping.</summary>
-    public string ReadCorrelationId(CloudEvent cloudEvent) =>
+    public string? ReadCorrelationId(CloudEvent cloudEvent) =>
         Read(cloudEvent, CorrelationIdAttribute);
 
     /// <summary>Reads <c>SessionId</c> from the CloudEvent per the configured mapping.</summary>
-    public string ReadSessionId(CloudEvent cloudEvent) =>
+    public string? ReadSessionId(CloudEvent cloudEvent) =>
         Read(cloudEvent, SessionIdAttribute);
 
-    private static void Write(CloudEvent cloudEvent, string attribute, string value)
+    private static void Write(CloudEvent? cloudEvent, string attribute, string? value)
     {
         if (cloudEvent is null || string.IsNullOrEmpty(value) || string.IsNullOrEmpty(attribute))
             return;
@@ -63,7 +63,7 @@ public sealed class CloudEventMapping
             cloudEvent.Extensions[attribute] = value;
     }
 
-    private static string Read(CloudEvent cloudEvent, string attribute)
+    private static string? Read(CloudEvent? cloudEvent, string attribute)
     {
         if (cloudEvent is null || string.IsNullOrEmpty(attribute))
             return null;

@@ -110,4 +110,28 @@ public interface IEndpointMetadataStore
     /// <param name="expectedRevision">The revision the caller read, or null to create.</param>
     /// <returns>False on a revision conflict; the stored record is unchanged.</returns>
     Task<bool> TrySetMcpAccessSettings(McpAccessSettings settings, string? expectedRevision);
+
+    /// <summary>
+    /// The issued agent API keys (Spec 039), or an empty list with a null
+    /// <see cref="AgentApiKeySettings.Revision"/> when none was saved.
+    /// </summary>
+    Task<AgentApiKeySettings> GetAgentApiKeySettings();
+
+    /// <summary>
+    /// Saves the agent API keys when the stored revision equals
+    /// <paramref name="expectedRevision"/>; null means only when nothing is stored yet.
+    /// <paramref name="settings"/> must already carry the new revision.
+    /// </summary>
+    /// <param name="settings">The keys to store, with their new revision.</param>
+    /// <param name="expectedRevision">The revision the caller read, or null to create.</param>
+    /// <returns>False on a revision conflict; the stored record is unchanged.</returns>
+    Task<bool> TrySetAgentApiKeySettings(AgentApiKeySettings settings, string? expectedRevision);
+
+    /// <summary>The last recorded use of every agent API key that has been used.</summary>
+    Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage();
+
+    /// <summary>Records that the key authenticated a request; the last write wins.</summary>
+    /// <param name="keyId">The key's <see cref="AgentApiKey.KeyId"/>.</param>
+    /// <param name="usedAtUtc">When the key was used.</param>
+    Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc);
 }

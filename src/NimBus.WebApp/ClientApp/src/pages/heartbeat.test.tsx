@@ -186,4 +186,31 @@ describe("Heartbeat page", () => {
     await screen.findByText("1/2");
     expect(screen.queryByRole("region", { name: "Platform services" })).toBeNull();
   });
+
+  // Spec 038 §9.1: the probing settings are one click away for those who can change them.
+  it("links a site Owner to the probing settings", async () => {
+    mocks.access.current = { canManageAccessControl: true, endpointRoles: [] };
+
+    render(
+      <MemoryRouter>
+        <Heartbeat />
+      </MemoryRouter>,
+    );
+
+    const link = await screen.findByRole("link", { name: /Configure probing/ });
+    expect(link.getAttribute("href")).toBe("/Settings/heartbeat");
+  });
+
+  it("does not offer the probing settings to anyone else", async () => {
+    mocks.access.current = { canManageAccessControl: false, endpointRoles: [] };
+
+    render(
+      <MemoryRouter>
+        <Heartbeat />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("1/2");
+    expect(screen.queryByRole("link", { name: /Configure probing/ })).toBeNull();
+  });
 });

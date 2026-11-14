@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Extensions;
@@ -399,7 +400,7 @@ public class PipelineAndLifecycleTests
     {
         public Task Handle(IMessageContext context, MessagePipelineDelegate next, CancellationToken ct = default)
         {
-            throw new ApplicationException("Behavior error before next()");
+            throw new InvalidOperationException("Behavior error before next()");
         }
     }
 

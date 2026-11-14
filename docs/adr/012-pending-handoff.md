@@ -109,6 +109,14 @@ Why it stays: NimBus has an agent zone that DIS does not. `GetAgentReceiveAsync`
 
 What the DIS rule would have bought, and why it was not enough: parity with DIS, the handoff badge staying visible during settlement, and one fewer case in the stale-write guard of Spec 030. The guard keeps a control-request clause for Resubmit and Skip regardless, so a row last written by a settlement request is already protected against a late copy of the original request. A badge-preserving variant (project the settlement but keep `PendingSubStatus = "Handoff"`, and exclude settled rows from the receive query by `MessageType`) remains possible at the cost of a query change in all three storage providers.
 
+## Note — 2026-10-11 — settlements in flight before the projection
+
+The projection above takes milliseconds, but an agent that loops straight from settle back to receive is faster. In the CrmErpDemo the enrichment agent received the event it had just settled, processed it a second time, and settled it again; both settles passed the Pending+Handoff guard, so two control messages and two `CompleteHandoff` audit rows were written 30 ms apart.
+
+`HandoffSettlementService` now claims the parked message in a process-wide `HandoffSettlementTracker` before sending the settlement. A second settle of the same parked message gets the same 400 it would get after the projection, with no second control message and no second audit row, so a settled hand-off still has exactly one audit row (ADR-002). `GetAgentReceiveAsync` skips a row whose settlement is in flight and keeps polling until the projection moves it out of the query. A claim is keyed by endpoint, event id and the parked row's message id (an event parked again by a new message is a new hand-off), is released if the send fails, and expires after five minutes so a settlement the Resolver never projects cannot hide the hand-off forever.
+
+The tracker is per process. With several WebApp instances, a receive or settle that reaches another instance inside the projection window can still see the hand-off, so delivery there stays at-least-once. A store-backed lease would close that gap, at the cost of a new storage member in all three providers.
+
 ## See Also
 
 - ADR-002: Centralized Resolver — establishes the audit-trail contract that PendingHandoff plugs into.

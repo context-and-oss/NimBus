@@ -46,7 +46,7 @@ public partial class EventImplementation
         string eventId,
         string messageId,
         MessageAuditType auditType,
-        string auditComment,
+        string? auditComment,
         Func<MessageEntity, string, Task> settle)
     {
         if (!EndpointVerificationService.EndpointExists(platform, endpointId))
@@ -54,7 +54,7 @@ public partial class EventImplementation
 
         if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
         {
-            await auditLogService.LogAuditAsync(auditType, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(auditType, httpContextAccessor.HttpContext!,
                 accessDenied: true, eventId: eventId, endpointId: endpointId);
             return new ForbidResult();
         }

@@ -25,11 +25,15 @@ public class EventType : IEventType
 
     public string Name => _type.Name;
 
-    public string Namespace => _type.Namespace;
+    public string? Namespace => _type.Namespace;
 
-    public string Description => _type.GetCustomAttribute<DescriptionAttribute>()?.Description;
+    public string? Description => _type.GetCustomAttribute<DescriptionAttribute>()?.Description;
 
-    public string SessionKeyProperty => _type.GetCustomAttribute<SessionKeyAttribute>()?.PropertyName;
+    /// <inheritdoc />
+    public string? SessionKeyProperty => _type.GetCustomAttribute<SessionKeyAttribute>()?.PropertyName;
+
+    /// <inheritdoc />
+    public string? RoutingKeyProperty => RoutingKeys.GetAttribute(_type)?.PropertyName;
 
     public IEnumerable<IProperty> Properties =>
         _type.GetProperties()
@@ -59,7 +63,7 @@ public class EventType : IEventType
     /// now, and an event class without an example reports null instead of
     /// throwing.
     /// </remarks>
-    public IEvent GetEventExample()
+    public IEvent? GetEventExample()
     {
         var staticFields = _type.GetFields(BindingFlags.Public | BindingFlags.Static);
 

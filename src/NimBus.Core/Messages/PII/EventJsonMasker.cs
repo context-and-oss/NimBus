@@ -141,7 +141,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         try
         {
             var root = JObject.Parse(eventJson);
-            var prop = root.Property(PiiMaskedMarker);
+            var prop = root.Property(PiiMaskedMarker, StringComparison.Ordinal);
             if (prop == null) return eventJson;
             prop.Remove();
             return root.ToString(Formatting.None);
@@ -189,7 +189,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         if (obj == null || clrType == null) return;
 
         var classAttr = inheritedSensitive ?? clrType.GetCustomAttribute<SensitiveAttribute>(inherit: true);
-        JsonObjectContract contract = null;
+        JsonObjectContract? contract = null;
         try { contract = _contractResolver.ResolveContract(clrType) as JsonObjectContract; }
         catch { contract = null; }
 
@@ -198,7 +198,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
             if (jProp.Name == PiiMaskedMarker) continue;
 
             var jsonProp = contract?.Properties.GetClosestMatchProperty(jProp.Name);
-            PropertyInfo clrProp = null;
+            PropertyInfo? clrProp = null;
             if (jsonProp?.UnderlyingName != null)
             {
                 clrProp = clrType.GetProperty(jsonProp.UnderlyingName,
@@ -260,7 +260,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
             return;
         }
 
-        var raw = token.Type == JTokenType.String ? (string)token : token.ToString(Formatting.None);
+        var raw = token.Type == JTokenType.String ? (string?)token : token.ToString(Formatting.None);
         if (!string.IsNullOrEmpty(raw))
         {
             collected.Add(raw);
@@ -271,14 +271,14 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
     {
         if (obj == null || clrType == null) return false;
         var classAttr = inheritedSensitive ?? clrType.GetCustomAttribute<SensitiveAttribute>(inherit: true);
-        JsonObjectContract contract = null;
+        JsonObjectContract? contract = null;
         try { contract = _contractResolver.ResolveContract(clrType) as JsonObjectContract; }
         catch { contract = null; }
 
         foreach (var jProp in obj.Properties())
         {
             var jsonProp = contract?.Properties.GetClosestMatchProperty(jProp.Name);
-            PropertyInfo clrProp = null;
+            PropertyInfo? clrProp = null;
             if (jsonProp?.UnderlyingName != null)
             {
                 clrProp = clrType.GetProperty(jsonProp.UnderlyingName,
@@ -323,7 +323,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
     private static bool TokenContainsRedact(JToken token)
     {
         if (token == null) return false;
-        if (token.Type == JTokenType.String && (string)token == DefaultRedactToken) return true;
+        if (token.Type == JTokenType.String && (string?)token == DefaultRedactToken) return true;
         if (token is JObject o)
         {
             foreach (var c in o.Properties())
@@ -349,7 +349,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
             .ToDictionary(g => g.Key, g => g.First().GetEventClassType());
     }
 
-    private Type ResolveType(string eventTypeId)
+    private Type? ResolveType(string eventTypeId)
     {
         if (string.IsNullOrEmpty(eventTypeId))
         {
@@ -407,7 +407,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         }
 
         var classAttr = inheritedSensitive ?? clrType.GetCustomAttribute<SensitiveAttribute>(inherit: true);
-        JsonObjectContract contract = null;
+        JsonObjectContract? contract = null;
         try
         {
             contract = _contractResolver.ResolveContract(clrType) as JsonObjectContract;
@@ -423,7 +423,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
             if (jProp.Name == PiiMaskedMarker) continue;
 
             var jsonProp = contract?.Properties.GetClosestMatchProperty(jProp.Name);
-            PropertyInfo clrProp = null;
+            PropertyInfo? clrProp = null;
             if (jsonProp?.UnderlyingName != null)
             {
                 clrProp = clrType.GetProperty(jsonProp.UnderlyingName,
@@ -472,7 +472,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         }
 
         var classAttr = inheritedSensitive ?? clrType.GetCustomAttribute<SensitiveAttribute>(inherit: true);
-        JsonObjectContract contract = null;
+        JsonObjectContract? contract = null;
         try
         {
             contract = _contractResolver.ResolveContract(clrType) as JsonObjectContract;
@@ -522,7 +522,8 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         }
     }
 
-    private static JToken RedactToken(JToken token, ref bool redactedAny)
+    [return: NotNullIfNotNull(nameof(token))]
+    private static JToken? RedactToken(JToken? token, ref bool redactedAny)
     {
         if (token == null || token.Type == JTokenType.Null)
         {
@@ -558,7 +559,8 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         jProp.Value = MaskToken(jProp.Value, attr, ref maskedAny);
     }
 
-    private JToken MaskToken(JToken token, SensitiveAttribute attr, ref bool maskedAny)
+    [return: NotNullIfNotNull(nameof(token))]
+    private JToken? MaskToken(JToken? token, SensitiveAttribute attr, ref bool maskedAny)
     {
         if (token == null || token.Type == JTokenType.Null)
         {
@@ -585,11 +587,12 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
 
         // Leaf value with a non-null sensitive attribute — mark and mask.
         maskedAny = true;
-        var raw = token.Type == JTokenType.String ? (string)token : token.ToString(Formatting.None);
+        var raw = token.Type == JTokenType.String ? (string?)token : token.ToString(Formatting.None);
         return new JValue(MaskString(raw, attr));
     }
 
-    private string MaskString(string value, SensitiveAttribute attr)
+    [return: NotNullIfNotNull(nameof(value))]
+    private string? MaskString(string? value, SensitiveAttribute attr)
     {
         if (value == null)
         {
@@ -601,7 +604,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
             case MaskMode.PartialReveal:
                 if (attr.Reveal > 0 && value.Length > attr.Reveal)
                 {
-                    return new string('*', value.Length - attr.Reveal) + value.Substring(value.Length - attr.Reveal);
+                    return string.Concat(new string('*', value.Length - attr.Reveal), value.AsSpan(value.Length - attr.Reveal));
                 }
                 return DefaultRedactToken;
 
@@ -621,20 +624,17 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
     /// </summary>
     private string HashWithSalt(string value)
     {
-        using (var sha = SHA256.Create())
+        var bytes = Encoding.UTF8.GetBytes(_hashSalt + value);
+        var hash = SHA256.HashData(bytes);
+        var sb = new StringBuilder(hash.Length * 2);
+        for (int i = 0; i < hash.Length; i++)
         {
-            var bytes = Encoding.UTF8.GetBytes(_hashSalt + value);
-            var hash = sha.ComputeHash(bytes);
-            var sb = new StringBuilder(hash.Length * 2);
-            for (int i = 0; i < hash.Length; i++)
-            {
-                sb.Append(hash[i].ToString("x2"));
-            }
-            return sb.ToString();
+            sb.Append(hash[i].ToString("x2", CultureInfo.InvariantCulture));
         }
+        return sb.ToString();
     }
 
-    private static Type GetEnumerableElementType(Type type)
+    private static Type? GetEnumerableElementType(Type type)
     {
         if (type == null || type == typeof(string))
         {

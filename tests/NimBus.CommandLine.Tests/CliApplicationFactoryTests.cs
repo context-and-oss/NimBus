@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using McMaster.Extensions.CommandLineUtils;
 using Xunit;
 
@@ -67,9 +68,9 @@ public class CliApplicationFactoryTests
     {
         var options = command.Options
             .Where(o => o.LongName != "help")
-            .Select(o => "--" + (o.LongName ?? o.ShortName) + (o.Validators.Any() ? "!" : ""))
+            .Select(o => "--" + (o.LongName ?? o.ShortName) + (o.Validators.Count != 0 ? "!" : ""))
             .OrderBy(o => o, StringComparer.Ordinal);
-        var arguments = command.Arguments.Select(a => "<" + a.Name + (a.Validators.Any() ? "!" : "") + ">");
+        var arguments = command.Arguments.Select(a => "<" + a.Name + (a.Validators.Count != 0 ? "!" : "") + ">");
         yield return $"{path}: {string.Join(" ", arguments.Concat(options))}".TrimEnd();
         foreach (var child in command.Commands.OrderBy(c => c.Name, StringComparer.Ordinal))
         {
@@ -107,9 +108,9 @@ public class CliApplicationFactoryTests
         "nb container message:",
         "nb container message delete: <to!> --db-connection-string",
         "nb container resubmit: <endpoint-name!> --db-connection-string --sb-connection-string --unresolved-retention-days",
-        "nb container skip: <endpoint-name!> --before --db-connection-string --status!",
+        "nb container skip: <endpoint-name!> --before --db-connection-string --sb-connection-string --status!",
         "nb deploy:",
-        "nb deploy apps: --configuration --dns-wait --environment! --from-source --only --platform --platform-feed --platform-package --repo-root --resource-group! --solution-id!",
+        "nb deploy apps: --configuration --dns-wait --environment! --from-source --only --platform --platform-feed --platform-package --repo-root --resource-group! --resource-name-postfix --solution-id!",
         "nb endpoint:",
         "nb endpoint purge: <endpoint-name!> --before --sb-connection-string --state --subscription",
         "nb endpoint session:",
@@ -117,10 +118,10 @@ public class CliApplicationFactoryTests
         "nb endpoint topics:",
         "nb endpoint topics removeDeprecated: <endpoint-name!> --sb-connection-string",
         "nb infra:",
-        "nb infra apply: --allow-public-access --dns-wait --environment! --location --management-plan-sku --monitor-private-link --network-mode --private-dns --private-dns-link-vnet-id --private-dns-zone-scope --private-endpoint-subnet-id --repo-root --resolver-max-instances --resolver-max-sessions --resolver-plan --resolver-subnet-id --resource-group! --resource-name-postfix --service-bus-capacity --service-bus-namespace-name --skip-transition --solution-id! --sql-admin-login --sql-mode --sql-server-name --storage-provider --webapp-subnet-id --webapp-version",
-        "nb setup: --allow-public-access --assembly --configuration --dns-wait --environment! --from-source --identity-admin-email --location --management-plan-sku --monitor-private-link --network-mode --platform --platform-feed --platform-package --private-dns --private-dns-link-vnet-id --private-dns-zone-scope --private-endpoint-subnet-id --repo-root --resolver-max-instances --resolver-max-sessions --resolver-plan --resolver-subnet-id --resource-group! --resource-name-postfix --service-bus-capacity --service-bus-namespace-name --skip-transition --solution-id! --sql-admin-login --sql-mode --sql-server-name --storage-provider --webapp-subnet-id --webapp-version",
+        "nb infra apply: --alert-mail-from --alert-mail-smtp-host --alert-mail-smtp-port --alert-mail-smtp-use-ssl --alert-mail-smtp-username --alert-mail-webapp-url --allow-public-access --dns-wait --environment! --func-storage-account-name --location --management-plan-sku --monitor-private-link --network-mode --private-dns --private-dns-link-vnet-id --private-dns-zone-scope --private-endpoint-subnet-id --repo-root --resolver-max-instances --resolver-max-sessions --resolver-plan --resolver-subnet-id --resource-group! --resource-name-postfix --service-bus-capacity --service-bus-namespace-name --skip-transition --solution-id! --sql-admin-login --sql-mode --sql-server-name --storage-provider --webapp-subnet-id --webapp-version",
+        "nb setup: --alert-mail-from --alert-mail-smtp-host --alert-mail-smtp-port --alert-mail-smtp-use-ssl --alert-mail-smtp-username --alert-mail-webapp-url --allow-public-access --assembly --configuration --dns-wait --environment! --from-source --func-storage-account-name --identity-admin-email --location --management-plan-sku --monitor-private-link --network-mode --platform --platform-feed --platform-package --private-dns --private-dns-link-vnet-id --private-dns-zone-scope --private-endpoint-subnet-id --repo-root --resolver-max-instances --resolver-max-sessions --resolver-plan --resolver-subnet-id --resource-group! --resource-name-postfix --service-bus-capacity --service-bus-namespace-name --skip-transition --solution-id! --sql-admin-login --sql-mode --sql-server-name --storage-provider --webapp-subnet-id --webapp-version",
         "nb topology:",
-        "nb topology apply: --assembly --dns-wait --environment --platform --platform-feed --platform-package --resource-group --sb-connection-string --service-bus-namespace-name --solution-id --storage-provider",
+        "nb topology apply: --assembly --dns-wait --environment --platform --platform-feed --platform-package --resource-group --resource-name-postfix --sb-connection-string --service-bus-namespace-name --solution-id --storage-provider",
         "nb topology export: --assembly --output --platform --platform-feed --platform-package",
     ];
 }

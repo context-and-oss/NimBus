@@ -45,7 +45,7 @@ internal sealed class FakeServiceBusSession : IServiceBusSession
         return Task.CompletedTask;
     }
 
-    public Task DeadLetterAsync(IServiceBusMessage message, string reason, string errorDescription, CancellationToken cancellationToken = default)
+    public Task DeadLetterAsync(IServiceBusMessage message, string reason, string? errorDescription, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         DeadLetteredCount++;

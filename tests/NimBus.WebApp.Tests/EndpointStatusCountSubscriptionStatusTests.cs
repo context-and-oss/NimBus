@@ -95,13 +95,13 @@ public sealed class EndpointStatusCountSubscriptionStatusTests
         var ok = result.Result as OkObjectResult;
         Assert.IsNotNull(ok, $"Expected 200 OK, got {result.Result?.GetType().Name}");
         return ((IEnumerable<EndpointStatusCount>)ok.Value!)
-            .ToDictionary(c => c.EndpointId!, c => c.SubscriptionStatus);
+            .ToDictionary(c => c.EndpointId!, c => (string?)c.SubscriptionStatus);
     }
 
     private static EndpointImplementation CreateSut(InMemoryMessageStore store, params string[] endpointIds)
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string> { ["Environment"] = "dev" })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Environment"] = "dev" })
             .Build();
 
         return new EndpointImplementation(

@@ -52,6 +52,14 @@ public interface ISubscriptionAdminService
     Task<BulkOperationResult> PurgeSubscriptionAsync(string topicName, string subscriptionName);
 
     /// <summary>
+    /// Complete every message in a subscription's dead-letter queue and transfer dead-letter
+    /// queue, which Service Bus never empties on its own. A paused subscription stays paused:
+    /// unlike <see cref="PurgeSubscriptionAsync"/>, this never makes it receivable, since that
+    /// would hand its paused backlog to consumers.
+    /// </summary>
+    Task<BulkOperationResult> PurgeDeadLetterQueueAsync(string topicName, string subscriptionName);
+
+    /// <summary>
     /// Delete a subscription and immediately re-provision it from the platform topology.
     /// The fastest way to discard a large backlog; the rebuilt subscription is identical
     /// to a freshly provisioned one.

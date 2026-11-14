@@ -33,7 +33,7 @@ public static class EventCatalogExporter
     internal static IReadOnlyDictionary<string, string> Build(
         IPlatform platform, AsyncApiEnrichmentRegistry? enrichment = null)
     {
-        if (platform is null) throw new ArgumentNullException(nameof(platform));
+        ArgumentNullException.ThrowIfNull(platform);
 
         var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
 
@@ -183,13 +183,33 @@ public static class EventCatalogExporter
             new Map { ["type"] = "asyncapi", ["path"] = "asyncapi.yaml", ["name"] = $"{endpoint.Name} AsyncAPI" },
         };
 
-        var body = $"## Overview\n\n{(endpoint.Description is { Length: > 0 } desc ? desc : $"The {endpoint.Name} endpoint.")}\n\n<NodeGraph />\n";
+        var body = $"## Overview\n\n{(endpoint.Description is { Length: > 0 } desc ? desc : $"The {endpoint.Name} endpoint.")}\n\n<NodeGraph />\n"
+            + RoutingSection(endpoint);
         files[$"services/{endpoint.Id}/index.mdx"] = Mdx(frontmatter, body);
 
         // The endpoint's own AsyncAPI 3.0 view, rendered by EventCatalog's spec tab. Filtered to
         // this endpoint; cross-endpoint forward-subscription detail stays in `nb asyncapi export`.
         files[$"services/{endpoint.Id}/asyncapi.yaml"] = ServiceBus.AsyncApi.AsyncApiExporter.Serialize(
             new SingleEndpointPlatformView(platform, endpoint), CoreAsyncApiFormat.Yaml, enrichment);
+    }
+
+    // Spec 045: which routing keys the endpoint takes each consumed event type for. Written as
+    // body text, not frontmatter, so EventCatalog's schema for `receives` stays untouched.
+    private static string RoutingSection(IEndpoint endpoint)
+    {
+        var lines = new List<string>();
+        foreach (var eventType in endpoint.EventTypesConsumed.OrderBy(e => e.Id, StringComparer.Ordinal))
+        {
+            var keys = endpoint.GetRoutingKeys(eventType);
+            if (keys.Count > 0)
+                lines.Add($"- `{eventType.Id}`: routing keys {string.Join(", ", keys.Select(key => $"`{key}`"))}");
+            else if (endpoint.IsUnmatchedConsumer(eventType))
+                lines.Add($"- `{eventType.Id}`: unmatched consumer (messages whose routing key no endpoint claims, or with none)");
+        }
+
+        return lines.Count == 0
+            ? string.Empty
+            : "\n## Routing keys\n\n" + string.Join("\n", lines) + "\n";
     }
 
     // ---- Channels ----
@@ -319,6 +339,12 @@ public static class EventCatalogExporter
         if (!string.IsNullOrEmpty(sessionKey))
         {
             lines.Add($"Processed in session order by session key `{sessionKey}`.");
+            lines.Add(string.Empty);
+        }
+
+        if (!string.IsNullOrEmpty(evt.RoutingKeyProperty))
+        {
+            lines.Add($"Routed to consumers by routing key `{evt.RoutingKeyProperty}`.");
             lines.Add(string.Empty);
         }
 

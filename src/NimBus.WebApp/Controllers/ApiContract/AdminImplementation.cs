@@ -22,7 +22,7 @@ using AsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
-public class AdminImplementation : IAdminApiController
+public partial class AdminImplementation : IAdminApiController
 {
     private readonly IAdminService _adminService;
     private readonly ISubscriptionAdminService _subscriptionAdminService;
@@ -35,6 +35,7 @@ public class AdminImplementation : IAdminApiController
     private readonly ILogger<AdminImplementation> _logger;
     private readonly ICosmosContainerAdmin? _containerAdmin;
     private readonly IAuditSettingsProvider? _auditSettings;
+    private readonly ISessionStateService? _sessionStates;
 
     public AdminImplementation(
         IHttpContextAccessor contextAccessor,
@@ -47,19 +48,21 @@ public class AdminImplementation : IAdminApiController
         IHeartbeatService heartbeatService,
         ILogger<AdminImplementation>? logger = null,
         ICosmosContainerAdmin? containerAdmin = null,
-        IAuditSettingsProvider? auditSettings = null)
+        IAuditSettingsProvider? auditSettings = null,
+        ISessionStateService? sessionStates = null)
     {
         _adminService = adminService;
         _subscriptionAdminService = subscriptionAdminService;
         _platform = platform;
         _configuration = configuration;
-        _context = contextAccessor.HttpContext;
+        _context = contextAccessor.HttpContext!;
         _auditLogService = auditLogService;
         _authorizationService = authorizationService;
         _heartbeatService = heartbeatService;
         _logger = logger ?? NullLogger<AdminImplementation>.Instance;
         _containerAdmin = containerAdmin;
         _auditSettings = auditSettings;
+        _sessionStates = sessionStates;
     }
 
     public async Task<ActionResult<PlatformConfig>> GetAdminPlatformConfigAsync()
@@ -145,12 +148,25 @@ public class AdminImplementation : IAdminApiController
     public async Task<ActionResult<BulkOperationResult>> PostAdminBulkResubmitAsync(string endpointId)
     {
         if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.Resubmit, _context,
+                accessDenied: true, endpointId: endpointId);
             return new ForbidResult();
+        }
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
             return new NotFoundObjectResult("Endpoint not found");
 
         var result = await _adminService.BulkResubmitFailedAsync(endpointId);
+        await _auditLogService.LogAuditAsync(MessageAuditType.Resubmit, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                action = "bulk-resubmit-failed",
+                processed = result.Processed,
+                succeeded = result.Succeeded,
+                failed = result.Failed,
+            }));
         return new OkObjectResult(result);
     }
 
@@ -163,18 +179,37 @@ public class AdminImplementation : IAdminApiController
             return new NotFoundObjectResult("Endpoint not found");
 
         var count = await _adminService.GetDeadLetteredCountAsync(endpointId);
-        return new OkObjectResult(new Response2 { Count = count });
+        var queue = await _adminService.GetDeadLetterQueueCountsAsync(endpointId);
+        return new OkObjectResult(new Response2
+        {
+            Count = count,
+            QueueCount = queue?.Total,
+            MatchingQueueCount = queue?.MatchingStoredEvents,
+        });
     }
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteDeadletteredAsync(string endpointId)
     {
         if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointId);
             return new ForbidResult();
+        }
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
             return new NotFoundObjectResult("Endpoint not found");
 
         var result = await _adminService.DeleteDeadLetteredAsync(endpointId);
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                operation = "delete-deadlettered",
+                result.Processed,
+                result.Succeeded,
+                result.Failed,
+            }));
         return new OkObjectResult(result);
     }
 
@@ -213,24 +248,58 @@ public class AdminImplementation : IAdminApiController
     public async Task<IActionResult> DeleteAdminEventAsync(string endpointId, string eventId)
     {
         if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, eventId: eventId, endpointId: endpointId);
             return new ForbidResult();
+        }
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
             return new NotFoundObjectResult("Endpoint not found");
 
-        var deleted = await _adminService.DeleteEventAsync(endpointId, eventId);
+        bool deleted;
+        try
+        {
+            deleted = await _adminService.DeleteEventAsync(endpointId, eventId);
+        }
+        catch (EventBlocksSessionException exception)
+        {
+            await LogDeleteEventAuditAsync(endpointId, eventId, "blocks-session");
+            return new ConflictObjectResult(exception.Message);
+        }
+
+        await LogDeleteEventAuditAsync(endpointId, eventId, deleted ? "deleted" : "not-found");
         if (deleted)
             return new OkResult();
 
         return new NotFoundResult();
     }
 
+    private Task LogDeleteEventAuditAsync(string endpointId, string eventId, string outcome) =>
+        _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            eventId: eventId, endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new { action = "delete-event", eventId, outcome }));
+
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteAllAsync(string endpointId)
     {
-        if (!await IsSiteOwnerAsync()) return new ForbidResult();
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointId);
+            return new ForbidResult();
+        }
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
 
         var result = await _adminService.DeleteAllEventsAsync(endpointId);
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                operation = "delete-all",
+                result.Processed,
+                result.Succeeded,
+                result.Failed,
+            }));
         return new OkObjectResult(result);
     }
 
@@ -267,7 +336,7 @@ public class AdminImplementation : IAdminApiController
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "Could not list Cosmos DB containers");
+            LogCouldNotListCosmosDbContainers(_logger, exception);
             return new ObjectResult("Cosmos DB containers could not be loaded.")
             {
                 StatusCode = StatusCodes.Status503ServiceUnavailable,
@@ -309,7 +378,7 @@ public class AdminImplementation : IAdminApiController
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "Could not delete Cosmos DB container {ContainerName}", containerName);
+            LogCouldNotDeleteCosmosDbContainer(_logger, exception, containerName);
             await _auditLogService.LogAuditAsync(MessageAuditType.DeleteStorageContainer, _context,
                 data: JsonConvert.SerializeObject(new { containerName, success = false }));
             return new ObjectResult("The Cosmos DB container could not be deleted.")
@@ -372,9 +441,7 @@ public class AdminImplementation : IAdminApiController
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception,
-                "Could not inspect Resolver dead letters for subscription {SubscriptionName}",
-                subscriptionName);
+            LogCouldNotInspectResolverDeadLetters(_logger, exception, subscriptionName);
             return new ObjectResult("Resolver dead letters could not be inspected.")
             {
                 StatusCode = StatusCodes.Status503ServiceUnavailable,
@@ -434,9 +501,7 @@ public class AdminImplementation : IAdminApiController
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception,
-                "Could not replay Resolver dead letters for subscription {SubscriptionName}",
-                subscriptionName);
+            LogCouldNotReplayResolverDeadLetters(_logger, exception, subscriptionName);
             await LogResolverReplayResultAsync(
                 action,
                 subscriptionName,
@@ -503,6 +568,24 @@ public class AdminImplementation : IAdminApiController
         }
     }
 
+    public async Task<ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionDeadlettersPurgeAsync(
+        string topicName, string subscriptionName)
+    {
+        var denied = await GuardSubscriptionMutationAsync(topicName, subscriptionName, "purge-dead-letters");
+        if (denied is not null) return denied;
+
+        try
+        {
+            var result = await _subscriptionAdminService.PurgeDeadLetterQueueAsync(topicName, subscriptionName);
+            await LogSubscriptionAuditAsync(topicName, subscriptionName, "purge-dead-letters");
+            return new OkObjectResult(result);
+        }
+        catch (SubscriptionNotFoundException exception)
+        {
+            return new NotFoundObjectResult(exception.Message);
+        }
+    }
+
     public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionRecreateAsync(
         string topicName, string subscriptionName) =>
         MutateSubscriptionAsync(topicName, subscriptionName, "recreate",
@@ -552,7 +635,7 @@ public class AdminImplementation : IAdminApiController
         }
     }
 
-    private async Task<ActionResult> GuardSubscriptionMutationAsync(string topicName, string subscriptionName, string action)
+    private async Task<ActionResult?> GuardSubscriptionMutationAsync(string topicName, string subscriptionName, string action)
     {
         if (!await IsSiteOwnerAsync())
         {
@@ -663,21 +746,64 @@ public class AdminImplementation : IAdminApiController
         var result = await _adminService.PurgeSubscriptionAsync(endpointId, subscription, body.States?.ToList() ?? new(), body.Before);
         await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
             endpointId: endpointId,
-            data: JsonConvert.SerializeObject(body));
+            data: JsonConvert.SerializeObject(new
+            {
+                subscription = body.Subscription,
+                states = body.States,
+                before = body.Before,
+                processed = result.Processed,
+                succeeded = result.Succeeded,
+                failed = result.Failed,
+                rowsDeleted = result.RowsDeleted,
+            }));
         return new OkObjectResult(result);
     }
 
     public async Task<ActionResult<CountResponse>> PostAdminDeleteByToPreviewAsync(DeleteByToRequest body)
     {
         if (!await IsSiteOwnerAsync()) return new ForbidResult();
-        var count = await _adminService.DeleteMessagesByToPreviewAsync(body.ToField);
-        return new OkObjectResult(new CountResponse { Count = count });
+        try
+        {
+            var count = await _adminService.DeleteMessagesByToPreviewAsync(body.ToField);
+            return new OkObjectResult(new CountResponse { Count = count });
+        }
+        catch (NotSupportedException exception)
+        {
+            // Cosmos-only: answer 400 with the reason rather than an unhandled 500 (#285).
+            return new BadRequestObjectResult(exception.Message);
+        }
     }
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByToAsync(DeleteByToRequest body)
     {
-        if (!await IsSiteOwnerAsync()) return new ForbidResult();
-        var result = await _adminService.DeleteMessagesByToAsync(body.ToField);
+        // The route names no endpoint, so neither record carries one; the To filter is in the data.
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true,
+                data: JsonConvert.SerializeObject(new { action = "delete-by-to", toField = body?.ToField }));
+            return new ForbidResult();
+        }
+
+        BulkOperationResult result;
+        try
+        {
+            result = await _adminService.DeleteMessagesByToAsync(body.ToField);
+        }
+        catch (NotSupportedException exception)
+        {
+            return new BadRequestObjectResult(exception.Message);
+        }
+
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            data: JsonConvert.SerializeObject(new
+            {
+                action = "delete-by-to",
+                toField = body.ToField,
+                processed = result.Processed,
+                succeeded = result.Succeeded,
+                failed = result.Failed,
+            }));
         return new OkObjectResult(result);
     }
 
@@ -692,12 +818,18 @@ public class AdminImplementation : IAdminApiController
             return new BadRequestObjectResult(error);
 
         var count = await _adminService.DeleteByStatusPreviewAsync(endpointId, statuses);
-        return new OkObjectResult(new CountResponse { Count = count });
+        var blocking = await _adminService.CountSessionBlockingEventsAsync(endpointId, statuses);
+        return new OkObjectResult(new CountResponse { Count = count, BlockingCount = blocking });
     }
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByStatusAsync(string endpointId, DeleteByStatusRequest body)
     {
-        if (!await IsSiteOwnerAsync()) return new ForbidResult();
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointId);
+            return new ForbidResult();
+        }
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
         if (!AdminStatusValidation.TryNormalizeDeleteStatuses(
                 body?.Statuses?.Select(status => status.ToString()),
@@ -706,6 +838,16 @@ public class AdminImplementation : IAdminApiController
             return new BadRequestObjectResult(error);
 
         var result = await _adminService.DeleteByStatusAsync(endpointId, statuses);
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                action = "delete-by-status",
+                statuses,
+                processed = result.Processed,
+                succeeded = result.Succeeded,
+                failed = result.Failed,
+            }));
         return new OkObjectResult(result);
     }
 
@@ -741,13 +883,41 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<CopyResult>> PostAdminCopyAsync(string endpointId, CopyRequest body)
     {
-        if (!await IsSiteOwnerAsync()) return new ForbidResult();
+        // The target connection string is a secret: no part of it goes into either record.
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.CopyEndpointData, _context,
+                accessDenied: true, endpointId: endpointId);
+            return new ForbidResult();
+        }
+
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
 
-        var result = await _adminService.CopyEndpointDataAsync(
-            endpointId, body.TargetConnectionString,
-            body.From, body.To,
-            body.Statuses?.ToList() ?? new(), body.BatchSize);
+        var statuses = body.Statuses?.ToList() ?? new();
+        CopyResult result;
+        try
+        {
+            result = await _adminService.CopyEndpointDataAsync(
+                endpointId, body.TargetConnectionString,
+                body.From, body.To,
+                statuses, body.BatchSize);
+        }
+        catch (NotSupportedException exception)
+        {
+            return new BadRequestObjectResult(exception.Message);
+        }
+
+        await _auditLogService.LogAuditAsync(MessageAuditType.CopyEndpointData, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                action = "copy-endpoint-data",
+                from = body.From,
+                to = body.To,
+                statuses,
+                eventsCopied = result.EventsCopied,
+                messagesCopied = result.MessagesCopied,
+            }));
         return new OkObjectResult(result);
     }
 
@@ -911,4 +1081,16 @@ public class AdminImplementation : IAdminApiController
     // the gate is the site Owner role (spec 026; the EIP_Management marker claim
     // still maps to site Owner via the authorization service's compat union).
     private Task<bool> IsSiteOwnerAsync() => _authorizationService.HasRoleAsync(AccessRole.Owner);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not list Cosmos DB containers")]
+    private static partial void LogCouldNotListCosmosDbContainers(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not delete Cosmos DB container {ContainerName}")]
+    private static partial void LogCouldNotDeleteCosmosDbContainer(ILogger logger, Exception exception, string containerName);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not inspect Resolver dead letters for subscription {SubscriptionName}")]
+    private static partial void LogCouldNotInspectResolverDeadLetters(ILogger logger, Exception exception, string subscriptionName);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not replay Resolver dead letters for subscription {SubscriptionName}")]
+    private static partial void LogCouldNotReplayResolverDeadLetters(ILogger logger, Exception exception, string subscriptionName);
 }

@@ -73,6 +73,14 @@ describe("Simulate page", () => {
     }
   });
 
+  // Spec 038 §9.2: the simulator's settings are one click away.
+  it("links to the simulation settings", async () => {
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: /Simulation settings/ });
+    expect(link.getAttribute("href")).toBe("/Settings/simulation");
+  });
+
   it("starts the simulation", async () => {
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Start" }));

@@ -125,6 +125,8 @@ internal sealed class McpTestHost : IAsyncDisposable
                     services.AddSingleton(store);
                     services.AddSingleton<IMessageTrackingStore>(store);
                     services.AddSingleton<IEndpointMetadataStore>(store);
+                    // Spec 044 Phase 2: the operation journal, so the write tools run journaled.
+                    services.AddSingleton<IOperatorOperationStore>(store);
                     services.AddSingleton<RecordingManagerClient>();
                     services.AddSingleton<IManagerClient>(sp => sp.GetRequiredService<RecordingManagerClient>());
                     services.AddSingleton<RecordingAuditLog>();
@@ -138,6 +140,7 @@ internal sealed class McpTestHost : IAsyncDisposable
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMonitorApiController>.Create().Instance);
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMessageApiController>.Create().Instance);
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMetricsApiController>.Create().Instance);
+                    services.AddSingleton(InterfaceFake<NimBus.WebApp.Services.Insights.IFailedInsightsQuery>.Create().Instance);
 
                     // Mirrors the local-dev branch of Startup.AddAuthenticationStack.
                     var authentication = services.AddAuthentication();
@@ -221,17 +224,20 @@ internal sealed class McpTestHost : IAsyncDisposable
         string? roles = null,
         string issuer = "",
         string oid = "33333333-3333-3333-3333-333333333333",
-        string azp = AgentClientId)
+        string azp = AgentClientId,
+        string? name = "Agent Operator")
     {
         var claims = new Dictionary<string, object>
         {
             ["oid"] = oid,
             ["tid"] = TenantId,
             ["azp"] = azp,
-            ["name"] = "Agent Operator",
         };
+        // Entra app-only tokens carry no name claim; pass null to model one.
+        if (name is not null) claims["name"] = name;
         if (scopes is not null) claims["scp"] = scopes;
-        if (roles is not null) claims["roles"] = new[] { roles };
+        // Space-separated, like scp: a workload can hold several app roles.
+        if (roles is not null) claims["roles"] = roles.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
@@ -273,7 +279,7 @@ internal sealed class McpTestHost : IAsyncDisposable
 
     private sealed class BillingEndpoint : CoreEndpoint { }
 
-    private sealed class StubAuthorization(StubAccess access) : IEndpointAuthorizationService
+    private sealed class StubAuthorization(StubAccess access, IHttpContextAccessor http) : IEndpointAuthorizationService
     {
         public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null)
             => Task.FromResult(Grants(required, endpointId, access.Contributor));
@@ -302,7 +308,8 @@ internal sealed class McpTestHost : IAsyncDisposable
                     id => id, _ => access.Contributor ? AccessRole.Contributor : AccessRole.Reader, StringComparer.OrdinalIgnoreCase),
             });
 
-        public string? GetCurrentUserName() => "Agent Operator";
+        // The real name resolution, so a token without a name claim is named as in production.
+        public string? GetCurrentUserName() => PrincipalNames.Resolve(http.HttpContext?.User) ?? "Agent Operator";
     }
 
     /// <summary>What the stub authorization grants beyond Reader on <see cref="ReadableEndpoints"/>.</summary>
@@ -322,11 +329,41 @@ internal sealed class McpTestHost : IAsyncDisposable
     }
 
     /// <summary>Records the commands the coordinator publishes.</summary>
-    public sealed class RecordingManagerClient : IManagerClient
+    public sealed class RecordingManagerClient : IManagerClient, IManagerCommandClient
     {
         private readonly System.Collections.Concurrent.ConcurrentQueue<string> _sent = new();
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _commandIds = new();
 
         public IReadOnlyList<string> Sent => _sent.ToList();
+
+        /// <summary>The message ids journaled commands were published under, in order.</summary>
+        public IReadOnlyList<string> CommandIds => _commandIds.ToList();
+
+        /// <summary>When set, the next send throws it (once).</summary>
+        public Exception? FailNextSend { get; set; }
+
+        public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson, string commandMessageId)
+        {
+            ThrowIfFailing();
+            _commandIds.Enqueue(commandMessageId);
+            return Resubmit(errorResponse, endpoint, eventTypeId, eventJson);
+        }
+
+        public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId, string commandMessageId)
+        {
+            ThrowIfFailing();
+            _commandIds.Enqueue(commandMessageId);
+            return Skip(errorResponse, endpoint, eventTypeId);
+        }
+
+        private void ThrowIfFailing()
+        {
+            var failure = FailNextSend;
+            if (failure is null)
+                return;
+            FailNextSend = null;
+            throw failure;
+        }
 
         public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
         {

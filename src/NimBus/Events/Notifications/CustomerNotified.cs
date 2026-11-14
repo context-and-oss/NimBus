@@ -28,11 +28,11 @@ public class CustomerNotified : Event
 
     [Required]
     [Description("The notification template or use case that was sent.")]
-    public string Template { get; set; }
+    public string Template { get; set; } = null!;
 
     [Required]
     [Description("The outbound channel, such as email or sms.")]
-    public string Channel { get; set; }
+    public string Channel { get; set; } = null!;
 
     [Description("The UTC timestamp when the notification was sent.")]
     public DateTime SentAt { get; set; }

@@ -21,7 +21,7 @@ public sealed class RequestReplyEndToEndTests
 
     private sealed class CreditCheckResult
     {
-        public string AccountId { get; set; }
+        public string AccountId { get; set; } = null!;
         public bool Approved { get; set; }
     }
 
@@ -70,7 +70,7 @@ public sealed class RequestReplyEndToEndTests
         Assert.AreEqual("reply-session-e2e", reply.ReplySessionId);
         Assert.AreEqual("corr-e2e", reply.CorrelationId);
         Assert.IsFalse(reply.IsError);
-        var payload = JsonConvert.DeserializeObject<CreditCheckResult>(reply.PayloadJson);
+        var payload = JsonConvert.DeserializeObject<CreditCheckResult>(reply.PayloadJson!)!;
         Assert.IsTrue(payload.Approved);
         Assert.AreEqual("acc-1", payload.AccountId);
 

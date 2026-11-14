@@ -89,7 +89,7 @@ else
                 <tbody>
                     @foreach (var unresolvedEvent in failedEvents)
                     {
-                        var eventType = Model.OriginatingMessageContents[unresolvedEvent.OriginatingMessageId].EventContent.EventTypeId;
+                        var eventType = Model.OriginatingMessageContents[unresolvedEvent.OriginatingMessageId!].EventContent!.EventTypeId;
                         var enqueuedTime = unresolvedEvent.UpdatedAt;
                         <tr>
                             @* ReSharper disable once Mvc.ControllerNotResolved *@
@@ -217,7 +217,7 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var eventType in Model.Endpoint.EventTypesProduced.Where(ep => ep.Namespace.Equals(namespaceName, StringComparison.OrdinalIgnoreCase)).OrderBy(ep => ep.Name))
+                @foreach (var eventType in Model.Endpoint.EventTypesProduced.Where(ep => ep.Namespace!.Equals(namespaceName, StringComparison.OrdinalIgnoreCase)).OrderBy(ep => ep.Name))
                 {
                     <tr>
                         <td>
@@ -249,7 +249,7 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var eventType in Model.Endpoint.EventTypesConsumed.Where(ep => ep.Namespace.Equals(namespaceName, StringComparison.OrdinalIgnoreCase)).OrderBy(ep => ep.Name))
+                @foreach (var eventType in Model.Endpoint.EventTypesConsumed.Where(ep => ep.Namespace!.Equals(namespaceName, StringComparison.OrdinalIgnoreCase)).OrderBy(ep => ep.Name))
                 {
                     <tr>
                         <td>

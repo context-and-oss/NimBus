@@ -23,7 +23,7 @@ export default function AsyncApiExport() {
       // Raw fetch rather than the generated client so the exact document bytes
       // and the server's Content-Type/Content-Disposition headers are preserved
       // (the generated client would parse the response into a typed object).
-      const response = await fetch(`/api/admin/asyncapi?format=${format}`, {
+      const response = await fetch(`/api/v1/admin/asyncapi?format=${format}`, {
         method: "GET",
         credentials: "include",
         headers: { "api-version": "2" },

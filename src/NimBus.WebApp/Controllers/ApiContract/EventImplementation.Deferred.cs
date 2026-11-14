@@ -36,7 +36,7 @@ public partial class EventImplementation
         endpointId = CanonicalEndpointId(endpointId);
         if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
         {
-            await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext!,
                 accessDenied: true, eventId: eventId, endpointId: endpointId,
                 data: "{\"action\":\"skip-deferred-tracking\"}");
             return new ForbidResult();
@@ -55,7 +55,7 @@ public partial class EventImplementation
         httpContextAccessor.HttpContext?.RequestAborted.ThrowIfCancellationRequested();
         try
         {
-            if (!await messageStore.TrySkipDeferredMessage(eventId, row.SessionId, endpointId, expectedMessageId, expectedUpdatedAt))
+            if (!await messageStore.TrySkipDeferredMessage(eventId, row.SessionId!, endpointId, expectedMessageId, expectedUpdatedAt))
                 return new ConflictObjectResult("The tracking record changed. Check it again.");
         }
         catch (NotSupportedException)
@@ -85,9 +85,9 @@ public partial class EventImplementation
         }
         catch (Exception exception)
         {
-            logger.LogWarning(exception, "Deferred tracking was skipped but audit failed for {EndpointId}/{EventId}", endpointId, eventId);
+            LogDeferredTrackingWasSkippedButAudit(logger, exception, endpointId, eventId);
         }
-        logger.LogInformation("Deferred tracking skipped for {EndpointId}/{EventId}; audit recorded: {AuditRecorded}", endpointId, eventId, auditRecorded);
+        LogDeferredTrackingSkipped(logger, endpointId, eventId, auditRecorded);
         return new DeferredSkipResult { AuditRecorded = auditRecorded };
     }
 
@@ -100,4 +100,10 @@ public partial class EventImplementation
     private async Task<DeferredInspection> InspectDeferredRowAsync(UnresolvedEvent row) =>
         await new DeferredMessageInspector(serviceBusClient, serviceBusAdministrationClient).InspectAsync(row,
             await messageStore.GetEventHistory(row.EventId), httpContextAccessor.HttpContext?.RequestAborted ?? default);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Deferred tracking was skipped but audit failed for {EndpointId}/{EventId}")]
+    private static partial void LogDeferredTrackingWasSkippedButAudit(ILogger logger, Exception exception, string endpointId, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Deferred tracking skipped for {EndpointId}/{EventId}; audit recorded: {AuditRecorded}")]
+    private static partial void LogDeferredTrackingSkipped(ILogger logger, string endpointId, string eventId, bool auditRecorded);
 }

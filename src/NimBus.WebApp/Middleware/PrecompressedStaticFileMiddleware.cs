@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
@@ -176,7 +177,7 @@ public sealed class PrecompressedContentTypeProvider : IContentTypeProvider
     /// <param name="subpath">The request subpath (possibly ending in <c>.br</c> or <c>.gz</c>).</param>
     /// <param name="contentType">The resolved content type, when known.</param>
     /// <returns><see langword="true"/> when the content type could be resolved.</returns>
-    public bool TryGetContentType(string subpath, out string contentType)
+    public bool TryGetContentType(string subpath, [MaybeNullWhen(false)] out string contentType)
     {
         ArgumentNullException.ThrowIfNull(subpath);
 

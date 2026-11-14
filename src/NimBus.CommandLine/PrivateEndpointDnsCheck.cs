@@ -301,8 +301,11 @@ internal static class PrivateNetworkPreflight
     }
 }
 
-/// <summary>A resource group's id and tags, where nb records the network setup (spec 034 §5.13).</summary>
-internal sealed record ResourceGroupInfo(string Id, IReadOnlyDictionary<string, string> Tags);
+/// <summary>
+/// A resource group's id and tags, where nb records the network setup (spec 034 §5.13), and its
+/// region, where the templates place new resources unless --location says otherwise.
+/// </summary>
+internal sealed record ResourceGroupInfo(string Id, IReadOnlyDictionary<string, string> Tags, string? Location = null);
 
 internal static class ResourceGroupTags
 {
@@ -340,7 +343,7 @@ internal static class ResourceGroupTags
     public static async Task<ResourceGroupInfo> ReadAsync(IAzureCliRunner az, string resourceGroupName, CancellationToken cancellationToken)
     {
         using var document = await az.CaptureJsonAsync(
-            new[] { "group", "show", "--name", resourceGroupName, "--query", "{id:id, tags:tags}", "--output", "json" },
+            new[] { "group", "show", "--name", resourceGroupName, "--query", "{id:id, location:location, tags:tags}", "--output", "json" },
             cancellationToken,
             $"Could not read the resource group '{resourceGroupName}'. Create it first and check that the deploying identity can read it.").ConfigureAwait(false);
 
@@ -358,6 +361,10 @@ internal static class ResourceGroupTags
             }
         }
 
-        return new ResourceGroupInfo(id, tags);
+        var location = root.TryGetProperty("location", out var locationElement) && locationElement.ValueKind == JsonValueKind.String
+            ? locationElement.GetString()
+            : null;
+
+        return new ResourceGroupInfo(id, tags, string.IsNullOrWhiteSpace(location) ? null : location);
     }
 }

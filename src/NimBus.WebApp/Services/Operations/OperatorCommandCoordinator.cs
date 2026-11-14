@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -26,9 +27,11 @@ namespace NimBus.WebApp.Services.Operations;
 /// <item>the command is published, and a failure releases the claim, is audited as
 /// <see cref="MessageAuditType.CommandNotSent"/>, and is rethrown.</item>
 /// </list>
-/// A crash between the claim and the publish leaves the row archived with no command sent; the
-/// audit row written before the publish is the trace. Spec 035 Phase 2b's operation journal
-/// closes that gap.
+/// A crash between the claim and the publish leaves the row archived with no command sent. For a
+/// journaled command (<see cref="OperatorCommandContext.Journal"/>, Spec 044 Phase 2) the journal
+/// records each step before it is taken, so the operation reconciler can tell "never sent" from
+/// "maybe sent" and repair the row; the command is published under the operation id so its
+/// response can be found in the Resolver's history.
 /// </summary>
 public sealed partial class OperatorCommandCoordinator : IOperatorCommands
 {
@@ -46,15 +49,15 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
     // What the Web UI offers resubmit and skip on (events-panel ACTIONABLE_STATUSES, plus the
     // Pending+Handoff manual override). The MCP server is narrower: handoff and deferred
     // recovery are Spec 035 Phase 3.
-    private static readonly IReadOnlySet<ResolutionStatus> WebAppActionable = new HashSet<ResolutionStatus>
+    private static readonly FrozenSet<ResolutionStatus> WebAppActionable = FrozenSet.ToFrozenSet(new[]
     {
         ResolutionStatus.Failed, ResolutionStatus.DeadLettered, ResolutionStatus.Unsupported, ResolutionStatus.Deferred,
-    };
+    });
 
-    private static readonly IReadOnlySet<ResolutionStatus> McpActionable = new HashSet<ResolutionStatus>
+    private static readonly FrozenSet<ResolutionStatus> McpActionable = FrozenSet.ToFrozenSet(new[]
     {
         ResolutionStatus.Failed, ResolutionStatus.DeadLettered, ResolutionStatus.Unsupported,
-    };
+    });
 
     private const string HandoffSubStatus = "Handoff";
 
@@ -103,7 +106,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
     /// The endpoint a command for <paramref name="message"/> goes to: the receiving endpoint of a
     /// self-originating (dead-letter forwarded) message, otherwise the endpoint that failed.
     /// </summary>
-    public static string TargetEndpoint(MessageEntity message)
+    public static string? TargetEndpoint(MessageEntity message)
     {
         ArgumentNullException.ThrowIfNull(message);
         return BlockedEventRules.IsSelfOriginating(message.OriginatingMessageId) ? message.To : message.From;
@@ -240,7 +243,9 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
 
         var eventJson = requestMessage.MessageContent?.EventContent?.EventJson!;
         return await RunAsync(target, context, MessageAuditType.Resubmit, eventTypeId, Describe(target, context),
-            () => _managerClient.Resubmit(message, target.EndpointId, eventTypeId, eventJson));
+            () => context.Journal is { } journal && _managerClient is IManagerCommandClient commands
+                ? commands.Resubmit(message, target.EndpointId, eventTypeId, eventJson, journal.CommandMessageId)
+                : _managerClient.Resubmit(message, target.EndpointId, eventTypeId, eventJson));
     }
 
     /// <inheritdoc/>
@@ -267,7 +272,9 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
             eventTypeId = (await GetMessageWithFallback(target.EventId, message.OriginatingMessageId))?.EventTypeId!;
 
         return await RunAsync(target, context, MessageAuditType.Skip, eventTypeId, Describe(target, context),
-            () => _managerClient.Skip(message, target.EndpointId, eventTypeId));
+            () => context.Journal is { } journal && _managerClient is IManagerCommandClient commands
+                ? commands.Skip(message, target.EndpointId, eventTypeId, journal.CommandMessageId)
+                : _managerClient.Skip(message, target.EndpointId, eventTypeId));
     }
 
     /// <inheritdoc/>
@@ -336,33 +343,57 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
         string auditData,
         Func<Task> publish)
     {
+        var journal = context.Journal;
         var httpContext = _httpContextAccessor.HttpContext!;
         if (!IsActionable(target.Row, context.Channel))
-            return new(OperatorCommandStatus.NotAllowed, $"A {target.Row.ResolutionStatus} message cannot be {Verb(auditType)}.");
+            return await NotRunAsync(journal, new(OperatorCommandStatus.NotAllowed, $"A {target.Row.ResolutionStatus} message cannot be {Verb(auditType)}."));
 
         if (!await _authorization.HasRoleFreshAsync(AccessRole.Contributor, target.EndpointId))
         {
             await _audit.LogAuditAsync(auditType, httpContext, accessDenied: true, data: auditData,
                 eventId: target.EventId, endpointId: target.EndpointId, eventTypeId: eventTypeId);
-            return new(OperatorCommandStatus.Forbidden);
+            return await NotRunAsync(journal, new(OperatorCommandStatus.Forbidden));
         }
 
         var version = target.Version;
         if (!await _store.TryArchiveUnresolvedEvent(target.EventId, version.SessionId!, target.EndpointId,
                 version.Status, version.LastMessageId, version.UpdatedAt))
         {
-            return new(OperatorCommandStatus.Stale);
+            return await NotRunAsync(journal, new(OperatorCommandStatus.Stale));
         }
 
         try
         {
+            if (journal is not null)
+                await journal.ClaimedAsync();
             await _audit.LogRequiredAuditAsync(auditType, httpContext, data: auditData,
                 eventId: target.EventId, endpointId: target.EndpointId, eventTypeId: eventTypeId);
         }
         catch (AuditUnavailableException)
         {
             await ReleaseClaimAsync(target);
-            return new(OperatorCommandStatus.AuditUnavailable, AuditUnavailableDetail);
+            return await NotRunAsync(journal, new(OperatorCommandStatus.AuditUnavailable, AuditUnavailableDetail));
+        }
+        catch (Exception ex) when (journal is not null)
+        {
+            // The journal could not record the claim: release it and send nothing.
+            LogJournalStepFailed(_logger, ex, target.EventId, target.EndpointId);
+            await ReleaseClaimAsync(target);
+            throw;
+        }
+
+        if (journal is not null)
+        {
+            try
+            {
+                await journal.PublishingAsync();
+            }
+            catch (Exception ex)
+            {
+                LogJournalStepFailed(_logger, ex, target.EventId, target.EndpointId);
+                await ReleaseClaimAsync(target);
+                throw;
+            }
         }
 
         try
@@ -371,16 +402,48 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Publishing {AuditType} for event {EventId} on {EndpointId} failed; releasing the claim",
-                auditType, target.EventId, target.EndpointId);
+            LogPublishingForEventOnFailed(_logger, ex, auditType, target.EventId, target.EndpointId);
             await ReleaseClaimAsync(target);
             await _audit.LogAuditAsync(MessageAuditType.CommandNotSent, httpContext,
-                data: JsonConvert.SerializeObject(new { command = auditType.ToString(), error = ex.GetType().Name }),
+                data: JsonConvert.SerializeObject(new { command = auditType.ToString(), error = ex.GetType().Name, operationId = journal?.OperationId }),
                 eventId: target.EventId, endpointId: target.EndpointId, eventTypeId: eventTypeId);
+            if (journal is not null)
+            {
+                try
+                {
+                    await journal.PublishFailedAsync(ex);
+                }
+                catch (Exception journalError)
+                {
+                    // The reconciler finds the operation in Publishing and resolves it.
+                    LogJournalStepFailed(_logger, journalError, target.EventId, target.EndpointId);
+                }
+            }
+
             throw;
         }
 
+        if (journal is not null)
+        {
+            try
+            {
+                await journal.DispatchedAsync();
+            }
+            catch (Exception ex)
+            {
+                // Sent: the reconciler finds the operation in Publishing and confirms it from the history.
+                LogJournalStepFailed(_logger, ex, target.EventId, target.EndpointId);
+            }
+        }
+
         return OperatorCommandResult.Accepted;
+    }
+
+    private static async Task<OperatorCommandResult> NotRunAsync(IOperatorCommandJournal? journal, OperatorCommandResult result)
+    {
+        if (journal is not null)
+            await journal.NotRunAsync(result.Status, result.Detail);
+        return result;
     }
 
     private async Task ReleaseClaimAsync(OperatorCommandTarget target)
@@ -391,14 +454,12 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
             if (!await _store.TryRestoreArchivedEvent(target.EventId, version.SessionId!, target.EndpointId,
                     version.Status, version.LastMessageId, version.UpdatedAt))
             {
-                _logger.LogWarning("Event {EventId} on {EndpointId} could not be restored after an unsent command; a newer write already replaced it",
-                    target.EventId, target.EndpointId);
+                LogEventOnCouldNotBeRestored(_logger, target.EventId, target.EndpointId);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Restoring event {EventId} on {EndpointId} after an unsent command failed; it stays archived",
-                target.EventId, target.EndpointId);
+            LogRestoringEventOnAfterAnUnsent(_logger, ex, target.EventId, target.EndpointId);
         }
     }
 
@@ -409,6 +470,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
             reason = context.Reason,
             idempotencyKey = context.IdempotencyKey,
             clientId = context.ClientId,
+            operationId = context.Journal?.OperationId,
             priorStatus = target.Row.ResolutionStatus.ToString(),
             messageId = target.Version.LastMessageId,
             messageVersion = target.Version.Encode(),
@@ -435,7 +497,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Fallback lookup failed for endpoint {EndpointId}", ep.Id);
+                LogFallbackLookupFailedForEndpoint(_logger, ex, ep.Id);
                 return (ep.Id, Event: (UnresolvedEvent?)null);
             }
         });
@@ -444,7 +506,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
         if (hit.Event == null)
             return null;
 
-        _logger.LogInformation("Message {MessageId} not found in messages container, using fallback from endpoint {EndpointId}", messageId, hit.Id);
+        LogMessageNotFoundInMessagesContainer(_logger, messageId, hit.Id);
         return MessageEntityFromUnresolvedEvent(hit.Event);
     }
 
@@ -478,4 +540,22 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
     // TicketId column width (64).
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")]
     private static partial Regex TicketIdPattern();
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Publishing {AuditType} for event {EventId} on {EndpointId} failed; releasing the claim")]
+    private static partial void LogPublishingForEventOnFailed(ILogger logger, Exception exception, MessageAuditType auditType, string eventId, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The operation journal could not record a step for event {EventId} on {EndpointId}")]
+    private static partial void LogJournalStepFailed(ILogger logger, Exception exception, string eventId, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Event {EventId} on {EndpointId} could not be restored after an unsent command; a newer write already replaced it")]
+    private static partial void LogEventOnCouldNotBeRestored(ILogger logger, string eventId, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Restoring event {EventId} on {EndpointId} after an unsent command failed; it stays archived")]
+    private static partial void LogRestoringEventOnAfterAnUnsent(ILogger logger, Exception exception, string eventId, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Fallback lookup failed for endpoint {EndpointId}")]
+    private static partial void LogFallbackLookupFailedForEndpoint(ILogger logger, Exception exception, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Message {MessageId} not found in messages container, using fallback from endpoint {EndpointId}")]
+    private static partial void LogMessageNotFoundInMessagesContainer(ILogger logger, string? messageId, string endpointId);
 }

@@ -63,7 +63,7 @@ public static class SensitiveTypeInspector
         return false;
     }
 
-    private static Type GetEnumerableElementType(Type type)
+    private static Type? GetEnumerableElementType(Type type)
     {
         if (type == null || type == typeof(string))
         {

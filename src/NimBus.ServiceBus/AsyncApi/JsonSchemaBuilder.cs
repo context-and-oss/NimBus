@@ -117,7 +117,7 @@ internal static class JsonSchemaBuilder
     private static bool IsNumber(Type t) =>
         t == typeof(decimal) || t == typeof(double) || t == typeof(float);
 
-    private static Type GetEnumerableElementType(Type type)
+    private static Type? GetEnumerableElementType(Type type)
     {
         if (type == typeof(string)) return null;
         if (type.IsArray) return type.GetElementType();

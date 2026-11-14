@@ -1,7 +1,9 @@
+using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using CrmErpDemo.Contracts.E2E;
 using CrmErpDemo.Contracts.Dtos;
 using CrmErpDemo.Contracts.Events;
+using CrmErpDemo.Contracts.Security;
 using Erp.Adapter.Functions.Clients;
 using Erp.Adapter.Functions.HandoffMode;
 using Erp.Adapter.Functions.Handlers;
@@ -23,18 +25,21 @@ builder.ConfigureFunctionsWebApplication();
 // This demo adapter stays deliberately minimal: no NimBus retry rules, inbox or circuit breaker (a
 // Functions trigger can't be paused by a breaker anyway), and its HTTP clients retry inside the
 // standard resilience handler. The e2e suite is tuned to that timing. For the shape a production
-// adapter should follow, see samples/DynamicsBcDemo/BusinessCentral.Adapter and
-// docs/building-adapters.md#resilience.
+// adapter should follow, see docs/building-adapters.md#resilience and the template in
+// akakaule/nimbus-adapter-kit.
 builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 
 builder.Services
     .AddOpenTelemetry()
     .UseFunctionsWorkerDefaults();
 
-// ServiceBusClient is provided from the AzureWebJobsServiceBus connection string.
+// ServiceBusClient uses the same AzureWebJobsServiceBus connection as the triggers: a
+// namespace plus managed identity in Azure, a connection string locally.
 builder.Services.AddSingleton<ServiceBusClient>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
+    if (cfg["AzureWebJobsServiceBus:fullyQualifiedNamespace"] is { Length: > 0 } fullyQualifiedNamespace)
+        return new ServiceBusClient(fullyQualifiedNamespace, new DefaultAzureCredential());
     var connection = cfg["AzureWebJobsServiceBus"]
         ?? throw new InvalidOperationException("AzureWebJobsServiceBus is required.");
     return new ServiceBusClient(connection);
@@ -45,6 +50,10 @@ static string ResolveErpApiBaseUrl(IConfiguration cfg) =>
         ?? cfg["services:erp-api:http:0"]
         ?? cfg["Erp:ApiBaseUrl"]
         ?? throw new InvalidOperationException("Erp API base URL is required (service discovery or Erp:ApiBaseUrl).");
+
+// In Azure erp-api requires sign-in; every client below, the notification webhook included,
+// presents the demo service key (Demo__ServiceKey).
+builder.Services.AddDemoServiceKey(builder.Configuration, ResolveErpApiBaseUrl(builder.Configuration));
 
 builder.Services.AddHttpClient<IErpApiClient, ErpApiClient>(c =>
     c.BaseAddress = new Uri(ResolveErpApiBaseUrl(builder.Configuration)));

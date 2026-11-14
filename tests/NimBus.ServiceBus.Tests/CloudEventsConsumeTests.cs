@@ -39,7 +39,7 @@ public class CloudEventsConsumeTests
         var ctx = Consume(message);
 
         // AC7: data → EventJson, type → dispatch key (unqualified last segment by default).
-        Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent.EventTypeId);
+        Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent!.EventTypeId);
         Assert.AreEqual("{\"orderId\":\"O-1\"}", ctx.MessageContent.EventContent.EventJson);
 
         // AC11: the inbound CloudEvent is readable.
@@ -69,8 +69,8 @@ public class CloudEventsConsumeTests
 
         var ctx = Consume(message);
 
-        Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent.EventTypeId);
-        Assert.AreEqual("ext-9", ctx.GetCloudEvent().Id);
+        Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent!.EventTypeId);
+        Assert.AreEqual("ext-9", ctx.GetCloudEvent()!.Id);
     }
 
     [TestMethod]
@@ -122,10 +122,10 @@ public class CloudEventsConsumeTests
         var ctx = Consume(message);
 
         // AC8: structured envelope → dispatch key + payload.
-        Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent.EventTypeId);
-        var payload = JsonConvert.DeserializeObject<OrderPlacedPayload>(ctx.MessageContent.EventContent.EventJson);
-        Assert.AreEqual("O-2", payload.OrderId);
-        Assert.AreEqual("ext-2", ctx.GetCloudEvent().Id);
+        Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent!.EventTypeId);
+        var payload = JsonConvert.DeserializeObject<OrderPlacedPayload>(ctx.MessageContent.EventContent.EventJson!);
+        Assert.AreEqual("O-2", payload!.OrderId);
+        Assert.AreEqual("ext-2", ctx.GetCloudEvent()!.Id);
     }
 
     [TestMethod]
@@ -172,13 +172,13 @@ public class CloudEventsConsumeTests
         var ctx = Consume(message);
 
         Assert.IsNull(ctx.GetCloudEvent());
-        Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent.EventTypeId);
+        Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent!.EventTypeId);
         Assert.AreEqual("{\"orderId\":\"native\"}", ctx.MessageContent.EventContent.EventJson);
     }
 
     private sealed class OrderPlacedPayload
     {
-        public string OrderId { get; set; }
+        public string OrderId { get; set; } = null!;
     }
 
 }

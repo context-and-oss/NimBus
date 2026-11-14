@@ -25,6 +25,14 @@ public interface IPlatform
     /// </summary>
     IReadOnlyList<NimBus.Core.Endpoints.DynamicForward> DynamicForwards
         => Array.Empty<NimBus.Core.Endpoints.DynamicForward>();
+
+    /// <summary>
+    /// Every routing key a consumer of <paramref name="eventType"/> claims (Spec 045), distinct
+    /// and in ordinal order. The unmatched consumer's forward rule excludes exactly these keys.
+    /// </summary>
+    /// <param name="eventType">The event type.</param>
+    IReadOnlyCollection<string> GetClaimedRoutingKeys(IEventType eventType) =>
+        RoutingKeys.Canonical(GetConsumers(eventType).SelectMany(consumer => consumer.GetRoutingKeys(eventType)));
 }
 
 public abstract class Platform : IPlatform

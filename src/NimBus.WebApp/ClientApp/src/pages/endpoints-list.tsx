@@ -7,7 +7,6 @@ import {
 } from "functions/endpoint.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import Page from "components/page";
-import { getApplicationStatus } from "hooks/app-status";
 import EndpointRowActions from "components/endpoint-list/endpoint-row-actions";
 import EndpointStatusIcon from "components/endpoint-list/endpoint-status-icon";
 import Cookies from "js-cookie";
@@ -42,7 +41,6 @@ export default class EndpointsList extends React.Component<
   EndpointState
 > {
   private client!: api.Client;
-  private env: string | undefined;
   private cookieName = "endpointFilters";
 
   constructor(props: EndpointProps) {
@@ -68,15 +66,9 @@ export default class EndpointsList extends React.Component<
 
     this.client = new api.Client(api.CookieAuth());
     // If we didn't rehydrate with endpoint states, call the api to get them.
-    // The endpoint list and the app status are independent — fetch them in
-    // parallel instead of serially on mount.
-    const [endPointIds, appStatus] = await Promise.all([
-      this.props.endpointIds
-        ? Promise.resolve(this.props.endpointIds)
-        : this.client.getEndpointsAll(),
-      getApplicationStatus(),
-    ]);
-    this.env = appStatus.env;
+    const endPointIds = this.props.endpointIds
+      ? this.props.endpointIds
+      : await this.client.getEndpointsAll();
 
     // Drop ids the catalog no longer knows about, otherwise a stale saved
     // filter keeps requesting ghost endpoints (and can hide every row).
@@ -144,7 +136,10 @@ export default class EndpointsList extends React.Component<
     // Fetch only the statuses we don't already have cached — unchecking never
     // discards or refetches statuses that are still on screen.
     const visibleIds = checked.length > 0 ? checked : this.state.endpointIds;
-    const statusById = await this.loadStatuses(visibleIds, this.state.statusById);
+    const statusById = await this.loadStatuses(
+      visibleIds,
+      this.state.statusById,
+    );
 
     this.persistFilter(checked);
     this.setState({ checked, statusById });
@@ -174,11 +169,13 @@ export default class EndpointsList extends React.Component<
   }
 
   mapMomentInEndpointStatus(endpointStatus: api.EndpointStatusCount) {
-    return api.EndpointStatusCount.fromJS(endpointStatus);
+    // SSR supplies plain ISO JSON; API calls supply hydrated DTOs. Serialize DTO
+    // dates to ISO before parsing so Moment never reparses its display string.
+    return api.EndpointStatusCount.fromJS(endpointStatus.toJSON?.() ?? endpointStatus);
   }
 
   // Immutably merge freshly fetched statuses into an existing id->status map,
-  // normalising the moment fields on the way in.
+  // preserving the Moment fields already hydrated by the generated client.
   private mergeStatuses(
     existing: Record<string, api.EndpointStatusCount>,
     endpoints: api.EndpointStatusCount[],
@@ -218,7 +215,9 @@ export default class EndpointsList extends React.Component<
     // Derive the visible rows from the status cache: the checked endpoints, or
     // the whole list when nothing is checked. Rows are re-sorted by the table.
     const visibleIds =
-      this.state.checked.length > 0 ? this.state.checked : this.state.endpointIds;
+      this.state.checked.length > 0
+        ? this.state.checked
+        : this.state.endpointIds;
     const tableData = visibleIds
       .map((id) => this.state.statusById[id])
       .filter(
@@ -233,7 +232,12 @@ export default class EndpointsList extends React.Component<
       { id: ITableData.pending, label: "Pending", numeric: true },
       { id: ITableData.lastUpdated, label: "Last updated", numeric: false },
       { id: ITableData.status, label: "Status", numeric: false },
-      { id: ITableData.actions, label: "Actions", numeric: false, width: "15%" },
+      {
+        id: ITableData.actions,
+        label: "Actions",
+        numeric: false,
+        width: "15%",
+      },
     ];
 
     return (
@@ -271,7 +275,9 @@ export default class EndpointsList extends React.Component<
           ITableData.name,
           {
             value: (
-              <span className="text-delegate-blue-600 dark:text-delegate-blue-400 font-bold hover:underline">{endpointId}</span>
+              <span className="text-delegate-blue-600 dark:text-delegate-blue-400 font-bold hover:underline">
+                {endpointId}
+              </span>
             ),
             searchValue: endpointId,
           },
@@ -321,8 +327,9 @@ export default class EndpointsList extends React.Component<
                 failed={failedEventsCount}
                 deferred={deferredEventsCount}
                 pending={pendingEventsCount}
-                storageAvailable={endpointStatus.storageStatus !== "unavailable"}
-                env={this.env}
+                storageAvailable={
+                  endpointStatus.storageStatus !== "unavailable"
+                }
                 refreshEndpoint={this.refreshEndpoint}
                 startLoading={this.startLoading}
                 stopLoading={this.stopLoading}

@@ -10,11 +10,15 @@ using NimBus.Extensions.Identity.Data;
 
 namespace NimBus.Extensions.Identity.Services;
 
-internal sealed class IdentityInitializerHostedService : IHostedService
+internal sealed partial class IdentityInitializerHostedService : IHostedService
 {
     private static readonly Regex SchemaNamePattern = new(
         @"^[A-Za-z_][A-Za-z0-9_]*$",
         RegexOptions.Compiled);
+
+    // The platform-admin marker the WebApp authorizes site Owners by. Identity roles surface
+    // as "groups" claims (NimBusClaimsTransformation), so membership makes the user an Owner.
+    private const string PlatformAdminRole = "EIP_Management";
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly NimBusIdentityOptions _options;
@@ -39,13 +43,14 @@ internal sealed class IdentityInitializerHostedService : IHostedService
             await EnsureSchemaAndTablesAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<NimBusUser>>();
-            await BootstrapAdminAsync(userManager, cancellationToken).ConfigureAwait(false);
+            var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+            await BootstrapAdminAsync(userManager, roleManager, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             // Don't crash the host — other request paths still work, and surfacing the error
             // in logs is more useful than a boot loop.
-            _logger.LogError(ex, "NimBus Identity initializer failed; sign-in may be unavailable until resolved.");
+            LogNimBusIdentityInitializerFailed(_logger, ex);
         }
     }
 
@@ -75,13 +80,13 @@ internal sealed class IdentityInitializerHostedService : IHostedService
 
         if (await IdentityTablesExistAsync(dbContext, schema, ct).ConfigureAwait(false))
         {
-            _logger.LogInformation("NimBus Identity tables already present in schema [{Schema}].", schema);
+            LogNimBusIdentityTablesAlreadyPresent(_logger, schema);
             return;
         }
 
         var creator = (IRelationalDatabaseCreator)dbContext.GetService<IDatabaseCreator>();
         await creator.CreateTablesAsync(ct).ConfigureAwait(false);
-        _logger.LogInformation("NimBus Identity tables created in schema [{Schema}].", schema);
+        LogNimBusIdentityTablesCreatedInSchema(_logger, schema);
     }
 
     private static async Task<bool> IdentityTablesExistAsync(NimBusIdentityDbContext dbContext, string schema, CancellationToken ct)
@@ -110,7 +115,7 @@ internal sealed class IdentityInitializerHostedService : IHostedService
         }
     }
 
-    private async Task BootstrapAdminAsync(UserManager<NimBusUser> userManager, CancellationToken ct)
+    private async Task BootstrapAdminAsync(UserManager<NimBusUser> userManager, RoleManager<IdentityRole> roleManager, CancellationToken ct)
     {
         var email = _options.Bootstrap.Email;
         var password = _options.Bootstrap.Password;
@@ -119,7 +124,7 @@ internal sealed class IdentityInitializerHostedService : IHostedService
 
         if (await userManager.Users.AnyAsync(ct).ConfigureAwait(false))
         {
-            _logger.LogDebug("Bootstrap admin skipped — user store is not empty.");
+            LogBootstrapAdminSkipped(_logger);
             return;
         }
 
@@ -134,16 +139,56 @@ internal sealed class IdentityInitializerHostedService : IHostedService
         };
 
         var result = await userManager.CreateAsync(user, password).ConfigureAwait(false);
-        if (result.Succeeded)
+        if (!result.Succeeded)
         {
-            _logger.LogInformation("Bootstrap admin {Email} created.", email);
+            LogBootstrapAdminCouldNotBeCreated(_logger, string.Join("; ", result.Errors.Select(e => e.Description)));
+            return;
         }
-        else
+
+        // Without the platform-admin role the bootstrap admin is denied everywhere on a
+        // fresh store and cannot grant anyone access.
+        if (!await roleManager.RoleExistsAsync(PlatformAdminRole).ConfigureAwait(false))
         {
-            _logger.LogError(
-                "Bootstrap admin {Email} could not be created: {Errors}",
-                email,
-                string.Join("; ", result.Errors.Select(e => e.Description)));
+            var createRole = await roleManager.CreateAsync(new IdentityRole(PlatformAdminRole)).ConfigureAwait(false);
+            if (!createRole.Succeeded)
+            {
+                LogBootstrapRoleFailure(createRole);
+                return;
+            }
         }
+
+        var addToRole = await userManager.AddToRoleAsync(user, PlatformAdminRole).ConfigureAwait(false);
+        if (!addToRole.Succeeded)
+        {
+            LogBootstrapRoleFailure(addToRole);
+            return;
+        }
+
+        // The address is personal data, so it stays out of the logs.
+        LogBootstrapAdminCreatedAsPlatformAdmin(_logger);
     }
+
+    private void LogBootstrapRoleFailure(IdentityResult result) =>
+        LogBootstrapAdminWasCreatedButCould(_logger, string.Join("; ", result.Errors.Select(e => e.Description)));
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "NimBus Identity initializer failed; sign-in may be unavailable until resolved.")]
+    private static partial void LogNimBusIdentityInitializerFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "NimBus Identity tables already present in schema [{Schema}].")]
+    private static partial void LogNimBusIdentityTablesAlreadyPresent(ILogger logger, string schema);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "NimBus Identity tables created in schema [{Schema}].")]
+    private static partial void LogNimBusIdentityTablesCreatedInSchema(ILogger logger, string schema);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Bootstrap admin skipped — user store is not empty.")]
+    private static partial void LogBootstrapAdminSkipped(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Bootstrap admin could not be created: {Errors}")]
+    private static partial void LogBootstrapAdminCouldNotBeCreated(ILogger logger, string errors);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Bootstrap admin created as platform admin.")]
+    private static partial void LogBootstrapAdminCreatedAsPlatformAdmin(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Bootstrap admin was created but could not be made platform admin: {Errors}")]
+    private static partial void LogBootstrapAdminWasCreatedButCould(ILogger logger, string errors);
 }

@@ -36,8 +36,8 @@ public class EventHandlerProviderTests
 
         Assert.AreEqual(0, headerCalls);
         Assert.AreEqual(0, bodyCalls);
-        StringAssert.Contains(exception.Message, "header.event.v1");
-        StringAssert.Contains(exception.Message, "body.event.v1");
+        StringAssert.Contains(exception.Message, "header.event.v1", StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, "body.event.v1", StringComparison.Ordinal);
     }
 
     [TestMethod]

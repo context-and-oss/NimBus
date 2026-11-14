@@ -62,7 +62,7 @@ public sealed class InboxEndToEndTests
             message => message.MessageType == MessageType.SkipResponse);
         Assert.AreEqual(
             InboxMiddleware.DuplicateReason,
-            duplicateResponse.MessageContent.ErrorContent.ErrorText);
+            duplicateResponse.MessageContent.ErrorContent!.ErrorText);
     }
 
     [TestMethod]
@@ -337,7 +337,6 @@ public sealed class InboxEndToEndTests
             replay.MessageId = Guid.NewGuid().ToString();
             replay.To = endpointId;
             replay.OriginalSessionId = null!;
-            replay.DeferralSequence = null;
             await fixture.PublishBus.Send(replay);
             await fixture.DeliverAllWithResults();
         }

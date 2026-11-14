@@ -40,7 +40,7 @@ const SITE_CARDS: Array<{
     role: "piiReader",
     title: "PII Readers",
     description:
-      "May view raw event payloads. Orthogonal to the ladder — Owners do NOT see payloads without this.",
+      "May reveal payload fields marked [Sensitive]. Owners also need PII Reader to reveal those fields. Other payload fields remain visible.",
     tone: "bg-status-warning",
     pick: (s) => s.piiReaders ?? [],
   },

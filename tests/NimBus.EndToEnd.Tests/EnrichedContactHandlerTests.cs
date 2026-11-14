@@ -37,8 +37,8 @@ public class EnrichedContactHandlerTests
         var fixture = new EndToEndFixture();
         fixture.RegisterDynamicHandler(EventTypeId, () => new DelegateEventJsonHandler((context, ct) =>
         {
-            var json = context.MessageContent.EventContent.EventJson;
-            captured = JsonConvert.DeserializeObject<EnrichedContact>(json);
+            var json = context.MessageContent.EventContent!.EventJson;
+            captured = JsonConvert.DeserializeObject<EnrichedContact>(json!);
             return Task.CompletedTask;
         }));
 
@@ -70,8 +70,8 @@ public class EnrichedContactHandlerTests
         var fixture = new EndToEndFixture();
         fixture.RegisterDynamicHandler(EventTypeId, () => new DelegateEventJsonHandler((context, ct) =>
         {
-            var json = context.MessageContent.EventContent.EventJson;
-            captured = JsonConvert.DeserializeObject<EnrichedContact>(json);
+            var json = context.MessageContent.EventContent!.EventJson;
+            captured = JsonConvert.DeserializeObject<EnrichedContact>(json!);
             return Task.CompletedTask;
         }));
 
@@ -100,7 +100,7 @@ public class EnrichedContactHandlerTests
         var responses = fixture.ResponseBus.SentMessages;
         Assert.AreEqual(1, responses.Count, "Exactly one ResolutionResponse must be produced.");
         Assert.AreEqual(MessageType.ResolutionResponse, responses[0].MessageType);
-        Assert.AreEqual(EventTypeId, responses[0].MessageContent.EventContent.EventTypeId);
+        Assert.AreEqual(EventTypeId, responses[0].MessageContent.EventContent!.EventTypeId);
     }
 
     private static IMessage CreateEnrichedEventRequest(string eventTypeId, string sessionId, string json)

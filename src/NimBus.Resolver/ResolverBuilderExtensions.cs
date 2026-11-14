@@ -27,6 +27,7 @@ public static class ResolverBuilderExtensions
 
         services.AddSingleton<IMessageHandler, ResolverService>();
         services.AddFlowStateChangeNotifier();
+        services.AddEndpointAlertNotifier();
 
         services.AddSingleton(sp =>
         {
@@ -36,7 +37,7 @@ public static class ResolverBuilderExtensions
             // `__` key only exists when set literally (e.g. local.settings.json).
             var fqns = config.GetValue<string>("AzureWebJobsServiceBus:fullyQualifiedNamespace")
                 ?? config.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
-            if (!string.IsNullOrEmpty(fqns) && !fqns.Contains("SharedAccessKey="))
+            if (!string.IsNullOrEmpty(fqns) && !fqns.Contains("SharedAccessKey=", StringComparison.OrdinalIgnoreCase))
                 return new ServiceBusClient(fqns, new DefaultAzureCredential());
 
             var connectionString = fqns

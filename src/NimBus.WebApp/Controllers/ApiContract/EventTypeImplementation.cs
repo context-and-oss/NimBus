@@ -43,7 +43,9 @@ public class EventTypeImplementation : IEventTypeApiController
         {
             var producers = platform.GetProducers(e).Select(p => p.Name).ToList();
             var consumers = platform.GetConsumers(e).Select(c => c.Name).ToList();
-            return Mapper.EventTypeFromIEventType(e, producers.Count, consumers.Count, producers, consumers);
+            var mapped = Mapper.EventTypeFromIEventType(e, producers.Count, consumers.Count, producers, consumers);
+            mapped.ConsumerRouting = Mapper.ConsumerRoutingFor(platform, e);
+            return mapped;
         });
         return new OkObjectResult(eventTypes);
     }
@@ -59,7 +61,7 @@ public class EventTypeImplementation : IEventTypeApiController
         if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
             return new ForbidResult();
 
-        IEndpoint endpoint = platform.Endpoints.FirstOrDefault(e => e.Name.Equals(endpointId, StringComparison.OrdinalIgnoreCase));
+        IEndpoint? endpoint = platform.Endpoints.FirstOrDefault(e => e.Name.Equals(endpointId, StringComparison.OrdinalIgnoreCase));
         if (endpoint == null)
         {
             return new NotFoundObjectResult($"Endpoint '{endpointId}' not found");
@@ -75,6 +77,7 @@ public class EventTypeImplementation : IEventTypeApiController
             CodeRepoLink = codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace),
             Producers = platform.GetProducers(eventType).Select(x => x.Name).ToList(),
             Consumers = platform.GetConsumers(eventType).Select(x => x.Name).ToList(),
+            ConsumerRouting = Mapper.ConsumerRoutingFor(platform, eventType),
         };
 
         // Ordering invariants: details list consumed types first, then
@@ -115,6 +118,7 @@ public class EventTypeImplementation : IEventTypeApiController
             CodeRepoLink = codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace),
             Producers = platform.GetProducers(eventType).Select(x => x.Name).ToList(),
             Consumers = platform.GetConsumers(eventType).Select(x => x.Name).ToList(),
+            ConsumerRouting = Mapper.ConsumerRoutingFor(platform, eventType),
         };
         return new OkObjectResult(eventTypeDetails);
     }

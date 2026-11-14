@@ -1,23 +1,20 @@
 import { useEffect, useState } from 'react';
 import { api, type Alert } from '../../api';
+import { Panel } from '../shell/ui';
 
 // Live view of NimBus notification alerts. The ERP adapter fires a webhook to the ERP API on
 // every message Failure / DeadLetter / SessionBlock; the API keeps the last 50 in memory and
-// this panel polls them every 3s. Flip "Error mode" or "Service mode" (header toggles) to make
+// this part polls them every 3s. Turn on Error mode or Service mode in Demo controls to make
 // inbound ERP messages fail and watch alerts appear here.
 
 const POLL_MS = 3000;
 
-function severityStyle(severity: string): { dot: string; badge: string } {
+function severityStyle(severity: string): { dot: string; text: string } {
   switch (severity) {
-    case 'Critical':
-      return { dot: 'bg-rose-500', badge: 'bg-rose-100 text-rose-700' };
-    case 'Error':
-      return { dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700' };
-    case 'Warning':
-      return { dot: 'bg-yellow-400', badge: 'bg-yellow-100 text-yellow-700' };
-    default:
-      return { dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-600' };
+    case 'Critical': return { dot: 'bg-[#c50f1f]', text: 'text-[#a4262c]' };
+    case 'Error':    return { dot: 'bg-[#da3b01]', text: 'text-[#a33000]' };
+    case 'Warning':  return { dot: 'bg-[#c19c00]', text: 'text-[#8a5300]' };
+    default:         return { dot: 'bg-[#8a8886]', text: 'text-ink-muted' };
   }
 }
 
@@ -30,106 +27,84 @@ function formatTime(iso: string): string {
   return t.toLocaleTimeString();
 }
 
-export default function AlertsPanel() {
+/** Polls the alert list. Shared by this part and the Home cue tile. */
+export function useAlerts(): { alerts: Alert[]; clear: () => Promise<void> } {
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [clearing, setClearing] = useState(false);
-
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
       try {
         const next = await api.getAlerts();
         if (!cancelled) setAlerts(next);
-      } catch {
-        /* ignore — try again next tick */
-      }
+      } catch { /* try again next tick */ }
     };
-    tick();
+    void tick();
     const t = setInterval(tick, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
+  const clear = async () => {
+    await api.clearAlerts();
+    setAlerts([]);
+  };
+  return { alerts, clear };
+}
 
-  async function clear() {
+export default function AlertsPanel({ alerts, clear, limit }: { alerts: Alert[]; clear: () => Promise<void>; limit?: number }) {
+  const [clearing, setClearing] = useState(false);
+
+  async function onClear() {
     setClearing(true);
-    try {
-      await api.clearAlerts();
-      setAlerts([]);
-    } catch {
-      /* ignore — UI will reflect next refresh */
-    } finally {
-      setClearing(false);
-    }
+    try { await clear(); } catch { /* UI reflects the next refresh */ } finally { setClearing(false); }
   }
 
+  const shown = limit ? alerts.slice(0, limit) : alerts;
+
   return (
-    <section className="bg-white border border-slate-200 rounded-md p-4 space-y-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-700">
-            Notification alerts
-            {alerts.length > 0 && (
-              <span className="ml-2 text-xs font-normal text-slate-400">({alerts.length})</span>
-            )}
-          </h2>
-          <p className="text-xs text-slate-500">
-            NimBus fires a webhook on every message failure, dead-letter, or blocked session — the
-            ERP adapter sends them here. Flip <strong>Error mode</strong> or{' '}
-            <strong>Service mode</strong> above to generate some.
-          </p>
-        </div>
+    <Panel
+      title={<>Notification alerts{alerts.length > 0 && <span className="ml-1.5 font-normal text-ink-muted">({alerts.length})</span>}</>}
+      actions={
         <button
           type="button"
-          onClick={clear}
+          onClick={() => void onClear()}
           disabled={clearing || alerts.length === 0}
-          className="px-3 py-1.5 rounded-md text-xs font-medium bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50"
+          className="rounded-sm px-2 py-1 text-[13px] text-accent hover:bg-nav disabled:text-ink-muted disabled:hover:bg-transparent"
         >
           Clear
         </button>
-      </header>
-
+      }
+    >
       {alerts.length === 0 ? (
-        <p className="text-xs text-slate-400 italic">No alerts yet.</p>
+        <p className="text-[13px] text-ink-muted">
+          No alerts yet. NimBus sends one for every failed, dead-lettered or blocked message. Turn on Error mode or
+          Service mode in Demo controls to produce some.
+        </p>
       ) : (
-        <ul className="space-y-2">
-          {alerts.map((a, i) => {
+        <ul className="flex flex-col divide-y divide-nav">
+          {shown.map((a, i) => {
             const s = severityStyle(a.severity);
             return (
-              <li
-                key={`${a.messageId}-${a.receivedAt}-${i}`}
-                className="flex gap-3 border border-slate-100 rounded-md p-3"
-              >
-                <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${s.badge}`}>
-                      {a.severity}
-                    </span>
-                    <span className="text-sm font-medium text-slate-700 truncate">{a.title}</span>
-                    <span className="ml-auto text-[10px] text-slate-400 font-mono shrink-0">
-                      {formatTime(a.receivedAt)}
-                    </span>
+              <li key={`${a.messageId}-${a.receivedAt}-${i}`} className="grid grid-cols-[8px_minmax(0,1fr)_auto] gap-x-3 py-2 first:pt-0 last:pb-0">
+                <span className={`mt-1.5 h-2 w-2 rounded-full ${s.dot}`} />
+                <div className="min-w-0">
+                  <div className="text-[13px]">
+                    <span className={`font-semibold ${s.text}`}>{a.severity}</span>
+                    <span className="font-semibold"> · {a.title}</span>
                   </div>
-                  <p className="text-xs text-slate-600 mt-0.5 break-words">{a.message}</p>
-                  {a.errorDetails && (
-                    <p className="text-[11px] text-rose-600 font-mono mt-1 break-words line-clamp-3">
-                      {a.errorDetails}
-                    </p>
-                  )}
+                  <p className="break-words text-xs text-ink-muted">{a.message}</p>
+                  {a.errorDetails && <p className="mt-0.5 line-clamp-2 break-words font-mono text-[11px] text-[#a4262c]">{a.errorDetails}</p>}
                   {a.eventTypeId && (
-                    <p className="text-[10px] text-slate-400 font-mono mt-1">
-                      {a.eventTypeId}
-                      {a.eventId ? ` · ${a.eventId}` : ''}
+                    <p className="mt-0.5 font-mono text-[10px] text-ink-muted">
+                      {a.eventTypeId}{a.eventId ? ` · ${a.eventId}` : ''}
                     </p>
                   )}
                 </div>
+                <span className="whitespace-nowrap font-mono text-[11px] text-ink-muted">{formatTime(a.receivedAt)}</span>
               </li>
             );
           })}
         </ul>
       )}
-    </section>
+      {limit && alerts.length > limit && <p className="mt-2 text-xs text-ink-muted">Showing the latest {limit} of {alerts.length}.</p>}
+    </Panel>
   );
 }

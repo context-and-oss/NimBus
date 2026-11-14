@@ -1,7 +1,8 @@
 /**
- * Failure-classification vocabulary shared by the admin explainer and the event-details card.
- * Mirrors NimBus.Extensions.IntegrationIntelligence: FailureClassificationQuestionSet (v1)
- * and FailureGuidanceRules.Compose. Keep them in sync when the question set changes.
+ * Failure-classification vocabulary shared by the admin explainer, the event-details card and
+ * Insights. Mirrors NimBus.Extensions.IntegrationIntelligence: FailureClassificationQuestionSet
+ * (v2 for agents, v1 for the deprecated provider) and FailureGuidanceRules.Compose. Keep them in
+ * sync when the question set changes.
  */
 
 export type FailureGuidance = "Uncertain" | "RetryMayHelp" | "ChangeLikelyRequired" | "Investigate";
@@ -12,7 +13,32 @@ export type GuidanceSignals = {
   category: string; categoryConfidence: number; retryLikelihood: number; changeRequiredLikelihood: number;
 };
 
+/** The question set the deprecated provider (Jev) answers. */
 export const QUESTION_SET_VERSION = 1;
+
+/** The question set agents answer over MCP: version 1 plus the fault origin (Spec 044). */
+export const AGENT_QUESTION_SET_VERSION = 2;
+
+/** Where the fault originates (question set v2). Mirrors FailureClassificationQuestionSet.FaultOrigins. */
+export const FAULT_ORIGINS = [
+  { id: "source_data", label: "Source data", meaning: "The publishing system sent data that is wrong, incomplete or breaks a rule." },
+  { id: "adapter_code", label: "Adapter code", meaning: "The adapter's own logic is wrong: a mapping, a null it does not handle, a case it does not support." },
+  { id: "target_system", label: "Target system", meaning: "The receiving system or a dependency is unavailable or refuses a valid request." },
+  { id: "configuration", label: "Configuration", meaning: "Credentials, permissions, addresses or settings." },
+  { id: "platform", label: "Platform", meaning: "NimBus, Service Bus, topology or sessions." },
+  { id: "unknown", label: "Unknown", meaning: "Not enough evidence." },
+] as const;
+
+/** A fault origin's label; "Not assessed" for a version 1 result, the raw value when unrecognized. */
+export const faultOriginLabel = (origin?: string | null): string =>
+  origin ? FAULT_ORIGINS.find(item => item.id === origin)?.label ?? origin : "Not assessed";
+
+/** The provider value of a result an agent recorded over MCP. */
+export const AGENT_PROVIDER = "Agent";
+
+/** Who made a saved result: an agent, or the deprecated provider by name. */
+export const provenanceLabel = (provider?: string | null): string | undefined =>
+  !provider ? undefined : provider === AGENT_PROVIDER ? "Agent" : `${provider} (deprecated provider)`;
 
 /** The fixed category list Jev chooses from; any other value is rejected as ProviderInvalidResponse. */
 export const FAILURE_CATEGORIES = [

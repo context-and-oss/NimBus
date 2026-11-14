@@ -16,6 +16,7 @@ import { Tooltip } from "components/ui/tooltip";
 import ConfirmDestructiveAction from "./confirm-destructive-action";
 import ResolverDeadLetterDialog from "./resolver-dead-letter-dialog";
 import { cn } from "lib/utils";
+import { ruleRoutingLabel } from "lib/routing-keys";
 
 const AUTO_REFRESH_MS = 10_000;
 
@@ -56,6 +57,7 @@ type PendingAction =
   | { kind: "delete"; subscription: api.ServiceBusSubscriptionInfo }
   | { kind: "recreate"; subscription: api.ServiceBusSubscriptionInfo }
   | { kind: "purge"; subscription: api.ServiceBusSubscriptionInfo }
+  | { kind: "purge-dead-letters"; subscription: api.ServiceBusSubscriptionInfo }
   | {
       kind: "detach-rule";
       subscription: api.ServiceBusSubscriptionInfo;
@@ -352,6 +354,19 @@ export default function SubscriptionManager() {
           };
         });
         break;
+      case "purge-dead-letters":
+        await runAction(name, "Purge dead letters", async () => {
+          const result = await client.postAdminServicebusSubscriptionDeadlettersPurge(
+            selectedTopic,
+            name,
+          );
+          return {
+            succeeded: (result.failed ?? 0) === 0,
+            message: `Purged ${nf.format(result.succeeded ?? 0)} dead-lettered message(s).`,
+            errors: result.errors,
+          };
+        });
+        break;
       case "detach-rule":
         await runAction(name, "Detach rule", () =>
           client.deleteAdminServicebusSubscriptionRule(
@@ -591,6 +606,8 @@ function pendingTitle(action: PendingAction | null): string {
       return "Delete & recreate subscription";
     case "purge":
       return "Purge subscription";
+    case "purge-dead-letters":
+      return "Purge dead letters";
     case "detach-rule":
       return "Detach rule";
     default:
@@ -608,6 +625,8 @@ function pendingConfirmLabel(action: PendingAction | null): string {
       return "Delete & recreate now";
     case "purge":
       return "Purge messages";
+    case "purge-dead-letters":
+      return "Purge dead letters now";
     case "detach-rule":
       return "Detach rule now";
     default:
@@ -620,17 +639,18 @@ function drainableCount(sub: api.ServiceBusSubscriptionInfo): number {
   return (sub.activeMessageCount ?? 0) + (sub.transferMessageCount ?? 0);
 }
 
+/** Messages in both dead-letter queues: what Purge dead letters removes. */
+function deadLetteredCount(sub: api.ServiceBusSubscriptionInfo): number {
+  return (sub.deadLetterMessageCount ?? 0) + (sub.transferDeadLetterMessageCount ?? 0);
+}
+
 /**
  * Everything a delete takes with it, dead-letter queues included — a drain
  * leaves those behind, a delete does not. Understating this on the confirmation
  * would be the worst place to be imprecise.
  */
 function discardedCount(sub: api.ServiceBusSubscriptionInfo): number {
-  return (
-    drainableCount(sub) +
-    (sub.deadLetterMessageCount ?? 0) +
-    (sub.transferDeadLetterMessageCount ?? 0)
-  );
+  return drainableCount(sub) + deadLetteredCount(sub);
 }
 
 function pendingDescription(action: PendingAction | null): string {
@@ -647,6 +667,8 @@ function pendingDescription(action: PendingAction | null): string {
       return `Deletes "${name}" with all ${discarded} message(s) it holds, dead-lettered ones included, and immediately re-provisions it from the platform topology (same rules, same forwarding, same session settings). Messages published during the few seconds it is missing are not captured.`;
     case "purge":
       return `Drains ${drainable} active and deferred message(s) out of "${name}" one batch at a time, leaving the subscription and its dead-letter queues in place.`;
+    case "purge-dead-letters":
+      return `Removes all ${nf.format(deadLetteredCount(sub))} dead-lettered message(s) from "${name}": its dead-letter queue and its transfer dead-letter queue. Service Bus never empties these on its own. The subscription and its active messages stay as they are, paused or not.`;
     case "detach-rule":
       return `Removes the rule "${action.ruleName}" from "${name}". No new messages enter through it; the ${drainable} already queued still drain. Restore it later with "Restore rules".`;
   }
@@ -938,6 +960,35 @@ function SubscriptionTable({
               sub.requiresSession === true &&
               !sub.forwardTo &&
               (sub.deadLetterMessageCount ?? 0) > 0;
+            // Detach is only offered where Restore rules can put it back. A
+            // $Default that is a subscription's whole routing, or any rule on a
+            // hand-made subscription, would be a one-way removal — show it,
+            // don't arm it.
+            const renderRuleChip = (rule: string) =>
+              (sub.detachableRuleNames ?? []).includes(rule) ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    onRequest({
+                      kind: "detach-rule",
+                      subscription: sub,
+                      ruleName: rule,
+                    })
+                  }
+                  title={`Detach rule "${rule}" so no new messages enter through it. Reversible with Restore rules.`}
+                  className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 whitespace-nowrap hover:bg-status-danger-50 hover:text-status-danger-ink disabled:opacity-50"
+                >
+                  {rule} ✕
+                </button>
+              ) : (
+                <span
+                  title="Not part of the platform topology, so NimBus can't restore it — remove it from Topology → Catalog drift if it really is deprecated."
+                  className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 whitespace-nowrap text-muted-foreground"
+                >
+                  {rule}
+                </span>
+              );
 
             return (
               <Fragment key={name}>
@@ -949,40 +1000,34 @@ function SubscriptionTable({
                       {!sub.canRecreate && " · not in platform topology"}
                     </div>
                   </td>
-                  <td className="px-3 py-2">
+                  <td
+                    className={cn(
+                      "px-3 py-2",
+                      // Routing labels need room beside their chips.
+                      (sub.ruleRouting?.length ?? 0) > 0 && "min-w-[22rem]",
+                    )}
+                  >
                     <div className="flex flex-wrap gap-1">
-                      {(sub.ruleNames ?? []).map((rule) =>
-                        // Detach is only offered where Restore rules can put it
-                        // back. A $Default that is a subscription's whole
-                        // routing, or any rule on a hand-made subscription,
-                        // would be a one-way removal — show it, don't arm it.
-                        (sub.detachableRuleNames ?? []).includes(rule) ? (
-                          <button
-                            key={rule}
-                            type="button"
-                            disabled={busy}
-                            onClick={() =>
-                              onRequest({
-                                kind: "detach-rule",
-                                subscription: sub,
-                                ruleName: rule,
-                              })
-                            }
-                            title={`Detach rule "${rule}" so no new messages enter through it. Reversible with Restore rules.`}
-                            className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 hover:bg-status-danger-50 hover:text-status-danger-ink disabled:opacity-50"
-                          >
-                            {rule} ✕
-                          </button>
-                        ) : (
-                          <span
-                            key={rule}
-                            title="Not part of the platform topology, so NimBus can't restore it — remove it from Topology → Catalog drift if it really is deprecated."
-                            className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 text-muted-foreground"
-                          >
-                            {rule}
+                      {(sub.ruleNames ?? []).map((rule) => {
+                        // Spec 045: a keyed forward rule is named after its
+                        // event type like any other, so its keys sit beside it.
+                        const routing = sub.ruleRouting?.find(
+                          (entry) => entry.ruleName === rule,
+                        );
+                        return (
+                          <span key={rule} className="inline-flex items-baseline gap-1 min-w-0">
+                            {renderRuleChip(rule)}
+                            {routing && (
+                              <span
+                                title={routing.filter}
+                                className="font-mono text-xs text-muted-foreground cursor-help"
+                              >
+                                {ruleRoutingLabel(routing)}
+                              </span>
+                            )}
                           </span>
-                        ),
-                      )}
+                        );
+                      })}
                       {(sub.ruleNames ?? []).length === 0 && (
                         <span className="text-xs text-muted-foreground">
                           none — receives nothing
@@ -1089,6 +1134,20 @@ function SubscriptionTable({
                           }
                         >
                           Purge
+                        </Button>
+                      )}
+
+                      {deadLetteredCount(sub) > 0 && (
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          disabled={busy}
+                          onClick={() =>
+                            onRequest({ kind: "purge-dead-letters", subscription: sub })
+                          }
+                          title="Remove every message from both dead-letter queues, leaving the subscription and its active messages alone"
+                        >
+                          Purge dead letters
                         </Button>
                       )}
 

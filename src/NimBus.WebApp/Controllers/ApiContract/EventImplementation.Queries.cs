@@ -33,7 +33,7 @@ public partial class EventImplementation
         }
         catch (Exception e)
         {
-            logger.LogWarning("Event Message not found. EventId: {EventId}, MessageId: {MessageId}, Ex: {Exception}", eventId, messageId, e.Message);
+            LogEventMessageNotFound(logger, eventId, messageId, e.Message);
             return new NotFoundObjectResult("Event Message not found");
         }
     }
@@ -61,7 +61,7 @@ public partial class EventImplementation
         }
         catch (Exception e)
         {
-            logger.LogWarning("Unresolved failed not found. EndpointId: {EndpointId}, EventId: {EventId}, SessionId: {SessionId}, Ex: {Exception}", endpointId, eventId, sessionId, e.Message);
+            LogUnresolvedFailedNotFound(logger, endpointId, eventId, sessionId, e.Message);
             return new NotFoundObjectResult("Unresolved failed not found");
         }
     }
@@ -121,7 +121,7 @@ public partial class EventImplementation
         }
         catch (Exception e)
         {
-            logger.LogWarning("Event not found. EndpointId: {EndpointId}, EventId: {EventId}, Ex: {Exception}", endpoint, id, e.Message);
+            LogEventNotFound(logger, endpoint, id, e.Message);
             return new NotFoundObjectResult("Event not found");
         }
     }
@@ -136,12 +136,12 @@ public partial class EventImplementation
 
         if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpoint))
         {
-            await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext,
+            await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext!,
                 accessDenied: true, eventId: id, endpointId: endpoint);
             return new ForbidResult();
         }
 
-        await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext,
+        await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext!,
             eventId: id, endpointId: endpoint);
 
         var eventDetails = new EventDetails();
@@ -151,7 +151,7 @@ public partial class EventImplementation
             var failedMessage = await messageStore.GetFailedMessage(id, endpoint);
             if (failedMessage != null)
             {
-                logger.LogInformation("Failed message found. EventId: {EventId}, MessageId: {MessageId}, Endpoint: {Endpoint}, MessageType: {MessageType}", failedMessage.EventId, failedMessage.MessageId, endpoint, failedMessage.MessageType);
+                LogFailedMessageFound(logger, failedMessage.EventId, failedMessage.MessageId, endpoint, failedMessage.MessageType);
                 eventDetails.FailedMessage = Mapper.MessageFromMessageEntity(failedMessage);
 
                 var downloadedMsg = await messageStore.GetMessage(eventDetails.FailedMessage.EventId,
@@ -169,10 +169,10 @@ public partial class EventImplementation
 
             if (deadletteredMessage != null)
             {
-                logger.LogInformation("Message found in deadletter. EventId: {EventId}, MessageId: {MessageId}, Endpoint: {Endpoint}, MessageType: {MessageType}", deadletteredMessage.EventId, deadletteredMessage.MessageId, endpoint, deadletteredMessage.MessageType);
+                LogMessageFoundInDeadletter(logger, deadletteredMessage.EventId, deadletteredMessage.MessageId, endpoint, deadletteredMessage.MessageType);
                 if (deadletteredMessage.MessageType == Core.Messages.MessageType.ResolutionResponse)
                 {
-                    var completedMsg = await messageStore.GetMessage(deadletteredMessage.EventId, deadletteredMessage.OriginatingMessageId);
+                    var completedMsg = await messageStore.GetMessage(deadletteredMessage.EventId, deadletteredMessage.OriginatingMessageId!);
                     if (completedMsg != null)
                     {
                         eventDetails.FailedMessage = Mapper.MessageFromMessageEntity(completedMsg);
@@ -187,7 +187,7 @@ public partial class EventImplementation
         }
         catch (Exception e)
         {
-            logger.LogWarning("GetEventDetailsIdAsync: {Exception}", e.Message);
+            LogGetEventDetailsIdAsync(logger, e.Message);
         }
 
         return await RedactDetailsForNonPiiReadersAsync(eventDetails);
@@ -217,13 +217,13 @@ public partial class EventImplementation
         try
         {
             logs = (await applicationInsightsService.GetLogs(id))
-                .Where(l => l.To.Equals(endpointId, StringComparison.OrdinalIgnoreCase) || l.From.Equals(endpointId, StringComparison.OrdinalIgnoreCase))
+                .Where(l => l.To!.Equals(endpointId, StringComparison.OrdinalIgnoreCase) || l.From!.Equals(endpointId, StringComparison.OrdinalIgnoreCase))
                 .Select(Mapper.EventLogEntryFromLogEntry)
                 .ToList();
         }
         catch (Exception e)
         {
-            logger.LogWarning("GetEventDetailsLogsIdAsync: {Exception}", e.Message);
+            LogGetEventDetailsLogsIdAsync(logger, e.Message);
         }
 
         if (!await authorizationService.CanReadPiiAsync())
@@ -254,7 +254,7 @@ public partial class EventImplementation
         }
         catch (Exception e)
         {
-            logger.LogWarning("GetEventDetailsHistoryIdAsync: {Exception}", e.Message);
+            LogGetEventDetailsHistoryIdAsync(logger, e.Message);
         }
 
         if (!await authorizationService.CanReadPiiAsync())
@@ -313,7 +313,7 @@ public partial class EventImplementation
 
         try
         {
-            var events = (await messageStore.GetPendingEventsOnSession(endpointId))
+            var events = (await messageStore.GetPendingEventsOnSession(endpointId))!
                 .Select(Mapper.EventFromMessageStoreEvent)
                 .ToList();
 
@@ -400,7 +400,7 @@ public partial class EventImplementation
     // (a ResolutionResponse, handoff control message, etc.). Returns the
     // EventJson of the most recent EventRequest / ResubmissionRequest in the
     // event's history, or null when none carries event content.
-    private async Task<string> GetLatestEventRequestPayload(string eventId)
+    private async Task<string?> GetLatestEventRequestPayload(string eventId)
     {
         try
         {
@@ -412,7 +412,7 @@ public partial class EventImplementation
         }
         catch (Exception e)
         {
-            logger.LogWarning("GetLatestEventRequestPayload failed for EventId {EventId}: {Exception}", eventId, e.Message);
+            LogGetLatestEventRequestPayloadFailedForEventId(logger, eventId, e.Message);
             return null;
         }
     }
@@ -425,4 +425,31 @@ public partial class EventImplementation
     // event type. Internal for unit tests (InternalsVisibleTo).
     internal static MessageEntity? LatestRequestMessageWithPayload(IEnumerable<MessageEntity> history) =>
         OperatorCommandCoordinator.LatestRequestMessageWithPayload(history);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Event Message not found. EventId: {EventId}, MessageId: {MessageId}, Ex: {Exception}")]
+    private static partial void LogEventMessageNotFound(ILogger logger, string eventId, string messageId, string exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Unresolved failed not found. EndpointId: {EndpointId}, EventId: {EventId}, SessionId: {SessionId}, Ex: {Exception}")]
+    private static partial void LogUnresolvedFailedNotFound(ILogger logger, string endpointId, string eventId, string sessionId, string exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Event not found. EndpointId: {EndpointId}, EventId: {EventId}, Ex: {Exception}")]
+    private static partial void LogEventNotFound(ILogger logger, string endpointId, string eventId, string exception);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Failed message found. EventId: {EventId}, MessageId: {MessageId}, Endpoint: {Endpoint}, MessageType: {MessageType}")]
+    private static partial void LogFailedMessageFound(ILogger logger, string eventId, string messageId, string endpoint, Core.Messages.MessageType messageType);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Message found in deadletter. EventId: {EventId}, MessageId: {MessageId}, Endpoint: {Endpoint}, MessageType: {MessageType}")]
+    private static partial void LogMessageFoundInDeadletter(ILogger logger, string eventId, string messageId, string endpoint, Core.Messages.MessageType messageType);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "GetEventDetailsIdAsync: {Exception}")]
+    private static partial void LogGetEventDetailsIdAsync(ILogger logger, string exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "GetEventDetailsLogsIdAsync: {Exception}")]
+    private static partial void LogGetEventDetailsLogsIdAsync(ILogger logger, string exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "GetEventDetailsHistoryIdAsync: {Exception}")]
+    private static partial void LogGetEventDetailsHistoryIdAsync(ILogger logger, string exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "GetLatestEventRequestPayload failed for EventId {EventId}: {Exception}")]
+    private static partial void LogGetLatestEventRequestPayloadFailedForEventId(ILogger logger, string eventId, string exception);
 }

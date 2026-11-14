@@ -1,3 +1,4 @@
+using System.Globalization;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,7 +12,9 @@ using Microsoft.AspNetCore.Http;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using NimBus.Management.ServiceBus;
+using NimBus.ServiceBus.Provisioning;
 using System.Security.Claims;
 using System.Text;
 using System.Reflection;
@@ -28,7 +31,7 @@ using Microsoft.Extensions.Logging;
 
 namespace NimBus.WebApp.Controllers;
 
-public class EndpointImplementation : IEndpointApiController
+public partial class EndpointImplementation : IEndpointApiController
 {
     private readonly IPlatform platform;
     private readonly IConfiguration configuration;
@@ -44,7 +47,6 @@ public class EndpointImplementation : IEndpointApiController
     private readonly PayloadRedaction _payloadRedaction;
     private const int InitialEvents = 40;
     private const int PagingEvents = 40;
-    private const int SqlInvalidObjectNameErrorNumber = 208;
 
     public EndpointImplementation(
         IHttpContextAccessor contextAccessor,
@@ -67,7 +69,7 @@ public class EndpointImplementation : IEndpointApiController
         _metadataStore = metadataStore;
         this.serviceBusManagement = serviceBusManagement;
         this._authorizationService = authorizationService;
-        _context = contextAccessor.HttpContext;
+        _context = contextAccessor.HttpContext!;
         _logger = logger;
         _auditLogService = auditLogService;
         _storeResultCache = storeResultCache;
@@ -181,7 +183,7 @@ public class EndpointImplementation : IEndpointApiController
                 return new ForbidResult();
 
             var endpoint = await messageStore.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
-            var status = Mapper.EndpointStatusFromEndpointState(endpoint);
+            var status = Mapper.EndpointStatusFromEndpointState(endpoint!);
             if (!await _authorizationService.CanReadPiiAsync())
                 _payloadRedaction.Redact(status);
             return new OkObjectResult(status);
@@ -225,7 +227,7 @@ public class EndpointImplementation : IEndpointApiController
                 return new ForbidResult();
 
             var endpoint = await messageStore.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
-            var status = Mapper.EndpointStatusFromEndpointState(endpoint);
+            var status = Mapper.EndpointStatusFromEndpointState(endpoint!);
             if (!await _authorizationService.CanReadPiiAsync())
                 _payloadRedaction.Redact(status);
             return new OkObjectResult(status);
@@ -281,40 +283,9 @@ public class EndpointImplementation : IEndpointApiController
         return new OkObjectResult(counts);
     }
 
-    private async Task<EndpointStatusCount> DownloadStatusOrStubAsync(string endpointId)
-    {
-        try
-        {
-            // Cached below the per-user role filtering (which
-            // happens at the call sites above): the cached value is the
-            // endpoint-scoped raw count, identical for every authorized user.
-            // Failures propagate uncached, so the stub branches below stay live.
-            var endpointStateCount = await _storeResultCache.GetEndpointStateCountAsync(messageStore, endpointId);
-            return Mapper.EndpointStatusCountFromEndpointStateCount(endpointStateCount);
-        }
-        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-        {
-            _logger.LogWarning(ex, "Storage container missing for endpoint {EndpointId} (Cosmos 404)", endpointId);
-            return StorageUnavailableStub(endpointId);
-        }
-        catch (EndpointNotFoundException ex)
-        {
-            _logger.LogWarning(ex, "Storage container missing for endpoint {EndpointId} (EndpointNotFoundException)", endpointId);
-            return StorageUnavailableStub(endpointId);
-        }
-        catch (SqlException ex) when (ex.Number == SqlInvalidObjectNameErrorNumber)
-        {
-            _logger.LogWarning(ex, "Storage table missing for endpoint {EndpointId} (SQL 208)", endpointId);
-            return StorageUnavailableStub(endpointId);
-        }
-    }
-
-    private static EndpointStatusCount StorageUnavailableStub(string endpointId)
-        => new EndpointStatusCount
-        {
-            EndpointId = endpointId,
-            StorageStatus = "unavailable",
-        };
+    // Cached below the per-user role filtering, which happens at the call sites above.
+    private Task<EndpointStatusCount> DownloadStatusOrStubAsync(string endpointId)
+        => EndpointStatusProjection.ReadOrStubAsync(_storeResultCache, messageStore, _logger, endpointId);
 
     public async Task<ActionResult<IEnumerable<Event>>> GetEndpointStatusIdAsync(string endpointName)
     {
@@ -414,7 +385,7 @@ public class EndpointImplementation : IEndpointApiController
                 return new ForbidResult();
 
             var endpoint = await messageStore.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
-            var status = Mapper.EndpointStatusFromEndpointState(endpoint);
+            var status = Mapper.EndpointStatusFromEndpointState(endpoint!);
             if (!await _authorizationService.CanReadPiiAsync())
                 _payloadRedaction.Redact(status);
             return new OkObjectResult(status);
@@ -488,7 +459,7 @@ public class EndpointImplementation : IEndpointApiController
         // Validate environment
         var env = configuration.GetValue<string>("Environment");
         var isSiteOwner = await _authorizationService.HasRoleAsync(AccessRole.Owner);
-        if (!isSiteOwner && (env.Equals("prod", StringComparison.OrdinalIgnoreCase) ||
+        if (!isSiteOwner && (env!.Equals("prod", StringComparison.OrdinalIgnoreCase) ||
                              env.Equals("stag", StringComparison.OrdinalIgnoreCase)))
         {
             await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
@@ -507,8 +478,14 @@ public class EndpointImplementation : IEndpointApiController
         // Purge endpoint
         var isPurged = await messageStore.PurgeMessages(endpointName);
 
-        var endpointManagement = new EndpointManagement(serviceBusManagement);
-        await endpointManagement.ClearEndpoint(endpointName);
+        // Discard the subscription's backlog by recreating it from the same declaration
+        // `nb topology apply` provisions, so the purge cannot drift from provisioning.
+        // The rebuilder is resolved here rather than injected so the constructor, which
+        // Akaule.NimBus.WebApp publishes, keeps its signature.
+        var topologyRebuilder = _context.RequestServices.GetRequiredService<ITopologyRebuilder>();
+        await serviceBusManagement.DeleteSubscription(endpointName, endpointName);
+        await topologyRebuilder.EnsureSubscriptionAsync(
+            endpointName, TopologyDescriptor.EndpointSubscription(endpointName));
 
         await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
             endpointId: endpointName);
@@ -630,7 +607,7 @@ public class EndpointImplementation : IEndpointApiController
         return new OkObjectResult(mapped);
     }
 
-    private string GetCurrentUsersMail()
+    private string? GetCurrentUsersMail()
     {
         var name = _context.User.Identities.FirstOrDefault()?.Name;
 
@@ -671,18 +648,18 @@ public class EndpointImplementation : IEndpointApiController
             .Select(x => x.PrincipalId).ToList();
         if (principals.Count > 0)
         {
-            await using Stream stream = Assembly.GetExecutingAssembly()
+            await using Stream? stream = Assembly.GetExecutingAssembly()
                 .GetManifestResourceStream("EET.EIP.WebApp.Resources.EndpointRoleAssignment.ps1");
             if (stream != null)
             {
                 using var reader = new StreamReader(stream);
-                builder.AppendLine($"$subscription =\"{subscriptionId}\" \n");
-                builder.AppendLine($"$resourceGroupName = \"{resourceGroupName}\" \n");
+                builder.AppendLine(CultureInfo.InvariantCulture, $"$subscription =\"{subscriptionId}\" \n");
+                builder.AppendLine(CultureInfo.InvariantCulture, $"$resourceGroupName = \"{resourceGroupName}\" \n");
                 builder.Append(await reader.ReadToEndAsync());
                 builder.AppendLine();
                 foreach (var principal in principals)
                 {
-                    builder.AppendLine(
+                    builder.AppendLine(CultureInfo.InvariantCulture,
                         $"Assign-ServiceBusSubscription -assigneeId \"{principal}\" -serviceBusNamespace \"{serviceBusNamespace}\" -topic \"{endpoint.Id}\" -subscription \"{endpoint.Id}\" \n");
                 }
             }
@@ -889,7 +866,7 @@ public class EndpointImplementation : IEndpointApiController
         {
             if (!EndpointVerificationService.EndpointExists(platform, id))
             {
-                return new NotFoundObjectResult(String.Format("Endpoint with id {0} not found",id));
+                return new NotFoundObjectResult(string.Create(CultureInfo.InvariantCulture, $"Endpoint with id {id} not found"));
             }
         }
 
@@ -948,24 +925,11 @@ public class EndpointImplementation : IEndpointApiController
             return;
         }
 
+        // Only a status the metadata actually knows is reported. A null flag means "unknown", not
+        // "missing": the emulator has no reachable admin REST port and real Azure has outages,
+        // and claiming "not-found" would label a healthy endpoint as Subscription Missing.
         var metadataList = await ResolveMetadataWithSubscriptionStatusAsync(endpointIds);
-        foreach (var count in counts)
-        {
-            var metadata = metadataList.Find(m =>
-                m.EndpointId != null && m.EndpointId.Equals(count.EndpointId, StringComparison.OrdinalIgnoreCase));
-
-            // Only report a status the metadata actually knows. A null flag means
-            // "unknown", not "missing": SetSubscriptionStatusMetadata leaves it null
-            // both when the admin probe fails (the emulator has no reachable admin
-            // REST port, and real Azure has outages) and when the subscription is
-            // genuinely absent, so the two are indistinguishable here. Claiming
-            // "not-found" would label a healthy endpoint as Subscription Missing and
-            // dead its enable/disable switch on the strength of one failed probe.
-            if (metadata?.SubscriptionStatus != null)
-            {
-                count.SubscriptionStatus = Mapper.SubscriptionStatusFromMetadata(metadata);
-            }
-        }
+        EndpointStatusProjection.ApplySubscriptionStatus(counts, metadataList);
     }
 
 
@@ -984,22 +948,88 @@ public class EndpointImplementation : IEndpointApiController
             return new ForbidResult();
         }
 
-        var technicalContacts = body.TechnicalContacts
+        if (body is null)
+        {
+            return new BadRequestObjectResult("A metadata body is required.");
+        }
+
+        var invalid = ValidateMetadata(body, endpointId);
+        if (invalid is not null)
+        {
+            return new BadRequestObjectResult(invalid);
+        }
+
+        var technicalContacts = (body.TechnicalContacts ?? [])
             .Select(technicalContact => new TechnicalContact()
             { Name = technicalContact.Name, Email = technicalContact.Email }).ToList();
 
+        // Read-modify-write: the request edits ownership only, so the heartbeat and subscription
+        // state the store keeps on the same record (and Cosmos keeps in the same document) stays.
+        var existing = await _metadataStore.GetEndpointMetadata(endpointId);
+        var metadata = existing ?? new EndpointMetadata { EndpointId = endpointId };
+        var before = Ownership(existing);
+        metadata.EndpointOwner = body.EndpointOwner;
+        metadata.EndpointOwnerTeam = body.EndpointOwnerTeam;
+        metadata.EndpointOwnerEmail = body.EndpointOwnerEmail;
+        metadata.TechnicalContacts = technicalContacts;
+        metadata.SourceSystem = EndpointCodeLocation.Normalize(body.SourceSystem);
+        metadata.RepositoryUrl = EndpointCodeLocation.Normalize(body.RepositoryUrl);
+        metadata.TicketLinkTemplate = EndpointCodeLocation.Normalize(body.TicketLinkTemplate);
 
-        var metadataStatus = await _metadataStore.SetEndpointMetadata(
-            new EndpointMetadata
-            {
-                EndpointOwner = body.EndpointOwner,
-                EndpointId = body.Id,
-                EndpointOwnerTeam = body.EndpointOwnerTeam,
-                EndpointOwnerEmail = body.EndpointOwnerEmail,
-                TechnicalContacts = technicalContacts,
-            });
+        try
+        {
+            await _auditLogService.LogRequiredAuditAsync(
+                MessageAuditType.UpdateEndpointMetadata,
+                _context,
+                data: System.Text.Json.JsonSerializer.Serialize(new { before, after = Ownership(metadata) }),
+                endpointId: endpointId);
+        }
+        catch (AuditUnavailableException)
+        {
+            return new ObjectResult("The change could not be audited, so it was not made.") { StatusCode = StatusCodes.Status503ServiceUnavailable };
+        }
+
+        var metadataStatus = await _metadataStore.SetEndpointMetadata(metadata);
         return new OkObjectResult(metadataStatus);
     }
+
+    /// <summary>Longest stored owner, team and contact name (SQL <c>NVARCHAR(200)</c>).</summary>
+    internal const int MaximumMetadataNameLength = 200;
+
+    /// <summary>Longest stored email address (SQL <c>NVARCHAR(400)</c>).</summary>
+    internal const int MaximumMetadataEmailLength = 400;
+
+    /// <summary>Most technical contacts one endpoint may list.</summary>
+    internal const int MaximumTechnicalContacts = 50;
+
+    private static string? ValidateMetadata(Metadata body, string endpointId)
+    {
+        if (!string.IsNullOrEmpty(body.Id) && !string.Equals(body.Id, endpointId, StringComparison.OrdinalIgnoreCase))
+            return "The metadata id must match the endpoint in the route.";
+        if (body.EndpointOwner?.Length > MaximumMetadataNameLength || body.EndpointOwnerTeam?.Length > MaximumMetadataNameLength)
+            return $"Owner and team are at most {MaximumMetadataNameLength} characters.";
+        if (body.EndpointOwnerEmail?.Length > MaximumMetadataEmailLength)
+            return $"The owner email is at most {MaximumMetadataEmailLength} characters.";
+        var contacts = body.TechnicalContacts ?? [];
+        if (contacts.Count > MaximumTechnicalContacts)
+            return $"At most {MaximumTechnicalContacts} technical contacts.";
+        if (contacts.Any(c => c is null || c.Name?.Length > MaximumMetadataNameLength || c.Email?.Length > MaximumMetadataEmailLength))
+            return $"Each technical contact needs a name of at most {MaximumMetadataNameLength} and an email of at most {MaximumMetadataEmailLength} characters.";
+        return EndpointCodeLocation.ValidateSourceSystem(body.SourceSystem)
+            ?? EndpointCodeLocation.ValidateRepositoryUrl(body.RepositoryUrl)
+            ?? EndpointCodeLocation.ValidateTicketLinkTemplate(body.TicketLinkTemplate);
+    }
+
+    private static object? Ownership(EndpointMetadata? metadata) => metadata is null ? null : new
+    {
+        owner = metadata.EndpointOwner,
+        team = metadata.EndpointOwnerTeam,
+        email = metadata.EndpointOwnerEmail,
+        technicalContacts = metadata.TechnicalContacts?.Select(c => new { name = c.Name, email = c.Email }),
+        sourceSystem = metadata.SourceSystem,
+        repositoryUrl = metadata.RepositoryUrl,
+        ticketLinkTemplate = metadata.TicketLinkTemplate,
+    };
 
     private async Task SetSubscriptionStatusMetadata(EndpointMetadata metadata)
     {

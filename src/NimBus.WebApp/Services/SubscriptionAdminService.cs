@@ -14,7 +14,7 @@ using NimBus.WebApp.ManagementApi;
 namespace NimBus.WebApp.Services;
 
 /// <inheritdoc cref="ISubscriptionAdminService"/>
-public class SubscriptionAdminService : ISubscriptionAdminService
+public partial class SubscriptionAdminService : ISubscriptionAdminService
 {
     private readonly IPlatform _platform;
     private readonly IServiceBusManagement _sbManagement;
@@ -29,6 +29,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
     /// is what terminates the drain loop once the subscription runs dry, so it can't be zero.
     /// </summary>
     private const int DrainBatchSize = 100;
+    private const int MatchScanSnapshotLimit = 100_000;
     private static readonly TimeSpan DrainIdleTimeout = TimeSpan.FromSeconds(5);
 
     public SubscriptionAdminService(
@@ -111,11 +112,12 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             await _sbManagement.DeleteTopic(topicName);
             result.Succeeded = true;
             result.Message = $"Topic '{topicName}' deleted along with its subscriptions and messages.";
-            _logger.LogWarning("Topic {Topic} deleted by operator", topicName);
+            LogTopicDeletedByOperator(_logger, topicName);
         }
         catch (Exception exception)
         {
-            Fail(result, exception, "Failed to delete topic {Topic}", topicName);
+            LogFailedToDeleteTopic(_logger, exception, topicName);
+            Fail(result, exception);
         }
         return result;
     }
@@ -132,9 +134,12 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         await foreach (var settings in _sbManagement.ListSubscriptionsAsync(topicName))
         {
             var ruleNames = new List<string>();
+            var ruleRouting = new List<SubscriptionRuleRouting>();
             await foreach (var rule in _sbManagement.ListRulesAsync(topicName, settings.SubscriptionName))
             {
                 ruleNames.Add(rule.Name);
+                if (RoutingOf(rule) is { } routing)
+                    ruleRouting.Add(routing);
             }
 
             var expected = FindExpected(topicName, settings.SubscriptionName);
@@ -165,6 +170,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 RuleNames = ruleNames,
                 MissingRuleNames = missingRules,
                 DetachableRuleNames = detachableRules,
+                RuleRouting = ruleRouting,
                 CanRecreate = expected is not null,
                 ActiveMessageCount = counts?.ActiveMessageCount ?? 0,
                 DeadLetterMessageCount = counts?.DeadLetterMessageCount ?? 0,
@@ -179,6 +185,29 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             .OrderByDescending(subscription => subscription.ActiveMessageCount + subscription.TransferMessageCount)
             .ThenBy(subscription => subscription.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// The routing-key shape (Spec 045) of a forward rule, read back from its live SQL filter,
+    /// or null for a rule that takes every key or isn't a NimBus forward rule. A forward rule
+    /// is named after the event type it forwards, which is what the filter is checked against.
+    /// </summary>
+    private static SubscriptionRuleRouting? RoutingOf(RuleProperties rule)
+    {
+        if (rule.Filter is not SqlRuleFilter sql
+            || !TopologyDescriptor.TryReadRoutingKeys(sql.SqlExpression, rule.Name, out var routing)
+            || routing is null)
+        {
+            return null;
+        }
+
+        return new SubscriptionRuleRouting
+        {
+            RuleName = rule.Name,
+            RoutingKeys = routing.Keys.ToList(),
+            Unmatched = routing.Mode == RoutingRuleMode.Unmatched,
+            Filter = sql.SqlExpression,
+        };
     }
 
     // ───────────────────────── Pause / resume ─────────────────────────
@@ -254,6 +283,10 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
             var expected = FindExpected(topicName, subscriptionName);
 
+            // A purge marker an interrupted purge left behind is cleared by either toggle, in
+            // the same update; any other metadata is the operator's and stays as it is.
+            var userMetadata = IsPurgeMarker(settings.UserMetadata) ? string.Empty : null;
+
             if (enable)
             {
                 // Restore forwarding only if the platform knows where it should point and
@@ -263,10 +296,10 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
                 await _sbManagement.UpdateSubscription(
                     topicName, subscriptionName, EntityStatus.Active,
-                    forwardTo: expected?.ForwardTo, changeForwardTo: restoreForwarding);
+                    forwardTo: expected?.ForwardTo, changeForwardTo: restoreForwarding, userMetadata);
 
                 result.Message = restoreForwarding
-                    ? $"Delivery resumed and forwarding to '{expected.ForwardTo}' restored."
+                    ? $"Delivery resumed and forwarding to '{expected!.ForwardTo}' restored."
                     : "Delivery resumed.";
             }
             else
@@ -287,7 +320,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
                 await _sbManagement.UpdateSubscription(
                     topicName, subscriptionName, EntityStatus.ReceiveDisabled,
-                    forwardTo: null, changeForwardTo: detachForwarding);
+                    forwardTo: null, changeForwardTo: detachForwarding, userMetadata);
 
                 result.Message = detachForwarding
                     ? $"Paused: delivery disabled and forwarding to '{settings.ForwardTo}' detached. Messages now " +
@@ -296,8 +329,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             }
 
             result.Succeeded = true;
-            _logger.LogInformation("Subscription {Topic}/{Subscription} delivery {Action}",
-                topicName, subscriptionName, enable ? "resumed" : "paused");
+            LogSubscriptionDelivery(_logger, topicName, subscriptionName, enable ? "resumed" : "paused");
         }
         catch (SubscriptionNotFoundException)
         {
@@ -305,7 +337,8 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         }
         catch (Exception exception)
         {
-            Fail(result, exception, "Failed to change delivery on {Topic}/{Subscription}", topicName, subscriptionName);
+            LogFailedToChangeDelivery(_logger, exception, topicName, subscriptionName);
+            Fail(result, exception);
         }
 
         return result;
@@ -334,12 +367,21 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         // Pause → Purge workflow would silently remove nothing. Make the subscription
         // receivable for the duration of the drain and put its status back afterwards,
         // whatever happens.
+        //
+        // While it drains, the subscription is Active with ForwardTo detached, which
+        // `nb topology apply` would read as a forwarder to re-attach, forwarding the backlog
+        // being discarded. So the same update that activates it also sets the purge marker,
+        // which apply leaves alone, and the restore puts the original metadata back. A null,
+        // empty or leftover-marker original restores as empty: null would mean "unchanged".
         var pausedStatus = settings.Status != EntityStatus.Active ? settings.Status : (EntityStatus?)null;
+        var originalUserMetadata = string.IsNullOrEmpty(settings.UserMetadata) || IsPurgeMarker(settings.UserMetadata)
+            ? string.Empty
+            : settings.UserMetadata;
         if (pausedStatus.HasValue)
         {
             await _sbManagement.UpdateSubscription(
                 topicName, subscriptionName, EntityStatus.Active,
-                forwardTo: null, changeForwardTo: false);
+                forwardTo: null, changeForwardTo: false, userMetadata: SubscriptionMarkers.PurgeInProgress);
         }
 
         try
@@ -359,7 +401,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         }
         catch (Exception exception)
         {
-            _logger.LogWarning(exception, "Error draining {Topic}/{Subscription}", topicName, subscriptionName);
+            LogErrorDraining(_logger, exception, topicName, subscriptionName);
             errors.Add(exception.Message);
         }
         finally
@@ -370,23 +412,24 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 {
                     await _sbManagement.UpdateSubscription(
                         topicName, subscriptionName, pausedStatus.Value,
-                        forwardTo: null, changeForwardTo: false);
+                        forwardTo: null, changeForwardTo: false, userMetadata: originalUserMetadata);
                 }
                 catch (Exception exception)
                 {
                     // Leaving it Active is recoverable and visible in the table, but the
-                    // operator has to be told the pause didn't survive.
-                    _logger.LogError(exception, "Drained {Topic}/{Subscription} but could not restore status {Status}",
-                        topicName, subscriptionName, pausedStatus.Value);
+                    // operator has to be told the pause didn't survive, and how to get the
+                    // marker off: apply skips a marked forwarder until it is cleared.
+                    LogDrainedButCouldNotRestoreStatus(_logger, exception, topicName, subscriptionName, pausedStatus.Value);
                     errors.Add(
                         $"Messages were drained, but the subscription could not be returned to {pausedStatus.Value} " +
-                        $"and is now Active: {exception.Message}");
+                        $"and is now Active, and the purge marker may still be set: {exception.Message} " +
+                        "Pause clears the purge marker and restores the pause. Resume afterwards only if forwarding " +
+                        "should be re-attached.");
                 }
             }
         }
 
-        _logger.LogInformation("Purged {Count} message(s) from {Topic}/{Subscription}",
-            removed, topicName, subscriptionName);
+        LogPurgedMessage(_logger, removed, topicName, subscriptionName);
 
         return new BulkOperationResult
         {
@@ -456,11 +499,53 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         return removed;
     }
 
+    public async Task<BulkOperationResult> PurgeDeadLetterQueueAsync(string topicName, string subscriptionName)
+    {
+        _ = await _sbManagement.GetSubscription(topicName, subscriptionName)
+            ?? throw new SubscriptionNotFoundException(topicName, subscriptionName);
+
+        // No status flip here, unlike Purge: a paused subscription made receivable would hand its
+        // paused backlog to consumers. If Service Bus refuses the receive, the result says so.
+        var errors = new List<string>();
+        int removed = 0;
+        foreach (var (subQueue, queueName) in new[]
+                 {
+                     (SubQueue.DeadLetter, "dead-letter queue"),
+                     (SubQueue.TransferDeadLetter, "transfer dead-letter queue"),
+                 })
+        {
+            var receiver = _sbClient.CreateReceiver(topicName, subscriptionName,
+                new ServiceBusReceiverOptions { SubQueue = subQueue });
+            await using (receiver)
+            {
+                try
+                {
+                    await DrainAsync(receiver, () => removed++);
+                }
+                catch (Exception exception)
+                {
+                    LogErrorDrainingTheOf(_logger, exception, queueName, ForLog(topicName), ForLog(subscriptionName));
+                    errors.Add($"The {queueName} of {subscriptionName}: {exception.Message}");
+                }
+            }
+        }
+
+        return new BulkOperationResult
+        {
+            Processed = removed + errors.Count,
+            Succeeded = removed,
+            Failed = errors.Count,
+            Errors = errors,
+        };
+    }
+
     /// <summary>
     /// Completes every active message a receiver hands back, plus any deferred messages
     /// parked behind them, until the entity runs dry. The caller owns the receiver's lifetime.
+    /// <paramref name="onRemoved"/> runs after each completion, so a caller still knows what
+    /// was removed when a later completion throws.
     /// </summary>
-    private static async Task<int> DrainAsync(ServiceBusReceiver receiver)
+    internal static async Task<int> DrainAsync(ServiceBusReceiver receiver, Action? onRemoved = null)
     {
         int removed = 0;
 
@@ -488,6 +573,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 if (message == null) continue;
                 await receiver.CompleteMessageAsync(message);
                 removed++;
+                onRemoved?.Invoke();
             }
             catch (ServiceBusException exception) when (exception.Reason == ServiceBusFailureReason.MessageNotFound)
             {
@@ -504,11 +590,102 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             {
                 await receiver.CompleteMessageAsync(message);
                 removed++;
+                onRemoved?.Invoke();
             }
         }
 
         return removed;
     }
+
+    /// <summary>
+    /// Completes the messages a receiver hands back that <paramref name="matches"/> accepts and
+    /// releases the rest. The pass is limited to twice the number of messages in an initial peek
+    /// snapshot, capped at <see cref="MatchScanSnapshotLimit"/>. Unmatched locks can expire
+    /// repeatedly on a large queue, causing the same messages
+    /// to be received forever; the budget leaves any unreached matches for a retry. An empty
+    /// receive also doesn't prove that no matching message is left, so a caller that must know
+    /// checks with <see cref="PeekMatchingAsync"/>.
+    /// <paramref name="onCompleted"/> runs after each completion.
+    /// </summary>
+    internal static async Task CompleteMatchingAsync(
+        ServiceBusReceiver receiver, Func<ServiceBusReceivedMessage, bool> matches, Action onCompleted)
+    {
+        int snapshotCount = 0;
+        long fromSequenceNumber = 0;
+        while (snapshotCount < MatchScanSnapshotLimit)
+        {
+            var peeked = await receiver.PeekMessagesAsync(
+                Math.Min(DrainBatchSize, MatchScanSnapshotLimit - snapshotCount), fromSequenceNumber);
+            if (peeked.Count == 0) break;
+
+            snapshotCount += peeked.Count;
+            fromSequenceNumber = peeked[peeked.Count - 1].SequenceNumber + 1;
+        }
+
+        long remainingDeliveries = snapshotCount * 2L;
+        var held = new Dictionary<long, ServiceBusReceivedMessage>();
+        try
+        {
+            while (remainingDeliveries > 0)
+            {
+                var batch = await receiver.ReceiveMessagesAsync(DrainBatchSize, DrainIdleTimeout);
+                if (batch.Count == 0) break;
+                remainingDeliveries -= batch.Count;
+
+                foreach (var message in batch)
+                {
+                    if (!matches(message))
+                    {
+                        held[message.SequenceNumber] = message;
+                        continue;
+                    }
+
+                    await receiver.CompleteMessageAsync(message);
+                    onCompleted();
+                }
+            }
+        }
+        finally
+        {
+            foreach (var message in held.Values)
+            {
+                try
+                {
+                    await receiver.AbandonMessageAsync(message);
+                }
+                catch (ServiceBusException)
+                {
+                    // Its lock already expired, so it is back in the queue anyway.
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The messages in the entity that <paramref name="matches"/> accepts, found by peeking only:
+    /// a peek sees every message, whatever is locked, and settles nothing.
+    /// </summary>
+    internal static async Task<List<ServiceBusReceivedMessage>> PeekMatchingAsync(
+        ServiceBusReceiver receiver, Func<ServiceBusReceivedMessage, bool> matches)
+    {
+        var matching = new List<ServiceBusReceivedMessage>();
+        long fromSequenceNumber = 0;
+        while (true)
+        {
+            var peeked = await receiver.PeekMessagesAsync(DrainBatchSize, fromSequenceNumber);
+            if (peeked.Count == 0) break;
+
+            matching.AddRange(peeked.Where(matches));
+            fromSequenceNumber = peeked[peeked.Count - 1].SequenceNumber + 1;
+        }
+
+        return matching;
+    }
+
+    // Topic and subscription names come from the route; strip line breaks so they cannot forge
+    // log entries.
+    private static string ForLog(string? value)
+        => (value ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ');
 
     // ───────────────────────── Delete / recreate / rules ─────────────────────────
 
@@ -521,11 +698,12 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             await _sbManagement.DeleteSubscription(topicName, subscriptionName);
             result.Succeeded = true;
             result.Message = "Subscription deleted along with every message it held.";
-            _logger.LogWarning("Subscription {Topic}/{Subscription} deleted by operator", topicName, subscriptionName);
+            LogSubscriptionDeletedByOperator(_logger, topicName, subscriptionName);
         }
         catch (Exception exception)
         {
-            Fail(result, exception, "Failed to delete {Topic}/{Subscription}", topicName, subscriptionName);
+            LogFailedToDeleteSubscription(_logger, exception, topicName, subscriptionName);
+            Fail(result, exception);
         }
 
         return result;
@@ -550,7 +728,8 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         }
         catch (Exception exception)
         {
-            Fail(result, exception, "Failed to delete {Topic}/{Subscription} while recreating it", topicName, subscriptionName);
+            LogFailedToDeleteWhileRecreating(_logger, exception, topicName, subscriptionName);
+            Fail(result, exception);
             return result;
         }
 
@@ -563,14 +742,14 @@ public class SubscriptionAdminService : ISubscriptionAdminService
                 ? "Subscription recreated empty with its expected rules."
                 : $"Subscription recreated empty, forwarding to '{expected.ForwardTo}' again.";
 
-            _logger.LogWarning("Subscription {Topic}/{Subscription} recreated by operator (backlog discarded)",
-                topicName, subscriptionName);
+            LogSubscriptionRecreatedByOperator(_logger, topicName, subscriptionName);
         }
         catch (Exception exception)
         {
             // The subscription is gone at this point, so make the failure loud: an operator
             // has to know the entity is missing, not just that a button failed.
-            Fail(result, exception, "Deleted {Topic}/{Subscription} but failed to recreate it", topicName, subscriptionName);
+            LogFailedToRecreateSubscription(_logger, exception, topicName, subscriptionName);
+            Fail(result, exception);
             result.Message = "Subscription was deleted but could not be recreated — re-run 'nb topology apply'.";
         }
 
@@ -607,12 +786,12 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             result.Succeeded = true;
             result.Message = $"Rule '{ruleName}' detached. No new messages will enter this subscription through it; " +
                              "whatever is already queued still drains.";
-            _logger.LogWarning("Rule {Rule} detached from {Topic}/{Subscription} by operator",
-                ruleName, topicName, subscriptionName);
+            LogRuleDetachedFromByOperator(_logger, ruleName, topicName, subscriptionName);
         }
         catch (Exception exception)
         {
-            Fail(result, exception, "Failed to detach a rule from {Topic}/{Subscription}", topicName, subscriptionName);
+            LogFailedToDetachRule(_logger, exception, topicName, subscriptionName);
+            Fail(result, exception);
         }
 
         return result;
@@ -645,8 +824,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             }
             catch (Exception exception)
             {
-                _logger.LogWarning(exception, "Failed to restore a rule on {Topic}/{Subscription}",
-                    topicName, subscriptionName);
+                LogFailedToRestoreARule(_logger, exception, topicName, subscriptionName);
                 result.Errors.Add($"{rule.Name}: {exception.Message}");
             }
         }
@@ -661,7 +839,10 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 
     // ───────────────────────── Helpers ─────────────────────────
 
-    private ExpectedSubscription FindExpected(string topicName, string subscriptionName) =>
+    private static bool IsPurgeMarker(string? userMetadata) =>
+        string.Equals(userMetadata, SubscriptionMarkers.PurgeInProgress, StringComparison.Ordinal);
+
+    private ExpectedSubscription? FindExpected(string topicName, string subscriptionName) =>
         TopologyDescriptor.FindSubscription(topicName, subscriptionName, _platform, _isEmulator);
 
     private static SubscriptionActionResult NewResult(string topicName, string subscriptionName, string action) =>
@@ -676,13 +857,60 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             Errors = new List<string>(),
         };
 
-    private void Fail(SubscriptionActionResult result, Exception exception, string message, params object[] args)
+    private static void Fail(SubscriptionActionResult result, Exception exception)
     {
-        _logger.LogWarning(exception, message, args);
         result.Succeeded = false;
         result.Message = exception.Message;
         result.Errors.Add(exception.Message);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Topic {Topic} deleted by operator")]
+    private static partial void LogTopicDeletedByOperator(ILogger logger, string topic);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Subscription {Topic}/{Subscription} delivery {Action}")]
+    private static partial void LogSubscriptionDelivery(ILogger logger, string topic, string subscription, string action);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Error draining {Topic}/{Subscription}")]
+    private static partial void LogErrorDraining(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Drained {Topic}/{Subscription} but could not restore status {Status}")]
+    private static partial void LogDrainedButCouldNotRestoreStatus(ILogger logger, Exception exception, string topic, string subscription, EntityStatus status);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Purged {Count} message(s) from {Topic}/{Subscription}")]
+    private static partial void LogPurgedMessage(ILogger logger, int count, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Error draining the {Queue} of {Topic}/{Subscription}")]
+    private static partial void LogErrorDrainingTheOf(ILogger logger, Exception exception, string queue, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Subscription {Topic}/{Subscription} deleted by operator")]
+    private static partial void LogSubscriptionDeletedByOperator(ILogger logger, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Subscription {Topic}/{Subscription} recreated by operator (backlog discarded)")]
+    private static partial void LogSubscriptionRecreatedByOperator(ILogger logger, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rule {Rule} detached from {Topic}/{Subscription} by operator")]
+    private static partial void LogRuleDetachedFromByOperator(ILogger logger, string rule, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to restore a rule on {Topic}/{Subscription}")]
+    private static partial void LogFailedToRestoreARule(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to delete topic {Topic}")]
+    private static partial void LogFailedToDeleteTopic(ILogger logger, Exception exception, string topic);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to change delivery on {Topic}/{Subscription}")]
+    private static partial void LogFailedToChangeDelivery(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to delete {Topic}/{Subscription}")]
+    private static partial void LogFailedToDeleteSubscription(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to delete {Topic}/{Subscription} while recreating it")]
+    private static partial void LogFailedToDeleteWhileRecreating(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Deleted {Topic}/{Subscription} but failed to recreate it")]
+    private static partial void LogFailedToRecreateSubscription(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to detach a rule from {Topic}/{Subscription}")]
+    private static partial void LogFailedToDetachRule(ILogger logger, Exception exception, string topic, string subscription);
 }
 
 /// <summary>Thrown when the named subscription doesn't exist on the topic.</summary>

@@ -17,7 +17,7 @@ namespace NimBus.MessageStore.States;
 public class Heartbeat
 {
     /// <summary>Correlation id of the probe — the row key within an endpoint.</summary>
-    public string MessageId { get; set; }
+    public string MessageId { get; set; } = null!;
 
     /// <summary>When the platform sent the probe.</summary>
     public DateTime StartTime { get; set; }
@@ -36,7 +36,7 @@ public class Heartbeat
     public int IntervalSeconds { get; set; }
 
     /// <summary>NimBus SDK version reported by the answering endpoint; absent for pre-heartbeat SDKs.</summary>
-    public string SdkVersion { get; set; }
+    public string? SdkVersion { get; set; }
 
     /// <summary>Outcome of this probe. <c>Pending</c> until it is answered or swept.</summary>
     [JsonConverter(typeof(StringEnumConverter))]

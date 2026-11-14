@@ -2,6 +2,7 @@ using NimBus.Core.Messages;
 using NimBus.Core.CircuitBreaker;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,19 +15,20 @@ namespace NimBus.Core.Extensions;
 /// </summary>
 public class MessagePipeline
 {
-    private readonly IReadOnlyList<IMessagePipelineBehavior> _behaviors;
+    private readonly ReadOnlyCollection<IMessagePipelineBehavior> _behaviors;
 
     public MessagePipeline(
         PipelineBehaviorRegistry registry,
         IServiceProvider serviceProvider,
         IEnumerable<CircuitBreakerRecorderBehavior>? appendedBehaviors = null)
     {
-        if (registry == null) throw new ArgumentNullException(nameof(registry));
-        if (serviceProvider == null) throw new ArgumentNullException(nameof(serviceProvider));
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(serviceProvider);
 
         var configuredBehaviors = registry.BehaviorTypes
-            .Select(t => (IMessagePipelineBehavior)serviceProvider.GetService(t))
-            .Where(b => b != null);
+            .Select(t => (IMessagePipelineBehavior?)serviceProvider.GetService(t))
+            .Where(b => b != null)
+            .Select(b => b!);
 
         // Distinct (reference equality — behaviors are DI singletons):
         // a user following the AddPipelineBehavior<T> docs may register the

@@ -132,7 +132,7 @@ new name and move your adapters:
 1. Quiesce publishers and let the Resolver and subscribers drain. Service Bus migrations do
    not copy messages, so scheduled retries, deferred and dead-lettered messages must be
    processed, resubmitted from the store, or knowingly written off; the WebApp's
-   subscription admin page shows what remains.
+   **Topology → Subscriptions** view shows what remains.
 2. Run the transition pass below with `--service-bus-namespace-name sb-acme-prod-premium`.
    `nb` records the name, and `nb topology apply` provisions the topology on it.
 3. Re-point your adapters to the new namespace, then delete the old one.

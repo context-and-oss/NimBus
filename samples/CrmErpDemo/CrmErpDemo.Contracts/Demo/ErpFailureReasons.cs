@@ -122,9 +122,11 @@ public static class ErpFailureReasons
                 "ERP customer for CRM account 6f1c0a5e-4b2d-4e8a-9c3f-1a2b3c4d5e01 was not found. " +
                 "The CrmAccountCreated event for this account has not been processed yet, so there is no Customer row to attach the change to."),
 
+#pragma warning disable CA2201 // The demo deliberately reproduces a real NullReferenceException as failure evidence.
             "application_defect" => new NullReferenceException(
                 "Object reference not set to an instance of an object. " +
                 "(Erp.Adapter.Functions.Mapping.CustomerMapper.MapAddress: dto.Address was null; the mapper assumes every customer has a billing address)"),
+#pragma warning restore CA2201
 
             _ => new HandlerErrorModeException(),
         };

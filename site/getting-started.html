@@ -9,6 +9,17 @@
       content="Run the NimBus CRM/ERP sample with a local Service Bus emulator and SQL Server, then follow a customer account through the integration."
     />
     <link rel="stylesheet" href="overview.css" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="NimBus" />
+    <meta property="og:title" content="Try NimBus locally — CRM/ERP sample" />
+    <meta property="og:description" content="Run the NimBus CRM/ERP sample with a local Service Bus emulator and SQL Server, then follow a customer account through the integration." />
+    <meta property="og:url" content="https://context-and-oss.github.io/NimBus/getting-started.html" />
+    <meta property="og:image" content="https://context-and-oss.github.io/NimBus/social-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="NimBus: keep integrations in order, recover when they fail" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
@@ -18,8 +29,9 @@
         <div class="links">
           <a href="platform.html">How it works</a
           ><a href="features.html">Features</a
-          ><a href="getting-started.html">Try locally</a
-          ><a href="https://github.com/akakaule/NimBus">GitHub</a>
+          ><a href="getting-started.html" aria-current="page">Try locally</a
+          ><a href="docs/">Docs</a
+          ><a href="https://github.com/context-and-oss/NimBus">GitHub</a>
         </div>
       </div>
     </nav>
@@ -40,6 +52,12 @@
           <h2>1. Prepare your machine</h2>
           <ul>
             <li>.NET 10 SDK and Git.</li>
+            <li>
+              The
+              <a href="https://aspire.dev/get-started/install-cli/"
+                >Aspire CLI</a
+              >, for example <code>dotnet tool install -g Aspire.Cli</code>.
+            </li>
             <li>Node.js 22+ for the CRM, ERP, and management frontends.</li>
             <li>
               A running Docker-compatible container runtime for SQL Server and
@@ -56,14 +74,15 @@
             From a terminal, install the sample’s frontend dependencies and
             launch its Aspire AppHost:
           </p>
-          <pre><code>git clone https://github.com/akakaule/NimBus.git
+          <pre><code>git clone https://github.com/context-and-oss/NimBus.git
 cd NimBus
 npm --prefix samples/CrmErpDemo/Crm.Web install
 npm --prefix samples/CrmErpDemo/Erp.Web install
-dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost</code></pre>
+aspire run --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj</code></pre>
           <p>
             The first build downloads dependencies and container images. Open
-            the Aspire dashboard URL printed in the terminal. Wait for
+            the Aspire dashboard with the login link printed in the terminal.
+            Wait for
             <code>provisioner</code> to finish and the application resources to
             become healthy.
           </p>
@@ -94,7 +113,7 @@ dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost</code></pre>
           <p>
             The
             <a
-              href="https://github.com/akakaule/NimBus/blob/master/samples/CrmErpDemo/README.md"
+              href="https://github.com/context-and-oss/NimBus/blob/master/samples/CrmErpDemo/README.md"
               >sample guide</a
             >
             explains the adapters, topology, storage options, and recovery
@@ -121,7 +140,7 @@ dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost</code></pre>
           <p>
             Follow
             <a
-              href="https://github.com/akakaule/NimBus/blob/master/docs/building-adapters.md"
+              href="docs/building-adapters"
               >Building Adapters</a
             >
             to define events, register handlers, and configure receiver hosting
@@ -136,7 +155,7 @@ dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost</code></pre>
           <p>
             Ready to deploy? The
             <a
-              href="https://github.com/akakaule/NimBus/blob/master/docs/deployment.md"
+              href="docs/deployment"
               >deployment guide</a
             >
             covers Azure prerequisites, permissions, the CLI, and CI/CD
@@ -149,10 +168,12 @@ dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost</code></pre>
       <div class="wrap">
         <span>NimBus · Open-source .NET integration on Azure Service Bus</span>
         <div>
-          <a
-            href="https://github.com/akakaule/NimBus/blob/master/docs/deployment.md"
+          <a href="docs/"
+            >Documentation</a
+          ><a
+            href="docs/deployment"
             >Deploy to Azure</a
-          ><a href="https://github.com/akakaule/NimBus/blob/master/LICENSE"
+          ><a href="https://github.com/context-and-oss/NimBus/blob/master/LICENSE"
             >MIT License</a
           >
         </div>

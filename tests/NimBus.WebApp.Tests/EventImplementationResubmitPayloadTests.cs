@@ -66,7 +66,7 @@ public sealed class EventImplementationResubmitPayloadTests
         var result = EventImplementation.LatestRequestMessageWithPayload(history);
 
         Assert.AreEqual(MessageType.ResubmissionRequest, result!.MessageType);
-        Assert.AreEqual("{\"v\":2}", result.MessageContent.EventContent.EventJson);
+        Assert.AreEqual("{\"v\":2}", result.MessageContent.EventContent!.EventJson);
     }
 
     [TestMethod]

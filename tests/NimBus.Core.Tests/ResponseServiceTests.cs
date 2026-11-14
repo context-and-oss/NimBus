@@ -138,7 +138,7 @@ public class ResponseServiceTests
         var message = sender.SentMessages.Single();
         Assert.AreEqual(Constants.ResolverId, message.To);
         Assert.AreEqual(MessageType.SkipResponse, message.MessageType);
-        Assert.AreEqual("DuplicateDetected", message.MessageContent.ErrorContent.ErrorText);
+        Assert.AreEqual("DuplicateDetected", message.MessageContent.ErrorContent!.ErrorText);
         Assert.AreSame(context.MessageContent.EventContent, message.MessageContent.EventContent);
     }
 
@@ -157,9 +157,9 @@ public class ResponseServiceTests
         Assert.AreEqual(Constants.ResolverId, msg.To);
         Assert.AreEqual(MessageType.SkipResponse, msg.MessageType);
         Assert.AreSame(ctx.MessageContent.EventContent, msg.MessageContent.EventContent);
-        Assert.AreEqual(nameof(InvalidOperationException), msg.MessageContent.ErrorContent.ErrorType);
-        StringAssert.Contains(msg.MessageContent.ErrorContent.ErrorText, exception.Message);
-        StringAssert.Contains(msg.MessageContent.ErrorContent.ErrorText, classifierName);
+        Assert.AreEqual(nameof(InvalidOperationException), msg.MessageContent.ErrorContent!.ErrorType);
+        StringAssert.Contains(msg.MessageContent.ErrorContent.ErrorText, exception.Message, StringComparison.Ordinal);
+        StringAssert.Contains(msg.MessageContent.ErrorContent.ErrorText, classifierName, StringComparison.Ordinal);
         Assert.IsNull(msg.DeadLetterReason);
         Assert.IsNull(msg.DeadLetterErrorDescription);
     }
@@ -178,7 +178,7 @@ public class ResponseServiceTests
         var msg = sender.SentMessages.Single();
         Assert.AreEqual(Constants.ResolverId, msg.To);
         Assert.AreEqual(MessageType.ErrorResponse, msg.MessageType);
-        Assert.AreEqual("boom", msg.MessageContent.ErrorContent.ErrorText);
+        Assert.AreEqual("boom", msg.MessageContent.ErrorContent!.ErrorText);
         Assert.AreEqual(nameof(InvalidOperationException), msg.MessageContent.ErrorContent.ErrorType,
             "ErrorType should be the simple type name (no namespace) for WebApp readability");
     }
@@ -196,8 +196,64 @@ public class ResponseServiceTests
         await sut.SendErrorResponse(CreateContext(), ex);
 
         var msg = sender.SentMessages.Single();
-        Assert.AreEqual(nameof(SomeCustomException), msg.MessageContent.ErrorContent.ErrorType);
+        Assert.AreEqual(nameof(SomeCustomException), msg.MessageContent.ErrorContent!.ErrorType);
         Assert.AreEqual("handler blew up", msg.MessageContent.ErrorContent.ErrorText);
+    }
+
+    [TestMethod]
+    public async Task SendErrorResponse_StoresNoStackTraceByDefault()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+
+        await sut.SendErrorResponse(CreateContext(), Thrown(new InvalidOperationException("boom")));
+
+        Assert.IsNull(sender.SentMessages.Single().MessageContent.ErrorContent!.ExceptionStackTrace);
+    }
+
+    [TestMethod]
+    public async Task SendErrorResponse_StoresTheHandlerExceptionsFramesWhenAskedTo()
+    {
+        // Spec 044 Phase 3: opt-in, so failure-handling agents can locate the defect.
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender, new ResponseServiceOptions { IncludeStackTrace = true });
+        var inner = Thrown(new SomeCustomException("handler blew up"));
+
+        await sut.SendErrorResponse(CreateContext(), new EventContextHandlerException(inner));
+
+        var trace = sender.SentMessages.Single().MessageContent.ErrorContent!.ExceptionStackTrace;
+        Assert.IsNotNull(trace);
+        StringAssert.Contains(trace, nameof(Thrown), StringComparison.Ordinal);
+        Assert.IsFalse(trace.Contains("handler blew up", StringComparison.Ordinal), "Frames only: the message is in ErrorText.");
+    }
+
+    [TestMethod]
+    public async Task SendErrorResponse_CutsALongStackTrace()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender, new ResponseServiceOptions { IncludeStackTrace = true });
+
+        await sut.SendErrorResponse(CreateContext(), new LongTraceException());
+
+        Assert.AreEqual(ResponseServiceOptions.MaximumStackTraceLength,
+            sender.SentMessages.Single().MessageContent.ErrorContent!.ExceptionStackTrace!.Length);
+    }
+
+    private static Exception Thrown(Exception exception)
+    {
+        try
+        {
+            throw exception;
+        }
+        catch (Exception caught)
+        {
+            return caught;
+        }
+    }
+
+    private sealed class LongTraceException : Exception
+    {
+        public override string StackTrace => new('f', ResponseServiceOptions.MaximumStackTraceLength + 500);
     }
 
     // ── SendDeadLetterResponse ──────────────────────────────────────────
@@ -216,8 +272,8 @@ public class ResponseServiceTests
         Assert.AreEqual(MessageType.ErrorResponse, msg.MessageType);
         Assert.AreEqual("Failed to handle message.", msg.DeadLetterReason);
         Assert.IsNotNull(msg.DeadLetterErrorDescription);
-        StringAssert.Contains(msg.DeadLetterErrorDescription, "boom");
-        StringAssert.Contains(msg.DeadLetterErrorDescription, nameof(InvalidOperationException));
+        StringAssert.Contains(msg.DeadLetterErrorDescription, "boom", StringComparison.Ordinal);
+        StringAssert.Contains(msg.DeadLetterErrorDescription, nameof(InvalidOperationException), StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -265,7 +321,7 @@ public class ResponseServiceTests
         var msg = sender.SentMessages.Single();
         Assert.AreEqual(Constants.ResolverId, msg.To);
         Assert.AreEqual(MessageType.DeferralResponse, msg.MessageType);
-        Assert.AreEqual("blocked", msg.MessageContent.ErrorContent.ErrorText);
+        Assert.AreEqual("blocked", msg.MessageContent.ErrorContent!.ErrorText);
     }
 
     // ── SendRetryResponse ───────────────────────────────────────────────
@@ -745,7 +801,7 @@ public class ResponseServiceTests
         public string EventTypeId { get; set; } = string.Empty;
         public string OriginalSessionId { get; set; } = string.Empty;
         public int? DeferralSequence { get; set; }
-        public string InboxMessageId { get; set; }
+        public string? InboxMessageId { get; set; }
         public DateTime EnqueuedTimeUtc { get; set; }
         private string _from = string.Empty;
 
@@ -758,10 +814,10 @@ public class ResponseServiceTests
             set => _from = value;
         }
 
-        public string DeadLetterReason { get; set; }
-        public string DeadLetterErrorDescription { get; set; }
-        public string HandoffReason { get; set; }
-        public string ExternalJobId { get; set; }
+        public string? DeadLetterReason { get; set; }
+        public string? DeadLetterErrorDescription { get; set; }
+        public string? HandoffReason { get; set; }
+        public string? ExternalJobId { get; set; }
         public DateTime? ExpectedBy { get; set; }
         public bool IsDeferred { get; set; }
         public int ThrottleRetryCount { get; set; }
@@ -769,10 +825,10 @@ public class ResponseServiceTests
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
-        public HandoffMetadata HandoffMetadata { get; set; }
+        public HandoffMetadata? HandoffMetadata { get; set; }
 
-        public NimBus.Core.CloudEvents.CloudEvent CloudEventToReturn { get; set; }
-        public NimBus.Core.CloudEvents.CloudEvent GetCloudEvent() => CloudEventToReturn;
+        public NimBus.Core.CloudEvents.CloudEvent? CloudEventToReturn { get; set; }
+        public NimBus.Core.CloudEvents.CloudEvent? GetCloudEvent() => CloudEventToReturn;
 
         public Task Complete(CancellationToken ct = default) => Task.CompletedTask;
         public Task Abandon(TransientException ex) => Task.CompletedTask;
@@ -782,7 +838,7 @@ public class ResponseServiceTests
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> IsSessionBlockedByEventId(CancellationToken ct = default) => Task.FromResult(false);
-        public Task<string> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult(string.Empty);
+        public Task<string?> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult<string?>(string.Empty);
         public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) => Task.FromResult(0);
         public Task IncrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
         public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;

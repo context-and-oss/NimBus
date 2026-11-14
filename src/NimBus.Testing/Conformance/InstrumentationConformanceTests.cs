@@ -150,23 +150,23 @@ public abstract class InstrumentationConformanceTests
         public string EventId => _message.EventId;
         public string To => _message.To;
         public string SessionId => _message.SessionId;
-        public string CorrelationId => _message.CorrelationId;
-        public string MessageId => _message.MessageId;
+        public string? CorrelationId => _message.CorrelationId;
+        public string MessageId => _message.MessageId!;
         public MessageType MessageType => _message.MessageType;
         public MessageContent MessageContent => _message.MessageContent;
-        public string ParentMessageId => _message.ParentMessageId;
-        public string OriginatingMessageId => _message.OriginatingMessageId;
+        public string? ParentMessageId => _message.ParentMessageId;
+        public string? OriginatingMessageId => _message.OriginatingMessageId;
         public int? RetryCount => _message.RetryCount;
-        public string OriginatingFrom => _message.OriginatingFrom;
+        public string? OriginatingFrom => _message.OriginatingFrom;
         public string EventTypeId => _message.EventTypeId;
-        public string OriginalSessionId => _message.OriginalSessionId;
+        public string? OriginalSessionId => _message.OriginalSessionId;
         public int? DeferralSequence => _message.DeferralSequence;
         public DateTime EnqueuedTimeUtc { get; }
-        public string From => _message.From;
+        public string? From => _message.From;
         public string DeadLetterReason { get; } = string.Empty;
         public string DeadLetterErrorDescription { get; } = string.Empty;
-        public string HandoffReason => _message.HandoffReason;
-        public string ExternalJobId => _message.ExternalJobId;
+        public string? HandoffReason => _message.HandoffReason;
+        public string? ExternalJobId => _message.ExternalJobId;
         public DateTime? ExpectedBy => _message.ExpectedBy;
         public bool IsDeferred => false;
         public int ThrottleRetryCount { get; set; }
@@ -174,7 +174,7 @@ public abstract class InstrumentationConformanceTests
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
-        public HandoffMetadata HandoffMetadata { get; set; } = null!;
+        public HandoffMetadata? HandoffMetadata { get; set; }
         public ActivityContext ParentTraceContext { get; }
 
         public Task Complete(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -185,7 +185,7 @@ public abstract class InstrumentationConformanceTests
         public Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult(string.Empty);
+        public Task<string?> GetBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult<string?>(string.Empty);
         public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task IncrementDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DecrementDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;

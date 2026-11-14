@@ -6,7 +6,7 @@ NimBus is an open-source .NET integration platform built on Azure Service Bus. I
 
 It is designed for teams connecting business systems such as CRM, ERP, and billing, where a failed message must be understood and recovered before subsequent work continues.
 
-[Website](https://akakaule.github.io/NimBus/) · [Watch the demo](https://www.youtube.com/watch?v=jZ99gbYZLqU) · [Documentation](docs/)
+[Website](https://context-and-oss.github.io/NimBus/) · [Watch the demo](https://www.youtube.com/watch?v=jZ99gbYZLqU) · [Documentation](https://context-and-oss.github.io/NimBus/docs/)
 
 ## What you get
 
@@ -23,7 +23,7 @@ Deploy the platform into your own environment and integrate applications through
 
 ## Try locally
 
-Start with the [CRM/ERP sample](samples/CrmErpDemo/README.md#running-locally--sql-server-default). It runs the emulator and SQL Server locally, without an Azure account. For Dynamics 365 Sales with Business Central, where CRM owns the pipeline and ERP owns the buying customer, see the [Dynamics 365 Sales ↔ Business Central demo](samples/DynamicsBcDemo/README.md).
+Start with the [CRM/ERP sample](samples/CrmErpDemo/README.md#running-locally--sql-server-default). It runs the emulator and SQL Server locally, without an Azure account.
 
 You need the .NET 10 SDK, Node.js 22+, and a running Docker-compatible container runtime. The sample guide includes dependency installation and startup commands.
 
@@ -36,6 +36,8 @@ dotnet add package Akaule.NimBus.SDK
 ```
 
 Follow [Building Adapters](docs/building-adapters.md) to register publishers, handlers, and receiver hosting for a .NET Worker or Azure Function.
+
+Starting a customer project? [Onboarding a Customer Project](docs/onboarding.md) takes a delivery team from prerequisites through catalog design, environments, adapters and pipelines to go-live, using Dynamics 365 Sales and Business Central as the example.
 
 ## Learn more
 

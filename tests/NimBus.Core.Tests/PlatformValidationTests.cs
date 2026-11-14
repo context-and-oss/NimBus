@@ -98,8 +98,8 @@ public class PlatformValidationTests
         var errors = PlatformValidation.ValidateCommandConsumers(platform);
 
         Assert.AreEqual(1, errors.Count);
-        StringAssert.Contains(errors[0], "TestCommand");
-        StringAssert.Contains(errors[0], "no consuming endpoint");
+        StringAssert.Contains(errors[0], "TestCommand", StringComparison.Ordinal);
+        StringAssert.Contains(errors[0], "no consuming endpoint", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -115,9 +115,9 @@ public class PlatformValidationTests
         // TestCommand has 2 consumers (error); SecondCommand has 0 (error); PlainEvent is exempt.
         Assert.AreEqual(2, errors.Count);
         var multiError = errors.Single(e => e.Contains("2 consumers", StringComparison.Ordinal));
-        StringAssert.Contains(multiError, "TestCommand");
-        StringAssert.Contains(multiError, nameof(ConsumerEndpoint));
-        StringAssert.Contains(multiError, nameof(SecondConsumerEndpoint));
+        StringAssert.Contains(multiError, "TestCommand", StringComparison.Ordinal);
+        StringAssert.Contains(multiError, nameof(ConsumerEndpoint), StringComparison.Ordinal);
+        StringAssert.Contains(multiError, nameof(SecondConsumerEndpoint), StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -159,8 +159,8 @@ public class PlatformValidationTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(
             () => PlatformValidation.EnsureCommandConsumers(platform));
 
-        StringAssert.Contains(ex.Message, "TestCommand");
-        StringAssert.Contains(ex.Message, "SecondCommand");
+        StringAssert.Contains(ex.Message, "TestCommand", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "SecondCommand", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -184,10 +184,10 @@ public class PlatformValidationTests
     {
         public string Id => nameof(ClrLessEndpoint);
         public string Name => Id;
-        public string Description => null;
-        public string Namespace => GetType().Namespace;
+        public string? Description => null;
+        public string? Namespace => GetType().Namespace;
         public string SecurityGroupName => $"azu-endpoint-{Id}";
-        public ISystem System => null;
+        public ISystem? System => null;
         public IEnumerable<IEventType> EventTypesProduced => new[] { new ClrLessEventType() };
         public IEnumerable<IEventType> EventTypesConsumed => Enumerable.Empty<IEventType>();
         public IEnumerable<IRoleAssignment> RoleAssignments => Enumerable.Empty<IRoleAssignment>();
@@ -197,10 +197,10 @@ public class PlatformValidationTests
     {
         public string Id => "config.loaded.event.v1";
         public string Name => Id;
-        public string Description => null;
-        public string Namespace => null;
+        public string? Description => null;
+        public string? Namespace => null;
         public IEnumerable<IProperty> Properties => Enumerable.Empty<IProperty>();
-        public Type GetEventClassType() => null;
-        public IEvent GetEventExample() => null;
+        public Type GetEventClassType() => null!;
+        public IEvent? GetEventExample() => null;
     }
 }

@@ -15,8 +15,8 @@ static class Endpoint
 {
     public static async Task DeleteSession(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, CommandArgument nameArg, CommandArgument sessionIdArg)
     {
-        string sessionId = sessionIdArg.Value;
-        string endpoint = nameArg.Value;
+        string sessionId = sessionIdArg.Value!;
+        string endpoint = nameArg.Value!;
 
         Console.WriteLine($"Waiting to accept session {sessionId}");
 
@@ -35,7 +35,7 @@ static class Endpoint
 
     public static async Task RemoveDeprecated(ServiceBusAdministrationClient sbAdmin, CommandArgument nameArg)
     {
-        string endpointName = nameArg.Value.ToLower();
+        string endpointName = nameArg.Value!.ToLowerInvariant();
 
         var topic = (await sbAdmin.GetTopicAsync(endpointName)).Value;
 
@@ -308,7 +308,7 @@ static class Endpoint
         //
         // GetActualTopic lowercases everything it reads back from the broker, so the
         // descriptor's names are lowercased to match.
-        var endpoint = platform.Endpoints.First(x => x.Name.ToLower() == endpointName);
+        var endpoint = platform.Endpoints.First(x => string.Equals(x.Name, endpointName, StringComparison.OrdinalIgnoreCase));
         var topicName = endpointName.ToLowerInvariant();
 
         return new TopicDto
@@ -345,8 +345,8 @@ static class Endpoint
             var subscriptions = page.Values
                 .Select(x => new SubscriptionDto
                 {
-                    Name = x.SubscriptionName.ToLower(),
-                    TopicName = x.TopicName.ToLower(),
+                    Name = x.SubscriptionName.ToLowerInvariant(),
+                    TopicName = x.TopicName.ToLowerInvariant(),
                     Rules = new List<RuleDto>()
                 })
                 .ToList();
@@ -360,7 +360,7 @@ static class Endpoint
             await foreach (var page in rulesAsync.AsPages())
             {
                 var rules = page.Values
-                    .Select(x => new RuleDto { Name = x.Name.ToLower(), SubscriptionName = subscription.Name.ToLower() })
+                    .Select(x => new RuleDto { Name = x.Name.ToLowerInvariant(), SubscriptionName = subscription.Name.ToLowerInvariant() })
                     .ToArray();
                 subscription.Rules.AddRange(rules);
             }
@@ -386,7 +386,7 @@ static class Endpoint
                     if (deferredMessage != null)
                     {
                         var sbMessage = new NimBus.ServiceBus.ServiceBusMessage(deferredMessage);
-                        string eventId = sbMessage.GetUserProperty(UserPropertyName.EventId);
+                        string? eventId = sbMessage.GetUserProperty(UserPropertyName.EventId);
 
                         Console.WriteLine($"Received deferred message {deferredMessage.MessageId} EventId: {eventId}");
                         await receiver.CompleteMessageAsync(deferredMessage);
@@ -411,7 +411,7 @@ static class Endpoint
             foreach (var message in messages)
             {
                 var sbMessage = new NimBus.ServiceBus.ServiceBusMessage(message);
-                string eventId = sbMessage.GetUserProperty(UserPropertyName.EventId);
+                string? eventId = sbMessage.GetUserProperty(UserPropertyName.EventId);
 
                 Console.WriteLine($"MessageId: {message.MessageId} EventId: {eventId}");
                 await receiver.CompleteMessageAsync(message);
@@ -425,7 +425,7 @@ static class Endpoint
     {
         Console.WriteLine($"Removing messages in CosmosDB...");
 
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
         int maxSearchItemsCount = 20;
         SearchResponse searchResponse;
 

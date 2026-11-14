@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System;
 using System.Collections.Generic;
 using System.Linq;

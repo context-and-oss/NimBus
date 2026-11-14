@@ -1,0 +1,70 @@
+using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
+using NimBus.WebApp.Mcp.Prompts;
+
+namespace NimBus.WebApp.Mcp.Access;
+
+/// <summary>
+/// Hides the prompts that lead to a tool the MCP access policy makes unavailable from
+/// <c>prompts/list</c>, and refuses <c>prompts/get</c> for them (Spec 040). Prompts have no switch
+/// of their own: <c>recover-message</c> follows <c>nimbus_prepare_action</c>, and
+/// <c>handle-failures</c> follows <c>nimbus_record_classification</c> (Spec 044 §6.9).
+/// </summary>
+public static class McpPromptAccess
+{
+    /// <summary>Whether <paramref name="prompt"/> is available to <paramref name="caller"/> under <paramref name="policy"/>.</summary>
+    public static bool IsAvailable(string prompt, McpAccessPolicy policy, McpCaller caller) => prompt switch
+    {
+        OperatorPrompts.RecoverMessage => McpToolAccess.IsAvailable(McpToolAccess.PrepareTool, policy, caller),
+        OperatorPrompts.HandleFailures => McpToolAccess.IsAvailable(McpToolAccess.RecordTool, policy, caller),
+        _ => true,
+    };
+
+    /// <summary>The <c>prompts/list</c> filter.</summary>
+    public static McpRequestHandler<ListPromptsRequestParams, ListPromptsResult> FilterList(McpRequestHandler<ListPromptsRequestParams, ListPromptsResult> next)
+        => async (request, cancellationToken) =>
+        {
+            var result = await next(request, cancellationToken).ConfigureAwait(false);
+            var (policy, caller, _) = McpToolAccess.Resolve(request.Services);
+            result.Prompts = policy is null
+                ? []
+                : result.Prompts.Where(prompt => IsAvailable(prompt.Name, policy, caller)).ToList();
+            return result;
+        };
+
+    /// <summary>
+    /// The <c>completion/complete</c> filter (Spec 046 §5): nothing for a prompt the caller can't
+    /// list. No refusal is audited: the caller was refused nothing it could see.
+    /// </summary>
+    public static McpRequestHandler<CompleteRequestParams, CompleteResult> FilterComplete(McpRequestHandler<CompleteRequestParams, CompleteResult> next)
+        => async (request, cancellationToken) =>
+        {
+            if (request.Params?.Ref is PromptReference prompt)
+            {
+                var (policy, caller, _) = McpToolAccess.Resolve(request.Services);
+                if (policy is null || !IsAvailable(prompt.Name, policy, caller))
+                    return OperatorPromptCompletions.Empty();
+            }
+
+            return await next(request, cancellationToken).ConfigureAwait(false);
+        };
+
+    /// <summary>The <c>prompts/get</c> filter.</summary>
+    public static McpRequestHandler<GetPromptRequestParams, GetPromptResult> FilterGet(McpRequestHandler<GetPromptRequestParams, GetPromptResult> next)
+        => async (request, cancellationToken) =>
+        {
+            var prompt = request.Params?.Name ?? string.Empty;
+            var (policy, caller, http) = McpToolAccess.Resolve(request.Services);
+            if (policy is not null && IsAvailable(prompt, policy, caller))
+                return await next(request, cancellationToken).ConfigureAwait(false);
+
+            if (http is not null && policy is not null)
+            {
+                var refusals = http.RequestServices.GetRequiredService<McpAccessRefusals>();
+                await refusals.RecordAsync(http, caller, McpRefusalReason.Tool, prompt).ConfigureAwait(false);
+            }
+
+            throw new McpProtocolException($"[PermissionDenied] {prompt} is turned off by an administrator.", McpErrorCode.InvalidParams);
+        };
+}

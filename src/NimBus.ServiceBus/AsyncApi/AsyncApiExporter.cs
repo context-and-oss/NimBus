@@ -2,6 +2,7 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
+using NimBus.ServiceBus.Provisioning;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -31,14 +32,6 @@ namespace NimBus.ServiceBus.AsyncApi;
 /// </summary>
 public static class AsyncApiExporter
 {
-    // Kept in lock-step with ServiceBusTopologyProvisioner so the documented rules match what
-    // provisioning actually creates. If those SQL expressions change, change them here too.
-    private static string ForwardFilter(string eventTypeId) =>
-        $"user.EventTypeId = '{eventTypeId}' AND user.From IS NULL";
-
-    private static string ForwardAction(string from, string to) =>
-        $"SET user.From = '{from}'; SET user.EventId = newid(); SET user.To = '{to}';";
-
     private static string DeliveryFilter(string endpointId) => $"user.To = '{endpointId}'";
 
     /// <summary>Exports an arbitrary platform (WebApp export endpoint, external integration repos, samples, tests).</summary>
@@ -48,7 +41,7 @@ public static class AsyncApiExporter
         CoreAsyncApiFormat format,
         AsyncApiEnrichmentRegistry? enrichment = null)
     {
-        if (platform is null) throw new ArgumentNullException(nameof(platform));
+        ArgumentNullException.ThrowIfNull(platform);
 
         var content = Serialize(platform, format, enrichment);
         await File.WriteAllTextAsync(outputPath, content);
@@ -69,7 +62,7 @@ public static class AsyncApiExporter
     /// </param>
     public static string Serialize(IPlatform platform, CoreAsyncApiFormat format, AsyncApiEnrichmentRegistry? enrichment = null)
     {
-        if (platform is null) throw new ArgumentNullException(nameof(platform));
+        ArgumentNullException.ThrowIfNull(platform);
 
         var document = BuildDocument(platform, enrichment);
         return format == CoreAsyncApiFormat.Json
@@ -180,7 +173,7 @@ public static class AsyncApiExporter
 
     private static Map BuildChannels(
         SortedDictionary<string, SortedSet<string>> topicMessages,
-        IReadOnlyDictionary<string, IEndpoint> endpointsById)
+        Dictionary<string, IEndpoint> endpointsById)
     {
         var channels = new Map();
         foreach (var (endpointId, eventIds) in topicMessages)
@@ -224,7 +217,7 @@ public static class AsyncApiExporter
     {
         ["specversion"] = "1.0",
         ["contentMode"] = string.IsNullOrEmpty(cloudEvents.CloudEventsContentMode) ? "binary" : cloudEvents.CloudEventsContentMode,
-        ["source"] = cloudEvents.CloudEventsSource,
+        ["source"] = cloudEvents.CloudEventsSource!,
         ["attributes"] = new List<object> { "id", "source", "type", "specversion", "subject", "time", "datacontenttype", "dataschema" },
         ["headers"] = new Map { ["$ref"] = "#/components/schemas/CloudEventsMessageHeaders" },
     };
@@ -233,7 +226,7 @@ public static class AsyncApiExporter
         IPlatform platform,
         IReadOnlyList<IEventType> events,
         IReadOnlyList<DynamicForward> dynamicForwards,
-        IReadOnlyDictionary<string, IEndpoint> endpointsById)
+        Dictionary<string, IEndpoint> endpointsById)
     {
         var operations = new Map();
 
@@ -251,13 +244,23 @@ public static class AsyncApiExporter
             {
                 // Auto-forward sources are every OTHER producer's topic (the provisioner never
                 // creates a self-forward for an event a single endpoint both produces and consumes).
+                // The routing shape is the descriptor's, so the documented filter is the one
+                // `nb topology apply` lays down (Spec 045).
+                var routing = TopologyDescriptor.RoutingFor(consumer, evt, platform);
                 var forwards = producers
                     .Where(p => !string.Equals(p.Id, consumer.Id, StringComparison.Ordinal))
-                    .Select(p => ForwardSubscription(p.Id, consumer.Id, evt.Id, subscriptionName: consumer.Id))
+                    .Select(p => ForwardSubscription(p.Id, consumer.Id, evt.Id, subscriptionName: consumer.Id, routing))
                     .ToList();
 
-                operations[$"{consumer.Id}_receive_{OpKey(evt.Id)}"] =
-                    ReceiveOperation(consumer, evt.Id, evt.Name, forwards);
+                var operation = ReceiveOperation(consumer, evt.Id, evt.Name, forwards);
+                if (routing is not null)
+                {
+                    operation["x-nimbus-routing"] = routing.Mode == RoutingRuleMode.Keyed
+                        ? new Map { ["routingKeys"] = routing.Keys.Cast<object>().ToList() }
+                        : new Map { ["unmatched"] = true, ["excludedRoutingKeys"] = routing.Keys.Cast<object>().ToList() };
+                }
+
+                operations[$"{consumer.Id}_receive_{OpKey(evt.Id)}"] = operation;
             }
         }
 
@@ -315,15 +318,17 @@ public static class AsyncApiExporter
             },
         };
 
-    private static Map ForwardSubscription(string sourceTopic, string target, string eventId, string subscriptionName) =>
+    private static Map ForwardSubscription(string sourceTopic, string target, string eventId, string subscriptionName, RoutingRule? routing = null) =>
         new()
         {
             ["topic"] = sourceTopic,
             ["subscription"] = subscriptionName,
             ["forwardTo"] = target,
             ["requiresSession"] = false,
-            ["filter"] = ForwardFilter(eventId),
-            ["action"] = ForwardAction(sourceTopic, target),
+            // The provisioner's own strings, so the documented rule is byte-identical to the
+            // one `nb topology apply` lays down.
+            ["filter"] = TopologyDescriptor.ForwardFilter(eventId, routing),
+            ["action"] = TopologyDescriptor.ForwardAction(sourceTopic, target),
         };
 
     private static Map BuildComponents(
@@ -436,6 +441,12 @@ public static class AsyncApiExporter
         if (governance.Count > 0)
         {
             message["x-nimbus-governance"] = governance;
+        }
+
+        // Spec 045: the payload property that routes the message by key.
+        if (!string.IsNullOrEmpty(evt.RoutingKeyProperty))
+        {
+            message["x-nimbus-routing-key"] = evt.RoutingKeyProperty!;
         }
 
         var examples = BuildExamples(evt, resolved);
@@ -551,7 +562,7 @@ public static class AsyncApiExporter
     private static void EnsureObjectSchema(Type type, Map schemas, HashSet<Type> building) =>
         JsonSchemaBuilder.EnsureObjectSchema(type, schemas, building);
 
-    private static Map TryBuildExample(IEventType evt)
+    private static Map? TryBuildExample(IEventType evt)
     {
         try
         {

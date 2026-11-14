@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -7,6 +8,7 @@ using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using NimBus.Core;
 using NimBus.Core.Events;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
@@ -82,11 +84,23 @@ public interface ISimulationEventFactory
 public sealed class FakePayloadSimulationEventFactory : ISimulationEventFactory
 {
     private readonly FakeEventPayloadGenerator _generator;
+    private readonly IPlatform? _platform;
 
     /// <summary>Creates the factory.</summary>
     public FakePayloadSimulationEventFactory(FakeEventPayloadGenerator generator)
+        : this(generator, platform: null)
+    {
+    }
+
+    /// <summary>
+    /// Creates the factory. With a <paramref name="platform"/>, an event type routed by key
+    /// (Spec 045) gets one of the keys its consumers claim, so simulated traffic reaches the
+    /// instance endpoints rather than only the unmatched one.
+    /// </summary>
+    public FakePayloadSimulationEventFactory(FakeEventPayloadGenerator generator, IPlatform? platform)
     {
         _generator = generator ?? throw new ArgumentNullException(nameof(generator));
+        _platform = platform;
     }
 
     /// <inheritdoc />
@@ -97,6 +111,7 @@ public sealed class FakePayloadSimulationEventFactory : ISimulationEventFactory
             ?? throw new InvalidOperationException($"No payload could be generated for event type '{eventType.Id}'.");
         var @event = JsonConvert.DeserializeObject(json, eventType.GetEventClassType()) as IEvent
             ?? throw new InvalidOperationException($"The generated payload for '{eventType.Id}' did not deserialize to an event.");
+        ApplyClaimedRoutingKey(eventType, @event);
         var validation = @event.TryValidate();
         if (!validation.IsValid)
         {
@@ -106,6 +121,21 @@ public sealed class FakePayloadSimulationEventFactory : ISimulationEventFactory
         }
 
         return @event;
+    }
+
+    private void ApplyClaimedRoutingKey(IEventType eventType, IEvent @event)
+    {
+        if (_platform is null || string.IsNullOrEmpty(eventType.RoutingKeyProperty))
+            return;
+
+        var claimed = _platform.GetClaimedRoutingKeys(eventType).ToList();
+        var property = @event.GetType().GetProperty(eventType.RoutingKeyProperty);
+        if (claimed.Count == 0 || property is null || property.PropertyType != typeof(string) || !property.CanWrite)
+            return;
+
+#pragma warning disable CA5394 // Picking a simulated key needs no cryptographic randomness.
+        property.SetValue(@event, claimed[Random.Shared.Next(claimed.Count)]);
+#pragma warning restore CA5394
     }
 }
 
@@ -128,7 +158,8 @@ public interface ISimulationPublishSink
 /// <see cref="SimulationRateLimiter"/>. Each loop reads the live config every iteration, so
 /// rate, speed and enabled changes apply on the next publish.
 /// </summary>
-public sealed class SimulatedPublisher
+[SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "Lifetime ends at StopAsync, which cancels the token source. A stop that times out abandons loops that still observe the token, so it is deliberately never disposed.")]
+public sealed partial class SimulatedPublisher
 {
     private static readonly TimeSpan DisabledRecheck = TimeSpan.FromSeconds(1);
 
@@ -215,14 +246,12 @@ public sealed class SimulatedPublisher
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Simulated publisher loop for {EndpointId} ended with an error.", _endpointId);
+            LogSimulatedPublisherLoopForEnded(_logger, ex, _endpointId);
         }
 
         if (abandoned > 0)
         {
-            _logger.LogWarning(
-                "Abandoned {Count} simulated publish loop(s) for {EndpointId} after {Deadline}; disposing their sender.",
-                abandoned, _endpointId, deadline);
+            LogAbandonedSimulatedPublishLoop(_logger, abandoned, _endpointId, deadline);
             _sink.SendsAbandoned(_endpointId, abandoned);
         }
 
@@ -245,7 +274,7 @@ public sealed class SimulatedPublisher
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Disposing the simulated sender for {EndpointId} did not complete cleanly.", _endpointId);
+            LogDisposingTheSimulatedSenderForDid(_logger, ex, _endpointId);
         }
     }
 
@@ -282,7 +311,7 @@ public sealed class SimulatedPublisher
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not generate a simulated {EventTypeId} for {EndpointId}.", eventType.Id, _endpointId);
+            LogCouldNotGenerateASimulated(_logger, ex, eventType.Id, _endpointId);
             _sink.PublishFailed(_endpointId, eventType.Id, ex);
             return;
         }
@@ -300,7 +329,7 @@ public sealed class SimulatedPublisher
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Simulated publish of {EventTypeId} from {EndpointId} failed.", eventType.Id, _endpointId);
+            LogSimulatedPublishOfFromFailed(_logger, ex, eventType.Id, _endpointId);
             _sink.PublishFailed(_endpointId, eventType.Id, ex);
         }
     }
@@ -357,4 +386,19 @@ public sealed class SimulatedPublisher
             Interlocked.Increment(ref _waiting);
         await completion.Task.ConfigureAwait(false);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Simulated publisher loop for {EndpointId} ended with an error.")]
+    private static partial void LogSimulatedPublisherLoopForEnded(ILogger logger, Exception exception, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Abandoned {Count} simulated publish loop(s) for {EndpointId} after {Deadline}; disposing their sender.")]
+    private static partial void LogAbandonedSimulatedPublishLoop(ILogger logger, int count, string endpointId, TimeSpan deadline);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Disposing the simulated sender for {EndpointId} did not complete cleanly.")]
+    private static partial void LogDisposingTheSimulatedSenderForDid(ILogger logger, Exception exception, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not generate a simulated {EventTypeId} for {EndpointId}.")]
+    private static partial void LogCouldNotGenerateASimulated(ILogger logger, Exception exception, string eventTypeId, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Simulated publish of {EventTypeId} from {EndpointId} failed.")]
+    private static partial void LogSimulatedPublishOfFromFailed(ILogger logger, Exception exception, string eventTypeId, string endpointId);
 }

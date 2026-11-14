@@ -1,13 +1,22 @@
 openapi: 3.0.0
 info:
-  title: EIP Management Web API
-  description: HTTP API for inspecting and interacting with EIP endpoints and events
-  version: 0.0.1
+  title: NimBus Management API
+  description: HTTP API behind the NimBus WebApp for inspecting endpoints, events and sessions, and for recovering messages (resubmit, skip)
+  version: 1.0.0
 servers:
-  - url: 'https://localhost:5001'
-    description: Local
+  - url: 'https://{host}'
+    description: >-
+      A NimBus WebApp deployment. Set host to the WebApp's host name, for
+      example webapp-<solution>-<environment>-management.azurewebsites.net
+      or your custom domain.
+    variables:
+      host:
+        default: nimbus.example.com
+        description: Host name (and port, if not 443) of the NimBus WebApp.
+  - url: 'https://localhost:18443'
+    description: Local development (dotnet run or the Aspire AppHost)
 paths:
-  /api/endpoint/status/count:
+  /api/v1/endpoint/status/count:
     get:
       summary: Get current status of all endpoints
       description: Return an array of endpoint statuses.
@@ -45,7 +54,7 @@ paths:
         description: ''
       tags:
         - Endpoint
-  '/api/endpoint/{endpointName}/status/':
+  '/api/v1/endpoint/{endpointName}/status/':
     get:
       parameters:
         - in: path
@@ -68,11 +77,11 @@ paths:
         '404':
           description: Endpoint not found
           content:
-            text/string:
+            application/problem+json:
               schema:
-                type: string
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: get-endpoint-status-id
-  '/api/event/{eventId}/{messageId}':
+  '/api/v1/event/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -96,7 +105,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Message'
       operationId: get-event-ids
-  '/api/event/unresolved/{endpointId}/{eventId}/{sessionId}':
+  '/api/v1/event/unresolved/{endpointId}/{eventId}/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -125,7 +134,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Event'
       operationId: get-unresolved-failed-event-id
-  /api/event-types:
+  /api/v1/event-types:
     get:
       summary: GetEventTypes
       tags:
@@ -140,7 +149,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/EventType'
       operationId: get-event-types
-  '/api/event-types/{eventtypeid}':
+  '/api/v1/event-types/{eventtypeid}':
     parameters:
       - schema:
           type: string
@@ -159,7 +168,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EventTypeDetails'
       operationId: get-eventtypes-eventtypeid
-  '/api/event-types/{eventtypeid}/fake':
+  '/api/v1/event-types/{eventtypeid}/fake':
     parameters:
       - schema:
           type: string
@@ -187,8 +196,12 @@ paths:
                 $ref: '#/components/schemas/FakeEventPayload'
         '404':
           description: Event type not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: get-eventtypes-eventtypeid-fake
-  '/api/event/resubmit/{eventId}/{messageId}':
+  '/api/v1/event/resubmit/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -208,17 +221,29 @@ paths:
           description: OK
         '404':
           description: Event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: >-
             The message changed since it was loaded (it was resubmitted, skipped
             or failed again), or its current state does not allow the command.
             Nothing was sent.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '503':
           description: >-
             The audit log could not record the command, so it was not run.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Event
-  '/api/event/skip/{eventId}/{messageId}':
+  '/api/v1/event/skip/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -238,17 +263,29 @@ paths:
           description: OK
         '404':
           description: Event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: >-
             The message changed since it was loaded (it was resubmitted, skipped
             or failed again), or its current state does not allow the command.
             Nothing was sent.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '503':
           description: >-
             The audit log could not record the command, so it was not run.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Event
-  '/api/event/handoff/complete/{endpointId}/{eventId}/{messageId}':
+  '/api/v1/event/handoff/complete/{endpointId}/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -282,11 +319,19 @@ paths:
           description: OK
         '400':
           description: Event is not a pending handoff
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint or event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Event
-  '/api/event/handoff/fail/{endpointId}/{eventId}/{messageId}':
+  '/api/v1/event/handoff/fail/{endpointId}/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -321,11 +366,19 @@ paths:
           description: OK
         '400':
           description: Event is not a pending handoff, or reason is missing
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint or event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Event
-  '/api/endpoint/status/{endpointName}':
+  '/api/v1/endpoint/status/{endpointName}':
     parameters:
       - schema:
           type: string
@@ -345,7 +398,7 @@ paths:
       tags:
         - Endpoint
       description: Returns detailed endpoint status including enriched unresolved events with pagination support.
-  '/api/event/details/{endpoint}/{id}':
+  '/api/v1/event/details/{endpoint}/{id}':
     parameters:
       - schema:
           type: string
@@ -369,7 +422,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EventDetails'
       operationId: get-event-details-id
-  '/api/event/data/{endpoint}/{id}':
+  '/api/v1/event/data/{endpoint}/{id}':
     parameters:
       - schema:
           type: string
@@ -395,8 +448,12 @@ paths:
                 $ref: '#/components/schemas/Event'
         '404':
           description: Endpoint or event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: get-event-id
-  '/api/event-types/endpoint/{endpointId}':
+  '/api/v1/event-types/endpoint/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -429,7 +486,7 @@ paths:
                       $ref: '#/components/schemas/EventTypeDetails'
               examples: {}
       operationId: get-eventtypes-by-endpoint-id
-  '/api/event/change/{eventId}/{messageId}':
+  '/api/v1/event/change/{eventId}/{messageId}':
     parameters:
       - schema:
           type: string
@@ -449,14 +506,26 @@ paths:
           description: OK
         '404':
           description: Event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: >-
             The message changed since it was loaded (it was resubmitted, skipped
             or failed again), or its current state does not allow the command.
             Nothing was sent.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '503':
           description: >-
             The audit log could not record the command, so it was not run.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       requestBody:
         content:
           application/json:
@@ -465,7 +534,7 @@ paths:
       description: ''
       tags:
         - Event
-  /api/app/stats:
+  /api/v1/app/stats:
     get:
       summary: Get application status and version
       description: >-
@@ -483,7 +552,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApplicationStatus'
       operationId: get-api-app-stats
-  /api/endpoint/endpoints:
+  /api/v1/endpoint/endpoints:
     get:
       summary: Get all endpoint IDs
       responses:
@@ -498,7 +567,7 @@ paths:
       operationId: get-endpoints-all
       tags:
         - Endpoint
-  '/api/endpoint/{endpointName}/status/count':
+  '/api/v1/endpoint/{endpointName}/status/count':
     parameters:
       - schema:
           type: string
@@ -517,7 +586,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EndpointStatusCount'
       operationId: get-endpoint-status-count-id
-  '/api/endpoint/{endpointName}/status/continuationToken':
+  '/api/v1/endpoint/{endpointName}/status/continuationToken':
     parameters:
       - schema:
           type: string
@@ -541,7 +610,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ContinuationToken'
-  '/api/event/details/{endpointId}/{id}/logs':
+  '/api/v1/event/details/{endpointId}/{id}/logs':
     parameters:
       - schema:
           type: string
@@ -567,7 +636,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/EventLogEntry'
       operationId: get-event-details-logs-id
-  '/api/event/details/{endpointId}/{id}/history':
+  '/api/v1/event/details/{endpointId}/{id}/history':
     parameters:
       - schema:
           type: string
@@ -593,7 +662,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Message'
       operationId: get-event-details-history-id
-  '/api/endpoint/{endpointId}/session/{sessionId}':
+  '/api/v1/endpoint/{endpointId}/session/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -617,7 +686,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SessionStatus'
       operationId: get-endpoint-session-id
-  '/api/endpoint/{endpointId}/sessions/batch':
+  '/api/v1/endpoint/{endpointId}/sessions/batch':
     parameters:
       - schema:
           type: string
@@ -638,6 +707,10 @@ paths:
                   $ref: '#/components/schemas/SessionStatus'
         '404':
           description: Endpoint not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       requestBody:
         content:
           application/json:
@@ -648,7 +721,7 @@ paths:
         description: Array of session IDs to query
       tags:
         - Endpoint
-  '/api/storagehook/cosmos/{endpointId}':
+  '/api/v1/storagehook/cosmos/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -667,7 +740,7 @@ paths:
           description: OK
       tags:
         - StorageHook
-  '/api/storagehook/heartbeat/{endpointId}':
+  '/api/v1/storagehook/heartbeat/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -683,11 +756,19 @@ paths:
           description: OK
         '400':
           description: Unknown endpoint
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Missing or invalid webhook key
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - StorageHook
-  '/api/storagehook/servicehealth/{serviceId}':
+  '/api/v1/storagehook/servicehealth/{serviceId}':
     parameters:
       - schema:
           type: string
@@ -706,11 +787,19 @@ paths:
           description: OK
         '400':
           description: Unknown service
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Missing or invalid webhook key
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - StorageHook
-  '/api/event/audit/{eventId}':
+  '/api/v1/event/audit/{eventId}':
     parameters:
       - schema:
           type: string
@@ -732,6 +821,10 @@ paths:
                   $ref: '#/components/schemas/MessageAudit'
         '404':
           description: Event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: get-message-audits-event-id
     post:
       summary: ''
@@ -746,7 +839,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MessageAudit'
-  '/api/event/deferred/{endpointId}/{eventId}':
+  '/api/v1/event/deferred/{endpointId}/{eventId}':
     get:
       summary: Inspect deferred tracking and broker presence
       operationId: get-deferred-inspection
@@ -760,9 +853,19 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeferredInspection' }
-        '403': { description: Reader permission required }
-        '404': { description: Endpoint or event not found }
-  '/api/event/deferred/{endpointId}/{eventId}/skip-tracking':
+        '403':
+          description: Reader permission required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Endpoint or event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/event/deferred/{endpointId}/{eventId}/skip-tracking':
     post:
       summary: Skip a stale deferred tracking record without publishing or settling messages
       operationId: post-skip-deferred-tracking
@@ -781,12 +884,37 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeferredSkipResult' }
-        '400': { description: Reason and inspected row version required }
-        '403': { description: Contributor permission required }
-        '404': { description: Endpoint or event not found }
-        '409': { description: Row changed or broker inspection does not permit skipping }
-        '501': { description: Storage provider does not support conditional recovery }
-  '/api/event/reprocess-deferred/{endpointId}/{sessionId}':
+        '400':
+          description: Reason and inspected row version required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Contributor permission required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Endpoint or event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Row changed or broker inspection does not permit skipping
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: Storage provider does not support conditional recovery
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/event/reprocess-deferred/{endpointId}/{sessionId}':
     post:
       summary: Reprocess deferred messages for a session
       operationId: post-reprocess-deferred
@@ -812,7 +940,11 @@ paths:
                 $ref: '#/components/schemas/DeferredReprocessResult'
         '404':
           description: Endpoint not found
-  /api/me:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/me:
     get:
       summary: Get current user info
       operationId: get-me
@@ -825,15 +957,23 @@ paths:
                 $ref: '#/components/schemas/UserInfo'
       tags:
         - Application
-  /api/event/compose-new:
+  /api/v1/event/compose-new:
     post:
       summary: Your POST endpoint
       operationId: post-compose-new-event
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComposeNewEventResult'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Event
       requestBody:
@@ -841,7 +981,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ResubmitWithChanges'
-  '/api/event/blocked/{endpointId}/{sessionId}':
+  '/api/v1/event/blocked/{endpointId}/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -883,8 +1023,12 @@ paths:
                 $ref: '#/components/schemas/BlockedEventsPage'
         '404':
           description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: get-event-blocked-id
-  '/api/event/pending/{endpointId}':
+  '/api/v1/event/pending/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -912,8 +1056,12 @@ paths:
                       status: string
         '404':
           description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: get-event-pending-id
-  '/api/endpoint/{endpointId}/subscribe':
+  '/api/v1/endpoint/{endpointId}/subscribe':
     parameters:
       - schema:
           type: string
@@ -928,6 +1076,10 @@ paths:
           description: OK
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Endpoint
       description: ''
@@ -950,6 +1102,10 @@ paths:
                   $ref: '#/components/schemas/EndpointSubscription'
         '404':
           description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Endpoint
       description: Get all subscribers to given endpoint
@@ -961,6 +1117,10 @@ paths:
           description: OK
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       requestBody:
         content:
           application/json:
@@ -969,7 +1129,7 @@ paths:
             examples: {}
       tags:
         - Endpoint
-  '/api/endpoint/{endpointName}/purge':
+  '/api/v1/endpoint/{endpointName}/purge':
     parameters:
       - schema:
           type: string
@@ -984,10 +1144,14 @@ paths:
           description: OK
         '404':
           description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       description: Remove all messages on endpoint
       tags:
         - Endpoint
-  '/api/endpoint/{endpointId}/subscriptionstatus':
+  '/api/v1/endpoint/{endpointId}/subscriptionstatus':
     parameters:
       - schema:
           type: string
@@ -1002,6 +1166,10 @@ paths:
           description: OK
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Endpoint
       description: ''
@@ -1025,10 +1193,14 @@ paths:
                 type: string
         '404':
           description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Endpoint
       description: Get status for given subscription on endpoint
-  '/api/endpoint/{endpointId}/sendstatus':
+  '/api/v1/endpoint/{endpointId}/sendstatus':
     parameters:
       - schema:
           type: string
@@ -1043,6 +1215,10 @@ paths:
           description: OK
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Endpoint
       description: Enable or disable sending (publishing) on an endpoint's topic
@@ -1066,10 +1242,14 @@ paths:
                 type: string
         '404':
           description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Endpoint
       description: Get send (publish) status for an endpoint's topic
-  '/api/event/invalid/{endpointId}/{eventId}/{sessionId}':
+  '/api/v1/event/invalid/{endpointId}/{eventId}/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -1092,10 +1272,26 @@ paths:
       responses:
         '200':
           description: OK
-      description: ''
+        '404':
+          description: The endpoint or the event was not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: >-
+            The event blocks its session (it failed, or is a pending hand-off), so deleting it
+            would leave the session blocked. Skip or resubmit it first. Nothing was deleted.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      description: >-
+        Permanently delete one stored event. Refused with 409 for the event its session is
+        blocked on.
       tags:
         - Event
-  '/api/endpoint/{endpointId}/roleAssignmentScript':
+  '/api/v1/endpoint/{endpointId}/roleAssignmentScript':
     parameters:
       - schema:
           type: string
@@ -1117,9 +1313,13 @@ paths:
               examples: {}
         '404':
           description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: get-endpoint-roleAssignmentScript
       description: Get role assignment script for a given endpoint
-  '/api/event/unsupported/{endpointId}/{eventId}/{sessionId}':
+  '/api/v1/event/unsupported/{endpointId}/{eventId}/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -1149,7 +1349,7 @@ paths:
                 $ref: '#/components/schemas/Event'
       operationId: get-event-unsupported-endpointId-eventId
       description: ''
-  '/api/event/deadletter/{endpointId}/{eventId}/{sessionId}':
+  '/api/v1/event/deadletter/{endpointId}/{eventId}/{sessionId}':
     parameters:
       - schema:
           type: string
@@ -1179,7 +1379,7 @@ paths:
                 $ref: '#/components/schemas/Event'
       operationId: get-event-deadletter-endpointId-eventId
       description: ''
-  '/api/event/{endpointId}/getByFilter':
+  '/api/v1/event/{endpointId}/getByFilter':
     parameters:
       - schema:
           type: string
@@ -1204,7 +1404,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SearchRequest'
         description: getByFilterBody
-  '/api/event/{endpointId}/{eventId}/report':
+  '/api/v1/event/{endpointId}/{eventId}/report':
     parameters:
       - schema:
           type: string
@@ -1229,11 +1429,23 @@ paths:
           description: OK
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '503':
           description: >-
             The audit log could not record the command, so it was not run.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Event
       requestBody:
@@ -1242,7 +1454,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ReportEventRequest'
         description: reportEventBody
-  '/api/metadata/{endpointId}':
+  '/api/v1/metadata/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -1262,6 +1474,10 @@ paths:
                 $ref: '#/components/schemas/Metadata'
         '404':
           description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: getMetadataEndpoint
       description: ''
     post:
@@ -1279,7 +1495,7 @@ paths:
       tags:
         - Endpoint
       description: ''
-  /api/metadatashort:
+  /api/v1/metadatashort:
     parameters: []
     post:
       summary: Metadata short
@@ -1300,6 +1516,10 @@ paths:
                       subscriptionStatus: string
         '404':
           description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       requestBody:
         content:
           application/json:
@@ -1309,7 +1529,7 @@ paths:
                 type: string
       tags:
         - Endpoint
-  /api/admin/platform-config:
+  /api/v1/admin/platform-config:
     get:
       summary: Get platform configuration
       operationId: get-admin-platform-config
@@ -1324,7 +1544,11 @@ paths:
                 $ref: '#/components/schemas/PlatformConfig'
         '403':
           description: Forbidden
-  /api/admin/asyncapi:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/asyncapi:
     get:
       summary: Export platform topology as an AsyncAPI 3.0 document
       operationId: get-admin-asyncapi
@@ -1347,9 +1571,17 @@ paths:
                 format: binary
         '400':
           description: Invalid format
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
-  /api/admin/storage/cosmos/containers:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/storage/cosmos/containers:
     get:
       summary: List Cosmos DB containers with platform membership
       operationId: get-admin-cosmos-containers
@@ -1366,11 +1598,23 @@ paths:
                   $ref: '#/components/schemas/CosmosContainerInfo'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Cosmos DB storage is not configured
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '503':
           description: Cosmos DB operation unavailable
-  '/api/admin/storage/cosmos/containers/{containerName}/delete':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/storage/cosmos/containers/{containerName}/delete':
     parameters:
       - schema:
           type: string
@@ -1397,13 +1641,29 @@ paths:
                 $ref: '#/components/schemas/CosmosContainerDeleteResult'
         '400':
           description: Invalid confirmation or protected container
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Container or Cosmos DB provider not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '503':
           description: Cosmos DB operation unavailable
-  /api/admin/heartbeat/settings:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/heartbeat/settings:
     get:
       summary: Get the platform heartbeat schedule
       operationId: get-admin-heartbeat-settings
@@ -1418,6 +1678,10 @@ paths:
                 $ref: '#/components/schemas/HeartbeatSettings'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
     put:
       summary: Update the platform heartbeat schedule
       description: >-
@@ -1442,9 +1706,17 @@ paths:
                 $ref: '#/components/schemas/HeartbeatSettings'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
-  /api/admin/audit/settings:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/audit/settings:
     get:
       summary: Get which audit types are recorded
       operationId: get-admin-audit-settings
@@ -1459,6 +1731,10 @@ paths:
                 $ref: '#/components/schemas/AuditSettings'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
     put:
       summary: Choose which audit types are recorded
       description: >-
@@ -1484,9 +1760,17 @@ paths:
                 $ref: '#/components/schemas/AuditSettings'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
-  /api/admin/mcp/settings:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/mcp/settings:
     get:
       summary: Get the MCP access policy and the deployment's MCP configuration
       description: >-
@@ -1505,6 +1789,10 @@ paths:
                 $ref: '#/components/schemas/McpAccessState'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
     put:
       summary: Save the MCP access policy
       description: >-
@@ -1530,18 +1818,22 @@ paths:
         '400':
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/McpAccessProblem'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: Conflict
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/McpAccessProblem'
-  /api/admin/mcp/turn-off:
+  /api/v1/admin/mcp/turn-off:
     post:
       summary: Turn MCP access off now
       description: >-
@@ -1561,18 +1853,22 @@ paths:
         '400':
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/McpAccessProblem'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: Conflict
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/McpAccessProblem'
-  /api/admin/mcp/activity:
+  /api/v1/admin/mcp/activity:
     get:
       summary: Recent agent activity over MCP
       description: >-
@@ -1600,7 +1896,330 @@ paths:
                 $ref: '#/components/schemas/McpActivity'
         '403':
           description: Forbidden
-  /api/admin/heartbeat/send:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/agent-keys:
+    get:
+      summary: List the agent API keys
+      description: >-
+        Spec 039. Site Owner only. Every issued key with its status and last use, never the
+        secret, plus an antiforgery token for the write operations.
+      operationId: get-admin-agent-keys
+      tags:
+        - AgentKeys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyState'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      summary: Issue an agent API key
+      description: >-
+        Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the
+        full key once; only its hash is stored. The key authenticates as agentId on
+        /api/v1/agent/* and nowhere else, on every instance within 30 seconds.
+      operationId: post-admin-agent-keys
+      tags:
+        - AgentKeys
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentApiKeyCreate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyIssued'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+  /api/v1/admin/agent-keys/{keyId}/revoke:
+    post:
+      summary: Revoke an agent API key
+      description: >-
+        Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. The key stops
+        working on every instance within 30 seconds and stays listed until it is removed.
+      operationId: post-admin-agent-key-revoke
+      tags:
+        - AgentKeys
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyState'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+  /api/v1/admin/agent-keys/{keyId}:
+    delete:
+      summary: Remove a revoked or expired agent API key
+      description: >-
+        Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active key
+        must be revoked first (400 StillActive).
+      operationId: delete-admin-agent-key
+      tags:
+        - AgentKeys
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyState'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+  /api/v1/admin/dashboard-tokens:
+    get:
+      summary: List the dashboard tokens
+      description: >-
+        Site Owner only. Every issued Monitor dashboard token with its status and last use,
+        never the secret, plus an antiforgery token for the write operations.
+      operationId: get-admin-dashboard-tokens
+      tags:
+        - DashboardTokens
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenState'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: The storage provider cannot store dashboard tokens
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      summary: Issue a dashboard token
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full token
+        once; only its hash is stored. The token gives read-only access to the Monitor feed
+        (/api/v1/monitor/feed/*) and nothing else.
+      operationId: post-admin-dashboard-tokens
+      tags:
+        - DashboardTokens
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardTokenCreate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenIssued'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '501':
+          description: The storage provider cannot store dashboard tokens
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/dashboard-tokens/{tokenId}/revoke:
+    post:
+      summary: Revoke a dashboard token
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. The token stops working
+        on this instance at once and on every other instance within 30 seconds (2 minutes while
+        the store is unreachable). It stays listed until it is removed.
+      operationId: post-admin-dashboard-token-revoke
+      tags:
+        - DashboardTokens
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenState'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '501':
+          description: The storage provider cannot store dashboard tokens
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/dashboard-tokens/{tokenId}:
+    delete:
+      summary: Remove a revoked or expired dashboard token
+      description: >-
+        Site Owner only; requires the X-NimBus-CSRF antiforgery header. An active token must be
+        revoked first (400 StillActive).
+      operationId: delete-admin-dashboard-token
+      tags:
+        - DashboardTokens
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenState'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/DashboardTokenProblem'
+        '501':
+          description: The storage provider cannot store dashboard tokens
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/heartbeat/send:
     post:
       summary: Send a heartbeat to every monitored endpoint now
       description: Runs the fan-out regardless of the enabled flag. Returns the number of probes sent.
@@ -1616,7 +2235,11 @@ paths:
                 $ref: '#/components/schemas/CountResponse'
         '403':
           description: Forbidden
-  /api/admin/heartbeat/overview:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/heartbeat/overview:
     get:
       summary: Heartbeat status per endpoint
       operationId: get-admin-heartbeat-overview
@@ -1633,7 +2256,11 @@ paths:
                   $ref: '#/components/schemas/HeartbeatOverviewRow'
         '403':
           description: Forbidden
-  '/api/admin/heartbeat/endpoint/{endpointId}/enabled':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/heartbeat/endpoint/{endpointId}/enabled':
     parameters:
       - schema:
           type: string
@@ -1658,11 +2285,23 @@ paths:
           description: OK
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  /api/admin/health/services:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/health/services:
     get:
       summary: Liveness of the platform's own services
       operationId: get-admin-health-services
@@ -1679,7 +2318,11 @@ paths:
                   $ref: '#/components/schemas/ServiceHealthRow'
         '403':
           description: Forbidden
-  '/api/admin/topology/{endpointName}':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/topology/{endpointName}':
     parameters:
       - schema:
           type: string
@@ -1700,9 +2343,17 @@ paths:
                 $ref: '#/components/schemas/TopologyAuditResult'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  '/api/admin/topology/{endpointName}/remove-deprecated':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/topology/{endpointName}/remove-deprecated':
     parameters:
       - schema:
           type: string
@@ -1723,9 +2374,17 @@ paths:
                 $ref: '#/components/schemas/TopologyCleanupResult'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  /api/admin/servicebus/topics:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/servicebus/topics:
     get:
       summary: Message counts per Service Bus topic across the namespace
       operationId: get-admin-servicebus-topics
@@ -1742,7 +2401,11 @@ paths:
                   $ref: '#/components/schemas/ServiceBusTopicOverview'
         '403':
           description: Forbidden
-  '/api/admin/servicebus/topics/{topicName}':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/topics/{topicName}':
     parameters:
       - schema:
           type: string
@@ -1763,9 +2426,17 @@ paths:
                 $ref: '#/components/schemas/SubscriptionActionResult'
         '400':
           description: Topic belongs to the platform topology
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
-  '/api/admin/servicebus/topics/{topicName}/subscriptions':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions':
     parameters:
       - schema:
           type: string
@@ -1788,9 +2459,17 @@ paths:
                   $ref: '#/components/schemas/ServiceBusSubscriptionInfo'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Topic not found
-  '/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters':
     parameters:
       - schema:
           type: string
@@ -1811,13 +2490,29 @@ paths:
                 $ref: '#/components/schemas/DeadLetterOverview'
         '400':
           description: Unsupported Resolver subscription target
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Subscription not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '503':
           description: Service Bus operation unavailable
-  '/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit':
     parameters:
       - schema:
           type: string
@@ -1844,15 +2539,35 @@ paths:
                 $ref: '#/components/schemas/BulkOperationResult'
         '400':
           description: Invalid selection or unsupported Resolver subscription target
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Subscription not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: A replay is already running for this subscription
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '503':
           description: Service Bus operation unavailable
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status':
     parameters:
       - schema:
           type: string
@@ -1883,11 +2598,23 @@ paths:
                 $ref: '#/components/schemas/SubscriptionActionResult'
         '400':
           description: Action must be 'enable' or 'disable'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Topic or subscription not found
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge':
     parameters:
       - schema:
           type: string
@@ -1913,11 +2640,64 @@ paths:
                 $ref: '#/components/schemas/BulkOperationResult'
         '400':
           description: Subscription auto-forwards and cannot be drained; recreate it instead
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Topic or subscription not found
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/deadletters/purge':
+    parameters:
+      - schema:
+          type: string
+        name: topicName
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: subscriptionName
+        in: path
+        required: true
+    post:
+      summary: Drain both dead-letter queues of a subscription
+      description: >-
+        Completes every message in the subscription's dead-letter queue and in
+        its transfer dead-letter queue. Service Bus never empties these on its
+        own. A paused subscription stays paused; if Service Bus refuses the
+        receive, the result says so.
+      operationId: post-admin-servicebus-subscription-deadletters-purge
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Topic or subscription not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate':
     parameters:
       - schema:
           type: string
@@ -1943,11 +2723,23 @@ paths:
                 $ref: '#/components/schemas/SubscriptionActionResult'
         '400':
           description: Platform has no recipe for this subscription; it cannot be recreated
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Topic or subscription not found
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}':
     parameters:
       - schema:
           type: string
@@ -1973,9 +2765,17 @@ paths:
                 $ref: '#/components/schemas/SubscriptionActionResult'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Topic or subscription not found
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}':
     parameters:
       - schema:
           type: string
@@ -2006,9 +2806,17 @@ paths:
                 $ref: '#/components/schemas/SubscriptionActionResult'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Topic, subscription or rule not found
-  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules':
     parameters:
       - schema:
           type: string
@@ -2034,11 +2842,23 @@ paths:
                 $ref: '#/components/schemas/SubscriptionActionResult'
         '400':
           description: Platform has no recipe for this subscription
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Topic or subscription not found
-  '/api/admin/endpoint/{endpointId}/failed-preview':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/failed-preview':
     parameters:
       - schema:
           type: string
@@ -2059,9 +2879,17 @@ paths:
                 $ref: '#/components/schemas/BulkResubmitPreview'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  '/api/admin/endpoint/{endpointId}/bulk-resubmit':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/bulk-resubmit':
     parameters:
       - schema:
           type: string
@@ -2082,9 +2910,17 @@ paths:
                 $ref: '#/components/schemas/BulkOperationResult'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  '/api/admin/endpoint/{endpointId}/deadlettered-preview':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/deadlettered-preview':
     parameters:
       - schema:
           type: string
@@ -2106,11 +2942,35 @@ paths:
                 properties:
                   count:
                     type: integer
+                    description: Stored events with status DeadLettered.
+                  queueCount:
+                    type: integer
+                    format: int64
+                    nullable: true
+                    description: >-
+                      Messages in the dead-letter queue of the endpoint's own
+                      subscription; null when Service Bus could not be read.
+                  matchingQueueCount:
+                    type: integer
+                    nullable: true
+                    description: >-
+                      Of queueCount, the messages whose EventId matches a stored
+                      dead-lettered event: the ones the delete removes. The rest
+                      are left for Admin → Subscriptions → Purge dead letters.
+                      Null when Service Bus could not be read.
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  '/api/admin/endpoint/{endpointId}/delete-deadlettered':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/delete-deadlettered':
     parameters:
       - schema:
           type: string
@@ -2119,6 +2979,14 @@ paths:
         required: true
     post:
       summary: Delete all dead-lettered messages for endpoint
+      description: >-
+        Deletes the stored events with status DeadLettered and completes their
+        messages in the dead-letter queue of the endpoint's own subscription,
+        matched on the EventId property. Queue messages that match no stored
+        event are left for Admin → Subscriptions → Purge dead letters. If the
+        queue cannot be read the stored events are kept, so the call can be
+        repeated. Succeeded counts queue messages removed plus stored events
+        deleted.
       operationId: post-admin-delete-deadlettered
       tags:
         - Admin
@@ -2131,9 +2999,17 @@ paths:
                 $ref: '#/components/schemas/BulkOperationResult'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  '/api/admin/endpoint/{endpointId}/session/{sessionId}/preview':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/preview':
     parameters:
       - schema:
           type: string
@@ -2159,9 +3035,17 @@ paths:
                 $ref: '#/components/schemas/SessionPurgePreview'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint or session not found
-  '/api/admin/endpoint/{endpointId}/session/{sessionId}/purge':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/purge':
     parameters:
       - schema:
           type: string
@@ -2187,9 +3071,206 @@ paths:
                 $ref: '#/components/schemas/SessionPurgeResult'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint or session not found
-  '/api/admin/endpoint/{endpointId}/event/{eventId}':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/session/{sessionId}/state':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    get:
+      summary: Look up a session's Service Bus session state
+      description: >-
+        Reads the session state on the endpoint subscription under a briefly held session
+        lock, together with the session's queued messages and store counts. Never writes.
+      operationId: get-admin-session-state
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStateView'
+        '400':
+          description: Invalid session id
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Endpoint not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      summary: Change a session's Service Bus session state
+      description: >-
+        Applies a guided action or replaces the state with validated JSON. The change is
+        refused with 409 when the stored state no longer matches expectedVersion or the
+        session is locked by a receiver, and with 503 when the audit record cannot be written.
+      operationId: post-admin-session-state
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStateChangeRequest'
+      responses:
+        '200':
+          description: The state after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStateView'
+        '400':
+          description: Invalid request or session state JSON
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Endpoint not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: The state changed since it was read, or the session is locked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/SessionStateView'
+        '503':
+          description: The audit record could not be written; nothing was changed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/session-cleanup/preview':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Preview which sessions hold idle session state
+      operationId: post-admin-session-cleanup-preview
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCleanupPreviewRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionCleanupPreview'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Endpoint not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/session-cleanup':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Reset the session state of previewed idle sessions
+      operationId: post-admin-session-cleanup
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCleanupRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionCleanupResult'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Endpoint not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: The audit record could not be written; nothing was changed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/event/{eventId}':
     parameters:
       - schema:
           type: string
@@ -2211,11 +3292,28 @@ paths:
           description: OK
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Event not found
-  '/api/admin/endpoint/{endpointId}/delete-all':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: >-
+            The event blocks its session (a Failed event, or Pending with a
+            hand-off), so deleting it would leave the session blocked. Skip it
+            first.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/delete-all':
     post:
-      summary: Delete all events for an endpoint (purges the entire container)
+      summary: Wipe an endpoint (recreates its own and Deferred subscriptions, purges stored events and message history)
       operationId: post-admin-delete-all
       tags:
         - Admin
@@ -2232,7 +3330,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
-  '/api/admin/endpoint/{endpointId}/purge-preview':
+  '/api/v1/admin/endpoint/{endpointId}/purge-preview':
     post:
       summary: Preview subscription purge
       operationId: post-admin-purge-preview
@@ -2256,7 +3354,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PurgePreview'
-  '/api/admin/endpoint/{endpointId}/purge':
+  '/api/v1/admin/endpoint/{endpointId}/purge':
     post:
       summary: Execute subscription purge
       operationId: post-admin-purge
@@ -2280,7 +3378,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
-  '/api/admin/endpoint/{endpointId}/stale-pending-preview':
+  '/api/v1/admin/endpoint/{endpointId}/stale-pending-preview':
     post:
       summary: Preview stale Pending reconciliation
       operationId: post-admin-stale-pending-preview
@@ -2306,9 +3404,17 @@ paths:
                 $ref: '#/components/schemas/StalePendingPreview'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  '/api/admin/endpoint/{endpointId}/stale-pending-reconcile':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/stale-pending-reconcile':
     post:
       summary: Reconcile stale Pending rows
       operationId: post-admin-stale-pending-reconcile
@@ -2335,11 +3441,23 @@ paths:
                 $ref: '#/components/schemas/StalePendingReconcileResult'
         '400':
           description: Invalid or too-recent cutoff
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  /api/admin/messages/delete-by-to-preview:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/messages/delete-by-to-preview:
     post:
       summary: Preview delete messages by To field
       operationId: post-admin-delete-by-to-preview
@@ -2357,7 +3475,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CountResponse'
-  /api/admin/messages/delete-by-to:
+        '400':
+          description: The operation needs the Cosmos DB storage provider
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden (requires the site Owner role)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/messages/delete-by-to:
     post:
       summary: Delete messages by To field
       operationId: post-admin-delete-by-to
@@ -2375,7 +3505,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
-  '/api/admin/endpoint/{endpointId}/delete-by-status-preview':
+        '400':
+          description: The operation needs the Cosmos DB storage provider
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden (requires the site Owner role)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/admin/endpoint/{endpointId}/delete-by-status-preview':
     post:
       summary: Preview delete events by status
       operationId: post-admin-delete-by-status-preview
@@ -2400,7 +3542,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CountResponse'
-  '/api/admin/endpoint/{endpointId}/delete-by-status':
+  '/api/v1/admin/endpoint/{endpointId}/delete-by-status':
     post:
       summary: Delete events by status
       operationId: post-admin-delete-by-status
@@ -2425,7 +3567,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
-  '/api/admin/endpoint/{endpointId}/skip-preview':
+  '/api/v1/admin/endpoint/{endpointId}/skip-preview':
     post:
       summary: Preview skip messages
       operationId: post-admin-skip-preview
@@ -2450,9 +3592,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CountResponse'
-  '/api/admin/endpoint/{endpointId}/skip':
+  '/api/v1/admin/endpoint/{endpointId}/skip':
     post:
       summary: Skip messages by status
+      description: >-
+        Sends a skip for each matching event, as the per-message Skip does: the
+        endpoint releases the session the event blocks and the Resolver records
+        Skipped from its response. Each skip is audited.
       operationId: post-admin-skip
       tags:
         - Admin
@@ -2475,7 +3621,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
-  '/api/admin/endpoint/{endpointId}/copy':
+  '/api/v1/admin/endpoint/{endpointId}/copy':
     post:
       summary: Copy endpoint data to another Cosmos DB
       operationId: post-admin-copy
@@ -2499,7 +3645,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CopyResult'
-  /api/messages/search:
+        '400':
+          description: The operation needs the Cosmos DB storage provider
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden (requires the site Owner role)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Endpoint not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/messages/search:
     post:
       summary: Search messages across all endpoints
       operationId: post-messages-search
@@ -2517,7 +3681,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MessageSearchRequest'
-  /api/failed/search:
+  /api/v1/failed/search:
     post:
       summary: Search unresolved failures across every endpoint the caller can read
       description: >-
@@ -2535,8 +3699,16 @@ paths:
                 $ref: '#/components/schemas/SearchResponse'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Failed
       requestBody:
@@ -2544,7 +3716,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/FailedSearchRequest'
-  /api/failed/histogram:
+  /api/v1/failed/histogram:
     post:
       summary: Count unresolved failures per time bucket
       description: >-
@@ -2561,8 +3733,16 @@ paths:
                 $ref: '#/components/schemas/FailedHistogram'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Failed
       requestBody:
@@ -2570,7 +3750,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/FailedHistogramRequest'
-  /api/failed/error-groups:
+  /api/v1/failed/error-groups:
     post:
       summary: Group unresolved failures by error category and pattern
       description: >-
@@ -2587,8 +3767,16 @@ paths:
                 $ref: '#/components/schemas/FailedErrorGroups'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Failed
       requestBody:
@@ -2596,7 +3784,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/FailedErrorGroupsRequest'
-  /api/audits/search:
+  /api/v1/audits/search:
     post:
       summary: Search audit log entries across all events
       operationId: post-audits-search
@@ -2614,7 +3802,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AuditSearchRequest'
-  /api/metrics/overview:
+  /api/v1/metrics/overview:
     get:
       summary: Get metrics overview for all endpoints
       operationId: get-metrics-overview
@@ -2647,9 +3835,13 @@ paths:
                 $ref: '#/components/schemas/MetricsOverview'
         '400':
           description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/metrics/latency:
+  /api/v1/metrics/latency:
     get:
       summary: Get latency percentiles for all endpoints
       operationId: get-metrics-latency
@@ -2682,9 +3874,13 @@ paths:
                 $ref: '#/components/schemas/LatencyOverview'
         '400':
           description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/metrics/failed-insights:
+  /api/v1/metrics/failed-insights:
     get:
       summary: Get failed message insights grouped by error pattern
       operationId: get-metrics-failed-insights
@@ -2708,18 +3904,155 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: endpointId
+          in: query
+          required: false
+          description: Exact endpoint id to narrow the failures to. Omitted selects every endpoint.
+          schema:
+            type: string
+        - name: refresh
+          in: query
+          required: false
+          description: Re-read saved classifications instead of using the short-lived enrichment cache. New failures can still lag by the metrics cache lifetime.
+          schema:
+            type: boolean
       responses:
         '200':
-          description: Failed message insights grouped by error pattern
+          description: Failed message insights grouped by error pattern, and by likely cause and recovery guidance when saved classifications are available
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FailedInsightsOverview'
         '400':
           description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/metrics/timeseries:
+  /api/v1/metrics/failed-insights/occurrences:
+    get:
+      summary: Page the failure occurrences of one insights group
+      description: Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis.
+      operationId: get-metrics-failed-insights-occurrences
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Window start (inclusive), as returned by the overview.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Window end (exclusive), as returned by the overview.
+          schema:
+            type: string
+            format: date-time
+        - name: endpointId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: perspective
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/InsightsPerspective'
+        - name: groupKey
+          in: query
+          required: true
+          description: A groupKey from the overview for the same perspective.
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          required: false
+          description: 1 to 100; default 50.
+          schema:
+            type: integer
+        - name: continuationToken
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of occurrences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightOccurrencePage'
+        '400':
+          description: Invalid window, page size, group key or continuation token, or saved classifications unavailable for a cause or guidance group
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      tags:
+        - Metrics
+  /api/v1/metrics/failed-insights/patterns:
+    get:
+      summary: Page the error patterns of one likely-cause or recovery-guidance group
+      operationId: get-metrics-failed-insights-patterns
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: endpointId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: perspective
+          in: query
+          required: true
+          description: cause or guidance.
+          schema:
+            $ref: '#/components/schemas/InsightsPerspective'
+        - name: groupKey
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          required: false
+          description: 1 to 100; default 50.
+          schema:
+            type: integer
+        - name: continuationToken
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of error patterns, most frequent first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightGroupPatternPage'
+        '400':
+          description: Invalid window, perspective, page size, group key or continuation token, or saved classifications unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      tags:
+        - Metrics
+  /api/v1/metrics/timeseries:
     get:
       summary: Get time-bucketed message counts
       operationId: get-metrics-timeseries
@@ -2752,9 +4085,13 @@ paths:
                 $ref: '#/components/schemas/TimeSeriesOverview'
         '400':
           description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/metrics/timeseries-by-eventtype:
+  /api/v1/metrics/timeseries-by-eventtype:
     get:
       summary: Time-series buckets of published messages grouped by event type.
       operationId: get-metrics-timeseries-by-eventtype
@@ -2787,9 +4124,13 @@ paths:
                 $ref: '#/components/schemas/EventTypeTimeSeriesOverview'
         '400':
           description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Metrics
-  /api/heartbeat/page:
+  /api/v1/heartbeat/page:
     get:
       summary: Get fleet heartbeat history and current liveness
       operationId: get-heartbeat-page
@@ -2811,9 +4152,13 @@ paths:
                 $ref: '#/components/schemas/HeartbeatPage'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Heartbeat
-  /api/monitor/acknowledgements:
+  /api/v1/monitor/acknowledgements:
     get:
       summary: List the Monitor acknowledgements the caller can see
       description: >-
@@ -2833,7 +4178,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/MonitorAcknowledgement'
-  '/api/monitor/acknowledgements/{endpointId}':
+  '/api/v1/monitor/acknowledgements/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -2863,10 +4208,22 @@ paths:
                 $ref: '#/components/schemas/MonitorAcknowledgement'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
     delete:
       summary: Clear an endpoint's acknowledgement
       description: Requires Contributor on the endpoint. Succeeds when nothing is acknowledged.
@@ -2878,9 +4235,123 @@ paths:
           description: Cleared
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  /api/agent/catalog:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/monitor/feed/status:
+    get:
+      summary: The Monitor's current state, polled every few seconds
+      description: >-
+        Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header).
+        Every endpoint, unfiltered: status counts, blocked sessions, heartbeat and acknowledgement.
+        stale is true when the store could not be read and an earlier result is returned.
+      operationId: get-monitor-feed-status
+      tags:
+        - MonitorFeed
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorFeedStatus'
+        '401':
+          description: No session and no valid dashboard token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Signed in without the site Reader role
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: The store could not be read and nothing earlier is cached
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/monitor/feed/metrics:
+    get:
+      summary: The Monitor's last-hour throughput and timings, polled every 30 seconds
+      description: >-
+        Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header).
+        A per-minute series for the last hour (60 buckets, the last partial) and per-endpoint
+        counts and average timings over the 60 minutes up to now.
+      operationId: get-monitor-feed-metrics
+      tags:
+        - MonitorFeed
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorFeedMetrics'
+        '401':
+          description: No session and no valid dashboard token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Signed in without the site Reader role
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: The store could not be read and nothing earlier is cached
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/monitor/feed/history:
+    get:
+      summary: The Monitor's longer history, polled every 5 minutes
+      description: >-
+        Requires the site Reader role or a dashboard token (X-NimBus-Dashboard-Token header).
+        A per-hour series for the last 3 days (72 buckets, the last partial), queue and
+        processing time per hour for the last 24 hours, and each endpoint's 24-hour average
+        processing time.
+      operationId: get-monitor-feed-history
+      tags:
+        - MonitorFeed
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorFeedHistory'
+        '401':
+          description: No session and no valid dashboard token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Signed in without the site Reader role
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: The store could not be read and nothing earlier is cached
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/agent/catalog:
     get:
       summary: Get agent catalog
       operationId: get-agent-catalog
@@ -2893,7 +4364,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentCatalog'
-  /api/agent/event-types:
+  /api/v1/agent/event-types:
     post:
       summary: Define or retrieve an event type
       operationId: post-agent-event-types
@@ -2913,7 +4384,11 @@ paths:
                 $ref: '#/components/schemas/EventTypeInfo'
         '409':
           description: Event type already exists with a different schema
-  /api/agent/subscribe:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/agent/subscribe:
     post:
       summary: Subscribe to an event type
       operationId: post-agent-subscribe
@@ -2927,7 +4402,7 @@ paths:
       responses:
         '200':
           description: OK
-  /api/agent/receive:
+  /api/v1/agent/receive:
     get:
       summary: Receive the next available event
       operationId: get-agent-receive
@@ -2953,7 +4428,7 @@ paths:
                 $ref: '#/components/schemas/AgentReceivedMessage'
         '204':
           description: No message available in the wait window
-  /api/agent/publish:
+  /api/v1/agent/publish:
     post:
       summary: Publish an event
       operationId: post-agent-publish
@@ -2969,9 +4444,17 @@ paths:
           description: OK
         '400':
           description: Payload failed schema validation
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Unknown eventTypeId
-  /api/agent/settle:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/agent/settle:
     post:
       summary: Settle a received event
       operationId: post-agent-settle
@@ -2985,7 +4468,7 @@ paths:
       responses:
         '200':
           description: OK
-  /api/access-control:
+  /api/v1/access-control:
     get:
       summary: Get the site-wide access-control lists
       operationId: get-access-control
@@ -3000,7 +4483,11 @@ paths:
                 $ref: '#/components/schemas/AccessControlSet'
         '403':
           description: Forbidden
-  /api/access-control/roles:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/access-control/roles:
     post:
       summary: Grant a site-wide role to an email address or Entra object id
       operationId: post-access-control-role
@@ -3020,8 +4507,16 @@ paths:
                 $ref: '#/components/schemas/AccessControlSet'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
     delete:
       summary: Revoke a site-wide role entry
       operationId: delete-access-control-role
@@ -3041,9 +4536,17 @@ paths:
                 $ref: '#/components/schemas/AccessControlSet'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
-  /api/access-control/me:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/access-control/me:
     get:
       summary: Get the current user's resolved access
       operationId: get-access-control-me
@@ -3056,7 +4559,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentUserAccessInfo'
-  '/api/access-control/endpoint/{endpointId}':
+  '/api/v1/access-control/endpoint/{endpointId}':
     parameters:
       - schema:
           type: string
@@ -3077,9 +4580,17 @@ paths:
                 $ref: '#/components/schemas/AccessControlSet'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  '/api/access-control/endpoint/{endpointId}/roles':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/access-control/endpoint/{endpointId}/roles':
     parameters:
       - schema:
           type: string
@@ -3105,10 +4616,22 @@ paths:
                 $ref: '#/components/schemas/AccessControlSet'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
     delete:
       summary: Revoke an endpoint-scoped role entry
       operationId: delete-endpoint-access-control-role
@@ -3128,11 +4651,23 @@ paths:
                 $ref: '#/components/schemas/AccessControlSet'
         '400':
           description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Endpoint not found
-  /api/admin/simulation:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/simulation:
     get:
       summary: Traffic simulator status
       description: >-
@@ -3151,7 +4686,11 @@ paths:
                 $ref: '#/components/schemas/SimulationStatus'
         '403':
           description: Forbidden
-  /api/admin/simulation/settings:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/simulation/settings:
     put:
       summary: Update the traffic simulator settings
       description: >-
@@ -3176,18 +4715,22 @@ paths:
         '400':
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/SimulationProblem'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: Conflict
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/SimulationProblem'
-  /api/admin/simulation/config:
+  /api/v1/admin/simulation/config:
     put:
       summary: Replace the traffic simulator config
       description: >-
@@ -3211,12 +4754,16 @@ paths:
         '400':
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/SimulationProblem'
         '403':
           description: Forbidden
-  /api/admin/simulation/start:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/admin/simulation/start:
     post:
       summary: Start or resume the traffic simulator
       operationId: post-admin-simulation-start
@@ -3231,13 +4778,17 @@ paths:
                 $ref: '#/components/schemas/SimulationStatus'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: Conflict
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/SimulationProblem'
-  /api/admin/simulation/pause:
+  /api/v1/admin/simulation/pause:
     post:
       summary: Pause the traffic simulator
       operationId: post-admin-simulation-pause
@@ -3252,13 +4803,17 @@ paths:
                 $ref: '#/components/schemas/SimulationStatus'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: Conflict
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/SimulationProblem'
-  /api/admin/simulation/stop:
+  /api/v1/admin/simulation/stop:
     post:
       summary: Stop the traffic simulator
       description: Stops publishers, drains simulated subscribers within the drain window, then stops them.
@@ -3274,14 +4829,61 @@ paths:
                 $ref: '#/components/schemas/SimulationStatus'
         '403':
           description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: Conflict
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/SimulationProblem'
 components:
   schemas:
+    ProblemDetails:
+      title: ProblemDetails
+      type: object
+      description: >-
+        RFC 7807 problem returned by every error response (media type
+        application/problem+json). Branch on status and, where an operation
+        documents one, on code. Further members may appear; ignore the ones
+        you don't know.
+      properties:
+        type:
+          type: string
+          nullable: true
+          description: A URI reference that identifies the problem type (the RFC 9110 section for the status).
+        title:
+          type: string
+          nullable: true
+          description: A short summary of the problem type, usually the status's reason phrase.
+        status:
+          type: integer
+          nullable: true
+          description: The HTTP status code.
+        detail:
+          type: string
+          nullable: true
+          description: A human-readable explanation of this occurrence.
+        instance:
+          type: string
+          nullable: true
+          description: A URI reference that identifies this occurrence.
+        traceId:
+          type: string
+          nullable: true
+          description: The request's trace id, for correlating with server logs.
+        code:
+          type: string
+          nullable: true
+          description: A stable machine-readable reason, on operations that document their codes.
+        errors:
+          type: array
+          nullable: true
+          description: Validation or refusal messages, when there are several.
+          items:
+            type: string
     SimulationRunState:
       title: SimulationRunState
       type: string
@@ -3318,12 +4920,9 @@ components:
         - unsupported
     SimulationProblem:
       title: SimulationProblem
-      type: object
-      properties:
-        errors:
-          type: array
-          items:
-            type: string
+      description: A refused simulation request; errors lists the reasons.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
     SimulationSettings:
       title: SimulationSettings
       type: object
@@ -3780,6 +5379,79 @@ components:
           type: array
           items:
             type: string
+        sessionKeyProperty:
+          type: string
+          nullable: true
+          description: >-
+            The payload property named by the class's [SessionKey] attribute, whose
+            value is the default session key. Null when the class has no attribute
+            (it overrides GetSessionId, or each event gets its own session).
+        routingKeyProperty:
+          type: string
+          nullable: true
+          description: >-
+            The payload property that holds the routing key (Spec 045), or null
+            when the event type isn't routed by key.
+        consumerRouting:
+          type: array
+          description: >-
+            How each consumer takes the event type (Spec 045), one entry per
+            consumer in the order of `consumers`. `consumers` is unchanged.
+          items:
+            $ref: '#/components/schemas/ConsumerRouting'
+    ConsumerRouting:
+      title: ConsumerRouting
+      type: object
+      description: >-
+        The routing-key declaration of one consumer of an event type: the keys
+        it takes, the unmatched role, or neither (every key).
+      required:
+        - endpoint
+        - routingKeys
+        - unmatched
+      properties:
+        endpoint:
+          type: string
+        routingKeys:
+          type: array
+          description: The keys the consumer takes; empty means every key.
+          items:
+            type: string
+        unmatched:
+          type: boolean
+          description: >-
+            True for the unmatched consumer: messages whose key no consumer
+            claims, or with no key.
+    SubscriptionRuleRouting:
+      title: SubscriptionRuleRouting
+      type: object
+      description: >-
+        The routing-key filter of one forward rule on a subscription (Spec 045),
+        read back from the rule's live SQL filter.
+      required:
+        - ruleName
+        - routingKeys
+        - unmatched
+        - filter
+      properties:
+        ruleName:
+          type: string
+          description: The rule's name, which is the event type it forwards.
+        routingKeys:
+          type: array
+          description: >-
+            For a keyed rule, the keys it takes. For the unmatched rule, the keys
+            it excludes because other consumers claim them.
+          items:
+            type: string
+        unmatched:
+          type: boolean
+          description: >-
+            True for the unmatched consumer's rule: messages with no key, or a key
+            no consumer claims.
+        filter:
+          type: string
+          description: The rule's SQL filter as Service Bus holds it.
     EventTypeProperty:
       title: EventTypeProperty
       type: object
@@ -3810,11 +5482,16 @@ components:
           type: array
           items:
             type: string
+        consumerRouting:
+          type: array
+          description: How each consumer takes the event type (Spec 045); see EventType.consumerRouting.
+          items:
+            $ref: '#/components/schemas/ConsumerRouting'
     FakeEventPayload:
       title: FakeEventPayload
       type: object
       description: >-
-        Response shape for GET /api/event-types/{eventtypeid}/fake. The
+        Response shape for GET /api/v1/event-types/{eventtypeid}/fake. The
         payload field is a fully-formed JSON string (indented), not a
         structured object — the client inserts it verbatim into the textarea.
         Null when the type cannot be constructed (abstract, interface, or no
@@ -4027,6 +5704,15 @@ components:
             - commandNotSent
             - updateMcpSettings
             - mcpAccessRefused
+            - agentApiKeyCreated
+            - agentApiKeyRevoked
+            - agentApiKeyRemoved
+            - copyEndpointData
+            - changeSessionState
+            - dashboardTokenCreated
+            - dashboardTokenRevoked
+            - dashboardTokenRemoved
+            - updateEndpointMetadata
         comment:
           type: string
           nullable: true
@@ -4135,6 +5821,28 @@ components:
           type: string
         eventContent:
           type: string
+    ComposeNewEventResult:
+      title: ComposeNewEventResult
+      type: object
+      description: Identity of the event a compose published, so the operator can follow it.
+      required:
+        - eventTypeId
+        - publishedBy
+        - messageId
+        - sessionId
+      properties:
+        eventTypeId:
+          type: string
+          description: The composed event type.
+        publishedBy:
+          type: string
+          description: The producing endpoint whose topic the event was published to.
+        messageId:
+          type: string
+          description: The published message id. Every subscriber's Event Request carries it, so it finds the event on each subscriber.
+        sessionId:
+          type: string
+          description: The session the event was published on.
     CompleteHandoffRequest:
       title: CompleteHandoffRequest
       type: object
@@ -4379,6 +6087,18 @@ components:
             $ref: '#/components/schemas/TechnicalContact'
         subscriptionStatus:
           type: string
+        sourceSystem:
+          type: string
+          nullable: true
+          description: The business system the endpoint's adapter integrates, at most 200 characters (Spec 044 Phase 3).
+        repositoryUrl:
+          type: string
+          nullable: true
+          description: The https address of the adapter's repository, where agents file adapter defects (Spec 044 Phase 3). No credentials, query string or fragment.
+        ticketLinkTemplate:
+          type: string
+          nullable: true
+          description: The issue tracker as an https link template containing {ticketId}. Overrides the site's ticket link for this endpoint (Spec 044 Phase 3).
     TechnicalContact:
       title: TechnicalContact
       x-stoplight:
@@ -4484,13 +6204,22 @@ components:
           format: date-time
           nullable: true
           description: Custom window end; used with `from` instead of `period`.
+        timeZone:
+          type: string
+          nullable: true
+          description: >-
+            IANA time zone (for example Europe/Berlin) the bars follow: they start
+            at local midnight and step in whole buckets of local time. UTC when
+            absent or unknown.
     FailedHistogram:
       title: FailedHistogram
       type: object
       properties:
         bucketMinutes:
           type: integer
-          description: Bucket size in minutes.
+          description: >-
+            Nominal bucket size in minutes. Each bucket ends where the next one
+            starts, so a bar across a daylight-saving change is shorter or longer.
         from:
           type: string
           format: date-time
@@ -4930,6 +6659,13 @@ components:
           description: >-
             Rules the platform topology can put back, and therefore the only ones
             safe to offer as a reversible detach.
+        ruleRouting:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubscriptionRuleRouting'
+          description: >-
+            The routing-key filter (Spec 045) of each forward rule that has one,
+            read back from the live rule. Rules that take every key are absent.
         canRecreate:
           type: boolean
           description: Whether the platform has a recipe to rebuild this subscription after deletion
@@ -5006,6 +6742,10 @@ components:
           type: array
           items:
             type: string
+        rowsDeleted:
+          type: integer
+          nullable: true
+          description: Stored rows deleted by the operation. Set only by Purge subscription; null for every other operation.
     DeadLetterOverview:
       title: DeadLetterOverview
       type: object
@@ -5080,6 +6820,192 @@ components:
           type: array
           items:
             type: string
+    SessionStateView:
+      title: SessionStateView
+      description: >-
+        A session's Service Bus session state on the endpoint subscription, read under a
+        session lock, with the session's queued messages and store counts.
+      type: object
+      properties:
+        sessionId:
+          type: string
+        locked:
+          type: boolean
+          description: A receiver holds the session, so its state could not be read.
+        readable:
+          type: boolean
+          description: The stored state parses as NimBus session state.
+        isEmpty:
+          type: boolean
+        stateJson:
+          type: string
+          nullable: true
+          description: The stored state as text; null when nothing is stored.
+        stateVersion:
+          type: string
+          nullable: true
+          description: SHA-256 of the stored bytes; send it back as expectedVersion.
+        blockedByEventId:
+          type: string
+          nullable: true
+        blockedByMessageId:
+          type: string
+          nullable: true
+        deferredCount:
+          type: integer
+        nextDeferralSequence:
+          type: integer
+        replayedThroughSequence:
+          type: integer
+          nullable: true
+        drainRequestedForSequence:
+          type: integer
+          nullable: true
+        drainRequestedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        legacyDeferredCount:
+          type: integer
+        blocked:
+          type: boolean
+        hasUnreplayedMessages:
+          type: boolean
+        activeMessageCount:
+          type: integer
+          description: Messages queued on the session (peeked, at most 100).
+        deferredSubscriptionCount:
+          type: integer
+          description: Messages parked on the Deferred subscription (peeked, at most 100).
+        storePendingCount:
+          type: integer
+        storeDeferredCount:
+          type: integer
+        blockingEventStatus:
+          type: string
+          nullable: true
+          description: Stored status of the blocking event; null when not blocked or not found.
+        message:
+          type: string
+          nullable: true
+    SessionStateChangeRequest:
+      title: SessionStateChangeRequest
+      type: object
+      required:
+        - action
+        - expectedVersion
+      properties:
+        action:
+          type: string
+          enum:
+            - clearBlock
+            - markReplayed
+            - reset
+            - replace
+        expectedVersion:
+          type: string
+          description: The stateVersion the change was based on.
+        stateJson:
+          type: string
+          nullable: true
+          description: The new state, for replace.
+    SessionCleanupPreviewRequest:
+      title: SessionCleanupPreviewRequest
+      type: object
+      properties:
+        updatedSince:
+          type: string
+          format: date-time
+          nullable: true
+          description: Only sessions of events updated since; defaults to 30 days ago.
+        maxSessions:
+          type: integer
+          nullable: true
+          description: Most sessions to inspect, 1 to 1000; defaults to 200.
+        includeStaleBlocks:
+          type: boolean
+    SessionCleanupPreview:
+      title: SessionCleanupPreview
+      type: object
+      properties:
+        inspectedCount:
+          type: integer
+        emptyCount:
+          type: integer
+          description: Inspected sessions that hold no state.
+        truncated:
+          type: boolean
+          description: More sessions matched than maxSessions.
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionCleanupCandidate'
+    SessionCleanupCandidate:
+      title: SessionCleanupCandidate
+      type: object
+      properties:
+        sessionId:
+          type: string
+        classification:
+          type: string
+          enum:
+            - idle
+            - staleBlock
+            - inUse
+        reason:
+          type: string
+          nullable: true
+        stateVersion:
+          type: string
+          nullable: true
+        stateJson:
+          type: string
+          nullable: true
+    SessionCleanupRequest:
+      title: SessionCleanupRequest
+      type: object
+      required:
+        - sessions
+      properties:
+        includeStaleBlocks:
+          type: boolean
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionCleanupSelection'
+    SessionCleanupSelection:
+      title: SessionCleanupSelection
+      type: object
+      required:
+        - sessionId
+        - stateVersion
+      properties:
+        sessionId:
+          type: string
+        stateVersion:
+          type: string
+    SessionCleanupResult:
+      title: SessionCleanupResult
+      type: object
+      properties:
+        resetCount:
+          type: integer
+        skipped:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionCleanupSkip'
+        errors:
+          type: array
+          items:
+            type: string
+    SessionCleanupSkip:
+      title: SessionCleanupSkip
+      type: object
+      properties:
+        sessionId:
+          type: string
+        reason:
+          type: string
     MetricsOverview:
       title: MetricsOverview
       type: object
@@ -5161,14 +7087,276 @@ components:
             $ref: '#/components/schemas/ErrorPatternGroup'
         totalFailed:
           type: integer
+          description: Failure occurrences in the window. Always equal to totalOccurrences; kept for existing clients.
+        from:
+          type: string
+          format: date-time
+          description: Resolved window start (inclusive, UTC). Send it back unchanged with to for drill-down.
+        to:
+          type: string
+          format: date-time
+          description: Resolved window end (exclusive, UTC).
+        endpointId:
+          type: string
+          nullable: true
+          description: The endpoint filter applied, or null for every endpoint.
+        totalOccurrences:
+          type: integer
+          description: Failed attempts in the scope. An event that failed three times counts three.
+        occurrencesReadAt:
+          type: string
+          format: date-time
+          description: When the failure occurrences were read from the message store.
+        classificationsReadAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When saved classifications were read, or null when enrichment is not available.
+        enrichment:
+          $ref: '#/components/schemas/InsightsEnrichmentStatus'
+        enrichmentLimit:
+          type: integer
+          description: The largest scope, in occurrences, that is enriched with saved classifications.
+        analysisAvailable:
+          type: boolean
+          description: Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is.
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
+        causeGroups:
+          type: array
+          nullable: true
+          description: Occurrences grouped by likely failure cause. Null unless enrichment is available.
+          items:
+            $ref: '#/components/schemas/InsightGroup'
+        guidanceGroups:
+          type: array
+          nullable: true
+          description: Occurrences grouped by saved recovery guidance. Null unless enrichment is available.
+          items:
+            $ref: '#/components/schemas/InsightGroup'
+        faultOriginGroups:
+          type: array
+          nullable: true
+          description: Occurrences grouped by the fault origin agents recorded (Spec 044 Phase 3) - source_data, adapter_code, target_system, configuration, platform, unknown - plus notAssessed (question set version 1), uncertain, notAnalyzed and notEligible. Null unless enrichment is available.
+          items:
+            $ref: '#/components/schemas/InsightGroup'
+    InsightsEnrichmentStatus:
+      title: InsightsEnrichmentStatus
+      type: string
+      description: Whether saved classifications enrich this response. Every value except available leaves coverage and the cause and guidance groups null. disabled is listed first so an unset value never reads as available.
+      enum:
+        - disabled
+        - available
+        - unavailable
+        - unsupported
+        - limitExceeded
+    InsightsCoverage:
+      title: InsightsCoverage
+      type: object
+      nullable: true
+      description: How many occurrences have saved analysis. classified + uncertain + notAnalyzed + notEligible = total.
+      properties:
+        total:
+          type: integer
+        analyzed:
+          type: integer
+          description: classified + uncertain.
+        classified:
+          type: integer
+        uncertain:
+          type: integer
+        notAnalyzed:
+          type: integer
+          description: No completed result, and analysis could be requested. Includes failures that can no longer be analyzed because their event has since completed or been skipped.
+        notEligible:
+          type: integer
+          description: No completed result, and the endpoint is outside the configured analysis allow-list.
+    InsightGroup:
+      title: InsightGroup
+      type: object
+      description: One likely-cause or recovery-guidance group.
+      properties:
+        groupKey:
+          type: string
+          description: Stable within this response. A taxonomy or guidance name, or uncertain, notAnalyzed, notEligible.
+        label:
+          type: string
+        count:
+          type: integer
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
+        endpoints:
+          type: array
+          items:
+            type: string
+        eventTypes:
+          type: array
+          items:
+            type: string
+        sources:
+          type: array
+          nullable: true
+          description: The publishing endpoints of the group's failures with their counts, most first (Spec 044 Phase 3) - the data-quality view for a source's owner.
+          items:
+            $ref: '#/components/schemas/InsightSourceCount'
+        latestOccurrence:
+          type: string
+          format: date-time
+        topPatterns:
+          type: array
+          description: The group's most frequent error patterns, at most the configured limit.
+          items:
+            $ref: '#/components/schemas/InsightGroupPattern'
+        morePatterns:
+          type: integer
+          description: Distinct error patterns in the group beyond topPatterns.
+    InsightSourceCount:
+      title: InsightSourceCount
+      type: object
+      properties:
+        endpointId:
+          type: string
+        eventTypeId:
+          type: string
+        count:
+          type: integer
+    InsightsPerspective:
+      title: InsightsPerspective
+      type: string
+      enum:
+        - errorPattern
+        - cause
+        - guidance
+        - faultOrigin
+    InsightAnalysisState:
+      title: InsightAnalysisState
+      type: string
+      description: The occurrence's coverage state. unavailable (listed first so an unset value never claims analysis) means saved classifications could not be read for this scope.
+      enum:
+        - unavailable
+        - classified
+        - uncertain
+        - notAnalyzed
+        - notEligible
+    InsightOccurrence:
+      title: InsightOccurrence
+      type: object
+      description: One failed attempt.
+      properties:
+        messageId:
+          type: string
+        eventId:
+          type: string
+        endpointId:
+          type: string
+        eventTypeId:
+          type: string
+        failedAt:
+          type: string
+          format: date-time
+        errorPatternKey:
+          type: string
+        normalizedPattern:
+          type: string
+        analysisState:
+          $ref: '#/components/schemas/InsightAnalysisState'
+        operationMarker:
+          type: string
+          nullable: true
+          description: analysisRunning, outcomeUnknown, lastAnalysisFailed or identityMismatch; null when the latest operation is the completed result.
+        category:
+          type: string
+          nullable: true
+          description: The saved category; for an uncertain result, the provider's suggestion.
+        categoryConfidence:
+          type: number
+          nullable: true
+        guidance:
+          type: string
+          nullable: true
+          description: The saved guidance name, or the raw stored value when unrecognized.
+        revision:
+          type: integer
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+          description: Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider).
+        faultOrigin:
+          type: string
+          nullable: true
+          description: The saved fault origin (question set version 2); null when not assessed.
+        classifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        currentStatus:
+          type: string
+          nullable: true
+          description: The event's current resolution status, or null when unavailable. Never implies unresolved.
+    InsightOccurrencePage:
+      title: InsightOccurrencePage
+      type: object
+      properties:
+        occurrences:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsightOccurrence'
+        continuationToken:
+          type: string
+          nullable: true
+        occurrencesReadAt:
+          type: string
+          format: date-time
+        classificationsReadAt:
+          type: string
+          format: date-time
+          nullable: true
+        enrichment:
+          $ref: '#/components/schemas/InsightsEnrichmentStatus'
+    InsightGroupPatternPage:
+      title: InsightGroupPatternPage
+      type: object
+      properties:
+        patterns:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsightGroupPattern'
+        continuationToken:
+          type: string
+          nullable: true
+        occurrencesReadAt:
+          type: string
+          format: date-time
+    InsightGroupPattern:
+      title: InsightGroupPattern
+      type: object
+      properties:
+        groupKey:
+          type: string
+          description: The error pattern's key, as on ErrorSubGroup.
+        normalizedPattern:
+          type: string
+        count:
+          type: integer
+        exampleErrorText:
+          type: string
     ErrorPatternGroup:
       title: ErrorPatternGroup
       type: object
       properties:
+        groupKey:
+          type: string
+          description: Stable within this response; not durable across releases.
         errorCategory:
           type: string
         count:
           type: integer
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
         endpoints:
           type: array
           items:
@@ -5190,10 +7378,15 @@ components:
       title: ErrorSubGroup
       type: object
       properties:
+        groupKey:
+          type: string
+          description: Stable within this response; not durable across releases.
         normalizedPattern:
           type: string
         count:
           type: integer
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
         endpoints:
           type: array
           items:
@@ -5331,6 +7524,15 @@ components:
             - commandNotSent
             - updateMcpSettings
             - mcpAccessRefused
+            - agentApiKeyCreated
+            - agentApiKeyRevoked
+            - agentApiKeyRemoved
+            - copyEndpointData
+            - changeSessionState
+            - dashboardTokenCreated
+            - dashboardTokenRevoked
+            - dashboardTokenRemoved
+            - updateEndpointMetadata
         createdAtFrom:
           type: string
           format: date-time
@@ -5528,7 +7730,13 @@ components:
         statuses:
           type: array
           minItems: 1
-          description: Source statuses; Completed and Skipped are terminal and cannot be skipped again.
+          description: >-
+            Source statuses. Only Failed, DeadLettered and Unsupported are
+            accepted; the other values stay in the enum for compatibility and are
+            rejected with 400. A Deferred event's parked copy replays once its
+            session's block clears, and Pending, TooManyRequests and Published
+            messages are still on their way, so a skip would not stop them.
+            Completed and Skipped are terminal.
           items:
             $ref: '#/components/schemas/AdminSkipSourceStatus'
         before:
@@ -5699,6 +7907,13 @@ components:
       properties:
         count:
           type: integer
+        blockingCount:
+          type: integer
+          nullable: true
+          description: >-
+            Delete by status preview only: matching events the delete keeps because
+            each blocks its session (a Failed event, or Pending with a hand-off).
+            Skip them first; then they can be deleted as Skipped.
     HeartbeatSettings:
       title: HeartbeatSettings
       type: object
@@ -5755,6 +7970,25 @@ components:
           $ref: '#/components/schemas/McpCapabilities'
         allowWorkloads:
           type: boolean
+        allowWorkloadClassification:
+          type: boolean
+          description: Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false.
+        allowWorkloadResubmit:
+          type: boolean
+          description: Whether workloads with the Nimbus.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false.
+        allowWorkloadAnnotation:
+          type: boolean
+          description: Whether workloads with the Nimbus.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false.
+        workloadResubmitsPerDay:
+          type: integer
+          format: int32
+          nullable: true
+          description: Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20).
+        workloadResubmitsPerMessage:
+          type: integer
+          format: int32
+          nullable: true
+          description: Unsuccessful workload resubmits of one message, across agents, after which NimBus refuses another; 1-5. Null on a save keeps the default (2).
         people:
           $ref: '#/components/schemas/McpPeople'
         clients:
@@ -5968,19 +8202,333 @@ components:
           type: boolean
     McpAccessProblem:
       title: McpAccessProblem
+      description: >-
+        A refused MCP access change. code is Invalid, ConfirmationRequired,
+        RevisionConflict or InvalidAntiforgeryToken.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
       type: object
       properties:
-        code:
-          type: string
-          description: Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken.
-        errors:
-          type: array
-          items:
-            type: string
         changes:
           type: array
           items:
             $ref: '#/components/schemas/McpAccessChange'
+    AgentApiKeyStatus:
+      title: AgentApiKeyStatus
+      type: string
+      enum:
+        - active
+        - revoked
+        - expired
+    AgentApiKeyInfo:
+      title: AgentApiKeyInfo
+      type: object
+      description: An issued agent API key (Spec 039). Never carries the secret.
+      properties:
+        keyId:
+          type: string
+        prefix:
+          type: string
+          description: The non-secret start of the key, nbak_<keyId>, to recognise it.
+        agentId:
+          type: string
+        name:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/AgentApiKeyStatus'
+        createdAtUtc:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          nullable: true
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedBy:
+          type: string
+          nullable: true
+        lastUsedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: Recorded at most every 5 minutes per instance; null when never used.
+    AgentApiKeyState:
+      title: AgentApiKeyState
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentApiKeyInfo'
+        csrfToken:
+          type: string
+          description: Send as the X-NimBus-CSRF header on writes.
+    AgentApiKeyCreate:
+      title: AgentApiKeyCreate
+      type: object
+      properties:
+        agentId:
+          type: string
+          description: Letters, digits, '.', '_' or '-', up to 64 characters, starting with a letter or digit.
+        name:
+          type: string
+          nullable: true
+          description: A label for the Settings page, up to 100 characters.
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the key stops working; null for no expiry. Must be in the future.
+    AgentApiKeyIssued:
+      title: AgentApiKeyIssued
+      type: object
+      properties:
+        key:
+          type: string
+          description: The full key. Shown once; it cannot be retrieved again.
+        issued:
+          $ref: '#/components/schemas/AgentApiKeyInfo'
+        state:
+          $ref: '#/components/schemas/AgentApiKeyState'
+    AgentApiKeyProblem:
+      title: AgentApiKeyProblem
+      description: >-
+        A refused agent key change. code is Invalid, NotFound, StillActive,
+        RevisionConflict or InvalidAntiforgeryToken.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+    DashboardTokenStatus:
+      title: DashboardTokenStatus
+      type: string
+      enum:
+        - active
+        - revoked
+        - expired
+    DashboardTokenInfo:
+      title: DashboardTokenInfo
+      type: object
+      description: An issued Monitor dashboard token. Never carries the secret.
+      properties:
+        tokenId:
+          type: string
+        prefix:
+          type: string
+          description: The non-secret start of the token, nbdt_<tokenId>, to recognise it.
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/DashboardTokenStatus'
+        createdAtUtc:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          nullable: true
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        revokedBy:
+          type: string
+          nullable: true
+        lastUsedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: Recorded at most every 5 minutes per instance; null when never used.
+    DashboardTokenState:
+      title: DashboardTokenState
+      type: object
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardTokenInfo'
+        csrfToken:
+          type: string
+          description: Send as the X-NimBus-CSRF header on writes.
+    DashboardTokenCreate:
+      title: DashboardTokenCreate
+      type: object
+      properties:
+        name:
+          type: string
+          description: A label, for example the wall the token is for. Required, up to 100 characters.
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the token stops working; null for no expiry. Must be in the future.
+    DashboardTokenIssued:
+      title: DashboardTokenIssued
+      type: object
+      properties:
+        token:
+          type: string
+          description: The full token. Shown once; it cannot be retrieved again.
+        issued:
+          $ref: '#/components/schemas/DashboardTokenInfo'
+        state:
+          $ref: '#/components/schemas/DashboardTokenState'
+    DashboardTokenProblem:
+      title: DashboardTokenProblem
+      description: >-
+        A refused dashboard token change. code is Invalid, NotFound, StillActive,
+        RevisionConflict or InvalidAntiforgeryToken.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+    MonitorFeedStatus:
+      title: MonitorFeedStatus
+      type: object
+      properties:
+        environment:
+          type: string
+          nullable: true
+        platformName:
+          type: string
+          nullable: true
+        serverTimeUtc:
+          type: string
+          format: date-time
+        generatedAtUtc:
+          type: string
+          format: date-time
+          description: When the endpoint data was read from the store.
+        stale:
+          type: boolean
+          description: True when the latest read failed and this is an earlier result.
+        tokenAccess:
+          type: boolean
+          description: True when the caller authenticated with a dashboard token.
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitorFeedEndpoint'
+    MonitorFeedEndpoint:
+      title: MonitorFeedEndpoint
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/EndpointStatusCount'
+        blockedSessionCount:
+          type: integer
+          nullable: true
+          description: >-
+            Estimated sessions blocked by a failed, dead-lettered or pending hand-off message.
+            Null when the store cannot tell.
+        heartbeat:
+          $ref: '#/components/schemas/MonitorFeedHeartbeat'
+        acknowledgement:
+          $ref: '#/components/schemas/MonitorAcknowledgement'
+    MonitorFeedHeartbeat:
+      title: MonitorFeedHeartbeat
+      type: object
+      description: Absent when the endpoint does not take part in heartbeats.
+      properties:
+        liveness:
+          type: string
+          description: 'alive, late, missing or notDeployed.'
+        lastAnsweredUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the endpoint last answered a heartbeat probe.
+    MonitorFeedCounts:
+      title: MonitorFeedCounts
+      type: object
+      properties:
+        published:
+          type: integer
+        handled:
+          type: integer
+        failed:
+          type: integer
+          description: Failed attempts (error responses), not the unresolved state.
+        queue:
+          $ref: '#/components/schemas/LatencyStats'
+        processing:
+          $ref: '#/components/schemas/LatencyStats'
+    MonitorFeedEndpointMetrics:
+      title: MonitorFeedEndpointMetrics
+      type: object
+      properties:
+        endpointId:
+          type: string
+        counts:
+          $ref: '#/components/schemas/MonitorFeedCounts'
+    MonitorFeedMetrics:
+      title: MonitorFeedMetrics
+      type: object
+      properties:
+        generatedAtUtc:
+          type: string
+          format: date-time
+        stale:
+          type: boolean
+        lastHour:
+          type: array
+          description: Per-minute buckets, ascending; the last one is the current, partial minute.
+          items:
+            $ref: '#/components/schemas/TimeSeriesDataPoint'
+        fleet:
+          $ref: '#/components/schemas/MonitorFeedCounts'
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitorFeedEndpointMetrics'
+    MonitorFeedLatencyPoint:
+      title: MonitorFeedLatencyPoint
+      type: object
+      properties:
+        timestamp:
+          type: string
+        queue:
+          $ref: '#/components/schemas/LatencyStats'
+        processing:
+          $ref: '#/components/schemas/LatencyStats'
+    MonitorFeedEndpointHistory:
+      title: MonitorFeedEndpointHistory
+      type: object
+      properties:
+        endpointId:
+          type: string
+        processing:
+          $ref: '#/components/schemas/LatencyStats'
+    MonitorFeedHistory:
+      title: MonitorFeedHistory
+      type: object
+      properties:
+        generatedAtUtc:
+          type: string
+          format: date-time
+        stale:
+          type: boolean
+        lastThreeDays:
+          type: array
+          description: Per-hour buckets, ascending; the last one is the current, partial hour.
+          items:
+            $ref: '#/components/schemas/TimeSeriesDataPoint'
+        latencyLastDay:
+          type: array
+          nullable: true
+          description: Sparse per-hour queue and processing time; null when the store cannot tell.
+          items:
+            $ref: '#/components/schemas/MonitorFeedLatencyPoint'
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitorFeedEndpointHistory'
     McpActivityCount:
       title: McpActivityCount
       type: object
@@ -6293,6 +8841,15 @@ components:
             - commandNotSent
             - updateMcpSettings
             - mcpAccessRefused
+            - agentApiKeyCreated
+            - agentApiKeyRevoked
+            - agentApiKeyRemoved
+            - copyEndpointData
+            - changeSessionState
+            - dashboardTokenCreated
+            - dashboardTokenRevoked
+            - dashboardTokenRemoved
+            - updateEndpointMetadata
         comment:
           type: string
           nullable: true
@@ -6434,3 +8991,4 @@ tags:
   - name: Agent
   - name: Simulation
   - name: McpAccess
+  - name: AgentKeys

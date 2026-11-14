@@ -68,12 +68,17 @@ WHEN MATCHED THEN UPDATE SET
     EndpointHeartbeatStatus = @Status,
     TechnicalContactsJson = @TechnicalContactsJson,
     SubscriptionStatus = @SubscriptionStatus,
+    SourceSystem = @SourceSystem,
+    RepositoryUrl = @RepositoryUrl,
+    TicketLinkTemplate = @TicketLinkTemplate,
     UpdatedAtUtc = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT (
     EndpointId, EndpointOwner, EndpointOwnerTeam, EndpointOwnerEmail,
-    IsHeartbeatEnabled, EndpointHeartbeatStatus, TechnicalContactsJson, SubscriptionStatus)
+    IsHeartbeatEnabled, EndpointHeartbeatStatus, TechnicalContactsJson, SubscriptionStatus,
+    SourceSystem, RepositoryUrl, TicketLinkTemplate)
 VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
-    @IsHeartbeatEnabled, @Status, @TechnicalContactsJson, @SubscriptionStatus);";
+    @IsHeartbeatEnabled, @Status, @TechnicalContactsJson, @SubscriptionStatus,
+    @SourceSystem, @RepositoryUrl, @TicketLinkTemplate);";
         await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(sql, new
         {
@@ -85,6 +90,9 @@ VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
             Status = endpointMetadata.EndpointHeartbeatStatus?.ToString(),
             TechnicalContactsJson = JsonConvert.SerializeObject(endpointMetadata.TechnicalContacts ?? new List<TechnicalContact>()),
             endpointMetadata.SubscriptionStatus,
+            endpointMetadata.SourceSystem,
+            endpointMetadata.RepositoryUrl,
+            endpointMetadata.TicketLinkTemplate,
         }, commandTimeout: _context.CommandTimeout);
         return rows > 0;
     }
@@ -104,6 +112,9 @@ VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
             : JsonConvert.DeserializeObject<List<TechnicalContact>>((string)row.TechnicalContactsJson) ?? new List<TechnicalContact>(),
         Heartbeats = new List<Heartbeat>(),
         SubscriptionStatus = row.SubscriptionStatus,
+        SourceSystem = row.SourceSystem,
+        RepositoryUrl = row.RepositoryUrl,
+        TicketLinkTemplate = row.TicketLinkTemplate,
     };
 
     // ───────── Endpoint heartbeat ─────────
@@ -367,6 +378,150 @@ WHERE Id = @Id AND Revision = @Expected;";
         }
     }
 
+    public async Task<AgentApiKeySettings> GetAgentApiKeySettings()
+    {
+        await using var conn = await OpenAsync();
+        var json = await conn.QuerySingleOrDefaultAsync<string?>(
+            $"SELECT SettingsJson FROM {T("AgentApiKeys")} WHERE Id = @Id",
+            new { Id = AgentApiKeySettings.SingletonId },
+            commandTimeout: _context.CommandTimeout);
+
+        return string.IsNullOrEmpty(json)
+            ? new AgentApiKeySettings()
+            : JsonConvert.DeserializeObject<AgentApiKeySettings>(json) ?? new AgentApiKeySettings();
+    }
+
+    public async Task<bool> TrySetAgentApiKeySettings(AgentApiKeySettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The keys must carry their new revision.", nameof(settings));
+        settings.Id = AgentApiKeySettings.SingletonId;
+
+        // Same compare-and-set shape as TrySetMcpAccessSettings.
+        var sql = expectedRevision is null
+            ? $@"
+INSERT INTO {T("AgentApiKeys")} (Id, Revision, SettingsJson)
+SELECT @Id, @Revision, @Json
+WHERE NOT EXISTS (SELECT 1 FROM {T("AgentApiKeys")} WITH (UPDLOCK, HOLDLOCK) WHERE Id = @Id);"
+            : $@"
+UPDATE {T("AgentApiKeys")}
+SET Revision = @Revision, SettingsJson = @Json, UpdatedAtUtc = SYSUTCDATETIME()
+WHERE Id = @Id AND Revision = @Expected;";
+
+        await using var conn = await OpenAsync();
+        try
+        {
+            var rows = await conn.ExecuteAsync(sql, new
+            {
+                settings.Id,
+                settings.Revision,
+                Json = JsonConvert.SerializeObject(settings),
+                Expected = expectedRevision,
+            }, commandTimeout: _context.CommandTimeout);
+            return rows == 1;
+        }
+        catch (SqlException e) when (e.Number is 2627 or 2601)
+        {
+            // A concurrent first save won the primary key.
+            return false;
+        }
+    }
+
+    public async Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage()
+    {
+        await using var conn = await OpenAsync();
+        var rows = await conn.QueryAsync<AgentApiKeyUsage>(
+            $"SELECT KeyId, LastUsedAtUtc FROM {T("AgentApiKeyUsage")}",
+            commandTimeout: _context.CommandTimeout);
+        return rows.ToList();
+    }
+
+    public async Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyId);
+        var sql = $@"
+MERGE {T("AgentApiKeyUsage")} WITH (HOLDLOCK) AS target
+USING (SELECT @KeyId AS KeyId) AS source
+ON target.KeyId = source.KeyId
+WHEN MATCHED THEN UPDATE SET LastUsedAtUtc = @UsedAtUtc
+WHEN NOT MATCHED THEN INSERT (KeyId, LastUsedAtUtc) VALUES (@KeyId, @UsedAtUtc);";
+        await using var conn = await OpenAsync();
+        await conn.ExecuteAsync(sql, new { KeyId = keyId, UsedAtUtc = usedAtUtc }, commandTimeout: _context.CommandTimeout);
+    }
+
+    public async Task<DashboardTokenSettings> GetDashboardTokenSettings()
+    {
+        await using var conn = await OpenAsync();
+        var json = await conn.QuerySingleOrDefaultAsync<string?>(
+            $"SELECT SettingsJson FROM {T("DashboardTokens")} WHERE Id = @Id",
+            new { Id = DashboardTokenSettings.SingletonId },
+            commandTimeout: _context.CommandTimeout);
+
+        return string.IsNullOrEmpty(json)
+            ? new DashboardTokenSettings()
+            : JsonConvert.DeserializeObject<DashboardTokenSettings>(json) ?? new DashboardTokenSettings();
+    }
+
+    public async Task<bool> TrySetDashboardTokenSettings(DashboardTokenSettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The tokens must carry their new revision.", nameof(settings));
+        settings.Id = DashboardTokenSettings.SingletonId;
+
+        // Same compare-and-set shape as TrySetAgentApiKeySettings.
+        var sql = expectedRevision is null
+            ? $@"
+INSERT INTO {T("DashboardTokens")} (Id, Revision, SettingsJson)
+SELECT @Id, @Revision, @Json
+WHERE NOT EXISTS (SELECT 1 FROM {T("DashboardTokens")} WITH (UPDLOCK, HOLDLOCK) WHERE Id = @Id);"
+            : $@"
+UPDATE {T("DashboardTokens")}
+SET Revision = @Revision, SettingsJson = @Json, UpdatedAtUtc = SYSUTCDATETIME()
+WHERE Id = @Id AND Revision = @Expected;";
+
+        await using var conn = await OpenAsync();
+        try
+        {
+            var rows = await conn.ExecuteAsync(sql, new
+            {
+                settings.Id,
+                settings.Revision,
+                Json = JsonConvert.SerializeObject(settings),
+                Expected = expectedRevision,
+            }, commandTimeout: _context.CommandTimeout);
+            return rows == 1;
+        }
+        catch (SqlException e) when (e.Number is 2627 or 2601)
+        {
+            // A concurrent first save won the primary key.
+            return false;
+        }
+    }
+
+    public async Task<List<DashboardTokenUsage>> GetDashboardTokenUsage()
+    {
+        await using var conn = await OpenAsync();
+        var rows = await conn.QueryAsync<DashboardTokenUsage>(
+            $"SELECT TokenId, LastUsedAtUtc FROM {T("DashboardTokenUsage")}",
+            commandTimeout: _context.CommandTimeout);
+        return rows.ToList();
+    }
+
+    public async Task RecordDashboardTokenUse(string tokenId, DateTime usedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tokenId);
+        var sql = $@"
+MERGE {T("DashboardTokenUsage")} WITH (HOLDLOCK) AS target
+USING (SELECT @TokenId AS TokenId) AS source
+ON target.TokenId = source.TokenId
+WHEN MATCHED THEN UPDATE SET LastUsedAtUtc = @UsedAtUtc
+WHEN NOT MATCHED THEN INSERT (TokenId, LastUsedAtUtc) VALUES (@TokenId, @UsedAtUtc);";
+        await using var conn = await OpenAsync();
+        await conn.ExecuteAsync(sql, new { TokenId = tokenId, UsedAtUtc = usedAtUtc }, commandTimeout: _context.CommandTimeout);
+    }
+
     public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         // The rows-affected check is what makes at most one scaled-out instance
@@ -477,7 +632,7 @@ ORDER BY m.EndpointId";
         return rows.Select(MapHeartbeatRow).Cast<Heartbeat>().ToList();
     }
 
-    private async Task PopulateHeartbeats(SqlConnection conn, IReadOnlyCollection<EndpointMetadata> metadatas)
+    private async Task PopulateHeartbeats(SqlConnection conn, List<EndpointMetadata> metadatas)
     {
         if (metadatas.Count == 0) return;
 

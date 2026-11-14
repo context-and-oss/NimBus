@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using NimBus.Core.Events;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,6 +9,7 @@ namespace NimBus.SDK.EventHandlers;
 /// Defines a message handler.
 /// </summary>
 /// <typeparam name="T">The type of message to be handled.</typeparam>
+[SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "Public API; renaming would break every handler implementation.")]
 public interface IEventHandler<T> where T : IEvent
 {
     /// <summary>

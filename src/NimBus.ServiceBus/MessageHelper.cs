@@ -25,6 +25,11 @@ public static class MessageHelper
             result.ApplicationProperties[UserPropertyName.From.ToString()] = message.From;
         result.ApplicationProperties[UserPropertyName.EventTypeId.ToString()] =  message.EventTypeId ?? message.MessageContent?.EventContent?.EventTypeId;
 
+        // Spec 045: forward rules filter on the routing key, so it is written only when the
+        // message has one. A keyless message looks exactly as it did before routing keys.
+        if (!string.IsNullOrEmpty(message.RoutingKey))
+            result.ApplicationProperties[UserPropertyName.RoutingKey.ToString()] = message.RoutingKey;
+
         // Add OriginalSessionId and DeferralSequence if present (for deferred messages)
         if (!string.IsNullOrEmpty(message.OriginalSessionId))
         {
@@ -167,6 +172,8 @@ public static class MessageHelper
         result.ApplicationProperties[UserPropertyName.EventTypeId.ToString()] = message.EventTypeId ?? message.MessageContent?.EventContent?.EventTypeId;
         result.ApplicationProperties[UserPropertyName.OriginalSessionId.ToString()] = originalSessionId;
         result.ApplicationProperties[UserPropertyName.DeferralSequence.ToString()] = deferralSequence;
+        if (!string.IsNullOrEmpty(message.RoutingKey))
+            result.ApplicationProperties[UserPropertyName.RoutingKey.ToString()] = message.RoutingKey;
         var inboxMessageId = message.GetInboxMessageIdOrDefault();
         if (inboxMessageId is not null)
             result.ApplicationProperties[UserPropertyName.InboxMessageId.ToString()] = inboxMessageId;

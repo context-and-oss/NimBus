@@ -6,7 +6,9 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
+using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Services.Operations;
 using CoreConstants = NimBus.Core.Messages.Constants;
 
 namespace NimBus.WebApp.Services;
@@ -23,7 +25,7 @@ public partial class AdminService
 
         // Count Cosmos events for the session
         int cosmosEventCount = 0;
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -71,7 +73,7 @@ public partial class AdminService
             Errors = new List<string>()
         };
 
-        ServiceBusSessionReceiver receiver = null;
+        ServiceBusSessionReceiver? receiver = null;
         try
         {
             receiver = await _sbClient.AcceptSessionAsync(endpointId, endpointId, sessionId);
@@ -165,7 +167,9 @@ public partial class AdminService
             // Clear session state
             try
             {
-                await receiver.SetSessionStateAsync(null);
+                // Keep the deferral sequence, so a replay still in flight isn't mistaken for
+                // a message parked after the purge.
+                await ClearSessionState(receiver, state => state.ClearAfterPurge());
                 result.SessionStateCleared = true;
             }
             catch (Exception ex)
@@ -217,7 +221,7 @@ public partial class AdminService
         try
         {
             int cosmosRemoved = 0;
-            string continuationToken = string.Empty;
+            string? continuationToken = string.Empty;
 
             do
             {
@@ -260,7 +264,11 @@ public partial class AdminService
         if (ev == null)
             return false;
 
-        return await _messageStore.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
+        // Deleting the event its session is blocked on would strand the session (#288).
+        if (BlockedEventRules.BlocksItsSession(ev))
+            throw new EventBlocksSessionException(ev.EventId);
+
+        return await _messageStore.RemoveMessage(ev.EventId, ev.SessionId!, endpointId);
     }
 
     public async Task<PurgePreview> PurgeSubscriptionPreviewAsync(string endpointId, string subscription, List<string> states, DateTime? before)
@@ -334,6 +342,15 @@ public partial class AdminService
         int failed = 0;
         var errors = new List<string>();
 
+        // The event id and session of every message the purge completes, first one wins, so a
+        // row shared by several messages is looked up and deleted once (#289).
+        var completedEvents = new Dictionary<string, string>(StringComparer.Ordinal);
+        void RecordCompleted(ServiceBusReceivedMessage message, string sessionId)
+        {
+            if (EventIdOf(message) is { Length: > 0 } eventId)
+                completedEvents.TryAdd(eventId, sessionId);
+        }
+
         foreach (var (sid, messages) in sessionMessages)
         {
             ServiceBusSessionReceiver sessionReceiver;
@@ -360,6 +377,7 @@ public partial class AdminService
                         {
                             await sessionReceiver.CompleteMessageAsync(msg);
                             succeeded++;
+                            RecordCompleted(msg, sid);
                         }
                     }
                     catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessageNotFound) { }
@@ -381,6 +399,7 @@ public partial class AdminService
                             {
                                 await sessionReceiver.CompleteMessageAsync(msg);
                                 succeeded++;
+                                RecordCompleted(msg, sid);
                                 anyCompleted = true;
                             }
                             else
@@ -398,8 +417,50 @@ public partial class AdminService
             }
         }
 
-        return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
+        // The Resolver recorded each purged message as Pending (or Deferred); with the message gone
+        // nothing would ever settle that row. Rows that block their session, and settled rows,
+        // are kept. A row that cannot be deleted is a failure; its message is still purged.
+        int rowsDeleted = 0;
+        foreach (var (eventId, sessionId) in completedEvents)
+        {
+            try
+            {
+                var row = await _messageStore.GetEvent(endpointId, eventId);
+                if (row is null || !IsLeftByPurge(row))
+                    continue;
+
+                if (await _messageStore.RemoveMessage(eventId, sessionId, endpointId))
+                {
+                    rowsDeleted++;
+                }
+                else
+                {
+                    failed++;
+                    errors.Add($"Stored row {eventId}: not removed");
+                }
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                errors.Add($"Stored row {eventId}: {ex.Message}");
+            }
+        }
+
+        return new BulkOperationResult
+        {
+            Processed = succeeded + failed,
+            Succeeded = succeeded,
+            Failed = failed,
+            Errors = errors,
+            RowsDeleted = rowsDeleted,
+        };
     }
+
+    // A Pending row (other than a pending hand-off, which blocks its session) or a Deferred row
+    // only ever waits for its message, so it is stranded once the purge removes that message.
+    private static bool IsLeftByPurge(MessageStore.UnresolvedEvent row) =>
+        row.ResolutionStatus == MessageStore.ResolutionStatus.Deferred
+        || (row.ResolutionStatus == MessageStore.ResolutionStatus.Pending && !BlockedEventRules.BlocksItsSession(row));
 
     public async Task<int> DeleteMessagesByToPreviewAsync(string toField)
     {
@@ -455,11 +516,18 @@ public partial class AdminService
         return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
     }
 
-    public async Task<int> DeleteByStatusPreviewAsync(string endpointId, List<string> statuses)
+    public Task<int> CountSessionBlockingEventsAsync(string endpointId, List<string> statuses) =>
+        CountByStatusAsync(endpointId, statuses, BlockedEventRules.BlocksItsSession);
+
+    // The events a delete by status will remove: every match except those it keeps.
+    public Task<int> DeleteByStatusPreviewAsync(string endpointId, List<string> statuses) =>
+        CountByStatusAsync(endpointId, statuses, ev => !BlockedEventRules.BlocksItsSession(ev));
+
+    private async Task<int> CountByStatusAsync(string endpointId, List<string> statuses, Func<MessageStore.UnresolvedEvent, bool> counts)
     {
         statuses = AdminStatusValidation.NormalizeDeleteStatuses(statuses);
         int count = 0;
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -467,7 +535,7 @@ public partial class AdminService
                 new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
                 continuationToken, PageSize);
 
-            count += response.Events.Count();
+            count += response.Events.Count(counts);
             continuationToken = response.ContinuationToken;
         }
         while (continuationToken != null);
@@ -475,13 +543,17 @@ public partial class AdminService
         return count;
     }
 
+    // An event that blocks its session (a failure, or a pending hand-off) is kept: deleting it
+    // would leave the session blocked by an event no one can see, with nothing left to skip
+    // (#288). It has to be skipped first, which releases the session; then it can go as Skipped.
     public async Task<BulkOperationResult> DeleteByStatusAsync(string endpointId, List<string> statuses)
     {
         statuses = AdminStatusValidation.NormalizeDeleteStatuses(statuses);
         int succeeded = 0;
         int failed = 0;
+        int kept = 0;
         var errors = new List<string>();
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -491,9 +563,15 @@ public partial class AdminService
 
             foreach (var ev in response.Events)
             {
+                if (BlockedEventRules.BlocksItsSession(ev))
+                {
+                    kept++;
+                    continue;
+                }
+
                 try
                 {
-                    bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
+                    bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId!, endpointId);
                     if (removed) succeeded++;
                     else { failed++; errors.Add($"{ev.EventId}: remove returned false"); }
                 }
@@ -508,6 +586,13 @@ public partial class AdminService
         }
         while (continuationToken != null);
 
+        if (kept > 0)
+        {
+            failed += kept;
+            errors.Add($"{kept} events were kept because each blocks its session. Skip them first " +
+                "(Operations → Skip messages), then delete them as Skipped.");
+        }
+
         return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
     }
 
@@ -515,7 +600,7 @@ public partial class AdminService
     {
         statuses = AdminStatusValidation.NormalizeSkipStatuses(statuses);
         int count = 0;
-        string continuationToken = string.Empty;
+        string? continuationToken = string.Empty;
 
         do
         {
@@ -536,65 +621,169 @@ public partial class AdminService
         return count;
     }
 
+    // Recorded as the reason on each skip's audit row, so a bulk skip can be told apart from a
+    // per-message one.
+    private static readonly OperatorCommandContext BulkSkipCommand =
+        new(OperatorChannel.WebApp, Reason: "Bulk skip from Operations");
+
+    // Only the endpoint can clear a session's block, so each skip goes out as the same operator
+    // command a per-message Skip sends: role check, claim of the row at the version read, audit
+    // row, SkipRequest. The Resolver records Skipped from the endpoint's SkipResponse. Writing
+    // Skipped to the store directly would leave the session blocked (#287).
     public async Task<BulkOperationResult> SkipMessagesAsync(string endpointId, List<string> statuses, DateTime? before)
     {
         statuses = AdminStatusValidation.NormalizeSkipStatuses(statuses);
-        int succeeded = 0;
-        int failed = 0;
-        var errors = new List<string>();
-        string continuationToken = string.Empty;
+        var operatorCommands = _operatorCommands
+            ?? throw new InvalidOperationException($"Bulk skip needs an {nameof(IOperatorCommands)}.");
 
+        // Read every match before skipping any: each skip archives its row, which would shift the
+        // pages of a filter that is still being read.
+        var eventIds = new List<string>();
+        string? continuationToken = string.Empty;
         do
         {
             var response = await _messageStore.GetEventsByFilter(
                 new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
                 continuationToken, PageSize);
 
-            foreach (var ev in response.Events)
-            {
-                if (before.HasValue && ev.UpdatedAt >= before.Value)
-                    continue;
-
-                try
-                {
-                    bool updated = await _messageStore.UploadSkippedMessage(ev.EventId, ev.SessionId, endpointId, ev);
-                    if (updated) succeeded++;
-                    else { failed++; errors.Add($"{ev.EventId}: update returned false"); }
-                }
-                catch (Exception ex)
-                {
-                    failed++;
-                    errors.Add($"{ev.EventId}: {ex.Message}");
-                }
-            }
+            eventIds.AddRange(response.Events
+                .Where(ev => !before.HasValue || ev.UpdatedAt < before.Value)
+                .Select(ev => ev.EventId));
 
             continuationToken = response.ContinuationToken;
         }
         while (continuationToken != null);
 
+        int succeeded = 0;
+        int failed = 0;
+        var errors = new List<string>();
+
+        foreach (var eventId in eventIds)
+        {
+            // One row's store or Service Bus failure is that row's, not the batch's.
+            OperatorCommandResult result;
+            try
+            {
+                var lookup = await operatorCommands.FindCurrentAsync(endpointId, eventId);
+                var target = lookup.Target;
+
+                // Resolved or skipped by someone else since it was read: nothing left to do.
+                if (lookup.Status == OperatorCommandStatus.NotFound)
+                    continue;
+
+                if (target == null)
+                {
+                    failed++;
+                    errors.Add($"{eventId}: {lookup.Status}");
+                    continue;
+                }
+
+                // A row that moved on since it was read (a newer attempt, another status) is no
+                // longer one the operator asked to skip.
+                if (!statuses.Contains(target.Row.ResolutionStatus.ToString())
+                    || (before.HasValue && target.Row.UpdatedAt >= before.Value))
+                {
+                    continue;
+                }
+
+                result = await operatorCommands.SkipAsync(target, BulkSkipCommand);
+            }
+            catch (Exception ex)
+            {
+                LogBulkSkipFailed(ex, eventId, endpointId);
+                failed++;
+                errors.Add($"{eventId}: {ex.Message}");
+                continue;
+            }
+
+            if (result.Status == OperatorCommandStatus.Accepted)
+            {
+                succeeded++;
+                continue;
+            }
+
+            failed++;
+
+            // These refuse every row alike, so stop instead of repeating the refusal per row.
+            if (result.Status is OperatorCommandStatus.AuditUnavailable or OperatorCommandStatus.Forbidden)
+            {
+                errors.Add($"Stopped after {succeeded} of {eventIds.Count} events: {DescribeSkipRefusal(result)}");
+                break;
+            }
+
+            errors.Add($"{eventId}: {DescribeSkipRefusal(result)}");
+        }
+
         return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
     }
+
+    private static string DescribeSkipRefusal(OperatorCommandResult result) => result.Detail ?? result.Status switch
+    {
+        OperatorCommandStatus.Stale => "changed while the skip ran, so it was not skipped",
+        OperatorCommandStatus.Forbidden => "skipping needs the Contributor role on this endpoint",
+        _ => result.Status.ToString(),
+    };
 
     public async Task<BulkOperationResult> DeleteAllEventsAsync(string endpointId)
     {
         var errors = new List<string>();
-        bool success = false;
+        var succeeded = 0;
+
+        // Service Bus first: once the backlog is gone nothing still queued can land in
+        // storage again after the purge below. A failed step doesn't stop the rest — the
+        // operator asked for everything gone, and the result names whatever was left.
+        foreach (var subscriptionName in new[] { endpointId, CoreConstants.DeferredSubscriptionName })
+        {
+            try
+            {
+                var recreated = await _subscriptionAdmin.RecreateSubscriptionAsync(endpointId, subscriptionName);
+                if (recreated.Succeeded)
+                {
+                    succeeded++;
+                }
+                else
+                {
+                    errors.Add($"Subscription {endpointId}/{subscriptionName}: {recreated.Message}");
+                    errors.AddRange(recreated.Errors ?? Enumerable.Empty<string>());
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDeleteAllEventsFailed(ex, endpointId);
+                errors.Add($"Subscription {endpointId}/{subscriptionName}: {ex.Message}");
+            }
+        }
 
         try
         {
-            success = await _messageStore.PurgeMessages(endpointId);
+            if (await _messageStore.PurgeMessages(endpointId))
+                succeeded++;
+            else
+                errors.Add("Events: nothing was deleted — the endpoint had no stored events, or the store refused the purge (see logs).");
         }
         catch (Exception ex)
         {
             LogDeleteAllEventsFailed(ex, endpointId);
-            errors.Add(ex.Message);
+            errors.Add($"Events: {ex.Message}");
         }
 
+        try
+        {
+            await _messageStore.PurgeStoredMessages(endpointId);
+            succeeded++;
+        }
+        catch (Exception ex)
+        {
+            LogDeleteAllEventsFailed(ex, endpointId);
+            errors.Add($"Message history: {ex.Message}");
+        }
+
+        const int steps = 4;
         return new BulkOperationResult
         {
-            Processed = 1,
-            Succeeded = success ? 1 : 0,
-            Failed = success ? 0 : 1,
+            Processed = steps,
+            Succeeded = succeeded,
+            Failed = steps - succeeded,
             Errors = errors
         };
     }

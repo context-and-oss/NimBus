@@ -30,6 +30,7 @@ internal static class DeployCommands
                 var fromSource = appsCommand.Option("--from-source", "Build the applications from a repository clone instead of deploying the published release artifacts.", CommandOptionType.NoValue);
                 var configuration = appsCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish. Source builds only.", CommandOptionType.SingleValue);
                 var only = appsCommand.Option("--only <APP>", "Deploy a single application: resolver | webapp. Defaults to both.", CommandOptionType.SingleValue);
+                var appsPostfix = appsCommand.Option(ResourceNaming.PostfixOptionTemplate, ResourceNaming.PostfixLookupOptionDescription, CommandOptionType.SingleValue);
                 var appsDnsWait = appsCommand.Option(NetworkSelection.DnsWaitOptionTemplate, NetworkSelection.DnsWaitOptionDescription, CommandOptionType.SingleValue);
                 var appsPackage = appsCommand.Option("--platform-package <ID@VERSION>",
                     "NuGet package containing your IPlatform catalog, e.g. Acme.Contracts@1.4.0. Its assemblies are deployed with the WebApp so Endpoints, Event Types and PII masking show your platform instead of the built-in one.",
@@ -43,6 +44,7 @@ internal static class DeployCommands
 
                 appsCommand.OnExecuteAsync(async cancellationToken =>
                 {
+                    _ = ResourceNaming.NormalizePostfix(appsPostfix.Value());
                     var context = CommandContext.Create(repoRoot.Value());
                     var az = new AzureCliRunner();
                     var platformPackage = appsPackage.HasValue()
@@ -56,12 +58,13 @@ internal static class DeployCommands
                         solutionId.Value()!,
                         environment.Value()!), platformPackage);
                     var options = new AppDeploymentOptions(
-                        solutionId.Value(),
-                        environment.Value(),
-                        resourceGroup.Value(),
+                        solutionId.Value()!,
+                        environment.Value()!,
+                        resourceGroup.Value()!,
                         configuration.HasValue() ? configuration.Value()! : "Release",
                         DeployTargetSelection.ParseOnlyOption(only.Value()),
-                        NetworkSelection.ParseDnsWaitOption(appsDnsWait.Value()));
+                        NetworkSelection.ParseDnsWaitOption(appsDnsWait.Value()),
+                        appsPostfix.Value());
 
                     await deployer.DeployAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;

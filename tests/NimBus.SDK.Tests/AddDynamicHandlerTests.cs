@@ -37,7 +37,7 @@ public class AddDynamicHandlerTests
             EventTypeId,
             () => new DelegateEventJsonHandler((ctx, _) =>
             {
-                receivedJson = ctx.MessageContent.EventContent.EventJson;
+                receivedJson = ctx.MessageContent.EventContent!.EventJson;
                 return Task.CompletedTask;
             }));
 
@@ -168,8 +168,8 @@ public class AddDynamicHandlerTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
             builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>());
 
-        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
-        StringAssert.Contains(ex.Message, "dynamic");
+        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent), StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "dynamic", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -183,8 +183,8 @@ public class AddDynamicHandlerTests
                 nameof(DynamicCollisionEvent),
                 () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
 
-        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
-        StringAssert.Contains(ex.Message, "typed");
+        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent), StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "typed", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -200,7 +200,7 @@ public class AddDynamicHandlerTests
                 EventTypeId,
                 () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
 
-        StringAssert.Contains(ex.Message, EventTypeId);
+        StringAssert.Contains(ex.Message, EventTypeId, StringComparison.Ordinal);
     }
 
     // ── SP-aware overload: AddDynamicHandler(string, Func<IServiceProvider, IEventJsonHandler>) ──
@@ -275,8 +275,8 @@ public class AddDynamicHandlerTests
                 nameof(DynamicCollisionEvent),
                 p => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
 
-        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
-        StringAssert.Contains(ex.Message, "typed");
+        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent), StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "typed", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -290,8 +290,8 @@ public class AddDynamicHandlerTests
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
             builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>());
 
-        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
-        StringAssert.Contains(ex.Message, "dynamic");
+        StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent), StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "dynamic", StringComparison.Ordinal);
     }
 
     // ── Stub ──────────────────────────────────────────────────────────────
@@ -304,7 +304,7 @@ public class AddDynamicHandlerTests
 
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
-            ReceivedJson = context.MessageContent.EventContent.EventJson;
+            ReceivedJson = context.MessageContent.EventContent!.EventJson;
             return Task.CompletedTask;
         }
     }
@@ -353,7 +353,7 @@ public class AddDynamicHandlerTests
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
-        public HandoffMetadata HandoffMetadata { get; set; }
+        public HandoffMetadata? HandoffMetadata { get; set; }
         public ActivityContext ParentTraceContext { get; set; }
 
         public Task Complete(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -364,7 +364,7 @@ public class AddDynamicHandlerTests
         public Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult(string.Empty);
+        public Task<string?> GetBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult<string?>(string.Empty);
         public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task IncrementDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DecrementDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;

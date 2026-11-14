@@ -2,8 +2,8 @@ namespace NimBus.CommandLine.Models;
 
 public class RuleDto
 {
-    public string Name { get; set; }
-    public string SubscriptionName { get; set; }
+    public string Name { get; set; } = null!;
+    public string SubscriptionName { get; set; } = null!;
     public bool IsDeprecated { get; set; }
 
     public class RuleDtoComparer : IEqualityComparer<RuleDto>
@@ -11,7 +11,7 @@ public class RuleDto
         public int GetHashCode(RuleDto co)
         {
             if (co == null) return 0;
-            return co.Name.GetHashCode();
+            return co.Name.GetHashCode(StringComparison.Ordinal);
         }
 
         public bool Equals(RuleDto? x1, RuleDto? x2)

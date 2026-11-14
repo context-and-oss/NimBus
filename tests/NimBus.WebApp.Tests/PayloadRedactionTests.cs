@@ -192,7 +192,7 @@ public class ReaderFloorTests
         public string? GetCurrentUserName() => "test-user";
     }
 
-    private static MetricsImplementation Metrics(StubAuthz authz) => new(
+    private static MetricsImplementation Metrics(StubAuthz authz) => FailedInsightsServiceTests.Metrics(
         new InMemoryMessageStore(),
         new StoreResultCache(new Microsoft.Extensions.Caching.Memory.MemoryCache(
             new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions())),
@@ -208,13 +208,13 @@ public class ReaderFloorTests
     public async Task Metrics_require_site_reader()
     {
         var denied = Metrics(new StubAuthz());
-        Assert.IsInstanceOfType((await denied.GetMetricsOverviewAsync(Period._1d)).Result, typeof(ForbidResult));
-        Assert.IsInstanceOfType((await denied.GetMetricsLatencyAsync(Period._1d)).Result, typeof(ForbidResult));
-        Assert.IsInstanceOfType((await denied.GetMetricsFailedInsightsAsync(Period._1d)).Result, typeof(ForbidResult));
-        Assert.IsInstanceOfType((await denied.GetMetricsTimeseriesAsync(Period._1d)).Result, typeof(ForbidResult));
+        Assert.IsInstanceOfType<ForbidResult>((await denied.GetMetricsOverviewAsync(Period._1d)).Result);
+        Assert.IsInstanceOfType<ForbidResult>((await denied.GetMetricsLatencyAsync(Period._1d)).Result);
+        Assert.IsInstanceOfType<ForbidResult>((await denied.GetMetricsFailedInsightsAsync(Period._1d)).Result);
+        Assert.IsInstanceOfType<ForbidResult>((await denied.GetMetricsTimeseriesAsync(Period._1d)).Result);
 
         var reader = Metrics(new StubAuthz { SiteRole = AccessRole.Reader });
-        Assert.IsNotInstanceOfType((await reader.GetMetricsOverviewAsync(Period._1d)).Result, typeof(ForbidResult));
+        Assert.IsNotInstanceOfType<ForbidResult>((await reader.GetMetricsOverviewAsync(Period._1d)).Result);
     }
 
     [TestMethod]
@@ -222,7 +222,7 @@ public class ReaderFloorTests
     {
         var denied = Messages(new StubAuthz());
         var result = await denied.PostMessagesSearchAsync(new MessageSearchRequest());
-        Assert.IsInstanceOfType(result.Result, typeof(ForbidResult));
+        Assert.IsInstanceOfType<ForbidResult>(result.Result);
 
         var reader = Messages(new StubAuthz { SiteRole = AccessRole.Reader });
         var ok = await reader.PostMessagesSearchAsync(new MessageSearchRequest());

@@ -87,7 +87,7 @@ public sealed class SimulationApiTests
         var entry = audit.Entries.Single();
         Assert.AreEqual(MessageAuditType.UpdateSimulationSettings, entry.Type);
         Assert.IsFalse(entry.AccessDenied);
-        StringAssert.Contains(entry.Data, SimulationTestPlatform.Warehouse);
+        StringAssert.Contains(entry.Data, SimulationTestPlatform.Warehouse, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -99,7 +99,7 @@ public sealed class SimulationApiTests
 
         var status = (Api.SimulationStatus)((OkObjectResult)response.Result!).Value!;
         Assert.AreEqual(Api.SimulationRunState.Running, status.State);
-        StringAssert.Contains(audit.Entries.Single().Data, "start");
+        StringAssert.Contains(audit.Entries.Single().Data, "start", StringComparison.Ordinal);
         await sut.Service.StopAsync();
     }
 
@@ -129,7 +129,7 @@ public sealed class SimulationApiTests
             },
         });
 
-        var problem = (Api.SimulationProblem)((BadRequestObjectResult)response.Result!).Value!;
+        var problem = (Api.ProblemDetails)((BadRequestObjectResult)response.Result!).Value!;
         Assert.AreEqual(4, problem.Errors.Count, string.Join("\n", problem.Errors));
     }
 
@@ -146,7 +146,7 @@ public sealed class SimulationApiTests
         var response = await controller.PostAdminSimulationStartAsync();
 
         var conflict = (ConflictObjectResult)response.Result!;
-        Assert.IsTrue(((Api.SimulationProblem)conflict.Value!).Errors.Single().Contains("Stopping", StringComparison.Ordinal));
+        Assert.IsTrue(((Api.ProblemDetails)conflict.Value!).Errors.Single().Contains("Stopping", StringComparison.Ordinal));
         sut.Hosts.ReleaseStops();
         await stop;
     }

@@ -26,6 +26,9 @@ const { auditsDeferreds, postAuditsSearchMock } = vi.hoisted(() => {
 });
 
 // DataTable reads the toast provider for action feedback; no-op it.
+// No site-Owner lookup in these tests (the page asks to show its settings link).
+vi.mock("hooks/use-access", () => ({ useAccess: () => ({ access: null }) }));
+
 vi.mock("components/ui/toast", () => ({
   useToast: () => ({ addToast: () => {} }),
 }));

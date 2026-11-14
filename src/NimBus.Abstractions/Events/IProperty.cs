@@ -5,6 +5,6 @@ public interface IProperty
     string Name { get; }
     string TypeName { get; }
     string TypeFullName { get; }
-    string Description { get; }
+    string? Description { get; }
     bool IsRequired { get; }
 }

@@ -25,7 +25,7 @@ public static class AsyncApiDocumentLoader
     /// <summary>Parses <paramref name="content"/> as JSON when <paramref name="asJson"/>, otherwise YAML.</summary>
     public static JObject Parse(string content, bool asJson)
     {
-        if (content is null) throw new ArgumentNullException(nameof(content));
+        ArgumentNullException.ThrowIfNull(content);
 
         // Fall back to sniffing the first non-whitespace char when the caller can't say: a leading
         // '{' means JSON, anything else is treated as YAML (a superset that also parses JSON).

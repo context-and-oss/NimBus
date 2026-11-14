@@ -11,7 +11,7 @@ public sealed class TeamsChannelOptions : NotificationChannelOptions
     /// <summary>
     /// The Teams Incoming Webhook (connector) URL to POST the Adaptive Card to.
     /// </summary>
-    public string ConnectorUrl { get; set; }
+    public string ConnectorUrl { get; set; } = null!;
 
     internal override void Validate()
     {

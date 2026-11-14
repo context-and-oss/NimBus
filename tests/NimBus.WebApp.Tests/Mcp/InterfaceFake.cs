@@ -1,4 +1,5 @@
 #pragma warning disable CA1707, CA2007
+using System.Diagnostics.CodeAnalysis;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -18,6 +19,7 @@ public class InterfaceFake<T> : DispatchProxy where T : class
     public ConcurrentQueue<(string Method, object?[] Args)> Calls { get; } = new();
 
     /// <summary>Creates the proxy and returns its configuration handle.</summary>
+    [SuppressMessage("Design", "CA1000:Do not declare static members on generic types", Justification = "Mirrors DispatchProxy.Create<T, TProxy>(): the factory needs T.")]
     public static InterfaceFake<T> Create()
     {
         var proxy = Create<T, InterfaceFake<T>>();

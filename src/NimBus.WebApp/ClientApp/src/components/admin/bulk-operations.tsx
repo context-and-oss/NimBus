@@ -13,6 +13,8 @@ import { Input } from "components/ui/input";
 import { Spinner } from "components/ui/spinner";
 import ConfirmDestructiveAction from "./confirm-destructive-action";
 import OperationProgress from "./operation-progress";
+import OperationErrorAlert from "./operation-error-alert";
+import { describeOperationError } from "./operation-error";
 
 interface EndpointOption {
   value: string;
@@ -56,18 +58,27 @@ export function BulkResubmitCard({ endpoints, initialEndpoint }: { endpoints: En
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // A failure drops the preview too: the server may have partly changed, so preview again.
+  function fail(err: unknown) {
+    setError(describeOperationError(err));
+    setPreview(null);
+    setResult(null);
+  }
 
   async function handlePreview() {
     if (selected.length === 0) return;
     setLoading(true);
     setPreview(null);
     setResult(null);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const p = await client.getAdminFailedPreview(selected[0]);
       setPreview(p);
-    } catch {
-      // error handling
+    } catch (err) {
+      fail(err);
     } finally {
       setLoading(false);
     }
@@ -77,13 +88,14 @@ export function BulkResubmitCard({ endpoints, initialEndpoint }: { endpoints: En
     if (selected.length === 0) return;
     setShowConfirm(false);
     setExecuting(true);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const r = await client.postAdminBulkResubmit(selected[0]);
       setResult(r);
       setPreview(null);
-    } catch {
-      // error
+    } catch (err) {
+      fail(err);
     } finally {
       setExecuting(false);
     }
@@ -108,6 +120,7 @@ export function BulkResubmitCard({ endpoints, initialEndpoint }: { endpoints: En
                   setSelected(v);
                   setPreview(null);
                   setResult(null);
+                  setError(null);
                 }}
                 placeholder="Select endpoint..."
                 label="Endpoint"
@@ -123,6 +136,8 @@ export function BulkResubmitCard({ endpoints, initialEndpoint }: { endpoints: En
               Preview
             </Button>
           </div>
+
+          <OperationErrorAlert message={error} />
 
           {preview && (
             <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
@@ -186,22 +201,40 @@ export function DeleteDeadLetteredCard({
 }) {
   const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [count, setCount] = useState<number | null>(null);
+  // The subscription's dead-letter queue: every message, and those of the stored events (the ones
+  // the delete removes). Null when Service Bus couldn't be read.
+  const [queueCount, setQueueCount] = useState<number | null>(null);
+  const [matchingCount, setMatchingCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function fail(err: unknown) {
+    setError(describeOperationError(err));
+    setCount(null);
+    setResult(null);
+  }
+
+  // Queue messages with no stored event: the delete leaves them for Purge dead letters.
+  const unmatched = queueCount !== null && matchingCount !== null ? queueCount - matchingCount : 0;
+  const matchingText = matchingCount === null ? "messages" : `${matchingCount} messages`;
 
   async function handlePreview() {
     if (selected.length === 0) return;
     setLoading(true);
     setCount(null);
     setResult(null);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const p = await client.getAdminDeadletteredPreview(selected[0]);
+      setQueueCount(p.queueCount ?? null);
+      setMatchingCount(p.matchingQueueCount ?? null);
       setCount(p.count ?? 0);
-    } catch {
-      // error
+    } catch (err) {
+      fail(err);
     } finally {
       setLoading(false);
     }
@@ -211,13 +244,14 @@ export function DeleteDeadLetteredCard({
     if (selected.length === 0) return;
     setShowConfirm(false);
     setExecuting(true);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const r = await client.postAdminDeleteDeadlettered(selected[0]);
       setResult(r);
       setCount(null);
-    } catch {
-      // error
+    } catch (err) {
+      fail(err);
     } finally {
       setExecuting(false);
     }
@@ -228,7 +262,7 @@ export function DeleteDeadLetteredCard({
       <CardHeader>
         <CardTitle>Delete Dead-Lettered Messages</CardTitle>
         <CardDescription>
-          Remove all dead-lettered messages for an endpoint
+          Delete an endpoint's dead-lettered events and remove their messages from its subscription's dead-letter queue
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -242,6 +276,7 @@ export function DeleteDeadLetteredCard({
                   setSelected(v);
                   setCount(null);
                   setResult(null);
+                  setError(null);
                 }}
                 placeholder="Select endpoint..."
                 label="Endpoint"
@@ -258,12 +293,24 @@ export function DeleteDeadLetteredCard({
             </Button>
           </div>
 
+          <OperationErrorAlert message={error} />
+
           {count !== null && (
             <div className="bg-yellow-50 border border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-900/60 rounded-md p-4 space-y-2">
               <p className="text-sm">
-                Dead-lettered messages:{" "}
+                Stored dead-lettered events:{" "}
                 <span className="font-bold">{count}</span>
               </p>
+              <p className="text-sm">
+                Their messages in the dead-letter queue:{" "}
+                <span className="font-bold">{matchingCount ?? "unknown"}</span>
+              </p>
+              {unmatched > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {unmatched} more messages in the dead-letter queue have no stored event, so this
+                  leaves them. Purge them in Admin → Subscriptions with Purge dead letters.
+                </p>
+              )}
               {count > 0 && (
                 <Button
                   colorScheme="red"
@@ -272,7 +319,7 @@ export function DeleteDeadLetteredCard({
                   isLoading={executing}
                   size="sm"
                 >
-                  Delete {count} messages
+                  Delete dead-lettered messages
                 </Button>
               )}
             </div>
@@ -294,7 +341,7 @@ export function DeleteDeadLetteredCard({
             onConfirm={handleDelete}
             title="Delete Dead-Lettered Messages"
             confirmLabel="Delete dead-lettered"
-            description={`This will permanently delete ${count ?? 0} dead-lettered messages for endpoint "${selected[0] ?? ""}".`}
+            description={`This will permanently delete ${count ?? 0} stored dead-lettered events and their ${matchingText} in the dead-letter queue of endpoint "${selected[0] ?? ""}".`}
             confirmText={selected[0] ?? ""}
             isLoading={executing}
           />
@@ -310,7 +357,7 @@ export function DeleteEventCard({ endpoints, initialEndpoint }: { endpoints: End
   const [deleting, setDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleteResult, setDeleteResult] = useState<
-    "success" | "not-found" | null
+    "success" | "not-found" | "blocks-session" | "failed" | null
   >(null);
 
   async function handleDelete() {
@@ -325,8 +372,11 @@ export function DeleteEventCard({ endpoints, initialEndpoint }: { endpoints: End
     } catch (err: any) {
       if (err.status === 404) {
         setDeleteResult("not-found");
+      } else if (err.status === 409) {
+        // #288: it blocks its session, so the API keeps it.
+        setDeleteResult("blocks-session");
       } else {
-        setDeleteResult("not-found");
+        setDeleteResult("failed");
       }
     } finally {
       setDeleting(false);
@@ -390,6 +440,17 @@ export function DeleteEventCard({ endpoints, initialEndpoint }: { endpoints: End
           {deleteResult === "not-found" && (
             <div className="bg-red-50 border border-red-200 dark:bg-red-950/30 dark:border-red-900/60 rounded-md p-3 text-red-800 dark:text-red-200 text-sm">
               Event not found.
+            </div>
+          )}
+          {deleteResult === "blocks-session" && (
+            <div className="bg-yellow-50 border border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-900/60 rounded-md p-3 text-sm">
+              This event blocks its session, so it was not deleted: deleting it would leave the session
+              blocked. Skip it first (on the message, or with Operations → Skip messages), then delete it.
+            </div>
+          )}
+          {deleteResult === "failed" && (
+            <div className="bg-red-50 border border-red-200 dark:bg-red-950/30 dark:border-red-900/60 rounded-md p-3 text-red-800 dark:text-red-200 text-sm">
+              The event could not be deleted. Try again.
             </div>
           )}
 

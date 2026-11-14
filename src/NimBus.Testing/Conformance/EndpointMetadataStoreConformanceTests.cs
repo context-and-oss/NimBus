@@ -34,12 +34,33 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsTrue(saved);
 
         var fetched = await store.GetEndpointMetadata(endpointId);
-        Assert.AreEqual(endpointId, fetched.EndpointId);
+        Assert.AreEqual(endpointId, fetched!.EndpointId);
         Assert.AreEqual("Team Blue", fetched.EndpointOwnerTeam);
         Assert.AreEqual("owner@example.com", fetched.EndpointOwnerEmail);
         Assert.AreEqual(true, fetched.SubscriptionStatus);
-        Assert.AreEqual(1, fetched.TechnicalContacts.Count);
+        Assert.AreEqual(1, fetched.TechnicalContacts!.Count);
         Assert.AreEqual("Ops", fetched.TechnicalContacts[0].Name);
+        Assert.AreEqual("Dynamics 365 Sales", fetched.SourceSystem);
+        Assert.AreEqual("https://github.com/example/crm-adapter", fetched.RepositoryUrl);
+        Assert.AreEqual("https://github.com/example/crm-adapter/issues/{ticketId}", fetched.TicketLinkTemplate);
+    }
+
+    [TestMethod]
+    public async Task Code_location_fields_round_trip_as_null()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-no-code");
+        var metadata = SampleMetadata(endpointId);
+        metadata.SourceSystem = null;
+        metadata.RepositoryUrl = null;
+        metadata.TicketLinkTemplate = null;
+
+        await store.SetEndpointMetadata(metadata);
+        var fetched = await store.GetEndpointMetadata(endpointId);
+
+        Assert.IsNull(fetched!.SourceSystem);
+        Assert.IsNull(fetched.RepositoryUrl);
+        Assert.IsNull(fetched.TicketLinkTemplate);
     }
 
     [TestMethod]
@@ -73,10 +94,10 @@ public abstract class EndpointMetadataStoreConformanceTests
         var fromAll = (await store.GetMetadatas()).Single(metadata => metadata.EndpointId == endpointId);
 
         Assert.IsNotNull(filtered);
-        Assert.AreEqual(1, filtered!.Single().Heartbeats.Count,
+        Assert.AreEqual(1, filtered!.Single().Heartbeats!.Count,
             "The scheduled history fold uses the filtered batch overload and requires its probe rows.");
-        Assert.AreEqual("probe-1", filtered.Single().Heartbeats.Single().MessageId);
-        Assert.AreEqual(1, fromAll.Heartbeats.Count,
+        Assert.AreEqual("probe-1", filtered.Single().Heartbeats!.Single().MessageId);
+        Assert.AreEqual(1, fromAll.Heartbeats!.Count,
             "Both batch overloads must return complete EndpointMetadata records.");
     }
 
@@ -91,7 +112,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         await store.SetHeartbeat(Probe("probe-1", HeartbeatStatus.Pending, T0), endpointId);
 
         var afterSend = await store.GetEndpointMetadata(endpointId);
-        Assert.AreEqual(1, afterSend.Heartbeats.Count);
+        Assert.AreEqual(1, afterSend!.Heartbeats!.Count);
         Assert.AreEqual(HeartbeatStatus.Pending, afterSend.EndpointHeartbeatStatus);
 
         // Same MessageId: the answer settles the row the send created.
@@ -100,7 +121,7 @@ public abstract class EndpointMetadataStoreConformanceTests
             endpointId);
 
         var afterAnswer = await store.GetEndpointMetadata(endpointId);
-        Assert.AreEqual(1, afterAnswer.Heartbeats.Count);
+        Assert.AreEqual(1, afterAnswer!.Heartbeats!.Count);
         var row = afterAnswer.Heartbeats[0];
         Assert.AreEqual(HeartbeatStatus.On, row.EndpointHeartbeatStatus);
         Assert.AreEqual(T0.Ticks, row.StartTime.Ticks);
@@ -125,7 +146,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         }
 
         var metadata = await store.GetEndpointMetadata(endpointId);
-        Assert.AreEqual(HeartbeatRollup.MaxHeartbeatsPerEndpoint, metadata.Heartbeats.Count);
+        Assert.AreEqual(HeartbeatRollup.MaxHeartbeatsPerEndpoint, metadata!.Heartbeats!.Count);
         // The oldest five were dropped, not the newest.
         Assert.AreEqual(T0.AddMinutes(5).Ticks, metadata.Heartbeats.Min(h => h.StartTime).Ticks);
         Assert.AreEqual(T0.AddMinutes(written - 1).Ticks, metadata.Heartbeats.Max(h => h.StartTime).Ticks);
@@ -141,8 +162,8 @@ public abstract class EndpointMetadataStoreConformanceTests
         await store.EnableHeartbeatOnEndpoint(optedIn, true);
         await store.EnableHeartbeatOnEndpoint(optedOut, false);
 
-        Assert.AreEqual(true, (await store.GetEndpointMetadata(optedIn)).IsHeartbeatEnabled);
-        Assert.AreEqual(false, (await store.GetEndpointMetadata(optedOut)).IsHeartbeatEnabled);
+        Assert.AreEqual(true, (await store.GetEndpointMetadata(optedIn))!.IsHeartbeatEnabled);
+        Assert.AreEqual(false, (await store.GetEndpointMetadata(optedOut))!.IsHeartbeatEnabled);
 
         var enabled = (await store.GetMetadatasWithEnabledHeartbeat()).Select(m => m.EndpointId).ToList();
         CollectionAssert.Contains(enabled, optedIn);
@@ -270,6 +291,10 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsNull(defaults.Revision);
         Assert.IsTrue(defaults.Enabled);
         Assert.IsTrue(defaults.Capabilities.Skip);
+        Assert.IsFalse(defaults.AllowWorkloadClassification, "Workload recording is off until an Owner turns it on (Spec 044 §6.6).");
+        Assert.IsFalse(defaults.AllowWorkloadResubmit, "Unattended resubmits are off until an Owner turns them on (Spec 044 Phase 2).");
+        Assert.AreEqual(McpAccessSettings.DefaultWorkloadResubmitsPerDay, defaults.WorkloadResubmitsPerDay);
+        Assert.AreEqual(McpAccessSettings.DefaultWorkloadResubmitsPerMessage, defaults.WorkloadResubmitsPerMessage);
     }
 
     [TestMethod]
@@ -291,6 +316,10 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsTrue(stored.Capabilities.Resubmit);
         Assert.IsFalse(stored.Capabilities.Skip);
         Assert.IsFalse(stored.AllowWorkloads);
+        Assert.IsTrue(stored.AllowWorkloadClassification);
+        Assert.IsTrue(stored.AllowWorkloadResubmit);
+        Assert.AreEqual(7, stored.WorkloadResubmitsPerDay);
+        Assert.AreEqual(3, stored.WorkloadResubmitsPerMessage);
         Assert.AreEqual(McpPeopleMode.Listed, stored.People.Mode);
         Assert.AreEqual("pilot@example.com", stored.People.Principals.Single().Principal);
         Assert.AreEqual("Pilot", stored.People.Principals.Single().Label);
@@ -361,6 +390,10 @@ public abstract class EndpointMetadataStoreConformanceTests
         Enabled = false,
         Capabilities = new McpCapabilitySettings { Payloads = false, Report = true, Classify = false, Resubmit = true, Skip = false },
         AllowWorkloads = false,
+        AllowWorkloadClassification = true,
+        AllowWorkloadResubmit = true,
+        WorkloadResubmitsPerDay = 7,
+        WorkloadResubmitsPerMessage = 3,
         People = new McpPeopleSettings
         {
             Mode = McpPeopleMode.Listed,
@@ -439,9 +472,9 @@ public abstract class EndpointMetadataStoreConformanceTests
         CollectionAssert.Contains(swept, stale);
         CollectionAssert.DoesNotContain(swept, fresh);
         CollectionAssert.DoesNotContain(swept, answered);
-        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(stale)).EndpointHeartbeatStatus);
-        Assert.AreEqual(HeartbeatStatus.Pending, (await store.GetEndpointMetadata(fresh)).EndpointHeartbeatStatus);
-        Assert.AreEqual(HeartbeatStatus.On, (await store.GetEndpointMetadata(answered)).EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(stale))!.EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.Pending, (await store.GetEndpointMetadata(fresh))!.EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.On, (await store.GetEndpointMetadata(answered))!.EndpointHeartbeatStatus);
     }
 
     [TestMethod]
@@ -457,7 +490,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         var swept = await store.SweepTimedOutHeartbeats(start.AddMilliseconds(100));
 
         CollectionAssert.Contains(swept, endpointId);
-        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(endpointId)).EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(endpointId))!.EndpointHeartbeatStatus);
     }
 
     [TestMethod]
@@ -542,7 +575,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         await store.SetHeartbeat(Probe("p1", HeartbeatStatus.On, T0, T0.AddMilliseconds(120), "1.0.0"), endpointId);
         await store.SetHeartbeat(Probe("p2", HeartbeatStatus.Pending, T0.AddMinutes(5)), endpointId);
 
-        Assert.AreEqual(HeartbeatStatus.On, (await store.GetEndpointMetadata(endpointId)).EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.On, (await store.GetEndpointMetadata(endpointId))!.EndpointHeartbeatStatus);
     }
 
     [TestMethod]
@@ -553,7 +586,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         await store.SetHeartbeat(Probe("p1", HeartbeatStatus.On, T0, T0.AddMilliseconds(120), "1.0.0"), endpointId);
         await store.SetHeartbeat(Probe("p2", HeartbeatStatus.Off, T0.AddMinutes(5)), endpointId);
 
-        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(endpointId)).EndpointHeartbeatStatus);
+        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(endpointId))!.EndpointHeartbeatStatus);
     }
 
     private static async Task<HeartbeatOverviewItem> Overview(IEndpointMetadataStore store, string endpointId)
@@ -590,6 +623,9 @@ public abstract class EndpointMetadataStoreConformanceTests
             new() { Name = "Ops", Email = "ops@example.com" },
         },
         SubscriptionStatus = true,
+        SourceSystem = "Dynamics 365 Sales",
+        RepositoryUrl = "https://github.com/example/crm-adapter",
+        TicketLinkTemplate = "https://github.com/example/crm-adapter/issues/{ticketId}",
     };
 
     // Single-row lookups return null for a missing row; optional strings round-trip exactly.
@@ -623,7 +659,152 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsNull(fetched.EndpointOwner);
         Assert.IsNull(fetched.EndpointOwnerTeam);
         Assert.IsNull(fetched.EndpointOwnerEmail);
-        Assert.AreEqual(1, fetched.Heartbeats.Count);
+        Assert.AreEqual(1, fetched.Heartbeats!.Count);
         Assert.IsNull(fetched.Heartbeats[0].SdkVersion, "a probe that has not been answered carries no SDK version");
     }
+
+    [TestMethod]
+    public async Task GetAgentApiKeySettings_always_returns_the_singleton_record()
+    {
+        var store = CreateStore();
+
+        var settings = await store.GetAgentApiKeySettings();
+
+        // A shared backend may already carry saved keys, so the empty default is asserted on
+        // the type and only the never-null contract against the store.
+        Assert.IsNotNull(settings);
+        Assert.AreEqual(AgentApiKeySettings.SingletonId, settings.Id);
+        Assert.IsNotNull(settings.Keys);
+        Assert.IsNull(new AgentApiKeySettings().Revision);
+        Assert.AreEqual(0, new AgentApiKeySettings().Keys.Count);
+    }
+
+    [TestMethod]
+    public async Task TrySetAgentApiKeySettings_round_trips_every_field()
+    {
+        var store = CreateStore();
+        var sample = SampleAgentApiKeySettings();
+
+        await SaveAgentApiKeySettingsAsync(store, sample);
+        var stored = await store.GetAgentApiKeySettings();
+
+        Assert.AreEqual(sample.Revision, stored.Revision);
+        Assert.AreEqual(sample.UpdatedBy, stored.UpdatedBy);
+        Assert.AreEqual(sample.UpdatedAtUtc!.Value.Ticks, stored.UpdatedAtUtc!.Value.Ticks);
+        Assert.AreEqual(2, stored.Keys.Count);
+
+        var active = stored.Keys.Single(k => k.KeyId == "abcdefghijkl");
+        Assert.AreEqual("enrichment-agent", active.AgentId);
+        Assert.AreEqual("Production enrichment", active.Name);
+        Assert.AreEqual("q83vEjRWeJ1mN9u5Hl1YGqHk8Ywq4cG4x3V5D8pX1Ak=", active.SecretHash);
+        Assert.AreEqual(T0.Ticks, active.CreatedAtUtc.Ticks);
+        Assert.AreEqual("owner@example.com", active.CreatedBy);
+        Assert.AreEqual(T0.AddDays(90).Ticks, active.ExpiresAtUtc!.Value.Ticks);
+        Assert.IsNull(active.RevokedAtUtc);
+        Assert.IsNull(active.RevokedBy);
+
+        var revoked = stored.Keys.Single(k => k.KeyId == "mnopqrstuvwx");
+        Assert.IsNull(revoked.Name);
+        Assert.IsNull(revoked.ExpiresAtUtc);
+        Assert.AreEqual(T0.AddHours(1).Ticks, revoked.RevokedAtUtc!.Value.Ticks);
+        Assert.AreEqual("owner@example.com", revoked.RevokedBy);
+    }
+
+    [TestMethod]
+    public async Task TrySetAgentApiKeySettings_refuses_a_stale_revision_and_keeps_the_record()
+    {
+        var store = CreateStore();
+        var saved = await SaveAgentApiKeySettingsAsync(store, SampleAgentApiKeySettings());
+
+        var stale = SampleAgentApiKeySettings();
+        stale.Keys.Clear();
+        stale.Revision = Guid.NewGuid().ToString();
+        Assert.IsFalse(await store.TrySetAgentApiKeySettings(stale, Guid.NewGuid().ToString()));
+
+        // Null means "create": refused because a record exists.
+        Assert.IsFalse(await store.TrySetAgentApiKeySettings(stale, null));
+
+        var stored = await store.GetAgentApiKeySettings();
+        Assert.AreEqual(saved, stored.Revision);
+        Assert.AreEqual(2, stored.Keys.Count);
+    }
+
+    [TestMethod]
+    public async Task TrySetAgentApiKeySettings_lets_exactly_one_of_two_concurrent_writers_win()
+    {
+        var store = CreateStore();
+        var current = await SaveAgentApiKeySettingsAsync(store, SampleAgentApiKeySettings());
+
+        var first = SampleAgentApiKeySettings();
+        first.Revision = Guid.NewGuid().ToString();
+        var second = SampleAgentApiKeySettings();
+        second.Revision = Guid.NewGuid().ToString();
+
+        var results = await Task.WhenAll(
+            store.TrySetAgentApiKeySettings(first, current),
+            store.TrySetAgentApiKeySettings(second, current));
+
+        Assert.AreEqual(1, results.Count(r => r));
+        var winner = results[0] ? first.Revision : second.Revision;
+        Assert.AreEqual(winner, (await store.GetAgentApiKeySettings()).Revision);
+    }
+
+    [TestMethod]
+    public async Task RecordAgentApiKeyUse_records_and_overwrites_per_key()
+    {
+        var store = CreateStore();
+        // Key ids scoped to this test so a shared backend's other rows don't interfere.
+        var keyA = _scope + "-a";
+        var keyB = _scope + "-b";
+
+        await store.RecordAgentApiKeyUse(keyA, T0);
+        await store.RecordAgentApiKeyUse(keyB, T0.AddMinutes(1));
+        await store.RecordAgentApiKeyUse(keyA, T0.AddMinutes(10));
+
+        var usage = (await store.GetAgentApiKeyUsage())
+            .Where(u => u.KeyId == keyA || u.KeyId == keyB)
+            .ToDictionary(u => u.KeyId, u => u.LastUsedAtUtc);
+
+        Assert.AreEqual(2, usage.Count);
+        Assert.AreEqual(T0.AddMinutes(10).Ticks, usage[keyA].Ticks);
+        Assert.AreEqual(T0.AddMinutes(1).Ticks, usage[keyB].Ticks);
+    }
+
+    /// <summary>Saves <paramref name="settings"/> over whatever is stored and returns its new revision.</summary>
+    private static async Task<string> SaveAgentApiKeySettingsAsync(IEndpointMetadataStore store, AgentApiKeySettings settings)
+    {
+        var current = await store.GetAgentApiKeySettings();
+        settings.Revision = Guid.NewGuid().ToString();
+        Assert.IsTrue(await store.TrySetAgentApiKeySettings(settings, current.Revision));
+        return settings.Revision;
+    }
+
+    private static AgentApiKeySettings SampleAgentApiKeySettings() => new()
+    {
+        UpdatedBy = "owner@example.com",
+        UpdatedAtUtc = T0.AddHours(1),
+        Keys =
+        {
+            new AgentApiKey
+            {
+                KeyId = "abcdefghijkl",
+                AgentId = "enrichment-agent",
+                Name = "Production enrichment",
+                SecretHash = "q83vEjRWeJ1mN9u5Hl1YGqHk8Ywq4cG4x3V5D8pX1Ak=",
+                CreatedAtUtc = T0,
+                CreatedBy = "owner@example.com",
+                ExpiresAtUtc = T0.AddDays(90),
+            },
+            new AgentApiKey
+            {
+                KeyId = "mnopqrstuvwx",
+                AgentId = "triage-agent",
+                SecretHash = "3Yz2vT0pG8hJ6kL4mN1qR7sU9wX5aB2cD4eF6gH8iJ0=",
+                CreatedAtUtc = T0,
+                CreatedBy = "owner@example.com",
+                RevokedAtUtc = T0.AddHours(1),
+                RevokedBy = "owner@example.com",
+            },
+        },
+    };
 }

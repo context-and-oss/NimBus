@@ -25,6 +25,7 @@ public class OperatorMessageToolsTests
     private InterfaceFake<IEndpointApiController> _endpoints = null!;
     private InterfaceFake<IEventApiController> _events = null!;
     private InterfaceFake<IMonitorApiController> _monitor = null!;
+    private readonly NimBus.Testing.Conformance.InMemoryMessageStore _metadata = new();
 
     [TestInitialize]
     public void CreateFakes()
@@ -79,6 +80,41 @@ public class OperatorMessageToolsTests
     }
 
     [TestMethod]
+    public async Task Get_endpoint_returns_the_recorded_ownership_and_code_location()
+    {
+        _endpoints.On(nameof(IEndpointApiController.GetEndpointStatusCountIdAsync), args => Ok(new EndpointStatusCount { EndpointId = (string)args[0]! }));
+        _monitor.On(nameof(IMonitorApiController.GetMonitorAcknowledgementsAsync), _ => Ok<IEnumerable<MonitorAcknowledgement>>([]));
+        await _metadata.SetEndpointMetadata(new NimBus.MessageStore.States.EndpointMetadata
+        {
+            EndpointId = "CrmEndpoint",
+            EndpointOwner = "Alice",
+            EndpointOwnerTeam = "CRM team",
+            TechnicalContacts = [new NimBus.MessageStore.States.TechnicalContact { Name = "Ops", Email = "ops@example.com" }],
+            SourceSystem = "Dynamics 365 Sales",
+            RepositoryUrl = "https://github.com/example/crm-adapter",
+            TicketLinkTemplate = "https://github.com/example/crm-adapter/issues/{ticketId}",
+        });
+
+        var ownership = (await CallAsync("nimbus_get_endpoint", new() { ["endpointId"] = "CrmEndpoint" })).GetProperty("ownership");
+
+        Assert.AreEqual("Alice", ownership.GetProperty("owner").GetString());
+        Assert.AreEqual("Dynamics 365 Sales", ownership.GetProperty("sourceSystem").GetString());
+        Assert.AreEqual("https://github.com/example/crm-adapter", ownership.GetProperty("repositoryUrl").GetString());
+        Assert.AreEqual("Ops", ownership.GetProperty("technicalContacts")[0].GetProperty("name").GetString());
+    }
+
+    [TestMethod]
+    public async Task Get_endpoint_without_recorded_ownership_returns_null_not_an_error()
+    {
+        _endpoints.On(nameof(IEndpointApiController.GetEndpointStatusCountIdAsync), args => Ok(new EndpointStatusCount { EndpointId = (string)args[0]! }));
+        _monitor.On(nameof(IMonitorApiController.GetMonitorAcknowledgementsAsync), _ => Ok<IEnumerable<MonitorAcknowledgement>>([]));
+
+        var json = await CallAsync("nimbus_get_endpoint", new() { ["endpointId"] = "CrmEndpoint" });
+
+        Assert.AreEqual(JsonValueKind.Null, json.GetProperty("ownership").ValueKind);
+    }
+
+    [TestMethod]
     public async Task Get_endpoint_resolves_the_endpoint_id_case_insensitively()
     {
         _endpoints.On(nameof(IEndpointApiController.GetEndpointStatusCountIdAsync), args =>
@@ -99,7 +135,7 @@ public class OperatorMessageToolsTests
         var result = await CallRawAsync(tool, new() { ["endpointId"] = "BillingEndpoint" });
 
         Assert.IsTrue(result.IsError);
-        StringAssert.Contains(ErrorText(result), "EndpointNotFound");
+        StringAssert.Contains(ErrorText(result), "EndpointNotFound", StringComparison.Ordinal);
         Assert.IsTrue(_endpoints.Calls.IsEmpty && _events.Calls.IsEmpty);
     }
 
@@ -136,7 +172,7 @@ public class OperatorMessageToolsTests
         var result = await CallRawAsync("nimbus_find_messages", new() { ["endpointId"] = "CrmEndpoint", ["statuses"] = new[] { "Exploded" } });
 
         Assert.IsTrue(result.IsError);
-        StringAssert.Contains(ErrorText(result), "InvalidArgument");
+        StringAssert.Contains(ErrorText(result), "InvalidArgument", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -188,7 +224,7 @@ public class OperatorMessageToolsTests
 
         CollectionAssert.AreEqual(new string?[] { null, "store-token-2" }, tokens);
         Assert.IsTrue(reused.IsError);
-        StringAssert.Contains(ErrorText(reused), "InvalidCursor");
+        StringAssert.Contains(ErrorText(reused), "InvalidCursor", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -215,7 +251,7 @@ public class OperatorMessageToolsTests
         Assert.AreEqual(2000, error.GetProperty("errorText").GetString()!.Length);
         Assert.IsTrue(error.GetProperty("errorTextTruncated").GetBoolean());
         Assert.IsFalse(json.GetRawText().Contains("Secret.Internals", StringComparison.Ordinal), "Stack traces must not be returned.");
-        StringAssert.EndsWith(json.GetProperty("webUiUrl").GetString(), "/Message/Index/CrmEndpoint/event-1042");
+        StringAssert.EndsWith(json.GetProperty("webUiUrl").GetString(), "/Message/Index/CrmEndpoint/event-1042", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -229,7 +265,7 @@ public class OperatorMessageToolsTests
         var result = await CallRawAsync("nimbus_get_message", new() { ["endpointId"] = "CrmEndpoint", ["eventId"] = "event-9" });
 
         Assert.IsTrue(result.IsError);
-        StringAssert.Contains(ErrorText(result), "MessageNotFound");
+        StringAssert.Contains(ErrorText(result), "MessageNotFound", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -239,7 +275,7 @@ public class OperatorMessageToolsTests
 
         var result = await CallRawAsync("nimbus_get_message", new() { ["endpointId"] = "CrmEndpoint", ["eventId"] = "event-9" });
 
-        StringAssert.Contains(ErrorText(result), "MessageNotFound");
+        StringAssert.Contains(ErrorText(result), "MessageNotFound", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -293,6 +329,7 @@ public class OperatorMessageToolsTests
             services.AddSingleton(_endpoints.Instance);
             services.AddSingleton(_events.Instance);
             services.AddSingleton(_monitor.Instance);
+            services.AddSingleton<NimBus.MessageStore.Abstractions.IEndpointMetadataStore>(_metadata);
         });
         await using var client = await host.CreateClientAsync();
         return await client.CallToolAsync(tool, arguments ?? []);

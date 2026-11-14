@@ -63,11 +63,47 @@ public class AgentServiceCollectionExtensionsTests
 
         using var provider = services.BuildServiceProvider();
 
-        Assert.IsInstanceOfType(provider.GetRequiredService<IAgentHandler<Ping>>(), typeof(TestHandler));
+        Assert.IsInstanceOfType<TestHandler>(provider.GetRequiredService<IAgentHandler<Ping>>());
         Assert.IsNotNull(provider.GetRequiredService<IAgentBusGateway>());
         Assert.IsTrue(
             provider.GetServices<IHostedService>().Any(h => h is AgentLoopWorker<Ping>),
             "The agent loop should be registered as a hosted service.");
+    }
+
+    [TestMethod]
+    public void AddNimBusAgent_WithApiKey_SendsTheKeyHeader()
+    {
+        var client = BuildGatewayClient(o => o.ApiKey = "nbak_abcdefghijkl_secret");
+
+        Assert.AreEqual("nbak_abcdefghijkl_secret", client.DefaultRequestHeaders.GetValues("X-NimBus-Agent-Key").Single());
+        Assert.AreEqual("enrichment-agent", client.DefaultRequestHeaders.GetValues("X-Agent-Id").Single());
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow("   ")]
+    public void AddNimBusAgent_WithoutApiKey_SendsNoKeyHeader(string? apiKey)
+    {
+        var client = BuildGatewayClient(o => o.ApiKey = apiKey);
+
+        Assert.IsFalse(client.DefaultRequestHeaders.Contains("X-NimBus-Agent-Key"));
+    }
+
+    private static HttpClient BuildGatewayClient(Action<AgentOptions> configure)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNimBusAgent<TestHandler, Ping>(o =>
+        {
+            o.AgentId = "enrichment-agent";
+            o.Subscribe("Ping");
+            o.BaseAddress = "http://nimbus-ops.test";
+            configure(o);
+        });
+        var provider = services.BuildServiceProvider();
+        // The typed client's name is its service type's name.
+        return provider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(IAgentBusGateway));
     }
 
     [TestMethod]
@@ -91,7 +127,7 @@ public class AgentServiceCollectionExtensionsTests
                 o.BaseAddress = "http://other.test";
             }));
 
-        StringAssert.Contains(ex.Message, "first-agent");
-        StringAssert.Contains(ex.Message, "second-agent");
+        StringAssert.Contains(ex.Message, "first-agent", StringComparison.Ordinal);
+        StringAssert.Contains(ex.Message, "second-agent", StringComparison.Ordinal);
     }
 }

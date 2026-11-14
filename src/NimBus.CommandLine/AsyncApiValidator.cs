@@ -28,7 +28,7 @@ public static class AsyncApiValidator
     /// <summary>Validates <paramref name="document"/> and returns the collected errors.</summary>
     public static AsyncApiValidationResult Validate(JObject document)
     {
-        if (document is null) throw new ArgumentNullException(nameof(document));
+        ArgumentNullException.ThrowIfNull(document);
 
         var errors = new List<string>();
 
@@ -198,7 +198,7 @@ public static class AsyncApiValidator
         JToken current = document;
         foreach (var rawSegment in reference.Substring(2).Split('/'))
         {
-            var segment = rawSegment.Replace("~1", "/").Replace("~0", "~");
+            var segment = rawSegment.Replace("~1", "/", StringComparison.Ordinal).Replace("~0", "~", StringComparison.Ordinal);
             switch (current)
             {
                 case JObject obj when obj.TryGetValue(segment, out var next):

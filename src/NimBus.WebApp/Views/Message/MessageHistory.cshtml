@@ -37,7 +37,7 @@
                     Exception
                 </dt>
                 <dd class="col-sm-9">
-                    @Html.DisplayFor(model => item.MessageContent.ErrorContent.ExceptionStackTrace)
+                    @Html.DisplayFor(model => item.MessageContent.ErrorContent!.ExceptionStackTrace)
                 </dd>
                 <dt class="col-sm-3">
                     @Html.DisplayNameFor(model => item.From)

@@ -196,7 +196,7 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) =>
         InstrumentAsync(nameof(DownloadEndpointSessionStateCountBatch), () => _inner.DownloadEndpointSessionStateCountBatch(endpointId, sessionIds));
 
-    public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) =>
+    public Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) =>
         InstrumentAsync(nameof(DownloadEndpointStatePaging), () => _inner.DownloadEndpointStatePaging(endpointId, pageSize, continuationToken));
 
     // ── Session views ───────────────────────────────────────────────────
@@ -204,7 +204,7 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take) =>
         InstrumentAsync(nameof(GetBlockedEventsOnSession), () => _inner.GetBlockedEventsOnSession(endpointId, sessionId, skip, take));
 
-    public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId) =>
+    public Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId) =>
         InstrumentAsync(nameof(GetPendingEventsOnSession), () => _inner.GetPendingEventsOnSession(endpointId));
 
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId) =>
@@ -247,6 +247,9 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task RemoveStoredMessage(string eventId, string messageId) =>
         InstrumentAsync(nameof(RemoveStoredMessage), () => _inner.RemoveStoredMessage(eventId, messageId));
 
+    public Task<int> PurgeStoredMessages(string endpointId) =>
+        InstrumentAsync(nameof(PurgeStoredMessages), () => _inner.PurgeStoredMessages(endpointId));
+
     public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) =>
         InstrumentAsync(nameof(SearchMessages), () => _inner.SearchMessages(filter, continuationToken, maxItemCount));
 
@@ -269,6 +272,9 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
 
     public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds) =>
         InstrumentAsync(nameof(GetEventReports), () => _inner.GetEventReports(endpointId, eventIds));
+
+    public Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit) =>
+        InstrumentAsync(nameof(FindEventReports), () => _inner.FindEventReports(endpointId, ticketId, limit));
 
     // ── Endpoint diagnostics ────────────────────────────────────────────
 

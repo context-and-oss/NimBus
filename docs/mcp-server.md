@@ -2,9 +2,9 @@
 
 The management WebApp can serve a **Model Context Protocol (MCP)** endpoint at `/mcp`. It lets an
 AI agent (Claude Code, Claude Desktop or any MCP client) look at endpoint health, find and inspect
-messages, search across endpoints, read metrics and failure classifications, and, for a signed-in
-operator, resubmit, skip, mark reported and classify failed messages. It applies the same
-authorization, redaction and audit as the Web UI.
+messages, search across endpoints, read metrics and failure classifications, read the evidence of a
+failure and record its own classification of it, and, for a signed-in operator, resubmit, skip and
+mark reported failed messages. It applies the same authorization, redaction and audit as the Web UI.
 
 - **Transport:** Streamable HTTP, stateless, protocol revisions up to 2026-07-28
   (`ModelContextProtocol.AspNetCore`).
@@ -23,24 +23,115 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_get_capabilities` | Environment, caller, readable endpoints, limits and features. Call it first | Signed in |
 | `nimbus_list_endpoints` | Readable endpoints with the event types each produces and consumes | Endpoint Reader |
 | `nimbus_get_overview` | Counts by status, oldest failure and Monitor acknowledgements across readable endpoints | Endpoint Reader |
-| `nimbus_get_endpoint` | The same for one endpoint | Endpoint Reader |
-| `nimbus_find_messages` | Tracked messages on one endpoint, filtered by status, event type, session, event id and time | Endpoint Reader |
+| `nimbus_get_worklist` | "What needs me?": open failed and dead-lettered messages grouped by endpoint, event type and error pattern, each with the newest open message, the sessions it blocks, its saved classification, a shared ticket and [options](#options-in-results) | Endpoint Reader |
+| `nimbus_get_endpoint` | The same for one endpoint, with its ownership: owner, team, contacts, source system, adapter repository and ticket link | Endpoint Reader |
+| `nimbus_find_messages` | Tracked messages on one endpoint, filtered by status, event type, session, event id and time. With `includeClassification`, whether each failed message's latest attempt is classified, and how | Endpoint Reader |
 | `nimbus_get_message` | Status, latest attempt, latest error, Web UI link, `messageVersion` and the `eligibleActions` you may take; the payload only with `includePayload=true` | Endpoint Reader; payloads also need PiiReader (and, with Entra, the `nimbus.payload.read` scope) |
 | `nimbus_get_message_history` | Processing attempts and log entries of one message | Endpoint Reader |
 | `nimbus_get_session` | Pending and deferred events of one session | Endpoint Reader |
 | `nimbus_search_messages` | Processing messages across all endpoints | Site Reader |
 | `nimbus_get_metrics` | Throughput, latency or failure groups for 1h to 30d | Site Reader |
-| `nimbus_get_classification` | The stored AI classification of a failed attempt, advisory only | Endpoint Reader; classification enabled |
-| `nimbus_prepare_action` | A read-only preview of resubmitting or skipping one message, and an `actionToken` to run it | The action's scope and endpoint Contributor |
-| `nimbus_resubmit_message` | Runs a prepared resubmit: replays the latest stored payload to the endpoint | `nimbus.resubmit` and endpoint Contributor |
-| `nimbus_skip_message` | Runs a prepared skip: the message is never processed, and later messages in its session may be released | `nimbus.skip` and endpoint Contributor |
-| `nimbus_set_message_reported` | Sets or clears the "reported" marker, optionally with an external ticket id | `nimbus.annotate` and endpoint Contributor |
-| `nimbus_classify_failure` | Requests an AI classification of a failure, or returns the stored one. Advisory only | `nimbus.classify` and endpoint Contributor; classification enabled |
+| `nimbus_get_classification` | The stored classification of a failed attempt, with who recorded it, advisory only. A rationale is untrusted | Endpoint Reader; classification enabled |
+| `nimbus_get_failure_evidence` | The scrubbed evidence of one failed attempt, its sending endpoint, a redacted payload when allowed, and the question set to answer | Endpoint Reader; classification recordable |
+| `nimbus_prepare_action` | A read-only preview of resubmitting or skipping one message, or of resubmitting the failed messages reported under one `ticketId` (at most 50), and an `actionToken` to run it | The action's scope and endpoint Contributor |
+| `nimbus_resubmit_message` | Runs a prepared resubmit: replays the latest stored payload to the endpoint. Returns an `operationId` | `nimbus.resubmit` (workloads: the `Nimbus.Resubmit` app role, within a budget) and endpoint Contributor |
+| `nimbus_skip_message` | Runs a prepared skip: the message is never processed, and later messages in its session may be released. Returns an `operationId` | Delegated `nimbus.skip` and endpoint Contributor; never a workload |
+| `nimbus_get_operation` | The status and observed outcome of a resubmit or skip: Dispatched, Succeeded, Failed, NotSent, OutcomeUnknown or Refused | Endpoint Reader on the operation's endpoint; the operation journal |
+| `nimbus_set_message_reported` | Sets or clears the "reported" marker on one message (`eventId`) or up to 50 on one endpoint (`eventIds`), optionally with an external ticket id | `nimbus.annotate` (workloads: the `Nimbus.Annotate` app role) and endpoint Contributor |
+| `nimbus_find_reports` | An endpoint's reported messages, optionally under one ticket, with each one's status and normalized error pattern, to reuse a ticket | Endpoint Reader |
+| `nimbus_record_classification` | Records your answers to the question set for one failed attempt. NimBus composes the guidance. Advisory, changes no message | `nimbus.classify` (workloads: the `Nimbus.Classify` app role) and endpoint Contributor; classification recordable |
+| `nimbus_classify_failure` | **Deprecated, removed in v5.0.0.** Asks the built-in provider to classify a failure, or returns the stored one | Delegated `nimbus.classify` and endpoint Contributor; a configured provider |
 
-Results never contain stack traces. Error and log text is cut to 2,000 characters and is untrusted
+Results never contain stack traces, except `nimbus_get_failure_evidence` with `includeStackTrace`
+when the adapter stores one and an Owner allows it (see
+[Integration Intelligence](integration-intelligence.md)). Error and log text is cut to 2,000 characters and is untrusted
 data from the failing handler. Timestamps are UTC. Errors start with a code in brackets, for example
 `[EndpointNotFound]` or `[PermissionDenied]`. A resource the caller cannot read is reported exactly
 like one that does not exist.
+
+## Options in results
+
+So that a person can pick "resubmit this failed message" from a list instead of naming tools and
+ids, several results carry `nextActions` ([Spec 046](spec/046-mcp-guided-actions/spec.md)): the
+options the caller may take now, recommended first. The server instructions tell the agent to offer
+them as a numbered choice, with the client's own question UI where it has one.
+
+```json
+{
+  "id": "resubmit",
+  "label": "Resubmit this message",
+  "kind": "change",
+  "tool": "nimbus_prepare_action",
+  "arguments": { "action": "resubmit", "endpointId": "ErpEndpoint", "eventId": "…", "messageVersion": "…" },
+  "needs": [],
+  "confirm": true
+}
+```
+
+| Result | Options |
+| --- | --- |
+| `nimbus_get_message` | Look at its history, resubmit, classify, mark reported, skip, or open it in the Web UI (deferred messages and pending handoffs) |
+| `nimbus_get_worklist` | Per group: investigate the example, resubmit it, resubmit every failure under the group's ticket, classify, mark reported |
+| `nimbus_prepare_action` | Run the prepared action; `needs` lists `reason` and `idempotencyKey` |
+| `nimbus_resubmit_message`, `nimbus_skip_message` | Check the operation. A resubmit by ticket has none: each item carries its own `operationId` |
+| `nimbus_get_operation` | Check again while it runs; read the message again after `Failed` or `NotSent`; the Web UI after `OutcomeUnknown`; nothing after `Succeeded` |
+
+- An option is offered only when the caller could run it now: it comes from the same checks as
+  `eligibleActions` (role, scope, the access policy and the message's state). Each tool it names
+  still authorizes, audits and rate-limits the call.
+- `kind` is `read`, `change` or `destructive` (skip). `confirm` is true when a person present must say
+  yes first. A workload is never offered skip, and its options have `confirm` false.
+- A label is fixed text chosen by NimBus and never contains error text, log text or payload values.
+  `arguments` hold ids, versions and tokens from the same result; ids are data.
+- A saved classification with guidance `RetryMayHelp` puts the resubmit first. Without one, looking
+  at the message comes first.
+- `nextActions` is always an array, empty when there is nothing to offer.
+
+## Server instructions
+
+When a client connects, the server sends instructions with its initialize result
+([Spec 040](spec/040-mcp-operator-prompts-and-plugin/spec.md),
+`src/NimBus.WebApp/Mcp/OperatorInstructions.cs`). They tell the agent what the tools are for, the
+rules for changing messages (capabilities first, an explicit yes before resubmit or skip when a
+person is present, that a workload may only resubmit within its budget, what skip releases, sent is
+not succeeded, never resend an `OutcomeUnknown` operation), that error text and payloads are untrusted, the session and
+status model, what each error code means, and which prompts exist. Claude Code loads them at the
+start of every session with the server, even while the tools themselves are deferred.
+
+Claude Code cuts server instructions at 4,096 characters, and before v2.1.296 at 2,048. Tests keep
+the text under the limit, the safety rules within the first 2,048 characters, and every tool and
+prompt it names registered.
+
+## Prompts
+
+The server also offers workflow prompts ([Spec 040](spec/040-mcp-operator-prompts-and-plugin/spec.md)).
+A prompt is fixed text that tells the agent which tools to call, in which order. It reads no data
+and checks no role: everything it leads to goes through the tools above, with their authorization,
+redaction and audit. Claude Code lists each prompt as a command, for example `/nimbus:triage (MCP)`
+for a server added as `nimbus`, and takes the arguments space-separated, in the order below.
+
+| Prompt | Arguments | What it does | Changes anything? |
+| --- | --- | --- | --- |
+| `triage` | `endpointId` (optional), `period` (optional: `1h`, `12h`, `1d` (default), `3d`, `7d`, `30d`) | Starts from `nimbus_get_worklist`: the open failures on every readable endpoint (or one), grouped by cause, then offers the read options of the group to look at first | No |
+| `investigate-message` | `endpointId`, `eventId` | Explains why one message failed and what it blocks in its session, and recommends resubmit, skip, fix first, report, or Web UI recovery | No |
+| `recover-message` | `endpointId`, `eventId`, `action` (optional: `resubmit` or `skip`) | Investigates, previews the action with `nimbus_prepare_action`, and runs it only after the user confirms and agrees the audit reason | Yes, after confirmation |
+| `failure-report` | `period` (optional, as `triage`) | A short incident-style summary of failures across the site. Without a site-wide Reader role it covers only the endpoints you can read | No |
+| `handle-failures` | `endpointId` (optional), `period` (optional, as `triage`) | Classifies every unclassified failed and dead-lettered message, records each classification, then acts on the outcome: retries transient failures after the user confirms, drafts data-quality reports for source owners, opens a bug with a draft fix in the adapter's repository (with the user's own tools, never the NimBus repository), or hands the rest to a person | Records classifications; resubmits only after confirmation |
+
+`recover-message` is listed only while `nimbus_prepare_action` is available to the caller: a site
+Owner can remove it by switching off both resubmit and skip, or by denying the client changes, in
+[Settings → MCP access](#managing-access-in-the-webapp). Requesting it anyway answers
+`[PermissionDenied] recover-message is turned off by an administrator.` and is audited like a
+refused tool. `handle-failures` follows `nimbus_record_classification` the same way: switching off
+**Classify failures**, or denying the client changes, removes it. An invalid argument (an id longer than 200 characters or with control characters, an
+unknown period or action) answers `[InvalidArgument]`. An endpoint you cannot read surfaces as
+`[EndpointNotFound]` from the first tool the agent calls.
+
+Clients that support argument completion offer a list while you fill in a prompt: `period`,
+`action` and `unattended` from their allowed values, and `endpointId` from the endpoints you can
+read. Event ids are not completed; use `nimbus_get_worklist` to find a message. A prompt you cannot
+list completes nothing. Completions count against the request limit (see [Limits](#limits)) and are
+not audited.
 
 ## Changing messages
 
@@ -74,14 +165,132 @@ between the command and the Resolver recording it, `nimbus_get_message` reports 
 later.
 
 Over MCP, resubmit and skip accept Failed, DeadLettered and Unsupported messages. Deferred messages
-and pending handoffs are recovered in the Web UI. `nimbus_set_message_reported` and
-`nimbus_classify_failure` need no token; they take a reason or an idempotency key directly.
+and pending handoffs are recovered in the Web UI. `nimbus_set_message_reported`,
+`nimbus_record_classification` and `nimbus_classify_failure` need no token; they take a reason or an
+idempotency key directly.
 
 Tools that change a message require a delegated scope from a signed-in user. A workload token,
-which carries app roles and no `scp` claim, is refused with `[PermissionDenied]`. Errors specific
+which carries app roles and no `scp` claim, is refused with `[PermissionDenied]`. The exceptions are
+recording a classification, which changes no message (see
+[Recording classifications](#recording-classifications)), and an unattended resubmit within a budget
+(see [Unattended resubmits](#unattended-resubmits)). A workload can never skip. Errors specific
 to these tools are `[StaleMessage]`, `[ActionNotAllowed]` (the message's state does not allow the
-action), `[RateLimited]`, `[AuditUnavailable]` and `[OutcomeUnknown]` (publishing failed after the
-message was claimed; it was restored, so read it again before you retry).
+action, or a workload's budget or the message's cap is used up), `[RateLimited]`,
+`[AuditUnavailable]` and `[OutcomeUnknown]` (publishing failed after the message was claimed; it was
+restored, but the command may have reached Service Bus).
+
+## Operation journal
+
+Every resubmit and skip over MCP is an operation ([Spec 044](spec/044-agent-first/spec.md) Phase 2,
+from Spec 035 Phase 2b), stored in the message store: SQL Server table `OperatorOperations`
+(migration `0026_OperatorOperations.sql`), the Cosmos container `operatoroperations` (partition key
+`/id`, item TTL on), or the in-memory store. Operations are kept for 30 days.
+
+- **The same idempotency key never runs twice.** The operation id is derived from the caller and
+  the key. Retrying with the same key returns the existing operation (`replayed: true`) and sends
+  nothing, even after the action token expired or the message changed. A key used for a resubmit
+  cannot be reused for a skip.
+- **The outcome comes from the Resolver.** The command is published with the operation id as its
+  Service Bus message id. When the Resolver has stored that message the operation is `Dispatched`,
+  and the endpoint's response, whose `ParentMessageId` names it, makes it `Succeeded`
+  (`ResolutionResponse`, `SkipResponse`) or `Failed` (`ErrorResponse`, `UnsupportedResponse`).
+  `nimbus_get_operation` reads it, and catches up with the history on every read.
+- **A crashed request is repaired, never republished.** The journal records each step before it is
+  taken: claimed, then publishing, then dispatched. A background reconciler on every WebApp
+  instance visits operations whose request stopped. One that stopped before publishing is
+  `NotSent` and its message is restored. One that stopped while publishing is confirmed from the
+  Resolver's history, or after 60 minutes without a trace its message is restored for a person and
+  it stays `OutcomeUnknown`. NimBus never sends a command again on its own, and an agent must not
+  resubmit an `OutcomeUnknown` operation. Repairs are audited as `CommandNotSent` by
+  "NimBus operation reconciler".
+
+Topic duplicate detection stays off: a subscriber that enables the [inbox](inbox-pattern.md) also
+skips a redelivered command, because the inbox records a resubmission's message id. Without the
+journal store (a custom storage provider that does not implement `IOperatorOperationStore`) resubmit
+and skip work as before, `nimbus_get_operation` answers `[FeatureUnavailable]`, and unattended
+resubmits are unavailable. The Web UI's own resubmit and skip are not journaled.
+
+## Reports, ownership and resubmit by ticket
+
+[Spec 044](spec/044-agent-first/spec.md) Phase 3 lets an agent link failures to the report or bug it
+filed and resubmit them after the fix:
+
+- **Ownership.** An endpoint Owner records the source system, the adapter's repository and the issue
+  tracker's link template (`{ticketId}`) on the endpoint's **Ownership** tab. `nimbus_get_endpoint`
+  returns them. Agents file adapter defects only in that repository, never in the NimBus
+  repository; without one they hand adapter faults to a person.
+- **Reuse a ticket.** `nimbus_find_reports` lists an endpoint's reported messages with their ticket
+  and normalized error pattern, so a repeated pattern goes on the existing ticket.
+- **Mark a batch.** `nimbus_set_message_reported` with `eventIds` marks up to 50 messages under one
+  reason and ticket, auditing each and returning a result per message.
+- **Resubmit by ticket.** `nimbus_prepare_action` with `ticketId` (resubmit only) previews the failed
+  messages reported under it, and `nimbus_resubmit_message` runs each as its own journaled operation,
+  keyed by the idempotency key and the event id. Stale members are skipped; a workload's budget and
+  cap apply per member.
+- **Stack traces.** With `includeStackTrace`, `nimbus_get_failure_evidence` returns the scrubbed
+  trace when the adapter stores one and an Owner allows it (see
+  [Integration Intelligence](integration-intelligence.md)).
+
+A workload marks messages reported with the `Nimbus.Annotate` app role while the Owner's **Workloads
+may mark messages reported** switch is on.
+
+## Unattended resubmits
+
+A workload resubmits failed messages without a person when:
+
+- its token carries the `Nimbus.Resubmit` app role;
+- the Owner turned on **Workloads may resubmit** in **Settings → MCP access** (off by default,
+  effective only while workload tokens are accepted and **Resubmit messages** is on);
+- its object id has Contributor on the endpoint in Access Control; and
+- the deployment has the operation journal.
+
+NimBus then enforces two limits, both counted from the journal, so they hold across instances and
+restarts and apply even when rate limiting is off:
+
+| Limit | Default | Range | Refusal |
+| --- | --- | --- | --- |
+| Resubmits per workload client in a rolling 24 hours | 20 | 0–500 | `[ActionNotAllowed]` "… used its budget …" |
+| Unsuccessful workload resubmits of one message, across agents | 2 | 1–5 | `[ActionNotAllowed]` "… Hand it to a person." |
+
+A resubmit counts against the cap unless its operation `Succeeded` (or was never sent or was
+refused). The per-minute change limit still applies on top. `nimbus_get_capabilities` reports
+`caller.isWorkload` and, for a workload admitted to resubmit, an `unattended` block with the budget,
+how much of it is used and the cap. The `handle-failures` prompt takes `unattended: true` for a
+runner with no person present: it then retries without asking, polls `nimbus_get_operation`, and
+hands a message to a person when a limit refuses it. There is no app role for skip.
+
+## Recording classifications
+
+An agent classifies a failure with its own model ([Spec 044](spec/044-agent-first/spec.md)):
+
+1. `nimbus_find_messages` with `includeClassification: true` finds the failures whose latest
+   attempt has no saved classification. When classification storage cannot answer,
+   `classificationStatus` is `unavailable` and nothing is inferred.
+2. `nimbus_get_failure_evidence` returns the evidence and the current question set: a failure
+   category, three likelihoods and the fault origin (`source_data`, `adapter_code`, `target_system`,
+   `configuration`, `platform` or `unknown`). Each question names the argument that carries its
+   answer. A message that is no longer Failed or DeadLettered answers `[ActionNotAllowed]`.
+3. `nimbus_record_classification` stores the answers, with the `messageId` and `questionSetVersion`
+   the evidence returned, a new GUID as `idempotencyKey`, and optionally the model and a rationale of
+   up to 1,000 characters. NimBus composes the guidance from the answers and the saved thresholds.
+   When a classification already exists it is returned unchanged (`existing: true`) unless
+   `supersede` is true.
+
+A recording is advisory and changes no message. It counts against the request limit, not the
+change limit. The rationale is scrubbed like error text and is returned to other agents as untrusted
+data. Every recording is audited as `FailureClassified` with the provider `Agent` and the client
+application.
+
+The evidence carries a redacted payload only when an Owner turns on **Settings → Failure
+intelligence → Agents may see redacted payloads** (off by default). Values not marked sensitive in
+the event's metadata remain, so the prompt tells agents never to copy payload values into issues,
+reports or tests.
+
+**Unattended recording.** A workload (an app-only token) may record when it holds the
+`Nimbus.Classify` app role, the Owner turned on **Workloads may record classifications** in
+**Settings → MCP access** (off by default, and effective only while workload tokens are accepted),
+and the workload's object id has Contributor on the endpoint in Access Control. The role admits
+`nimbus_record_classification` only: never `nimbus_classify_failure`, resubmit, skip or report.
 
 ## Managing access in the WebApp
 
@@ -90,8 +299,8 @@ There are two layers:
 
 - **The deployment** decides whether `/mcp` can exist and whom NimBus trusts for tokens:
   `NimBus__Mcp__Enabled`, `NimBus__Mcp__EnableForLocalDevelopment`, `NimBus__Mcp__Entra__*`,
-  `NimBus__Mcp__AllowedOrigins__*` and the `RateLimiting__Mcp*` limits. The tab shows them but
-  cannot change them.
+  `NimBus__Mcp__AllowedOrigins__*` and the `RateLimiting__Mcp*` limits. The panel's
+  **Overview** and **Limits** tabs show them but cannot change them.
 - **The Owner's policy** can only narrow that. A call proceeds only when the policy, the Entra scope
   or app role, the NimBus role on the endpoint and the message state all allow it.
 
@@ -102,6 +311,9 @@ The policy covers:
 | Serve the MCP endpoint | When off, every call gets `503 [Disabled]`. The protected-resource metadata keeps working. |
 | Raw payloads, mark reported, classify, resubmit, skip | A switched-off tool is removed from `tools/list` and from `permittedActions`; a direct call gets `[PermissionDenied] … turned off by an administrator`. The read tools have no switch. |
 | Unattended workloads | Whether app-only (`Nimbus.Observe`) tokens are accepted for the read tools. |
+| Workloads may record classifications | Whether workloads with the `Nimbus.Classify` app role may call `nimbus_record_classification`. Off by default; effective only while workload tokens are accepted and **Classify failures** is on. |
+| Workloads may mark messages reported | Whether workloads with the `Nimbus.Annotate` app role may call `nimbus_set_message_reported`. Off by default. |
+| Workloads may resubmit | Whether workloads with the `Nimbus.Resubmit` app role may resubmit unattended, with the resubmits per agent per day and the unsuccessful resubmits per message (see [Unattended resubmits](#unattended-resubmits)). Off by default. |
 | People | Everyone with a NimBus role, or only listed users and groups (email, user object id, or a group object id from the `groups` claim). Workloads are governed by the workload switch instead. |
 | Client applications | Any client Entra lets sign in, or only approved ones, matched on `azp` (then `appid`). Each approved client can be allowed or denied the tools that change messages. |
 | Endpoints | Hide endpoints from agents (they answer `[EndpointNotFound]`), and limit where agents may change messages. |
@@ -116,21 +328,54 @@ the instance that saved it applies it at once. **Turn off now** turns the endpoi
 latest saved policy, whatever revision the page last read. The policy fails closed: if it cannot
 be read, an instance keeps the last policy it loaded, and until it has loaded one at all it
 answers `503 [Unavailable]`. With no saved policy, everything the deployment allows is on, as
-before the tab existed.
+before the policy existed.
 
 The policy is one record in shared storage (`IEndpointMetadataStore.GetMcpAccessSettings`;
 SQL Server migration `0023_McpAccessSettings.sql`, a fixed-id document in the Cosmos settings
-container). The API is `GET`/`PUT /api/admin/mcp/settings`, `POST /api/admin/mcp/turn-off` and
-`GET /api/admin/mcp/activity`.
+container). The API is `GET`/`PUT /api/v1/admin/mcp/settings`, `POST /api/v1/admin/mcp/turn-off` and
+`GET /api/v1/admin/mcp/activity`.
+
+## Connect a client
+
+The quickest way is to let the assistant set itself up while you do the sign-in. Paste this into
+it, with your deployment's URL and the client id from
+[step 1.7](#1-register-the-mcp-resource) (for local development, leave out the client id):
+
+> Add the NimBus operator MCP server at `https://<webapp>/mcp` with client id `<client-id>`. Don't
+> sign in for me: tell me when to do it in the browser. Then call `nimbus_get_capabilities` and
+> tell me which endpoints I can read and what I may do.
+
+Never type a password or token into the chat. The sign-in happens in your browser.
+
+| Client | Status |
+| --- | --- |
+| Claude Code | Supported. Local development: see [the next section](#local-development-aspire). Entra: `claude mcp add --transport http --client-id <mcp-client-app-id> --callback-port <port> nimbus https://<webapp>/mcp`, then `/mcp` to sign in ([Verify](#3-verify)) |
+| Claude Desktop, Codex | Not yet documented. They need a pre-registered Entra client id and a registered redirect URI, and a client that connects from its vendor's cloud cannot reach a local stack or a [private network](spec/034-private-networking/spec.md). Steps follow once each has been connected end to end ([Spec 046 §6.1](spec/046-mcp-guided-actions/spec.md)) |
+
+### Example flows
+
+These show the order of tool calls, not literal transcripts.
+
+**"What needs me?"** `nimbus_get_capabilities`, then `nimbus_get_worklist`. The agent shows a table
+of groups and offers the first group's `nextActions` as a numbered choice: "1. Investigate an
+example 2. Resubmit the example 3. Mark it reported under a ticket".
+
+**"Resubmit it."** `nimbus_get_message` (its `messageVersion`), `nimbus_prepare_action`, then the
+preview and a question: "Resubmit message … to ErpEndpoint? Reason for the audit log?" After a yes,
+`nimbus_resubmit_message` with the reason and a new GUID, then `nimbus_get_operation` until it
+reads `Succeeded` or `Failed`.
+
+**A Reader.** The same worklist, but every option has `kind` `read`, so the agent offers only to
+look further and says who can make changes.
 
 ## Local development (Aspire)
 
 With the NimBus Aspire AppHost (`src/NimBus.AppHost`) no setup is needed: it sets
 `NimBus__Mcp__EnableForLocalDevelopment=true`, and the
 WebApp serves `/mcp` whenever its local-dev bypass is on (Development and
-`EnableLocalDevAuthentication=true` in `src/NimBus.WebApp/appsettings.Development.json`). The
-CrmErpDemo AppHost does not set it; to use `/mcp` there, set `NimBus:Mcp:EnableForLocalDevelopment`
-to `true` yourself, for example in that `appsettings.Development.json`. No sign-in
+`EnableLocalDevAuthentication=true`, which the AppHost sets unless `NIMBUS_IDENTITY` is on). The
+CrmErpDemo AppHost sets it too, and also turns on failure classification
+with `Provider: None`, so an agent can record classifications there. No sign-in
 is involved; every call runs as the "Local Developer" user, with the same role and PII checks as the
 Web UI. Scopes do not apply in this mode, so the tools that change messages need only the
 Contributor role. With the bypass off, `/mcp` is not served.
@@ -167,8 +412,9 @@ In the tenant that signs in your operators:
      replaces it.
    - `nimbus.resubmit`, `nimbus.skip`, `nimbus.annotate` and `nimbus.classify`: use
      `nimbus_resubmit_message`, `nimbus_skip_message`, `nimbus_set_message_reported` and
-     `nimbus_classify_failure`. Each only adds to the Contributor role on the endpoint. Consider
-     making them admin-consent scopes so only clients you approve can request them.
+     `nimbus_record_classification` (and the deprecated `nimbus_classify_failure`). Each only adds to
+     the Contributor role on the endpoint. Consider making them admin-consent scopes so only clients
+     you approve can request them.
 3. **Add the endpoint URL as a second Application ID URI:** `https://<webapp>/mcp`, exactly as
    clients connect to it. MCP clients send that URL as the OAuth `resource` parameter, and Entra
    refuses a sign-in whose `resource` does not belong to the same app as the requested scopes
@@ -179,8 +425,9 @@ In the tenant that signs in your operators:
    ```
 4. **Manifest:** set `api.requestedAccessTokenVersion` to `2`, so access tokens carry the client
    id as their audience whichever identifier the client asked for.
-5. **App roles** (optional, for unattended workloads): add `Nimbus.Observe` for applications. No
-   app role grants payload access or changes messages.
+5. **App roles** (optional, for unattended workloads): add `Nimbus.Observe` for applications, and
+   `Nimbus.Classify` for workloads that record failure classifications. No app role grants payload
+   access or changes messages.
 6. **Token configuration** (optional): add the `groups` claim if your NimBus role grants use Entra
    groups. Grants keyed by object id or email work without it.
 7. **Register an MCP client.** Entra does not support dynamic client registration, so every MCP
@@ -246,6 +493,37 @@ keys, rather than serving an unauthenticated endpoint.
 In [private networking mode](spec/034-private-networking/spec.md), only clients inside the network
 can reach `/mcp`. Cloud-hosted agents need a path through the Application Gateway.
 
+## Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `AADSTS9010010`: the resource doesn't match the requested scopes | The endpoint URL isn't an Application ID URI of the MCP resource. Add `https://<webapp>/mcp` ([step 1.3](#1-register-the-mcp-resource)) |
+| `AADSTS500113`: no reply address is registered | The client id is the MCP resource's own app id. Use the separate client registration ([step 1.7](#1-register-the-mcp-resource)) |
+| `AADSTS50011`: the redirect URI doesn't match | Register `http://localhost:<port>/callback` under **Mobile and desktop** on the client registration, with the same port as `--callback-port` |
+| `AADSTS65001`: consent required | Pre-authorize the client on the MCP resource for the scopes it asks for, or grant admin consent |
+| `/.well-known/oauth-protected-resource/mcp` returns the WebApp's HTML page or a sign-in redirect instead of JSON | `/mcp` isn't enabled on this WebApp (`NimBus__Mcp__Enabled`), or its NimBus version predates the endpoint |
+| `403` when connecting | The site Owner's [access policy](#managing-access-in-the-webapp) refuses this person, client application or workload |
+| `503 [Disabled]` | A site Owner turned the endpoint off in Settings → MCP access |
+| `nimbus_get_capabilities` lists no readable endpoints | The user holds no NimBus role on any endpoint |
+| An action you expected is missing from `permittedActions` | The token lacks the action's scope (sign in again after adding it), the user isn't Contributor on the endpoint, or a site Owner switched the action off |
+| New tools or prompts don't appear after an upgrade | Claude Code reads the tool list when it connects. Reconnect the server in `/mcp` or start a new session |
+
+Tool errors start with a code in brackets. What to do about each:
+
+| Code | Meaning and what to do |
+| --- | --- |
+| `[EndpointNotFound]`, `[MessageNotFound]` | Missing, or not readable by you; the two look the same on purpose. Check the id with `nimbus_list_endpoints` or `nimbus_get_worklist` |
+| `[PermissionDenied]` | Your role, scope or the access policy doesn't allow it. Don't retry; ask a site Owner, or sign in again after a scope was added |
+| `[StaleMessage]` | The message changed since it was read, or the action token expired. Nothing was sent. Read it again and confirm again |
+| `[ActionNotAllowed]` | Its state doesn't allow the action, or a workload's budget or per-message cap is used up. Hand it to a person |
+| `[OutcomeUnknown]` | The send may or may not have reached Service Bus. Read the operation; never resend it. A person decides in the Web UI |
+| `[RateLimited]` | Too many changes in the window. Wait and try again |
+| `[AuditUnavailable]` | The audit log couldn't record the action, so nothing was sent. Try again later |
+| `[FeatureUnavailable]` | The feature, for example failure classification or the operation journal, isn't enabled in this deployment |
+| `[SourceUnavailable]` | Storage couldn't answer. Try again; if it persists, check the WebApp's logs |
+| `[InvalidCursor]` | The cursor belongs to another query. Repeat the query without it |
+| `[InvalidArgument]` | An argument is missing or invalid; the message says which |
+
 ## Limits
 
 `/mcp` has its own rate-limit policy, `nimbus-mcp`: 60 requests per 60 seconds, per tenant,
@@ -266,4 +544,4 @@ Owner can lower both limits in Settings → MCP access, but not raise them. See
   `nimbus_find_messages`, `nimbus_search_messages` and `nimbus_get_message_history`.
 - **Bus participation:** `define_event_type`, `subscribe`, `receive_messages`, `publish_event` and
   `settle_message` are not operator tools. Agents that take part on the bus use the `NimBus.Agents`
-  REST SDK against `/api/agent/*`.
+  REST SDK against `/api/v1/agent/*`.

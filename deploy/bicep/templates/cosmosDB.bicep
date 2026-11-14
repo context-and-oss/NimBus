@@ -132,6 +132,7 @@ var sharedContainers = [
   { name: 'settings', pk: '/id' }        // operator-tuned platform settings
   { name: 'servicehealth', pk: '/id' }   // Resolver liveness beats
   { name: 'endpointacknowledgements', pk: '/id' } // shared Monitor ACKs, one document per endpoint
+  { name: 'operatoroperations', pk: '/id', ttl: -1 } // operator operation journal (Spec 044); TTL on, items expire after 30 days
   { name: 'heartbeatuptimedays', pk: '/EndpointId', ttl: -1 } // heartbeat uptime rollups; TTL on, items decide expiry
   { name: 'heartbeatgaps', pk: '/EndpointId', ttl: -1 }       // heartbeat silent periods; TTL on, items decide expiry
 ]

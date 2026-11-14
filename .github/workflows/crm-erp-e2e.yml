@@ -56,7 +56,17 @@ jobs:
 
       - name: Install demo prerequisites
         run: |
-          dotnet tool install --global Aspire.Cli --version 13.5.4
+          # The Aspire CLI has to match the AppHost's Aspire version, so read it from the
+          # AppHost project instead of pinning it here. A CLI one minor behind still reports
+          # the AppHost as started, then cannot find it: every later step fails with
+          # "No AppHost is currently running" and no scenario runs.
+          aspire_version="$(grep -oE 'Aspire\.AppHost\.Sdk/[0-9]+\.[0-9]+\.[0-9]+' "$E2E_APPHOST" | head -n 1 | cut -d/ -f2 || true)"
+          if [ -z "$aspire_version" ]; then
+            echo "::error::Could not read the Aspire.AppHost.Sdk version from $E2E_APPHOST"
+            exit 1
+          fi
+          echo "Aspire version of the AppHost: $aspire_version"
+          dotnet tool install --global Aspire.Cli --version "$aspire_version"
           npm install --global azure-functions-core-tools@4.14.0
           export SSL_CERT_DIR="$HOME/.aspnet/dev-certs/trust:${SSL_CERT_DIR:-/usr/lib/ssl/certs}"
           echo "SSL_CERT_DIR=$SSL_CERT_DIR" >> "$GITHUB_ENV"

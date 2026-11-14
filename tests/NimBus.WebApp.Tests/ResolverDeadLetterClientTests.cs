@@ -65,4 +65,27 @@ public sealed class ResolverDeadLetterClientTests
         Assert.AreEqual("original-id", replay.ApplicationProperties["DeadLetterOriginalMessageId"]);
         Assert.AreEqual("CosmosDbThrottled", replay.ApplicationProperties["DeadLetterOriginalReason"]);
     }
+
+    [TestMethod]
+    public void CloneForReplay_StartsAFreshThrottleRetryBudget()
+    {
+        // A message is dead-lettered as CosmosDbThrottled once ThrottleRetryCount + DeliveryCount
+        // reaches the delivery budget, so it carries a count of about nine. Copied onto the
+        // replay, that count would dead-letter it again on its first throttle, without backoff.
+        var source = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("payload"),
+            messageId: "original-id",
+            sessionId: "session",
+            properties: new Dictionary<string, object>
+            {
+                ["ordinary"] = "kept",
+                ["ThrottleRetryCount"] = "9",
+                ["DeadLetterReason"] = "CosmosDbThrottled",
+            });
+
+        var replay = ResolverDeadLetterClient.CloneForReplay(source);
+
+        Assert.IsFalse(replay.ApplicationProperties.ContainsKey("ThrottleRetryCount"));
+        Assert.AreEqual("kept", replay.ApplicationProperties["ordinary"]);
+    }
 }

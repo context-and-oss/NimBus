@@ -38,7 +38,7 @@ public class RequestJsonHandler<TRequest, TResponse> : IEventJsonHandler
     /// <inheritdoc />
     public async Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
     {
-        if (context == null) throw new ArgumentNullException(nameof(context));
+        ArgumentNullException.ThrowIfNull(context);
 
         var replyTo = context.ReplyTo;
         var replySessionId = context.ReplyToSessionId;
@@ -60,7 +60,7 @@ public class RequestJsonHandler<TRequest, TResponse> : IEventJsonHandler
         {
             if (canReply)
             {
-                await TrySendErrorReplyAsync(replyTo, replySessionId, context.CorrelationId, exception, cancellationToken)
+                await TrySendErrorReplyAsync(replyTo!, replySessionId!, context.CorrelationId, exception, cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -76,7 +76,7 @@ public class RequestJsonHandler<TRequest, TResponse> : IEventJsonHandler
         }
         catch (Exception exception) when (canReply)
         {
-            await TrySendErrorReplyAsync(replyTo, replySessionId, context.CorrelationId, exception, cancellationToken)
+            await TrySendErrorReplyAsync(replyTo!, replySessionId!, context.CorrelationId, exception, cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -84,7 +84,7 @@ public class RequestJsonHandler<TRequest, TResponse> : IEventJsonHandler
         if (canReply)
         {
             await _replyDispatcher.SendReplyAsync(
-                new ReplyMessage(replyTo, replySessionId)
+                new ReplyMessage(replyTo!, replySessionId!)
                 {
                     CorrelationId = context.CorrelationId,
                     PayloadJson = JsonConvert.SerializeObject(response),
@@ -96,7 +96,7 @@ public class RequestJsonHandler<TRequest, TResponse> : IEventJsonHandler
     private async Task TrySendErrorReplyAsync(
         string replyTo,
         string replySessionId,
-        string correlationId,
+        string? correlationId,
         Exception exception,
         CancellationToken cancellationToken)
     {

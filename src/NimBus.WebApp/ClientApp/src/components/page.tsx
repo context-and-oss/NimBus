@@ -4,7 +4,11 @@ import { cn } from "lib/utils";
 
 interface IPage {
   title: string;
-  subtitle?: string;
+  /** Small caps label above the title (e.g. "Event"). */
+  eyebrow?: string;
+  /** Rendered beside the title, e.g. a status badge. */
+  titleAdornment?: React.ReactNode;
+  subtitle?: React.ReactNode;
   actions?: React.ReactNode;
   offsetDimensionsHandler?: (height: number, width: number) => void;
   children: React.ReactNode;
@@ -60,7 +64,7 @@ const Page: React.FC<IPage> = (props) => {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 px-7 py-7 gap-6">
-      <header className="flex items-end justify-between gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="flex items-center gap-3.5 min-w-0">
           {props.backbutton && (
             <button
@@ -77,18 +81,26 @@ const Page: React.FC<IPage> = (props) => {
             </button>
           )}
           <div className="min-w-0">
-            <h1 className="text-[28px] font-bold tracking-tight m-0 truncate">
-              {props.title}
-            </h1>
+            {props.eyebrow && (
+              <div className="mb-1 font-mono text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground">
+                {props.eyebrow}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+              <h1 className="text-[28px] font-bold tracking-tight m-0 truncate">
+                {props.title}
+              </h1>
+              {props.titleAdornment}
+            </div>
             {props.subtitle && (
-              <p className="mt-1 text-sm text-muted-foreground m-0 truncate">
+              <div className="mt-1 text-sm text-muted-foreground m-0 truncate">
                 {props.subtitle}
-              </p>
+              </div>
             )}
           </div>
         </div>
         {props.actions && (
-          <div className="flex gap-2 items-center shrink-0">{props.actions}</div>
+          <div className="flex gap-2 items-center">{props.actions}</div>
         )}
       </header>
       <div ref={ref} className="flex flex-1 min-h-0">

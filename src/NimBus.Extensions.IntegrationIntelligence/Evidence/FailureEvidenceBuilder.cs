@@ -70,6 +70,8 @@ public sealed class FailureEvidenceBuilder
 
         var history = _options.Data.IncludeRecentFailureHistory
             ? await _messages.GetEventHistory(eventId).ConfigureAwait(false) : [];
+        var (source, originating) = Senders(target, current, history);
+        input = input with { SourceEndpoint = source, OriginatingEndpoint = originating };
         var priorFailures = history
             .Where(row => string.Equals(row.EndpointId, target.EndpointId, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(row.SessionId, target.SessionId, StringComparison.Ordinal)
@@ -90,6 +92,8 @@ public sealed class FailureEvidenceBuilder
             .ToArray();
 
         input = input with { RecentHistory = priorFailures };
+        if (_options.IncludeStackTrace)
+            input = input with { StackTrace = ScrubStackTrace(target, error?.ExceptionStackTrace) };
         if (_options.IncludeEventPayload && _redactor is not null)
         {
             var payload = target.MessageContent?.EventContent?.EventJson;
@@ -120,6 +124,65 @@ public sealed class FailureEvidenceBuilder
             scrubbed = _secrets.ScrubJson(scrubbed) ?? string.Empty;
         return IntelligenceDataRedactor.ScrubText(scrubbed, maximumLength ?? _options.MaximumErrorTextLength);
     }
+
+    // Values the event's metadata marks sensitive are replaced in the trace too, failing closed
+    // like error text when they can't be read.
+    private string? ScrubStackTrace(MessageEntity row, string? trace)
+    {
+        if (string.IsNullOrWhiteSpace(trace))
+            return null;
+        var payload = row.MessageContent?.EventContent?.EventJson;
+        if (string.IsNullOrWhiteSpace(payload) || !_masker.TryCollectSensitiveValues(row.EventTypeId, payload, out var values))
+            return null;
+        var scrubbed = trace;
+        foreach (var value in values.Where(value => !string.IsNullOrWhiteSpace(value)).OrderByDescending(value => value.Length))
+            scrubbed = scrubbed.Replace(value, EventJsonMasker.DefaultRedactToken, StringComparison.Ordinal);
+        return IntelligenceDataRedactor.ScrubStackTrace(scrubbed);
+    }
+
+    /// <summary>
+    /// Scrubs free text an agent wrote about <paramref name="row"/> the way error text is scrubbed
+    /// for the provider (Spec 044 §6.4): every value the event's metadata marks sensitive is
+    /// replaced, then credential-shaped values are redacted. Returns null when the text cannot be
+    /// verified (the payload's sensitive values could not be read) or holds an exception dump.
+    /// </summary>
+    public string? ScrubAgentText(MessageEntity row, string text, int maximumLength)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentNullException.ThrowIfNull(text);
+        // Fail closed, as for error text: without a payload whose sensitive values can be read,
+        // nothing proves the text is free of them, so it is not stored.
+        var payload = row.MessageContent?.EventContent?.EventJson;
+        if (string.IsNullOrWhiteSpace(payload) || !_masker.TryCollectSensitiveValues(row.EventTypeId, payload, out var values))
+            return null;
+        var scrubbed = text;
+        foreach (var value in values.Where(value => !string.IsNullOrWhiteSpace(value)).OrderByDescending(value => value.Length))
+            scrubbed = scrubbed.Replace(value, EventJsonMasker.DefaultRedactToken, StringComparison.Ordinal);
+        return IntelligenceDataRedactor.ScrubText(scrubbed, maximumLength);
+    }
+
+    /// <summary>
+    /// The endpoint that sent the failed event and, when it differs, the one it originated from.
+    /// A failure row's <c>From</c> is the subscriber that answered with the error, so the sender
+    /// is read from the event request that reached this endpoint, else from the publisher
+    /// captured at publish time (<c>OriginatingFrom</c>).
+    /// </summary>
+    private static (string? Source, string? Originating) Senders(MessageEntity target, UnresolvedEvent current, IEnumerable<MessageEntity> history)
+    {
+        var originating = Endpoint(current.OriginatingFrom) ?? Endpoint(target.OriginatingFrom);
+        var request = history
+            .Where(row => row.MessageType == MessageType.EventRequest
+                && string.Equals(row.EndpointId, target.EndpointId, StringComparison.OrdinalIgnoreCase)
+                && row.EnqueuedTimeUtc <= target.EnqueuedTimeUtc)
+            .OrderByDescending(row => row.EnqueuedTimeUtc)
+            .Select(row => Endpoint(row.From))
+            .FirstOrDefault(from => from is not null);
+        var source = request ?? originating;
+        return (source, string.Equals(originating, source, StringComparison.OrdinalIgnoreCase) ? null : originating);
+    }
+
+    private static string? Endpoint(string? value)
+        => string.IsNullOrWhiteSpace(value) || string.Equals(value, Constants.Self, StringComparison.OrdinalIgnoreCase) ? null : value;
 
     private static string? CleanSource(string? source)
         => string.IsNullOrWhiteSpace(source) ? null : source.Split([',', '\n', '\r'], 2)[0].Trim();

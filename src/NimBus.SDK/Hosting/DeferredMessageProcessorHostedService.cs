@@ -25,7 +25,7 @@ namespace NimBus.SDK.Hosting;
 /// at 1 unless out-of-order replay is acceptable: the trigger subscription is
 /// non-session, so serial processing is its only ordering mechanism.</para>
 /// </summary>
-public sealed class DeferredMessageProcessorHostedService : BackgroundService
+public sealed partial class DeferredMessageProcessorHostedService : BackgroundService
 {
     private readonly ServiceBusClient _serviceBusClient;
     private readonly IDeferredMessageProcessor _deferredMessageProcessor;
@@ -64,10 +64,7 @@ public sealed class DeferredMessageProcessorHostedService : BackgroundService
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation(
-            "Deferred-processor hosted service enabled on topic '{Topic}' (subscription '{Subscription}', MaxConcurrentCalls {MaxConcurrentCalls}). " +
-            "Set NimBusSubscriberOptions.DisableDeferredProcessorHostedService = true to opt out.",
-            _options.TopicName, _options.SubscriptionName, _options.MaxConcurrentCalls);
+        LogDeferredProcessorHostedServiceEnabledOn(_logger, _options.TopicName, _options.SubscriptionName, _options.MaxConcurrentCalls);
 
         var processor = _serviceBusClient.CreateProcessor(
             _options.TopicName,
@@ -130,9 +127,7 @@ public sealed class DeferredMessageProcessorHostedService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "Failed to process deferred-processor trigger on {Topic}/{Subscription} for session {SessionId}",
-                _options.TopicName, _options.SubscriptionName, args.Message.SessionId);
+            LogFailedToProcessDeferredProcessorTrigger(_logger, ex, _options.TopicName, _options.SubscriptionName, args.Message.SessionId);
 
             // CancellationToken.None: stoppingToken may already be cancelled
             // mid-shutdown if a real error tripped us. We still want the
@@ -143,18 +138,27 @@ public sealed class DeferredMessageProcessorHostedService : BackgroundService
             }
             catch (Exception abandonEx)
             {
-                _logger.LogError(abandonEx,
-                    "Failed to abandon deferred-processor trigger after handler exception on {Topic}/{Subscription}",
-                    _options.TopicName, _options.SubscriptionName);
+                LogFailedToAbandonDeferredProcessorTrigger(_logger, abandonEx, _options.TopicName, _options.SubscriptionName);
             }
         }
     }
 
     private Task OnErrorAsync(ProcessErrorEventArgs args)
     {
-        _logger.LogError(args.Exception,
-            "Deferred-processor service-bus error on {Topic}/{Subscription} (source: {ErrorSource})",
-            _options.TopicName, _options.SubscriptionName, args.ErrorSource);
+        LogDeferredProcessorServiceBusError(_logger, args.Exception, _options.TopicName, _options.SubscriptionName, args.ErrorSource);
         return Task.CompletedTask;
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Deferred-processor hosted service enabled on topic '{Topic}' (subscription '{Subscription}', MaxConcurrentCalls {MaxConcurrentCalls}). " +
+            "Set NimBusSubscriberOptions.DisableDeferredProcessorHostedService = true to opt out.")]
+    private static partial void LogDeferredProcessorHostedServiceEnabledOn(ILogger logger, string topic, string subscription, int maxConcurrentCalls);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to process deferred-processor trigger on {Topic}/{Subscription} for session {SessionId}")]
+    private static partial void LogFailedToProcessDeferredProcessorTrigger(ILogger logger, Exception exception, string topic, string subscription, string sessionId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to abandon deferred-processor trigger after handler exception on {Topic}/{Subscription}")]
+    private static partial void LogFailedToAbandonDeferredProcessorTrigger(ILogger logger, Exception exception, string topic, string subscription);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Deferred-processor service-bus error on {Topic}/{Subscription} (source: {ErrorSource})")]
+    private static partial void LogDeferredProcessorServiceBusError(ILogger logger, Exception exception, string topic, string subscription, ServiceBusErrorSource errorSource);
 }

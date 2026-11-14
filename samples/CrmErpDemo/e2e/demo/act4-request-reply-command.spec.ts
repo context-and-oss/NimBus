@@ -29,7 +29,7 @@ test.beforeAll(async () => {
 
   // Off-camera setup: this act is about the two synchronous interactions, not
   // about watching another account propagate.
-  account = await crm.createAccount({ legalName: LEGAL_NAME, countryCode: "US" });
+  account = await crm.createAccount({ legalName: LEGAL_NAME, countryCode: "DK" });
   await waitFor(async () => await erp.findCustomerByCrmAccountId(account.id), {
     timeoutMs: 180_000,
     intervalMs: 2000,

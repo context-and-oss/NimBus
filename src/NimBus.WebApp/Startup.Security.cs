@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.AgentApiKeys;
+using NimBus.WebApp.Services.DashboardTokens;
 using NimBus.Extensions.Identity;
 
 namespace NimBus.WebApp;
@@ -122,6 +124,18 @@ public partial class Startup
         }
         else
         {
+            // Without a ClientId this branch still starts, then every request (anonymous
+            // ones included) fails with Microsoft.Identity.Web's IDW10106 when the OIDC
+            // handler initializes. Fail at startup instead, naming the settings to fix.
+            if (!hasEntraId)
+            {
+                throw new InvalidOperationException(
+                    "No sign-in method is configured for the NimBus WebApp. Set AzureAd:ClientId and AzureAd:TenantId " +
+                    "(app settings AzureAd__ClientId, AzureAd__TenantId) for Microsoft Entra ID sign-in, or " +
+                    "NimBusIdentity:ConnectionString for username/password sign-in. For local development only, set " +
+                    "EnableLocalDevAuthentication=true in the Development environment. See docs/authentication.md.");
+            }
+
             // Entra ID only (original behavior)
             services
             .AddAuthentication("Az")
@@ -160,6 +174,14 @@ public partial class Startup
             // and the Identity branches rely on NimBusClaimsTransformation.
             services.AddTransient<IClaimsTransformation, EntraAdminClaimsTransformation>();
         }
+
+        // Spec 039: agents authenticate to /api/agent/* with an API key in every mode. The key
+        // scheme is never a default, so a key admits nothing else.
+        services.AddNimBusAgentApiKeys();
+
+        // A wall display reads the Monitor feed with a dashboard token in every mode. The token
+        // scheme is never a default either, so a token admits nothing but /api/monitor/feed/*.
+        services.AddNimBusDashboardTokens();
 
         // The NSwag-generated controllers cannot carry per-action attributes,
         // so the stats endpoint's anonymous exemption is applied via an
@@ -213,7 +235,7 @@ public partial class Startup
         }
     }
 
-    private void AddAuthorizationAndAuditServices(IServiceCollection services)
+    private static void AddAuthorizationAndAuditServices(IServiceCollection services)
     {
         // Short-TTL cache for hot read-only store results (status counts,
         // metrics aggregates). Singleton is required: the consuming
@@ -235,6 +257,9 @@ public partial class Startup
         // Shared hand-off settlement core used by both the operator (EventImplementation)
         // and agent (AgentImplementation) settle endpoints so neither can skip the audit row.
         services.AddScoped<IHandoffSettlementService, HandoffSettlementService>();
+        // Settlements sent but not yet projected by the Resolver. Singleton so a receive or
+        // second settle on another request sees them (per process, not across instances).
+        services.AddSingleton(sp => new HandoffSettlementTracker(sp.GetService<TimeProvider>() ?? TimeProvider.System));
         services.AddScoped<NimBus.WebApp.Services.Operations.IOperatorCommands, NimBus.WebApp.Services.Operations.OperatorCommandCoordinator>();
     }
 }

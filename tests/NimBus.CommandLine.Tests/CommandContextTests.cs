@@ -1,9 +1,10 @@
+#pragma warning disable CA1707, CA2007
 using NimBus.CommandLine;
 using Xunit;
 
 namespace NimBus.CommandLine.Tests;
 
-public class CommandContextTests : IDisposable
+public sealed class CommandContextTests : IDisposable
 {
     private readonly string _tempRoot;
 
@@ -49,17 +50,17 @@ public class CommandContextTests : IDisposable
     public void CoreBicepPath_PointsToDeployBicep()
     {
         var context = CommandContext.Create(_tempRoot);
-        Assert.EndsWith("deploy.core.bicep", context.CoreBicepPath);
-        Assert.StartsWith(context.DeployDirectory, context.CoreBicepPath);
+        Assert.EndsWith("deploy.core.bicep", context.CoreBicepPath, StringComparison.Ordinal);
+        Assert.StartsWith(context.DeployDirectory, context.CoreBicepPath, StringComparison.Ordinal);
     }
 
     [Fact]
     public void ProjectPaths_PointToSourceDirectory()
     {
         var context = CommandContext.Create(_tempRoot);
-        Assert.StartsWith(context.SourceDirectory, context.ResolverProjectPath);
-        Assert.StartsWith(context.SourceDirectory, context.WebAppProjectPath);
-        Assert.EndsWith(".csproj", context.ResolverProjectPath);
-        Assert.EndsWith(".csproj", context.WebAppProjectPath);
+        Assert.StartsWith(context.SourceDirectory, context.ResolverProjectPath, StringComparison.Ordinal);
+        Assert.StartsWith(context.SourceDirectory, context.WebAppProjectPath, StringComparison.Ordinal);
+        Assert.EndsWith(".csproj", context.ResolverProjectPath, StringComparison.Ordinal);
+        Assert.EndsWith(".csproj", context.WebAppProjectPath, StringComparison.Ordinal);
     }
 }

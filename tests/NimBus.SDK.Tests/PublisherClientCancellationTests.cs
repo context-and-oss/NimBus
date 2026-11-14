@@ -89,7 +89,7 @@ public class PublisherClientCancellationTests
 
         Assert.AreEqual(CancellationToken.None, oldSender.Sent[0].Token);
         Assert.AreEqual(oldSender.Sent[0].Message.MessageId, newSender.Sent[0].Message.MessageId);
-        Assert.AreEqual(oldSender.Sent[0].Message.MessageContent.EventContent.EventJson, newSender.Sent[0].Message.MessageContent.EventContent.EventJson);
+        Assert.AreEqual(oldSender.Sent[0].Message.MessageContent.EventContent!.EventJson, newSender.Sent[0].Message.MessageContent.EventContent!.EventJson);
     }
 
     [TestMethod]

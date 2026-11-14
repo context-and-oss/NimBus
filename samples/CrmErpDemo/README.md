@@ -68,6 +68,7 @@ graph TB
 - **Operator surface** — reuses the existing `NimBus.WebApp` + Resolver from the main repo for full audit trail and resubmit/skip.
 - **Inbox deduplication on CRM** — `Crm.Adapter` opts into platform-level dedup (`UseInbox`, SQL store in the crm DB); redelivery of the same broker `MessageId` is skipped as `DuplicateDetected`, contrasting with ERP's application-level idempotent upserts. Operator resubmit uses a new message identity.
 - **Request/reply (synchronous credit check)** — CRM asks ERP for a customer's credit standing via `PublisherClient.Request` and gets a typed answer back over the `CrmEndpoint-reply` session subscription.
+- **Routing keys (regional hubs)** — CRM account events carry their country as a routing key, and three hub endpoints served by one adapter each receive only their own countries; an account in a country no hub claims is dead-lettered on the unmatched consumer with a reason naming the key. See [Showcase: Routing keys](#showcase-routing-keys-regional-hubs).
 - **Commands (imperative, exactly one consumer)** — `PlaceCustomerOnCreditHold : Command` is fire-and-forget with a single declared consumer (`ErpEndpoint`); platform validation fails provisioning if anyone adds a second consumer (ADR-014).
 
 ## Domains in v1
@@ -86,7 +87,7 @@ graph TB
 
 ### Service Bus topology — how events cross between topics
 
-The provisioner (`CrmErpDemo.Provisioner`) creates one topic per endpoint and one **forwarding subscription** per cross-system consumer. Each forwarding rule is filtered on `EventTypeId AND user.From IS NULL` so the rule fires only on **original publishes**, never on already-forwarded copies — this is what prevents loops.
+The provisioner (`CrmErpDemo.Provisioner`) creates one topic per endpoint and one **forwarding subscription** per cross-system consumer. Each forwarding rule is filtered on `user.EventTypeId = '<type>' AND user.MessageType = 'EventRequest' AND user.From IS NULL` so the rule fires only on **original publishes**: `MessageType = 'EventRequest'` keeps the endpoint's own responses, retries and resubmissions off the forwarder, and `From IS NULL` keeps already-forwarded copies off it — this is what prevents loops.
 
 ```mermaid
 graph LR
@@ -95,14 +96,14 @@ graph LR
 
     subgraph crmSubs["crmendpoint subscriptions"]
         s1["<b>CrmEndpoint</b><br/>(session)<br/><i>filter: user.To = 'CrmEndpoint'</i>"]
-        s2["<b>ErpEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(CrmAccount*, CrmContact*)<br/>AND From IS NULL</i>"]
+        s2["<b>ErpEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(CrmAccount*, CrmContact*)<br/>AND MessageType = 'EventRequest'<br/>AND From IS NULL</i>"]
         s3["<b>Resolver</b>"]
         s4["<b>Deferred / DeferredProcessor</b>"]
     end
 
     subgraph erpSubs["erpendpoint subscriptions"]
         t1["<b>ErpEndpoint</b><br/>(session)<br/><i>filter: user.To = 'ErpEndpoint'</i>"]
-        t2["<b>CrmEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(ErpCustomerCreated, ErpContact*)<br/>AND From IS NULL</i>"]
+        t2["<b>CrmEndpoint</b><br/>(forward)<br/><i>filter: EventTypeId IN<br/>(ErpCustomerCreated, ErpContact*)<br/>AND MessageType = 'EventRequest'<br/>AND From IS NULL</i>"]
         t3["<b>Resolver</b>"]
         t4["<b>Deferred / DeferredProcessor</b>"]
     end
@@ -159,7 +160,7 @@ sequenceDiagram
     CrmApi->>SB: Send CrmAccountCreated<br/>topic = crmendpoint, session = AccountId
     CrmApi-->>Web: 201 Created
 
-    Note over SB: ErpEndpoint forward sub matches<br/>(EventTypeId='CrmAccountCreated' AND From IS NULL)<br/>action: SET To='ErpEndpoint' → forward to erpendpoint
+    Note over SB: ErpEndpoint forward sub matches<br/>(EventTypeId='CrmAccountCreated' AND MessageType='EventRequest'<br/>AND From IS NULL)<br/>action: SET To='ErpEndpoint' → forward to erpendpoint
 
     SB-->>ErpAd: deliver CrmAccountCreated
     ErpAd->>ErpApi: PUT /api/customers/by-crm/{AccountId}
@@ -299,7 +300,7 @@ Quotes, Price Lists, Invoices, Payments, Purchase Orders are subsets of the abov
 
 ```
 samples/CrmErpDemo/
-  CrmErpDemo.AppHost/        Aspire host (SQL Server + DbGate + everything below)
+  CrmErpDemo.AppHost/        Aspire host (SQL Server + DbGate + Mailpit + everything below)
   CrmErpDemo.Contracts/      Shared events + endpoints + CrmErpPlatformConfiguration
   CrmErpDemo.Provisioner/    Code-first SB topology (CrmEndpoint, ErpEndpoint)
   Crm.Api/                   ASP.NET Core minimal API + EF Core SQL Server
@@ -308,7 +309,23 @@ samples/CrmErpDemo/
   Erp.Api/                   ASP.NET Core minimal API + EF Core; hosts ERP outbox dispatcher
   Erp.Adapter.Functions/     Azure Functions isolated worker
   Erp.Web/                   React + Vite + TS + Tailwind SPA
+  RegionalHub/               Worker run once per regional hub endpoint (routing keys)
 ```
+
+### The two web apps
+
+**crm-web** is laid out like a model-driven sales app: a site map on the left (Accounts,
+Contacts, Partner leads), a command bar above every list and form, and account forms with a
+record header, a Contacts tab and the audit log as a timeline. **erp-web** is laid out like a
+role center: a **Home** page with tiles that count customers, credit holds, pending handoffs and
+alerts, customer lists with a details box for the selected row, and customer cards with
+collapsible sections. Both borrow the layout patterns only; the names and styling are the demo's own.
+
+Every demo switch (simulated traffic, CRM API outage, partner leads, service and error mode,
+pending handoff, processing delay, data reset) sits in the **Demo controls** pane on the right
+of each app. The pane is open by default; the gear button in the app bar closes and reopens it,
+and the browser remembers the choice. A mode that is on also shows as a label in the app bar,
+so it stays visible with the pane closed.
 
 ## Prerequisites
 
@@ -363,6 +380,102 @@ aspire run --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.cs
 
 In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver and WebApp call `AddCosmosDbMessageStore()` instead.
 
+## Deploy to Azure
+
+`aspire deploy` publishes the demo to Azure Container Apps in a resource group of its own. The AppHost's publish mode replaces the local-only pieces. Running it locally is unchanged.
+
+| Local (`aspire run`) | Azure (`aspire deploy`) |
+|---|---|
+| NimBus Service Bus emulator | Azure Service Bus (Standard), local auth disabled; every app connects with its managed identity |
+| SQL Server container + DbGate | Azure SQL (`crm`, `erp`, `nimbus`) on the Basic tier, Entra-only; each app's identity gets `db_owner` |
+| Vite dev servers for crm-web / erp-web | `crm-api` and `erp-api` serve the built UIs from `wwwroot` |
+| Local-dev auth bypass on nimbus-ops | NimBus Identity sign-in with a bootstrap admin |
+| Mailpit catches the Resolver's endpoint alert mail | No Mailpit; endpoint alert mail is off |
+| crm-web and erp-web are anonymous | crm-web and erp-web require sign-in with the nimbus-ops accounts; the adapters present a generated service key |
+| Provisioner runs before the subscribers | Provisioner is a manually started Container Apps job |
+| enrichment-agent signs in through the local-dev bypass | enrichment-agent signs in with an agent API key issued in nimbus-ops (Spec 039) |
+
+Only `crm-api`, `erp-api` and `nimbus-ops` are public. Everything else is internal to the Container Apps environment. The Aspire dashboard URL is printed at the end of the deploy.
+
+CRM and ERP use the nimbus-ops user store, so the same email and password work on all three apps. Users are managed in nimbus-ops, and any signed-in user gets in; there are no roles inside CRM and ERP. Each app is on its own `*.azurecontainerapps.io` host and that domain is a public suffix, so the apps can't share a cookie: you sign in to each once. The health probes (`/health`, `/alive`, `/ready`) and the static UI bundles stay public.
+
+> [!WARNING]
+> Every signed-in user can use the whole demo, including `DELETE /api/admin/data`. Use fictional data only, and tear the environment down when you are done.
+
+### Prerequisites
+
+- Everything in [Prerequisites](#prerequisites), plus the [Aspire CLI](https://aspire.dev/get-started/install-cli/), Azure CLI (`az login`) and Docker (the images are built locally and pushed to the environment's registry).
+- Owner, or Contributor + Role Based Access Control Administrator, on the subscription. The deploy creates role assignments.
+- A region with Container Apps and Azure SQL capacity. `swedencentral` is known to work.
+
+### Deploy
+
+Deploy settings and parameters are environment variables on the `aspire deploy` process. The AppHost's user secrets are not read, because deploy runs in the Production environment. `ops-admin-email` and `ops-admin-password` are the nimbus-ops bootstrap admin. It is created on the first start against an empty user store, so changing them later has no effect.
+
+```bash
+Azure__SubscriptionId=<subscription-id> Azure__Location=swedencentral Azure__ResourceGroup=rg-crmerp-demo Parameters__ops_admin_email=admin@example.com Parameters__ops_admin_password='<a strong password>' aspire deploy --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj
+```
+
+The nimbus-ops footer shows the NimBus version the images were built from: the AppHost stamps them with what `git describe --tags` reports for the checkout, such as `4.13.0` on a release tag or `4.13.0-2-gabc1234` two commits after it. The demo's own catalog assembly (`CrmErpDemo.Contracts`, the footer's "Config" version) is built before the AppHost starts and stays at `0.0.0`. To version it too, or to choose the version yourself, add `NIMBUS_BUILD_VERSION=4.13.0` to the command.
+
+If your account can see more than one tenant, also set `Azure__TenantId`. The first deploy takes about 20 minutes. `flow-webhook-key` (the shared key for the Resolver's realtime Flow updates) and `demo-service-key` (the adapters' key for the CRM and ERP APIs) are generated and kept in the deployment state. Redeploying the same command updates the apps in place.
+
+Then create the Service Bus topology by starting the provisioner job once. Run it again after a deploy that changes the event catalog:
+
+```bash
+az containerapp job start -g rg-crmerp-demo -n provisioner
+```
+
+```bash
+az containerapp job execution list -g rg-crmerp-demo -n provisioner --query "[0].properties.status" -o tsv
+```
+
+Until the job has run, the subscribers log "messaging entity could not be found" errors. They keep retrying, and the demo starts working once the job reports `Succeeded`.
+
+List the public URLs with:
+
+```bash
+az containerapp list -g rg-crmerp-demo --query "[?properties.configuration.ingress.external].properties.configuration.ingress.fqdn" -o tsv
+```
+
+### Give the enrichment agent its key
+
+nimbus-ops requires sign-in in Azure, so the enrichment agent needs an agent API key. The key can only be issued once nimbus-ops is running, so the first deploy has none. Until it does, the agent logs 401s and the Agent Zone holds new CRM contacts as Pending.
+
+1. Sign in to nimbus-ops as the bootstrap admin. Open **Settings → Agent keys** and issue a key for agent id `enrichment-agent`. Copy it: it is shown once.
+2. Redeploy with the key added to the same command, as `Parameters__enrichment_agent_key='<the key>'`. Pass it on every later deploy too, or the agent loses it. To use Claude for classification, also add `Parameters__anthropic_api_key`; without it the agent uses its deterministic classifier.
+3. The held contacts are enriched within a minute. In **Settings → Agent keys** the key now shows when it was last used.
+
+### Smoke test
+
+1. Open the `crm-api` URL from the deploy output. It redirects to the sign-in page. Sign in with the bootstrap admin; crm-web opens and shows your initials and **Sign out** in its app bar. Create an account.
+2. Open the `erp-api` URL (erp-web) and sign in the same way. The customer appears, and crm-web shows its ERP customer number. The adapters reached both APIs with the service key.
+3. Open the `nimbus-ops` URL and sign in with the bootstrap admin. The account's events are Completed under **Endpoints**, and **Flow** animates new traffic.
+4. A PartnerPortal lead arrives in crm-web's contacts about every 45 seconds.
+5. A new contact is enriched by the agent. Its hand-off on **AgentZoneEndpoint** is Completed, and the audit names `enrichment-agent`.
+
+### Turn it off and on
+
+Every app runs one always-on replica, so the apps bill compute around the clock even when nobody uses the demo. To stop that without tearing anything down, deactivate the apps' revisions:
+
+```powershell
+samples/CrmErpDemo/scripts/demo-power.ps1 off      # every app to 0 replicas
+samples/CrmErpDemo/scripts/demo-power.ps1 on       # back on, except enrichment-agent
+samples/CrmErpDemo/scripts/demo-power.ps1 status   # active state, replicas and public URLs
+```
+
+SQL, Service Bus, the registry and the data stay as they are, so the fixed monthly cost below remains. While the apps are off, their URLs don't answer. `on` leaves enrichment-agent off unless you pass `-IncludeEnrichmentAgent`, because without its [key](#give-the-enrichment-agent-its-key) it only logs 401s. Add `-WhatIf` to preview, or `-ResourceGroup` for a group other than `rg-crmerp-demo`. A redeploy activates every app again.
+
+### Tear down
+
+```bash
+aspire destroy --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj
+```
+
+`aspire destroy` deletes the whole resource group. While it runs, the environment costs roughly the Service Bus Standard base charge (about $10 a month), a Basic container registry (about $5 a month) and Container Apps consumption for the always-on apps. The three Azure SQL databases are on the fixed-price Basic tier (5 DTU, 2 GB each). That is about $5 a month per database, or $15 for the three, whether or not anyone uses the demo. Prices vary by region; see [Azure SQL Database pricing](https://azure.microsoft.com/pricing/details/azure-sql-database/single/).
+
+The databases don't use the serverless free offer, which is Aspire's default for Azure SQL. The Resolver, the nimbus-ops heartbeat sweep and erp-api's outbox dispatcher, which polls every second, query SQL all the time, so a serverless database never auto-pauses. A deployment on the free offer used up the monthly allowance (100,000 vCore-seconds per database) in about three days. Then Azure paused all three databases until the next month: nimbus-ops sign-in failed, and the CRM and ERP APIs stopped working. If the `nimbus` database gets close to the 2 GB limit, scale it to Standard S0 (250 GB, about $15 a month).
+
 ## End-to-end happy path
 
 1. Open **crm-web** from the Aspire dashboard.
@@ -393,17 +506,17 @@ For the full classification of error types in an adapter (transient redelivery, 
 
 NimBus's PendingHandoff feature ([ADR-012](../../docs/adr/012-pending-handoff.md)) lets a subscriber handler signal "work is in flight on an external system" via `ctx.MarkPendingHandoff(reason, externalJobId, expectedBy)` and return normally — the inbound message is settled, the session blocks for siblings, the audit row reads `Pending` + `PendingSubStatus = "Handoff"`, and settlement happens later via `IHandoffClient.CompleteAsync` / `FailAsync` without re-invoking the user handler. This demo wires the feature onto the ERP adapter's `CrmAccountCreated` handler so the lifecycle (Pending badge, deferred siblings, completion replay, failure + operator Skip) is visible end-to-end in the AppHost.
 
-The control surface is in **erp-web → Admin**: a toggle plus duration and failure-rate sliders. `Erp.Api/HandoffMode/HandoffJobBackgroundService` simulates the external import, draining expired jobs once a second and rolling against the configured failure rate; on success it applies the upsert and calls `IHandoffClient.CompleteAsync`, on failure it calls `IHandoffClient.FailAsync` with one of a small set of canned `DMF rejected: ...` errors.
+The control surface is the **Pending handoff** section of erp-web's **Demo controls** pane: a switch plus duration and failure-rate sliders, and the in-flight jobs counting down. `Erp.Api/HandoffMode/HandoffJobBackgroundService` simulates the external import, draining expired jobs once a second and rolling against the configured failure rate; on success it applies the upsert and calls `IHandoffClient.CompleteAsync`, on failure it calls `IHandoffClient.FailAsync` with one of a small set of canned `DMF rejected: ...` errors.
 
 ### Manual smoke flow
 
-1. AppHost up → open **erp-web** → Admin → flip handoff mode ON, set ~30 s, 0% failure.
+1. AppHost up → open **erp-web** → Demo controls → flip **Pending-handoff mode** ON, set ~30 s, 0% failure.
 2. Open **crm-web** → create account "Acme".
 3. Open **nimbus-ops** (the operator UI) → navigate to `ErpEndpoint` → see the `CrmAccountCreated` row marked **Pending** with the **Awaiting external** badge. Click it → the detail page shows `HandoffReason`, `ExternalJobId`, `ExpectedBy`.
 4. Back in **crm-web** → update "Acme" twice in quick succession.
 5. **nimbus-ops** → both updates show **Deferred** (queued behind the in-flight create on the same session).
 6. Wait. After ~30 s the create row flips to **Completed**, the deferred updates replay in FIFO order (also Completed), and the ERP customer in **erp-web** reflects the latest update.
-7. Re-flip Erp.Web admin: failure rate = 100%. Create another account.
+7. In erp-web's Demo controls, set the failure rate to 100%. Create another account.
 8. **nimbus-ops** → after ~30 s the row is **Failed** with `ErrorContent.ErrorText` matching one of the canned `DMF rejected: ...` strings verbatim. Click **Skip** → audit row flips to **Skipped**, session unblocks.
 
 ### Automated coverage
@@ -428,7 +541,7 @@ erp-web (Error mode / Service mode toggle)
    └─▶ erp-adapter handler fails  →  NimBus lifecycle: Failed / DeadLettered / SessionBlocked
         └─▶ WebhookChannel POSTs a JSON alert  →  erp-api  /api/webhooks/notifications
              └─▶ AlertsState (last 50, in-memory)
-                  └─▶ erp-web "Notification alerts" panel polls /api/admin/alerts every 3s
+                  └─▶ erp-web Home / Alerts "Notification alerts" part polls /api/admin/alerts every 3s
 ```
 
 - **Emit** — `Erp.Adapter.Functions/Program.cs` registers `AddNimBusNotifications(...)` with a single
@@ -438,8 +551,9 @@ erp-web (Error mode / Service mode toggle)
 - **Receive** — `Erp.Api/Endpoints/AlertsEndpoints.cs` exposes `POST /api/webhooks/notifications`
   (the sink), `GET /api/admin/alerts`, and `DELETE /api/admin/alerts`, backed by the in-memory
   `Erp.Api/AlertsState.cs` (mirrors the other demo state singletons; non-persistent).
-- **Display** — `Erp.Web/src/components/admin/alerts-panel.tsx` renders newest-first,
-  severity-colored cards (Critical → rose, Error → amber).
+- **Display** — `Erp.Web/src/components/admin/alerts-panel.tsx` renders the alerts newest-first
+  with a severity dot, on erp-web's **Home** page (latest five, plus a count tile) and its
+  **Alerts** page (all of them).
 
 > The receiver is unauthenticated by design — it's a local demo sink, and the `WebhookChannel`
 > sends no auth header. Don't copy this receiver verbatim into production.
@@ -448,15 +562,29 @@ erp-web (Error mode / Service mode toggle)
 
 1. AppHost up → open **erp-web**.
 2. Open **crm-web** → create an account (e.g. "Acme GmbH") to start CRM → ERP traffic.
-3. In **erp-web**, flip **Error mode** ON (header toggle): every inbound ERP handler now throws.
-   The dropdown next to it picks *which* failure is simulated (see [Failure reasons](#failure-reasons-integration-intelligence-showcase)).
-4. Within a few seconds the **Notification alerts** panel shows an **Error** alert
+3. In **erp-web**, flip **Error mode** ON in the Demo controls pane: every inbound ERP handler now throws.
+   The dropdown under it picks *which* failure is simulated (see [Failure reasons](#failure-reasons-integration-intelligence-showcase)).
+4. Within a few seconds the **Notification alerts** part on erp-web's Home page shows an **Error** alert
    ("Message failed: …"). Handler failures are not retried: the message is recorded as Failed and
    its session blocks, so the next message on that session (for example an edit to the same
    account) raises a **Critical** **session blocked** alert.
    Flipping **Service mode** ON instead rejects inbound messages in middleware, which dead-letters
    them immediately: each produces an **Error** alert and a **Critical** **dead-lettered** alert.
-5. Turn the toggles OFF to stop new alerts; click **Clear** to empty the panel.
+5. Turn the modes OFF to stop new alerts; click **Clear** to empty the list.
+
+### Endpoint alert mail (Alerts tab → Mailpit)
+
+The Resolver also mails the people who subscribe on an endpoint's **Alerts** tab in nimbus-ops
+([how it works](../../docs/notifications.md#endpoint-alerts-alerts-tab)). Locally it sends to the
+**mailpit** container, which catches every message, so any address works.
+
+1. In **nimbus-ops**, open **Endpoints → ErpEndpoint → Alerts** and subscribe an address
+   (type *Mail*, frequency *Hourly*).
+2. Flip **Error mode** ON in **erp-web** and create an account in **crm-web**.
+3. Open **mailpit** from the Aspire dashboard: one mail arrives, `[NimBus] ErpEndpoint: … failed`,
+   with links back to the event and the endpoint. Further failures within the hour send nothing.
+
+The Azure deployment has no Mailpit and leaves alert mail off.
 
 ### Failure reasons (Integration Intelligence showcase)
 
@@ -481,11 +609,21 @@ The catalog lives in `CrmErpDemo.Contracts/Demo/ErpFailureReasons.cs` and is sha
 `GET /api/admin/error-mode/reasons`), `Erp.Adapter.Functions` (`ErrorModeGuard` throws the
 matching exception from every handler) and the erp-web dropdown, so the three cannot drift.
 
-To run the showcase: enable Integration Intelligence in the WebApp (user secrets, see the guide),
-pick a reason, flip error mode ON, create or edit a CRM account or contact, open the failed
-message in the NimBus WebApp and click **Analyze failure**. Switch reasons and repeat to compare
-categories and guidance. `PUT /api/admin/error-mode` still accepts a bare `{ "enabled": true }`,
-so the e2e suite and the demo film keep the generic failure.
+The AppHost turns on failure classification (`Provider: None`) and the operator MCP endpoint at
+`https://localhost:18443/mcp`. NimBus calls no model: an agent connected to `/mcp` reads each
+failure's evidence and records its classification (see the
+[MCP server guide](../../docs/mcp-server.md)). To run the showcase:
+
+1. Pick a reason, flip error mode ON, and create or edit a CRM account or contact. Use a
+   different account per reason: a Failed message blocks its session.
+2. Connect an agent, for example `claude mcp add --transport http nimbus https://localhost:18443/mcp`
+   (no sign-in under Aspire), and run the `handle-failures` prompt.
+3. Open the failed message in the NimBus WebApp: the intelligence card shows the agent's category,
+   guidance, fault origin and rationale, and **Insights** groups the failures by cause.
+
+Switch reasons and repeat to compare categories and guidance. `PUT /api/admin/error-mode` still
+accepts a bare `{ "enabled": true }`, so the e2e suite and the demo film keep the generic failure.
+The [failure agent sample](../FailureAgent/README.md) runs the same prompt unattended.
 
 ## Showcase: Circuit breaker (outage → pause → probe → recover)
 
@@ -503,7 +641,7 @@ crm-web ("CRM API outage" toggle)
         └─▶ failure rate ≥ 50% over 5+ outcomes  →  circuit OPENS  →  both receivers pause
              └─▶ 20s break  →  HALF-OPEN probes at 1 session  →  2 successes  →  CLOSED
                   └─▶ CircuitStateReporter POSTs each transition  →  crm-api  /api/webhooks/circuit-state
-                       └─▶ crm-web "Circuit breaker" panel polls /api/admin/circuit-state every 3s
+                       └─▶ crm-web Demo controls "Circuit breaker" section polls /api/admin/circuit-state every 3s
 ```
 
 - **Fail** — `Crm.Api/ErrorModeState.cs` + `/api/admin/error-mode` (mirrors the ERP toggles);
@@ -514,13 +652,14 @@ crm-web ("CRM API outage" toggle)
   One breaker pauses both receivers — CrmEndpoint *and* the PartnerInbound ingress.
 - **Display** — `Crm.Adapter/Observability/CircuitStateReporter.cs` (a default-implemented
   `IMessageLifecycleObserver`) pushes transitions to `Crm.Api/CircuitStateStore.cs`;
-  `Crm.Web/src/components/admin/circuit-breaker-panel.tsx` shows Closed / Open / Half-open live.
+  `Crm.Web/src/components/admin/circuit-breaker-panel.tsx` shows Closed / Open / Half-open live,
+  and crm-web's app bar shows **Circuit open** / **Circuit half-open** while the circuit isn't closed.
   The `nimbus.circuit_breaker.state` gauge also lands in the Aspire dashboard's Metrics tab.
 
 ### Manual smoke flow
 
-1. AppHost up → open **crm-web** → the Circuit breaker panel reads **Closed**.
-2. Click **Simulate** (or create accounts by hand) to drive steady CRM → ERP → CRM traffic.
+1. AppHost up → open **crm-web** → the Circuit breaker section of Demo controls reads **Circuit closed**.
+2. Switch on **Simulate** (or create accounts by hand) to drive steady CRM → ERP → CRM traffic.
 3. Flip **CRM API outage: ON**. Handlers fail; within ~15–30 s the panel flips to **Open** —
    crm-adapter's log shows "Pausing NimBus receiver …", and **nimbus-ops** shows the few failed
    sessions from before the pause (no flood: the receiver stopped consuming).
@@ -581,7 +720,8 @@ Key mechanics on display:
 ### Manual smoke flow
 
 1. AppHost up → **partner-portal** logs a published lead every 45 s
-   (`PARTNER_LEAD_INTERVAL_SECONDS` to change).
+   (`PARTNER_LEAD_INTERVAL_SECONDS` to change; the **Partner leads** switch in crm-web turns
+   the leads off, see [below](#turning-the-partner-leads-off)).
 2. **crm-adapter** logs `PartnerLeadSubmittedHandler` with the CloudEvent id/source/type;
    open **crm-web** → Contacts → the lead appears with a violet **Partner** badge.
 3. Open **erp-web** → create a customer (or create an account in **crm-web** and let the
@@ -591,6 +731,26 @@ Key mechanics on display:
    it sends one CloudEvent missing `ce-source`; crm-adapter rejects it with
    `InvalidCloudEventException` and the message lands in the
    `PartnerInbound/CrmEndpoint` dead-letter queue.
+
+### Turning the partner leads off
+
+A lead every 45 seconds adds up in a demo that runs for days. The **Partner leads** switch in
+**crm-web**'s Demo controls pane (below the circuit breaker) turns the recurring `PartnerLeadSubmitted` leads
+off and on while the demo runs. crm-api holds the flag and partner-portal asks for it before
+each lead, so a flip takes effect within a few seconds. partner-portal keeps logging the ERP
+CloudEvents it receives, and `PARTNER_SEND_INVALID=true` still sends its one message.
+
+The flag lives in crm-api's memory, so a crm-api restart returns it to the startup setting:
+on, unless `PARTNER_PUBLISH_LEADS=false`. If partner-portal cannot reach crm-api it keeps the
+last answer it got, starting from its own `PARTNER_PUBLISH_LEADS`.
+
+- **Locally:** set `PARTNER_PUBLISH_LEADS=false` in the AppHost's environment before starting
+  it. The AppHost passes it to crm-api and partner-portal.
+- **Azure:** set `PARTNER_PUBLISH_LEADS=false` on the `aspire deploy` process. On a demo that
+  is already running, set it on both apps:
+  `az containerapp update -g rg-crmerp-demo -n crm-api --set-env-vars PARTNER_PUBLISH_LEADS=false`
+  and the same for `partner-portal`. A later `aspire deploy` without the variable starts the
+  leads on again.
 
 ## Showcase: Inbox deduplication (CrmEndpoint)
 
@@ -708,6 +868,76 @@ credit check returning **On hold**, which is also how the two showcases prove ea
 ### Automated coverage
 
 `tests/NimBus.Core.Tests/PlatformValidationTests.cs` + `tests/CrmErpDemo.AppHost.Tests/CommandCatalogTests.cs` (core/catalog) and `e2e/tests/10-credit-hold-command.spec.ts` (demo).
+
+## Showcase: Routing keys (regional hubs)
+
+By default an event goes to every endpoint that consumes its type. A
+[routing key](../../docs/routing-keys.md) (Spec 045, preview) routes by data as well: one
+source, several targets of the same kind, each receiving only its own share.
+
+Here the key is the account's country. `CrmAccountCreated` and `CrmAccountUpdated` name it, and
+three hub endpoints declare which countries they take:
+
+```csharp
+[SessionKey(nameof(AccountId))]
+[RoutingKey(nameof(CountryCode))]
+public class CrmAccountCreated : Event { ... }
+
+public sealed class NordicHubEndpoint : RegionalHubEndpoint
+{
+    public NordicHubEndpoint() : base("Nordic hub", "DK", "SE", "NO", "FI") { }
+}
+```
+
+| Endpoint | Aspire resource | Receives |
+|---|---|---|
+| `NordicHubEndpoint` | `hub-nordic` | Accounts in DK, SE, NO, FI |
+| `DachHubEndpoint` | `hub-dach` | Accounts in DE, AT, CH |
+| `UnroutedHubEndpoint` | `hub-unrouted` | Every other country, and accounts with none |
+| `ErpEndpoint` | `erp-adapter` | Every account, as before: it declares no keys |
+
+The filter runs on Service Bus. The provisioner writes one forward rule per consumer on the
+`CrmEndpoint` topic, and a hub's rule adds `user.RoutingKey IN ('DK', 'FI', 'NO', 'SE')`, so
+the Nordic hub never receives a German account.
+
+- **One adapter, three endpoints.** `RegionalHub/` is one worker project. The AppHost starts it
+  three times and tells each instance which endpoint it serves (`RegionalHub__Endpoint`). Each
+  hub has its own subscription, sessions and failures.
+- **The receive check.** A regional hub calls `EnforceRoutingKeys(...)`: before a handler runs,
+  the country in the payload must be one the hub claims. A message that fails is dead-lettered
+  and does not block its session.
+- **The unmatched consumer.** Service Bus silently drops a message no rule matches, so platform
+  validation refuses a keyed event type without an unmatched consumer. `UnroutedHubEndpoint`
+  is that consumer and uses the built-in `AddUnmatchedHandler<T>()`, which dead-letters each
+  message with a reason naming the key. An account in a country without a hub becomes
+  something an operator sees, not a message that disappeared.
+
+**crm-web** shows the routing under the **Country code** field while you type, from
+`GET /api/regional-hubs`, which reads the hub list from the same endpoint declarations.
+**Generate fake data** and the simulator only produce hub countries, so the unrouted
+dead-letter happens when you ask for it.
+
+### Manual smoke flow
+
+1. In **crm-web**, create an account with country `DK`. In **nimbus-ops**, **Endpoints →
+   NordicHubEndpoint** shows `CrmAccountCreated` Completed; **DachHubEndpoint** shows nothing,
+   and **ErpEndpoint** shows it too. The `hub-nordic` log reads "Nordic hub received new account".
+2. Create one with `DE`: it reaches **DachHubEndpoint** only.
+3. Change the first account's country to `AT` and save: `CrmAccountUpdated` reaches the DACH
+   hub, because the key travels with each message.
+4. Create one with `FR`. The form says no hub claims it. **UnroutedHubEndpoint** shows the
+   message dead-lettered: `No endpoint consumes CrmAccountCreated with routing key 'FR'`.
+   Resubmitting returns it to the same endpoint; **Skip** it. The ERP round-trip for that
+   account is unaffected.
+5. **Event Types → CrmAccountCreated** shows each consumer's keys, `unmatched` on the unrouted
+   hub, and "routed by CountryCode" on the event type.
+
+### Automated coverage
+
+`tests/CrmErpDemo.AppHost.Tests/RegionalHubRoutingTests.cs` (the catalog passes routing-key
+validation, each hub's keys, and the forward rules the provisioner writes on the `CrmEndpoint`
+topic) and `tests/NimBus.ServiceBusEmulator.Tests/RoutingKeyForwardingTests.cs` (core: the
+rules send each key to exactly one consumer on the in-process broker).
 
 ## Demo video
 

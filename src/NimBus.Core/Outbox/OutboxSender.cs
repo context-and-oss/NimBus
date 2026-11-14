@@ -87,7 +87,7 @@ public class OutboxSender : ISender
         };
     }
 
-    private static Activity StartEnqueueSpan(string endpoint, string eventTypeId, int count)
+    private static Activity? StartEnqueueSpan(string? endpoint, string? eventTypeId, int count)
     {
         var activity = NimBusActivitySources.Outbox.StartActivity("NimBus.Outbox.Enqueue", ActivityKind.Internal);
         if (activity is null) return null;

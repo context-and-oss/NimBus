@@ -274,10 +274,15 @@ in the CRM/ERP demo — [`samples/CrmErpDemo/README.md#showcase-pendinghandoff-a
 ```csharp
 public interface ISubscriberClient
 {
-    Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken ct);
+    // Azure Functions isolated worker
+    Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken ct);
+    Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionReceiver sessionReceiver, CancellationToken ct);
+    Task Handle(ProcessSessionMessageEventArgs args, CancellationToken ct);
     void RegisterHandler<TEvent>(Func<IEventHandler<TEvent>> factory) where TEvent : IEvent;
 }
 ```
+
+`Handle(message, sessionActions, ct)` is obsolete and will be removed in v5: `ServiceBusSessionMessageActions` cannot complete or dead-letter messages. Bind `ServiceBusMessageActions` in the trigger and call `Handle(message, messageActions, sessionActions, ct)` instead — see [Azure Functions hosting](azure-functions-hosting.md#4-create-the-function) for the trigger binding.
 
 Typically not used directly — `AddNimBusSubscriber` + `AddNimBusReceiver` handle registration and hosting.
 

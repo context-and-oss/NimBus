@@ -1,10 +1,15 @@
 #pragma warning disable CA1707, CS0618
 using Azure.Messaging.ServiceBus;
+using Grpc.Core;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.Messages;
+using NimBus.Core.Messages.Exceptions;
 using NimBus.ServiceBus;
 using System;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace NimBus.ServiceBus.Tests;
@@ -47,4 +52,200 @@ public class ServiceBusSessionTests
             sut.SendScheduledMessageAsync(new Azure.Messaging.ServiceBus.ServiceBusMessage("payload"), DateTimeOffset.UtcNow.AddMinutes(1)));
     }
 
+    // ── Settlement failures relayed by the Functions host over gRPC ─────
+
+    // The Status.Detail a CrmEndpoint delivery carried in production when the host lost the
+    // session lock while the handler ran.
+    private const string HostSessionLockLostDetail =
+        "Azure.Messaging.ServiceBus.ServiceBusException: The session lock was lost. Request a new session receiver. (SessionLockLost). " +
+        "For troubleshooting information, see https://aka.ms/azsdk/net/servicebus/exceptions/troubleshoot. " +
+        "---> Azure.Messaging.ServiceBus.ServiceBusException: The connection was inactive for more than the allowed 60000 milliseconds " +
+        "and is closed by container 'amqps://sb-eetdis-prod.servicebus.windows.net/-a7e5a1b8'. (GeneralError). " +
+        "For troubleshooting information, see https://aka.ms/azsdk/net/servicebus/exceptions/troubleshoot. " +
+        "--- End of inner exception stack trace --- at Azure.Messaging.ServiceBus.Amqp.AmqpReceiver.ExecuteRequest(TimeSpan timeout, AmqpRequestMessage amqpRequestMessage)";
+
+    private static RpcException HostFailure(string detail) => new(new Status(StatusCode.Unknown, detail));
+
+    [TestMethod]
+    public async Task GetStateAsync_HostReportsSessionLockLost_ThrowsSessionLockLost()
+    {
+        var sut = new ServiceBusSession(new ThrowingSessionActions(HostFailure(HostSessionLockLostDetail)));
+
+        var exception = await Assert.ThrowsExactlyAsync<ServiceBusException>(() => sut.GetStateAsync());
+
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, exception.Reason);
+        Assert.IsInstanceOfType<RpcException>(exception.InnerException);
+    }
+
+    [TestMethod]
+    public async Task SetStateAsync_HostReportsTransientFailure_ThrowsTransientServiceBusException()
+    {
+        var detail = "Azure.Messaging.ServiceBus.ServiceBusException: The operation did not complete within the allocated time. (ServiceTimeout). " +
+            "For troubleshooting information, see https://aka.ms/azsdk/net/servicebus/exceptions/troubleshoot.";
+        var sut = new ServiceBusSession(new ThrowingSessionActions(HostFailure(detail)));
+
+        var exception = await Assert.ThrowsExactlyAsync<ServiceBusException>(() => sut.SetStateAsync(new SessionState()));
+
+        Assert.AreEqual(ServiceBusFailureReason.ServiceTimeout, exception.Reason);
+        Assert.IsTrue(exception.IsTransient);
+    }
+
+    [TestMethod]
+    public async Task CompleteAsync_HostReportsSessionLockLost_ThrowsSessionLockLost()
+    {
+        var sut = new ServiceBusSession(
+            new ThrowingMessageActions(HostFailure(HostSessionLockLostDetail)),
+            ServiceBusTestDoubles.CreateSessionActions(),
+            serviceBusClient: null,
+            entityPath: null,
+            sessionId: "session-1");
+
+        var exception = await Assert.ThrowsExactlyAsync<ServiceBusException>(() => sut.CompleteAsync(new ServiceBusMessage(ServiceBusModelFactory.ServiceBusReceivedMessage(sessionId: "session-1"))));
+
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, exception.Reason);
+    }
+
+    [TestMethod]
+    public async Task GetStateAsync_HostReportsNonServiceBusFailure_RethrowsRpcException()
+    {
+        var failure = HostFailure("System.InvalidOperationException: something else (Oops).");
+        var sut = new ServiceBusSession(new ThrowingSessionActions(failure));
+
+        var exception = await Assert.ThrowsExactlyAsync<RpcException>(() => sut.GetStateAsync());
+
+        Assert.AreSame(failure, exception);
+    }
+
+    [TestMethod]
+    public async Task MessageContext_HostReportsSessionLockLost_ThrowsTransient()
+    {
+        var session = new ServiceBusSession(new ThrowingSessionActions(HostFailure(HostSessionLockLostDetail)));
+        var ctx = new MessageContext(new ServiceBusMessage(ServiceBusModelFactory.ServiceBusReceivedMessage(sessionId: "session-1")), session);
+
+        await Assert.ThrowsExactlyAsync<TransientException>(() => ctx.GetBlockedByEventId());
+    }
+
+    [TestMethod]
+    public async Task MessageContext_DeadLetter_HostReportsSessionLockLost_ThrowsTransient()
+    {
+        var session = new ServiceBusSession(
+            new ThrowingMessageActions(HostFailure(HostSessionLockLostDetail)),
+            ServiceBusTestDoubles.CreateSessionActions(),
+            serviceBusClient: null,
+            entityPath: null,
+            sessionId: "session-1");
+        var ctx = new MessageContext(new ServiceBusMessage(ServiceBusModelFactory.ServiceBusReceivedMessage(sessionId: "session-1")), session);
+
+        var exception = await Assert.ThrowsExactlyAsync<TransientException>(() => ctx.DeadLetter("reason"));
+
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, ((ServiceBusException)exception.InnerException!).Reason);
+    }
+
+    // Azure.Messaging.ServiceBus 7.21 closes a session receiver whose link was lost; its
+    // operations then throw these exceptions locally (see AmqpLifecycleTests for the real SDK).
+    private static ObjectDisposedException ClosedReceiver() =>
+        new(nameof(ServiceBusReceiver), "ServiceBusReceiver has already been closed and cannot perform the requested operation.");
+
+    private static ObjectDisposedException ClosedSessionReceiver() =>
+        new(nameof(ServiceBusSessionReceiver), "ServiceBusSessionReceiver has already been closed and cannot perform the requested operation.");
+
+    private static ServiceBusSession ProcessorSession(ServiceBusSessionReceiver receiver) =>
+        new(new ProcessSessionMessageEventArgs(ReceivedMessage(), receiver, "processor-1", CancellationToken.None));
+
+    private static ServiceBusReceivedMessage ReceivedMessage() =>
+        ServiceBusModelFactory.ServiceBusReceivedMessage(sessionId: "session-1");
+
+    [TestMethod]
+    public async Task CompleteAsync_ProcessorReceiverClosed_ThrowsSessionLockLost()
+    {
+        var sut = ProcessorSession(new ClosedSessionReceiverDouble(ClosedReceiver()));
+
+        var exception = await Assert.ThrowsExactlyAsync<ServiceBusException>(() => sut.CompleteAsync(new ServiceBusMessage(ReceivedMessage())));
+
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, exception.Reason);
+        Assert.IsInstanceOfType<ObjectDisposedException>(exception.InnerException);
+    }
+
+    [TestMethod]
+    public async Task DeadLetterAsync_ProcessorReceiverClosed_ThrowsSessionLockLost()
+    {
+        var sut = ProcessorSession(new ClosedSessionReceiverDouble(ClosedReceiver()));
+
+        var exception = await Assert.ThrowsExactlyAsync<ServiceBusException>(() => sut.DeadLetterAsync(new ServiceBusMessage(ReceivedMessage()), "reason", null));
+
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, exception.Reason);
+    }
+
+    [TestMethod]
+    public async Task SessionState_ProcessorReceiverClosed_ThrowsSessionLockLost()
+    {
+        var sut = ProcessorSession(new ClosedSessionReceiverDouble(ClosedSessionReceiver()));
+
+        var get = await Assert.ThrowsExactlyAsync<ServiceBusException>(() => sut.GetStateAsync());
+        var set = await Assert.ThrowsExactlyAsync<ServiceBusException>(() => sut.SetStateAsync(new SessionState()));
+
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, get.Reason);
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, set.Reason);
+    }
+
+    [TestMethod]
+    public async Task MessageContext_ProcessorReceiverClosed_ThrowsTransient()
+    {
+        var session = ProcessorSession(new ClosedSessionReceiverDouble(ClosedReceiver()));
+        var ctx = new MessageContext(new ServiceBusMessage(ReceivedMessage()), session);
+
+        await Assert.ThrowsExactlyAsync<TransientException>(() => ctx.Complete());
+    }
+
+    [TestMethod]
+    public async Task CompleteAsync_UnrelatedObjectDisposed_IsNotReclassified()
+    {
+        var unrelated = new ObjectDisposedException("SomethingElse");
+        var sut = ProcessorSession(new ClosedSessionReceiverDouble(unrelated));
+
+        var exception = await Assert.ThrowsExactlyAsync<ObjectDisposedException>(() => sut.CompleteAsync(new ServiceBusMessage(ReceivedMessage())));
+
+        Assert.AreSame(unrelated, exception);
+    }
+
+    private sealed class ClosedSessionReceiverDouble : ServiceBusSessionReceiver
+    {
+        private readonly Exception _exception;
+
+        public ClosedSessionReceiverDouble(Exception exception) => _exception = exception;
+
+        public override Task CompleteMessageAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken = default) => throw _exception;
+
+        public override Task DeadLetterMessageAsync(ServiceBusReceivedMessage message, string deadLetterReason, string? deadLetterErrorDescription = null, CancellationToken cancellationToken = default) => throw _exception;
+
+        public override Task DeadLetterMessageAsync(ServiceBusReceivedMessage message, System.Collections.Generic.IDictionary<string, object>? propertiesToModify = null, CancellationToken cancellationToken = default) => throw _exception;
+
+        public override Task DeadLetterMessageAsync(ServiceBusReceivedMessage message, System.Collections.Generic.IDictionary<string, object> propertiesToModify, string deadLetterReason, string? deadLetterErrorDescription = null, CancellationToken cancellationToken = default) => throw _exception;
+
+        public override Task<BinaryData> GetSessionStateAsync(CancellationToken cancellationToken = default) => throw _exception;
+
+        public override Task SetSessionStateAsync(BinaryData sessionState, CancellationToken cancellationToken = default) => throw _exception;
+    }
+
+    private sealed class ThrowingSessionActions : ServiceBusSessionMessageActions
+    {
+        private readonly Exception _exception;
+
+        public ThrowingSessionActions(Exception exception) => _exception = exception;
+
+        public override Task<BinaryData> GetSessionStateAsync(CancellationToken cancellationToken = default) => throw _exception;
+
+        public override Task SetSessionStateAsync(BinaryData sessionState, CancellationToken cancellationToken = default) => throw _exception;
+    }
+
+    private sealed class ThrowingMessageActions : ServiceBusMessageActions
+    {
+        private readonly Exception _exception;
+
+        public ThrowingMessageActions(Exception exception) => _exception = exception;
+
+        public override Task CompleteMessageAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken = default) => throw _exception;
+
+        public override Task DeadLetterMessageAsync(ServiceBusReceivedMessage message, System.Collections.Generic.Dictionary<string, object>? propertiesToModify = null, string? deadLetterReason = null, string? deadLetterErrorDescription = null, CancellationToken cancellationToken = default) => throw _exception;
+    }
 }

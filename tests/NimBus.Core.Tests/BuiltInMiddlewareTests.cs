@@ -34,10 +34,10 @@ file sealed class TestMessageContext : IMessageContext
     public int? DeferralSequence { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; } = DateTime.UtcNow;
     public string From { get; set; } = string.Empty;
-    public string DeadLetterReason { get; set; }
-    public string DeadLetterErrorDescription { get; set; }
-    public string HandoffReason { get; set; }
-    public string ExternalJobId { get; set; }
+    public string? DeadLetterReason { get; set; }
+    public string? DeadLetterErrorDescription { get; set; }
+    public string? HandoffReason { get; set; }
+    public string? ExternalJobId { get; set; }
     public DateTime? ExpectedBy { get; set; }
     public bool IsDeferred { get; set; }
     public int ThrottleRetryCount { get; set; }
@@ -45,7 +45,7 @@ file sealed class TestMessageContext : IMessageContext
     public long? ProcessingTimeMs { get; set; }
     public DateTime? HandlerStartedAtUtc { get; set; }
     public HandlerOutcome HandlerOutcome { get; set; }
-    public HandoffMetadata HandoffMetadata { get; set; }
+    public HandoffMetadata? HandoffMetadata { get; set; }
 
     public int DeadLetterCalls { get; private set; }
     public int CompleteCalls { get; private set; }
@@ -58,7 +58,7 @@ file sealed class TestMessageContext : IMessageContext
     public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);
     public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) => Task.FromResult(false);
     public Task<bool> IsSessionBlockedByEventId(CancellationToken ct = default) => Task.FromResult(false);
-    public Task<string> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult(string.Empty);
+    public Task<string?> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult<string?>(string.Empty);
     public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) => Task.FromResult(0);
     public Task IncrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
     public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
@@ -97,8 +97,8 @@ public class LoggingMiddlewareTests
         await middleware.Handle(context, (ctx, ct) => { handlerCalled = true; return Task.CompletedTask; });
 
         Assert.IsTrue(handlerCalled);
-        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Processing")));
-        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Completed")));
+        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Processing", StringComparison.Ordinal)));
+        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Completed", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -111,8 +111,8 @@ public class LoggingMiddlewareTests
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             middleware.Handle(context, (ctx, ct) => throw new InvalidOperationException("boom")));
 
-        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Failed")));
-        Assert.IsFalse(logger.Entries.Any(e => e.Contains("Completed")));
+        Assert.IsTrue(logger.Entries.Any(e => e.Contains("Failed", StringComparison.Ordinal)));
+        Assert.IsFalse(logger.Entries.Any(e => e.Contains("Completed", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -125,8 +125,8 @@ public class LoggingMiddlewareTests
         await middleware.Handle(context, (ctx, ct) => Task.CompletedTask);
 
         var allText = string.Join(" ", logger.Entries);
-        Assert.IsTrue(allText.Contains("OrderPlaced"));
-        Assert.IsTrue(allText.Contains("evt-42"));
+        Assert.IsTrue(allText.Contains("OrderPlaced", StringComparison.Ordinal));
+        Assert.IsTrue(allText.Contains("evt-42", StringComparison.Ordinal));
     }
 
     [TestMethod]

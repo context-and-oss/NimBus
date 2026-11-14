@@ -54,10 +54,10 @@ public class AuditSearchResult
 
 public class AuditSearchItem
 {
-    public string EventId { get; set; }
+    public string EventId { get; set; } = null!;
     public string? EndpointId { get; set; }
     public string? EventTypeId { get; set; }
-    public MessageAuditEntity Audit { get; set; }
+    public MessageAuditEntity Audit { get; set; } = null!;
     public DateTime CreatedAt { get; set; }
 }
 
@@ -89,7 +89,7 @@ public class EventFilter
     public string? ErrorText { get; set; }
 
     /// <summary>
-    /// Case-insensitive prefix match on <see cref="States.UnresolvedEvent.LastMessageId"/>,
+    /// Case-insensitive prefix match on <see cref="UnresolvedEvent.LastMessageId"/>,
     /// the id of the message the event's current state was recorded for.
     /// </summary>
     public string? LastMessageId { get; set; }

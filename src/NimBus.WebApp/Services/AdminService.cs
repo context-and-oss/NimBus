@@ -10,6 +10,7 @@ using NimBus.Core;
 using NimBus.Manager;
 using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Services.Operations;
 using CoreConstants = NimBus.Core.Messages.Constants;
 
 namespace NimBus.WebApp.Services;
@@ -38,6 +39,10 @@ public partial class AdminService : IAdminService
     private readonly ServiceBusAdministrationClient _sbAdmin;
     private readonly ServiceBusClient _sbClient;
     private readonly IManagerClient _managerClient;
+    private readonly ISubscriptionAdminService _subscriptionAdmin;
+    // Bulk skip sends each skip through the operator-command path, the only one that tells the
+    // endpoint (and so unblocks the session). Null only for callers that never bulk-skip.
+    private readonly IOperatorCommands? _operatorCommands;
     private readonly ILogger<AdminService> _logger;
 
     private const int PageSize = 20;
@@ -52,8 +57,10 @@ public partial class AdminService : IAdminService
         ServiceBusAdministrationClient sbAdmin,
         ServiceBusClient sbClient,
         IManagerClient managerClient,
+        ISubscriptionAdminService subscriptionAdmin,
         ILogger<AdminService> logger,
-        CosmosClient? rawCosmosClient = null)
+        CosmosClient? rawCosmosClient = null,
+        IOperatorCommands? operatorCommands = null)
     {
         _platform = platform;
         _messageStore = messageStore;
@@ -62,6 +69,8 @@ public partial class AdminService : IAdminService
         _sbAdmin = sbAdmin;
         _sbClient = sbClient;
         _managerClient = managerClient;
+        _subscriptionAdmin = subscriptionAdmin;
+        _operatorCommands = operatorCommands;
         _logger = logger;
     }
 
@@ -102,6 +111,28 @@ public partial class AdminService : IAdminService
         };
 
         return Task.FromResult(config);
+    }
+
+    /// <summary>
+    /// Rewrites a session's stored state with <paramref name="clear"/> applied, so an operator
+    /// action resets what it must and keeps the replay position the endpoint's ordering guard
+    /// relies on. State that can't be read is cleared outright, as these actions always did.
+    /// </summary>
+    internal static async Task ClearSessionState(ServiceBusSessionReceiver receiver, Action<NimBus.Core.Messages.SessionState> clear)
+    {
+        var stored = await receiver.GetSessionStateAsync();
+        BinaryData? cleared = null;
+        try
+        {
+            var state = NimBus.Core.Messages.SessionState.FromBinaryData(stored);
+            clear(state);
+            cleared = state.ToBinaryData();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+        }
+
+        await receiver.SetSessionStateAsync(cleared);
     }
 
     // ─────────── Internal DTOs for topology comparison ───────────

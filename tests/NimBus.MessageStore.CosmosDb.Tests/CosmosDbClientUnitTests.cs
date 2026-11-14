@@ -55,21 +55,20 @@ public sealed class CosmosDbClientUnitTests
     }
 
     [TestMethod]
-    public async Task PurgeMessages_evicts_cached_handle_so_next_access_recreates_container()
+    public async Task PurgeMessages_keeps_the_container_so_the_cached_handle_stays_valid()
     {
         var adapter = new FakeCosmosClientAdapter();
         var client = new CosmosDbClient(adapter);
 
         await client.DownloadEndpointStateCount("endpoint-1");
 
-        // Purge deletes the container and must evict the cache, so the next
-        // access re-runs "ensure exists" instead of reusing a stale handle.
-        var purged = await client.PurgeMessages("endpoint-1");
+        // Purge deletes the documents, not the container, so the cached handle
+        // stays good and the next access needs no "ensure exists" round-trip.
+        await client.PurgeMessages("endpoint-1");
         await client.DownloadEndpointStateCount("endpoint-1");
 
-        Assert.IsTrue(purged, "PurgeMessages should succeed against the fake adapter.");
-        Assert.AreEqual(2, adapter.GetCreateContainerCallCount("endpoint-1"),
-            "After a purge the cached handle is stale; the next access must re-ensure the container exists.");
+        Assert.AreEqual(1, adapter.GetCreateContainerCallCount("endpoint-1"),
+            "A purge must not invalidate the container handle.");
     }
 
     [TestMethod]
@@ -271,7 +270,7 @@ public sealed class CosmosDbClientUnitTests
 
     private sealed class FakeContainerAdapter : ICosmosContainerAdapter
     {
-        public Exception UpsertException { get; set; }
+        public Exception? UpsertException { get; set; }
 
         public Exception? OperationException { get; set; }
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import Topbar from "./topbar";
 
 vi.mock("hooks/use-theme", () => ({
@@ -48,4 +48,20 @@ describe("Topbar breadcrumbs", () => {
     expect(parent?.textContent).toBe("Settings");
     expect(parent?.getAttribute("href")).toBe("/Settings");
   });
+});
+
+it("links details opened from Failed back to Failed", () => {
+  render(
+    <MemoryRouter initialEntries={["/Message/Index/Crm/event-1/0?from=failed"]}>
+      <Routes>
+        <Route
+          path="/Message/Index/:endpointId/:id/:backindex"
+          element={<Topbar />}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(
+    screen.getByRole("link", { name: "Failed" }).getAttribute("href"),
+  ).toBe("/Failed");
 });

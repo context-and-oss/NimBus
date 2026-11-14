@@ -1,3 +1,5 @@
+import { apiFetch } from './auth';
+
 export interface Customer {
   id: string;
   customerNumber: string;
@@ -112,85 +114,85 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export const api = {
-  listCustomers: () => fetch('/api/customers').then(json<Customer[]>),
-  getCustomer: (id: string) => fetch(`/api/customers/${id}`).then(json<Customer>),
+  listCustomers: () => apiFetch('/api/customers').then(json<Customer[]>),
+  getCustomer: (id: string) => apiFetch(`/api/customers/${id}`).then(json<Customer>),
   createCustomer: (c: Partial<Customer>) =>
-    fetch('/api/customers', {
+    apiFetch('/api/customers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(c),
     }).then(json<Customer>),
   updateCustomer: (id: string, c: Partial<Customer>) =>
-    fetch(`/api/customers/${id}`, {
+    apiFetch(`/api/customers/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(c),
     }).then(json<Customer>),
   deleteCustomer: (id: string) =>
-    fetch(`/api/customers/${id}`, { method: 'DELETE' }).then(json<Customer>),
+    apiFetch(`/api/customers/${id}`, { method: 'DELETE' }).then(json<Customer>),
 
-  getServiceMode: () => fetch('/api/admin/service-mode').then(json<ModeState>),
+  getServiceMode: () => apiFetch('/api/admin/service-mode').then(json<ModeState>),
   setServiceMode: (enabled: boolean) =>
-    fetch('/api/admin/service-mode', {
+    apiFetch('/api/admin/service-mode', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     }).then(json<ModeState>),
 
-  getErrorMode: () => fetch('/api/admin/error-mode').then(json<ErrorModeState>),
+  getErrorMode: () => apiFetch('/api/admin/error-mode').then(json<ErrorModeState>),
   setErrorMode: (enabled: boolean, reason?: string) =>
-    fetch('/api/admin/error-mode', {
+    apiFetch('/api/admin/error-mode', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(reason === undefined ? { enabled } : { enabled, reason }),
     }).then(json<ErrorModeState>),
-  getErrorModeReasons: () => fetch('/api/admin/error-mode/reasons').then(json<FailureReason[]>),
+  getErrorModeReasons: () => apiFetch('/api/admin/error-mode/reasons').then(json<FailureReason[]>),
 
-  getHandoffMode: () => fetch('/api/admin/handoff-mode').then(json<HandoffMode>),
+  getHandoffMode: () => apiFetch('/api/admin/handoff-mode').then(json<HandoffMode>),
   setHandoffMode: (m: { enabled: boolean; durationSeconds: number; failureRate: number }) =>
-    fetch('/api/admin/handoff-mode', {
+    apiFetch('/api/admin/handoff-mode', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(m),
     }).then(json<HandoffMode>),
 
-  getHandoffJobs: () => fetch('/api/internal/handoff-jobs').then(json<HandoffJob[]>),
+  getHandoffJobs: () => apiFetch('/api/internal/handoff-jobs').then(json<HandoffJob[]>),
 
-  getProcessingDelay: () => fetch('/api/admin/processing-delay').then(json<ProcessingDelay>),
+  getProcessingDelay: () => apiFetch('/api/admin/processing-delay').then(json<ProcessingDelay>),
   setProcessingDelay: (m: { enabled: boolean; delayMs: number }) =>
-    fetch('/api/admin/processing-delay', {
+    apiFetch('/api/admin/processing-delay', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(m),
     }).then(json<ProcessingDelay>),
 
-  getAlerts: () => fetch('/api/admin/alerts').then(json<Alert[]>),
-  clearAlerts: () => fetch('/api/admin/alerts', { method: 'DELETE' }).then((res) => {
+  getAlerts: () => apiFetch('/api/admin/alerts').then(json<Alert[]>),
+  clearAlerts: () => apiFetch('/api/admin/alerts', { method: 'DELETE' }).then((res) => {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   }),
 
   // Demo reset: wipes all ERP business data + pending outbox rows (no delete
   // events published).
   deleteAllData: () =>
-    fetch('/api/admin/data', { method: 'DELETE' }).then(json<DataResetResult>),
+    apiFetch('/api/admin/data', { method: 'DELETE' }).then(json<DataResetResult>),
 
-  listContacts: () => fetch('/api/contacts').then(json<Contact[]>),
-  getContact: (id: string) => fetch(`/api/contacts/${id}`).then(json<Contact>),
+  listContacts: () => apiFetch('/api/contacts').then(json<Contact[]>),
+  getContact: (id: string) => apiFetch(`/api/contacts/${id}`).then(json<Contact>),
   createContact: (c: Partial<Contact>) =>
-    fetch('/api/contacts', {
+    apiFetch('/api/contacts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(c),
     }).then(json<Contact>),
   updateContact: (id: string, c: Partial<Contact>) =>
-    fetch(`/api/contacts/${id}`, {
+    apiFetch(`/api/contacts/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(c),
     }).then(json<Contact>),
   deleteContact: (id: string) =>
-    fetch(`/api/contacts/${id}`, { method: 'DELETE' }).then(json<Contact>),
+    apiFetch(`/api/contacts/${id}`, { method: 'DELETE' }).then(json<Contact>),
 
   getAuditLog: (entityType: 'Customer' | 'ErpContact', entityId: string) =>
-    fetch(`/api/audit/${entityType}/${entityId}`).then(json<AuditEntry[]>),
+    apiFetch(`/api/audit/${entityType}/${entityId}`).then(json<AuditEntry[]>),
 };

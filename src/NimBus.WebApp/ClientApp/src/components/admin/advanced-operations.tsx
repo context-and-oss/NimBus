@@ -10,8 +10,11 @@ import {
 } from "components/ui/card";
 import { Combobox } from "components/ui/combobox";
 import { Input } from "components/ui/input";
+import { useStorageProvider } from "hooks/app-status";
 import ConfirmDestructiveAction from "./confirm-destructive-action";
 import OperationProgress from "./operation-progress";
+import OperationErrorAlert, { CosmosOnlyNotice } from "./operation-error-alert";
+import { describeOperationError, isCosmosOnlyUnavailable } from "./operation-error";
 
 interface EndpointOption {
   value: string;
@@ -63,6 +66,14 @@ export function SubscriptionPurgeCard({ endpoints, initialEndpoint }: { endpoint
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // A failure drops the preview too: the server may have partly changed, so preview again.
+  function fail(err: unknown) {
+    setError(describeOperationError(err));
+    setPreview(null);
+    setResult(null);
+  }
 
   function buildRequest(): api.PurgeRequest {
     const req = new api.PurgeRequest();
@@ -80,23 +91,25 @@ export function SubscriptionPurgeCard({ endpoints, initialEndpoint }: { endpoint
     setLoading(true);
     setPreview(null);
     setResult(null);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const p = await client.postAdminPurgePreview(selected[0], buildRequest());
       setPreview(p);
-    } catch { /* */ } finally { setLoading(false); }
+    } catch (err) { fail(err); } finally { setLoading(false); }
   }
 
   async function handleExecute() {
     if (selected.length === 0) return;
     setShowConfirm(false);
     setExecuting(true);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const r = await client.postAdminPurge(selected[0], buildRequest());
       setResult(r);
       setPreview(null);
-    } catch { /* */ } finally { setExecuting(false); }
+    } catch (err) { fail(err); } finally { setExecuting(false); }
   }
 
   return (
@@ -112,25 +125,27 @@ export function SubscriptionPurgeCard({ endpoints, initialEndpoint }: { endpoint
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Endpoint</label>
-              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setPreview(null); setResult(null); }} placeholder="Select endpoint..." multiple={false} />
+              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setPreview(null); setResult(null); setError(null); }} placeholder="Select endpoint..." multiple={false} />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Subscription (optional)</label>
-              <Input value={subscription} onChange={(e) => setSubscription(e.target.value)} placeholder="Defaults to endpoint name" />
+              <Input value={subscription} onChange={(e) => { setSubscription(e.target.value); setError(null); }} placeholder="Defaults to endpoint name" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">States</label>
               <div className="flex gap-4 mt-2">
-                <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={purgeActive} onChange={(e) => setPurgeActive(e.target.checked)} /> Active</label>
-                <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={purgeDeferred} onChange={(e) => setPurgeDeferred(e.target.checked)} /> Deferred</label>
+                <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={purgeActive} onChange={(e) => { setPurgeActive(e.target.checked); setError(null); }} /> Active</label>
+                <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={purgeDeferred} onChange={(e) => { setPurgeDeferred(e.target.checked); setError(null); }} /> Deferred</label>
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Before</label>
-              <Input type="datetime-local" value={before} onChange={(e) => setBefore(e.target.value)} />
+              <Input type="datetime-local" value={before} onChange={(e) => { setBefore(e.target.value); setError(null); }} />
             </div>
           </div>
           <Button onClick={handlePreview} disabled={selected.length === 0 || loading} isLoading={loading} variant="outline">Preview</Button>
+
+          <OperationErrorAlert message={error} />
 
           {preview && (
             <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
@@ -146,9 +161,12 @@ export function SubscriptionPurgeCard({ endpoints, initialEndpoint }: { endpoint
           )}
 
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
+          {result?.rowsDeleted != null && (
+            <p className="text-sm">Stored rows deleted: <span className="font-bold">{result.rowsDeleted}</span></p>
+          )}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Purge Subscription Messages" confirmLabel="Purge subscription" description={`This will purge ${preview?.totalMatching ?? 0} messages from endpoint "${selected[0] ?? ""}".`}
+            title="Purge Subscription Messages" confirmLabel="Purge subscription" description={`This will purge ${preview?.totalMatching ?? 0} messages from endpoint "${selected[0] ?? ""}". The stored Pending and Deferred rows of the purged messages are deleted too.`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>
@@ -166,19 +184,32 @@ const ALL_STATUSES: api.AdminDeleteStatus[] = [
   api.AdminDeleteStatus.Pending,
 ];
 
+// Skipped is offered so that an event the delete keeps (#288) can go once it has been skipped.
+const DELETE_STATUSES: api.AdminDeleteStatus[] = [...ALL_STATUSES, api.AdminDeleteStatus.Skipped];
+
 export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
   const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [statuses, setStatuses] = useState<Set<api.AdminDeleteStatus>>(new Set());
   const [previewCount, setPreviewCount] = useState<number | null>(null);
+  // Matching events the delete keeps because each blocks its session.
+  const [blockingCount, setBlockingCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function fail(err: unknown) {
+    setError(describeOperationError(err));
+    setPreviewCount(null);
+    setResult(null);
+  }
 
   function toggleStatus(s: api.AdminDeleteStatus) {
     setStatuses((prev) => { const next = new Set(prev); next.has(s) ? next.delete(s) : next.add(s); return next; });
     setPreviewCount(null);
     setResult(null);
+    setError(null);
   }
 
   async function handlePreview() {
@@ -186,19 +217,22 @@ export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: 
     setLoading(true);
     setPreviewCount(null);
     setResult(null);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const req = new api.DeleteByStatusRequest();
       req.statuses = Array.from(statuses);
       const r = await client.postAdminDeleteByStatusPreview(selected[0], req);
+      setBlockingCount(r.blockingCount ?? 0);
       setPreviewCount(r.count ?? 0);
-    } catch { /* */ } finally { setLoading(false); }
+    } catch (err) { fail(err); } finally { setLoading(false); }
   }
 
   async function handleExecute() {
     if (selected.length === 0 || statuses.size === 0) return;
     setShowConfirm(false);
     setExecuting(true);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const req = new api.DeleteByStatusRequest();
@@ -206,7 +240,7 @@ export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: 
       const r = await client.postAdminDeleteByStatus(selected[0], req);
       setResult(r);
       setPreviewCount(null);
-    } catch { /* */ } finally { setExecuting(false); }
+    } catch (err) { fail(err); } finally { setExecuting(false); }
   }
 
   return (
@@ -219,13 +253,13 @@ export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: 
         <div className="space-y-4">
           <div className="flex gap-4 items-end">
             <div className="flex-1 max-w-md">
-              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setPreviewCount(null); setResult(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
+              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setPreviewCount(null); setResult(null); setError(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
             </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Statuses</label>
             <div className="flex flex-wrap gap-3">
-              {ALL_STATUSES.map((s) => (
+              {DELETE_STATUSES.map((s) => (
                 <label key={s} className="flex items-center gap-1 text-sm">
                   <input type="checkbox" checked={statuses.has(s)} onChange={() => toggleStatus(s)} /> {s}
                 </label>
@@ -234,9 +268,18 @@ export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: 
           </div>
           <Button onClick={handlePreview} disabled={selected.length === 0 || statuses.size === 0 || loading} isLoading={loading} variant="outline">Preview</Button>
 
+          <OperationErrorAlert message={error} />
+
           {previewCount !== null && (
             <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
               <p className="text-sm">Events matching: <span className="font-bold">{previewCount}</span></p>
+              {blockingCount > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {blockingCount} more events block their session, so the delete keeps them: deleting
+                  one would leave its session blocked. Skip them first (Operations → Skip messages), then
+                  delete them as Skipped.
+                </p>
+              )}
               {previewCount > 0 && (
                 <Button colorScheme="red" onClick={() => setShowConfirm(true)} disabled={executing} isLoading={executing} size="sm">
                   Delete {previewCount} events
@@ -258,14 +301,13 @@ export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: 
 
 // ──────────────────── Skip Messages ────────────────────────
 
+// The statuses the server accepts (SkipRules.BulkSkipSourceStatuses): each skip is sent to the
+// endpoint, which settles these. Deferred is left out: its parked copy replays and runs once the
+// session's block clears, whatever a skip recorded.
 const SKIPPABLE_STATUSES: api.AdminSkipSourceStatus[] = [
   api.AdminSkipSourceStatus.Failed,
-  api.AdminSkipSourceStatus.Deferred,
   api.AdminSkipSourceStatus.DeadLettered,
   api.AdminSkipSourceStatus.Unsupported,
-  api.AdminSkipSourceStatus.Pending,
-  api.AdminSkipSourceStatus.TooManyRequests,
-  api.AdminSkipSourceStatus.Published,
 ];
 
 export function SkipMessagesCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
@@ -277,11 +319,19 @@ export function SkipMessagesCard({ endpoints, initialEndpoint }: { endpoints: En
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function fail(err: unknown) {
+    setError(describeOperationError(err));
+    setPreviewCount(null);
+    setResult(null);
+  }
 
   function toggleStatus(s: api.AdminSkipSourceStatus) {
     setStatuses((prev) => { const next = new Set(prev); next.has(s) ? next.delete(s) : next.add(s); return next; });
     setPreviewCount(null);
     setResult(null);
+    setError(null);
   }
 
   function buildRequest(): api.SkipRequest {
@@ -296,40 +346,42 @@ export function SkipMessagesCard({ endpoints, initialEndpoint }: { endpoints: En
     setLoading(true);
     setPreviewCount(null);
     setResult(null);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const r = await client.postAdminSkipPreview(selected[0], buildRequest());
       setPreviewCount(r.count ?? 0);
-    } catch { /* */ } finally { setLoading(false); }
+    } catch (err) { fail(err); } finally { setLoading(false); }
   }
 
   async function handleExecute() {
     if (selected.length === 0 || statuses.size === 0) return;
     setShowConfirm(false);
     setExecuting(true);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const r = await client.postAdminSkip(selected[0], buildRequest());
       setResult(r);
       setPreviewCount(null);
-    } catch { /* */ } finally { setExecuting(false); }
+    } catch (err) { fail(err); } finally { setExecuting(false); }
   }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Skip Messages</CardTitle>
-        <CardDescription>Mark non-terminal events as Skipped</CardDescription>
+        <CardDescription>Send a skip to the endpoint for each matching event, so the sessions they block continue</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setPreviewCount(null); setResult(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
+              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setPreviewCount(null); setResult(null); setError(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Before (optional)</label>
-              <Input type="datetime-local" value={before} onChange={(e) => setBefore(e.target.value)} />
+              <Input type="datetime-local" value={before} onChange={(e) => { setBefore(e.target.value); setError(null); }} />
             </div>
           </div>
           <div>
@@ -343,6 +395,8 @@ export function SkipMessagesCard({ endpoints, initialEndpoint }: { endpoints: En
             </div>
           </div>
           <Button onClick={handlePreview} disabled={selected.length === 0 || statuses.size === 0 || loading} isLoading={loading} variant="outline">Preview</Button>
+
+          <OperationErrorAlert message={error} />
 
           {previewCount !== null && (
             <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
@@ -358,7 +412,7 @@ export function SkipMessagesCard({ endpoints, initialEndpoint }: { endpoints: En
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Skip Messages" confirmLabel="Skip messages" tone="primary" description={`This will mark ${previewCount ?? 0} events as Skipped on endpoint "${selected[0] ?? ""}".`}
+            title="Skip Messages" confirmLabel="Skip messages" tone="primary" description={`This will send a skip for ${previewCount ?? 0} events to endpoint "${selected[0] ?? ""}". Each one shows as Skipped once the endpoint has handled it.`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>
@@ -375,25 +429,36 @@ export function DeleteMessagesByToCard() {
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const provider = useStorageProvider();
+  const unavailable = isCosmosOnlyUnavailable(provider);
+
+  function fail(err: unknown) {
+    setError(describeOperationError(err));
+    setPreviewCount(null);
+    setResult(null);
+  }
 
   async function handlePreview() {
-    if (!toField) return;
+    if (!toField || unavailable) return;
     setLoading(true);
     setPreviewCount(null);
     setResult(null);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const req = new api.DeleteByToRequest();
       req.toField = toField;
       const r = await client.postAdminDeleteByToPreview(req);
       setPreviewCount(r.count ?? 0);
-    } catch { /* */ } finally { setLoading(false); }
+    } catch (err) { fail(err); } finally { setLoading(false); }
   }
 
   async function handleExecute() {
-    if (!toField) return;
+    if (!toField || unavailable) return;
     setShowConfirm(false);
     setExecuting(true);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const req = new api.DeleteByToRequest();
@@ -401,30 +466,33 @@ export function DeleteMessagesByToCard() {
       const r = await client.postAdminDeleteByTo(req);
       setResult(r);
       setPreviewCount(null);
-    } catch { /* */ } finally { setExecuting(false); }
+    } catch (err) { fail(err); } finally { setExecuting(false); }
   }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Delete Messages by To Field</CardTitle>
-        <CardDescription>Delete messages from the messages container filtered by the "To" field</CardDescription>
+        <CardDescription>Delete messages from the messages container filtered by the "To" field (Cosmos DB only)</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
+          {unavailable && <CosmosOnlyNotice provider={provider} />}
           <div className="flex gap-4 items-end">
             <div className="flex-1 max-w-md">
               <label className="block text-xs font-medium text-muted-foreground mb-1">To (Subscriber)</label>
-              <Input value={toField} onChange={(e) => { setToField(e.target.value); setPreviewCount(null); setResult(null); }} placeholder="e.g. CrmEndpoint" />
+              <Input value={toField} onChange={(e) => { setToField(e.target.value); setPreviewCount(null); setResult(null); setError(null); }} placeholder="e.g. CrmEndpoint" />
             </div>
-            <Button onClick={handlePreview} disabled={!toField || loading} isLoading={loading} variant="outline">Preview</Button>
+            <Button onClick={handlePreview} disabled={!toField || loading || unavailable} isLoading={loading} variant="outline">Preview</Button>
           </div>
+
+          <OperationErrorAlert message={error} />
 
           {previewCount !== null && (
             <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
               <p className="text-sm">Messages matching: <span className="font-bold">{previewCount}</span></p>
               {previewCount > 0 && (
-                <Button colorScheme="red" onClick={() => setShowConfirm(true)} disabled={executing} isLoading={executing} size="sm">
+                <Button colorScheme="red" onClick={() => setShowConfirm(true)} disabled={executing || unavailable} isLoading={executing} size="sm">
                   Delete {previewCount} messages
                 </Button>
               )}
@@ -454,15 +522,20 @@ export function CopyEndpointCard({ endpoints, initialEndpoint }: { endpoints: En
   const [result, setResult] = useState<api.CopyResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const provider = useStorageProvider();
+  const unavailable = isCosmosOnlyUnavailable(provider);
 
   function toggleStatus(s: string) {
     setStatuses((prev) => { const next = new Set(prev); next.has(s) ? next.delete(s) : next.add(s); return next; });
+    setError(null);
   }
 
   async function handleExecute() {
-    if (selected.length === 0 || !targetConnStr) return;
+    if (selected.length === 0 || !targetConnStr || unavailable) return;
     setShowConfirm(false);
     setExecuting(true);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const req = new api.CopyRequest();
@@ -473,7 +546,10 @@ export function CopyEndpointCard({ endpoints, initialEndpoint }: { endpoints: En
       if (batchSize) req.batchSize = parseInt(batchSize, 10);
       const r = await client.postAdminCopy(selected[0], req);
       setResult(r);
-    } catch { /* */ } finally { setExecuting(false); }
+    } catch (err) {
+      setError(describeOperationError(err));
+      setResult(null);
+    } finally { setExecuting(false); }
   }
 
   return (
@@ -484,27 +560,28 @@ export function CopyEndpointCard({ endpoints, initialEndpoint }: { endpoints: En
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
+          {unavailable && <CosmosOnlyNotice provider={provider} />}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setResult(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
+              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setResult(null); setError(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Target Connection String</label>
-              <Input type="password" value={targetConnStr} onChange={(e) => setTargetConnStr(e.target.value)} placeholder="AccountEndpoint=..." />
+              <Input type="password" value={targetConnStr} onChange={(e) => { setTargetConnStr(e.target.value); setError(null); }} placeholder="AccountEndpoint=..." />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">From (optional)</label>
-              <Input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <Input type="datetime-local" value={from} onChange={(e) => { setFrom(e.target.value); setError(null); }} />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">To (optional)</label>
-              <Input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} />
+              <Input type="datetime-local" value={to} onChange={(e) => { setTo(e.target.value); setError(null); }} />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Batch Size (optional)</label>
-              <Input type="number" value={batchSize} onChange={(e) => setBatchSize(e.target.value)} placeholder="All" />
+              <Input type="number" value={batchSize} onChange={(e) => { setBatchSize(e.target.value); setError(null); }} placeholder="All" />
             </div>
           </div>
           <div>
@@ -517,9 +594,11 @@ export function CopyEndpointCard({ endpoints, initialEndpoint }: { endpoints: En
               ))}
             </div>
           </div>
-          <Button colorScheme="primary" onClick={() => setShowConfirm(true)} disabled={selected.length === 0 || !targetConnStr || executing} isLoading={executing}>
+          <Button colorScheme="primary" onClick={() => setShowConfirm(true)} disabled={selected.length === 0 || !targetConnStr || executing || unavailable} isLoading={executing}>
             Copy Data
           </Button>
+
+          <OperationErrorAlert message={error} />
 
           {result && (
             <div className="bg-green-50 border border-green-200 dark:bg-green-950/30 dark:border-green-900/60 rounded-md p-4 space-y-1">
@@ -544,39 +623,46 @@ export function DeleteAllEventsCard({ endpoints, initialEndpoint }: { endpoints:
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleExecute() {
     if (selected.length === 0) return;
     setShowConfirm(false);
     setExecuting(true);
+    setError(null);
     try {
       const client = new api.Client(api.CookieAuth());
       const r = await client.postAdminDeleteAll(selected[0]);
       setResult(r);
-    } catch { /* */ } finally { setExecuting(false); }
+    } catch (err) {
+      setError(describeOperationError(err));
+      setResult(null);
+    } finally { setExecuting(false); }
   }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Delete All Events</CardTitle>
-        <CardDescription>Delete the entire endpoint container from storage. This removes all events regardless of status.</CardDescription>
+        <CardDescription>Wipe the endpoint: delete and recreate its subscription and its Deferred subscription (discarding every queued and parked message), then delete all stored events regardless of status and the endpoint's message history.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           <div className="flex gap-4 items-end">
             <div className="flex-1 max-w-md">
-              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setResult(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
+              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setResult(null); setError(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
             </div>
             <Button colorScheme="red" onClick={() => setShowConfirm(true)} disabled={selected.length === 0 || executing} isLoading={executing}>
               Delete All
             </Button>
           </div>
 
+          <OperationErrorAlert message={error} />
+
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Delete All Events" confirmLabel="Delete all events" description={`This will permanently delete ALL events for endpoint "${selected[0] ?? ""}". The entire storage container will be removed. This action cannot be undone.`}
+            title="Delete All Events" confirmLabel="Delete all events" description={`This will permanently wipe endpoint "${selected[0] ?? ""}": its subscription and Deferred subscription are deleted and recreated empty, and every stored event and message-history record for it is deleted. This action cannot be undone.`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>

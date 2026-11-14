@@ -68,6 +68,25 @@ public sealed class McpAccessPolicy
     public bool AllowsPayloads => Settings.Capabilities.Payloads;
 
     /// <summary>
+    /// Whether workloads with the <c>Nimbus.Classify</c> app role may record classifications: the
+    /// Owner allowed it and workload tokens are accepted (Spec 044 §6.6).
+    /// </summary>
+    public bool AllowsWorkloadClassification => Settings.AllowWorkloads && Settings.AllowWorkloadClassification;
+
+    /// <summary>
+    /// Whether workloads with the <c>Nimbus.Resubmit</c> app role may resubmit: the Owner allowed
+    /// it and workload tokens are accepted (Spec 044 Phase 2). The journal must also be available;
+    /// <c>OperatorActionAccess</c> checks that.
+    /// </summary>
+    public bool AllowsWorkloadResubmit => Settings.AllowWorkloads && Settings.AllowWorkloadResubmit;
+
+    /// <summary>
+    /// Whether workloads with the <c>Nimbus.Annotate</c> app role may mark messages reported: the
+    /// Owner allowed it and workload tokens are accepted (Spec 044 Phase 3).
+    /// </summary>
+    public bool AllowsWorkloadAnnotation => Settings.AllowWorkloads && Settings.AllowWorkloadAnnotation;
+
+    /// <summary>
     /// Builds the policy from <paramref name="settings"/>, with each limit lowered to the
     /// deployment's value. When rate limiting is off the saved limits are ignored.
     /// </summary>

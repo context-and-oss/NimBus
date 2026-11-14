@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System.Text.Json;
 using NimBus.CommandLine;
 using Xunit;
@@ -30,7 +31,7 @@ public sealed class PlatformAppSettingsTests
 
         await service.DeployAsync(Options, CancellationToken.None);
 
-        var settingsCall = Assert.Single(az.Calls, call => call.Contains("appsettings"));
+        var settingsCall = Assert.Single(az.Calls, call => call.Contains("appsettings", StringComparison.Ordinal));
         Assert.Contains("delete", settingsCall, StringComparison.Ordinal);
         Assert.Contains("NimBus__PlatformType", settingsCall, StringComparison.Ordinal);
         Assert.Contains("NimBus__PlatformAssembly", settingsCall, StringComparison.Ordinal);
@@ -44,7 +45,21 @@ public sealed class PlatformAppSettingsTests
 
         await service.DeployAsync(Options with { Target = AppDeploymentTarget.Resolver }, CancellationToken.None);
 
-        Assert.DoesNotContain(az.Calls, call => call.Contains("appsettings"));
+        Assert.DoesNotContain(az.Calls, call => call.Contains("appsettings", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task DeployingWithAPostfix_TargetsThePostfixedApps()
+    {
+        var az = new RecordingAzureCli();
+        var service = new AppDeploymentService(az, new StubArtifacts(), platformPackage: null);
+
+        await service.DeployAsync(Options with { Target = AppDeploymentTarget.All, ResourceNamePostfix = "avk" }, CancellationToken.None);
+
+        Assert.Contains(az.Calls, call => call.StartsWith("webapp deploy", StringComparison.Ordinal) && call.Contains("--name webapp-acme-test-management-avk", StringComparison.Ordinal));
+        Assert.Contains(az.Calls, call => call.Contains("func-acme-test-resolver-avk", StringComparison.Ordinal));
+        // The App Service plan was never postfixed.
+        Assert.DoesNotContain(az.Calls, call => call.Contains("asp-acme-test-core-avk", StringComparison.Ordinal));
     }
 
     private sealed class StubArtifacts : IDeploymentArtifactSource
@@ -96,6 +111,12 @@ public sealed class PlatformAppSettingsTests
         public Task<JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage)
         {
             Calls.Add(string.Join(' ', arguments));
+            // The resource group read that resolves the recorded names: nothing recorded.
+            if (arguments.Contains("group"))
+            {
+                return Task.FromResult(JsonDocument.Parse("""{"id":"/subscriptions/0/resourceGroups/rg-acme-test","tags":null}"""));
+            }
+
             // `az version`: old enough to be irrelevant, new enough to clear the Flex gate.
             return Task.FromResult(JsonDocument.Parse("""{"azure-cli":"2.99.0"}"""));
         }

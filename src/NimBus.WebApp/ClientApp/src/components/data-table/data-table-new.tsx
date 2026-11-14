@@ -1,14 +1,25 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  getPaginationRowModel,
-  getFilteredRowModel,
+  useTable,
+  tableFeatures,
+  columnFilteringFeature,
+  columnSizingFeature,
+  globalFilteringFeature,
+  rowPaginationFeature,
+  rowSelectionFeature,
+  rowSortingFeature,
+  createFilteredRowModel,
+  createPaginatedRowModel,
+  createSortedRowModel,
+  sortFn_alphanumeric,
+  sortFn_basic,
+  sortFn_datetime,
+  sortFn_text,
   flexRender,
   type SortingState,
   type ColumnDef,
+  type Row,
   type RowSelectionState,
 } from "@tanstack/react-table";
 import { cn } from "lib/utils";
@@ -34,6 +45,28 @@ export type {
   ITableBodyAction,
   ITableData,
 } from "./types";
+
+// The table features this component uses. Each row model follows its feature,
+// and the automatic sort ("auto") only resolves the sort functions registered here.
+const features = tableFeatures({
+  columnSizingFeature,
+  columnFilteringFeature,
+  globalFilteringFeature,
+  filteredRowModel: createFilteredRowModel(),
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+  sortFns: {
+    alphanumeric: sortFn_alphanumeric,
+    basic: sortFn_basic,
+    datetime: sortFn_datetime,
+    text: sortFn_text,
+  },
+  rowPaginationFeature,
+  paginatedRowModel: createPaginatedRowModel(),
+  rowSelectionFeature,
+});
+
+type Features = typeof features;
 
 interface DataTableProps {
   headCells: ITableHeadCell[];
@@ -102,8 +135,8 @@ export function DataTable({
   const clearRowSelection = () => setRowSelection({});
 
   // Convert Map-based rows to column accessor format
-  const columns = useMemo<ColumnDef<ITableRow>[]>(() => {
-    const cols: ColumnDef<ITableRow>[] = [];
+  const columns = useMemo<ColumnDef<Features, ITableRow>[]>(() => {
+    const cols: ColumnDef<Features, ITableRow>[] = [];
 
     // Checkbox column
     if (withCheckboxes) {
@@ -112,7 +145,11 @@ export function DataTable({
         header: ({ table }) => (
           <Checkbox
             checked={table.getIsAllPageRowsSelected()}
-            indeterminate={table.getIsSomePageRowsSelected()}
+            // From react-table 9 "some" is also true when all rows are selected.
+            indeterminate={
+              table.getIsSomePageRowsSelected() &&
+              !table.getIsAllPageRowsSelected()
+            }
             onChange={table.getToggleAllPageRowsSelectedHandler()}
             aria-label="Select all"
           />
@@ -243,7 +280,8 @@ export function DataTable({
     [],
   );
 
-  const table = useReactTable({
+  const table = useTable({
+    features,
     data: rows,
     columns,
     state: {
@@ -256,17 +294,16 @@ export function DataTable({
     // and index-keyed selection would then target the wrong rows.
     getRowId: (row) => row.id,
     enableRowSelection: withCheckboxes,
+    // From react-table 9 Shift+click selects a range; keep single-row toggling.
+    enableRowRangeSelection: false,
     onSortingChange: setSorting,
     onRowSelectionChange: setRowSelection,
     onGlobalFilterChange: setGlobalFilter,
     globalFilterFn: (row, columnId, filterValue) =>
       globalFilterFn(row.original, filterValue),
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     initialState: {
       pagination: {
+        pageIndex: 0,
         pageSize: dataRowsPerPage,
       },
     },
@@ -278,7 +315,7 @@ export function DataTable({
   // condition, triggered onPageChange, that appended more rows, which fired the effect
   // again, etc. — so opening a list page issued 2–3 fetches without user input.
   const prevPageIndex = useRef(0);
-  const pageIndex = table.getState().pagination.pageIndex;
+  const pageIndex = table.state.pagination.pageIndex;
   useEffect(() => {
     if (pageIndex <= prevPageIndex.current) {
       prevPageIndex.current = pageIndex;
@@ -286,7 +323,7 @@ export function DataTable({
     }
     prevPageIndex.current = pageIndex;
     if (!onPageChange) return;
-    const pageSize = table.getState().pagination.pageSize;
+    const pageSize = table.state.pagination.pageSize;
     if (rows.length - pageSize * (pageIndex + 1) <= pageSize) {
       onPageChange();
     }
@@ -415,13 +452,13 @@ export function DataTable({
           {table.getFilteredRowModel().rows.length > 0 && (
             <>
               Showing{" "}
-              {table.getState().pagination.pageIndex *
-                table.getState().pagination.pageSize +
+              {table.state.pagination.pageIndex *
+                table.state.pagination.pageSize +
                 1}{" "}
               to{" "}
               {Math.min(
-                (table.getState().pagination.pageIndex + 1) *
-                  table.getState().pagination.pageSize,
+                (table.state.pagination.pageIndex + 1) *
+                  table.state.pagination.pageSize,
                 table.getFilteredRowModel().rows.length,
               )}{" "}
               of {count ?? table.getFilteredRowModel().rows.length} results
@@ -438,7 +475,7 @@ export function DataTable({
             Previous
           </Button>
           <span className="text-sm text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} of{" "}
+            Page {table.state.pagination.pageIndex + 1} of{" "}
             {table.getPageCount()}
           </span>
           <Button
@@ -581,7 +618,13 @@ function isInteractiveTarget(e: React.MouseEvent): boolean {
 }
 
 // Table row component with proper navigation handling
-function TableRow({ row, rowData }: { row: any; rowData: ITableRow }) {
+function TableRow({
+  row,
+  rowData,
+}: {
+  row: Row<Features, ITableRow>;
+  rowData: ITableRow;
+}) {
   const navigate = useNavigate();
 
   const handleRowClick = (e: React.MouseEvent) => {
@@ -615,7 +658,7 @@ function TableRow({ row, rowData }: { row: any; rowData: ITableRow }) {
       onAuxClick={rowData.route ? handleRowAuxClick : undefined}
       title={rowData.hoverText}
     >
-      {row.getVisibleCells().map((cell: any) => (
+      {row.getAllCells().map((cell) => (
         <td
           key={cell.id}
           className={cn(

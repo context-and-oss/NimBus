@@ -60,8 +60,8 @@ public class TemplateRendererTests
 
         // The rendered payload must round-trip as valid JSON with the original values intact.
         var parsed = Newtonsoft.Json.Linq.JObject.Parse(result);
-        Assert.AreEqual("Order \"42\" failed", (string)parsed["summary"]);
-        Assert.AreEqual("line1\nline2\tC:\\temp", (string)parsed["error"]);
+        Assert.AreEqual("Order \"42\" failed", (string?)parsed["summary"]);
+        Assert.AreEqual("line1\nline2\tC:\\temp", (string?)parsed["error"]);
     }
 
     [TestMethod]

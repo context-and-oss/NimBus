@@ -163,11 +163,11 @@ public interface IApplicationInsightsService
 
 public class LatencyMetric
 {
-    public string Destination { get; set; }
-    public string EventType { get; set; }
-    public LatencyStats Queue { get; set; }
-    public LatencyStats Processing { get; set; }
-    public LatencyStats E2E { get; set; }
+    public string Destination { get; set; } = null!;
+    public string EventType { get; set; } = null!;
+    public LatencyStats? Queue { get; set; }
+    public LatencyStats? Processing { get; set; }
+    public LatencyStats? E2E { get; set; }
 }
 
 public class LatencyStats

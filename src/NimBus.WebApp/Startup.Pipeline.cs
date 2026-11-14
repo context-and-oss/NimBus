@@ -2,7 +2,12 @@ using NimBus.WebApp.Hubs;
 using Microsoft.Net.Http.Headers;
 using NimBus.WebApp.Middleware;
 using NimBus.Extensions.IntegrationIntelligence;
+using NimBus.WebApp.Csrf;
 using NimBus.WebApp.Mcp;
+using NimBus.WebApp.Problems;
+using NimBus.WebApp.RateLimiting;
+using NimBus.WebApp.Versioning;
+using NimBus.WebApp.Cors;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 namespace NimBus.WebApp;
@@ -23,6 +28,11 @@ public partial class Startup
             app.UseHsts();
         }
 
+        // Every /api error ends as an RFC 7807 problem: bodyless statuses (ForbidResult, the auth
+        // handlers' 401/403, unmatched routes) and unhandled exceptions. Ahead of routing and
+        // authentication so their responses are covered; inside the developer exception page.
+        app.UseNimBusApiProblemDetails();
+
         app.UseHttpsRedirection();
 
         // Response compression MUST run before UseStaticFiles and UseRouting.
@@ -37,6 +47,13 @@ public partial class Startup
         app.UseMiddleware<SecurityHeadersMiddleware>();
 
         app.UseRouting();
+
+        // After routing, so the endpoint is known: deprecated /api/… routes announce /api/v1/….
+        app.UseNimBusLegacyApiRouteHeaders();
+
+        // Cross-origin calls to /api from Cors:AllowedOrigins, before authentication so a
+        // preflight is answered rather than challenged. A no-op when no origin is configured.
+        app.UseNimBusApiCors();
 
         // Serve the Brotli/gzip siblings the Vite build emits next to each
         // asset, before the SPA static-file middleware. When the client
@@ -105,6 +122,9 @@ public partial class Startup
         app.UseAuthentication();
         app.UseAuthorization();
 
+        // After authorization: the token it hands the SPA is bound to the signed-in user (#296).
+        app.UseNimBusAntiforgeryTokenCookie();
+
         // After UseAuthorization, not right after UseRouting: the admin and
         // search partitions key on HttpContext.User, which UseAuthentication
         // populates. Placed earlier, every authenticated caller collapses
@@ -113,6 +133,8 @@ public partial class Startup
         // UseEndpoints(...) — which is what endpoint policy resolution needs.
         // Side benefit: unauthorized requests are rejected before they can
         // consume a permit.
+        // Agent keys and dashboard tokens authenticate inside MVC; name them for the limiter first.
+        app.UseNimBusRateLimitCallers();
         app.UseRateLimiter();
 
         app.UseEndpoints(endpoints =>
@@ -142,7 +164,7 @@ public partial class Startup
                     ctx.Context.Response.GetTypedHeaders().CacheControl =
                         new CacheControlHeaderValue { NoCache = true, NoStore = true, MustRevalidate = true };
 
-                    if (!ctx.Context.User.Identity.IsAuthenticated)
+                    if (!ctx.Context.User.Identity!.IsAuthenticated)
                     {
                         ctx.Context.Response.Redirect(loginPath);
                     }
@@ -153,11 +175,28 @@ public partial class Startup
             // wwwroot holds no copy, so the fallback must use the SPA file provider
             // rather than the default WebRoot one. The Directory.Exists guard keeps
             // hosts without a built SPA (unit tests) constructible.
+            // The Monitor wall's shell loads without a session: a wall display authenticates its API
+            // calls with a dashboard token carried in the URL fragment, which the server never
+            // sees, so it cannot tell here whether one is coming. The shell is static and holds no
+            // data. A separate endpoint, because MapFallbackToFile rewrites the request path to the
+            // file before OnPrepareResponse runs. Routing is case-insensitive; /Monitor/x is not
+            // matched and keeps redirecting.
+            var monitorShellOptions = new StaticFileOptions
+            {
+                OnPrepareResponse = ctx => ctx.Context.Response.GetTypedHeaders().CacheControl =
+                    new CacheControlHeaderValue { NoCache = true, NoStore = true, MustRevalidate = true },
+            };
+
             if (System.IO.Directory.Exists(spaAssetRoot))
             {
-                fallbackOptions.FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(spaAssetRoot);
+                var spaFiles = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(spaAssetRoot);
+                fallbackOptions.FileProvider = spaFiles;
+                monitorShellOptions.FileProvider = spaFiles;
             }
 
+            // An unknown /api route is a 404 problem, never the SPA's index.html.
+            endpoints.MapNimBusApiNotFound();
+            endpoints.MapFallbackToFile("Monitor", "index.html", monitorShellOptions);
             endpoints.MapFallbackToFile("index.html", fallbackOptions);
         });
     }

@@ -24,6 +24,12 @@ public sealed class RateLimitOptions
     /// </summary>
     public bool TrustForwardedForHeader { get; set; }
 
+    /// <summary>
+    /// Fixed-window limits applied per caller to every <c>/api</c> request, on top of the named
+    /// policies below: a ceiling for the routes no policy covers. Default 600 per 60 seconds.
+    /// </summary>
+    public WindowLimits Global { get; set; } = new() { PermitLimit = 600, WindowSeconds = 60 };
+
     /// <summary>Concurrency limits for <c>GET /api/agent/receive</c>.</summary>
     public AgentReceiveLimits AgentReceive { get; set; } = new();
 

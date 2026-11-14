@@ -34,8 +34,9 @@ public class NimBusClaimsTransformation : IClaimsTransformation
         }
 
         // Map Identity roles to "groups" claims (EndpointAuthorizationService checks
-        // for "EIP_Management" in claim values, regardless of claim type)
-        foreach (var roleClaim in principal.Claims.Where(c => c.Type == ClaimTypes.Role))
+        // for "EIP_Management" in claim values, regardless of claim type). Snapshot the roles:
+        // AddClaim below changes the collection principal.Claims enumerates.
+        foreach (var roleClaim in principal.Claims.Where(c => c.Type == ClaimTypes.Role).ToList())
         {
             if (!principal.HasClaim(c => c.Value == roleClaim.Value && c.Type != ClaimTypes.Role))
             {

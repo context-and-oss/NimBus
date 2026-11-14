@@ -23,12 +23,12 @@ public class PublisherClientRequestTests
 {
     private sealed class PingRequest : Event
     {
-        public string Text { get; set; }
+        public string Text { get; set; } = null!;
     }
 
     private sealed class PongResponse
     {
-        public string Echo { get; set; }
+        public string Echo { get; set; } = null!;
     }
 
     private sealed class PingHandler : IRequestHandler<PingRequest, PongResponse>
@@ -68,9 +68,9 @@ public class PublisherClientRequestTests
 
     private sealed class MarkerServiceBusClient : ServiceBusClient
     {
-        public string AcceptedTopic { get; private set; }
-        public string AcceptedSubscription { get; private set; }
-        public string AcceptedSessionId { get; private set; }
+        public string? AcceptedTopic { get; private set; }
+        public string? AcceptedSubscription { get; private set; }
+        public string? AcceptedSessionId { get; private set; }
 
         public override Task<ServiceBusSessionReceiver> AcceptSessionAsync(
             string topicName, string subscriptionName, string sessionId,
@@ -112,7 +112,7 @@ public class PublisherClientRequestTests
         var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             publisher.Request<PingRequest, PongResponse>(new PingRequest(), TimeSpan.FromSeconds(1)));
 
-        StringAssert.Contains(ex.Message, "AddNimBusPublisher");
+        StringAssert.Contains(ex.Message, "AddNimBusPublisher", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -126,7 +126,7 @@ public class PublisherClientRequestTests
         var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             publisher.Request<PingRequest, PongResponse>(new PingRequest(), TimeSpan.FromSeconds(1)));
 
-        StringAssert.Contains(ex.Message, "-reply");
+        StringAssert.Contains(ex.Message, "-reply", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -142,7 +142,7 @@ public class PublisherClientRequestTests
 
         var ex = Assert.ThrowsExactly<InvalidOperationException>(
             () => builder.AddRequestHandler<PingRequest, PongResponse, PingHandler>());
-        StringAssert.Contains(ex.Message, "PingRequest");
+        StringAssert.Contains(ex.Message, "PingRequest", StringComparison.Ordinal);
     }
 
     [TestMethod]

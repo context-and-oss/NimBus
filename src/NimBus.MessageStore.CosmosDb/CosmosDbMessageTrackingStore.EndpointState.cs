@@ -50,12 +50,50 @@ internal sealed partial class CosmosDbMessageTrackingStore
             EndpointId = endpointId,
             EventTime = DateTime.UtcNow,
             OldestFailureAt = oldestFailure,
-            DeferredCount = resultDict.ContainsKey(DeferredStatus) ? resultDict[DeferredStatus] : 0,
-            PendingCount = resultDict.ContainsKey(PendingStatus) ? resultDict[PendingStatus] : 0,
-            FailedCount = resultDict.ContainsKey(FailedStatus) ? resultDict[FailedStatus] : 0,
-            DeadletterCount = resultDict.ContainsKey(DLQStatus) ? resultDict[DLQStatus] : 0,
-            UnsupportedCount = resultDict.ContainsKey(UnsupportedStatus) ? resultDict[UnsupportedStatus] : 0,
+            DeferredCount = resultDict.GetValueOrDefault(DeferredStatus),
+            PendingCount = resultDict.GetValueOrDefault(PendingStatus),
+            FailedCount = resultDict.GetValueOrDefault(FailedStatus),
+            DeadletterCount = resultDict.GetValueOrDefault(DLQStatus),
+            UnsupportedCount = resultDict.GetValueOrDefault(UnsupportedStatus),
         };
+    }
+
+    /// <summary>
+    /// Distinct non-empty sessions held by a failed, dead-lettered or pending hand-off event
+    /// (<c>IMonitorMetricsStore.GetBlockedSessionCount</c>). One row per session comes back and
+    /// is counted here: a COUNT over a DISTINCT subquery is not relied on across partitions, and
+    /// a cross-partition GROUP BY can repeat a key, hence the set.
+    /// </summary>
+    public async Task<int> GetBlockedSessionCount(string endpointId)
+    {
+        var container = await _getEndpointContainer(endpointId);
+        var queryDefinition = new QueryDefinition(
+                "SELECT c.sessionId FROM c WHERE (NOT IS_DEFINED(c.deleted) or c.deleted != true) " +
+                "AND IS_STRING(c.sessionId) AND c.sessionId != '' " +
+                "AND (c.status IN (@failedStatus, @deadletterStatus) " +
+                "OR (c.status = @pendingStatus AND c.event.PendingSubStatus = 'Handoff')) " +
+                "GROUP BY c.sessionId")
+            .WithParameter("@failedStatus", FailedStatus)
+            .WithParameter("@deadletterStatus", DLQStatus)
+            .WithParameter("@pendingStatus", PendingStatus);
+
+        var sessions = new HashSet<string>(StringComparer.Ordinal);
+        var iterator = container.GetItemQueryIterator<SessionIdRow>(queryDefinition);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var row in await iterator.ReadNextAsync())
+            {
+                if (!string.IsNullOrEmpty(row.SessionId))
+                    sessions.Add(row.SessionId);
+            }
+        }
+
+        return sessions.Count;
+    }
+
+    private sealed class SessionIdRow
+    {
+        [Newtonsoft.Json.JsonProperty("sessionId")] public string? SessionId { get; set; }
     }
 
     // Reads the failures up to the widened end of the second that holds inOldestSecond and
@@ -163,7 +201,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
             });
     }
 
-    public async Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize,
+    public async Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize,
         string continuationToken)
     {
         var container = await _getEndpointContainer(endpointId);
@@ -227,7 +265,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
                             // this projection.
                             EventContent = new EventContent
                             {
-                                EventTypeId = x.Event.MessageContent.EventContent.EventTypeId,
+                                EventTypeId = x.Event.MessageContent.EventContent!.EventTypeId,
                             },
                             ErrorContent = x.Event.MessageContent.ErrorContent,
                         },
@@ -301,13 +339,19 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger?.LogInformation("COSMOS PAGING: Endpoint container not found for '{EndpointId}'", endpointId);
+            LogCosmosPagingEndpointContainerNotFound(_logger, endpointId);
             return null;
         }
         catch (Exception e)
         {
-            _logger?.LogError(e, "COSMOS PAGING-ERROR: Failed to download endpoint state for '{EndpointId}'", endpointId);
+            LogCosmosPagingError(_logger, e, endpointId);
             throw;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "COSMOS PAGING: Endpoint container not found for '{EndpointId}'")]
+    private static partial void LogCosmosPagingEndpointContainerNotFound(ILogger logger, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "COSMOS PAGING-ERROR: Failed to download endpoint state for '{EndpointId}'")]
+    private static partial void LogCosmosPagingError(ILogger logger, Exception exception, string endpointId);
 }

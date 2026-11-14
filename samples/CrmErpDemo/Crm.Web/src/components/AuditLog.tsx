@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AuditEntry, api } from '../api';
+import { Panel } from './shell/ui';
 
 interface Props {
   entityType: 'Account' | 'Contact';
@@ -14,11 +15,9 @@ interface Group {
   action: string;
 }
 
-// Reads /api/audit/{entityType}/{entityId} and renders the change history as
-// a vertical timeline. Updated rows are grouped by their (timestamp, action)
-// because a single SaveChanges may produce many field rows that share the
-// same instant — we want them under one "06/05/26 12:34:56 — Updated" header
-// rather than one bullet per field.
+// Reads /api/audit/{entityType}/{entityId} and renders the change history as the record's
+// timeline. Updated rows are grouped by (timestamp, action) because a single SaveChanges may
+// produce many field rows that share the same instant; they belong under one entry.
 export default function AuditLog({ entityType, entityId }: Props) {
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,48 +38,47 @@ export default function AuditLog({ entityType, entityId }: Props) {
   const groups = group(entries ?? []);
 
   return (
-    <section className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-3">
-      <h2 className="text-base font-semibold text-slate-700">Audit log</h2>
-      {error && <div className="text-sm text-red-700">Failed to load audit history: {error}</div>}
-      {entries === null && !error && <div className="text-sm text-slate-400">Loading…</div>}
-      {entries !== null && groups.length === 0 && (
-        <div className="text-sm text-slate-400">No history yet.</div>
-      )}
+    <Panel title="Timeline">
+      {error && <div className="text-[13px] text-[#a4262c]">Couldn't load the history: {error}</div>}
+      {entries === null && !error && <div className="text-[13px] text-ink-muted">Loading…</div>}
+      {entries !== null && groups.length === 0 && <div className="text-[13px] text-ink-muted">No history yet.</div>}
       {groups.length > 0 && (
-        <ol className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-1 before:bottom-1 before:w-px before:bg-slate-200">
+        <ol className="flex flex-col gap-4">
           {groups.map(g => (
-            <li key={g.key} className="relative">
-              <span className={`absolute left-[-22px] top-1.5 w-3 h-3 rounded-full border-2 border-white ${dotClass(g.action)}`} />
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className={`px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide ${badgeClass(g.action)}`}>{g.action}</span>
-                <span className="font-mono text-slate-500">{formatTimestamp(g.timestamp)}</span>
-                {g.origin && (
-                  <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">via {g.origin}</span>
+            <li key={g.key} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
+              <span aria-hidden="true" className={`grid h-7 w-7 place-items-center rounded-full text-[12px] font-bold text-white ${dotClass(g.action)}`}>
+                {glyph(g.action)}
+              </span>
+              <div className="min-w-0">
+                <div className="text-[13px]">
+                  <span className="font-semibold">{title(g.action)}</span>
+                  {g.origin && <span className="text-ink-muted"> · via {g.origin}</span>}
+                </div>
+                <div className="text-xs text-ink-muted">{formatTimestamp(g.timestamp)}</div>
+                {g.action === 'Updated' && (
+                  <ul className="mt-1 flex flex-col gap-0.5 text-[13px]">
+                    {g.rows.filter(r => r.fieldName).map(r => (
+                      <li key={r.id} className="break-words">
+                        <span className="text-ink-muted">{r.fieldName}</span>{' '}
+                        <span className="font-mono text-xs text-ink-muted line-through">{display(r.oldValue)}</span>
+                        {' → '}
+                        <span className="font-mono text-xs">{display(r.newValue)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {g.action === 'Created' && g.rows[0]?.newValue && (
+                  <details className="mt-1 text-[13px]">
+                    <summary className="cursor-pointer text-xs text-accent hover:underline">Initial values</summary>
+                    <pre className="mt-1 overflow-x-auto whitespace-pre-wrap rounded-sm border border-line bg-canvas px-2 py-1 font-mono text-[11px]">{prettyJson(g.rows[0].newValue)}</pre>
+                  </details>
                 )}
               </div>
-              {g.action === 'Updated' && (
-                <ul className="mt-1 text-sm text-slate-700 space-y-0.5">
-                  {g.rows.filter(r => r.fieldName).map(r => (
-                    <li key={r.id}>
-                      <span className="font-medium text-slate-600">{r.fieldName}</span>:{' '}
-                      <span className="font-mono text-slate-400 line-through">{display(r.oldValue)}</span>
-                      {' → '}
-                      <span className="font-mono text-slate-800">{display(r.newValue)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {g.action === 'Created' && g.rows[0]?.newValue && (
-                <details className="mt-1 text-sm">
-                  <summary className="text-xs text-slate-500 cursor-pointer hover:underline">Initial values</summary>
-                  <pre className="mt-1 px-2 py-1 bg-slate-50 border border-slate-100 rounded text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">{prettyJson(g.rows[0].newValue)}</pre>
-                </details>
-              )}
             </li>
           ))}
         </ol>
       )}
-    </section>
+    </Panel>
   );
 }
 
@@ -113,20 +111,29 @@ function prettyJson(raw: string): string {
   try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
 }
 
-function badgeClass(action: string): string {
+function title(action: string): string {
   switch (action) {
-    case 'Created': return 'bg-emerald-100 text-emerald-800';
-    case 'Updated': return 'bg-indigo-100 text-indigo-800';
-    case 'Deleted': return 'bg-rose-100 text-rose-800';
-    default:        return 'bg-slate-100 text-slate-700';
+    case 'Created': return 'Record created';
+    case 'Updated': return 'Fields changed';
+    case 'Deleted': return 'Record deleted';
+    default:        return action;
+  }
+}
+
+function glyph(action: string): string {
+  switch (action) {
+    case 'Created': return '+';
+    case 'Updated': return '✎';
+    case 'Deleted': return '×';
+    default:        return '•';
   }
 }
 
 function dotClass(action: string): string {
   switch (action) {
-    case 'Created': return 'bg-emerald-500';
-    case 'Updated': return 'bg-indigo-500';
-    case 'Deleted': return 'bg-rose-500';
-    default:        return 'bg-slate-400';
+    case 'Created': return 'bg-[#107c10]';
+    case 'Updated': return 'bg-accent';
+    case 'Deleted': return 'bg-[#c50f1f]';
+    default:        return 'bg-[#8a8886]';
   }
 }

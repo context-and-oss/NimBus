@@ -17,16 +17,16 @@ public class RenderService : IRenderService
     {
         nodeJSService = nodeJSServ;
         serverJsPath = webHostEnvironment.ContentRootFileProvider
-                .GetFileInfo(ServerJsRelPath).PhysicalPath;
+                .GetFileInfo(ServerJsRelPath).PhysicalPath!;
     }
 
-    public async Task<string> RenderAsync(string url, object props)
+    public async Task<string> RenderAsync(string url, object? props)
     {
-        (bool success, string result) = await nodeJSService.TryInvokeFromCacheAsync<string>(serverJsPath, args: new object[] { url, JavaScriptEncoder.Default.Encode(JsonSerializer.Serialize(props)) });
+        (bool success, string? result) = await nodeJSService.TryInvokeFromCacheAsync<string>(serverJsPath, args: new object[] { url, JavaScriptEncoder.Default.Encode(JsonSerializer.Serialize(props)) });
         if (!success)
         {
             result = await nodeJSService.InvokeFromFileAsync<string>(serverJsPath, args: new object[] { url, JavaScriptEncoder.Default.Encode(JsonSerializer.Serialize(props)) });
         }
-        return result;
+        return result!;
     }
 }

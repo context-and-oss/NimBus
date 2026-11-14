@@ -161,6 +161,27 @@ public sealed class InfrastructureDeployerNetworkTests
         Assert.Empty(azureCli.Deployments);
     }
 
+    /// <summary>
+    /// Without --location, new apps go to the resource group's region (the templates'
+    /// default), so the subnets are checked against that region, not a fixed West Europe.
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_WithoutLocationChecksSubnetsAgainstTheResourceGroupRegion()
+    {
+        var azureCli = CustomerNetwork(existingServiceBus: null);
+        var network = azureCli.Responder!;
+        azureCli.Responder = arguments =>
+            arguments.Contains("group") && arguments.Contains("show") && arguments.Any(a => a.Contains("location", StringComparison.Ordinal))
+                ? $$"""{"id":"{{RecordingAzureCliRunner.ResourceGroupIdPrefix}}rg-nimbus-dev","location":"swedencentral","tags":null}"""
+                : network(arguments);
+
+        var error = await Assert.ThrowsAsync<CommandException>(() =>
+            Deployer(azureCli).ApplyAsync(Options(PrivateNetwork) with { Location = null }, CancellationToken.None));
+
+        Assert.Contains("the app it serves is in swedencentral", error.Message, StringComparison.Ordinal);
+        Assert.Empty(azureCli.Deployments);
+    }
+
     /// <summary>Malformed or contradictory values fail before login or any Azure call.</summary>
     [Fact]
     public async Task ApplyAsync_MalformedNetworkOptionsFailBeforeAnyAzureCall()

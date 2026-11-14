@@ -64,7 +64,7 @@ public class ResolverStaleCopyTests
         Assert.AreEqual("event-1", eventId);
         Assert.AreEqual(MessageAuditType.Comment, audit.AuditType);
         Assert.AreEqual(Constants.ResolverId, audit.AuditorName);
-        StringAssert.Contains(audit.Data, "req-late");
+        StringAssert.Contains(audit.Data, "req-late", StringComparison.Ordinal);
         Assert.AreEqual(0, notifier.Notifications.Count, "nothing changed, so nothing to notify about");
     }
 
@@ -117,7 +117,7 @@ public class ResolverStaleCopyTests
         await service.Handle(response);
         await service.Handle(lateRequest);
 
-        var row = await store.GetEvent(Endpoint, "event-1");
+        var row = (await store.GetEvent(Endpoint, "event-1"))!;
         Assert.AreEqual(ResolutionStatus.Completed, row.ResolutionStatus);
         Assert.AreEqual(0, (await store.DownloadEndpointStateCount(Endpoint)).PendingCount);
         Assert.AreEqual(2, (await store.GetEventHistory("event-1")).Count(), "both copies stay in the Flow tab");
@@ -137,7 +137,7 @@ public class ResolverStaleCopyTests
             messageId: "rsp-1", parentMessageId: "req-1"));
         await service.Handle(CreateMessageContext(MessageType.EventRequest, to: Endpoint, messageId: "req-1"));
 
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
     }
 
     [TestMethod]
@@ -151,7 +151,7 @@ public class ResolverStaleCopyTests
             messageId: "ho-1", parentMessageId: "req-1"));
         await service.Handle(CreateMessageContext(MessageType.EventRequest, to: Endpoint, messageId: "req-late"));
 
-        var row = await store.GetPendingEvent(Endpoint, "event-1", "session-1");
+        var row = (await store.GetPendingEvent(Endpoint, "event-1", "session-1"))!;
         Assert.AreEqual("Handoff", row.PendingSubStatus, "GetNextPendingHandoffEvent must keep finding the row");
         Assert.AreEqual(MessageType.PendingHandoffResponse, row.MessageType);
     }
@@ -167,7 +167,7 @@ public class ResolverStaleCopyTests
             messageId: "hc-1", parentMessageId: "ho-1"));
         await service.Handle(CreateMessageContext(MessageType.EventRequest, to: Endpoint, messageId: "req-late"));
 
-        var row = await store.GetPendingEvent(Endpoint, "event-1", "session-1");
+        var row = (await store.GetPendingEvent(Endpoint, "event-1", "session-1"))!;
         Assert.AreEqual(MessageType.HandoffCompletedRequest, row.MessageType);
         Assert.IsNull(row.PendingSubStatus, "the settlement clears the handoff sub-status (ADR-012)");
     }
@@ -185,7 +185,41 @@ public class ResolverStaleCopyTests
             MessageType.ResubmissionRequest, to: Endpoint, from: Constants.ManagerId,
             messageId: "rs-1", parentMessageId: "err-1"));
 
-        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetEvent(Endpoint, "event-1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
+    }
+
+    [TestMethod]
+    [DataRow(true, DisplayName = "duplicate after the response")]
+    [DataRow(false, DisplayName = "duplicate before the response")]
+    public async Task A_duplicate_skip_leaves_the_row_Completed(bool responseFirst)
+    {
+        // Spec 041 §2.7, bug 2: a deferred replay is redelivered after its handler and inbox
+        // record committed. The endpoint's inbox answers the redelivery with a SkipResponse,
+        // which must not rewrite the replay's Completed outcome.
+        var store = new InMemoryMessageStore();
+        var service = new ResolverService(store, new RecordingNotifier());
+        var response = CreateMessageContext(
+            MessageType.ResolutionResponse, to: Constants.ResolverId, from: Endpoint,
+            messageId: "rsp-1", parentMessageId: "replay-1");
+        var duplicate = CreateMessageContext(
+            MessageType.SkipResponse, to: Constants.ResolverId, from: Endpoint,
+            messageId: "dup-1", parentMessageId: "replay-2");
+        duplicate.MessageContent.ErrorContent = new ErrorContent { ErrorText = NimBus.Core.Inbox.InboxMiddleware.DuplicateReason };
+
+        if (responseFirst)
+        {
+            await service.Handle(response);
+            await service.Handle(duplicate);
+        }
+        else
+        {
+            await service.Handle(duplicate);
+            await service.Handle(response);
+        }
+
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
+        Assert.AreEqual(2, (await store.GetEventHistory("event-1")).Count(), "the duplicate stays in the Flow tab");
+        Assert.AreEqual(1, duplicate.CompletedCalls);
     }
 
     [TestMethod]
@@ -203,7 +237,7 @@ public class ResolverStaleCopyTests
             MessageType.DeferralResponse, to: Constants.ResolverId, from: Endpoint,
             messageId: "def-late", parentMessageId: "req-1"));
 
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
         Assert.AreEqual(0, (await store.DownloadEndpointStateCount(Endpoint)).DeferredCount);
     }
 
@@ -220,7 +254,7 @@ public class ResolverStaleCopyTests
             MessageType.PendingHandoffResponse, to: Constants.ResolverId, from: Endpoint,
             messageId: "ho-late", parentMessageId: "req-2"));
 
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
         Assert.IsNull(await store.GetNextPendingHandoffEvent(Endpoint, eventTypeIds: null),
             "a phantom 'awaiting external' row would be handed to an agent");
     }
@@ -244,7 +278,7 @@ public class ResolverStaleCopyTests
             MessageType.ResubmissionRequest, to: Endpoint, from: Constants.ManagerId,
             messageId: "rs-1", parentMessageId: "err-1", throttleRetryCount: 3));
 
-        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1")).ResolutionStatus);
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(Endpoint, "event-1"))!.ResolutionStatus);
         Assert.AreEqual(0, (await store.DownloadEndpointStateCount(Endpoint)).PendingCount);
     }
 

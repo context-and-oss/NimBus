@@ -12,6 +12,15 @@ public sealed class InMemorySubscriptionStoreTests : SubscriptionStoreConformanc
 }
 
 [TestClass]
+public sealed class InMemorySubscriptionNotificationStoreTests : SubscriptionNotificationStoreConformanceTests
+{
+    protected override ISubscriptionStore CreateStore() => new InMemoryMessageStore();
+
+    protected override ISubscriptionNotificationStore NotificationStoreFor(ISubscriptionStore store)
+        => (ISubscriptionNotificationStore)store;
+}
+
+[TestClass]
 public sealed class InMemoryEndpointMetadataStoreTests : EndpointMetadataStoreConformanceTests
 {
     protected override IEndpointMetadataStore CreateStore() => new InMemoryMessageStore();
@@ -21,6 +30,18 @@ public sealed class InMemoryEndpointMetadataStoreTests : EndpointMetadataStoreCo
 public sealed class InMemoryMetricsStoreTests : MetricsStoreConformanceTests
 {
     protected override INimBusMessageStore CreateStore() => new InMemoryMessageStore();
+}
+
+[TestClass]
+public sealed class InMemoryMonitorMetricsStoreTests : MonitorMetricsStoreConformanceTests
+{
+    protected override INimBusMessageStore CreateStore() => new InMemoryMessageStore();
+}
+
+[TestClass]
+public sealed class InMemoryDashboardTokenStoreTests : DashboardTokenStoreConformanceTests
+{
+    protected override IDashboardTokenStore CreateStore() => new InMemoryMessageStore();
 }
 
 [TestClass]
@@ -51,4 +72,10 @@ public sealed class InMemoryEndpointAcknowledgementStoreConformanceTests : Endpo
 public sealed class InMemoryHeartbeatHistoryStoreConformanceTests : HeartbeatHistoryStoreConformanceTests
 {
     protected override IHeartbeatHistoryStore CreateStore() => new InMemoryMessageStore();
+}
+
+[TestClass]
+public sealed class InMemoryOperatorOperationStoreTests : OperatorOperationStoreConformanceTests
+{
+    protected override IOperatorOperationStore CreateStore() => new InMemoryMessageStore();
 }

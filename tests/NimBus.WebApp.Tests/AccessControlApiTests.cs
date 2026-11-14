@@ -86,7 +86,7 @@ public class AccessControlApiTests
 
     private static T Ok<T>(ActionResult<T> result)
     {
-        Assert.IsInstanceOfType(result.Result, typeof(OkObjectResult));
+        Assert.IsInstanceOfType<OkObjectResult>(result.Result);
         return (T)((OkObjectResult)result.Result!).Value!;
     }
 
@@ -105,7 +105,7 @@ public class AccessControlApiTests
             new[] { MessageAuditType.GrantRole, MessageAuditType.RevokeRole },
             _audit.Entries.Select(e => e.Type).ToArray());
         Assert.IsTrue(_audit.Entries.All(e => !e.AccessDenied));
-        StringAssert.Contains(_audit.Entries[0].Data!, OtherEmail);
+        StringAssert.Contains(_audit.Entries[0].Data!, OtherEmail, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -167,7 +167,7 @@ public class AccessControlApiTests
         var result = await sut.PostEndpointAccessControlRoleAsync(
             Entry(RoleEntryRole.PiiReader, OtherEmail), "Storefront");
 
-        Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult));
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
     }
 
     [TestMethod]
@@ -177,7 +177,7 @@ public class AccessControlApiTests
 
         var result = await sut.GetEndpointAccessControlAsync("Nope");
 
-        Assert.IsInstanceOfType(result.Result, typeof(NotFoundObjectResult));
+        Assert.IsInstanceOfType<NotFoundObjectResult>(result.Result);
     }
 
     [TestMethod]
@@ -187,7 +187,7 @@ public class AccessControlApiTests
 
         var result = await sut.PostAccessControlRoleAsync(Entry(RoleEntryRole.Owner, OtherEmail));
 
-        Assert.IsInstanceOfType(result.Result, typeof(ForbidResult));
+        Assert.IsInstanceOfType<ForbidResult>(result.Result);
         Assert.AreEqual(1, _audit.Entries.Count);
         Assert.IsTrue(_audit.Entries[0].AccessDenied);
         Assert.AreEqual(MessageAuditType.GrantRole, _audit.Entries[0].Type);
@@ -200,7 +200,7 @@ public class AccessControlApiTests
 
         var result = await sut.GetAccessControlAsync();
 
-        Assert.IsInstanceOfType(result.Result, typeof(ForbidResult));
+        Assert.IsInstanceOfType<ForbidResult>(result.Result);
     }
 
     [TestMethod]
@@ -214,14 +214,14 @@ public class AccessControlApiTests
         var endpointOwner = CreateSut(User());
         var ownScope = await endpointOwner.PostEndpointAccessControlRoleAsync(
             Entry(RoleEntryRole.Reader, "reader@example.com"), "Storefront");
-        Assert.IsInstanceOfType(ownScope.Result, typeof(OkObjectResult));
+        Assert.IsInstanceOfType<OkObjectResult>(ownScope.Result);
 
         var otherScope = await endpointOwner.PostEndpointAccessControlRoleAsync(
             Entry(RoleEntryRole.Reader, "reader@example.com"), "Billing");
-        Assert.IsInstanceOfType(otherScope.Result, typeof(ForbidResult));
+        Assert.IsInstanceOfType<ForbidResult>(otherScope.Result);
 
         var siteScope = await endpointOwner.PostAccessControlRoleAsync(Entry(RoleEntryRole.Reader, OtherEmail));
-        Assert.IsInstanceOfType(siteScope.Result, typeof(ForbidResult));
+        Assert.IsInstanceOfType<ForbidResult>(siteScope.Result);
     }
 
     [TestMethod]
@@ -267,7 +267,7 @@ public class AccessControlApiTests
 
         var result = await sut.PostAccessControlRoleAsync(Entry(RoleEntryRole.Reader, "   "));
 
-        Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult));
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
     }
 
     // ───────── Test doubles ─────────

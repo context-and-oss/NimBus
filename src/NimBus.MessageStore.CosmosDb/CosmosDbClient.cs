@@ -11,13 +11,13 @@ using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
 
-public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore
+public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore
 {
     /// <inheritdoc />
     public bool PrunesHeartbeatHistoryAutomatically => _heartbeatHistory.PrunesHeartbeatHistoryAutomatically;
 
     private readonly ICosmosClientAdapter _cosmosClient;
-    private readonly ILogger _logger;
+    private readonly ILogger? _logger;
 
     // Cosmos container handles are lightweight client-side proxies the SDK
     // recommends caching for the client's lifetime. Every data operation used to
@@ -25,8 +25,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     // round-trip on each call even when the container already exists. Cache the
     // resolved handle (running the one-time "ensure exists" once per container)
     // so steady-state reads/writes skip that round-trip. Keyed by container id,
-    // which is unique per physical container in the database. Entries are evicted
-    // when a container is deleted (PurgeMessages) so the next access recreates it.
+    // which is unique per physical container in the database.
     private readonly ConcurrentDictionary<string, Task<ICosmosContainerAdapter>> _containerCache = new();
 
     private readonly CosmosDbMetricsStore _metrics;
@@ -36,6 +35,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private readonly CosmosDbHeartbeatHistoryStore _heartbeatHistory;
     private readonly CosmosDbServiceHealthStore _serviceHealth;
     private readonly CosmosDbEndpointAcknowledgementStore _acknowledgements;
+    private readonly CosmosDbOperatorOperationStore _operations;
     private readonly CosmosDbEndpointMetadataStore _endpointMetadata;
     private readonly CosmosDbMessageTrackingStore _messageTracking;
 
@@ -69,6 +69,8 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private const string HeartbeatUptimeDaysContainer = "heartbeatuptimedays";
     private const string HeartbeatGapsContainer = "heartbeatgaps";
     private const string EndpointAcknowledgementsContainer = "endpointacknowledgements";
+    // Operator operation journal (Spec 044 Phase 2). TTL on; items carry a 30-day ttl.
+    private const string OperatorOperationsContainer = "operatoroperations";
     private const int HeartbeatHistoryTtlSeconds = 90 * 24 * 60 * 60;
 
     // Seconds stamped as the document ttl on non-terminal tracking rows. -1 disables
@@ -98,8 +100,9 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _heartbeatHistory = new CosmosDbHeartbeatHistoryStore(GetHeartbeatUptimeDaysContainer, GetHeartbeatGapsContainer, GetSettingsContainer);
         _serviceHealth = new CosmosDbServiceHealthStore(GetServiceHealthContainer, _logger);
         _acknowledgements = new CosmosDbEndpointAcknowledgementStore(GetEndpointAcknowledgementsContainer);
+        _operations = new CosmosDbOperatorOperationStore(GetOperatorOperationsContainer);
         _endpointMetadata = new CosmosDbEndpointMetadataStore(GetMetadataContainer, GetSettingsContainer, _logger);
-        _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, endpointId => _containerCache.TryRemove(endpointId, out _), _logger, _unresolvedTtlSeconds);
+        _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, _logger, _unresolvedTtlSeconds);
     }
 
     public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient>? logger = null)
@@ -111,7 +114,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     /// Creates the store with explicit options. The third parameter is non-optional so
     /// existing one- and two-argument calls keep binding the overload above.
     /// </summary>
-    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger, CosmosDbMessageStoreOptions options)
+    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient>? logger, CosmosDbMessageStoreOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
@@ -125,12 +128,13 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _heartbeatHistory = new CosmosDbHeartbeatHistoryStore(GetHeartbeatUptimeDaysContainer, GetHeartbeatGapsContainer, GetSettingsContainer);
         _serviceHealth = new CosmosDbServiceHealthStore(GetServiceHealthContainer, _logger);
         _acknowledgements = new CosmosDbEndpointAcknowledgementStore(GetEndpointAcknowledgementsContainer);
+        _operations = new CosmosDbOperatorOperationStore(GetOperatorOperationsContainer);
         _endpointMetadata = new CosmosDbEndpointMetadataStore(GetMetadataContainer, GetSettingsContainer, _logger);
-        _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, endpointId => _containerCache.TryRemove(endpointId, out _), _logger, _unresolvedTtlSeconds);
+        _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, _logger, _unresolvedTtlSeconds);
     }
 
     // ───────── Subscription store — implementation in CosmosDbSubscriptionStore ─────────
-    public Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
+    public Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
         => _subscriptions.SubscribeToEndpointNotification(endpointId, mail, type, author, url, eventTypes, payload, frequency);
 
     public Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId)
@@ -150,6 +154,10 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     public Task<bool> DeleteSubscription(string subscriptionId)
         => _subscriptions.DeleteSubscription(subscriptionId);
+
+    /// <inheritdoc />
+    public Task<bool> TrySetNotifiedAtAsync(string subscriptionId, string? expectedNotifiedAt, string? notifiedAt, CancellationToken cancellationToken = default)
+        => _subscriptions.TrySetNotifiedAtAsync(subscriptionId, expectedNotifiedAt, notifiedAt, cancellationToken);
     // Resolves a container handle through _containerCache, running "ensure
     // exists" exactly once per container id and caching the resulting handle.
     // A faulted creation is never left cached: the faulted entry is evicted
@@ -250,6 +258,9 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private Task<ICosmosContainerAdapter> GetEndpointAcknowledgementsContainer() =>
         GetCachedContainerAsync(EndpointAcknowledgementsContainer, "/id");
 
+    private Task<ICosmosContainerAdapter> GetOperatorOperationsContainer() =>
+        GetCachedContainerAsync(OperatorOperationsContainer, "/id", CosmosContainerDefaults.EndpointContainerDefaultTimeToLive);
+
     private Task<ICosmosContainerAdapter> GetHeartbeatUptimeDaysContainer() =>
         GetCachedContainerAsync(HeartbeatUptimeDaysContainer, "/EndpointId", CosmosContainerDefaults.EndpointContainerDefaultTimeToLive);
 
@@ -280,7 +291,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId) => _messageTracking.DownloadEndpointStateCount(endpointId);
     public Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId) => _messageTracking.DownloadEndpointSessionStateCount(endpointId, sessionId);
     public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) => _messageTracking.DownloadEndpointSessionStateCountBatch(endpointId, sessionIds);
-    public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => _messageTracking.DownloadEndpointStatePaging(endpointId, pageSize, continuationToken);
+    public Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => _messageTracking.DownloadEndpointStatePaging(endpointId, pageSize, continuationToken);
     public Task<bool> UploadDeferredMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadDeferredMessage(eventId, sessionId, endpointId, content);
     public Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadFailedMessage(eventId, sessionId, endpointId, content);
     public Task<bool> UploadPendingMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadPendingMessage(eventId, sessionId, endpointId, content);
@@ -310,11 +321,12 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<SearchResponse> GetFailedEventsAcrossEndpoints(EventFilter filter, IReadOnlyCollection<string> endpointIds, string? continuationToken, int maxItemCount) => _messageTracking.GetFailedEventsAcrossEndpoints(filter, endpointIds, continuationToken, maxItemCount);
     public Task<FailedEventHistogram> GetFailedEventHistogram(EventFilter filter, IReadOnlyCollection<string> endpointIds, DateTime fromUtc, DateTime toUtc, TimeSpan bucketSize) => _messageTracking.GetFailedEventHistogram(filter, endpointIds, fromUtc, toUtc, bucketSize);
     public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take) => _messageTracking.GetBlockedEventsOnSession(endpointId, sessionId, skip, take);
-    public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId) => _messageTracking.GetPendingEventsOnSession(endpointId);
+    public Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId) => _messageTracking.GetPendingEventsOnSession(endpointId);
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId) => _messageTracking.GetInvalidEventsOnSession(endpointId);
     public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => _messageTracking.SearchMessages(filter, continuationToken, maxItemCount);
     public Task StoreMessage(MessageEntity message) => _messageTracking.StoreMessage(message);
     public Task RemoveStoredMessage(string eventId, string messageId) => _messageTracking.RemoveStoredMessage(eventId, messageId);
+    public Task<int> PurgeStoredMessages(string endpointId) => _messageTracking.PurgeStoredMessages(endpointId);
     public Task<MessageEntity?> GetMessage(string eventId, string messageId) => _messageTracking.GetMessage(eventId, messageId);
     public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) => _messageTracking.GetEventHistory(eventId);
     public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId) => _messageTracking.GetLatestEventRequestMessage(eventId);
@@ -326,13 +338,14 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetResubmitCounts(endpointId, eventIds);
     public Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId) => _messageTracking.SetEventReport(endpointId, eventId, isReported, reportedBy, ticketId);
     public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetEventReports(endpointId, eventIds);
+    public Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit) => _messageTracking.FindEventReports(endpointId, ticketId, limit);
     public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => _messageTracking.ArchiveFailedEvent(eventId, sessionId, endpointId);
     public Task<string> GetEndpointErrorList(string endpointId) => _messageTracking.GetEndpointErrorList(endpointId);
 
     internal const string MessageSearchProjection = CosmosDbMessageTrackingStore.MessageSearchProjection;
     // ── IEndpointMetadataStore — implementation in CosmosDbEndpointMetadataStore ──
     public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId) => _endpointMetadata.GetEndpointMetadata(endpointId);
-    public Task<List<EndpointMetadata>>? GetMetadatas(IEnumerable<string> endpointIds) => _endpointMetadata.GetMetadatas(endpointIds);
+    public Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds) => _endpointMetadata.GetMetadatas(endpointIds);
     public Task<List<EndpointMetadata>> GetMetadatas() => _endpointMetadata.GetMetadatas();
     public Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata) => _endpointMetadata.SetEndpointMetadata(endpointMetadata);
     public Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat() => _endpointMetadata.GetMetadatasWithEnabledHeartbeat();
@@ -348,6 +361,27 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<McpAccessSettings> GetMcpAccessSettings() => _endpointMetadata.GetMcpAccessSettings();
     public Task<bool> TrySetMcpAccessSettings(McpAccessSettings settings, string? expectedRevision)
         => _endpointMetadata.TrySetMcpAccessSettings(settings, expectedRevision);
+    public Task<AgentApiKeySettings> GetAgentApiKeySettings() => _endpointMetadata.GetAgentApiKeySettings();
+    public Task<bool> TrySetAgentApiKeySettings(AgentApiKeySettings settings, string? expectedRevision)
+        => _endpointMetadata.TrySetAgentApiKeySettings(settings, expectedRevision);
+    public Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage() => _endpointMetadata.GetAgentApiKeyUsage();
+    public Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc) => _endpointMetadata.RecordAgentApiKeyUse(keyId, usedAtUtc);
+
+    // ── IOperatorOperationStore — implementation in CosmosDbOperatorOperationStore ──
+    public Task<OperatorOperationCreateResult> TryCreateOperatorOperation(OperatorOperation operation) => _operations.TryCreateOperatorOperation(operation);
+    public Task<OperatorOperation?> GetOperatorOperation(string operationId) => _operations.GetOperatorOperation(operationId);
+    public Task<bool> TryUpdateOperatorOperation(OperatorOperation operation, string expectedVersion) => _operations.TryUpdateOperatorOperation(operation, expectedVersion);
+    public Task<IReadOnlyList<OperatorOperation>> ListDueOperatorOperations(IReadOnlyCollection<OperatorOperationStatus> statuses, DateTime updatedBeforeUtc, int limit)
+        => _operations.ListDueOperatorOperations(statuses, updatedBeforeUtc, limit);
+    public Task<int> CountOperatorOperations(OperatorOperationQuery query) => _operations.CountOperatorOperations(query);
+    public Task<int> PurgeExpiredOperatorOperations(DateTime nowUtc, int limit) => _operations.PurgeExpiredOperatorOperations(nowUtc, limit);
+
+    // ── IDashboardTokenStore — implementation in CosmosDbEndpointMetadataStore ──
+    public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();
+    public Task<bool> TrySetDashboardTokenSettings(DashboardTokenSettings settings, string? expectedRevision)
+        => _endpointMetadata.TrySetDashboardTokenSettings(settings, expectedRevision);
+    public Task<List<DashboardTokenUsage>> GetDashboardTokenUsage() => _endpointMetadata.GetDashboardTokenUsage();
+    public Task RecordDashboardTokenUse(string tokenId, DateTime usedAtUtc) => _endpointMetadata.RecordDashboardTokenUse(tokenId, usedAtUtc);
     // ── Durable endpoint heartbeat history — implementation in CosmosDbHeartbeatHistoryStore ──
     public Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
         => _heartbeatHistory.GetHeartbeatUptimeDays(fromDayUtc);
@@ -412,4 +446,9 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetEventTypeTimeSeriesMetrics(from, to, substringLength, bucketLabel);
 
+    // ── IMonitorMetricsStore — implementation in CosmosDbMetricsStore and CosmosDbMessageTrackingStore ──
+
+    public Task<LatencyTimeSeriesResult> GetLatencyTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetLatencyTimeSeriesMetrics(from, to, substringLength, bucketLabel);
+
+    public Task<int> GetBlockedSessionCount(string endpointId) => _messageTracking.GetBlockedSessionCount(endpointId);
 }

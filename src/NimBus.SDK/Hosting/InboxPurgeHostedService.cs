@@ -13,7 +13,7 @@ namespace NimBus.SDK.Hosting;
 /// <summary>
 /// Periodically removes inbox records that are older than the configured retention period.
 /// </summary>
-public sealed class InboxPurgeHostedService : BackgroundService
+public sealed partial class InboxPurgeHostedService : BackgroundService
 {
     private const string PurgeOperation = "purge";
     private readonly IInboxStore _inboxStore;
@@ -61,10 +61,7 @@ public sealed class InboxPurgeHostedService : BackgroundService
                 {
                     var cutoff = _timeProvider.GetUtcNow() - _options.RetentionPeriod;
                     var purged = await _inboxStore.PurgeExpiredAsync(_endpointId, cutoff, stoppingToken);
-                    _logger.LogInformation(
-                        "Inbox cleanup purged {PurgedRecordCount} expired records. EndpointId:{EndpointId}",
-                        purged,
-                        _endpointId);
+                    LogInboxCleanupPurgedExpiredRecords(_logger, purged, _endpointId);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -77,9 +74,7 @@ public sealed class InboxPurgeHostedService : BackgroundService
                         new KeyValuePair<string, object?>(
                             MessagingAttributes.NimBusStoreOperation,
                             PurgeOperation));
-                    _logger.LogWarning(
-                        "Inbox cleanup failed with {ExceptionType}; cleanup will retry on the next tick.",
-                        exception.GetType().Name);
+                    LogInboxCleanupFailed(_logger, exception.GetType().Name);
                 }
             }
         }
@@ -88,4 +83,10 @@ public sealed class InboxPurgeHostedService : BackgroundService
             // Cooperative host shutdown.
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Inbox cleanup purged {PurgedRecordCount} expired records. EndpointId:{EndpointId}")]
+    private static partial void LogInboxCleanupPurgedExpiredRecords(ILogger logger, int purgedRecordCount, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Inbox cleanup failed with {ExceptionType}; cleanup will retry on the next tick.")]
+    private static partial void LogInboxCleanupFailed(ILogger logger, string exceptionType);
 }

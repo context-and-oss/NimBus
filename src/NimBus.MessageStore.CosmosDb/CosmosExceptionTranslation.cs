@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.MessageStore.Abstractions;
 
 namespace NimBus.MessageStore;
@@ -14,7 +15,7 @@ namespace NimBus.MessageStore;
 /// equivalents at the message store boundary. Consumers see only the abstractions
 /// surface — they should never need to <c>using Microsoft.Azure.Cosmos;</c>.
 /// </summary>
-internal static class CosmosExceptionTranslation
+internal static partial class CosmosExceptionTranslation
 {
     private const string TransientFailureMessage = "Cosmos DB message store is temporarily unavailable.";
 
@@ -36,6 +37,7 @@ internal static class CosmosExceptionTranslation
         ILogger? logger = null,
         [CallerMemberName] string operation = "")
     {
+        logger ??= NullLogger.Instance;
         if (!IsTransient(exception))
         {
             return;
@@ -49,11 +51,7 @@ internal static class CosmosExceptionTranslation
         // exception is still available. Cosmos exception messages and metadata
         // can contain account hosts, database names, activity IDs, or payload
         // details and therefore must not be attached to this warning.
-        logger?.LogWarning(
-            "COSMOS TRANSIENT: Operation: {Operation}, HttpStatusCode: {StatusCode}, RetryAfter: {RetryAfter}",
-            operation,
-            (int)exception.StatusCode,
-            retryAfter);
+        LogCosmosTransientOperation(logger, operation, (int)exception.StatusCode, retryAfter);
 
         if (exception.StatusCode == HttpStatusCode.TooManyRequests)
         {
@@ -189,4 +187,7 @@ internal static class CosmosExceptionTranslation
             throw;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "COSMOS TRANSIENT: Operation: {Operation}, HttpStatusCode: {StatusCode}, RetryAfter: {RetryAfter}")]
+    private static partial void LogCosmosTransientOperation(ILogger logger, string operation, int statusCode, TimeSpan? retryAfter);
 }

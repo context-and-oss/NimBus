@@ -116,10 +116,16 @@ for (const direction of directions) {
       await flow.script([]); await flow.update("same");
       const [completed] = await flow.status("Completed"); await flow.targetRevision("same");
       const auditBefore = await flow.audit();
-      await harness.nimbus.resubmit(completed.eventId, completed.lastMessageId);
-      await waitFor(async () => (await flow.control.attempts(flow.session)).length === 2 ? true : null,
-        { timeoutMs: 60_000, description: "Operator resubmit invoked the idempotent business handler" });
-      await flow.status("Completed");
+      // The WebApp only acts on Failed, DeadLettered, Unsupported, Deferred and Handoff-pending
+      // rows (#210, docs/plan/2026-10-06-mcp-operator-phase2a-plan.md): Completed work is refused.
+      await expect(harness.nimbus.resubmit(completed.eventId, completed.lastMessageId))
+        .rejects.toThrow(/409 A Completed message cannot be resubmitted/);
+      // Longer than the configured 2s retry delay: nothing may be replayed.
+      await new Promise(resolve => setTimeout(resolve, 5_000));
+      expect(await flow.control.attempts(flow.session)).toHaveLength(1);
+      const [still] = await flow.status("Completed");
+      expect(still.eventId).toBe(completed.eventId);
+      await flow.clean();
       expect(await flow.audit()).toEqual(auditBefore);
       await flow.targetRevision("same");
     });

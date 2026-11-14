@@ -5,6 +5,8 @@ namespace NimBus.MessageStore.HealthChecks;
 
 public static class HealthCheckExtensions
 {
+    private static readonly string[] ReadyTags = ["ready"];
+
     public static IHealthChecksBuilder AddCosmosDbHealthCheck(this IHealthChecksBuilder builder)
     {
         // The singleton registration is load-bearing: without it AddCheck<T>
@@ -13,6 +15,6 @@ public static class HealthCheckExtensions
         return builder.AddCheck<CosmosDbHealthCheck>(
             "cosmosdb",
             failureStatus: HealthStatus.Unhealthy,
-            tags: new[] { "ready" });
+            tags: ReadyTags);
     }
 }

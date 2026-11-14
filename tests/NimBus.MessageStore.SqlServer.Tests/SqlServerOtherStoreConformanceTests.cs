@@ -22,6 +22,24 @@ public sealed class SqlServerSubscriptionStoreTests : SubscriptionStoreConforman
 }
 
 [TestClass]
+public sealed class SqlServerSubscriptionNotificationStoreTests : SubscriptionNotificationStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerSubscriptionNotificationStoreTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerSubscriptionNotificationStoreTests));
+
+    protected override ISubscriptionStore CreateStore()
+        => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerSubscriptionNotificationStoreTests));
+
+    protected override ISubscriptionNotificationStore NotificationStoreFor(ISubscriptionStore store)
+        => (ISubscriptionNotificationStore)store;
+}
+
+[TestClass]
 public sealed class SqlServerEndpointMetadataStoreTests : EndpointMetadataStoreConformanceTests
 {
     [ClassInitialize]
@@ -49,6 +67,36 @@ public sealed class SqlServerMetricsStoreTests : MetricsStoreConformanceTests
 
     protected override INimBusMessageStore CreateStore()
         => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerMetricsStoreTests));
+}
+
+[TestClass]
+public sealed class SqlServerMonitorMetricsStoreTests : MonitorMetricsStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerMonitorMetricsStoreTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerMonitorMetricsStoreTests));
+
+    protected override INimBusMessageStore CreateStore()
+        => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerMonitorMetricsStoreTests));
+}
+
+[TestClass]
+public sealed class SqlServerDashboardTokenStoreTests : DashboardTokenStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerDashboardTokenStoreTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerDashboardTokenStoreTests));
+
+    protected override IDashboardTokenStore CreateStore()
+        => (IDashboardTokenStore)SqlServerStoreTestHarness.CreateStore(typeof(SqlServerDashboardTokenStoreTests));
 }
 
 [TestClass]
@@ -124,4 +172,19 @@ public sealed class SqlServerHeartbeatHistoryStoreConformanceTests : HeartbeatHi
 
     protected override IHeartbeatHistoryStore CreateStore()
         => (IHeartbeatHistoryStore)SqlServerStoreTestHarness.CreateStore(typeof(SqlServerHeartbeatHistoryStoreConformanceTests));
+}
+
+[TestClass]
+public sealed class SqlServerOperatorOperationStoreTests : OperatorOperationStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerOperatorOperationStoreTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerOperatorOperationStoreTests));
+
+    protected override IOperatorOperationStore CreateStore()
+        => (IOperatorOperationStore)SqlServerStoreTestHarness.CreateStore(typeof(SqlServerOperatorOperationStoreTests));
 }

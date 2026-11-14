@@ -3,6 +3,7 @@ using System.Linq;
 using NimBus.MessageStore;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services.ApplicationInsights;
+using NimBus.Core;
 using NimBus.Core.Events;
 using Event = NimBus.WebApp.ManagementApi.Event;
 using NimBus.MessageStore.States;
@@ -111,7 +112,7 @@ public static class Mapper
             message.EventContent = messageEntity.MessageContent?.EventContent?.EventJson;
 
         if (messageEntity.MessageContent?.ErrorContent != null)
-            message.ErrorContent = MessageErrorContentFromErroryContent(messageEntity.MessageContent?.ErrorContent);
+            message.ErrorContent = MessageErrorContentFromErroryContent(messageEntity.MessageContent.ErrorContent);
 
         message.PendingSubStatus = messageEntity.PendingSubStatus;
         message.HandoffReason = messageEntity.HandoffReason;
@@ -142,8 +143,24 @@ public static class Mapper
                 .Select(x => EventPropertyFromEventTypeProperty(x))
                 .ToList(),
             ExamplePayload = includeExamplePayload ? ExamplePayloadFromIEventType(eventType) : null,
+            SessionKeyProperty = eventType.SessionKeyProperty,
+            RoutingKeyProperty = eventType.RoutingKeyProperty,
         };
     }
+
+    /// <summary>
+    /// How each consumer of <paramref name="eventType"/> takes it (Spec 045), in the order of
+    /// <see cref="IPlatform.GetConsumers"/>, so it lines up with the <c>consumers</c> names.
+    /// </summary>
+    public static List<ConsumerRouting> ConsumerRoutingFor(IPlatform platform, IEventType eventType) =>
+        platform.GetConsumers(eventType)
+            .Select(consumer => new ConsumerRouting
+            {
+                Endpoint = consumer.Name,
+                RoutingKeys = consumer.GetRoutingKeys(eventType).ToList(),
+                Unmatched = consumer.IsUnmatchedConsumer(eventType),
+            })
+            .ToList();
 
     /// <summary>
     /// The authored <c>static Example</c> on the event class as indented JSON, or null when
@@ -188,6 +205,8 @@ public static class Mapper
             ConsumerCount = consumerCount,
             Producers = (producers ?? Enumerable.Empty<string>()).ToList(),
             Consumers = (consumers ?? Enumerable.Empty<string>()).ToList(),
+            SessionKeyProperty = eventType.SessionKeyProperty,
+            RoutingKeyProperty = eventType.RoutingKeyProperty,
         };
     }
 
@@ -269,6 +288,8 @@ public static class Mapper
     // Pending+Handoff entries (PendingSubStatus = "Handoff") roll into PendingCount
     // automatically because their ResolutionStatus is Pending — no change needed
     // here for the FR-040 dashboard-count requirement.
+    // FailedCount folds in DeadLettered and Unsupported: neither drains on its own,
+    // so every failure view (Endpoints list, Monitor, Failed page) counts them.
     internal static EndpointStatusCount EndpointStatusCountFromEndpointStateCount(EndpointStateCount state)
     {
         return new EndpointStatusCount
@@ -277,10 +298,10 @@ public static class Mapper
             EventTime = state.EventTime,
             OldestFailureAt = state.OldestFailureAt,
             DeferredCount = state.DeferredCount,
-            PendingCount = state.PendingCount + state.UnsupportedCount,
+            PendingCount = state.PendingCount,
             UnsupportedCount = state.UnsupportedCount,
             DeadletterCount = state.DeadletterCount,
-            FailedCount = state.FailedCount + state.DeadletterCount,
+            FailedCount = state.FailedCount + state.DeadletterCount + state.UnsupportedCount,
             StorageStatus = "ok"
         };
     }
@@ -418,6 +439,9 @@ public static class Mapper
             EndpointOwnerTeam = endpointMetadata.EndpointOwnerTeam,
             EndpointOwnerEmail = endpointMetadata.EndpointOwnerEmail,
             TechnicalContacts = technicalContacts,
+            SourceSystem = endpointMetadata.SourceSystem,
+            RepositoryUrl = endpointMetadata.RepositoryUrl,
+            TicketLinkTemplate = endpointMetadata.TicketLinkTemplate,
         };
     }
 

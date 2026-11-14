@@ -17,7 +17,7 @@ const fetchCurrentUser = (): Promise<CurrentUser | null> => {
   if (cachedUser !== undefined) return Promise.resolve(cachedUser);
   if (pendingRequest) return pendingRequest;
 
-  pendingRequest = fetch("/api/auth/me", {
+  pendingRequest = fetch("/api/v1/auth/me", {
     credentials: "include",
     headers: { Accept: "application/json" },
   })

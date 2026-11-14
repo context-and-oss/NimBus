@@ -23,5 +23,10 @@ public class CrmErpPlatformConfiguration : Platform
         AddEndpoint(new ErpEndpoint());
         AddEndpoint(new DataPlatformEndpoint());
         AddEndpoint(new AgentZoneEndpoint());
+
+        // Routing-keys showcase (Spec 045): one hub per region, plus the unmatched consumer.
+        AddEndpoint(new NordicHubEndpoint());
+        AddEndpoint(new DachHubEndpoint());
+        AddEndpoint(new UnroutedHubEndpoint());
     }
 }

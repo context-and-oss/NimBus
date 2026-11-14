@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -34,7 +35,7 @@ public abstract class SubscriptionStoreConformanceTests
             payload: "priority",
             frequency: 15);
 
-        Assert.IsFalse(string.IsNullOrWhiteSpace(subscription.Id));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(subscription!.Id));
         Assert.AreEqual(endpointId, subscription.EndpointId);
         Assert.AreEqual("ops@example.com", subscription.Mail);
 
@@ -62,7 +63,7 @@ public abstract class SubscriptionStoreConformanceTests
             "old",
             15);
 
-        subscription.Mail = "support@example.com";
+        subscription!.Mail = "support@example.com";
         subscription.Url = "https://example.test/new";
         subscription.EventTypes = new List<string> { "CustomerChanged" };
         subscription.Payload = "new";
@@ -95,7 +96,7 @@ public abstract class SubscriptionStoreConformanceTests
             string.Empty,
             15);
 
-        var removed = await store.UnsubscribeById(endpointId, subscription.Id);
+        var removed = await store.UnsubscribeById(endpointId, subscription!.Id);
         Assert.IsTrue(removed);
 
         var subscriptions = (await store.GetSubscriptionsOnEndpoint(endpointId)).ToList();
@@ -139,7 +140,7 @@ public abstract class SubscriptionStoreConformanceTests
             string.Empty,
             15);
 
-        var removed = await store.DeleteSubscription(subscription.Id);
+        var removed = await store.DeleteSubscription(subscription!.Id);
         Assert.IsTrue(removed);
 
         var subscriptions = (await store.GetSubscriptionsOnEndpoint(endpointId)).ToList();

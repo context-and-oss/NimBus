@@ -150,6 +150,14 @@ VALUES (
             new { EventId = eventId, MessageId = messageId }, commandTimeout: _context.CommandTimeout);
     }
 
+    public async Task<int> PurgeStoredMessages(string endpointId)
+    {
+        await using var conn = await OpenAsync();
+        return await conn.ExecuteAsync(
+            $"DELETE FROM {T("Messages")} WHERE EndpointId = @EndpointId",
+            new { EndpointId = endpointId }, commandTimeout: _context.CommandTimeout);
+    }
+
     private static MessageEntity MapMessageRow(dynamic row)
     {
         return new MessageEntity

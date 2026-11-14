@@ -203,15 +203,15 @@ internal sealed class RecordingCosmosContainerAdapter : ICosmosContainerAdapter
 
         UpsertedItems.Add(item);
         CapturedRequestOptions.Add(requestOptions);
-        // The client under test is constructed without a logger, so the null-conditional
-        // trace log never dereferences the (null) response.
-        return Task.FromResult<ItemResponse<T>>(null!);
+        // Like the Cosmos SDK, a successful upsert always returns a response: the stores log
+        // its status code.
+        return Task.FromResult<ItemResponse<T>>(new FakeItemResponse<T>(item, "\"etag\""));
     }
 
     public Task<ItemResponse<T>> PatchItemAsync<T>(string id, PartitionKey partitionKey, IReadOnlyList<PatchOperation> patchOperations)
     {
         CapturedPatches.Add(patchOperations);
-        return Task.FromResult<ItemResponse<T>>(null!);
+        return Task.FromResult<ItemResponse<T>>(new FakeItemResponse<T>(default!, "\"etag\""));
     }
 
     public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)
@@ -222,7 +222,7 @@ internal sealed class RecordingCosmosContainerAdapter : ICosmosContainerAdapter
         }
 
         CreatedItems.Add(item);
-        return Task.FromResult<ItemResponse<T>>(null!);
+        return Task.FromResult<ItemResponse<T>>(new FakeItemResponse<T>(item, "\"etag\""));
     }
 
     public Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey)

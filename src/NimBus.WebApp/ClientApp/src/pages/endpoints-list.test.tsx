@@ -4,6 +4,29 @@ import { MemoryRouter } from "react-router-dom";
 import * as React from "react";
 import * as api from "api-client";
 import EndpointsList from "./endpoints-list";
+import moment from "moment";
+
+it("hydrates ISO timestamps from server-rendered endpoint state", () => {
+  const raw = { eventTime: "2026-09-29T20:53:00Z", oldestFailureAt: "2026-09-28T19:00:00Z" } as unknown as api.EndpointStatusCount;
+  const mapped = new EndpointsList({}).mapMomentInEndpointStatus(raw);
+  expect(moment.isMoment(mapped.eventTime)).toBe(true);
+  expect(mapped.eventTime?.toISOString()).toBe("2026-09-29T20:53:00.000Z");
+  expect(mapped.oldestFailureAt?.toISOString()).toBe("2026-09-28T19:00:00.000Z");
+});
+
+it("does not reparse hydrated endpoint dates through Moment's string fallback", () => {
+  const endpoint = new api.EndpointStatusCount({
+    eventTime: moment("2026-09-29T20:53:00Z"),
+  });
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const mapped = new EndpointsList({}).mapMomentInEndpointStatus(endpoint);
+    expect(mapped.eventTime?.valueOf()).toBe(endpoint.eventTime?.valueOf());
+    expect(warning).not.toHaveBeenCalled();
+  } finally {
+    warning.mockRestore();
+  }
+});
 
 // Shared fakes for the two api-client calls the endpoints list makes while
 // resolving which statuses to show. Declared via vi.hoisted so the hoisted
@@ -27,16 +50,15 @@ vi.mock("js-cookie", () => ({
   },
 }));
 
-vi.mock("hooks/app-status", () => ({
-  getApplicationStatus: vi.fn().mockResolvedValue({ env: "dev" }),
-}));
-
 // Capture the DataTable props instead of rendering the full TanStack table —
 // the rows array and checkedEndpointIds are all we need to assert what the
 // user would see for a given checkbox state.
 const captured: { rows?: { id: string }[]; checked?: string[] } = {};
 vi.mock("components/data-table", () => ({
-  default: (props: { rows: { id: string }[]; checkedEndpointIds?: string[] }) => {
+  default: (props: {
+    rows: { id: string }[];
+    checkedEndpointIds?: string[];
+  }) => {
     captured.rows = props.rows;
     captured.checked = props.checkedEndpointIds;
     return <div data-testid="data-table-stub" />;

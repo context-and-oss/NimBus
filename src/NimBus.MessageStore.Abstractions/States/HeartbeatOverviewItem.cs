@@ -16,13 +16,13 @@ namespace NimBus.MessageStore.States;
 public class HeartbeatOverviewItem
 {
     /// <summary>The endpoint this row describes.</summary>
-    public string EndpointId { get; set; }
+    public string EndpointId { get; set; } = null!;
 
     /// <summary>Opt-in flag; null when the endpoint has never been configured either way.</summary>
     public bool? IsHeartbeatEnabled { get; set; }
 
     /// <summary>Correlation id of the most recent probe, answered or not.</summary>
-    public string MessageId { get; set; }
+    public string MessageId { get; set; } = null!;
 
     /// <summary>Send time of the most recent probe, answered or not.</summary>
     public DateTime? LastStartTime { get; set; }
@@ -37,7 +37,7 @@ public class HeartbeatOverviewItem
     public long? RoundTripMs { get; set; }
 
     /// <summary>NimBus SDK version from the last answered probe; empty for pre-heartbeat SDKs.</summary>
-    public string SdkVersion { get; set; }
+    public string SdkVersion { get; set; } = null!;
 
     /// <summary>Last settled outcome. Never reflects an in-flight probe unless nothing has settled yet.</summary>
     public HeartbeatStatus Status { get; set; } = HeartbeatStatus.Unknown;

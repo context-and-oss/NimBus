@@ -106,7 +106,7 @@ public class NotificationLifecycleObserver : IMessageLifecycleObserver
         await Dispatch(notification, cancellationToken);
     }
 
-    public async Task OnSessionBlocked(MessageLifecycleContext context, string blockedByEventId, CancellationToken cancellationToken = default)
+    public async Task OnSessionBlocked(MessageLifecycleContext context, string? blockedByEventId, CancellationToken cancellationToken = default)
     {
         if (!_options.NotifyOnSessionBlock) return;
 

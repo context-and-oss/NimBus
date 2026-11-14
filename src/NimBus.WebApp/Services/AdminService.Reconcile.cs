@@ -122,7 +122,7 @@ public partial class AdminService
                     classification.Response, history, endpointId, now);
                 if (!await _messageStore.TryCompletePendingMessage(
                         storedRow.EventId,
-                        storedRow.SessionId,
+                        storedRow.SessionId!,
                         endpointId,
                         storedRow.LastMessageId,
                         projection))

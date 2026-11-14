@@ -15,10 +15,20 @@ namespace NimBus.Core.Messages;
 public class ResponseService : IResponseService
 {
     private readonly ISender _sender;
+    private readonly ResponseServiceOptions _options;
 
     public ResponseService(ISender sender)
+        : this(sender, new ResponseServiceOptions())
+    {
+    }
+
+    /// <summary>Creates the service with <paramref name="options"/>.</summary>
+    /// <param name="sender">Sends the responses.</param>
+    /// <param name="options">Response options, such as whether stack traces are stored.</param>
+    public ResponseService(ISender sender, ResponseServiceOptions options)
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
     public async Task SendResolutionResponse(IMessageContext messageContext, CancellationToken cancellationToken = default)
@@ -134,17 +144,17 @@ public class ResponseService : IResponseService
 
     public async Task SendErrorResponse(IMessageContext messageContext, Exception exception, CancellationToken cancellationToken = default)
     {
-        IMessage response = CreateResponse(messageContext, MessageType.ErrorResponse, CreateErrorContent(exception, messageContext));
+        IMessage response = CreateResponse(messageContext, MessageType.ErrorResponse, CreateErrorContent(exception, messageContext, _options.IncludeStackTrace));
         await _sender.Send(response, cancellationToken: cancellationToken);
     }
 
-    public async Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception exception, CancellationToken cancellationToken = default)
+    public async Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception? exception, CancellationToken cancellationToken = default)
     {
         // Routed to the Resolver as an ErrorResponse with the dead-letter properties
         // populated. The Resolver short-circuits on DeadLetterErrorDescription and
         // classifies the audit record as DeadLettered regardless of MessageType.
         var content = exception != null
-            ? CreateErrorContent(exception, messageContext)
+            ? CreateErrorContent(exception, messageContext, _options.IncludeStackTrace)
             : new MessageContent { EventContent = messageContext.MessageContent?.EventContent };
         var response = (Message)CreateResponse(messageContext, MessageType.ErrorResponse, content);
         response.DeadLetterReason = reason;
@@ -152,12 +162,12 @@ public class ResponseService : IResponseService
         await _sender.Send(response, cancellationToken: cancellationToken);
     }
 
-    private static string FormatDeadLetterDescription(Exception exception, string reason) =>
+    private static string FormatDeadLetterDescription(Exception? exception, string reason) =>
         exception?.ToString() ?? reason;
 
     public async Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default)
     {
-        IMessage response = CreateResponse(messageContext, MessageType.DeferralResponse, CreateErrorContent(exception, messageContext));
+        IMessage response = CreateResponse(messageContext, MessageType.DeferralResponse, CreateErrorContent(exception, messageContext, _options.IncludeStackTrace));
         await _sender.Send(response, cancellationToken: cancellationToken);
     }
 
@@ -195,7 +205,7 @@ public class ResponseService : IResponseService
             CorrelationId = deferredMessageContext.MessageId,
             SessionId = deferredMessageContext.SessionId,
             EventId = deferredMessageContext.EventId,
-            OriginatingMessageId = !deferredMessageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? deferredMessageContext.OriginatingMessageId : deferredMessageContext.MessageId,
+            OriginatingMessageId = !deferredMessageContext.OriginatingMessageId!.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? deferredMessageContext.OriginatingMessageId : deferredMessageContext.MessageId,
             ParentMessageId = deferredMessageContext.MessageId,
             EventTypeId = deferredMessageContext.EventTypeId,
             MessageType = MessageType.ContinuationRequest,
@@ -209,7 +219,7 @@ public class ResponseService : IResponseService
         await _sender.Send(response, cancellationToken: cancellationToken);
     }
 
-    private static IMessage CreateResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent)
+    private static Message CreateResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent)
     {
         // Preserve the inbound CloudEvent's identity on the response so the Resolver
         // persists it on the tracking/audit record. Null (native message) leaves the
@@ -225,7 +235,7 @@ public class ResponseService : IResponseService
             CorrelationId = messageId,
             SessionId = messageContext.SessionId,
             EventId = messageContext.EventId,
-            OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageId,
+            OriginatingMessageId = !messageContext.OriginatingMessageId!.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageId,
             ParentMessageId = messageId,
             RetryCount = messageContext.RetryCount ?? null,
             OriginatingFrom = GetOriginator(messageContext),
@@ -264,17 +274,17 @@ public class ResponseService : IResponseService
     // throws on access. It is only recorded, so fall back to the originator the request
     // still carries: throwing here would dead-letter a message whose handler side effect
     // already landed.
-    private static string GetOriginator(IMessageContext messageContext) =>
+    private static string? GetOriginator(IMessageContext messageContext) =>
         messageContext.GetFromOrDefault() ?? messageContext.OriginatingFrom;
 
-    private IMessage CreateRetryResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent) =>
+    private static Message CreateRetryResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent) =>
         new Message()
         {
             To = Constants.RetryId,
             CorrelationId = messageContext.MessageId,
             SessionId = messageContext.SessionId,
             EventId = messageContext.EventId,
-            OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
+            OriginatingMessageId = !messageContext.OriginatingMessageId!.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
             ParentMessageId = messageContext.MessageId,
             RetryCount = messageContext.RetryCount.HasValue ? messageContext.RetryCount + 1 : 1,
             OriginatingFrom = GetOriginator(messageContext),
@@ -287,7 +297,12 @@ public class ResponseService : IResponseService
         };
 
 
-    private static MessageContent CreateErrorContent(Exception exception, IMessageContext messageContext)
+    private static string? Bound(string? stackTrace)
+        => string.IsNullOrEmpty(stackTrace) || stackTrace.Length <= ResponseServiceOptions.MaximumStackTraceLength
+            ? stackTrace
+            : stackTrace[..ResponseServiceOptions.MaximumStackTraceLength];
+
+    private static MessageContent CreateErrorContent(Exception exception, IMessageContext messageContext, bool includeStackTrace)
     {
         // For ErrorType the operator wants the actual handler exception
         // (e.g. SampleApiException) — not the generic
@@ -303,7 +318,8 @@ public class ResponseService : IResponseService
             {
                 ErrorText = exception.Message,
                 ErrorType = reported.GetType().Name,
-                ExceptionStackTrace = null,
+                // Frames only: the message is already in ErrorText. Opt-in (ResponseServiceOptions).
+                ExceptionStackTrace = includeStackTrace ? Bound(reported.StackTrace) : null,
                 ExceptionSource = null,
             },
             EventContent = messageContext.MessageContent.EventContent
@@ -323,7 +339,7 @@ public class ResponseService : IResponseService
             CorrelationId = messageContext.CorrelationId,
             SessionId = messageContext.SessionId,           // Session-enabled deferred subscription
             EventId = messageContext.EventId,
-            OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
+            OriginatingMessageId = !messageContext.OriginatingMessageId!.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
             ParentMessageId = messageContext.MessageId,
             RetryCount = messageContext.RetryCount ?? null,
             OriginatingFrom = from ?? messageContext.OriginatingFrom,
@@ -382,7 +398,7 @@ public class ResponseService : IResponseService
             CorrelationId = messageContext.MessageId,
             SessionId = messageContext.SessionId,
             EventId = messageContext.EventId,
-            OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
+            OriginatingMessageId = !messageContext.OriginatingMessageId!.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
             ParentMessageId = messageContext.MessageId,
             EventTypeId = messageContext.EventTypeId,
             MessageType = MessageType.ProcessDeferredRequest,

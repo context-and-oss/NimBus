@@ -128,8 +128,8 @@ public class AgentImplementationTests
     // returns an empty sequence and so cannot exercise the null-guard.
     private sealed class NullPendingStore : InMemoryMessageStore
     {
-        public override Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
-            => Task.FromResult<IEnumerable<UnresolvedEvent>>(null!);
+        public override Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId)
+            => Task.FromResult<IEnumerable<UnresolvedEvent>?>(null);
     }
 
     // The Agent Zone endpoint id receive/settle resolve to when no IConfiguration is
@@ -169,7 +169,7 @@ public class AgentImplementationTests
         // Real audit + settlement services over the same in-memory store, so settle
         // tests can assert the audit row the shared HandoffSettlementService writes.
         var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
-        var settlement = new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance);
+        var settlement = new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance);
         var impl = new AgentImplementation(
             store,
             platform,
@@ -190,6 +190,16 @@ public class AgentImplementationTests
     {
         var ctx = new DefaultHttpContext();
         ctx.Request.Headers["X-Agent-Id"] = agentId;
+        return new HttpContextAccessor { HttpContext = ctx };
+    }
+
+    // An accessor whose caller authenticated with an agent API key (Spec 039) and sent no header.
+    private static IHttpContextAccessor AgentKeyContext(string agentId)
+    {
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            new[] { new System.Security.Claims.Claim(NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.AgentIdClaim, agentId) },
+            NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.SchemeName);
+        var ctx = new DefaultHttpContext { User = new System.Security.Claims.ClaimsPrincipal(identity) };
         return new HttpContextAccessor { HttpContext = ctx };
     }
 
@@ -326,8 +336,8 @@ public class AgentImplementationTests
         var first = await impl.PostAgentEventTypesAsync(req);
         var second = await impl.PostAgentEventTypesAsync(req);
 
-        Assert.IsInstanceOfType(first.Result, typeof(OkObjectResult), "First call must be 200");
-        Assert.IsInstanceOfType(second.Result, typeof(OkObjectResult), "Second call with same schema must be 200");
+        Assert.IsInstanceOfType<OkObjectResult>(first.Result, "First call must be 200");
+        Assert.IsInstanceOfType<OkObjectResult>(second.Result, "Second call with same schema must be 200");
     }
 
     [TestMethod]
@@ -342,7 +352,7 @@ public class AgentImplementationTests
             name: "Inventory Adjusted");
 
         var define = await impl.PostAgentEventTypesAsync(req);
-        Assert.IsInstanceOfType(define.Result, typeof(OkObjectResult), "Define must be 200");
+        Assert.IsInstanceOfType<OkObjectResult>(define.Result, "Define must be 200");
 
         var catalogResult = await impl.GetAgentCatalogAsync();
         var catalog = (catalogResult.Result as OkObjectResult)!.Value as AgentCatalog;
@@ -365,8 +375,7 @@ public class AgentImplementationTests
         await impl.PostAgentEventTypesAsync(first);
         var result = await impl.PostAgentEventTypesAsync(conflict);
 
-        Assert.IsInstanceOfType(result.Result, typeof(ConflictResult),
-            "Changing a schema must yield 409 ConflictResult");
+        Assert.IsInstanceOfType<ConflictResult>(result.Result, "Changing a schema must yield 409 ConflictResult");
     }
 
     // ── PostAgentEventTypesAsync — validation ────────────────────────────
@@ -379,8 +388,7 @@ public class AgentImplementationTests
 
         var result = await impl.PostAgentEventTypesAsync(req);
 
-        Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult),
-            "Empty eventTypeId must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result, "Empty eventTypeId must yield 400");
     }
 
     [TestMethod]
@@ -391,8 +399,7 @@ public class AgentImplementationTests
 
         var result = await impl.PostAgentEventTypesAsync(req);
 
-        Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult),
-            "Whitespace-only eventTypeId must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result, "Whitespace-only eventTypeId must yield 400");
     }
 
     [TestMethod]
@@ -403,8 +410,7 @@ public class AgentImplementationTests
 
         var result = await impl.PostAgentEventTypesAsync(req);
 
-        Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult),
-            "Empty jsonSchema must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result, "Empty jsonSchema must yield 400");
     }
 
     [TestMethod]
@@ -415,8 +421,7 @@ public class AgentImplementationTests
 
         var result = await impl.PostAgentEventTypesAsync(req);
 
-        Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult),
-            "An unparseable JSON Schema must be rejected at define time (400), not stored");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result, "An unparseable JSON Schema must be rejected at define time (400), not stored");
         // Nothing must have been persisted.
         Assert.IsNull(await store.GetSchema("bad.schema.v1"), "A rejected schema must not be stored");
     }
@@ -434,8 +439,7 @@ public class AgentImplementationTests
 
         var result = await impl.PostAgentEventTypesAsync(req);
 
-        Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult),
-            "A sessionKeyPath that is not a JSONPath (no leading '$') must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result, "A sessionKeyPath that is not a JSONPath (no leading '$') must yield 400");
         Assert.IsNull(await store.GetSchema("crm.contact.v1"), "A rejected schema must not be stored");
     }
 
@@ -451,7 +455,7 @@ public class AgentImplementationTests
             EventTypeId = "crm.lead.v1",
         });
 
-        Assert.IsInstanceOfType(result, typeof(OkResult), "Valid subscribe must yield 200");
+        Assert.IsInstanceOfType<OkResult>(result, "Valid subscribe must yield 200");
         // CurrentAgentId() falls back to "demo-agent" with no X-Agent-Id header.
         CollectionAssert.Contains(registry.GetSubscriptions("demo-agent").ToArray(), "crm.lead.v1",
             "Registry must record the subscription for the current agent");
@@ -464,7 +468,7 @@ public class AgentImplementationTests
 
         var result = await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "" });
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult), "Empty eventTypeId must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result, "Empty eventTypeId must yield 400");
         Assert.AreEqual(0, registry.GetSubscriptions("demo-agent").Count, "Nothing must be recorded on a 400");
     }
 
@@ -503,7 +507,7 @@ public class AgentImplementationTests
 
         var result = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
 
-        Assert.IsInstanceOfType(result.Result, typeof(NoContentResult), "Nothing parked must yield 204");
+        Assert.IsInstanceOfType<NoContentResult>(result.Result, "Nothing parked must yield 204");
     }
 
     [TestMethod]
@@ -519,7 +523,7 @@ public class AgentImplementationTests
             new CapturingPublisher(),
             store,
             new CapturingHandoffClientFactory(),
-            new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance),
+            new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance),
             new AgentSubscriptionRegistry(),
             config: null!,
             httpContextAccessor: null!,
@@ -527,8 +531,7 @@ public class AgentImplementationTests
 
         var result = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
 
-        Assert.IsInstanceOfType(result.Result, typeof(NoContentResult),
-            "A null pending result (zone container missing) must be guarded -> 204");
+        Assert.IsInstanceOfType<NoContentResult>(result.Result, "A null pending result (zone container missing) must be guarded -> 204");
     }
 
     [TestMethod]
@@ -538,12 +541,10 @@ public class AgentImplementationTests
         await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
 
         var miss = await impl.GetAgentReceiveAsync("other.type.v1", waitSeconds: 0);
-        Assert.IsInstanceOfType(miss.Result, typeof(NoContentResult),
-            "A parked event of a different type than the query param must yield 204");
+        Assert.IsInstanceOfType<NoContentResult>(miss.Result, "A parked event of a different type than the query param must yield 204");
 
         var hit = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
-        Assert.IsInstanceOfType(hit.Result, typeof(OkObjectResult),
-            "A parked event matching the query param must yield 200");
+        Assert.IsInstanceOfType<OkObjectResult>(hit.Result, "A parked event matching the query param must yield 200");
     }
 
     [TestMethod]
@@ -555,14 +556,12 @@ public class AgentImplementationTests
         // Subscribed only to a different type -> the parked event must NOT match.
         await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "other.type.v1" });
         var miss = await impl.GetAgentReceiveAsync(eventTypeId: null!, waitSeconds: 0);
-        Assert.IsInstanceOfType(miss.Result, typeof(NoContentResult),
-            "With a non-matching subscription and no query param, nothing matches -> 204");
+        Assert.IsInstanceOfType<NoContentResult>(miss.Result, "With a non-matching subscription and no query param, nothing matches -> 204");
 
         // Now subscribe to the parked type -> it matches.
         await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "crm.lead.v1" });
         var hit = await impl.GetAgentReceiveAsync(eventTypeId: null!, waitSeconds: 0);
-        Assert.IsInstanceOfType(hit.Result, typeof(OkObjectResult),
-            "Once subscribed to the parked type, the event matches -> 200");
+        Assert.IsInstanceOfType<OkObjectResult>(hit.Result, "Once subscribed to the parked type, the event matches -> 200");
     }
 
     // ── PostAgentSettleAsync ─────────────────────────────────────────────
@@ -594,7 +593,7 @@ public class AgentImplementationTests
         var result = await impl.PostAgentSettleAsync(
             SettleRequest("evt-1", AgentSettleRequestOutcome.Complete, result: "{\"importedId\":42}"));
 
-        Assert.IsInstanceOfType(result, typeof(OkResult), "Complete settle must yield 200");
+        Assert.IsInstanceOfType<OkResult>(result, "Complete settle must yield 200");
         Assert.AreEqual(1, handoffs.CompleteCount, "CompleteHandoff must be called once");
         Assert.AreEqual(0, handoffs.FailCount, "FailHandoff must NOT be called");
         Assert.AreEqual("evt-1", handoffs.CompletedCoords?.EventId);
@@ -612,7 +611,7 @@ public class AgentImplementationTests
         var result = await impl.PostAgentSettleAsync(
             SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: "boom", errorType: "RuntimeError"));
 
-        Assert.IsInstanceOfType(result, typeof(OkResult), "Fail settle must yield 200");
+        Assert.IsInstanceOfType<OkResult>(result, "Fail settle must yield 200");
         Assert.AreEqual(1, handoffs.FailCount, "FailHandoff must be called once");
         Assert.AreEqual(0, handoffs.CompleteCount, "CompleteHandoff must NOT be called");
         Assert.AreEqual("evt-1", handoffs.FailedCoords?.EventId);
@@ -630,7 +629,7 @@ public class AgentImplementationTests
         var result = await impl.PostAgentSettleAsync(
             SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: null));
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult), "Missing errorText must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result, "Missing errorText must yield 400");
         Assert.AreEqual(0, handoffs.FailCount, "FailHandoff must NOT be called without errorText");
     }
 
@@ -642,7 +641,7 @@ public class AgentImplementationTests
         var result = await impl.PostAgentSettleAsync(
             SettleRequest("missing-evt", AgentSettleRequestOutcome.Complete));
 
-        Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult), "Unknown event must yield 404");
+        Assert.IsInstanceOfType<NotFoundObjectResult>(result, "Unknown event must yield 404");
         Assert.AreEqual(0, handoffs.CompleteCount);
     }
 
@@ -660,7 +659,7 @@ public class AgentImplementationTests
         var result = await impl.PostAgentSettleAsync(
             SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult), "Non-pending-handoff event must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result, "Non-pending-handoff event must yield 400");
         Assert.AreEqual(0, handoffs.CompleteCount);
     }
 
@@ -684,7 +683,7 @@ public class AgentImplementationTests
         var result = await impl.PostAgentSettleAsync(
             SettleRequest("evt-1", AgentSettleRequestOutcome.Complete, result: "{\"importedId\":42}"));
 
-        Assert.IsInstanceOfType(result, typeof(OkResult), "Complete settle must yield 200");
+        Assert.IsInstanceOfType<OkResult>(result, "Complete settle must yield 200");
         Assert.AreEqual(1, handoffs.CompleteCount, "CompleteHandoff must be called once");
 
         var rows = (await store.GetMessageAudits("evt-1")).ToList();
@@ -703,7 +702,7 @@ public class AgentImplementationTests
         var result = await impl.PostAgentSettleAsync(
             SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: "boom", errorType: "RuntimeError"));
 
-        Assert.IsInstanceOfType(result, typeof(OkResult), "Fail settle must yield 200");
+        Assert.IsInstanceOfType<OkResult>(result, "Fail settle must yield 200");
         Assert.AreEqual(1, handoffs.FailCount, "FailHandoff must be called once");
 
         var rows = (await store.GetMessageAudits("evt-1")).ToList();
@@ -714,6 +713,20 @@ public class AgentImplementationTests
     }
 
     [TestMethod]
+    public async Task PostAgentSettle_with_an_agent_key_audits_the_key_agent()
+    {
+        var (impl, store, _, _, _) = BuildAgent(AgentKeyContext("enrichment-agent"));
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+        var result = await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
+
+        Assert.IsInstanceOfType<OkResult>(result);
+        var rows = (await store.GetMessageAudits("evt-1")).ToList();
+        Assert.AreEqual("enrichment-agent", rows[0].AuditorName,
+            "A key-authenticated agent is audited as the key's agent, with or without X-Agent-Id");
+    }
+
+    [TestMethod]
     public async Task PostAgentSettle_event_not_found_writes_no_audit_row()
     {
         var (impl, store, _, handoffs, _) = BuildAgent();
@@ -721,7 +734,7 @@ public class AgentImplementationTests
         var result = await impl.PostAgentSettleAsync(
             SettleRequest("missing-evt", AgentSettleRequestOutcome.Complete));
 
-        Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult), "Unknown event must yield 404");
+        Assert.IsInstanceOfType<NotFoundObjectResult>(result, "Unknown event must yield 404");
         Assert.AreEqual(0, handoffs.CompleteCount, "Nothing must settle for an unknown event");
         var audits = await store.GetMessageAudits("missing-evt");
         Assert.IsTrue(audits == null || !audits.Any(), "A 404 settle must not write an audit row");
@@ -735,7 +748,7 @@ public class AgentImplementationTests
         var handoffs = new CapturingHandoffClientFactory();
         var impl = new AgentImplementation(
             store, new FakePlatform(), new CapturingPublisher(), store, handoffs,
-            new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance),
+            new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance),
             new AgentSubscriptionRegistry(), config: null!, httpContextAccessor: null!,
             NullLogger<AgentImplementation>.Instance);
 
@@ -754,7 +767,7 @@ public class AgentImplementationTests
         var store = new InMemoryMessageStore();
         await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
         var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
-        var svc = new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance);
+        var svc = new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance);
 
         var settled = 0;
         var result = await svc.SettleAsync(
@@ -763,12 +776,126 @@ public class AgentImplementationTests
             httpContext: null,
             (entry, auditor) => { settled++; return Task.CompletedTask; });
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.AreEqual(1, settled, "The settle action must be invoked exactly once");
         var rows = (await store.GetMessageAudits("evt-1")).ToList();
         Assert.AreEqual(1, rows.Count, "The shared core must always write the audit row");
         Assert.AreEqual(NimBus.MessageStore.MessageAuditType.CompleteHandoff, rows[0].AuditType);
         Assert.AreEqual("operator-carol", rows[0].AuditorName, "The given auditor must be recorded");
+    }
+
+    // ── Settlement in flight (receive → settle → receive before the Resolver projects) ──
+
+    // Settle only sends the control message; the row stays Pending+Handoff in the store
+    // until the Resolver projects it. These tests never touch the store after settling,
+    // which is exactly that window.
+
+    [TestMethod]
+    public async Task GetAgentReceive_after_settle_before_resolver_projects_does_not_redeliver()
+    {
+        var (impl, store, _, _, _) = BuildAgent();
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+        var first = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
+        var received = (AgentReceivedMessage)((OkObjectResult)first.Result!).Value!;
+        var settled = await impl.PostAgentSettleAsync(new AgentSettleRequest
+        {
+            Coordinates = received.Coordinates,
+            Outcome = AgentSettleRequestOutcome.Complete,
+        });
+        Assert.IsInstanceOfType<OkResult>(settled);
+
+        var second = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
+
+        Assert.IsInstanceOfType<NoContentResult>(second.Result, "A hand-off with a settlement in flight must not be handed out again");
+    }
+
+    [TestMethod]
+    public async Task PostAgentSettle_twice_before_resolver_projects_settles_and_audits_once()
+    {
+        var (impl, store, _, handoffs, _) = BuildAgent(AgentContext("enrichment-agent"));
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+        var first = await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
+        var second = await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
+
+        Assert.IsInstanceOfType<OkResult>(first);
+        Assert.IsInstanceOfType<BadRequestObjectResult>(second, "A second settle must get the same 400 it would get once the Resolver has projected");
+        Assert.AreEqual(1, handoffs.CompleteCount, "CompleteHandoff must be sent once");
+        var rows = (await store.GetMessageAudits("evt-1")).ToList();
+        Assert.AreEqual(1, rows.Count, "One settled hand-off must leave exactly one audit row (ADR-002)");
+    }
+
+    [TestMethod]
+    public async Task PostAgentSettle_complete_then_fail_before_resolver_projects_sends_only_the_first()
+    {
+        var (impl, store, _, handoffs, _) = BuildAgent();
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+        await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
+        var second = await impl.PostAgentSettleAsync(
+            SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: "boom"));
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(second);
+        Assert.AreEqual(1, handoffs.CompleteCount);
+        Assert.AreEqual(0, handoffs.FailCount, "A conflicting second outcome must not be sent");
+    }
+
+    [TestMethod]
+    public async Task PostAgentSettle_send_failure_releases_the_claim_so_a_retry_settles()
+    {
+        var store = new InMemoryMessageStore();
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+        var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
+        var svc = new HandoffSettlementService(
+            store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => svc.SettleAsync(
+            ZoneId, "evt-1", "msg-1", NimBus.MessageStore.MessageAuditType.CompleteHandoff, null, "agent",
+            httpContext: null, (_, _) => throw new InvalidOperationException("Service Bus unavailable")));
+        var parked = await store.GetEvent(ZoneId, "evt-1");
+        Assert.IsFalse(svc.IsSettlementInFlight(ZoneId, parked!), "A settlement that was never sent is not in flight");
+
+        var retry = await svc.SettleAsync(
+            ZoneId, "evt-1", "msg-1", NimBus.MessageStore.MessageAuditType.CompleteHandoff, null, "agent",
+            httpContext: null, (_, _) => Task.CompletedTask);
+
+        Assert.IsInstanceOfType<OkResult>(retry, "The retry must settle");
+        Assert.AreEqual(1, (await store.GetMessageAudits("evt-1")).Count(), "Only the sent settlement is audited");
+    }
+
+    [TestMethod]
+    public async Task GetAgentReceive_event_reparked_by_a_new_message_is_delivered_again()
+    {
+        var (impl, store, _, _, _) = BuildAgent();
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-1");
+        await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete, messageId: "msg-1"));
+
+        // e.g. the event was resubmitted and parked again: a new message, a new hand-off.
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-2");
+        var result = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
+
+        var received = (AgentReceivedMessage)((OkObjectResult)result.Result!).Value!;
+        Assert.AreEqual("msg-2", received.Coordinates.MessageId);
+    }
+
+    [TestMethod]
+    public void HandoffSettlementTracker_claim_expires_after_the_hold_time()
+    {
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var tracker = new HandoffSettlementTracker(time);
+
+        Assert.IsTrue(tracker.TryBegin(ZoneId, "evt-1", "msg-1"));
+        Assert.IsFalse(tracker.TryBegin(ZoneId, "evt-1", "msg-1"), "A second claim must lose while the first holds");
+        Assert.IsTrue(tracker.IsInFlight(ZoneId, "evt-1", "msg-1"));
+        Assert.IsFalse(tracker.IsInFlight(ZoneId, "evt-1", "msg-2"), "Claims are per parked message");
+        Assert.IsFalse(tracker.IsInFlight("OtherZone", "evt-1", "msg-1"), "Claims are per endpoint");
+
+        time.Advance(HandoffSettlementTracker.HoldTime);
+
+        Assert.IsFalse(tracker.IsInFlight(ZoneId, "evt-1", "msg-1"),
+            "A Resolver that never projects must not hide the hand-off forever");
+        Assert.IsTrue(tracker.TryBegin(ZoneId, "evt-1", "msg-1"));
     }
 
     // ── PostAgentPublishAsync ────────────────────────────────────────────
@@ -801,8 +928,7 @@ public class AgentImplementationTests
             Payload = "{\"industry\":\"retail\"}",
         });
 
-        Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult),
-            "Unknown eventTypeId must yield 404");
+        Assert.IsInstanceOfType<NotFoundObjectResult>(result, "Unknown eventTypeId must yield 404");
         Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called for an unknown event type");
     }
 
@@ -819,8 +945,7 @@ public class AgentImplementationTests
             Payload = "{\"foo\":1}",
         });
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult),
-            "Schema-violating payload must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result, "Schema-violating payload must yield 400");
         Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called for an invalid payload");
     }
 
@@ -837,8 +962,7 @@ public class AgentImplementationTests
             Payload = "{\"a\":",
         });
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult),
-            "Malformed JSON payload must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result, "Malformed JSON payload must yield 400");
         Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called for malformed JSON");
     }
 
@@ -858,7 +982,7 @@ public class AgentImplementationTests
             SessionId = sessionId,
         });
 
-        Assert.IsInstanceOfType(result, typeof(OkResult), "Valid payload must yield 200");
+        Assert.IsInstanceOfType<OkResult>(result, "Valid payload must yield 200");
         Assert.AreEqual(1, publisher.CallCount, "Publisher must be called exactly once");
 
         var message = publisher.Published;
@@ -884,7 +1008,7 @@ public class AgentImplementationTests
             Payload = "{\"industry\":\"retail\"}",
         });
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.IsFalse(string.IsNullOrWhiteSpace(publisher.Published?.SessionId),
             "A sessionId must be generated when none is supplied");
     }
@@ -912,8 +1036,8 @@ public class AgentImplementationTests
         var second = await impl.PostAgentPublishAsync(Req());
         var secondSession = publisher.Published?.SessionId;
 
-        Assert.IsInstanceOfType(first, typeof(OkResult));
-        Assert.IsInstanceOfType(second, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(first);
+        Assert.IsInstanceOfType<OkResult>(second);
         Assert.AreEqual("c-1", firstSession, "sessionId must be derived from the payload via sessionKeyPath");
         Assert.AreEqual(firstSession, secondSession,
             "Same business key must map to the same session so ordering is preserved");
@@ -932,7 +1056,7 @@ public class AgentImplementationTests
             SessionId = "explicit-session",
         });
 
-        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.IsInstanceOfType<OkResult>(result);
         Assert.AreEqual("explicit-session", publisher.Published?.SessionId,
             "An explicit sessionId must win over sessionKeyPath derivation");
     }
@@ -956,7 +1080,7 @@ public class AgentImplementationTests
         var second = await impl.PostAgentPublishAsync(Req());
         var secondSession = publisher.Published?.SessionId;
 
-        Assert.IsInstanceOfType(first, typeof(OkResult), "A missing key must degrade to unordered, not fail");
+        Assert.IsInstanceOfType<OkResult>(first, "A missing key must degrade to unordered, not fail");
         Assert.IsTrue(Guid.TryParse(firstSession, out _), "The fallback session must be a fresh GUID");
         Assert.AreNotEqual(firstSession, secondSession,
             "Without a key each publish gets its own random session");
@@ -973,8 +1097,7 @@ public class AgentImplementationTests
             Payload = "{\"industry\":\"retail\"}",
         });
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult),
-            "Blank/whitespace eventTypeId must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result, "Blank/whitespace eventTypeId must yield 400");
         Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called when eventTypeId is blank");
     }
 
@@ -989,8 +1112,7 @@ public class AgentImplementationTests
             Payload = "   ",
         });
 
-        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult),
-            "Blank/whitespace payload must yield 400");
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result, "Blank/whitespace payload must yield 400");
         Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called when payload is blank");
     }
 }

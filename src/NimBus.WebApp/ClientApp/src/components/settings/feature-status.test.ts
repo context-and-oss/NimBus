@@ -70,13 +70,13 @@ describe("featureStatus", () => {
     });
 
     it("never turns MCP on inline: Turn on opens the panel's Overview", () => {
-      expect(
-        status("mcp", { mcp: { state: mcpState({}, false) } }),
-      ).toMatchObject({
+      const s = status("mcp", { mcp: { state: mcpState({}, false) } });
+      expect(s?.quick).toBeUndefined();
+      expect(s).toMatchObject({
         tone: "off",
         label: "Off",
         on: false,
-        quick: { kind: "open", label: "Turn on…", tab: "overview" },
+        cta: { label: "Turn on", tab: "overview" },
       });
     });
 
@@ -105,7 +105,7 @@ describe("featureStatus", () => {
         tone: "off",
         label: "Off",
         summary: "No API key configured",
-        quick: { kind: "open", label: "Set up…", tab: "provider" },
+        cta: { label: "Set up", tab: "provider" },
       });
     });
 
@@ -125,7 +125,7 @@ describe("featureStatus", () => {
       ).toMatchObject({
         tone: "danger",
         label: "Key unreadable",
-        quick: { kind: "open", tab: "provider" },
+        cta: { label: "Fix key", tab: "provider" },
       });
     });
 
@@ -167,7 +167,7 @@ describe("featureStatus", () => {
         tone: "off",
         label: "Off",
         summary: "Allowed in dev · auto-stop 30 min",
-        quick: { kind: "open", label: "Enable…", tab: "mode" },
+        cta: { label: "Enable", tab: "mode" },
       });
     });
 
@@ -192,6 +192,59 @@ describe("featureStatus", () => {
         summary: "Not available in prod",
       });
       expect(s?.quick).toBeUndefined();
+    });
+  });
+
+  describe("Agent keys", () => {
+    const keys = (...statuses: ("active" | "revoked" | "expired")[]) => ({
+      csrfToken: "csrf",
+      keys: statuses.map((status, i) => ({ keyId: `k${i}`, status }) as never),
+    });
+
+    it("counts active keys", () => {
+      expect(status("agent-keys", { agentKeys: keys("active", "active", "revoked") })).toMatchObject({
+        tone: "ok",
+        label: "2 active",
+        on: true,
+      });
+    });
+
+    it("offers to issue a key when none is active", () => {
+      const s = status("agent-keys", { agentKeys: keys("expired") });
+      expect(s).toMatchObject({ tone: "off", label: "No active keys", on: false });
+      expect(s?.cta).toEqual({ label: "Issue key", tab: "keys" });
+      // Issuing widens access, so it never acts from the row.
+      expect(s?.quick).toBeUndefined();
+    });
+
+    it("is unavailable when the keys could not be read", () => {
+      expect(status("agent-keys", { agentKeys: "error" })).toMatchObject({ label: "Unavailable" });
+    });
+  });
+
+  describe("Dashboard tokens", () => {
+    const tokens = (...statuses: ("active" | "revoked" | "expired")[]) => ({
+      csrfToken: "csrf",
+      tokens: statuses.map((status, i) => ({ tokenId: `t${i}`, status }) as never),
+    });
+
+    it("counts active tokens", () => {
+      expect(status("dashboard-tokens", { dashboardTokens: tokens("active", "revoked") })).toMatchObject({
+        tone: "ok",
+        label: "1 active",
+        on: true,
+      });
+    });
+
+    it("offers to issue a token from the panel, never from the row", () => {
+      const s = status("dashboard-tokens", { dashboardTokens: tokens() });
+      expect(s).toMatchObject({ tone: "off", label: "No active tokens", on: false });
+      expect(s?.cta).toEqual({ label: "Issue token", tab: "tokens" });
+      expect(s?.quick).toBeUndefined();
+    });
+
+    it("is unavailable when the tokens could not be read", () => {
+      expect(status("dashboard-tokens", { dashboardTokens: "error" })).toMatchObject({ label: "Unavailable" });
     });
   });
 

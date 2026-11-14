@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.Core.Messages;
 
-public class MessageHandler : IMessageHandler
+public partial class MessageHandler : IMessageHandler
 {
     private readonly ILogger _logger;
     private readonly MessagePipeline? _pipeline;
@@ -69,8 +69,7 @@ public class MessageHandler : IMessageHandler
         }
         catch (TransientException transientException)
         {
-            _logger.LogError(transientException?.InnerException, "Transient Error. Failed to handle message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
+            LogTransientError(_logger, transientException.InnerException, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
 
             if (_lifecycleNotifier?.HasObservers == true)
             {
@@ -87,8 +86,7 @@ public class MessageHandler : IMessageHandler
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to abandon message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                    messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
+                LogFailedToAbandonMessage(_logger, ex, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
             }
         }
         catch (SessionBlockedException sessionBlocked)
@@ -113,12 +111,11 @@ public class MessageHandler : IMessageHandler
         }
         catch (PermanentFailureException permanentFailure)
         {
-            _logger.LogWarning("Permanent failure — dead-lettering without retry. EventId:{EventId}, Exception:{ExceptionType}",
-                messageContext?.EventId, permanentFailure.InnerException?.GetType().Name);
+            LogPermanentFailure(_logger, messageContext?.EventId, permanentFailure.InnerException?.GetType().Name);
 
             if (_lifecycleNotifier?.HasObservers == true)
             {
-                await _lifecycleNotifier.NotifyFailed(messageContext, permanentFailure.InnerException ?? permanentFailure, cancellationToken);
+                await _lifecycleNotifier.NotifyFailed(messageContext!, permanentFailure.InnerException ?? permanentFailure, cancellationToken);
             }
 
             try
@@ -131,7 +128,7 @@ public class MessageHandler : IMessageHandler
                     ? "Permanent failure"
                     : $"Permanent failure: {inner.GetType().Name}: {inner.Message}";
                 await NotifyResolverOfDeadLetter(messageContext, reason, permanentFailure.InnerException, cancellationToken);
-                await messageContext.DeadLetter(reason, permanentFailure.InnerException, cancellationToken);
+                await messageContext!.DeadLetter(reason, permanentFailure.InnerException, cancellationToken);
 
                 if (_lifecycleNotifier?.HasObservers == true)
                 {
@@ -144,22 +141,21 @@ public class MessageHandler : IMessageHandler
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to dead-letter permanent failure message. EventId:{EventId}", messageContext?.EventId);
+                LogFailedToDeadLetterPermanentFailure(_logger, ex, messageContext?.EventId);
             }
         }
         catch (MessageAlreadyDeadLetteredException alreadyDeadLettered)
         {
             // Message was already dead-lettered by middleware (e.g., ValidationMiddleware).
             // Fire lifecycle notifications without attempting to dead-letter again.
-            _logger.LogWarning("Message already dead-lettered by middleware. EventId:{EventId}, Reason:{Reason}",
-                messageContext?.EventId, alreadyDeadLettered.Message);
+            LogMessageAlreadyDeadLetteredByMiddleware(_logger, messageContext?.EventId, alreadyDeadLettered.Message);
 
             await NotifyResolverOfDeadLetter(messageContext, alreadyDeadLettered.Message, alreadyDeadLettered, cancellationToken);
 
             if (_lifecycleNotifier?.HasObservers == true)
             {
-                await _lifecycleNotifier.NotifyFailed(messageContext, alreadyDeadLettered, cancellationToken);
-                await _lifecycleNotifier.NotifyDeadLettered(messageContext, alreadyDeadLettered.Message, alreadyDeadLettered, cancellationToken);
+                await _lifecycleNotifier.NotifyFailed(messageContext!, alreadyDeadLettered, cancellationToken);
+                await _lifecycleNotifier.NotifyDeadLettered(messageContext!, alreadyDeadLettered.Message, alreadyDeadLettered, cancellationToken);
             }
         }
         catch (Exception unexpectedException)
@@ -171,8 +167,7 @@ public class MessageHandler : IMessageHandler
 
             try
             {
-                _logger.LogError(unexpectedException, "Unexpected Error. Failed to handle message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                    messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
+                LogUnexpectedError(_logger, unexpectedException, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
                 await NotifyResolverOfDeadLetter(messageContext, "Failed to handle message.", unexpectedException, cancellationToken);
                 await messageContext.DeadLetter("Failed to handle message.", unexpectedException, cancellationToken);
 
@@ -187,13 +182,12 @@ public class MessageHandler : IMessageHandler
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to deadletter message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                    messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
+                LogFailedToDeadletterMessage(_logger, ex, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
             }
         }
     }
 
-    private async Task NotifyResolverOfDeadLetter(IMessageContext messageContext, string reason, Exception exception, CancellationToken cancellationToken)
+    private async Task NotifyResolverOfDeadLetter(IMessageContext? messageContext, string reason, Exception? exception, CancellationToken cancellationToken)
     {
         if (_responseService == null || messageContext == null) return;
         try
@@ -209,9 +203,7 @@ public class MessageHandler : IMessageHandler
             // Best-effort: a failure to publish the dead-letter notification must not
             // prevent the message from being dead-lettered. The DLQ is the source of
             // truth — the operator can still resubmit from the Manager.
-            _logger.LogWarning(sendException,
-                "Failed to publish dead-letter notification to Resolver. EventId:{EventId}, MessageId:{MessageId}",
-                messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault());
+            LogFailedToPublishDeadLetterNotification(_logger, sendException, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault());
         }
     }
 
@@ -293,4 +285,28 @@ public class MessageHandler : IMessageHandler
 
     public virtual Task HandleHandoffFailedRequest(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
         HandleDefault(messageContext, cancellationToken);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Transient Error. Failed to handle message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogTransientError(ILogger logger, Exception? exception, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to abandon message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogFailedToAbandonMessage(ILogger logger, Exception exception, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Permanent failure — dead-lettering without retry. EventId:{EventId}, Exception:{ExceptionType}")]
+    private static partial void LogPermanentFailure(ILogger logger, string? eventId, string? exceptionType);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to dead-letter permanent failure message. EventId:{EventId}")]
+    private static partial void LogFailedToDeadLetterPermanentFailure(ILogger logger, Exception exception, string? eventId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Message already dead-lettered by middleware. EventId:{EventId}, Reason:{Reason}")]
+    private static partial void LogMessageAlreadyDeadLetteredByMiddleware(ILogger logger, string? eventId, string reason);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Unexpected Error. Failed to handle message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogUnexpectedError(ILogger logger, Exception exception, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to deadletter message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogFailedToDeadletterMessage(ILogger logger, Exception exception, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to publish dead-letter notification to Resolver. EventId:{EventId}, MessageId:{MessageId}")]
+    private static partial void LogFailedToPublishDeadLetterNotification(ILogger logger, Exception exception, string? eventId, string? messageId);
 }

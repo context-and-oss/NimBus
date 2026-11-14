@@ -43,5 +43,5 @@ public partial class InvoiceCreatedHandler : IEventHandler<InvoiceCreated>
 
     [LoggerMessage(Level = LogLevel.Information,
         Message = "Processed InvoiceCreated {InvoiceId} via CloudEvents: id={CloudEventId}, source={Source}, type={Type}, specversion={SpecVersion}.")]
-    private static partial void LogCloudEvent(ILogger logger, Guid invoiceId, string cloudEventId, string source, string type, string specVersion);
+    private static partial void LogCloudEvent(ILogger logger, Guid invoiceId, string cloudEventId, string? source, string type, string? specVersion);
 }

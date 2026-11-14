@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 
 namespace NimBus.CommandLine;
@@ -36,6 +37,8 @@ internal interface IAzureCliRunner
 
 internal sealed class AzureCliRunner : IAzureCliRunner
 {
+    private static readonly string[] AccountShowArguments = ["account", "show"];
+
     private readonly IProcessRunner _processRunner;
 
     public AzureCliRunner()
@@ -51,7 +54,7 @@ internal sealed class AzureCliRunner : IAzureCliRunner
     public async Task EnsureLoggedInAsync(CancellationToken cancellationToken)
     {
         var result = await RunAzAsync(
-            new[] { "account", "show" },
+            AccountShowArguments,
             cancellationToken,
             throwOnFailure: false,
             echoStandardOutput: false).ConfigureAwait(false);
@@ -86,6 +89,7 @@ internal sealed class AzureCliRunner : IAzureCliRunner
     public Task<string> CaptureValueAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage) =>
         CaptureValueAsync(arguments, workingDirectory: null, cancellationToken, failureMessage);
 
+    [SuppressMessage("Design", "CA1068:CancellationToken parameters must come last", Justification = "Every IAzureCliRunner method takes the cancellation token before the failure message; this overload keeps that order.")]
     public async Task<string> CaptureValueAsync(IReadOnlyList<string> arguments, string? workingDirectory, CancellationToken cancellationToken, string failureMessage)
     {
         var result = await RunAzAsync(
@@ -108,15 +112,19 @@ internal sealed class AzureCliRunner : IAzureCliRunner
         return JsonDocument.Parse(payload);
     }
 
+    // Callers handle a failure themselves (often an expected one, like a show call that
+    // probes for a resource a fresh deployment lacks), so az's stderr is kept on the
+    // result rather than printed as an alarming "ERROR: (ResourceNotFound)".
     public Task<ProcessResult> TryRunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken) =>
-        RunAzAsync(arguments, cancellationToken, throwOnFailure: false, echoStandardOutput: false);
+        RunAzAsync(arguments, cancellationToken, throwOnFailure: false, echoStandardOutput: false, echoStandardError: false);
 
     private async Task<ProcessResult> RunAzAsync(
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken,
         string? workingDirectory = null,
         bool throwOnFailure = true,
-        bool echoStandardOutput = true)
+        bool echoStandardOutput = true,
+        bool echoStandardError = true)
     {
         var allArguments = new List<string>(arguments.Count + 1);
         allArguments.AddRange(arguments);
@@ -129,6 +137,7 @@ internal sealed class AzureCliRunner : IAzureCliRunner
             processArguments,
             workingDirectory,
             echoStandardOutput,
+            echoStandardError,
             cancellationToken).ConfigureAwait(false);
         if (throwOnFailure && !result.Succeeded)
         {
@@ -167,5 +176,5 @@ internal sealed class AzureCliRunner : IAzureCliRunner
     }
 
     private static bool RequiresWindowsCommandQuoting(string argument) =>
-        argument.Any(static ch => char.IsWhiteSpace(ch) || "\"&|<>^()%!".Contains(ch));
+        argument.Any(static ch => char.IsWhiteSpace(ch) || "\"&|<>^()%!".Contains(ch, StringComparison.Ordinal));
 }

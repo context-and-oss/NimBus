@@ -24,6 +24,7 @@ import { subscribeHeartbeatUpdates } from "lib/grid-events-connection";
 import { cn } from "lib/utils";
 import { useAccess } from "hooks/use-access";
 import PlatformServicesCard from "components/admin/platform-services-card";
+import { SettingsLink } from "components/settings/settings-link";
 
 const WINDOWS = [7, 30, 90] as const;
 
@@ -107,19 +108,24 @@ export default function Heartbeat() {
       title="Heartbeat"
       subtitle="Fleet reachability, observed uptime, and recent silent periods"
       actions={
-        <div className="flex gap-1" aria-label="Heartbeat history window">
-          {WINDOWS.map((days) => (
-            <Button
-              key={days}
-              size="sm"
-              variant={windowDays === days ? "solid" : "outline"}
-              colorScheme={windowDays === days ? "primary" : "gray"}
-              onClick={() => setWindowDays(days)}
-            >
-              {days}d
-            </Button>
-          ))}
-        </div>
+        <>
+          {canManageSite && (
+            <SettingsLink to="/Settings/heartbeat">Configure probing</SettingsLink>
+          )}
+          <div className="flex gap-1" aria-label="Heartbeat history window">
+            {WINDOWS.map((days) => (
+              <Button
+                key={days}
+                size="sm"
+                variant={windowDays === days ? "solid" : "outline"}
+                colorScheme={windowDays === days ? "primary" : "gray"}
+                onClick={() => setWindowDays(days)}
+              >
+                {days}d
+              </Button>
+            ))}
+          </div>
+        </>
       }
     >
       <div className="w-full space-y-5">

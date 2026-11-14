@@ -44,7 +44,6 @@
   </Folder>
   <Folder Name="/Samples/" />
   <Folder Name="/Samples/AspirePubSub/">
-    <Project Path="../samples/AspirePubSub/AspirePubSub.AppHost/AspirePubSub.AppHost.csproj" />
     <Project Path="../samples/AspirePubSub/AspirePubSub.Provisioner/AspirePubSub.Provisioner.csproj" />
     <Project Path="../samples/AspirePubSub/AspirePubSub.Publisher/AspirePubSub.Publisher.csproj" />
     <Project Path="../samples/AspirePubSub/AspirePubSub.ResolverWorker/AspirePubSub.ResolverWorker.csproj" />
@@ -67,14 +66,8 @@
     <Project Path="../samples/CrmErpDemo/Erp.Adapter.Functions/Erp.Adapter.Functions.csproj" />
     <Project Path="../samples/CrmErpDemo/Erp.Api/Erp.Api.csproj" />
   </Folder>
-  <Folder Name="/Samples/DynamicsBcDemo/">
-    <Project Path="../samples/DynamicsBcDemo/BusinessCentral.Adapter/BusinessCentral.Adapter.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/BusinessCentral.Api/BusinessCentral.Api.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/D365Sales.Adapter/D365Sales.Adapter.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/D365Sales.Api/D365Sales.Api.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/DynamicsBcDemo.AppHost/DynamicsBcDemo.AppHost.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/DynamicsBcDemo.Contracts/DynamicsBcDemo.Contracts.csproj" />
-    <Project Path="../samples/DynamicsBcDemo/DynamicsBcDemo.Provisioner/DynamicsBcDemo.Provisioner.csproj" />
+  <Folder Name="/Samples/FailureAgent/">
+    <Project Path="../samples/FailureAgent/FailureAgent.Runner/FailureAgent.Runner.csproj" />
   </Folder>
   <Folder Name="/Tests/" />
   <Folder Name="/Tests/CommandLine/">
@@ -88,8 +81,8 @@
   <Folder Name="/Tests/CrmErpDemo/">
     <Project Path="../tests/CrmErpDemo.AppHost.Tests/CrmErpDemo.AppHost.Tests.csproj" />
   </Folder>
-  <Folder Name="/Tests/DynamicsBcDemo/">
-    <Project Path="../tests/DynamicsBcDemo.Tests/DynamicsBcDemo.Tests.csproj" />
+  <Folder Name="/Tests/FailureAgent/">
+    <Project Path="../tests/FailureAgent.Runner.Tests/FailureAgent.Runner.Tests.csproj" />
   </Folder>
   <Folder Name="/Tests/EndToEnd/">
     <Project Path="../tests/NimBus.EndToEnd.Tests/NimBus.EndToEnd.Tests.csproj" />
@@ -112,6 +105,7 @@
   <Project Path="../samples/AspirePubSub/AspirePubSub.WarehouseSubscriber/AspirePubSub.WarehouseSubscriber.csproj" />
   <Project Path="../samples/CrmErpDemo/CrmErpDemo.AgentZone/CrmErpDemo.AgentZone.csproj" />
   <Project Path="../samples/CrmErpDemo/EnrichmentAgent/EnrichmentAgent.csproj" />
+  <Project Path="../samples/CrmErpDemo/RegionalHub/RegionalHub.csproj" />
   <Project Path="../tests/EnrichmentAgent.Tests/EnrichmentAgent.Tests.csproj" />
   <Project Path="../tests/NimBus.Agents.Tests/NimBus.Agents.Tests.csproj" />
   <Project Path="../tests/NimBus.AspireHosting.Tests/NimBus.AspireHosting.Tests.csproj" />

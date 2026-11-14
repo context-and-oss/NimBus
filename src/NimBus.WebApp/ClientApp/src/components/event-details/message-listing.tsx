@@ -1,3 +1,6 @@
+import { getResubmitPayload } from "functions/resubmit.functions";
+export { getResubmitPayload } from "functions/resubmit.functions";
+export { getRoutingFromTo } from "functions/event-details.functions";
 import * as React from "react";
 import * as api from "api-client";
 import IntelligenceCard from "components/event-details/intelligence-card";
@@ -9,7 +12,6 @@ import {
   ModalBody,
   ModalFooter,
 } from "components/ui/modal";
-import { Select } from "components/ui/select";
 import { Textarea } from "components/ui/textarea";
 import { CodeBlock } from "components/ui/code-block";
 import { CopyButton } from "components/common/copy-button";
@@ -27,13 +29,13 @@ import {
   formatMoment,
   formatResolutionStatus,
 } from "functions/endpoint.functions";
-import { Link } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
-import { notifyError } from "functions/notifications.functions";
 import {
-  describeCommandError,
-  isStaleCommand,
-} from "functions/operator-command.functions";
+  getRoutingFromTo,
+  isFailedStatus,
+  isPendingHandoff,
+} from "functions/event-details.functions";
+import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 
 // Threshold above which we surface an "Above P95" callout next to the timing
 // bar. The number is a UI heuristic, not a server-supplied value — the design
@@ -132,9 +134,10 @@ export function getHistoryQueueTimeMs(
     }
   }
   if (startAnchor === undefined) {
-    startAnchor = earliestOverall === Number.POSITIVE_INFINITY
-      ? undefined
-      : earliestOverall;
+    startAnchor =
+      earliestOverall === Number.POSITIVE_INFINITY
+        ? undefined
+        : earliestOverall;
   }
   if (startAnchor === undefined) return undefined;
 
@@ -164,100 +167,6 @@ function normalizeMessageType(rawType: unknown): string {
   return typeof rawType === "string" ? rawType.toLowerCase() : "";
 }
 
-function isResponseMessageType(messageType: unknown): boolean {
-  return normalizeMessageType(messageType).endsWith("response");
-}
-
-// Stores persist an absent `originatingFrom` inconsistently — Cosmos leaves it
-// null, SQL Server normalises it to "" — and the wire default is the literal
-// "self" sentinel. None of those is a usable publisher name, so collapse them
-// all to empty.
-function cleanSender(value: string | undefined): string {
-  const trimmed = (value ?? "").trim();
-  return trimmed.toLowerCase() === "self" ? "" : trimmed;
-}
-
-// A message's sender: prefer `originatingFrom` (the original publisher when
-// stamped), fall back to the literal `from`. Uses truthy `||` (not `??`) so an
-// empty/"self" originatingFrom falls through to `from` instead of rendering
-// blank.
-function senderOf(message: api.Message | undefined): string {
-  return cleanSender(message?.originatingFrom) || cleanSender(message?.from);
-}
-
-// Response messages (ResolutionResponse, ErrorResponse, SkipResponse, …) are
-// addressed `To` the platform Resolver — an internal auditing hop, not a
-// meaningful routing leg. The operator-relevant lineage is "where the event
-// came from → which endpoint handled it". The publisher lives on the
-// originating EventRequest message in the history; the response's own `from`
-// is the handling endpoint. So for responses we render From = <publisher> and
-// To = <handling endpoint>, and never surface the Resolver. Non-response
-// messages keep their literal from/to.
-export function getRoutingFromTo(
-  event:
-    | Pick<
-        api.Event,
-        "from" | "to" | "originatingFrom" | "originatingMessageId" | "messageType"
-      >
-    | undefined,
-  messages?: api.Message[],
-): { from: string; to: string } {
-  const from = event?.from ?? "";
-  const to = event?.to ?? "";
-  if (!isResponseMessageType(event?.messageType)) {
-    return { from, to };
-  }
-
-  const originatingMessage = event?.originatingMessageId
-    ? messages?.find((m) => m.messageId === event.originatingMessageId)
-    : undefined;
-  // Prefer the originating EventRequest's sender (the true publisher); fall
-  // back to the event's own originatingFrom, then to its from, so partial
-  // histories still render something meaningful. `||` so empty/"self" values
-  // fall through rather than rendering a blank From.
-  const publisher =
-    senderOf(originatingMessage) || cleanSender(event?.originatingFrom) || from;
-  return { from: publisher, to: from };
-}
-
-// Request message types that carry the original event payload — mirrors the
-// backend's resubmit source selection
-// (EventImplementation.LatestRequestMessageWithPayload). Handoff control
-// requests (HandoffCompleted/FailedRequest) and SkipRequest carry no payload;
-// terminal *Response messages may carry a stale/empty payload (notably a
-// failed hand-off's ErrorResponse). "processdeferredrequest" exists in Core
-// but is folded to Unknown by the current API contract — kept here so the
-// filter stays correct if the contract ever surfaces it.
-const PAYLOAD_REQUEST_TYPES = new Set([
-  "eventrequest",
-  "resubmissionrequest",
-  "retryrequest",
-  "continuationrequest",
-  "processdeferredrequest",
-]);
-
-// The payload that Resubmit replays: the latest request message that actually
-// carries event content — the same rule the backend uses. For a failed
-// hand-off the event's own payload is the empty terminal ErrorResponse, so
-// both the Payload section and the "Resubmit with changes" modal must use the
-// original request payload instead. Returns undefined when no such message is
-// in the loaded history (caller falls back to the event payload).
-export function getResubmitPayload(
-  messages?: api.Message[],
-): string | undefined {
-  if (!messages?.length) return undefined;
-  return messages
-    .filter(
-      (m) =>
-        PAYLOAD_REQUEST_TYPES.has(normalizeMessageType(m.messageType)) &&
-        !!m.eventContent,
-    )
-    .sort(
-      (a, b) =>
-        (b.enqueuedTimeUtc?.valueOf() ?? 0) -
-        (a.enqueuedTimeUtc?.valueOf() ?? 0),
-    )[0]?.eventContent;
-}
 
 /** Returns every stored failure occurrence represented by the event history. */
 export function getFailureOccurrences(
@@ -265,15 +174,40 @@ export function getFailureOccurrences(
   messages: api.Message[] | undefined,
 ): Array<{ eventId: string; messageId: string }> {
   const rows = (messages ?? []).filter((message) => {
-    const dynamic = message as api.Message & { deadLetterReason?: string; deadLetterErrorDescription?: string };
+    const dynamic = message as api.Message & {
+      deadLetterReason?: string;
+      deadLetterErrorDescription?: string;
+    };
     const type = String(message.messageType ?? "").toLowerCase();
-    return Boolean(message.messageId && message.eventId &&
-      (type.endsWith("errorresponse") || message.errorContent || dynamic.deadLetterReason || dynamic.deadLetterErrorDescription));
+    return Boolean(
+      message.messageId &&
+      message.eventId &&
+      (type.endsWith("errorresponse") ||
+        message.errorContent ||
+        dynamic.deadLetterReason ||
+        dynamic.deadLetterErrorDescription),
+    );
   });
-  const occurrences = rows.map((message) => ({ eventId: message.eventId!, messageId: message.messageId! }));
-  if (occurrences.length > 0) return occurrences.filter((entry, index) =>
-    occurrences.findIndex(candidate => candidate.eventId === entry.eventId && candidate.messageId === entry.messageId) === index);
-  if (event?.eventId && event.lastMessageId && ["failed", "deadlettered"].includes((event.resolutionStatus ?? "").toLowerCase()))
+  const occurrences = rows.map((message) => ({
+    eventId: message.eventId!,
+    messageId: message.messageId!,
+  }));
+  if (occurrences.length > 0)
+    return occurrences.filter(
+      (entry, index) =>
+        occurrences.findIndex(
+          (candidate) =>
+            candidate.eventId === entry.eventId &&
+            candidate.messageId === entry.messageId,
+        ) === index,
+    );
+  if (
+    event?.eventId &&
+    event.lastMessageId &&
+    ["failed", "deadlettered"].includes(
+      (event.resolutionStatus ?? "").toLowerCase(),
+    )
+  )
     return [{ eventId: event.eventId, messageId: event.lastMessageId }];
   return [];
 }
@@ -283,9 +217,7 @@ export function getFailureOccurrences(
 // payload lives elsewhere). Surface it as a separate "Handoff result" block.
 // Returns undefined when there is no completed hand-off or it carried no
 // details.
-export function getHandoffResult(
-  messages?: api.Message[],
-): string | undefined {
+export function getHandoffResult(messages?: api.Message[]): string | undefined {
   if (!messages?.length) return undefined;
   return messages
     .filter(
@@ -298,37 +230,6 @@ export function getHandoffResult(
         (b.enqueuedTimeUtc?.valueOf() ?? 0) -
         (a.enqueuedTimeUtc?.valueOf() ?? 0),
     )[0]?.eventContent;
-}
-
-function statusToBadgeVariant(
-  status: string | undefined,
-):
-  | "completed"
-  | "failed"
-  | "deferred"
-  | "deadlettered"
-  | "skipped"
-  | "unsupported"
-  | "pending"
-  | "default" {
-  switch (status?.toLowerCase()) {
-    case "completed":
-      return "completed";
-    case "failed":
-      return "failed";
-    case "deferred":
-      return "deferred";
-    case "deadlettered":
-      return "deadlettered";
-    case "skipped":
-      return "skipped";
-    case "unsupported":
-      return "unsupported";
-    case "pending":
-      return "pending";
-    default:
-      return "default";
-  }
 }
 
 // Format a millisecond duration for display: "—" when null, "Xms" under 1s,
@@ -359,16 +260,6 @@ interface IMessageListingProps {
    * today's behaviour.
    */
   messages?: api.Message[];
-  eventTypes: api.EventType[];
-  skipEvent: (eventId: string, messageId: string) => Promise<void>;
-  resubmitEvent: (eventId: string, messageId: string) => Promise<void>;
-  resubmitEventWithChanges: (
-    eventId: string,
-    messageId: string,
-    body: api.ResubmitWithChanges,
-  ) => Promise<void>;
-  deleteEvent?: () => Promise<void>;
-  reprocessDeferred?: () => Promise<void>;
   completeHandoff?: (
     endpointId: string,
     eventId: string,
@@ -389,31 +280,37 @@ interface IMessageListingProps {
    * in the Properties panel. Omit when not deferred or no GUID could be parsed.
    */
   blockedByEventId?: string;
+  /** Number of later events in the session waiting behind this failed event. */
+  blockedCount?: number;
+  /** Opens the Blocked tab; offered from the error card when events wait. */
+  onShowBlocked?: () => void;
 }
 
-interface IButtonState {
-  isDisabled: boolean;
-  text: string;
-}
+const LINK_CLASS = "text-status-info font-semibold no-underline hover:underline";
+// Narrower label column than PropertyRow's default: the rail is ~340-420px.
+const RAIL_ROW_CLASS = "grid-cols-[96px_minmax(0,1fr)] gap-3 px-4 py-2";
 
+/**
+ * The Overview tab of the event details page: the error, failure intelligence
+ * and payload in the main column; timing, routing, identifiers and the comment
+ * box in the right rail. The operator commands live in the page header
+ * (EventActions).
+ */
 export default function MessageListing(props: IMessageListingProps) {
-  const failureOccurrences = getFailureOccurrences(props.eventDetails, props.messages);
-  const [showErrorDetails, setShowErrorDetails] = useState(false);
-  const handleErrorDetailsToggle = () => setShowErrorDetails(!showErrorDetails);
-  const [isOpen, setIsOpen] = useState(false);
-  const onOpen = () => setIsOpen(true);
-  const onClose = () => setIsOpen(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const deleteBtn: IButtonState = { isDisabled: false, text: "Delete" };
-  const [deleteButton, setDeleteButton] = useState(deleteBtn);
+  const failureOccurrences = getFailureOccurrences(
+    props.eventDetails,
+    props.messages,
+  );
+  // A link to one failed attempt (Insights drill-down, spec 043 §7) names it with ?message=.
+  const [searchParams] = useSearchParams();
+  const linkedMessageId = searchParams.get("message") ?? undefined;
   // The original event payload: the latest payload-carrying request message
   // in the loaded history, falling back to the event's own (server-resolved)
   // payload. For a failed hand-off the event's own content is the empty
-  // terminal ErrorResponse, so the Payload section and the
-  // resubmit-with-changes modal must render/prefill the request payload.
-  // Memoised so these filter+sort derivations don't recompute on every render
-  // (e.g. a keystroke in a controlled input elsewhere in the subtree); the
-  // value only changes when the history or event document does.
+  // terminal ErrorResponse, so the Payload section must render the request
+  // payload. Memoised so these filter+sort derivations don't recompute on
+  // every render (e.g. a keystroke in the comment box); the value only
+  // changes when the history or event document does.
   const resubmitPayload = useMemo(
     () =>
       getResubmitPayload(props.messages) ??
@@ -432,10 +329,6 @@ export default function MessageListing(props: IMessageListingProps) {
   const routing = useMemo(
     () => getRoutingFromTo(props.eventDetails, props.messages),
     [props.eventDetails, props.messages],
-  );
-  const [textAreaValue, setTextAreaValue] = useState(resubmitPayload);
-  const [eventTypeIdValue, setEventTypeIdValue] = useState(
-    props.eventDetails?.eventTypeId,
   );
 
   const { addToast } = useToast();
@@ -457,15 +350,7 @@ export default function MessageListing(props: IMessageListingProps) {
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [operatorName, setOperatorName] = useState<string>("operator");
 
-  // The textarea prefill tracks the resolved request payload — `messages`
-  // loads asynchronously after `eventDetails`, so keying on the payload (not
-  // the event object) picks up the request payload once the history arrives.
   useEffect(() => {
-    setTextAreaValue(resubmitPayload);
-  }, [resubmitPayload]);
-
-  useEffect(() => {
-    setShowErrorDetails(false);
     // Reset handoff UI when navigating to a different event.
     setHeroOverride(null);
   }, [props.eventDetails]);
@@ -486,71 +371,12 @@ export default function MessageListing(props: IMessageListingProps) {
     };
   }, []);
 
-  const resubmitWithChanges: IButtonState = {
-    isDisabled: false,
-    text: "Resubmit with changes",
-  };
-  const [resubmitWithChangesButton, setResubmitWithChangesButton] =
-    useState(resubmitWithChanges);
-
-  const resubmit: IButtonState = { isDisabled: false, text: "Resubmit" };
-  const [resubmitButton, setResubmitButton] = useState(resubmit);
-
-  const skip: IButtonState = { isDisabled: false, text: "Skip" };
-  const [skipButton, setSkipButton] = useState(skip);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const inputValue = e.target.value;
-    const sanitizedValue = inputValue.replace(/\n/g, "");
-    setTextAreaValue(sanitizedValue);
-  };
-
-  const handleEventTypeIdChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setEventTypeIdValue(e.target.value);
-  };
-
-  const isFailedMessage = (status: string | undefined): boolean => {
-    if (!status) return false;
-    const lowerStatus = status.toLowerCase();
-    return (
-      lowerStatus === "failed" ||
-      lowerStatus === "unsupported" ||
-      lowerStatus === "deadlettered"
-    );
-  };
-
-  const isDeadletteredMessage = (status: string | undefined): boolean => {
-    if (!status) return false;
-    const lowerStatus = status.toLowerCase();
-    return lowerStatus === "deadlettered";
-  };
-
-  const isDeferredMessage = (status: string | undefined): boolean => {
-    if (!status) return false;
-    return status.toLowerCase() === "deferred";
-  };
-
-  // PendingHandoff entries are healthy in-flight messages. Resubmit/Skip stay
-  // available so operators can override a stuck or wrong external job.
-  const isPendingHandoff = (
-    status: string | undefined,
-    pendingSubStatus: string | null | undefined,
-  ): boolean => {
-    if (!status || !pendingSubStatus) return false;
-    return (
-      status.toLowerCase() === "pending" &&
-      pendingSubStatus.toLowerCase() === "handoff"
-    );
-  };
-
+  const status = props.eventDetails?.resolutionStatus?.toLowerCase();
+  const isFailed = isFailedStatus(props.eventDetails?.resolutionStatus);
   const isHandoff = isPendingHandoff(
     props.eventDetails?.resolutionStatus,
     props.eventDetails?.pendingSubStatus,
   );
-
-  // Pending handoffs are driven by the Hero card's Complete/Fail actions, so the
-  // Details-header resubmit/skip buttons are only for terminally failed events.
-  const showFailedActions = isFailedMessage(props.eventDetails?.resolutionStatus);
 
   // The hero shows for any pending handoff, and stays visible (in its settled/
   // failed form) immediately after the operator acts.
@@ -603,7 +429,8 @@ export default function MessageListing(props: IMessageListingProps) {
       setHeroOverride({ state: "failed", reason });
       addToast({
         title: "Handoff failed",
-        description: "Marked as failed — will surface under Blocked downstream.",
+        description:
+          "Marked as failed — will surface under Blocked downstream.",
         variant: "error",
       });
     } catch {
@@ -629,10 +456,9 @@ export default function MessageListing(props: IMessageListingProps) {
     resubmitPayload === "[REDACTED:unknown-type]" ||
     resubmitPayload === "[REDACTED:invalid-json]";
 
-  // Pretty-print the payload / hand-off result once and reuse across the
-  // inline blocks and the resubmit-with-changes modal, so a keystroke
-  // elsewhere in the subtree doesn't re-run JSON.parse/JSON.stringify over
-  // the full payload on every render.
+  // Pretty-print the payload / hand-off result once, so a keystroke elsewhere
+  // in the subtree doesn't re-run JSON.parse/JSON.stringify over the full
+  // payload on every render.
   const formattedPayload = useMemo(
     () => (resubmitPayload ? safeFormatJson(resubmitPayload) : ""),
     [resubmitPayload],
@@ -642,94 +468,14 @@ export default function MessageListing(props: IMessageListingProps) {
     [handoffResult],
   );
 
-  const reprocessBtn: IButtonState = { isDisabled: false, text: "Reprocess" };
-  const [reprocessButton, setReprocessButton] = useState(reprocessBtn);
-
-  const reprocessDeferredClick = async () => {
-    setReprocessButton({ text: "Triggering...", isDisabled: true });
-    try {
-      await props.reprocessDeferred?.();
-      setReprocessButton({ text: "Triggered", isDisabled: true });
-    } catch {
-      setReprocessButton({ text: "Failed", isDisabled: false });
-    }
-  };
-
-  const skipEventClick = async () => {
-    setSkipButton({ text: "Skipping...", isDisabled: true });
-    try {
-      await props.skipEvent(
-        props.eventDetails?.eventId!,
-        props.eventDetails?.lastMessageId!,
-      );
-      setSkipButton({ text: "Skipped", isDisabled: true });
-    } catch (caught) {
-      notifyError(describeCommandError(caught, "skip"));
-      setSkipButton(
-        isStaleCommand(caught)
-          ? { text: "Changed - refresh", isDisabled: true }
-          : { text: "Skip failed", isDisabled: false },
-      );
-    }
-  };
-
-  const resubmitEventClick = async () => {
-    setResubmitButton({ text: "Resubmitting...", isDisabled: true });
-    try {
-      await props.resubmitEvent(
-        props.eventDetails?.eventId!,
-        props.eventDetails?.lastMessageId!,
-      );
-      setResubmitButton({ text: "Resubmitted", isDisabled: true });
-    } catch (caught) {
-      notifyError(describeCommandError(caught, "resubmit"));
-      setResubmitButton(
-        isStaleCommand(caught)
-          ? { text: "Changed - refresh", isDisabled: true }
-          : { text: "Resubmit failed", isDisabled: false },
-      );
-    }
-  };
-
-  const deleteEventClick = async () => {
-    setShowDeleteConfirm(false);
-    setDeleteButton({ text: "Deleting...", isDisabled: true });
-    try {
-      await props.deleteEvent?.();
-      setDeleteButton({ text: "Deleted", isDisabled: true });
-    } catch {
-      setDeleteButton({ text: "Delete failed", isDisabled: false });
-    }
-  };
-
-  const resubmitEventWithChangesClick = async () => {
-    onClose();
-    setResubmitWithChangesButton({ text: "Resubmitting...", isDisabled: true });
-    const body: api.ResubmitWithChanges = api.ResubmitWithChanges.fromJS({
-      eventTypeId: eventTypeIdValue,
-      eventContent: textAreaValue,
-    });
-    try {
-      await props.resubmitEventWithChanges(
-        props.eventDetails?.eventId!,
-        props.eventDetails?.lastMessageId!,
-        body,
-      );
-      setResubmitWithChangesButton({ text: "Resubmitted", isDisabled: true });
-    } catch (caught) {
-      notifyError(describeCommandError(caught, "resubmit"));
-      setResubmitWithChangesButton(
-        isStaleCommand(caught)
-          ? { text: "Changed - refresh", isDisabled: true }
-          : { text: "Resubmit failed", isDisabled: false },
-      );
-    }
-  };
+  const errorContent = props.eventDetails?.messageContent?.errorContent;
+  const stackTrace = errorContent?.exceptionStackTrace?.trim();
+  const blockedCount = props.blockedCount ?? 0;
 
   return (
-    <div className="w-full">
+    <div className="w-full min-w-0 flex flex-col gap-5">
       {heroState && (
-        <div className="mb-5 overflow-hidden rounded-nb-lg border border-border">
+        <div className="overflow-hidden rounded-nb-lg border border-border">
           <HandoffHero
             state={heroState}
             reason={props.eventDetails?.handoffReason}
@@ -750,361 +496,101 @@ export default function MessageListing(props: IMessageListingProps) {
           />
         </div>
       )}
-      <h4 className="text-lg font-semibold flex items-center gap-4">
-        Details
-        {showFailedActions && (
-          <div className="flex gap-2">
-            <Button
-              size="xs"
-              colorScheme="blue"
-              disabled={resubmitButton.isDisabled}
-              onClick={resubmitEventClick}
-            >
-              {resubmitButton.text}
-            </Button>
-            <Button
-              size="xs"
-              colorScheme="green"
-              disabled={resubmitWithChangesButton.isDisabled}
-              onClick={onOpen}
-            >
-              {resubmitWithChangesButton.text}
-            </Button>
-            <Button
-              size="xs"
-              colorScheme="red"
-              variant="outline"
-              disabled={skipButton.isDisabled}
-              onClick={skipEventClick}
-            >
-              {skipButton.text}
-            </Button>
-            {props.deleteEvent && isFailedMessage(props.eventDetails?.resolutionStatus) && (
-              <Button
-                size="xs"
-                colorScheme="red"
-                disabled={deleteButton.isDisabled}
-                onClick={() => setShowDeleteConfirm(true)}
-              >
-                {deleteButton.text}
-              </Button>
-            )}
-          </div>
-        )}
-        {isDeferredMessage(props.eventDetails?.resolutionStatus) && props.reprocessDeferred && (
-          <Button
-            size="xs"
-            colorScheme="blue"
-            disabled={reprocessButton.isDisabled}
-            onClick={reprocessDeferredClick}
-          >
-            {reprocessButton.text}
-          </Button>
-        )}
-      </h4>
-      <br />
-      {/* Timing bar — queue · processing · ack as a stacked horizontal bar.
-          Operators glance once instead of scanning three KV rows (rec §09).
 
-          Spec 005 (FR-020/FR-050): the Queue value is chosen via
-          `getHistoryQueueTimeMs(props.messages) ?? event.queueTimeMs ??
-          diffMs(event.updatedAt, event.enqueuedTimeUtc)`. The override fires
-          only on waited (deferred / pending-handoff) lifecycles so the
-          captured row value — which describes only the *last* delivery — does
-          not silently report a millisecond for an event that actually spent
-          minutes waiting. Use `??` (not `||`) so a measured `0` is preserved.
-          DO NOT collapse this chain back to a single `event.queueTimeMs`
-          read; that regresses the spec. Processing time stays on the existing
-          chain (FR-021). */}
-      {(props.eventDetails?.queueTimeMs !== undefined ||
-        props.eventDetails?.processingTimeMs !== undefined) && (() => {
-        const queueMs =
-          getHistoryQueueTimeMs(props.messages) ??
-          props.eventDetails?.queueTimeMs ??
-          diffMs(
-            props.eventDetails?.updatedAt,
-            props.eventDetails?.enqueuedTimeUtc,
-          );
-        const processingMs = props.eventDetails?.processingTimeMs;
-        // FR-022: Total uses the displayed Queue + Processing — if Queue is
-        // overridden, the override participates in the total.
-        const totalMs = (queueMs ?? 0) + (processingMs ?? 0);
-        return (
-          <TimingBar
-            className="mb-4"
-            segments={[
-              {
-                label: "Queue",
-                display: formatDurationMs(queueMs),
-                weight: Math.max(queueMs ?? 0, 0),
-                colorClass: "bg-[#BFD8F2]",
-              },
-              {
-                label: "Processing",
-                display: formatDurationMs(processingMs),
-                weight: Math.max(processingMs ?? 0, 0),
-                colorClass: "bg-status-warning",
-              },
-              {
-                label: "Ack",
-                display: "< 1 ms",
-                weight:
-                  0.05 * ((queueMs ?? 0) + (processingMs ?? 0) || 1),
-                colorClass: "bg-status-success",
-              },
-            ]}
-            total={
-              <span>
-                {formatDurationMs(totalMs)}{" "}
-                ·{" "}
-                <span
-                  className={
-                    isFailedMessage(props.eventDetails?.resolutionStatus)
-                      ? "text-status-danger"
-                      : "text-status-success"
-                  }
-                >
-                  {formatResolutionStatus(
-                    props.eventDetails?.resolutionStatus,
-                    props.eventDetails?.reason,
-                  )}
-                </span>
-              </span>
-            }
-            // FR-023: the slow-processing callout evaluates Processing only,
-            // never the overridden Queue value.
-            trailing={
-              (processingMs ?? 0) >= SLOW_PROCESSING_MS
-                ? `Above ${SLOW_PROCESSING_MS} ms — check downstream sink`
-                : undefined
-            }
-          />
-        );
-      })()}
-
-      <PropertyList>
-        <PropertySection title="Identifiers">
-          <PropertyRow
-            label="EventId"
-            value={props.eventDetails?.eventId}
-            mono
-          />
-          <PropertyRow
-            label="SessionId"
-            value={props.eventDetails?.sessionId}
-            mono
-          />
-          <PropertyRow
-            label="MessageId"
-            value={props.eventDetails?.lastMessageId}
-            mono
-          />
-          {props.eventDetails?.originatingMessageId && (
-            <PropertyRow
-              label="OriginatingMessageId"
-              value={props.eventDetails.originatingMessageId}
-              mono
-            />
-          )}
-          {/* Spec 006: render only when the event is deferred AND a blocker
-              GUID was parsed AND we have an endpointId to build the link with.
-              All three are required — endpointId is part of the route, and a
-              row without a valid link would mislead operators. */}
-          {props.eventDetails?.resolutionStatus?.toLowerCase() === "deferred" &&
-            props.blockedByEventId &&
-            props.eventDetails?.endpointId && (
-              <PropertyRow
-                label="Blocked by"
-                value={
-                  <Link
-                    to={`/Message/Index/${props.eventDetails.endpointId}/${props.blockedByEventId}/0`}
-                    className="text-status-info font-semibold no-underline hover:underline"
-                  >
-                    {props.blockedByEventId}
-                  </Link>
-                }
-                mono
-              />
-            )}
-        </PropertySection>
-
-        <PropertySection title="Details">
-          <PropertyRow
-            label="EventTypeId"
-            value={
-              props.eventDetails?.eventTypeId && (
-                <Link
-                  to={`/EventTypes/Details/${props.eventDetails.eventTypeId}`}
-                  className="text-status-info font-semibold no-underline hover:underline"
-                >
-                  {props.eventDetails.eventTypeId}
-                </Link>
-              )
-            }
-          />
-          <PropertyRow
-            label="From"
-            value={
-              routing.from ? (
-                <Link
-                  to={`/Endpoints/Details/${routing.from}`}
-                  className="text-status-info font-semibold no-underline hover:underline"
-                >
-                  {routing.from}
-                </Link>
-              ) : (
-                "—"
-              )
-            }
-          />
-          <PropertyRow
-            label="To"
-            value={
-              routing.to ? (
-                <Link
-                  to={`/Endpoints/Details/${routing.to}`}
-                  className="text-status-info font-semibold no-underline hover:underline"
-                >
-                  {routing.to}
-                </Link>
-              ) : (
-                "—"
-              )
-            }
-          />
-          <PropertyRow
-            label="Status"
-            value={
-              <span className="inline-flex items-center gap-2">
-                <Badge
-                  variant={statusToBadgeVariant(
-                    props.eventDetails?.resolutionStatus,
-                  )}
-                  size="sm"
-                >
-                  {formatResolutionStatus(
-                    props.eventDetails?.resolutionStatus,
-                    props.eventDetails?.reason,
-                  ) ?? "—"}
-                </Badge>
-                {isPendingHandoff(
-                  props.eventDetails?.resolutionStatus,
-                  props.eventDetails?.pendingSubStatus,
-                ) && (
-                  <Badge variant="info" size="sm">
-                    Awaiting external
-                  </Badge>
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-5">
+        <div className="flex-[999_1_520px] min-w-0 flex flex-col gap-4">
+          {isFailed && (
+            <section
+              aria-label="Error"
+              className="bg-card border border-border rounded-nb-md overflow-hidden"
+            >
+              <div className="flex items-baseline justify-between gap-3 px-4 py-3 border-b border-border">
+                <h2 className="m-0 text-[13px] font-bold">Error</h2>
+                {props.eventDetails?.updatedAt && (
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {formatMoment(props.eventDetails.updatedAt)}
+                  </span>
                 )}
-              </span>
-            }
-          />
-          <PropertyRow
-            label="Enqueued"
-            value={formatMoment(props.eventDetails?.enqueuedTimeUtc)}
-            mono
-          />
-          <PropertyRow
-            label="Queue Time"
-            value={formatDurationMs(props.eventDetails?.queueTimeMs)}
-            mono
-          />
-          <PropertyRow
-            label="Processing Time"
-            value={
-              (props.eventDetails?.processingTimeMs ?? 0) >=
-              SLOW_PROCESSING_MS ? (
-                <Badge variant="warning" size="sm">
-                  {formatDurationMs(props.eventDetails?.processingTimeMs)}
-                </Badge>
-              ) : (
-                <span className="font-mono text-[12px] tabular-nums">
-                  {formatDurationMs(props.eventDetails?.processingTimeMs)}
-                </span>
-              )
-            }
-          />
-        </PropertySection>
-
-        {(props.eventDetails?.handoffReason ||
-          props.eventDetails?.externalJobId ||
-          props.eventDetails?.expectedBy) && (
-          <PropertySection title="Handoff details">
-            {props.eventDetails?.handoffReason && (
-              <PropertyRow
-                label="Reason"
-                value={props.eventDetails.handoffReason}
-              />
-            )}
-            {props.eventDetails?.externalJobId && (
-              <PropertyRow
-                label="External Job Id"
-                value={props.eventDetails.externalJobId}
-                mono
-              />
-            )}
-            {props.eventDetails?.expectedBy && (
-              <PropertyRow
-                label="Expected By"
-                value={formatMoment(props.eventDetails.expectedBy)}
-                mono
-              />
-            )}
-          </PropertySection>
-        )}
-      </PropertyList>
-      <br />
-      {isFailedMessage(props.eventDetails?.resolutionStatus) && (
-        <>
-          <h4 className="text-lg font-semibold mt-4">Error</h4>
-          <br />
-          {props.eventDetails?.messageContent?.errorContent && (
-            !isDeadletteredMessage(props.eventDetails?.resolutionStatus) ? (
-              <>
-                <div className="bg-red-100 border border-red-400 text-red-800 dark:bg-red-950/40 dark:border-red-900/60 dark:text-red-200 p-4 rounded-sm text-sm">
-                  {props.eventDetails?.messageContent?.errorContent?.errorText}
+              </div>
+              <div className="p-4 flex flex-col gap-3">
+                {status === "deadlettered" ? (
+                  <dl className="m-0 flex flex-col gap-2 text-sm">
+                    <div>
+                      <dt className="font-semibold text-muted-foreground text-[12px]">
+                        DeadLetter Reason
+                      </dt>
+                      <dd className="m-0 wrap-break-word">
+                        {props.eventDetails?.deadLetterReason || "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-semibold text-muted-foreground text-[12px]">
+                        DeadLetter Error Description
+                      </dt>
+                      <dd className="m-0 wrap-break-word">
+                        {props.eventDetails?.deadLetterErrorDescription || "—"}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : errorContent?.errorText ? (
+                  <div className="flex items-start gap-2.5 rounded-nb-md bg-status-danger-50 text-status-danger-ink dark:bg-red-950/40 dark:text-red-200 px-3.5 py-3">
+                    <svg
+                      aria-hidden="true"
+                      className="w-4 h-4 mt-0.5 shrink-0"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M8 2.5 14 13H2L8 2.5zM8 6.5v3M8 11.2v.3"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <p className="m-0 text-sm font-semibold wrap-break-word">
+                      {errorContent.errorText}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="m-0 text-sm text-muted-foreground">
+                    No error details were recorded for this attempt.
+                  </p>
+                )}
+                {status !== "deadlettered" && stackTrace && (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground">
+                      Exception
+                    </span>
+                    <pre className="m-0 max-h-64 overflow-auto rounded-nb-sm bg-muted px-3.5 py-3 font-mono text-[11.5px] leading-[1.65] text-muted-foreground whitespace-pre-wrap break-all">
+                      {errorContent?.exceptionStackTrace}
+                    </pre>
+                  </div>
+                )}
+              </div>
+              {blockedCount > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5 border-t border-border bg-status-warning-50 text-status-warning-ink dark:bg-yellow-950/40 dark:text-yellow-200 text-[13px]">
+                  <span className="font-semibold">
+                    {`This event holds up its session: ${blockedCount} later ${
+                      blockedCount === 1 ? "event is" : "events are"
+                    } waiting behind it.`}
+                  </span>
+                  {props.onShowBlocked && (
+                    <button
+                      type="button"
+                      onClick={props.onShowBlocked}
+                      className="bg-transparent border-0 p-0 font-semibold underline underline-offset-2 text-inherit"
+                    >
+                      View blocked events
+                    </button>
+                  )}
                 </div>
-                <table className="text-sm">
-                  <tbody>
-                    <tr className="hover:bg-accent">
-                      <td className="py-2 pr-4">
-                        <b>Exception</b>
-                      </td>
-                      <td className="py-2">
-                        {
-                          props.eventDetails?.messageContent?.errorContent
-                            ?.exceptionStackTrace
-                        }
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </>
-            ) : (
-              <table className="text-sm">
-                <tbody>
-                  <tr className="hover:bg-accent">
-                    <td className="py-2 pr-4">
-                      <b>DeadLetter Reason</b>
-                    </td>
-                    <td className="py-2">
-                      {props.eventDetails?.deadLetterReason}
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-accent">
-                    <td className="py-2 pr-4">
-                      <b>DeadLetter Error Description</b>
-                    </td>
-                    <td className="py-2">
-                      {props.eventDetails?.deadLetterErrorDescription}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            )
+              )}
+            </section>
           )}
-          <br />
-          {failureOccurrences.length > 0 && (
-            <div className="space-y-3">
+
+          {isFailed && failureOccurrences.length > 0 && (
+            <div className="flex flex-col">
               {failureOccurrences.map((occurrence, index) => (
                 <IntelligenceCard
                   key={`${occurrence.eventId}/${occurrence.messageId}`}
@@ -1113,131 +599,294 @@ export default function MessageListing(props: IMessageListingProps) {
                   messageId={occurrence.messageId}
                   resolutionStatus={props.eventDetails?.resolutionStatus}
                   occurrenceLabel={`occurrence ${index + 1}`}
+                  highlighted={linkedMessageId === occurrence.messageId}
                 />
               ))}
             </div>
           )}
-        </>
-      )}
 
-      {/* Payload — the original event content (the latest request message's
-          payload, falling back to the event's own). For a hand-off this is
-          the EventRequest, not the terminal settlement message which carries
-          no original payload. */}
-      {resubmitPayload && isRedacted && (
-        <div className="mt-4 flex items-center gap-2.5 bg-card border border-border rounded-nb-md px-4 py-3">
-          <svg className="w-4 h-4 shrink-0 text-muted-foreground" viewBox="0 0 16 16" fill="none">
-            <rect x="3" y="7" width="10" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
-            <path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" strokeWidth="1.4" />
-          </svg>
-          <span className="text-[13px] text-muted-foreground">
-            The payload is hidden — viewing raw event payloads requires the PII
-            Reader role. A site Owner can grant it on the Access Control page.
-          </span>
-        </div>
-      )}
+          {/* Payload — the original event content (the latest request message's
+              payload, falling back to the event's own). For a hand-off this is
+              the EventRequest, not the terminal settlement message which carries
+              no original payload. */}
+          {resubmitPayload && isRedacted && (
+            <div className="flex items-center gap-2.5 bg-card border border-border rounded-nb-md px-4 py-3">
+              <svg
+                className="w-4 h-4 shrink-0 text-muted-foreground"
+                viewBox="0 0 16 16"
+                fill="none"
+                aria-hidden="true"
+              >
+                <rect
+                  x="3"
+                  y="7"
+                  width="10"
+                  height="6"
+                  rx="1.4"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                />
+                <path
+                  d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                />
+              </svg>
+              <span className="text-[13px] text-muted-foreground">
+                The payload is hidden — viewing raw event payloads requires the
+                PII Reader role. A site Owner can grant it on the Access Control
+                page.
+              </span>
+            </div>
+          )}
 
-      {resubmitPayload && !isRedacted && (
-        <div className="mt-4">
-          {/* Rendered as-is. Sensitive values are already masked server-side for
-              callers without the PII Reader role, so there is nothing here to
-              blur or reveal — and blurring would only hide the non-sensitive
-              fields an operator needs to triage. */}
-          <CodeBlock
-            title="Payload"
-            subtitle="application/json"
-            // Copies what is rendered, which is the server-masked payload for a
-            // caller without the PII Reader role — the button never reaches past
-            // redaction to the raw event content.
-            actions={<CopyButton text={formattedPayload} describes="Payload" />}
-            linkifyGuid={(_guid) =>
-              // Clicking a GUID in the payload jumps to the Messages search
-              // pre-filtered to that ID — IDs become first-class navigation
-              // bridges between pages (design rec §09 code).
-              `/Messages?eventId=${_guid}`
-            }
-          >
-            {formattedPayload}
-          </CodeBlock>
-        </div>
-      )}
-
-      {/* Handoff result — the external system's completion details, when the
-          handler supplied any on CompleteHandoff (a HandoffCompletedRequest's
-          eventContent). Distinct from the event payload above. */}
-      {handoffResult && (
-        <div className="mt-4">
-          <CodeBlock title="Handoff result" subtitle="application/json">
-            {formattedHandoffResult}
-          </CodeBlock>
-        </div>
-      )}
-
-      <Modal isOpen={isOpen} onClose={onClose} size="2xl">
-        <ModalHeader onClose={onClose}>Resubmit with changes</ModalHeader>
-        <ModalBody>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Original event:
-            </label>
-            <pre className="bg-muted p-4 rounded-sm text-sm overflow-x-auto max-h-96">
-              {formattedPayload}
-            </pre>
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Event type:
-            </label>
-            <Select
-              onChange={handleEventTypeIdChange}
-              defaultValue={props.eventDetails?.eventTypeId}
+          {resubmitPayload && !isRedacted && (
+            // Rendered as-is. Sensitive values are already masked server-side for
+            // callers without the PII Reader role, so there is nothing here to
+            // blur or reveal.
+            <CodeBlock
+              title="Payload"
+              subtitle="application/json"
+              // Copies what is rendered, which is the server-masked payload for a
+              // caller without the PII Reader role — the button never reaches past
+              // redaction to the raw event content.
+              actions={<CopyButton text={formattedPayload} describes="Payload" />}
+              linkifyGuid={(_guid) =>
+                // Clicking a GUID in the payload jumps to the Messages search
+                // pre-filtered to that ID (design rec §09 code).
+                `/Messages?eventId=${_guid}`
+              }
             >
-              {props.eventTypes.map((et) => (
-                <option key={et.id} value={et.id}>
-                  {et.id}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Modified event:
-            </label>
-            <Textarea
-              value={textAreaValue}
-              onChange={handleInputChange}
-              className="min-h-[300px]"
-            />
-          </div>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-          <Button onClick={resubmitEventWithChangesClick}>Resubmit</Button>
-        </ModalFooter>
-      </Modal>
+              {formattedPayload}
+            </CodeBlock>
+          )}
 
-      {/* Comment Section */}
-      <CommentSection eventId={props.eventDetails?.eventId} onCommentAdded={props.onCommentAdded} />
+          {/* Handoff result — the external system's completion details, when the
+              handler supplied any on CompleteHandoff (a HandoffCompletedRequest's
+              eventContent). Distinct from the event payload above. */}
+          {handoffResult && (
+            <CodeBlock title="Handoff result" subtitle="application/json">
+              {formattedHandoffResult}
+            </CodeBlock>
+          )}
+        </div>
 
-      <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)}>
-        <ModalHeader>Delete Event</ModalHeader>
-        <ModalBody>
-          <p className="text-sm">
-            This will permanently delete the event from storage.{" "}
-            <span className="font-semibold text-red-600 dark:text-red-400">This action cannot be undone.</span>
-          </p>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
-            Cancel
-          </Button>
-          <Button colorScheme="red" onClick={deleteEventClick}>
-            Delete
-          </Button>
-        </ModalFooter>
-      </Modal>
+        <aside
+          aria-label="Event facts"
+          className="flex-[1_1_340px] min-w-0 flex flex-col gap-4"
+        >
+          {/* Timing bar — queue · processing · ack as a stacked horizontal bar.
+
+              Spec 005 (FR-020/FR-050): the Queue value is chosen via
+              `getHistoryQueueTimeMs(props.messages) ?? event.queueTimeMs ??
+              diffMs(event.updatedAt, event.enqueuedTimeUtc)`. The override fires
+              only on waited (deferred / pending-handoff) lifecycles so the
+              captured row value — which describes only the *last* delivery — does
+              not silently report a millisecond for an event that actually spent
+              minutes waiting. Use `??` (not `||`) so a measured `0` is preserved.
+              DO NOT collapse this chain back to a single `event.queueTimeMs`
+              read; that regresses the spec. Processing time stays on the existing
+              chain (FR-021). */}
+          {(props.eventDetails?.queueTimeMs !== undefined ||
+            props.eventDetails?.processingTimeMs !== undefined) &&
+            (() => {
+              const queueMs =
+                getHistoryQueueTimeMs(props.messages) ??
+                props.eventDetails?.queueTimeMs ??
+                diffMs(
+                  props.eventDetails?.updatedAt,
+                  props.eventDetails?.enqueuedTimeUtc,
+                );
+              const processingMs = props.eventDetails?.processingTimeMs;
+              // FR-022: Total uses the displayed Queue + Processing — if Queue is
+              // overridden, the override participates in the total.
+              const totalMs = (queueMs ?? 0) + (processingMs ?? 0);
+              return (
+                <TimingBar
+                  segments={[
+                    {
+                      label: "Queue",
+                      display: formatDurationMs(queueMs),
+                      weight: Math.max(queueMs ?? 0, 0),
+                      colorClass: "bg-[#BFD8F2]",
+                    },
+                    {
+                      label: "Processing",
+                      display: formatDurationMs(processingMs),
+                      weight: Math.max(processingMs ?? 0, 0),
+                      colorClass: "bg-status-warning",
+                    },
+                    {
+                      label: "Ack",
+                      display: "< 1 ms",
+                      weight:
+                        0.05 * ((queueMs ?? 0) + (processingMs ?? 0) || 1),
+                      colorClass: "bg-status-success",
+                    },
+                  ]}
+                  total={
+                    <span>
+                      {formatDurationMs(totalMs)} ·{" "}
+                      <span
+                        className={
+                          isFailed ? "text-status-danger" : "text-status-success"
+                        }
+                      >
+                        {formatResolutionStatus(
+                          props.eventDetails?.resolutionStatus,
+                          props.eventDetails?.reason,
+                        )}
+                      </span>
+                    </span>
+                  }
+                  // FR-023: the slow-processing callout evaluates Processing only,
+                  // never the overridden Queue value.
+                  trailing={
+                    (processingMs ?? 0) >= SLOW_PROCESSING_MS
+                      ? `Above ${SLOW_PROCESSING_MS} ms — check downstream sink`
+                      : undefined
+                  }
+                />
+              );
+            })()}
+
+          <PropertyList>
+            <PropertySection title="Routing">
+              <PropertyRow
+                className={RAIL_ROW_CLASS}
+                label="Event type"
+                value={
+                  props.eventDetails?.eventTypeId ? (
+                    <Link
+                      to={`/EventTypes/Details/${props.eventDetails.eventTypeId}`}
+                      className={LINK_CLASS}
+                    >
+                      {props.eventDetails.eventTypeId}
+                    </Link>
+                  ) : (
+                    "—"
+                  )
+                }
+              />
+              <PropertyRow
+                className={RAIL_ROW_CLASS}
+                label="From"
+                value={
+                  routing.from ? (
+                    <Link
+                      to={`/Endpoints/Details/${routing.from}`}
+                      className={LINK_CLASS}
+                    >
+                      {routing.from}
+                    </Link>
+                  ) : (
+                    "—"
+                  )
+                }
+              />
+              <PropertyRow
+                className={RAIL_ROW_CLASS}
+                label="To"
+                value={
+                  routing.to ? (
+                    <Link
+                      to={`/Endpoints/Details/${routing.to}`}
+                      className={LINK_CLASS}
+                    >
+                      {routing.to}
+                    </Link>
+                  ) : (
+                    "—"
+                  )
+                }
+              />
+              <PropertyRow
+                className={RAIL_ROW_CLASS}
+                label="Enqueued"
+                value={formatMoment(props.eventDetails?.enqueuedTimeUtc)}
+                mono
+              />
+              {/* Spec 006: render only when the event is deferred AND a blocker
+                  GUID was parsed AND we have an endpointId to build the link with.
+                  All three are required — endpointId is part of the route, and a
+                  row without a valid link would mislead operators. */}
+              {status === "deferred" &&
+                props.blockedByEventId &&
+                props.eventDetails?.endpointId && (
+                  <PropertyRow
+                    className={RAIL_ROW_CLASS}
+                    label="Blocked by"
+                    value={
+                      <Link
+                        to={`/Message/Index/${props.eventDetails.endpointId}/${props.blockedByEventId}/0`}
+                        className={LINK_CLASS}
+                      >
+                        {props.blockedByEventId}
+                      </Link>
+                    }
+                    mono
+                  />
+                )}
+            </PropertySection>
+
+            {(props.eventDetails?.handoffReason ||
+              props.eventDetails?.externalJobId ||
+              props.eventDetails?.expectedBy) && (
+              <PropertySection title="Handoff details">
+                {props.eventDetails?.handoffReason && (
+                  <PropertyRow
+                    className={RAIL_ROW_CLASS}
+                    label="Reason"
+                    value={props.eventDetails.handoffReason}
+                  />
+                )}
+                {props.eventDetails?.externalJobId && (
+                  <PropertyRow
+                    className={RAIL_ROW_CLASS}
+                    label="External job"
+                    value={props.eventDetails.externalJobId}
+                    mono
+                  />
+                )}
+                {props.eventDetails?.expectedBy && (
+                  <PropertyRow
+                    className={RAIL_ROW_CLASS}
+                    label="Expected by"
+                    value={formatMoment(props.eventDetails.expectedBy)}
+                    mono
+                  />
+                )}
+              </PropertySection>
+            )}
+
+            <PropertySection title="Identifiers">
+              <IdentifierRow
+                label="EventId"
+                value={props.eventDetails?.eventId}
+              />
+              <IdentifierRow
+                label="SessionId"
+                value={props.eventDetails?.sessionId}
+              />
+              <IdentifierRow
+                label="MessageId"
+                value={props.eventDetails?.lastMessageId}
+              />
+              {props.eventDetails?.originatingMessageId && (
+                <IdentifierRow
+                  label="OriginatingMessageId"
+                  value={props.eventDetails.originatingMessageId}
+                />
+              )}
+            </PropertySection>
+          </PropertyList>
+
+          <CommentSection
+            eventId={props.eventDetails?.eventId}
+            onCommentAdded={props.onCommentAdded}
+          />
+        </aside>
+      </div>
 
       {/* Complete handoff */}
       <Modal isOpen={completeOpen} onClose={() => setCompleteOpen(false)}>
@@ -1361,7 +1010,37 @@ export default function MessageListing(props: IMessageListingProps) {
   );
 }
 
-function CommentSection({ eventId, onCommentAdded }: { eventId?: string; onCommentAdded?: () => void }) {
+/** One identifier in the rail: label over the full value, with a copy button. */
+function IdentifierRow({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="flex items-center gap-2 pl-4 pr-2.5 py-2 border-t border-border">
+      <div className="flex-1 min-w-0">
+        <dt className="text-[11.5px] font-semibold text-muted-foreground">
+          {label}
+        </dt>
+        <dd className="m-0 font-mono text-[12px] tabular-nums text-foreground break-all">
+          {value || "—"}
+        </dd>
+      </div>
+      {value && (
+        <CopyButton
+          text={value}
+          label=""
+          describes={label}
+          className="shrink-0 border-transparent px-1.5 py-1.5"
+        />
+      )}
+    </div>
+  );
+}
+
+function CommentSection({
+  eventId,
+  onCommentAdded,
+}: {
+  eventId?: string;
+  onCommentAdded?: () => void;
+}) {
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1376,7 +1055,9 @@ function CommentSection({ eventId, onCommentAdded }: { eventId?: string; onComme
       try {
         const me = await client.getMe();
         if (me?.name) userName = me.name;
-      } catch { /* fallback */ }
+      } catch {
+        /* fallback */
+      }
 
       const audit = new api.MessageAudit();
       audit.auditorName = userName;
@@ -1396,20 +1077,44 @@ function CommentSection({ eventId, onCommentAdded }: { eventId?: string; onComme
   };
 
   return (
-    <div className="mt-6 border-t pt-4">
-      <h5 className="text-base font-semibold mb-2">Add Comment</h5>
+    <section
+      aria-label="Comment"
+      className="bg-card border border-border rounded-nb-md p-4 flex flex-col gap-2.5"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <label htmlFor="event-comment" className="text-[13px] font-bold">
+          Comment
+        </label>
+        <span className="text-xs text-muted-foreground">
+          Saved to the audit trail
+        </span>
+      </div>
       <Textarea
+        id="event-comment"
         value={comment}
-        onChange={(e) => { setComment(e.target.value); setSaved(false); }}
+        onChange={(e) => {
+          setComment(e.target.value);
+          setSaved(false);
+        }}
         placeholder="Enter a comment..."
         rows={3}
       />
-      <div className="flex items-center gap-2 mt-2">
-        <Button size="sm" colorScheme="primary" onClick={submit} disabled={saving || !comment.trim()}>
+      <div className="flex items-center justify-end gap-2">
+        {saved && (
+          <span className="text-sm text-green-600 dark:text-green-400">
+            Saved
+          </span>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          colorScheme="gray"
+          onClick={submit}
+          disabled={saving || !comment.trim()}
+        >
           {saving ? "Saving..." : "Save"}
         </Button>
-        {saved && <span className="text-sm text-green-600 dark:text-green-400">Saved</span>}
       </div>
-    </div>
+    </section>
   );
 }

@@ -23,10 +23,10 @@
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
   <!--
-    NOTE: this is the repo-wide DEFAULT, not the enforced reality — many src
-    projects override EnforceCodeStyleInBuild (and some EnableNETAnalyzers) to
-    false for legacy compatibility. See AGENTS.md "Build & test" for the
-    actual gate behavior; tightening the opted-out projects is a backlog item.
+    Every project inherits these. Don't set EnableNETAnalyzers or
+    EnforceCodeStyleInBuild to false in a project; suppress the specific rule
+    instead. Analyzer warnings stay non-fatal in Release (see
+    CodeAnalysisTreatWarningsAsErrors below and AGENTS.md "Build & test").
   -->
   <PropertyGroup Label="Analyzer settings">
     <AnalysisLevel>latest-recommended</AnalysisLevel>
@@ -38,6 +38,9 @@
     Level=moderate raises NU1901-NU1904 warnings on CVSS 4.0+ advisories.
     Release builds promote those to errors via the TreatWarningsAsErrors block
     below, so vulnerable dependencies fail CI without an extra workflow step.
+    The findings are raised at restore time, so this only holds when the restore
+    itself runs in Release. CI restores with Configuration=Release before a build
+    that skips restore; a Debug restore records them as plain warnings.
   -->
   <PropertyGroup Label="NuGet audit">
     <NuGetAudit>true</NuGetAudit>
@@ -49,8 +52,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Keep compiler warnings strict while allowing analyzer cleanup to be handled incrementally. -->
     <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
-    <!-- Allow nullable warnings in legacy code without blocking the build -->
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS1574;CS8600;CS8601;CS8602;CS8603;CS8604;CS8613;CS8618;CS8619;CS8620;CS8629;CS8632;CS8765;CA1848;CA1873;CA1305</WarningsNotAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS1574;CA1848;CA1873;CA1305</WarningsNotAsErrors>
   </PropertyGroup>
   <!-- NuGet package defaults (opt-in per project via IsPackable=true) -->
   <PropertyGroup Label="NuGet defaults">
@@ -59,7 +61,12 @@
          reserved by another owner on nuget.org, so NimBus.* packages are rejected.
          Assemblies and namespaces stay NimBus.*; only the NuGet package ID changes. -->
     <PackageId>Akaule.$(MSBuildProjectName)</PackageId>
-    <Version>0.0.0</Version>
+    <!-- The version lives in the release tag (docs/versioning.md): release builds pass
+         /p:Version, which wins over everything here. NIMBUS_BUILD_VERSION is for a source
+         build that cannot pass MSBuild properties, such as the images `aspire deploy` builds
+         for the CrmErpDemo. With neither, 0.0.0 marks an unversioned local build. -->
+    <Version Condition="'$(NIMBUS_BUILD_VERSION)' != ''">$(NIMBUS_BUILD_VERSION)</Version>
+    <Version Condition="'$(NIMBUS_BUILD_VERSION)' == ''">0.0.0</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/akakaule/NimBus</PackageProjectUrl>
     <RepositoryUrl>https://github.com/akakaule/NimBus</RepositoryUrl>
@@ -77,6 +84,6 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
   <ItemGroup Label="SourceLink">
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.400" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.403" PrivateAssets="All" />
   </ItemGroup>
 </Project>

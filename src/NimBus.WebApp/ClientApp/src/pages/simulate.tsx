@@ -5,6 +5,7 @@ import NotFoundPage from "components/not-found-page";
 import Loading from "components/loading/loading";
 import { Button } from "components/ui/button";
 import { useAccess } from "hooks/use-access";
+import { SettingsLink } from "components/settings/settings-link";
 import StatusStrip from "components/simulate/status-strip";
 import ScenarioBar from "components/simulate/scenario-bar";
 import SpeedControl from "components/simulate/speed-control";
@@ -60,8 +61,10 @@ function SimulateConsole() {
 
   const putConfig = (config: api.SimulationConfig) => run(() => client.putAdminSimulationConfig(config));
 
+  // The page is site-Owner only, so its settings link needs no further check.
   const actions = (
     <div className="flex gap-2">
+      <SettingsLink to="/Settings/simulation">Simulation settings</SettingsLink>
       <Button
         disabled={busy || transitioning || !(state === "stopped" || state === "paused")}
         onClick={() => void run(() => client.postAdminSimulationStart())}

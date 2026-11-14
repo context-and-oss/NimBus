@@ -10,8 +10,8 @@ namespace NimBus.WebApp.Models;
 
 public class EndpointViewModel
 {
-    public IEndpoint Endpoint { get; set; }
-    public EndpointState EndpointState { get; set; }
-    public Dictionary<string, MessageContent> OriginatingMessageContents { get; set; }
-    public IEnumerable<MessageEntity> FailedEvents { get; set; }
+    public IEndpoint Endpoint { get; set; } = null!;
+    public EndpointState EndpointState { get; set; } = null!;
+    public Dictionary<string, MessageContent> OriginatingMessageContents { get; set; } = null!;
+    public IEnumerable<MessageEntity> FailedEvents { get; set; } = null!;
 }

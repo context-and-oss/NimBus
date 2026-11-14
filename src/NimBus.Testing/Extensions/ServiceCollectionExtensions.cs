@@ -64,11 +64,11 @@ public static class ServiceCollectionExtensions
 
             IEventContextHandler contextHandler = InboxRegistration.Decorate(
                 sp,
-                eventHandlerProvider,
+                RoutingKeyGuardContextHandler.Decorate(eventHandlerProvider, builder, sp, endpoint),
                 builder.InboxConfiguration,
                 endpoint);
 
-            IRetryPolicyProvider retryPolicyProvider = null;
+            IRetryPolicyProvider? retryPolicyProvider = null;
             if (builder.RetryPolicyConfigurator != null)
             {
                 var provider = new DefaultRetryPolicyProvider();

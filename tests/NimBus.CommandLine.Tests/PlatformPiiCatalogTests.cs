@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;

@@ -8,7 +8,7 @@ namespace NimBus.Extensions.Identity.Services;
 /// <summary>
 /// Sends emails via SMTP for account confirmation and password reset.
 /// </summary>
-public class SmtpEmailSender : IEmailSender
+public partial class SmtpEmailSender : IEmailSender
 {
     private readonly SmtpOptions _options;
     private readonly ILogger<SmtpEmailSender> _logger;
@@ -23,7 +23,7 @@ public class SmtpEmailSender : IEmailSender
     {
         if (string.IsNullOrEmpty(_options.Host))
         {
-            _logger.LogWarning("SMTP not configured. Email to {Email} with subject '{Subject}' was not sent. Configure NimBusIdentity:Smtp to enable email delivery.", email, subject);
+            LogSmtpNotConfigured(_logger, email, subject);
             return;
         }
 
@@ -45,6 +45,12 @@ public class SmtpEmailSender : IEmailSender
         message.To.Add(email);
 
         await client.SendMailAsync(message);
-        _logger.LogInformation("Email sent to {Email}: {Subject}", email, subject);
+        LogEmailSent(_logger, email, subject);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "SMTP not configured. Email to {Email} with subject '{Subject}' was not sent. Configure NimBusIdentity:Smtp to enable email delivery.")]
+    private static partial void LogSmtpNotConfigured(ILogger logger, string email, string subject);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Email sent to {Email}: {Subject}")]
+    private static partial void LogEmailSent(ILogger logger, string email, string subject);
 }

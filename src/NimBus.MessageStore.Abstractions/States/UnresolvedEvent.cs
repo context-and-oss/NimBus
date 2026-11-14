@@ -11,7 +11,7 @@ public class UnresolvedEvent
     public DateTime EnqueuedTimeUtc { get; set; }
 
     //Identifiers
-    public string EventId { get; set; }
+    public string EventId { get; set; } = null!;
     public string? SessionId { get; set; }
     public string? CorrelationId { get; set; }
 
@@ -21,7 +21,7 @@ public class UnresolvedEvent
 
     [JsonConverter(typeof(StringEnumConverter))]
     public EndpointRole EndpointRole { get; set; }
-    public string EndpointId { get; set; }
+    public string EndpointId { get; set; } = null!;
     public int? RetryCount { get; set; }
     public int? RetryLimit { get; set; }
 
@@ -41,7 +41,7 @@ public class UnresolvedEvent
     public string? EventTypeId { get; set; }
     public string? To { get; set; }
     public string? From { get; set; }
-    public MessageContent MessageContent { get; set; }
+    public MessageContent MessageContent { get; set; } = null!;
 
     // Per-message timings carried on the response message (subscriber →
     // Resolver). Nullable: original publishes don't have them, and old

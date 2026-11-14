@@ -11,6 +11,7 @@ internal interface IProcessRunner
         IReadOnlyList<string> arguments,
         string? workingDirectory,
         bool echoStandardOutput,
+        bool echoStandardError,
         CancellationToken cancellationToken);
 }
 
@@ -53,13 +54,22 @@ internal sealed class ProcessRunner : IProcessRunner
         IReadOnlyList<string> arguments,
         string? workingDirectory,
         CancellationToken cancellationToken) =>
-        RunAsync(fileName, arguments, workingDirectory, echoStandardOutput: true, cancellationToken);
+        RunAsync(fileName, arguments, workingDirectory, echoStandardOutput: true, echoStandardError: true, cancellationToken);
+
+    public Task<ProcessResult> RunAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        bool echoStandardOutput,
+        CancellationToken cancellationToken) =>
+        RunAsync(fileName, arguments, workingDirectory, echoStandardOutput, echoStandardError: true, cancellationToken);
 
     public async Task<ProcessResult> RunAsync(
         string fileName,
         IReadOnlyList<string> arguments,
         string? workingDirectory,
         bool echoStandardOutput,
+        bool echoStandardError,
         CancellationToken cancellationToken)
     {
         var startInfo = new ProcessStartInfo
@@ -111,7 +121,11 @@ internal sealed class ProcessRunner : IProcessRunner
         {
             if (args.Data is not null)
             {
-                CliOutput.WriteError(args.Data);
+                if (echoStandardError)
+                {
+                    CliOutput.WriteError(args.Data);
+                }
+
                 error.AppendLine(args.Data);
             }
         };

@@ -10,7 +10,7 @@ namespace NimBus.WebApp;
 
 public class EnumMemberModelBinderProvider : IModelBinderProvider
 {
-    public IModelBinder GetBinder(ModelBinderProviderContext context)
+    public IModelBinder? GetBinder(ModelBinderProviderContext context)
     {
         if (context.Metadata.ModelType.IsEnum &&
             context.Metadata.ModelType.GetFields().Any(f => f.GetCustomAttribute<EnumMemberAttribute>() != null))
@@ -37,7 +37,7 @@ public class EnumMemberModelBinder : IModelBinder
         _valueMap = new Dictionary<string, object>(StringComparer.Ordinal);
         foreach (var field in enumType.GetFields(BindingFlags.Public | BindingFlags.Static))
         {
-            var enumValue = field.GetValue(null);
+            var enumValue = field.GetValue(null)!;
             var attr = field.GetCustomAttribute<EnumMemberAttribute>();
             if (attr?.Value != null)
                 _valueMap.TryAdd(attr.Value, enumValue);

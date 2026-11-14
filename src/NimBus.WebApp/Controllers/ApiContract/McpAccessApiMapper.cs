@@ -22,6 +22,11 @@ internal static class McpAccessApiMapper
             Skip = s.Capabilities.Skip,
         },
         AllowWorkloads = s.AllowWorkloads,
+        AllowWorkloadClassification = s.AllowWorkloadClassification,
+        AllowWorkloadResubmit = s.AllowWorkloadResubmit,
+        AllowWorkloadAnnotation = s.AllowWorkloadAnnotation,
+        WorkloadResubmitsPerDay = s.WorkloadResubmitsPerDay,
+        WorkloadResubmitsPerMessage = s.WorkloadResubmitsPerMessage,
         People = new Api.McpPeople
         {
             Mode = s.People.Mode == Store.McpPeopleMode.Listed ? Api.McpPeopleMode.Listed : Api.McpPeopleMode.All,
@@ -64,6 +69,11 @@ internal static class McpAccessApiMapper
                 Skip = a.Capabilities.Skip,
             },
         AllowWorkloads = a.AllowWorkloads,
+        AllowWorkloadClassification = a.AllowWorkloadClassification,
+        AllowWorkloadResubmit = a.AllowWorkloadResubmit,
+        AllowWorkloadAnnotation = a.AllowWorkloadAnnotation,
+        WorkloadResubmitsPerDay = a.WorkloadResubmitsPerDay ?? Store.McpAccessSettings.DefaultWorkloadResubmitsPerDay,
+        WorkloadResubmitsPerMessage = a.WorkloadResubmitsPerMessage ?? Store.McpAccessSettings.DefaultWorkloadResubmitsPerMessage,
         People = new Store.McpPeopleSettings
         {
             Mode = a.People?.Mode == Api.McpPeopleMode.Listed ? Store.McpPeopleMode.Listed : Store.McpPeopleMode.All,

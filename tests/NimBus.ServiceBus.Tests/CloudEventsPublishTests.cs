@@ -56,7 +56,7 @@ public class CloudEventsPublishTests
         // AC4: content-type is the data content type; body is the raw domain event, NOT the NimBus envelope.
         Assert.AreEqual("application/json", sent.ContentType);
         var body = Encoding.UTF8.GetString(sent.Body.ToArray());
-        StringAssert.Contains(body, "\"Payload\":\"hello\"");
+        StringAssert.Contains(body, "\"Payload\":\"hello\"", StringComparison.Ordinal);
         Assert.IsFalse(body.Contains("EventContent", StringComparison.Ordinal), "Binary body must be the domain event, not the MessageContent envelope.");
 
         // AC4: native NimBus routing metadata is still stamped so routing/sessions/resolver keep working.
@@ -126,16 +126,16 @@ public class CloudEventsPublishTests
         Assert.AreEqual("application/cloudevents+json", sent.ContentType);
 
         var envelope = JObject.Parse(Encoding.UTF8.GetString(sent.Body.ToArray()));
-        Assert.AreEqual("1.0", (string)envelope["specversion"]);
-        Assert.AreEqual("msg-1", (string)envelope["id"]);
-        Assert.AreEqual("urn:test:billing", (string)envelope["source"]);
-        Assert.AreEqual("TestEvent", (string)envelope["type"]);
-        Assert.AreEqual("application/json", (string)envelope["datacontenttype"]);
+        Assert.AreEqual("1.0", (string?)envelope["specversion"]);
+        Assert.AreEqual("msg-1", (string?)envelope["id"]);
+        Assert.AreEqual("urn:test:billing", (string?)envelope["source"]);
+        Assert.AreEqual("TestEvent", (string?)envelope["type"]);
+        Assert.AreEqual("application/json", (string?)envelope["datacontenttype"]);
         // AC5: data equals the domain event (embedded JSON, not a string).
-        Assert.AreEqual("hello", (string)envelope["data"]["Payload"]);
+        Assert.AreEqual("hello", (string?)envelope["data"]!["Payload"]);
         // AC6: NimBus identity present as extension attributes.
-        Assert.AreEqual("corr-1", (string)envelope["correlationid"]);
-        Assert.AreEqual("sess-1", (string)envelope["sessionid"]);
+        Assert.AreEqual("corr-1", (string?)envelope["correlationid"]);
+        Assert.AreEqual("sess-1", (string?)envelope["sessionid"]);
     }
 
     [TestMethod]
@@ -182,7 +182,7 @@ public class CloudEventsPublishTests
 
         var sent = recorder.SentMessages.Single();
         var body = Encoding.UTF8.GetString(sent.Body.ToArray());
-        StringAssert.Contains(body, "EventContent");
+        StringAssert.Contains(body, "EventContent", StringComparison.Ordinal);
         Assert.IsFalse(sent.ApplicationProperties.Keys.Any(k => k.StartsWith("cloudEvents:", StringComparison.Ordinal)),
             "Native publish must not stamp any cloudEvents:* application properties.");
     }

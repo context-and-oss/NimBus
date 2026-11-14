@@ -15,7 +15,7 @@ public class SessionKeyAttributeTests
     private class OrderWithAttribute : Event
     {
         public Guid OrderId { get; set; }
-        public string Product { get; set; }
+        public string Product { get; set; } = null!;
     }
 
     private sealed class OrderWithOverride : Event
@@ -38,7 +38,7 @@ public class SessionKeyAttributeTests
     [SessionKey(nameof(NullableField))]
     private sealed class OrderWithNullableField : Event
     {
-        public string NullableField { get; set; }
+        public string? NullableField { get; set; }
     }
 
     [SessionKey(nameof(CustomerId))]

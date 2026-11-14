@@ -118,7 +118,7 @@ public static class MessageContextStub
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
-        public HandoffMetadata HandoffMetadata { get; set; }
+        public HandoffMetadata? HandoffMetadata { get; set; }
         public ActivityContext ParentTraceContext { get; set; }
 
         public Task Complete(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -129,7 +129,7 @@ public static class MessageContextStub
         public Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult(string.Empty);
+        public Task<string?> GetBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult<string?>(string.Empty);
         public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task IncrementDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DecrementDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;

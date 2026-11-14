@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
 import { Select } from "components/ui/select";
@@ -9,6 +10,8 @@ import { PanelFooter, PanelSection, useInPanel, usePanelDirty, usePanelReviewing
 
 type Settings = {
   enabled: boolean; model: string; includeEventPayload: boolean; includeRecentFailureHistory: boolean;
+  /** Spec 044 Phase 3: agents may read the scrubbed stack trace. Optional: older servers omit it. */
+  includeStackTrace?: boolean;
   maximumHistoryItems: number; additionalRedactedKeys: string[]; allowedEndpoints: string[];
   timeoutSeconds: number; minimumCategoryConfidence: number; retryLikely: number; changeRequired: number;
 };
@@ -21,7 +24,7 @@ type SettingsState = {
   savedApiKey: "none" | "configured" | "unreadable";
   csrfToken: string;
 };
-const url = "/api/admin/failure-intelligence";
+const url = "/api/v1/admin/failure-intelligence";
 const names = (value: string) => value.split(",").map(item => item.trim()).filter(Boolean);
 const FORM_ID = "failure-intelligence-settings";
 /** Number of edited fields; list fields and the API key count once each. */
@@ -133,11 +136,11 @@ export default function FailureIntelligenceSettings() {
     if (apiKey.trim() && /\s/.test(apiKey.trim())) { setError("The API key must be a single token without spaces."); return; }
     setReview(true); setError(undefined);
   }}>
-    <header>{!inPanel && <h2 className="text-xl font-semibold">Failure intelligence</h2>}<p className="text-muted-foreground">On-demand advisory analysis. You control the provider, evidence and endpoint scope.</p>
+    <header>{!inPanel && <h2 className="text-xl font-semibold">Failure intelligence</h2>}<p className="text-muted-foreground">Advisory failure classification. Agents record classifications over MCP; you control the evidence they see and the endpoint scope.</p>
       <p className="mt-2 text-sm">Active on this instance: {state.active.enabled ? "enabled" : "disabled"} · payload {state.active.includeEventPayload ? "included" : "excluded"} · API key {credentialText[state.credentialSource]}</p>
       {state.restartRequired && <p role="status" className="mt-2 text-status-warning">Saved settings differ from this instance. Restart all WebApp instances to apply.</p>}
       {state.startupLoadFailed && <p role="alert">Startup settings could not be loaded. Classification is disabled until storage is restored and the WebApp restarts.</p>}
-      {!state.credentialConfigured && state.savedApiKey !== "configured" && <p role="status">Provider key is missing. Save one below, or configure it through deployment, before enabling analysis.</p>}
+      {!state.credentialConfigured && state.savedApiKey !== "configured" && <p role="status">Provider key is missing. Save one below, or configure it through deployment, before enabling analysis by the deprecated provider. Agents can record classifications over MCP without a key.</p>}
     </header>
     {error && <p role="alert" className="text-status-danger">{error}</p>}
     {message && <p role="status" className="text-status-success">{message}</p>}
@@ -145,8 +148,12 @@ export default function FailureIntelligenceSettings() {
       <fieldset disabled={saving || loading} className="min-w-0 space-y-5">
         <PanelSection tab="provider">
           <Card><CardHeader><CardTitle>01 · Activation &amp; provider</CardTitle></CardHeader><CardContent className="space-y-4">
-            <SettingToggle label="Enable failure intelligence" description="Contributors can request analysis. Nothing runs automatically." checked={draft.enabled} onChange={value => edit("enabled", value)} />
-            <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">Provider<Input value="TypeSafe" readOnly /></label>
+            <SettingToggle label="Enable failure intelligence" description="Agents with the classify permission record classifications over MCP; Contributors can request analysis by the provider. Nothing runs automatically." checked={draft.enabled} onChange={value => edit("enabled", value)} />
+            <p role="note" className="rounded-md border border-status-warning/40 bg-status-warning/10 p-3 text-sm">
+              <Badge variant="warning" className="mr-2">Deprecated</Badge>
+              The built-in provider and its model, API key and timeout are removed in NimBus 5.0.0. Agents record classifications over MCP with nimbus_record_classification and need no provider key.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">Provider<Input value="TypeSafe (deprecated)" readOnly /></label>
               <label className="text-sm">Model<Input value={draft.model} required maxLength={100} pattern="[a-zA-Z0-9_.\-]+" onChange={event => edit("model", event.target.value)} /></label></div>
             <label className="block text-sm">{state.savedApiKey === "none" ? "API key" : "New API key"}
               <Input type="password" autoComplete="new-password" spellCheck={false} maxLength={512} value={apiKey} disabled={clearApiKey}
@@ -160,9 +167,11 @@ export default function FailureIntelligenceSettings() {
           </CardContent></Card>
         </PanelSection>
         <PanelSection tab="evidence">
-          <Card><CardHeader><CardTitle>02 · Evidence sent to Jev</CardTitle></CardHeader><CardContent className="space-y-4">
-            <SettingToggle label="Include redacted event payload" description="Data.IncludeEventPayload — business context from this failure occurrence." checked={draft.includeEventPayload} onChange={value => edit("includeEventPayload", value)} />
-            {draft.includeEventPayload && <p className="rounded-md border border-status-warning/40 bg-status-warning/10 p-3 text-sm">Event data will leave NimBus. PII annotations and secret-key rules are applied first, but unmarked business data may remain. Confirm your organization’s data-sharing policy.</p>}
+          <Card><CardHeader><CardTitle>02 · Failure evidence</CardTitle></CardHeader><CardContent className="space-y-4">
+            <SettingToggle label="Agents may see redacted payloads" description="Data.IncludeEventPayload — the evidence agents read (nimbus_get_failure_evidence), and the deprecated provider receives, carries the event payload with every value marked sensitive replaced." checked={draft.includeEventPayload} onChange={value => edit("includeEventPayload", value)} />
+            {draft.includeEventPayload && <p className="rounded-md border border-status-warning/40 bg-status-warning/10 p-3 text-sm">Event data will leave NimBus. Only values marked sensitive in event metadata and the secret-key rules are redacted; unmarked business data remains and can reach agents, their models and the issues they write. Confirm your organization’s data-sharing policy.</p>}
+            <SettingToggle label="Agents may see stack traces" description="Data.IncludeStackTrace — nimbus_get_failure_evidence with includeStackTrace returns the failing handler's frames (file paths cut to the file name, sensitive values replaced), so an agent can locate an adapter defect. Only subscribers that set IncludeStackTraceInErrorResponses store a trace. Never sent to the deprecated provider." checked={Boolean(draft.includeStackTrace)} onChange={value => edit("includeStackTrace", value)} />
+            {draft.includeStackTrace && <p className="rounded-md border border-status-warning/40 bg-status-warning/10 p-3 text-sm">Stack traces name the adapter's classes, methods and source files. Agents may quote them in issues in the adapter's repository.</p>}
             <SettingToggle label="Include recent failure history" description="Earlier failures for the same event, endpoint and session." checked={draft.includeRecentFailureHistory} onChange={value => edit("includeRecentFailureHistory", value)} />
             <label className="block text-sm">Maximum history items<Input type="number" min={0} max={5} required disabled={!draft.includeRecentFailureHistory} value={draft.maximumHistoryItems} onChange={event => edit("maximumHistoryItems", Number(event.target.value))} /></label>
             <label className="block text-sm">Additional redacted keys<Input value={redactedKeys} maxLength={20100} placeholder="TaxId, AccountId" onChange={event => { setRedactedKeys(event.target.value); setReview(false); }} /><span className="text-xs text-muted-foreground">Comma-separated field names. Unverifiable payloads are omitted.</span></label>
@@ -174,7 +183,7 @@ export default function FailureIntelligenceSettings() {
             {selected && <label className="block text-sm">Endpoint IDs<Input value={endpoints} required maxLength={20100} onChange={event => { setEndpoints(event.target.value); setReview(false); }} placeholder="ErpEndpoint, CrmEndpoint" /></label>}
             <p className="text-xs text-muted-foreground">Existing permissions still apply. Contributors analyze; Readers view saved results. Restricting analysis does not remove history access.</p>
             <details><summary className="cursor-pointer text-sm font-semibold">Advanced limits</summary><div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm">Provider timeout (seconds)<Input type="number" required min={1} max={20} step={1} value={draft.timeoutSeconds} onChange={event => edit("timeoutSeconds", Number(event.target.value))} /></label>
+              <label className="text-sm">Provider timeout (seconds, deprecated)<Input type="number" required min={1} max={20} step={1} value={draft.timeoutSeconds} onChange={event => edit("timeoutSeconds", Number(event.target.value))} /></label>
             </div></details>
           </CardContent></Card>
         </PanelSection>
@@ -189,7 +198,7 @@ export default function FailureIntelligenceSettings() {
     </div>
     {review && <section aria-label="Review settings" className="space-y-4 rounded-md border border-primary/40 p-5">
       <h3 className="font-semibold">Review changes</h3><p className="text-sm">{draft.enabled ? "Enable" : "Disable"} analysis · {draft.model} · payload {draft.includeEventPayload ? "included after redaction" : "excluded"} · {selected ? endpoints : "all authorized endpoints"} · API key {keyAction}.</p>
-      {draft.includeEventPayload && <label className="flex gap-2 text-sm"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />I authorize sending redacted event payloads to TypeSafe; unmarked business data may remain.</label>}
+      {draft.includeEventPayload && <label className="flex gap-2 text-sm"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />I authorize sharing redacted event payloads with agents and the deprecated provider; unmarked business data may remain.</label>}
       <div className="flex gap-2"><Button type="button" variant="outline" disabled={saving || loading} onClick={() => setReview(false)}>Back</Button><Button type="button" disabled={saving || loading || (draft.includeEventPayload && !consent)} onClick={() => void save()}>{saving ? "Saving…" : "Save settings"}</Button></div>
     </section>}
     {inPanel ? <PanelFooter>{actions}</PanelFooter>

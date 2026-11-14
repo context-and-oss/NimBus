@@ -8,6 +8,6 @@ namespace NimBus.MessageStore.States;
 
 public class SearchResponse
 {
-    public IEnumerable<UnresolvedEvent> Events { get; set; }
-    public string ContinuationToken { get; set; }
+    public IEnumerable<UnresolvedEvent> Events { get; set; } = null!;
+    public string? ContinuationToken { get; set; }
 }

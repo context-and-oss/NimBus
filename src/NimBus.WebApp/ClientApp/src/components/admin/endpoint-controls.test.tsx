@@ -87,28 +87,17 @@ describe("EndpointControlsCard", () => {
       <EndpointControlsCard
         endpoints={[...endpoints, { value: "ep-2", label: "ep-2" }]}
         counts={[
-          { endpointId: "ep-1", failedCount: 5, deadletterCount: 2, pendingCount: 4, unsupportedCount: 1 } as never,
+          { endpointId: "ep-1", failedCount: 6, deadletterCount: 2, pendingCount: 3, unsupportedCount: 1 } as never,
         ]}
       />,
     );
     await screen.findByRole("switch", { name: "Receive ep-1" });
 
     const cells = within(row("ep-1")).getAllByRole("cell").map((c) => c.textContent);
-    // failedCount already includes dead-lettered; pending leaves unsupported out.
-    expect(cells.slice(3, 6)).toEqual(["5", "2", "3"]);
+    // failedCount already includes dead-lettered and unsupported; pendingCount is
+    // pending only, so each count is shown as the API sends it.
+    expect(cells.slice(3, 6)).toEqual(["6", "2", "3"]);
     expect(within(row("ep-2")).getAllByRole("cell").slice(3, 6).map((c) => c.textContent)).toEqual(["—", "—", "—"]);
-  });
-
-  it("never shows a negative pending count", async () => {
-    render(
-      <EndpointControlsCard
-        endpoints={endpoints}
-        counts={[{ endpointId: "ep-1", pendingCount: 0, unsupportedCount: 1 } as never]}
-      />,
-    );
-    await screen.findByRole("switch", { name: "Receive ep-1" });
-
-    expect(within(row("ep-1")).getAllByRole("cell")[5].textContent).toBe("0");
   });
 
   it("opens an operation for an endpoint from its row", async () => {

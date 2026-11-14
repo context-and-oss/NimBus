@@ -18,7 +18,7 @@ namespace NimBus.Core.Inbox;
 /// the Resolver response and settles the broker message. Inbox recording must complete, or fail,
 /// before both operations so a record failure leaves the message available for retry.
 /// </remarks>
-public sealed class InboxMiddleware : IEventContextHandler
+public sealed partial class InboxMiddleware : IEventContextHandler
 {
     /// <summary>The maximum message-id length supported by inbox providers.</summary>
     public const int MaximumMessageIdLength = InboxDuplicateDetector.MaximumMessageIdLength;
@@ -95,12 +95,7 @@ public sealed class InboxMiddleware : IEventContextHandler
             // block still happen downstream, and both must be recreatable when a crash forces
             // redelivery. Recording here would turn that redelivery into a duplicate skip that
             // never re-establishes the pending state, so only plain successes are recorded.
-            _logger.LogInformation(
-                "Inbox record skipped for handler outcome {HandlerOutcome}. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}, MessageId:{MessageId}",
-                context.HandlerOutcome,
-                identity.Value.EndpointId,
-                context.EventTypeId,
-                identity.Value.MessageId);
+            LogInboxRecordSkippedForHandlerOutcome(_logger, context.HandlerOutcome, identity.Value.EndpointId, context.EventTypeId, identity.Value.MessageId);
             return;
         }
 
@@ -163,12 +158,7 @@ public sealed class InboxMiddleware : IEventContextHandler
         }
         catch (Exception exception)
         {
-            _logger.LogWarning(
-                "Could not read the delivery a resubmission resolves ({ExceptionType}); only its own MessageId is recorded. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}, MessageId:{MessageId}",
-                exception.GetType().Name,
-                context.GetEndpointIdOrDefault(),
-                context.EventTypeId,
-                messageId);
+            LogCouldNotReadTheDelivery(_logger, exception.GetType().Name, context.GetEndpointIdOrDefault(), context.EventTypeId, messageId);
             return null;
         }
     }
@@ -178,4 +168,10 @@ public sealed class InboxMiddleware : IEventContextHandler
         try { return context.MessageType == MessageType.ResubmissionRequest; }
         catch (InvalidMessageException) { return false; }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Inbox record skipped for handler outcome {HandlerOutcome}. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}, MessageId:{MessageId}")]
+    private static partial void LogInboxRecordSkippedForHandlerOutcome(ILogger logger, HandlerOutcome handlerOutcome, string endpointId, string eventTypeId, string messageId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not read the delivery a resubmission resolves ({ExceptionType}); only its own MessageId is recorded. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}, MessageId:{MessageId}")]
+    private static partial void LogCouldNotReadTheDelivery(ILogger logger, string exceptionType, string? endpointId, string eventTypeId, string messageId);
 }

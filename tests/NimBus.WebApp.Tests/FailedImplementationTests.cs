@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -120,7 +121,7 @@ public sealed class FailedImplementationTests
     [DataRow(Period._30d, 1440, 30)]
     public void ResolveWindow_presets_pick_the_bucket_and_end_after_now(Period period, int bucketMinutes, int bars)
     {
-        var (from, to, bucket) = FailedImplementation.ResolveWindow(period, null, null, Now)!.Value;
+        var (from, to, bucket) = FailedImplementation.ResolveWindow(period, null, null, Now)!;
 
         Assert.AreEqual(TimeSpan.FromMinutes(bucketMinutes), bucket);
         Assert.AreEqual(bars, (int)((to - from).Ticks / bucket.Ticks));
@@ -136,7 +137,7 @@ public sealed class FailedImplementationTests
     {
         var from = new DateTime(2026, 9, 1, 8, 3, 0, DateTimeKind.Utc);
 
-        var (alignedFrom, to, bucket) = FailedImplementation.ResolveWindow(Period._1d, from, from.AddHours(hours), Now)!.Value;
+        var (alignedFrom, to, bucket) = FailedImplementation.ResolveWindow(Period._1d, from, from.AddHours(hours), Now)!;
 
         Assert.AreEqual(TimeSpan.FromMinutes(bucketMinutes), bucket);
         Assert.IsTrue(alignedFrom <= from && to >= from.AddHours(hours), "The aligned window covers the requested one.");
@@ -180,7 +181,7 @@ public sealed class FailedImplementationTests
             },
         };
 
-        var histogram = FailedImplementation.BuildHistogram(rows, from, from.AddHours(4), TimeSpan.FromHours(1));
+        var histogram = FailedImplementation.BuildHistogram(rows, new HistogramWindow(Enumerable.Range(0, 5).Select(h => from.AddHours(h)).ToList(), TimeSpan.FromHours(1)));
 
         Assert.AreEqual(60, histogram.BucketMinutes);
         CollectionAssert.AreEqual(
@@ -205,6 +206,120 @@ public sealed class FailedImplementationTests
         Assert.AreEqual(2, histogram.Totals.Failed);
         Assert.AreEqual(1, histogram.Totals.DeadLettered);
         Assert.AreEqual(0, histogram.Totals.Unsupported, "Billing is not readable.");
+    }
+
+    private static readonly TimeZoneInfo Berlin = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
+
+    // Thursday 5 November 2026, 13:00 in Berlin (CET, UTC+1). Summer time ended on 25 October.
+    private static readonly DateTime NovemberNow = new(2026, 11, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    private static DateTime InBerlin(DateTime utc) => TimeZoneInfo.ConvertTimeFromUtc(utc, Berlin);
+
+    [TestMethod]
+    public void ResolveWindow_starts_days_at_local_midnight_across_a_daylight_saving_change()
+    {
+        var window = FailedImplementation.ResolveWindow(Period._30d, null, null, NovemberNow, Berlin)!;
+
+        Assert.AreEqual(new DateTime(2026, 10, 6, 22, 0, 0, DateTimeKind.Utc), window.From, "7 October, 00:00 CEST.");
+        Assert.AreEqual(new DateTime(2026, 11, 5, 23, 0, 0, DateTimeKind.Utc), window.To, "6 November, 00:00 CET.");
+        Assert.AreEqual(31, window.Boundaries.Count, "30 bars.");
+        Assert.IsTrue(window.Boundaries.All(b => InBerlin(b).TimeOfDay == TimeSpan.Zero), "Every bar starts at local midnight.");
+        var lengths = window.Boundaries.Zip(window.Boundaries.Skip(1), (a, b) => b - a).ToList();
+        Assert.AreEqual(1, lengths.Count(l => l == TimeSpan.FromHours(25)), "25 October has 25 hours.");
+        Assert.AreEqual(29, lengths.Count(l => l == TimeSpan.FromDays(1)));
+    }
+
+    [TestMethod]
+    public void ResolveWindow_aligns_six_hour_bars_to_local_hours()
+    {
+        var window = FailedImplementation.ResolveWindow(Period._7d, null, null, NovemberNow, Berlin)!;
+
+        Assert.AreEqual(new DateTime(2026, 11, 5, 17, 0, 0, DateTimeKind.Utc), window.To, "The bar holding 13:00 ends at 18:00 CET.");
+        Assert.AreEqual(29, window.Boundaries.Count, "28 bars.");
+        CollectionAssert.AreEquivalent(
+            new[] { 0, 6, 12, 18 },
+            window.Boundaries.Select(b => InBerlin(b).Hour).Distinct().ToList());
+    }
+
+    [TestMethod]
+    public void ResolveWindow_widens_a_custom_range_to_local_buckets()
+    {
+        // 23:30 CET on 28 October; a 7-day range gets 3-hour bars.
+        var from = new DateTime(2026, 10, 28, 22, 30, 0, DateTimeKind.Utc);
+
+        var window = FailedImplementation.ResolveWindow(Period._1d, from, from.AddDays(7), NovemberNow, Berlin)!;
+
+        Assert.AreEqual(TimeSpan.FromHours(3), window.Bucket);
+        Assert.AreEqual(new DateTime(2026, 10, 28, 20, 0, 0, DateTimeKind.Utc), window.From, "21:00 CET, not 21:00 UTC.");
+        Assert.AreEqual(new DateTime(2026, 11, 4, 23, 0, 0, DateTimeKind.Utc), window.To, "00:00 CET on 5 November.");
+    }
+
+    [TestMethod]
+    [DataRow("2026-07-01T12:00:00", "2026-07-01T10:00:00Z")]
+    [DataRow("2026-03-29T02:30:00", "2026-03-29T01:30:00Z")] // Skipped by the spring change: moves forward.
+    [DataRow("2026-10-25T02:30:00", "2026-10-25T00:30:00Z")] // Repeated by the autumn change: the earlier one.
+    public void ToUtc_resolves_local_times_like_a_javascript_date(string local, string expectedUtc)
+    {
+        var wall = DateTime.Parse(local, CultureInfo.InvariantCulture);
+        var expected = DateTime.Parse(expectedUtc, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
+
+        Assert.AreEqual(expected, FailedImplementation.ToUtc(wall, Berlin));
+    }
+
+    [TestMethod]
+    public void BuildHistogram_counts_a_failure_just_after_local_midnight_on_its_local_day()
+    {
+        var window = FailedImplementation.ResolveWindow(Period._30d, null, null, NovemberNow, Berlin)!;
+        var rows = new FailedEventHistogram
+        {
+            Rows = new[]
+            {
+                // 23:45 CET on 4 November.
+                new FailedEventHistogramRow { BucketStartUtc = new DateTime(2026, 11, 4, 22, 45, 0, DateTimeKind.Utc), EndpointId = "Erp", Status = "Failed", Count = 2 },
+                // 00:30 CET on 5 November: still 4 November in UTC.
+                new FailedEventHistogramRow { BucketStartUtc = new DateTime(2026, 11, 4, 23, 30, 0, DateTimeKind.Utc), EndpointId = "Erp", Status = "Failed", Count = 1 },
+            },
+        };
+
+        var histogram = FailedImplementation.BuildHistogram(rows, window);
+
+        Assert.AreEqual(1440, histogram.BucketMinutes);
+        Assert.AreEqual(30, histogram.Buckets.Count);
+        Assert.AreEqual(2, histogram.Buckets.Single(b => b.Start == new DateTime(2026, 11, 3, 23, 0, 0, DateTimeKind.Utc)).Failed, "4 November.");
+        Assert.AreEqual(1, histogram.Buckets.Single(b => b.Start == new DateTime(2026, 11, 4, 23, 0, 0, DateTimeKind.Utc)).Failed, "5 November.");
+        Assert.AreEqual(3, histogram.Totals.Failed);
+    }
+
+    [TestMethod]
+    public async Task Histogram_follows_the_requested_time_zone()
+    {
+        var harness = await CreateHarness(readable: new[] { "Crm", "Erp" });
+
+        var histogram = (await harness.Controller.PostFailedHistogramAsync(new FailedHistogramRequest
+        {
+            Period = Period._30d,
+            TimeZone = "Europe/Berlin",
+        })).Value!;
+
+        Assert.AreEqual(TimeSpan.Zero, InBerlin(histogram.From).TimeOfDay);
+        Assert.AreEqual(TimeSpan.Zero, InBerlin(histogram.To).TimeOfDay);
+        Assert.AreEqual(2, histogram.Totals.Failed);
+        Assert.AreEqual(1, histogram.Totals.DeadLettered);
+    }
+
+    [TestMethod]
+    public async Task Histogram_with_an_unknown_time_zone_uses_utc()
+    {
+        var harness = await CreateHarness(readable: new[] { "Crm" });
+
+        var histogram = (await harness.Controller.PostFailedHistogramAsync(new FailedHistogramRequest
+        {
+            Period = Period._30d,
+            TimeZone = "Not/AZone",
+        })).Value!;
+
+        Assert.AreEqual(TimeSpan.Zero, histogram.From.TimeOfDay);
+        Assert.AreEqual(2, histogram.Totals.Failed);
     }
 
     [TestMethod]

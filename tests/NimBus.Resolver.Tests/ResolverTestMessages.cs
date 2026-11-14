@@ -54,13 +54,32 @@ internal static class ResolverTestMessages
 
 internal sealed class FakeMessageContext : IMessageContext, IMessageDeliveryContext
 {
-    public string EventId { get; set; } = string.Empty;
+    private string _eventId = string.Empty;
+    private MessageContent _messageContent = new();
+
+    // Mirrors the Service Bus MessageContext, which throws when the EventId property is absent.
+    public bool EventIdIsMissing { get; set; }
+
+    // Mirrors the Service Bus MessageContext, which throws when the body is empty, not JSON,
+    // a non-object JSON value or literal null.
+    public bool MessageContentIsMissing { get; set; }
+
+    public string EventId
+    {
+        get => EventIdIsMissing ? throw new InvalidMessageException("Message.UserProperties[EventId] is not defined.") : _eventId;
+        set => _eventId = value;
+    }
+
     public string To { get; set; } = string.Empty;
     public string SessionId { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public string MessageId { get; set; } = string.Empty;
     public MessageType MessageType { get; set; }
-    public MessageContent MessageContent { get; set; } = new();
+    public MessageContent MessageContent
+    {
+        get => MessageContentIsMissing ? throw new InvalidMessageException("Message body does not contain MessageContent.") : _messageContent;
+        set => _messageContent = value;
+    }
     public string ParentMessageId { get; set; } = string.Empty;
     public string OriginatingMessageId { get; set; } = string.Empty;
     public int? RetryCount { get; set; }
@@ -82,8 +101,8 @@ internal sealed class FakeMessageContext : IMessageContext, IMessageDeliveryCont
 
     public string DeadLetterReason { get; set; } = null!;
     public string DeadLetterErrorDescription { get; set; } = null!;
-    public string HandoffReason { get; set; }
-    public string ExternalJobId { get; set; }
+    public string? HandoffReason { get; set; }
+    public string? ExternalJobId { get; set; }
     public DateTime? ExpectedBy { get; set; }
     public bool IsDeferred { get; set; }
     public int ThrottleRetryCount { get; set; }
@@ -92,11 +111,11 @@ internal sealed class FakeMessageContext : IMessageContext, IMessageDeliveryCont
     public long? ProcessingTimeMs { get; set; }
     public DateTime? HandlerStartedAtUtc { get; set; }
     public HandlerOutcome HandlerOutcome { get; set; }
-    public HandoffMetadata HandoffMetadata { get; set; }
-    public string CloudEventId { get; set; }
-    public string CloudEventSource { get; set; }
-    public string CloudEventType { get; set; }
-    public string CloudEventSubject { get; set; }
+    public HandoffMetadata? HandoffMetadata { get; set; }
+    public string? CloudEventId { get; set; }
+    public string? CloudEventSource { get; set; }
+    public string? CloudEventType { get; set; }
+    public string? CloudEventSubject { get; set; }
 
     public int CompletedCalls { get; private set; }
     public int AbandonCalls { get; private set; }
@@ -134,7 +153,7 @@ internal sealed class FakeMessageContext : IMessageContext, IMessageDeliveryCont
     public Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default) => Task.FromResult(false);
     public Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default) => Task.FromResult(false);
     public Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult(false);
-    public Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult(string.Empty);
+    public Task<string?> GetBlockedByEventId(CancellationToken cancellationToken = default) => Task.FromResult<string?>(string.Empty);
     public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default) => Task.FromResult(0);
     public Task IncrementDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task DecrementDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;

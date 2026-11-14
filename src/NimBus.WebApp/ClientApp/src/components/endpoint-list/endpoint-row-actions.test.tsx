@@ -8,7 +8,6 @@ import EndpointRowActions from "./endpoint-row-actions";
 
 const apiMocks = vi.hoisted(() => ({
   postEndpointSubscriptionstatus: vi.fn(),
-  postEndpointPurge: vi.fn(),
   getEndpointAccessControl: vi.fn(),
 }));
 
@@ -45,10 +44,6 @@ const asOwnerOfAlice = () => {
   };
 };
 
-const asSiteOwner = () => {
-  access.current = { siteRole: "Owner", endpointRoles: [] };
-};
-
 const asReader = () => {
   access.current = {
     siteRole: "Reader",
@@ -58,7 +53,7 @@ const asReader = () => {
 
 const refreshEndpoint = vi.fn();
 
-const renderActions = (subscriptionStatus = "active", env = "dev") =>
+const renderActions = (subscriptionStatus = "active") =>
   render(
     <MemoryRouter>
       <ToastProvider>
@@ -69,7 +64,6 @@ const renderActions = (subscriptionStatus = "active", env = "dev") =>
           deferred={0}
           pending={7}
           storageAvailable
-          env={env}
           refreshEndpoint={refreshEndpoint}
           startLoading={vi.fn()}
           stopLoading={vi.fn()}
@@ -87,7 +81,6 @@ describe("EndpointRowActions", () => {
   beforeEach(() => {
     asOwnerOfAlice();
     apiMocks.postEndpointSubscriptionstatus.mockResolvedValue(undefined);
-    apiMocks.postEndpointPurge.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -101,7 +94,9 @@ describe("EndpointRowActions", () => {
 
     expect(screen.getByRole("menuitem", { name: /configure alerts/i })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /manage access/i })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: /purge data/i })).toBeTruthy();
+    // Purging moved to Operations → Delete all events, which also rebuilds the
+    // endpoint's subscriptions; the row no longer offers a storage-only purge.
+    expect(screen.queryByRole("menuitem", { name: /purge/i })).toBeNull();
     expect(
       screen.getByRole("switch", { name: /disable alice/i }).hasAttribute("disabled"),
     ).toBe(false);
@@ -138,7 +133,6 @@ describe("EndpointRowActions", () => {
             deferred={0}
             pending={0}
             storageAvailable
-            env="dev"
             refreshEndpoint={() => Promise.reject(new Error("boom"))}
             startLoading={vi.fn()}
             stopLoading={stopLoading}
@@ -172,24 +166,6 @@ describe("EndpointRowActions", () => {
     expect(
       screen.getByRole("switch", { name: /disable alice/i }).hasAttribute("disabled"),
     ).toBe(true);
-  });
-
-  it("keeps purge out of the menu in a protected environment", async () => {
-    renderActions("active", "prod");
-    await openMenu();
-
-    expect(screen.queryByRole("menuitem", { name: /purge data/i })).toBeNull();
-  });
-
-  it("still offers purge in a protected environment to a site owner", async () => {
-    asSiteOwner();
-    renderActions("active", "prod");
-    await openMenu();
-
-    // The server lets a site Owner purge anywhere, so the item stays — without
-    // the "dev only" hint, which would be a lie here.
-    const purge = screen.getByRole("menuitem", { name: /purge data/i });
-    expect(purge.textContent).not.toContain("dev only");
   });
 
   it("confirms before disabling, then posts disable once", async () => {
@@ -227,25 +203,5 @@ describe("EndpointRowActions", () => {
     expect(toggle.hasAttribute("disabled")).toBe(true);
     await userEvent.click(toggle);
     expect(apiMocks.postEndpointSubscriptionstatus).not.toHaveBeenCalled();
-  });
-
-  it("arms purge only once the endpoint name is typed exactly", async () => {
-    renderActions();
-    await openMenu();
-    await userEvent.click(screen.getByRole("menuitem", { name: /purge data/i }));
-
-    const confirmButton = screen.getByRole("button", { name: /^purge data$/i });
-    expect(confirmButton.hasAttribute("disabled")).toBe(true);
-
-    const input = screen.getByLabelText(/to confirm/i);
-    await userEvent.type(input, "alice");
-    expect(confirmButton.hasAttribute("disabled")).toBe(true);
-
-    await userEvent.clear(input);
-    await userEvent.type(input, "Alice");
-    expect(confirmButton.hasAttribute("disabled")).toBe(false);
-
-    await userEvent.click(confirmButton);
-    expect(apiMocks.postEndpointPurge).toHaveBeenCalledWith("Alice");
   });
 });

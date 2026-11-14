@@ -41,7 +41,7 @@ public interface IAuditSettingsProvider
 /// a save on this instance takes effect immediately and other instances converge
 /// within the TTL.
 /// </summary>
-public sealed class AuditSettingsProvider : IAuditSettingsProvider
+public sealed partial class AuditSettingsProvider : IAuditSettingsProvider
 {
     private static readonly TimeSpan SuccessTtl = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan FailureTtl = TimeSpan.FromSeconds(5);
@@ -61,6 +61,14 @@ public sealed class AuditSettingsProvider : IAuditSettingsProvider
         MessageAuditType.CommandNotSent,
         MessageAuditType.UpdateMcpSettings,
         MessageAuditType.McpAccessRefused,
+        MessageAuditType.AgentApiKeyCreated,
+        MessageAuditType.AgentApiKeyRevoked,
+        MessageAuditType.AgentApiKeyRemoved,
+        MessageAuditType.ChangeSessionState,
+        MessageAuditType.DashboardTokenCreated,
+        MessageAuditType.DashboardTokenRevoked,
+        MessageAuditType.DashboardTokenRemoved,
+        MessageAuditType.UpdateEndpointMetadata,
     };
 
     /// <summary>
@@ -117,7 +125,7 @@ public sealed class AuditSettingsProvider : IAuditSettingsProvider
         {
             // Fail open: keep the last-known selection, or record everything when there
             // is none — a store outage must not silently stop auditing.
-            _logger.LogWarning(ex, "Audit settings read failed; using the last-known selection");
+            LogAuditSettingsReadFailed(_logger, ex);
             var fallback = current?.Disabled ?? None;
             Volatile.Write(ref _current, new CacheEntry(fallback, _utcNow() + FailureTtl));
             return fallback;
@@ -159,7 +167,7 @@ public sealed class AuditSettingsProvider : IAuditSettingsProvider
 
     // Names that no longer parse (a type retired in a later major) are ignored rather
     // than failing every audit write.
-    private static IReadOnlySet<MessageAuditType> Parse(IEnumerable<string>? names)
+    private static HashSet<MessageAuditType> Parse(IEnumerable<string>? names)
         => (names ?? Enumerable.Empty<string>())
             .Select(n => TryParseName(n, out var t) ? (MessageAuditType?)t : null)
             .Where(t => t.HasValue && !AlwaysRecorded.Contains(t.Value))
@@ -167,4 +175,7 @@ public sealed class AuditSettingsProvider : IAuditSettingsProvider
             .ToHashSet();
 
     private sealed record CacheEntry(IReadOnlySet<MessageAuditType> Disabled, DateTime ExpiresAtUtc);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Audit settings read failed; using the last-known selection")]
+    private static partial void LogAuditSettingsReadFailed(ILogger logger, Exception exception);
 }

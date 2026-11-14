@@ -26,7 +26,10 @@ export default [
       "react-hooks": reactHooks,
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      // The rule set of eslint-plugin-react-hooks 5's recommended preset. From 7 the preset
+      // also turns on the React Compiler rules as errors; adopting those is its own change.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       "max-classes-per-file": "off",
       "no-unused-vars": "off",
       // TypeScript itself checks undefined symbols (incl. type-only React

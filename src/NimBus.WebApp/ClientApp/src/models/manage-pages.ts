@@ -8,6 +8,13 @@ export const TOPOLOGY_VIEWS = [
   { id: "storage", label: "Storage" },
 ] as const;
 
+/**
+ * The Topology views this deployment has. Storage manages Cosmos DB containers,
+ * so it exists only on that provider; while the provider is unknown it is left out.
+ */
+export const availableTopologyViews = (storageProvider: string | undefined) =>
+  TOPOLOGY_VIEWS.filter((v) => v.id !== "storage" || storageProvider === "Cosmos DB");
+
 export interface SettingsTab {
   /** URL value: /Settings/:feature?tab=:id. */
   id: string;
@@ -61,6 +68,17 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     ],
   },
   {
+    id: "agent-keys",
+    group: "AI & agents",
+    name: "Agent keys",
+    description:
+      "Issue and revoke the keys agents built on NimBus.Agents use to call the agent API.",
+    applies: "Applies to every instance within 30 s",
+    tabs: [
+      { id: "keys", label: "Keys", keywords: "agent api key issue revoke remove expiry last used nimbus.agents" },
+    ],
+  },
+  {
     id: "heartbeat",
     group: "Monitoring",
     name: "Heartbeat probing",
@@ -69,6 +87,17 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     tabs: [
       { id: "probing", label: "Probing", keywords: "schedule interval timeout send now enabled" },
       { id: "endpoints", label: "Endpoints", keywords: "endpoints include exclude probe" },
+    ],
+  },
+  {
+    id: "dashboard-tokens",
+    group: "Monitoring",
+    name: "Dashboard tokens",
+    description:
+      "Issue and revoke the links wall displays use to show the Monitor read-only without signing in.",
+    applies: "Applies to every instance within 30 s",
+    tabs: [
+      { id: "tokens", label: "Tokens", keywords: "monitor wall display kiosk dashboard token link issue revoke expiry" },
     ],
   },
   {
@@ -119,23 +148,27 @@ export const OPERATIONS: readonly OperationInfo[] = [
   { id: "resubmit", group: "recovery", label: "Bulk resubmit failed", takesEndpoint: true,
     description: "Resubmit an endpoint's failed messages. Idempotent handlers absorb repeats." },
   { id: "skip", group: "recovery", label: "Skip messages", takesEndpoint: true,
-    description: "Mark matching events as Skipped so their sessions continue." },
+    description: "Skip matching events, so the sessions they block continue." },
   { id: "session", group: "recovery", label: "Session purge", takesEndpoint: true,
     description: "Unblock one stuck session by clearing its deferred and blocked messages." },
+  { id: "session-state", group: "recovery", label: "Session state", takesEndpoint: true,
+    description: "Look up one session's Service Bus session state, and clear its block, reset it or edit it." },
   { id: "stale", group: "recovery", label: "Reconcile stale pending", takesEndpoint: true,
     description: "Repair rows a redelivered copy left Pending after the original completed." },
   { id: "dlq", group: "cleanup", label: "Delete dead-lettered", takesEndpoint: true,
-    description: "Remove an endpoint's dead-lettered messages without reprocessing them." },
+    description: "Delete an endpoint's dead-lettered events and their messages in its dead-letter queue, without reprocessing them." },
   { id: "status", group: "cleanup", label: "Delete by status", takesEndpoint: true,
     description: "Delete an endpoint's stored events in the chosen states." },
   { id: "to", group: "cleanup", label: "Delete by To field", takesEndpoint: false,
     description: "Delete messages addressed to one value, across endpoints." },
   { id: "single", group: "cleanup", label: "Delete single event", takesEndpoint: true,
     description: "Delete one event by its ID." },
+  { id: "session-cleanup", group: "cleanup", label: "Clean up session state", takesEndpoint: true,
+    description: "Reset the session state that idle sessions keep after their messages are gone." },
   { id: "purge", group: "movement", label: "Purge subscription", takesEndpoint: true,
     description: "Drain an endpoint's Service Bus subscription. The messages are gone, not dead-lettered." },
   { id: "copy", group: "movement", label: "Copy endpoint data", takesEndpoint: true,
     description: "Copy an endpoint's stored events to another NimBus instance." },
   { id: "all", group: "danger", label: "Delete all events", takesEndpoint: true,
-    description: "Permanently delete every stored event for an endpoint. The storage container is removed." },
+    description: "Wipe an endpoint: recreate its subscription and Deferred subscription empty, and delete every stored event and message-history record." },
 ];

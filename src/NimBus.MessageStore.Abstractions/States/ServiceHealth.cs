@@ -23,14 +23,14 @@ public class ServiceHealth
 {
     /// <summary>Service identifier, e.g. <c>Resolver</c>. Also the document id.</summary>
     [JsonProperty(PropertyName = "id")]
-    public string ServiceId { get; set; }
+    public string ServiceId { get; set; } = null!;
 
     /// <summary>Last settled outcome. Never <c>Pending</c>.</summary>
     [JsonConverter(typeof(StringEnumConverter))]
     public HeartbeatStatus Status { get; set; } = HeartbeatStatus.Unknown;
 
     /// <summary>Informational assembly version reported by the responding service.</summary>
-    public string Version { get; set; }
+    public string Version { get; set; } = null!;
 
     /// <summary>Correlation id of the in-flight probe; null once it has settled.</summary>
     public string? LastProbeMessageId { get; set; }

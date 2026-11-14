@@ -1,8 +1,16 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Account, CreditCheckResult, api } from '../api';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Account, Contact, CreditCheckResult, api } from '../api';
 import { randomCompany } from '../fakeData';
 import AuditLog from '../components/AuditLog';
+import RegionalHubHint from '../components/RegionalHubHint';
+import { BackIcon, PlusIcon, SaveIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
+import {
+  Chip, CommandBar, CommandButton, CommandLink, CommandSeparator, ErrorBar, FieldRow, OriginChip, Panel,
+  RecordHeader, RecordTabs, formatDate, grid, inputClass,
+} from '../components/shell/ui';
+
+type Tab = 'summary' | 'contacts';
 
 export default function AccountForm() {
   const { id } = useParams();
@@ -10,6 +18,7 @@ export default function AccountForm() {
   const [form, setForm] = useState<Partial<Account>>({ legalName: '', countryCode: 'DE' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>('summary');
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState<CreditCheckResult | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
@@ -72,97 +81,144 @@ export default function AccountForm() {
     } finally { setSaving(false); }
   }
 
+  const deleted = form.isDeleted ?? false;
+
   return (
-    <div className="max-w-xl space-y-4">
-    <form onSubmit={submit} className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{id ? 'Edit account' : 'New account'}</h1>
+    <>
+      <CommandBar>
+        <CommandButton icon={<BackIcon />} onClick={() => nav('/accounts')} aria-label="Back to accounts" />
+        <CommandButton type="submit" form="account-form" icon={<SaveIcon />} primary disabled={saving || deleted}>
+          {saving ? 'Saving…' : 'Save'}
+        </CommandButton>
+        {id && <CommandLink to="/accounts/new" icon={<PlusIcon />}>New</CommandLink>}
+        {id && !deleted && <CommandButton icon={<TrashIcon />} danger onClick={() => void remove()} disabled={saving}>Delete</CommandButton>}
         {!id && (
-          <button
-            type="button"
-            onClick={() => setForm(prev => ({ ...prev, ...randomCompany() }))}
-            className="text-sm px-3 py-1 bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 border border-slate-200"
-          >
-            Generate fake data
-          </button>
+          <>
+            <CommandSeparator />
+            <CommandButton icon={<SparkleIcon />} onClick={() => setForm(prev => ({ ...prev, ...randomCompany() }))}>
+              Generate fake data
+            </CommandButton>
+          </>
         )}
-      </div>
-      {error && <div className="rounded-md bg-red-50 border border-red-200 text-red-800 px-3 py-2 text-sm">Save failed: {error}</div>}
-      <Field label="Legal name" value={form.legalName ?? ''} onChange={v => setForm({ ...form, legalName: v })} required />
-      <Field label="Country code (ISO-2)" value={form.countryCode ?? ''} onChange={v => setForm({ ...form, countryCode: v.toUpperCase().slice(0, 2) })} required />
-      <Field label="Tax ID" value={form.taxId ?? ''} onChange={v => setForm({ ...form, taxId: v })} />
-      <div className="flex gap-2 items-center">
-        <button type="submit" disabled={saving || form.isDeleted} className="px-4 py-2 bg-blue-600 text-white rounded-md disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
-        <button type="button" onClick={() => nav('/accounts')} className="px-4 py-2 text-slate-600">Cancel</button>
-        {id && !form.isDeleted && (
-          <button type="button" onClick={remove} disabled={saving} className="ml-auto px-4 py-2 bg-rose-600 text-white rounded-md disabled:opacity-60 hover:bg-rose-700">Delete</button>
-        )}
-        {id && form.isDeleted && (
-          <span className="ml-auto inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 ring-1 ring-rose-200">Deleted</span>
-        )}
-      </div>
-    </form>
-    {id && !form.isDeleted && (
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-700">ERP integration</h2>
-        <div className="flex flex-wrap gap-2 items-center">
-          <button
-            type="button"
-            onClick={runCreditCheck}
-            disabled={checking}
-            className="px-3 py-2 text-sm bg-indigo-600 text-white rounded-md disabled:opacity-60 hover:bg-indigo-700"
-          >
-            {checking ? 'Checking…' : 'Run ERP credit check'}
-          </button>
-          <button
-            type="button"
-            onClick={placeHold}
-            className="px-3 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700"
-          >
-            Place credit hold in ERP
-          </button>
-          {checkResult && (
-            <span
-              data-testid="credit-check-result"
-              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ring-1 ${
-                checkResult.approved
-                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                  : checkResult.status === 'OnHold'
-                    ? 'bg-amber-50 text-amber-700 ring-amber-200'
-                    : 'bg-rose-50 text-rose-700 ring-rose-200'
-              }`}
-            >
-              {checkResult.approved ? 'Approved' : checkResult.status === 'OnHold' ? 'On hold' : checkResult.status}
-              {checkResult.customerNumber ? ` · ${checkResult.customerNumber}` : ''}
-            </span>
-          )}
-          {holdRequested && (
-            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
-              Hold command sent
-            </span>
-          )}
-        </div>
-        {checkError && (
-          <div data-testid="credit-check-error" className="rounded-md bg-rose-50 border border-rose-200 text-rose-800 px-3 py-2 text-sm">
-            Credit check failed: {checkError}
+      </CommandBar>
+      {error && <ErrorBar>Save failed: {error}</ErrorBar>}
+      <RecordHeader
+        title={form.legalName || (id ? '…' : 'New account')}
+        entity="Account"
+        fields={id ? [
+          { label: 'Country', value: form.countryCode || '—' },
+          { label: 'ERP customer', value: form.erpCustomerNumber ? <Chip tone="ok" dot>{form.erpCustomerNumber}</Chip> : deleted ? '—' : <Chip tone="warn" dot>Pending</Chip> },
+          { label: 'Origin', value: <OriginChip origin={form.origin} /> },
+          { label: 'Status', value: deleted ? <Chip tone="bad">Deleted</Chip> : <Chip tone="ok">Active</Chip> },
+        ] : []}
+      >
+        {id && <RecordTabs<Tab> value={tab} onChange={setTab} tabs={[{ id: 'summary', label: 'Summary' }, { id: 'contacts', label: 'Contacts' }]} />}
+      </RecordHeader>
+
+      {tab === 'contacts' && id ? (
+        <AccountContacts accountId={id} />
+      ) : (
+        <div className={`grid gap-4 p-5 ${id ? 'xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]' : 'max-w-3xl'}`}>
+          <div className="flex min-w-0 flex-col gap-4">
+            <Panel title="Account information">
+              <form id="account-form" onSubmit={submit} className="flex flex-col gap-3">
+                <FieldRow label="Legal name" required>
+                  <input required disabled={deleted} value={form.legalName ?? ''} onChange={e => setForm({ ...form, legalName: e.target.value })} className={inputClass} />
+                </FieldRow>
+                <FieldRow label="Country code (ISO-2)" required>
+                  <div>
+                    <input required disabled={deleted} value={form.countryCode ?? ''} onChange={e => setForm({ ...form, countryCode: e.target.value.toUpperCase().slice(0, 2) })} className={inputClass} />
+                    {!deleted && <RegionalHubHint countryCode={form.countryCode} />}
+                  </div>
+                </FieldRow>
+                <FieldRow label="Tax ID">
+                  <input disabled={deleted} value={form.taxId ?? ''} onChange={e => setForm({ ...form, taxId: e.target.value })} className={inputClass} />
+                </FieldRow>
+              </form>
+            </Panel>
+            {id && !deleted && (
+              <Panel title="ERP integration">
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void runCreditCheck()}
+                      disabled={checking}
+                      className="rounded-sm bg-accent px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-60"
+                    >
+                      {checking ? 'Checking…' : 'Run ERP credit check'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void placeHold()}
+                      className="rounded-sm border border-[#8a8886] bg-white px-3 py-1.5 text-[13px] font-semibold hover:bg-nav"
+                    >
+                      Place credit hold in ERP
+                    </button>
+                    {checkResult && (
+                      <span data-testid="credit-check-result">
+                        <Chip tone={checkResult.approved ? 'ok' : checkResult.status === 'OnHold' ? 'warn' : 'bad'} dot>
+                          {checkResult.approved ? 'Approved' : checkResult.status === 'OnHold' ? 'On hold' : checkResult.status}
+                          {checkResult.customerNumber ? ` · ${checkResult.customerNumber}` : ''}
+                        </Chip>
+                      </span>
+                    )}
+                    {holdRequested && <Chip tone="warn" dot>Hold command sent</Chip>}
+                  </div>
+                  {checkError && (
+                    <div data-testid="credit-check-error" className="rounded-sm border border-[#f1bbbc] bg-[#fde7e9] px-3 py-2 text-[13px] text-[#a4262c]">
+                      Credit check failed: {checkError}
+                    </div>
+                  )}
+                  <p className="text-xs text-ink-muted">
+                    Credit check is a synchronous request/reply over the CrmEndpoint-reply subscription.
+                    Credit hold is a fire-and-forget command consumed only by ErpEndpoint.
+                  </p>
+                </div>
+              </Panel>
+            )}
           </div>
-        )}
-        <p className="text-xs text-slate-500">
-          Credit check = synchronous request/reply over the CrmEndpoint-reply subscription.
-          Credit hold = fire-and-forget command consumed only by ErpEndpoint.
-        </p>
-      </div>
-    )}
-    {id && <AuditLog entityType="Account" entityId={id} />}
-    </div>
+          {id && <div className="min-w-0"><AuditLog entityType="Account" entityId={id} /></div>}
+        </div>
+      )}
+    </>
   );
 }
 
-function Field({ label, value, onChange, required }: { label: string; value: string; onChange: (v: string) => void; required?: boolean }) {
+function AccountContacts({ accountId }: { accountId: string }) {
+  const [rows, setRows] = useState<Contact[] | null>(null);
+  useEffect(() => {
+    api.listContacts().then(all => setRows(all.filter(c => c.accountId === accountId))).catch(() => setRows([]));
+  }, [accountId]);
+
   return (
-    <label className="block">
-      <span className="block text-sm text-slate-600 mb-1">{label}{required && ' *'}</span>
-      <input required={required} value={value} onChange={e => onChange(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md" />
-    </label>
+    <div className="pt-5">
+      <div className={grid.wrap}>
+        <table className={grid.table}>
+          <thead>
+            <tr>
+              <th className={grid.th}>Full name</th>
+              <th className={grid.th}>Email</th>
+              <th className={grid.th}>Phone</th>
+              <th className={grid.th}>Origin</th>
+              <th className={grid.th}>Created on</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows === null && <tr><td colSpan={5} className={grid.empty}>Loading…</td></tr>}
+            {rows?.length === 0 && <tr><td colSpan={5} className={grid.empty}>No contacts for this account.</td></tr>}
+            {rows?.map(c => (
+              <tr key={c.id} className={`${grid.row} ${c.isDeleted ? 'text-ink-muted line-through' : ''}`}>
+                <td className={grid.td}><Link to={`/contacts/${c.id}`} className={grid.link}>{c.firstName} {c.lastName}</Link></td>
+                <td className={`${grid.td} text-ink-muted`}>{c.email ?? '—'}</td>
+                <td className={`${grid.td} text-ink-muted`}>{c.phone ?? '—'}</td>
+                <td className={grid.td}><OriginChip origin={c.origin} /></td>
+                <td className={`${grid.td} text-ink-muted`}>{formatDate(c.createdAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

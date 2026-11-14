@@ -20,7 +20,7 @@
                     <span>
                         <h4 style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0;">
                             <img style="height:3rem; width:auto;" src="~/nimbus_ascii_logo.png" alt="NimBus" />
-                            <span class="badge badge-secondary">@Configuration.GetSection("Environment").Value.ToUpper()</span>
+                            <span class="badge badge-secondary">@Configuration.GetSection("Environment").Value!.ToUpper()</span>
                         </h4>
                     </span>
                 </a>

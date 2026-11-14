@@ -142,10 +142,43 @@ public sealed class AmqpLifecycleTests
         broker.DeleteSubscription("events", "consumer");
         // The SDK completes an outstanding receive with no message on remote detach.
         Assert.IsNull(await receive.WaitAsync(TimeSpan.FromSeconds(4)));
-        var exception = await Assert.ThrowsAsync<ServiceBusException>(async () =>
+        // From SDK 7.21 the lost session link closes the receiver itself, so later calls fail
+        // locally with ObjectDisposedException rather than SessionLockLost.
+        Assert.IsTrue(receiver.IsClosed);
+        await Assert.ThrowsExactlyAsync<ObjectDisposedException>(async () =>
             await receiver.RenewSessionLockAsync());
-        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, exception.Reason);
         Assert.IsInstanceOfType<KeyNotFoundException>(await failures.Failure.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    [TestMethod]
+    [Timeout(30_000)]
+    public async Task Lost_session_settlement_through_NimBus_reports_session_lock_lost()
+    {
+        var broker = CreateBroker();
+        var port = GetPort();
+        using var frontend = new AmqpFrontend(port, broker);
+        frontend.Start();
+        await using var client = CreateClient(port);
+        await using var receiver = await client.AcceptSessionAsync("events", "consumer", "S");
+        await using var sender = client.CreateSender("events");
+        await sender.SendMessageAsync(new ServiceBusMessage("held") { SessionId = "S" });
+        var held = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2));
+        Assert.IsNotNull(held);
+
+        var receive = receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(10));
+        broker.DeleteSubscription("events", "consumer");
+        Assert.IsNull(await receive.WaitAsync(TimeSpan.FromSeconds(4)));
+
+        // MessageContext retries a lost session lock; any other failure dead-letters the message
+        // and reports it to the Resolver, although the broker redelivers it to the next session owner.
+        var session = new NimBus.ServiceBus.ServiceBusSession(receiver);
+        var message = new NimBus.ServiceBus.ServiceBusMessage(held);
+        await AssertSessionLockLost(() => session.CompleteAsync(message));
+        await AssertSessionLockLost(() => session.DeadLetterAsync(message, "reason", null));
+        await AssertSessionLockLost(() => session.GetStateAsync());
+        await AssertSessionLockLost(() => session.SetStateAsync(new NimBus.Core.Messages.SessionState()));
+        await Assert.ThrowsExactlyAsync<NimBus.Core.Messages.Exceptions.TransientException>(() =>
+            new NimBus.ServiceBus.MessageContext(message, session).Complete());
     }
 
     [TestMethod]
@@ -193,6 +226,71 @@ public sealed class AmqpLifecycleTests
         Assert.IsNotNull(message);
         Assert.AreEqual("after drain", message.Body.ToString());
         await receiver.CompleteMessageAsync(message);
+    }
+
+    private static async Task AssertSessionLockLost(Func<Task> operation)
+    {
+        var exception = await Assert.ThrowsExactlyAsync<ServiceBusException>(operation);
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, exception.Reason);
+    }
+
+    // Regression: the nightly CrmErpDemo suite. The deferred-processor trigger subscription is
+    // read by a processor with one concurrent call. While its handler ran for five seconds
+    // with another trigger queued behind it, the receive link closed after 500 ms with "The
+    // broker could not complete the link operation", the trigger's lock was lost, and the
+    // trigger was redelivered in a loop that starved every other session.
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task Processor_keeps_its_lock_while_a_second_message_waits_behind_a_slow_handler()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription("events", new SubscriptionDefinition("triggers"));
+        using var failures = new FailureLogger();
+        using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(failures));
+        var port = GetPort();
+        using var frontend = new AmqpFrontend(port, broker, loggerFactory: loggerFactory);
+        frontend.Start();
+        await using var client = CreateClient(port);
+        await using var sender = client.CreateSender("events");
+        await sender.SendMessageAsync(new ServiceBusMessage("first"));
+        await sender.SendMessageAsync(new ServiceBusMessage("second"));
+
+        var handled = new List<(string Body, int DeliveryCount)>();
+        var errors = new List<Exception>();
+        var bothHandled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var processor = client.CreateProcessor("events", "triggers", new ServiceBusProcessorOptions
+        {
+            MaxConcurrentCalls = 1,
+            AutoCompleteMessages = false,
+        });
+        processor.ProcessMessageAsync += async args =>
+        {
+            // Longer than the pump's 500 ms zero-credit check, with the other message waiting.
+            await Task.Delay(TimeSpan.FromMilliseconds(1500));
+            await args.CompleteMessageAsync(args.Message);
+            lock (handled)
+            {
+                handled.Add((args.Message.Body.ToString(), args.Message.DeliveryCount));
+                if (handled.Count == 2) bothHandled.TrySetResult();
+            }
+        };
+        processor.ProcessErrorAsync += args =>
+        {
+            lock (errors) errors.Add(args.Exception);
+            return Task.CompletedTask;
+        };
+        await processor.StartProcessingAsync();
+
+        await Task.WhenAny(bothHandled.Task, Task.Delay(TimeSpan.FromSeconds(20)));
+        await processor.StopProcessingAsync();
+
+        var pumpFailure = failures.Failure.Task.IsCompleted ? failures.Failure.Task.Result.ToString() : "none";
+        Assert.AreEqual(0, errors.Count, $"Processor errors: {string.Join(" | ", errors.Select(e => e.Message))}. Emulator pump failure: {pumpFailure}");
+        CollectionAssert.AreEqual(
+            new[] { ("first", 1), ("second", 1) },
+            handled,
+            $"Each message is handled once, in order, on its first delivery. Emulator pump failure: {pumpFailure}");
     }
 
     private static BrokerNamespace CreateBroker()

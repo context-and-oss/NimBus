@@ -10,6 +10,7 @@ using ModelContextProtocol.Protocol;
 using Microsoft.AspNetCore.Authorization;
 using NimBus.WebApp.Mcp.Access;
 using NimBus.WebApp.Mcp.Operations;
+using NimBus.WebApp.Mcp.Prompts;
 using NimBus.WebApp.Mcp.Tools;
 using NimBus.WebApp.RateLimiting;
 
@@ -67,28 +68,48 @@ public static class McpOperatorServiceCollectionExtensions
         services.AddSingleton<McpAccessRefusals>();
         services.AddScoped<IAuthorizationHandler, McpAccessRequirementHandler>();
 
-        services.AddMcpServer(server => server.ServerInfo = new Implementation
+        services.AddMcpServer(server =>
             {
-                Name = "nimbus-operator",
-                Title = "NimBus operator",
-                Version = ServerVersion(),
+                server.ServerInfo = new Implementation
+                {
+                    Name = "nimbus-operator",
+                    Title = "NimBus operator",
+                    Version = ServerVersion(),
+                };
+                server.ServerInstructions = OperatorInstructions.Text;
             })
             .WithHttpTransport(http => http.Stateless = true)
             .WithTools<OperatorDiscoveryTools>(ToolSerializerOptions)
             .WithTools<OperatorMessageTools>(ToolSerializerOptions)
             .WithTools<OperatorInsightTools>(ToolSerializerOptions)
             .WithTools<OperatorActionTools>(ToolSerializerOptions)
+            .WithTools<OperatorWorklistTools>(ToolSerializerOptions)
+            .WithPrompts([typeof(OperatorPrompts)])
+            .WithCompleteHandler(OperatorPromptCompletions.HandleAsync)
             .WithRequestFilters(filters => filters
                 .AddListToolsFilter(McpToolAccess.FilterList)
-                .AddCallToolFilter(McpToolAccess.FilterCall));
+                .AddCallToolFilter(McpToolAccess.FilterCall)
+                .AddListPromptsFilter(McpPromptAccess.FilterList)
+                .AddGetPromptFilter(McpPromptAccess.FilterGet)
+                .AddCompleteFilter(McpPromptAccess.FilterComplete));
 
         services.AddScoped<OperatorEndpointCatalog>();
         services.AddScoped<OperatorQueries>();
         services.AddScoped<OperatorPayloadAccess>();
-        services.AddScoped<IOperatorClassificationSource, OperatorClassificationSource>();
+        services.AddScoped<IOperatorClassificationSource>(sp => new OperatorClassificationSource(
+            sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationReader>(),
+            sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationService>(),
+            sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationRecorder>()));
         services.AddScoped<OperatorActionAccess>();
+        services.AddScoped<OperatorWorklist>();
         services.AddSingleton<OperatorActionTokens>();
         services.AddSingleton<OperatorMutationLimiter>();
+        // Spec 044 Phase 2: the operator operation journal and its reconciler. Both do nothing
+        // without a registered IOperatorOperationStore (ADR-018). AddSingleton<IHostedService>
+        // with a factory, because a second AddHostedService of a class is silently dropped.
+        services.AddScoped<NimBus.WebApp.Services.Operations.OperatorOperationJournal>();
+        services.AddSingleton<NimBus.WebApp.Services.Operations.OperatorOperationReconciler>();
+        services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(sp => sp.GetRequiredService<NimBus.WebApp.Services.Operations.OperatorOperationReconciler>());
         services.TryAddSingleton(TimeProvider.System);
         services.AddDataProtection();
 

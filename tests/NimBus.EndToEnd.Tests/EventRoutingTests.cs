@@ -1,3 +1,4 @@
+#pragma warning disable CA1707, CA2007
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Messages;
 using NimBus.EndToEnd.Tests.Infrastructure;
@@ -155,7 +156,7 @@ public class EventRoutingTests
         var deferredSecondMessage = responsesAfterFailure.Single(response =>
             response.MessageType == MessageType.EventRequest &&
             response.To == Constants.DeferredSubscriptionName &&
-            response.MessageContent.EventContent.EventJson.Contains("ORD-SECOND", StringComparison.Ordinal));
+            response.MessageContent.EventContent!.EventJson!.Contains("ORD-SECOND", StringComparison.Ordinal));
 
         // Act 2: skip the failed message.
         await fixture.PublishBus.Send(CreateSkipRequest(sessionId, failedEventId, "OrderPlaced"));
@@ -172,7 +173,7 @@ public class EventRoutingTests
         Assert.IsTrue(fixture.ResponseBus.SentMessages.Any(response => response.MessageType == MessageType.ProcessDeferredRequest));
         Assert.IsTrue(fixture.ResponseBus.SentMessages.Any(response =>
             response.MessageType == MessageType.ResolutionResponse &&
-            response.MessageContent.EventContent.EventJson.Contains("ORD-SECOND", StringComparison.Ordinal)));
+            response.MessageContent.EventContent!.EventJson!.Contains("ORD-SECOND", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -324,7 +325,7 @@ public class EventRoutingTests
             "Session-A failure should emit error response");
         Assert.IsTrue(fixture.ResponseBus.SentMessages.Any(response =>
             response.MessageType == MessageType.ResolutionResponse &&
-            response.MessageContent.EventContent.EventJson.Contains("ORD-PROCESS-SESSION-B", StringComparison.Ordinal)),
+            response.MessageContent.EventContent!.EventJson!.Contains("ORD-PROCESS-SESSION-B", StringComparison.Ordinal)),
             "Session-B should complete with resolution response");
     }
 
@@ -387,6 +388,7 @@ public class EventRoutingTests
             OriginatingMessageId = deferredMessage.OriginatingMessageId,
             ParentMessageId = deferredMessage.ParentMessageId,
             RetryCount = deferredMessage.RetryCount,
+            DeferralSequence = deferredMessage.DeferralSequence,
             MessageContent = deferredMessage.MessageContent,
             DiagnosticId = deferredMessage.DiagnosticId
         };

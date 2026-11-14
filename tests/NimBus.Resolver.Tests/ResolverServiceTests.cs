@@ -20,7 +20,7 @@ public class ResolverServiceTests
         var service = CreateService();
         var message = CreateMessageContext(messageType: MessageType.EventRequest, to: "BillingEndpoint", from: "StorefrontEndpoint");
 
-        var (endpointId, role) = service.DetermineEndpoint(message);
+        var (endpointId, role) = ResolverService.DetermineEndpoint(message);
 
         Assert.AreEqual("BillingEndpoint", endpointId);
         Assert.AreEqual(EndpointRole.Subscriber, role);
@@ -32,7 +32,7 @@ public class ResolverServiceTests
         var service = CreateService();
         var message = CreateMessageContext(messageType: MessageType.ResolutionResponse, to: "Resolver", from: "BillingEndpoint");
 
-        var (endpointId, role) = service.DetermineEndpoint(message);
+        var (endpointId, role) = ResolverService.DetermineEndpoint(message);
 
         Assert.AreEqual("BillingEndpoint", endpointId);
         Assert.AreEqual(EndpointRole.Subscriber, role);
@@ -227,7 +227,7 @@ public class ResolverServiceTests
         var tracked = cosmos.SkippedUploads[0].Content;
         Assert.AreEqual(ResolutionStatus.Skipped, tracked.ResolutionStatus);
         Assert.AreEqual(message.MessageContent.ErrorContent.ErrorText, tracked.Reason);
-        Assert.AreEqual(nameof(InvalidOperationException), tracked.MessageContent.ErrorContent.ErrorType);
+        Assert.AreEqual(nameof(InvalidOperationException), tracked.MessageContent.ErrorContent!.ErrorType);
         Assert.AreEqual(1, message.CompletedCalls);
     }
 
@@ -518,6 +518,27 @@ public class ResolverServiceTests
     }
 
     [TestMethod]
+    public async Task Handle_ErrorResponse_RecordsRetryCountOnHistoryAndAuditRow()
+    {
+        // The SDK stamps RetryCount on every response; the Resolver must persist it on
+        // both the per-message history row and the per-event audit row.
+        var cosmos = new FakeCosmosDbClient();
+        var errorResponse = CreateMessageContext(
+            messageType: MessageType.ErrorResponse,
+            to: "Resolver",
+            from: "BillingEndpoint");
+        errorResponse.RetryCount = 2;
+
+        var service = CreateService(cosmos);
+        await service.Handle(errorResponse);
+
+        Assert.AreEqual(1, cosmos.StoredMessages.Count);
+        Assert.AreEqual(2, cosmos.StoredMessages[0].RetryCount);
+        Assert.AreEqual(1, cosmos.FailedUploads.Count);
+        Assert.AreEqual(2, cosmos.FailedUploads[0].Content.RetryCount);
+    }
+
+    [TestMethod]
     public async Task Handle_UnexpectedException_DeadLettersMessage()
     {
         var cosmos = new FakeCosmosDbClient
@@ -782,6 +803,10 @@ public class ResolverServiceTests
         /// for a write StaleWriteGuard refused because the row already holds a later outcome.</summary>
         public bool PendingUploadResult { get; set; } = true;
 
+        /// <summary>What <see cref="UploadFailedMessage"/> reports back: false stands for a
+        /// refused (stale) failure write.</summary>
+        public bool FailedUploadResult { get; set; } = true;
+
         public List<MessageEntity> StoredMessages { get; } = new();
         public List<(string EventId, MessageAuditEntity Audit)> StoredAudits { get; } = new();
         public List<UploadCall> PendingUploads { get; } = new();
@@ -812,7 +837,7 @@ public class ResolverServiceTests
         {
             if (UploadException is not null) return Task.FromException<bool>(UploadException);
             FailedUploads.Add(new UploadCall(eventId, sessionId, endpointId, content));
-            return Task.FromResult(true);
+            return Task.FromResult(FailedUploadResult);
         }
 
         public Task<bool> UploadDeadletteredMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
@@ -861,11 +886,11 @@ public class ResolverServiceTests
         public Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId) => throw new NotSupportedException();
         public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) => throw new NotSupportedException();
         public Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId) => throw new NotSupportedException();
-        public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => throw new NotSupportedException();
+        public Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => throw new NotSupportedException();
         public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take) => throw new NotSupportedException();
-        public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId) => throw new NotSupportedException();
+        public Task<IEnumerable<UnresolvedEvent>?> GetPendingEventsOnSession(string endpointId) => throw new NotSupportedException();
         public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId) => throw new NotSupportedException();
-        public Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency) => throw new NotSupportedException();
+        public Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency) => throw new NotSupportedException();
         public Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId) => throw new NotSupportedException();
         public Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpointWithEventtype(string endpoint, string eventtypes, string payload, string errorText) => throw new NotSupportedException();
         public Task<string> GetEndpointErrorList(string endpointId) => throw new NotSupportedException();
@@ -903,6 +928,10 @@ public class ResolverServiceTests
         public Task<AuditSettings> GetAuditSettings() => Task.FromResult(new AuditSettings());
         public Task<McpAccessSettings> GetMcpAccessSettings() => Task.FromResult(new McpAccessSettings());
         public Task<bool> TrySetMcpAccessSettings(McpAccessSettings settings, string? expectedRevision) => Task.FromResult(true);
+        public Task<AgentApiKeySettings> GetAgentApiKeySettings() => Task.FromResult(new AgentApiKeySettings());
+        public Task<bool> TrySetAgentApiKeySettings(AgentApiKeySettings settings, string? expectedRevision) => Task.FromResult(true);
+        public Task<List<AgentApiKeyUsage>> GetAgentApiKeyUsage() => Task.FromResult(new List<AgentApiKeyUsage>());
+        public Task RecordAgentApiKeyUse(string keyId, DateTime usedAtUtc) => Task.CompletedTask;
         public Task<bool> SetAuditSettings(AuditSettings settings) => Task.FromResult(true);
         public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore) => Task.FromResult(true);
         public Task<List<HeartbeatOverviewItem>> GetHeartbeatOverview() => Task.FromResult(new List<HeartbeatOverviewItem>());
@@ -923,6 +952,7 @@ public class ResolverServiceTests
         public Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId) => throw new NotSupportedException();
         public Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId) => throw new NotSupportedException();
         public Task RemoveStoredMessage(string eventId, string messageId) => throw new NotSupportedException();
+        public Task<int> PurgeStoredMessages(string endpointId) => throw new NotSupportedException();
         public Task<IEnumerable<MessageAuditEntity>> GetMessageAudits(string eventId) => throw new NotSupportedException();
         public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => throw new NotSupportedException();
         public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => throw new NotSupportedException();

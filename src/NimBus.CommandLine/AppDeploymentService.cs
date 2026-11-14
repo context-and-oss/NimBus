@@ -23,11 +23,21 @@ internal sealed class AppDeploymentService
 
     public async Task DeployAsync(AppDeploymentOptions options, CancellationToken cancellationToken)
     {
-        var names = NamingConventions.Build(options.SolutionId, options.Environment);
         var deployResolver = options.Target != AppDeploymentTarget.WebApp;
         var deployWebApp = options.Target != AppDeploymentTarget.Resolver;
 
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
+
+        // The app names carry the postfix 'nb infra apply' deployed with (recorded on the
+        // resource group); the namespace override does not affect them.
+        var names = await ResourceNaming.ResolveDeployedNamesAsync(
+            _az,
+            options.SolutionId,
+            options.Environment,
+            options.ResourceGroupName,
+            explicitServiceBusNamespaceName: null,
+            options.ResourceNamePostfix,
+            cancellationToken).ConfigureAwait(false);
 
         // Deployments go through each app's Kudu/scm site, which a private deployment only
         // exposes through the app's private endpoint (spec 034 §5.7).

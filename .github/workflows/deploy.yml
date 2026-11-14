@@ -36,7 +36,7 @@ on:
         type: string
         default: ""
       location:
-        description: "Azure region for new resources (empty = westeurope; existing resources keep their region)"
+        description: "Azure region for new resources (empty = the resource group's region; existing resources keep theirs)"
         required: false
         type: string
         default: ""

@@ -11,6 +11,8 @@ namespace NimBus.CommandLine.Commands;
 /// <summary>Registers the <c>nb endpoint</c> command group.</summary>
 internal static class EndpointCommands
 {
+    private static readonly string[] ValidPurgeStates = ["active", "deferred"];
+
     internal static void Register(CommandLineApplication app, CommandOption sbConnectionString, CommandOption dbConnectionString)
     {
         app.Command("endpoint", endpointCommand =>
@@ -87,19 +89,19 @@ internal static class EndpointCommands
 
                 purgeCommand.OnExecuteAsync(async ct =>
                 {
-                    var validStates = new[] { "active", "deferred" };
+                    var validStates = ValidPurgeStates;
                     var stateFilters = new List<string>();
 
                     if (stateOption.HasValue())
                     {
-                        foreach (var raw in stateOption.Value().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        foreach (var raw in stateOption.Value()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                         {
                             if (!validStates.Contains(raw, StringComparer.OrdinalIgnoreCase))
                             {
                                 Console.Error.WriteLine($"Invalid state '{raw}'. Valid values: Active, Deferred");
                                 return 1;
                             }
-                            stateFilters.Add(raw.ToLower());
+                            stateFilters.Add(raw.ToLowerInvariant());
                         }
                     }
 
@@ -114,10 +116,10 @@ internal static class EndpointCommands
                         before = parsedDate;
                     }
 
-                    string subscription = subscriptionOption.HasValue() ? subscriptionOption.Value() : endpointName.Value;
+                    string subscription = subscriptionOption.HasValue() ? subscriptionOption.Value()! : endpointName.Value!;
 
                     await CommandRunner.Run(sbConnectionString, (sbClient) =>
-                        Endpoint.PurgeSubscription(sbClient, endpointName.Value, subscription, stateFilters, before));
+                        Endpoint.PurgeSubscription(sbClient, endpointName.Value!, subscription, stateFilters, before));
                     return 0;
                 });
             });
