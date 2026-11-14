@@ -3,6 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Contact, Customer, api } from '../api';
 import { randomPerson, randomPick } from '../fakeData';
 import AuditLog from '../components/AuditLog';
+import { FastTab } from '../components/shell/fasttab';
+import { BackIcon, PlusIcon, SaveIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
+import { CommandBar, CommandButton, CommandLink, CommandSeparator, ErrorBar, FieldRow, inputClass } from '../components/shell/ui';
 
 export default function ContactForm() {
   const { id } = useParams();
@@ -10,6 +13,7 @@ export default function ContactForm() {
   const [form, setForm] = useState<Partial<Contact>>({ firstName: '', lastName: '' });
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.listCustomers().then(setCustomers);
@@ -19,10 +23,13 @@ export default function ContactForm() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setError(null);
     try {
       if (id) await api.updateContact(id, form);
       else await api.createContact(form);
       nav('/contacts');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally { setSaving(false); }
   }
 
@@ -30,9 +37,12 @@ export default function ContactForm() {
     if (!id) return;
     if (!confirm(`Delete contact "${form.firstName} ${form.lastName}"? This will publish ErpContactDeleted; CRM will mark its matching contact deleted.`)) return;
     setSaving(true);
+    setError(null);
     try {
       await api.deleteContact(id);
       nav('/contacts');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally { setSaving(false); }
   }
 
@@ -42,59 +52,58 @@ export default function ContactForm() {
   }
 
   const lock = form.isDeleted ?? false;
+  const fullName = `${form.firstName ?? ''} ${form.lastName ?? ''}`.trim();
 
   return (
-    <div className="max-w-xl space-y-4">
-    <form onSubmit={submit} className="bg-white rounded-lg shadow-xs border border-slate-200 p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{id ? 'Edit contact' : 'New contact'}</h1>
+    <>
+      <CommandBar>
+        <CommandButton icon={<BackIcon />} onClick={() => nav('/contacts')} aria-label="Back to contacts" />
+        <CommandButton type="submit" form="contact-form" icon={<SaveIcon />} primary disabled={saving || lock}>
+          {saving ? 'Saving…' : 'Save'}
+        </CommandButton>
+        {id && <CommandLink to="/contacts/new" icon={<PlusIcon />}>New</CommandLink>}
+        {id && !lock && <CommandButton icon={<TrashIcon />} danger onClick={() => void remove()} disabled={saving}>Delete</CommandButton>}
         {!id && (
-          <button
-            type="button"
-            onClick={fillFakeData}
-            className="text-sm px-3 py-1 bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 border border-slate-200"
-          >
-            Generate fake data
-          </button>
+          <>
+            <CommandSeparator />
+            <CommandButton icon={<SparkleIcon />} onClick={fillFakeData}>Generate fake data</CommandButton>
+          </>
         )}
+      </CommandBar>
+      {error && <ErrorBar>Save failed: {error}</ErrorBar>}
+      <div className="border-b border-line bg-white px-5 pb-3 pt-4">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Contact card</div>
+        <h1 className="text-xl font-semibold">{fullName || (id ? '…' : 'New contact')}{lock && <span className="ml-2 text-[13px] font-normal text-[#a4262c]">Deleted</span>}</h1>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="block text-sm text-slate-600 mb-1">First name *</span>
-          <input required disabled={lock} value={form.firstName ?? ''} onChange={e => setForm({ ...form, firstName: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-md disabled:bg-slate-100" />
-        </label>
-        <label className="block">
-          <span className="block text-sm text-slate-600 mb-1">Last name *</span>
-          <input required disabled={lock} value={form.lastName ?? ''} onChange={e => setForm({ ...form, lastName: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-md disabled:bg-slate-100" />
-        </label>
-      </div>
-      <label className="block">
-        <span className="block text-sm text-slate-600 mb-1">Email</span>
-        <input type="email" disabled={lock} value={form.email ?? ''} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-md disabled:bg-slate-100" />
-      </label>
-      <label className="block">
-        <span className="block text-sm text-slate-600 mb-1">Phone</span>
-        <input disabled={lock} value={form.phone ?? ''} onChange={e => setForm({ ...form, phone: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-md disabled:bg-slate-100" />
-      </label>
-      <label className="block">
-        <span className="block text-sm text-slate-600 mb-1">Customer</span>
-        <select disabled={lock} value={form.customerId ?? ''} onChange={e => setForm({ ...form, customerId: e.target.value || null })} className="w-full px-3 py-2 border border-slate-300 rounded-md bg-white disabled:bg-slate-100">
-          <option value="">—</option>
-          {customers.map(c => <option key={c.id} value={c.id}>{c.legalName}</option>)}
-        </select>
-      </label>
-      <div className="flex gap-2 items-center">
-        <button type="submit" disabled={saving || lock} className="px-4 py-2 bg-emerald-600 text-white rounded-md disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
-        <button type="button" onClick={() => nav('/contacts')} className="px-4 py-2 text-slate-600">Cancel</button>
-        {id && !lock && (
-          <button type="button" onClick={remove} disabled={saving} className="ml-auto px-4 py-2 bg-rose-600 text-white rounded-md disabled:opacity-60 hover:bg-rose-700">Delete</button>
-        )}
-        {id && lock && (
-          <span className="ml-auto inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 ring-1 ring-rose-200">Deleted</span>
-        )}
-      </div>
-    </form>
-    {id && <AuditLog entityType="ErpContact" entityId={id} />}
-    </div>
+      <form id="contact-form" onSubmit={submit}>
+        <FastTab title="General">
+          <div className="grid max-w-5xl gap-x-10 gap-y-3 lg:grid-cols-2">
+            <FieldRow label="First name" required>
+              <input required disabled={lock} value={form.firstName ?? ''} onChange={e => setForm({ ...form, firstName: e.target.value })} className={inputClass} />
+            </FieldRow>
+            <FieldRow label="Last name" required>
+              <input required disabled={lock} value={form.lastName ?? ''} onChange={e => setForm({ ...form, lastName: e.target.value })} className={inputClass} />
+            </FieldRow>
+            <FieldRow label="Email">
+              <input type="email" disabled={lock} value={form.email ?? ''} onChange={e => setForm({ ...form, email: e.target.value })} className={inputClass} />
+            </FieldRow>
+            <FieldRow label="Phone">
+              <input disabled={lock} value={form.phone ?? ''} onChange={e => setForm({ ...form, phone: e.target.value })} className={inputClass} />
+            </FieldRow>
+            <FieldRow label="Customer">
+              <select disabled={lock} value={form.customerId ?? ''} onChange={e => setForm({ ...form, customerId: e.target.value || null })} className={inputClass}>
+                <option value="">—</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.legalName}</option>)}
+              </select>
+            </FieldRow>
+          </div>
+        </FastTab>
+      </form>
+      {id && (
+        <FastTab title="Audit" summary="Change history" defaultOpen={false}>
+          <div className="max-w-3xl"><AuditLog entityType="ErpContact" entityId={id} /></div>
+        </FastTab>
+      )}
+    </>
   );
 }

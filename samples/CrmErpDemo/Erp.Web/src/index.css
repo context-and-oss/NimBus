@@ -1,6 +1,22 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
+/* App palette. The shell components use these names (bg-bar, text-accent, …), so the CRM and
+   ERP apps share component code and differ only here. */
+@theme {
+  --color-bar: #1e2b2e;
+  --color-bar-hover: #2e4044;
+  --color-accent: #00796b;
+  --color-accent-hover: #00695c;
+  --color-accent-soft: #e0f2ef;
+  --color-canvas: #faf9f8;
+  --color-nav: #f3f2f1;
+  --color-line: #e1dfdd;
+  --color-ink: #242424;
+  --color-ink-muted: #616161;
+  --font-sans: "Segoe UI", "Segoe UI Web (West European)", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif;
+}
+
 /* Tailwind 4 defaults borders to currentColor; keep the v3 gray-200 default. */
 @layer base {
   *, ::after, ::before, ::backdrop, ::file-selector-button {
@@ -9,4 +25,4 @@
 }
 
 html, body, #root { height: 100%; }
-body { @apply bg-stone-50 text-slate-900 font-sans; }
+body { @apply bg-canvas text-ink font-sans text-[14px] antialiased; }

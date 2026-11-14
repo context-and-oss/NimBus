@@ -1,18 +1,27 @@
-import { FormEvent, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Customer, api } from '../api';
+import { FormEvent, useEffect, useState, type ReactNode } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Contact, Customer, api } from '../api';
 import { randomCompany } from '../fakeData';
 import AuditLog from '../components/AuditLog';
+import { FastTab } from '../components/shell/fasttab';
+import { BackIcon, PlusIcon, SaveIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
+import { CommandBar, CommandButton, CommandLink, CommandSeparator, ErrorBar, FieldRow, OriginChip, formatDate, inputClass } from '../components/shell/ui';
+import { CustomerStatus } from './CustomersList';
+
+// Customer card: General, CRM link, Credit, Contacts and Audit FastTabs.
 
 export default function CustomerForm() {
   const { id } = useParams();
   const nav = useNavigate();
   const [form, setForm] = useState<Partial<Customer>>({ legalName: '', countryCode: 'DE' });
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (id) api.getCustomer(id).then(setForm);
+    if (!id) return;
+    api.getCustomer(id).then(setForm);
+    api.listContacts().then(all => setContacts(all.filter(c => c.customerId === id))).catch(() => { /* tab shows none */ });
   }, [id]);
 
   async function submit(e: FormEvent) {
@@ -41,47 +50,98 @@ export default function CustomerForm() {
     } finally { setSaving(false); }
   }
 
+  const deleted = form.isDeleted ?? false;
+
   return (
-    <div className="max-w-xl space-y-4">
-    <form onSubmit={submit} className="bg-white rounded-lg shadow-xs border border-slate-200 p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{id ? 'Edit customer' : 'New customer'}</h1>
+    <>
+      <CommandBar>
+        <CommandButton icon={<BackIcon />} onClick={() => nav('/customers')} aria-label="Back to customers" />
+        <CommandButton type="submit" form="customer-form" icon={<SaveIcon />} primary disabled={saving || deleted}>
+          {saving ? 'Saving…' : 'Save'}
+        </CommandButton>
+        {id && <CommandLink to="/customers/new" icon={<PlusIcon />}>New</CommandLink>}
+        {id && !deleted && <CommandButton icon={<TrashIcon />} danger onClick={() => void remove()} disabled={saving}>Delete</CommandButton>}
         {!id && (
-          <button
-            type="button"
-            onClick={() => setForm(prev => ({ ...prev, ...randomCompany() }))}
-            className="text-sm px-3 py-1 bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 border border-slate-200"
-          >
-            Generate fake data
-          </button>
+          <>
+            <CommandSeparator />
+            <CommandButton icon={<SparkleIcon />} onClick={() => setForm(prev => ({ ...prev, ...randomCompany() }))}>Generate fake data</CommandButton>
+          </>
         )}
+      </CommandBar>
+      {error && <ErrorBar>Save failed: {error}</ErrorBar>}
+      <div className="border-b border-line bg-white px-5 pb-3 pt-4">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Customer card</div>
+        <h1 className="text-xl font-semibold">
+          {id ? <>{form.customerNumber && <span className="font-mono text-[17px]">{form.customerNumber} · </span>}{form.legalName || '…'}</> : 'New customer'}
+        </h1>
       </div>
-      {error && <div className="rounded-md bg-red-50 border border-red-200 text-red-800 px-3 py-2 text-sm">Save failed: {error}</div>}
-      <Field label="Legal name" value={form.legalName ?? ''} onChange={v => setForm({ ...form, legalName: v })} required disabled={form.isDeleted} />
-      <Field label="Country code (ISO-2)" value={form.countryCode ?? ''} onChange={v => setForm({ ...form, countryCode: v.toUpperCase().slice(0, 2) })} required disabled={form.isDeleted} />
-      <Field label="Tax ID" value={form.taxId ?? ''} onChange={v => setForm({ ...form, taxId: v })} disabled={form.isDeleted} />
-      {id && <Field label="Customer #" value={form.customerNumber ?? ''} onChange={() => {}} disabled />}
-      <div className="flex gap-2 items-center">
-        <button type="submit" disabled={saving || form.isDeleted} className="px-4 py-2 bg-emerald-600 text-white rounded-md disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
-        <button type="button" onClick={() => nav('/customers')} className="px-4 py-2 text-slate-600">Cancel</button>
-        {id && !form.isDeleted && (
-          <button type="button" onClick={remove} disabled={saving} className="ml-auto px-4 py-2 bg-rose-600 text-white rounded-md disabled:opacity-60 hover:bg-rose-700">Delete</button>
-        )}
-        {id && form.isDeleted && (
-          <span className="ml-auto inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 ring-1 ring-rose-200">Deleted</span>
-        )}
-      </div>
-    </form>
-    {id && <AuditLog entityType="Customer" entityId={id} />}
-    </div>
+
+      <form id="customer-form" onSubmit={submit}>
+        <FastTab title="General" summary={id ? <>{form.legalName} · {form.countryCode}</> : undefined}>
+          <div className="grid max-w-5xl gap-x-10 gap-y-3 lg:grid-cols-2">
+            <FieldRow label="Legal name" required>
+              <input required disabled={deleted} value={form.legalName ?? ''} onChange={e => setForm({ ...form, legalName: e.target.value })} className={inputClass} />
+            </FieldRow>
+            <FieldRow label="Country code (ISO-2)" required>
+              <input required disabled={deleted} value={form.countryCode ?? ''} onChange={e => setForm({ ...form, countryCode: e.target.value.toUpperCase().slice(0, 2) })} className={inputClass} />
+            </FieldRow>
+            <FieldRow label="Tax ID">
+              <input disabled={deleted} value={form.taxId ?? ''} onChange={e => setForm({ ...form, taxId: e.target.value })} className={inputClass} />
+            </FieldRow>
+            {id && (
+              <FieldRow label="Customer #">
+                <input disabled value={form.customerNumber ?? ''} readOnly className={`${inputClass} font-mono`} />
+              </FieldRow>
+            )}
+          </div>
+        </FastTab>
+      </form>
+
+      {id && (
+        <>
+          <FastTab title="CRM link" summary={form.crmAccountId ? 'Linked to a CRM account' : 'Not linked'}>
+            <dl className="grid max-w-5xl gap-x-10 gap-y-2 text-[13px] lg:grid-cols-2">
+              <Read label="Origin" value={<OriginChip origin={form.origin} />} />
+              <Read label="CRM account ID" value={<span className="break-all font-mono text-xs">{form.crmAccountId ?? '—'}</span>} />
+              <Read label="Created" value={formatDate(form.createdAt)} />
+              <Read label="Last updated" value={formatDate(form.updatedAt)} />
+            </dl>
+          </FastTab>
+          <FastTab title="Credit" summary={<CustomerStatus customer={form} />}>
+            <p className="max-w-2xl text-[13px] text-ink-muted">
+              {form.creditHold
+                ? 'This customer is on credit hold. The hold arrived from CRM as a PlaceCustomerOnCreditHold command; CRM credit checks now answer "On hold".'
+                : 'No credit hold. CRM can place one with the PlaceCustomerOnCreditHold command from the account form.'}
+            </p>
+          </FastTab>
+          <FastTab title="Contacts" summary={`${contacts.length} ${contacts.length === 1 ? 'contact' : 'contacts'}`} defaultOpen={false}>
+            {contacts.length === 0 ? (
+              <p className="text-[13px] text-ink-muted">No contacts for this customer.</p>
+            ) : (
+              <ul className="flex flex-col gap-1 text-[13px]">
+                {contacts.map(c => (
+                  <li key={c.id} className={c.isDeleted ? 'text-ink-muted line-through' : ''}>
+                    <Link to={`/contacts/${c.id}`} className="text-accent hover:underline">{c.firstName} {c.lastName}</Link>
+                    {c.email && <span className="text-ink-muted"> · {c.email}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </FastTab>
+          <FastTab title="Audit" summary="Change history" defaultOpen={false}>
+            <div className="max-w-3xl"><AuditLog entityType="Customer" entityId={id} /></div>
+          </FastTab>
+        </>
+      )}
+    </>
   );
 }
 
-function Field({ label, value, onChange, required, disabled }: { label: string; value: string; onChange: (v: string) => void; required?: boolean; disabled?: boolean }) {
+function Read({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <label className="block">
-      <span className="block text-sm text-slate-600 mb-1">{label}{required && ' *'}</span>
-      <input required={required} disabled={disabled} value={value} onChange={e => onChange(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md disabled:bg-slate-100" />
-    </label>
+    <div className="grid grid-cols-[180px_minmax(0,1fr)] items-baseline gap-3">
+      <dt className="text-ink-muted">{label}</dt>
+      <dd className="min-w-0">{value}</dd>
+    </div>
   );
 }
