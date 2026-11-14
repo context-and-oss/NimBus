@@ -11,6 +11,17 @@ public class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbContext(op
     public DbSet<Contact> Contacts => Set<Contact>();
     public DbSet<Audit> Audits => Set<Audit>();
 
+    /// <summary>
+    /// Creates the list indexes on a database that already exists. The model below declares
+    /// the same indexes, but it only reaches a database that is created from it, and start-up
+    /// creates the tables once and upgrades them with SQL after that. Safe to run every start.
+    /// </summary>
+    public const string ListIndexUpgradeSql = @"
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Accounts_CreatedAt_Id' AND object_id = OBJECT_ID('dbo.Accounts'))
+            CREATE INDEX IX_Accounts_CreatedAt_Id ON dbo.Accounts (CreatedAt DESC, Id);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Contacts_CreatedAt_Id' AND object_id = OBJECT_ID('dbo.Contacts'))
+            CREATE INDEX IX_Contacts_CreatedAt_Id ON dbo.Contacts (CreatedAt DESC, Id);";
+
     // Properties that are bookkeeping rather than user-visible state — never
     // emit a field-diff audit row for these. IsDeleted flips become a single
     // Deleted summary row instead (see ProjectAuditEntries).
@@ -26,6 +37,9 @@ public class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbContext(op
             e.Property(x => x.CountryCode).IsRequired().HasMaxLength(2);
             e.Property(x => x.TaxId).HasMaxLength(40);
             e.Property(x => x.ErpCustomerNumber).HasMaxLength(40);
+            // The list is paged newest first, then by Id. Without this index every page sorts
+            // the whole table, which took over a second for 21,000 contacts.
+            e.HasIndex(x => new { x.CreatedAt, x.Id }).IsDescending(true, false);
         });
 
         modelBuilder.Entity<Contact>(e =>
@@ -36,6 +50,7 @@ public class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbContext(op
             e.Property(x => x.Email).HasMaxLength(200);
             e.Property(x => x.Phone).HasMaxLength(40);
             e.HasIndex(x => x.AccountId);
+            e.HasIndex(x => new { x.CreatedAt, x.Id }).IsDescending(true, false);
         });
 
         modelBuilder.Entity<Audit>(e =>
