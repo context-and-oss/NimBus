@@ -38,9 +38,9 @@ in how they scale, in how the apps authenticate, and in a few operator tools.
 | What `nb` deploys | One Azure SQL database at **S0** (10 DTUs, 250 GB included) | One Cosmos account: 13 platform containers plus one container per endpoint, each at **400 RU/s** manual throughput |
 | Fixed monthly cost | ~$15, whatever the endpoint count | ~$304, plus ~$23 per endpoint |
 | Adding an endpoint | No storage change | `nb topology apply` creates the endpoint's container |
-| Scaling | Change the database tier. `nb` deploys S0 only; size it yourself or bring your own database with `--sql-mode external` | Raise a container's throughput; each container scales separately |
-| App authentication | Provisioned path: SQL login and password in the `SqlConnection` app setting. External path: whatever your connection string uses, including managed identity | Managed identity only; no secrets |
-| Bring your own store | `--sql-mode external` with any SQL Server or Azure SQL database | No: `nb` always creates the account |
+| Scaling | Change the database tier. `nb` deploys S0, and every `nb infra apply` sets it back to S0, so scale up in the portal again after each run | Raise a container's throughput; each container scales separately |
+| App authentication | SQL login and password in the `SqlConnection` app setting | Managed identity only; no secrets |
+| Bring your own store | Not usable yet: `--sql-mode external` configures the WebApp but not the Resolver ([known gap](#sql-only-deployment)) | No: `nb` always creates the account |
 | Cosmos-only tools | — | `nb container` commands, Copy Endpoint Data, Topology → Storage ([details](#operator-tools-that-are-cosmos-only-in-v1)) |
 | Deploy pipelines (`deploy.yml`, `pipelines/azure-pipelines-deploy.yml`) | Not yet: neither passes `--storage-provider`, so both deploy Cosmos | Yes |
 
@@ -56,7 +56,7 @@ and aren't included.
 | Dev / test | 1,000 | 5 | 1 GB | ~1 RU/s | **~$421** (18 containers) | **~$15** (S0) |
 | Small | 50,000 | 10 | 10 GB | ~29 RU/s | **~$540** (23 containers) | **~$15** (S0) |
 | Medium | 500,000 | 20 | 50 GB | ~290 RU/s | **~$783** (33 containers) | **~$29–$74** (S1–S2) |
-| Large | 5,000,000 | 50 | 200 GB | ~2,900 RU/s | **~$1,522**, plus raising the shared `messages` container above 400 RU/s ($5.84 a month per extra 100 RU/s) | **~$147–$294** (S3–S4), deployed with `--sql-mode external` |
+| Large | 5,000,000 | 50 | 200 GB | ~2,900 RU/s | **~$1,522**, plus raising the shared `messages` container above 400 RU/s ($5.84 a month per extra 100 RU/s) | **~$147–$294** (S3–S4), scaled in the portal |
 
 How the numbers are worked out:
 
@@ -75,8 +75,9 @@ How the numbers are worked out:
 - **SQL tiers are a starting point, not a measurement.** How many deliveries a DTU carries for
   NimBus has not been benchmarked. Start at the suggested tier, watch the database's **DTU
   percentage** in the portal or Azure Monitor, and move up a tier when it stays above about 80%.
-  `nb` deploys S0 only, and a rerun of `nb infra apply` redeploys S0, so for any other tier
-  provision the database yourself and use `--sql-mode external`.
+  `nb` deploys S0 only, and every `nb infra apply` sets the database back to S0. For a larger tier,
+  scale the database in the portal or with `az sql db update --service-objective`, and again after
+  each `nb infra apply`.
 
 ### Which to choose
 
@@ -84,16 +85,17 @@ Choose **SQL Server** when:
 
 - the load is small or medium. It costs a fraction of Cosmos's fixed floor, and endpoints add
   nothing;
-- your organization already runs Azure SQL or SQL Server, or doesn't allow Cosmos DB;
-- you want to bring your own database, including an on-premises or managed SQL Server.
+- your organization already runs Azure SQL or SQL Server, or doesn't allow Cosmos DB.
+
+Bringing your own SQL database (`--sql-mode external`) will also be a reason to choose SQL Server,
+once the Resolver gap described under [SQL-only deployment](#sql-only-deployment) is fixed.
 
 Choose **Cosmos DB** when:
 
 - the load is high or very bursty and you would rather raise throughput per container than size
   and change a database tier;
-- you need a data path with no secrets today. The provisioned SQL path still puts a SQL password
-  in an app setting, unless you bring your own database with a managed-identity connection
-  string;
+- you need a data path with no secrets today. The provisioned SQL path puts the SQL admin password
+  in an app setting;
 - your operators depend on the [Cosmos-only tools](#operator-tools-that-are-cosmos-only-in-v1);
 - you deploy through the `deploy.yml` workflow or the Azure Pipelines template, which support only
   Cosmos so far. SQL deployments run `nb` directly, passing `--storage-provider sqlserver` to
@@ -406,6 +408,12 @@ nb infra apply \
   --sql-mode external
 unset NIMBUS_SQL_CONNECTION_STRING
 ```
+
+**Known gap in external mode.** The connection string reaches only the WebApp. The core template
+sets the Resolver's `SqlConnection` only for `--sql-mode provision`. So the Resolver starts with no
+storage setting, falls back to Cosmos and fails. Adding the setting by hand doesn't last, because
+the next `nb infra apply` replaces the Resolver's app settings. Until this is fixed, use
+`--sql-mode provision`.
 
 The Bicep templates skip Cosmos provisioning entirely when `storageProvider == 'sqlserver'`.
 
