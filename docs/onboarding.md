@@ -55,12 +55,13 @@ for the flows (publish, failure, resubmit, skip, deferral, request/reply).
 
 ### See it working first
 
-Before designing anything, run the [Dynamics 365 Sales ↔ Business Central demo](../samples/DynamicsBcDemo/README.md)
-on a laptop. It is the closest thing to your project: simulated CRM and BC systems, two real adapters,
-the Resolver and the WebApp, with customer, prospect, opportunity, product-group and quote flows in
-both directions. Break a message and recover it in the WebApp. The demo's
-[`DynamicsBcDemo.Contracts`](../samples/DynamicsBcDemo/DynamicsBcDemo.Contracts) project is a
-complete catalog to copy from.
+Before designing anything, run the [CRM/ERP demo](../samples/CrmErpDemo/README.md#running-locally--sql-server-default)
+on a laptop. It runs simulated CRM and ERP systems, their adapters, the Resolver and the WebApp,
+with account and contact flows in both directions. Break a message and recover it in the WebApp.
+The demo's [`CrmErpDemo.Contracts`](../samples/CrmErpDemo/CrmErpDemo.Contracts) project is a
+complete catalog to copy from. The demo's adapters stay minimal; the
+[adapter kit](https://github.com/akakaule/nimbus-adapter-kit) generates the production shape
+([section 7](#7-build-the-adapters)).
 
 ## 2. Prerequisites
 
@@ -161,7 +162,7 @@ Record these in a short decision log before the first deployment. Most are hard 
 | **WebApp sign-in** | Entra ID, or username/password (SQL Server only) | Entra ID ([authentication.md](authentication.md)) |
 | **Adapter hosting** | Worker in an Azure Container App, or Azure Functions | Worker in a Container App: what the adapter kit generates, and the only host that supports the circuit breaker ([building-adapters.md](building-adapters.md#how-should-it-be-hosted)) |
 | **Endpoints** | One per system, or more | One per system: `D365SalesEndpoint` and `BusinessCentralEndpoint`. Add a second endpoint for a system only for a separate lane, such as bulk loads. |
-| **Ownership** | Per entity and per field | Write down which system owns each entity and field (for example: CRM owns prospects and opportunities, BC owns customers and quotes). The demo's [ownership model](../samples/DynamicsBcDemo/README.md#the-ownership-model) is a worked example. |
+| **Ownership** | Per entity and per field | Write down which system owns each entity and field (for example: CRM owns prospects and opportunities, BC owns customers and quotes). |
 
 ### Repository layout
 
@@ -596,7 +597,7 @@ Patch releases contain fixes only. Minor and major releases are described in
 
 | When | Read |
 |---|---|
-| First day | This guide, [README](../README.md), [architecture.md](architecture.md), the [Dynamics 365 ↔ BC demo](../samples/DynamicsBcDemo/README.md) |
+| First day | This guide, [README](../README.md), [architecture.md](architecture.md), the [CRM/ERP demo](../samples/CrmErpDemo/README.md) |
 | Designing the catalog | [getting-started.md](getting-started.md), [message-flows.md](message-flows.md), [sdk-api-reference.md](sdk-api-reference.md), kit patterns 01–03 |
 | Setting up environments | [deployment.md](deployment.md), [azure-requirements.md](azure-requirements.md), [cli.md](cli.md), [authentication.md](authentication.md), [storage-providers.md](storage-providers.md) |
 | Building adapters | [building-adapters.md](building-adapters.md), the kit's [patterns](https://github.com/akakaule/nimbus-adapter-kit/blob/main/skills/nimbus-adapter/references/patterns/README.md) and the Dataverse and Business Central packs |
