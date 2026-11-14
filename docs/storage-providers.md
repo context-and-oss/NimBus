@@ -41,6 +41,7 @@ in how they scale, in how the apps authenticate, and in a few operator tools.
 | Scaling | Change the database tier. `nb` deploys S0, and every `nb infra apply` sets it back to S0, so scale up in the portal again after each run | Raise a container's throughput; each container scales separately |
 | App authentication | SQL login and password in the `SqlConnection` app setting | Managed identity only; no secrets |
 | Bring your own store | Not usable yet: `--sql-mode external` configures the WebApp but not the Resolver ([known gap](#sql-only-deployment)) | No: `nb` always creates the account |
+| Data retention | **Nothing is deleted**: tracking rows, messages and audits stay until you remove them, so the database keeps growing toward its tier's limit (250 GB on S0) | Expires automatically: completed rows after 30 days, messages after 90, audits after a year ([details](#retention-of-unresolved-rows)) |
 | Cosmos-only tools | — | `nb container` commands, Copy Endpoint Data, Topology → Storage ([details](#operator-tools-that-are-cosmos-only-in-v1)) |
 | Deploy pipelines (`deploy.yml`, `pipelines/azure-pipelines-deploy.yml`) | Not yet: neither passes `--storage-provider`, so both deploy Cosmos | Yes |
 
@@ -89,6 +90,10 @@ Choose **SQL Server** when:
 
 Bringing your own SQL database (`--sql-mode external`) will also be a reason to choose SQL Server,
 once the Resolver gap described under [SQL-only deployment](#sql-only-deployment) is fixed.
+
+**Plan for SQL storage growth.** The SQL provider never deletes old data. Watch the database's
+used space, and delete old rows yourself before it reaches the tier's limit: Completed and Skipped
+rows in `UnresolvedEvents`, old `Messages` and old `MessageAudits`. Automatic cleanup is planned.
 
 Choose **Cosmos DB** when:
 
