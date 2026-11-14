@@ -97,16 +97,32 @@ describe("IntelligenceCard", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("shows an empty recordable card for an eligible failure without offering analysis", async () => {
-    globalThis.fetch = vi.fn()
+  it("stays hidden in recordable mode until an agent has recorded a classification", async () => {
+    const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Recordable", canAnalyze: false, canRecord: true, contractVersion: 1 })))
-      .mockResolvedValueOnce(new Response(null, { status: 404 })) as typeof fetch;
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    globalThis.fetch = fetchMock as typeof fetch;
 
     render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
 
-    expect(await screen.findByText("No classification has been recorded.")).toBeTruthy();
-    expect(screen.getByText("Agents record classifications over MCP.")).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText(/Failure intelligence/)).toBeNull();
+    expect(screen.queryByText("No classification has been recorded.")).toBeNull();
+  });
+
+  it("stays hidden for a Reader when no analysis exists and none can be started", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: false, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText(/Failure intelligence/)).toBeNull();
+    expect(screen.queryByText("No analysis has been performed.")).toBeNull();
   });
 
   it("marks a version 1 provider result's fault origin as not assessed", async () => {
