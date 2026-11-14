@@ -15,12 +15,13 @@ public class ErpDbContext(DbContextOptions<ErpDbContext> options) : DbContext(op
     /// Creates the list indexes on a database that already exists. The model below declares
     /// the same indexes, but it only reaches a database that is created from it, and start-up
     /// creates the tables once and upgrades them with SQL after that. Safe to run every start.
+    /// Keep each INCLUDE list equal to the entity's other columns: ListSortIndexTests checks it.
     /// </summary>
     public const string ListIndexUpgradeSql = @"
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Customers_CreatedAt_Id' AND object_id = OBJECT_ID('dbo.Customers'))
-            CREATE INDEX IX_Customers_CreatedAt_Id ON dbo.Customers (CreatedAt DESC, Id);
+            CREATE INDEX IX_Customers_CreatedAt_Id ON dbo.Customers (CreatedAt DESC, Id) INCLUDE (CustomerNumber, LegalName, TaxId, CountryCode, CrmAccountId, UpdatedAt, Origin, IsDeleted, CreditHold);
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Contacts_CreatedAt_Id' AND object_id = OBJECT_ID('dbo.Contacts'))
-            CREATE INDEX IX_Contacts_CreatedAt_Id ON dbo.Contacts (CreatedAt DESC, Id);";
+            CREATE INDEX IX_Contacts_CreatedAt_Id ON dbo.Contacts (CreatedAt DESC, Id) INCLUDE (CustomerId, FirstName, LastName, Email, Phone, UpdatedAt, Origin, IsDeleted);";
 
     // Properties that are bookkeeping rather than user-visible state — never
     // emit a field-diff audit row for these. IsDeleted flips become a single
@@ -39,9 +40,12 @@ public class ErpDbContext(DbContextOptions<ErpDbContext> options) : DbContext(op
             e.Property(x => x.CountryCode).IsRequired().HasMaxLength(2);
             e.Property(x => x.TaxId).HasMaxLength(40);
             e.HasIndex(x => x.CrmAccountId);
-            // The list is paged newest first, then by Id. Without this index every page sorts
-            // the whole table, which took over a second for 21,000 contacts.
-            e.HasIndex(x => new { x.CreatedAt, x.Id }).IsDescending(true, false);
+            // The list is paged newest first, then by Id. Without an index on that order every
+            // page sorts the whole table, which took over a second for 21,000 contacts. The
+            // index carries the other columns too: with the key alone, SQL Server looks up
+            // every row a deep page skips, which costs more than the sort it replaces.
+            e.HasIndex(x => new { x.CreatedAt, x.Id }).IsDescending(true, false)
+                .IncludeProperties(x => new { x.CustomerNumber, x.LegalName, x.TaxId, x.CountryCode, x.CrmAccountId, x.UpdatedAt, x.Origin, x.IsDeleted, x.CreditHold });
         });
 
         modelBuilder.Entity<ErpContact>(e =>
@@ -52,7 +56,8 @@ public class ErpDbContext(DbContextOptions<ErpDbContext> options) : DbContext(op
             e.Property(x => x.Email).HasMaxLength(200);
             e.Property(x => x.Phone).HasMaxLength(40);
             e.HasIndex(x => x.CustomerId);
-            e.HasIndex(x => new { x.CreatedAt, x.Id }).IsDescending(true, false);
+            e.HasIndex(x => new { x.CreatedAt, x.Id }).IsDescending(true, false)
+                .IncludeProperties(x => new { x.CustomerId, x.FirstName, x.LastName, x.Email, x.Phone, x.UpdatedAt, x.Origin, x.IsDeleted });
         });
 
         modelBuilder.Entity<Audit>(e =>

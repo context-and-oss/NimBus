@@ -52,7 +52,18 @@ public sealed class ListSortIndexTests
         // the index from the upgrade script, which must create the same index under the same name.
         var name = index.GetDatabaseName();
         Assert.AreEqual($"IX_{table}_CreatedAt_Id", name);
-        StringAssert.Contains(upgradeSql, $"CREATE INDEX {name} ON dbo.{table} (CreatedAt DESC, Id)", StringComparison.Ordinal);
+
+        // The index has to cover the row. With the key alone, SQL Server looks up every row a
+        // deep page skips: 46,008 page reads for page 150 of 21,000 contacts, against 1,764 for
+        // sorting the table with no index at all.
+        var included = index.GetIncludeProperties() ?? [];
+        var others = entity.GetProperties().Select(p => p.Name).Except(["CreatedAt", "Id"]).ToList();
+        CollectionAssert.AreEquivalent(others, included.ToList(), $"The {table} index must include every other column of the row.");
+
+        StringAssert.Contains(
+            upgradeSql,
+            $"CREATE INDEX {name} ON dbo.{table} (CreatedAt DESC, Id) INCLUDE ({string.Join(", ", included)});",
+            StringComparison.Ordinal);
         StringAssert.Contains(upgradeSql, $"name = '{name}'", StringComparison.Ordinal);
     }
 }
