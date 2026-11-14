@@ -126,4 +126,4 @@ npm --prefix website ci && npm --prefix website run build
 ## Out of scope
 
 - Spec 036 (deferred) and its review findings.
-- The in-request endpoint purge noted in Spec 036 §0.6. It gets its own issue.
+- The in-request endpoint purge noted in Spec 036 §0.6, tracked as #388.

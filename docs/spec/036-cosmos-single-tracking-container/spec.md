@@ -98,7 +98,7 @@ Any one of these:
 Since #375, `PurgeMessages(endpointId)` deletes row by row inside the HTTP request, at parallelism
 8, on every Cosmos deployment. An endpoint with a few hundred thousand rows can outlast App
 Service's request timeout of about 230 seconds. Until then, the delete competes with the
-Resolver's writes for that endpoint's container. This needs its own issue; it doesn't depend on the
+Resolver's writes for that endpoint's container. It is tracked as #388 and doesn't depend on the
 container layout.
 
 ---
