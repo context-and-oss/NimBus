@@ -21,6 +21,11 @@ and WebApp as deployable zips. The version lives only in the tag —
 release. A GitHub Release accompanies every tag; its notes follow the pattern
 below, which is the one the release history actually uses (3.6.0 onward).
 
+A build from source that cannot pass `/p:Version` sets the `NIMBUS_BUILD_VERSION`
+environment variable instead; `/p:Version` wins when both are given. The
+CrmErpDemo AppHost sets it from `git describe --tags` when `aspire deploy` builds
+its images, as `nb deploy apps` stamps its own builds from the latest tag.
+
 ## Cutting a release
 
 1. Read the two most recent releases first — `gh release view v<prev>` — and

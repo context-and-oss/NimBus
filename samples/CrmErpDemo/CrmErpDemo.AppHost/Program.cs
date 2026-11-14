@@ -9,6 +9,13 @@ var builder = DistributedApplication.CreateBuilder(args);
 // container, Vite dev servers and the local-dev auth bypass.
 var isPublish = builder.ExecutionContext.IsPublishMode;
 
+// Stamp the images this deploy builds with the checked-out release tag, so the nimbus-ops
+// footer shows the NimBus version instead of the repository's 0.0.0 placeholder.
+if (isPublish)
+{
+    CrmErpDemo.AppHost.DemoBuildVersion.Apply(builder.AppHostDirectory);
+}
+
 // NimBus storage provider toggle. Accepts the same flag names as the slim
 // src/NimBus.AppHost so muscle memory carries between the two sample apphosts:
 //   --NIMBUS_STORAGE_PROVIDER sqlserver  (env or arg)

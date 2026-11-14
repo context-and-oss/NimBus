@@ -399,6 +399,8 @@ Deploy settings and parameters are environment variables on the `aspire deploy` 
 Azure__SubscriptionId=<subscription-id> Azure__Location=swedencentral Azure__ResourceGroup=rg-crmerp-demo Parameters__ops_admin_email=admin@example.com Parameters__ops_admin_password='<a strong password>' aspire deploy --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj
 ```
 
+The nimbus-ops footer shows the NimBus version the images were built from: the AppHost stamps them with what `git describe --tags` reports for the checkout, such as `4.13.0` on a release tag or `4.13.0-2-gabc1234` two commits after it. The demo's own catalog assembly (`CrmErpDemo.Contracts`, the footer's "Config" version) is built before the AppHost starts and stays at `0.0.0`. To version it too, or to choose the version yourself, add `NIMBUS_BUILD_VERSION=4.13.0` to the command.
+
 If your account can see more than one tenant, also set `Azure__TenantId`. The first deploy takes about 20 minutes. `flow-webhook-key` (the shared key for the Resolver's realtime Flow updates) and `demo-service-key` (the adapters' key for the CRM and ERP APIs) are generated and kept in the deployment state. Redeploying the same command updates the apps in place.
 
 Then create the Service Bus topology by starting the provisioner job once. Run it again after a deploy that changes the event catalog:
