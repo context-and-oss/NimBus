@@ -156,7 +156,7 @@ public sealed class OperatorDiscoveryTools
 /// <param name="Caller">The authenticated caller.</param>
 /// <param name="AuthenticationMode"><c>Entra</c> or <c>LocalDevelopment</c>.</param>
 /// <param name="ReadableEndpoints">Endpoint ids the caller holds Reader on.</param>
-/// <param name="PermittedActions">Actions the caller may take through MCP on at least one endpoint: resubmit, skip, report, classify (record a classification). nimbus_get_message lists what applies to one message.</param>
+/// <param name="PermittedActions">Actions the caller may take through MCP on at least one endpoint: resubmit, skip, report, classify (record a classification), and where a site Owner switched them on settle_handoff, reprocess_deferred, skip_deferred_tracking and resubmit_with_changes. nimbus_get_message lists what applies to one message.</param>
 /// <param name="Limits">The MCP request limit, or null when rate limiting is off.</param>
 /// <param name="Features">Optional features available in this deployment.</param>
 /// <param name="Unattended">The budget and cap that apply when you resubmit as a workload; null otherwise.</param>

@@ -15,7 +15,15 @@ export interface McpSettings {
   updatedBy?: string | null;
   updatedAtUtc?: string | null;
   enabled: boolean;
-  capabilities: { payloads: boolean; report: boolean; classify: boolean; resubmit: boolean; skip: boolean };
+  capabilities: {
+    payloads: boolean; report: boolean; classify: boolean; resubmit: boolean; skip: boolean;
+    /** Spec 035 Phase 3. Off unless a site Owner turns it on; a missing value is off. */
+    settleHandoffs?: boolean;
+    /** Spec 035 Phase 3. Off unless a site Owner turns it on; a missing value is off. */
+    recoverDeferred?: boolean;
+    /** Spec 035 Phase 3. Off unless a site Owner turns it on; a missing value is off. */
+    editPayloads?: boolean;
+  };
   allowWorkloads: boolean;
   /** Spec 044: workloads with the Nimbus.Classify app role may record classifications. Effective only with allowWorkloads. */
   allowWorkloadClassification?: boolean;
@@ -92,8 +100,10 @@ export interface CapabilityInfo {
   tools: string[]; scope: string; role: string; description: string; note?: string;
 }
 
-export const READ_TOOL_COUNT = 14;
-export const TOTAL_TOOL_COUNT = 20;
+/** The tools that only read, without nimbus_prepare_action. They have no switch. */
+export const READ_TOOL_COUNT = 15;
+/** Every tool the server registers: the read tools, nimbus_prepare_action and the nine that change something. */
+export const TOTAL_TOOL_COUNT = 25;
 
 export const CAPABILITIES: CapabilityInfo[] = [
   { key: "payloads", label: "Raw payloads", risk: "data", riskText: "data", tools: ["nimbus_get_message · includePayload"],
@@ -113,6 +123,18 @@ export const CAPABILITIES: CapabilityInfo[] = [
     scope: "nimbus.skip", role: "Contributor",
     description: "Mark a message as never to be processed. This can release the later messages waiting in its session and can't be undone.",
     note: "Agents should show the preview and ask before skipping, but NimBus can't verify that a person approved it. Consider leaving Skip to the Web UI until a pilot has run for a while." },
+  { key: "settleHandoffs", label: "Settle pending handoffs", risk: "medium", riskText: "medium", tools: ["nimbus_prepare_action", "nimbus_settle_handoff"],
+    scope: "nimbus.settle", role: "Contributor",
+    description: "Complete or fail a message that waits for external work. The endpoint records the outcome without running its handler again.",
+    note: "The agent states the outcome of work that happened outside NimBus. NimBus can't check it: the person at the agent must know whether the external job finished." },
+  { key: "recoverDeferred", label: "Recover deferred messages", risk: "medium", riskText: "medium", tools: ["nimbus_prepare_action", "nimbus_reprocess_deferred", "nimbus_skip_deferred_tracking"],
+    scope: "nimbus.recover", role: "Contributor",
+    description: "Reprocess the deferred messages of a session that no failed message still blocks, or mark a stale Deferred tracking record as Skipped after the broker shows no matching message.",
+    note: "Skipping a tracking record changes NimBus only. Nothing is removed from Service Bus, and work that is already running is not cancelled." },
+  { key: "editPayloads", label: "Resubmit with an edited payload", risk: "high", riskText: "high", tools: ["nimbus_prepare_action", "nimbus_resubmit_with_changes"],
+    scope: "nimbus.edit", role: "Contributor + PiiReader",
+    description: "Replay a failed message with a payload the agent edited. The event type can't change, masked values are refused, and the audit row records which fields changed, not their values.",
+    note: "The endpoint processes what the agent sends in place of the stored payload. Agents should show the changed fields and ask first, but NimBus can't verify that a person approved them." },
 ];
 
 const sameSet = (a: string[], b: string[]) => {
@@ -142,9 +164,14 @@ export function describeChanges(a: McpSettings, b: McpSettings): McpChange[] {
   const names: Record<CapabilityKey, string> = {
     payloads: "raw payloads", report: "marking messages reported", classify: "classifying failures",
     resubmit: "resubmitting messages", skip: "skipping messages",
+    settleHandoffs: "settling pending handoffs", recoverDeferred: "recovering deferred messages",
+    editPayloads: "resubmitting with an edited payload",
   };
   for (const key of Object.keys(names) as CapabilityKey[]) {
-    if (a.capabilities[key] !== b.capabilities[key]) add(`${b.capabilities[key] ? "Allow" : "Stop"} ${names[key]}`, b.capabilities[key]);
+    // A missing switch is off, as on the server.
+    const was = Boolean(a.capabilities[key]);
+    const now = Boolean(b.capabilities[key]);
+    if (was !== now) add(`${now ? "Allow" : "Stop"} ${names[key]}`, now);
   }
   if (a.allowWorkloads !== b.allowWorkloads) add(b.allowWorkloads ? "Accept workload (app-only) tokens" : "Refuse workload (app-only) tokens", b.allowWorkloads);
   if (Boolean(a.allowWorkloadClassification) !== Boolean(b.allowWorkloadClassification))
@@ -229,6 +256,9 @@ export const PERSONAS: Record<Persona, { label: string; delegated: boolean; cont
 
 export interface PreviewRow { name: string; allowed: boolean; why: string }
 
+/** The Spec 035 Phase 3 capabilities: delegated callers only, never a workload. */
+const RECOVERY_KEYS: CapabilityKey[] = ["settleHandoffs", "recoverDeferred", "editPayloads"];
+
 /** What a caller of the given kind could use under `s` — a preview of the server's rules. */
 export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona, classifyAvailable: boolean): PreviewRow[] {
   const p = PERSONAS[persona];
@@ -253,14 +283,27 @@ export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona
       return s.allowWorkloadResubmit
         ? { name, allowed: true, why: "Nimbus.Resubmit role + Contributor, within budget" }
         : { name, allowed: false, why: "unattended resubmits off" };
+    // Spec 035 Phase 3: the recovery tools stay with the agent of a person.
+    if (!p.delegated && RECOVERY_KEYS.includes(key)) return { name, allowed: false, why: "workloads never recover" };
     if (!p.delegated) return { name, allowed: false, why: key === "payloads" ? "no app role for payloads" : key === "skip" ? "workloads never skip" : "workloads can't change" };
     if (key === "payloads") return p.pii ? { name, allowed: true, why: local ? "PiiReader" : "scope + PiiReader" } : { name, allowed: false, why: "needs PiiReader" };
-    return p.contributor ? { name, allowed: true, why: local ? "Contributor" : "scope + Contributor" } : { name, allowed: false, why: "needs Contributor" };
+    if (!p.contributor) return { name, allowed: false, why: "needs Contributor" };
+    // An edited payload replaces every value, the sensitive ones included.
+    if (key === "editPayloads")
+      return p.pii ? { name, allowed: true, why: local ? "Contributor + PiiReader" : "scope + Contributor + PiiReader" } : { name, allowed: false, why: "needs PiiReader" };
+    return { name, allowed: true, why: local ? "Contributor" : "scope + Contributor" };
   };
+  // The tools nimbus_prepare_action previews, by capability.
+  const prepared: PreviewRow[] = [
+    cap("nimbus_resubmit_message", "resubmit"), cap("nimbus_skip_message", "skip"),
+    cap("nimbus_settle_handoff", "settleHandoffs"),
+    cap("nimbus_reprocess_deferred", "recoverDeferred"), cap("nimbus_skip_deferred_tracking", "recoverDeferred"),
+    cap("nimbus_resubmit_with_changes", "editPayloads"),
+  ];
   rows.push(cap("payloads (includePayload)", "payloads"), cap("nimbus_set_message_reported", "report"),
-    cap("nimbus_record_classification", "classify"), cap("nimbus_resubmit_message", "resubmit"), cap("nimbus_skip_message", "skip"));
-  const prepare = rows[4].allowed || rows[5].allowed;
-  rows.push({ name: "nimbus_prepare_action", allowed: prepare, why: gate ?? (prepare ? "resubmit or skip allowed" : "needs resubmit or skip") });
+    cap("nimbus_record_classification", "classify"), ...prepared);
+  const prepare = prepared.some(r => r.allowed);
+  rows.push({ name: "nimbus_prepare_action", allowed: prepare, why: gate ?? (prepare ? "a recovery action is allowed" : "needs a recovery action") });
   return rows;
 }
 
@@ -268,6 +311,9 @@ export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona
 export function listedToolCount(s: McpSettings, d: McpDeployment): number {
   if (d.mode === "disabled" || !s.enabled) return 0;
   const c = s.capabilities;
-  // Classify lists nimbus_record_classification and the deprecated nimbus_classify_failure.
-  return READ_TOOL_COUNT + [c.report, c.resubmit, c.skip].filter(Boolean).length + (c.classify ? 2 : 0) + (c.resubmit || c.skip ? 1 : 0);
+  // Classify lists nimbus_record_classification and the deprecated nimbus_classify_failure; recovering
+  // deferred messages lists two tools. nimbus_prepare_action is listed while it can preview anything.
+  const preparable = [c.resubmit, c.skip, c.settleHandoffs, c.recoverDeferred, c.editPayloads].some(Boolean);
+  return READ_TOOL_COUNT + [c.report, c.resubmit, c.skip, c.settleHandoffs, c.editPayloads].filter(Boolean).length
+    + (c.classify ? 2 : 0) + (c.recoverDeferred ? 2 : 0) + (preparable ? 1 : 0);
 }

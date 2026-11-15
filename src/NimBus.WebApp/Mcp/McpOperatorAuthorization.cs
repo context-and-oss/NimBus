@@ -54,6 +54,21 @@ public static class McpOperatorPermissions
     public const string ClassifyScope = "nimbus.classify";
 
     /// <summary>
+    /// Delegated scope for <c>nimbus_settle_handoff</c> (Spec 035 Phase 3). The Phase 3 scopes
+    /// have no workload app role: these tools stay with a person's agent.
+    /// </summary>
+    public const string SettleScope = "nimbus.settle";
+
+    /// <summary>Delegated scope for <c>nimbus_reprocess_deferred</c> and <c>nimbus_skip_deferred_tracking</c> (Spec 035 Phase 3).</summary>
+    public const string RecoverScope = "nimbus.recover";
+
+    /// <summary>
+    /// Delegated scope for <c>nimbus_resubmit_with_changes</c> (Spec 035 Phase 3). It adds to, and
+    /// never replaces, the Contributor and PiiReader grants.
+    /// </summary>
+    public const string EditScope = "nimbus.edit";
+
+    /// <summary>
     /// Application role for workloads that record failure classifications (Spec 044 §6.6). It
     /// admits <c>nimbus_record_classification</c> only, and only while the Owner allows it; it
     /// changes no message.
@@ -77,11 +92,11 @@ public static class McpOperatorPermissions
     /// <summary>
     /// Every delegated scope the endpoint understands, in the order the protected-resource
     /// metadata advertises them. <see cref="ClassifyScope"/> and <see cref="ResubmitScope"/> have
-    /// workload app roles (<see cref="ClassifyRole"/>, <see cref="ResubmitRole"/>); skip stays with
-    /// interactive, delegated callers.
+    /// workload app roles (<see cref="ClassifyRole"/>, <see cref="ResubmitRole"/>); skip and the
+    /// Phase 3 scopes (settle, recover, edit) stay with interactive, delegated callers.
     /// </summary>
     public static readonly IReadOnlyList<string> AllScopes =
-        [ObserveScope, PayloadReadScope, ResubmitScope, SkipScope, AnnotateScope, ClassifyScope];
+        [ObserveScope, PayloadReadScope, ResubmitScope, SkipScope, AnnotateScope, ClassifyScope, SettleScope, RecoverScope, EditScope];
 
     /// <summary>True when <paramref name="user"/> holds the delegated <paramref name="scope"/>.</summary>
     public static bool HasDelegatedScope(ClaimsPrincipal user, string scope)

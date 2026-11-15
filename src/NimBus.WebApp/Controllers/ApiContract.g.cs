@@ -1318,7 +1318,7 @@ namespace NimBus.WebApp.ManagementApi
         /// </summary>
 
         /// <remarks>
-        /// Replaces the disabled audit types. Only types listed in configurableAuditTypes can be disabled; access-denied attempts, updateAuditSettings itself and the commands that change a message (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent) are always recorded.
+        /// Replaces the disabled audit types. Only types listed in configurableAuditTypes can be disabled; access-denied attempts, updateAuditSettings itself and the commands that change a message (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent, reprocessDeferred) are always recorded.
         /// </remarks>
 
         /// <returns>OK</returns>
@@ -1821,7 +1821,7 @@ namespace NimBus.WebApp.ManagementApi
         /// Choose which audit types are recorded
         /// </summary>
         /// <remarks>
-        /// Replaces the disabled audit types. Only types listed in configurableAuditTypes can be disabled; access-denied attempts, updateAuditSettings itself and the commands that change a message (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent) are always recorded.
+        /// Replaces the disabled audit types. Only types listed in configurableAuditTypes can be disabled; access-denied attempts, updateAuditSettings itself and the commands that change a message (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent, reprocessDeferred) are always recorded.
         /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPut, Microsoft.AspNetCore.Mvc.Route("api/v1/admin/audit/settings")]
@@ -19879,6 +19879,9 @@ namespace NimBus.WebApp.ManagementApi
         private bool _classify;
         private bool _resubmit;
         private bool _skip;
+        private bool _settleHandoffs;
+        private bool _recoverDeferred;
+        private bool _editPayloads;
 
         [Newtonsoft.Json.JsonProperty("payloads", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public bool Payloads    {
@@ -19940,6 +19943,54 @@ namespace NimBus.WebApp.ManagementApi
                 if (_skip != value)
                 {
                     _skip = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// nimbus_settle_handoff (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("settleHandoffs", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool SettleHandoffs    {
+            get { return _settleHandoffs; }
+            set
+            {
+                if (_settleHandoffs != value)
+                {
+                    _settleHandoffs = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// nimbus_reprocess_deferred and nimbus_skip_deferred_tracking (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("recoverDeferred", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool RecoverDeferred    {
+            get { return _recoverDeferred; }
+            set
+            {
+                if (_recoverDeferred != value)
+                {
+                    _recoverDeferred = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// nimbus_resubmit_with_changes (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("editPayloads", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool EditPayloads    {
+            get { return _editPayloads; }
+            set
+            {
+                if (_editPayloads != value)
+                {
+                    _editPayloads = value;
                     RaisePropertyChanged();
                 }
             }
@@ -25413,6 +25464,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"updateEndpointMetadata")]
         UpdateEndpointMetadata = 45,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"reprocessDeferred")]
+        ReprocessDeferred = 46,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -25770,6 +25824,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"updateEndpointMetadata")]
         UpdateEndpointMetadata = 45,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"reprocessDeferred")]
+        ReprocessDeferred = 46,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -26015,6 +26072,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"updateEndpointMetadata")]
         UpdateEndpointMetadata = 45,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reprocessDeferred")]
+        ReprocessDeferred = 46,
 
     }
 

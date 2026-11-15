@@ -19,6 +19,18 @@ public enum OperatorAction
 
     /// <summary>Request an AI classification of the failure.</summary>
     Classify,
+
+    /// <summary>Complete or fail a pending handoff (Spec 035 Phase 3).</summary>
+    SettleHandoff,
+
+    /// <summary>Reset a session's deferred state and request a drain of its deferred messages (Spec 035 Phase 3).</summary>
+    ReprocessDeferred,
+
+    /// <summary>Mark a stale Deferred tracking row Skipped; nothing is removed from the broker (Spec 035 Phase 3).</summary>
+    SkipDeferredTracking,
+
+    /// <summary>Replay the message with an edited payload (Spec 035 Phase 3).</summary>
+    ResubmitWithChanges,
 }
 
 /// <summary>
@@ -66,11 +78,33 @@ public sealed class OperatorActionAccess
         OperatorAction.Skip => McpOperatorPermissions.SkipScope,
         OperatorAction.Report => McpOperatorPermissions.AnnotateScope,
         OperatorAction.Classify => McpOperatorPermissions.ClassifyScope,
+        OperatorAction.SettleHandoff => McpOperatorPermissions.SettleScope,
+        OperatorAction.ReprocessDeferred or OperatorAction.SkipDeferredTracking => McpOperatorPermissions.RecoverScope,
+        OperatorAction.ResubmitWithChanges => McpOperatorPermissions.EditScope,
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };
 
+    /// <summary>The name agents see for a journaled operation: the same as its <see cref="OperatorAction"/>.</summary>
+    public static string NameOf(NimBus.MessageStore.States.OperatorOperationAction action) => action switch
+    {
+        NimBus.MessageStore.States.OperatorOperationAction.ResubmitWithChanges => NameOf(OperatorAction.ResubmitWithChanges),
+        _ => action.ToString().ToLowerInvariant(),
+    };
+
+    /// <summary>Whether <paramref name="action"/> is one of the Spec 035 Phase 3 recovery actions.</summary>
+    public static bool IsRecovery(OperatorAction action)
+        => action is OperatorAction.SettleHandoff or OperatorAction.ReprocessDeferred
+            or OperatorAction.SkipDeferredTracking or OperatorAction.ResubmitWithChanges;
+
     /// <summary>The name agents see for <paramref name="action"/>.</summary>
-    public static string NameOf(OperatorAction action) => action.ToString().ToLowerInvariant();
+    public static string NameOf(OperatorAction action) => action switch
+    {
+        OperatorAction.SettleHandoff => "settle_handoff",
+        OperatorAction.ReprocessDeferred => "reprocess_deferred",
+        OperatorAction.SkipDeferredTracking => "skip_deferred_tracking",
+        OperatorAction.ResubmitWithChanges => "resubmit_with_changes",
+        _ => action.ToString().ToLowerInvariant(),
+    };
 
     /// <summary>
     /// True when the access policy allows <paramref name="action"/> for the caller's client
@@ -98,7 +132,8 @@ public sealed class OperatorActionAccess
                 OperatorAction.Classify => $"classify requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.ClassifyRole} app role with workload recording allowed by an administrator.",
                 OperatorAction.Resubmit => $"resubmit requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.ResubmitRole} app role with unattended resubmits allowed by an administrator.",
                 OperatorAction.Report => $"report requires the delegated {ScopeOf(action)} scope, or for a workload the {McpOperatorPermissions.AnnotateRole} app role with workload reporting allowed by an administrator.",
-                _ => $"{NameOf(action)} requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens cannot {NameOf(action)} messages.",
+                OperatorAction.Skip => $"skip requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens cannot skip messages.",
+                _ => $"{NameOf(action)} requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens cannot use it.",
             });
         }
     }
@@ -173,6 +208,21 @@ public sealed class OperatorActionAccess
             if (HasScope(OperatorAction.Skip)) actions.Add(NameOf(OperatorAction.Skip));
         }
 
+        // Spec 035 Phase 3: recovery for the agent of a person. No workload role admits these.
+        if (row.ResolutionStatus == ResolutionStatus.Deferred)
+        {
+            if (HasScope(OperatorAction.ReprocessDeferred)) actions.Add(NameOf(OperatorAction.ReprocessDeferred));
+            if (HasScope(OperatorAction.SkipDeferredTracking)) actions.Add(NameOf(OperatorAction.SkipDeferredTracking));
+        }
+
+        if (OperatorRecoveryCommands.IsPendingHandoff(row) && HasScope(OperatorAction.SettleHandoff))
+            actions.Add(NameOf(OperatorAction.SettleHandoff));
+        if (OperatorCommandCoordinator.IsActionable(row, OperatorChannel.Mcp) && HasScope(OperatorAction.ResubmitWithChanges)
+            && await _authorization.CanReadPiiAsync().ConfigureAwait(false))
+        {
+            actions.Add(NameOf(OperatorAction.ResubmitWithChanges));
+        }
+
         if (HasScope(OperatorAction.Report)) actions.Add(NameOf(OperatorAction.Report));
         if (classificationAvailable && HasScope(OperatorAction.Classify)
             && row.ResolutionStatus is ResolutionStatus.Failed or ResolutionStatus.DeadLettered)
@@ -197,6 +247,8 @@ public sealed class OperatorActionAccess
 
         return Enum.GetValues<OperatorAction>()
             .Where(action => action != OperatorAction.Classify || classificationAvailable)
+            // An edited payload also needs PiiReader.
+            .Where(action => action != OperatorAction.ResubmitWithChanges || access.IsPiiReader)
             .Where(HasScope)
             .Select(NameOf)
             .ToList();

@@ -36,6 +36,9 @@ public sealed partial class OperatorActionTools
     private readonly NimBus.WebApp.Services.IAuditLogService _audit;
     private readonly OperatorOperationJournal _journal;
     private readonly NimBus.WebApp.Services.IEndpointAuthorizationService _authorization;
+    private readonly IOperatorRecoveryCommands _recovery;
+    private readonly NimBus.Core.Messages.PII.IEventJsonMasker _masker;
+    private readonly McpOperatorRuntime _runtime;
 
     /// <summary>Creates the tools for one request.</summary>
     public OperatorActionTools(
@@ -51,8 +54,14 @@ public sealed partial class OperatorActionTools
         ILogger<OperatorActionTools> logger,
         NimBus.WebApp.Services.IAuditLogService audit,
         OperatorOperationJournal journal,
-        NimBus.WebApp.Services.IEndpointAuthorizationService authorization)
+        NimBus.WebApp.Services.IEndpointAuthorizationService authorization,
+        IOperatorRecoveryCommands recovery,
+        NimBus.Core.Messages.PII.IEventJsonMasker masker,
+        McpOperatorRuntime runtime)
     {
+        _recovery = recovery;
+        _masker = masker;
+        _runtime = runtime;
         _audit = audit;
         _journal = journal;
         _authorization = authorization;
@@ -68,17 +77,21 @@ public sealed partial class OperatorActionTools
         _logger = logger;
     }
 
-    /// <summary>Previews a resubmit or skip and returns a token to run it.</summary>
+    /// <summary>Previews a recovery action and returns a token to run it.</summary>
     [McpServerTool(Name = "nimbus_prepare_action", Title = "Prepare a NimBus recovery action", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Checks and previews resubmitting or skipping one failed message without changing anything: pass eventId and the messageVersion from nimbus_get_message. Or previews resubmitting every failed message on the endpoint reported under one ticket (after the fix is deployed): pass ticketId instead, at most 50 messages. Returns the impact and an actionToken, valid for about two minutes and only for you, to pass to nimbus_resubmit_message or nimbus_skip_message. Show the preview to the user and get their confirmation before running a skip.")]
+    [Description("Checks and previews one recovery action without changing anything: pass eventId and the messageVersion from nimbus_get_message. resubmit or skip a failed message; settle_handoff for a pending handoff; reprocess_deferred or skip_deferred_tracking for a deferred message (the latter inspects the broker and is refused unless the tracking record is stale); resubmit_with_changes for a failed message with an edited payload in eventContent. Or previews resubmitting every failed message on the endpoint reported under one ticket (after the fix is deployed): pass ticketId instead, at most 50 messages. Returns the impact and an actionToken, valid for about two minutes and only for you, to pass to the tool that runs the action. Show the preview to the user and get their confirmation before running anything but a plain resubmit.")]
     public async Task<PrepareActionResult> PrepareActionAsync(
-        [Description("resubmit or skip.")] string action,
+        [Description("resubmit, skip, settle_handoff, reprocess_deferred, skip_deferred_tracking or resubmit_with_changes.")] string action,
         [Description("Endpoint id, as returned by nimbus_list_endpoints.")] string endpointId,
         [Description("The message's event id. Omit when you pass ticketId.")] string? eventId = null,
         [Description("messageVersion from nimbus_get_message: the state you decided on. Omit when you pass ticketId.")] string? messageVersion = null,
-        [Description("Resubmit every failed message on this endpoint reported under this ticket. Resubmit only.")] string? ticketId = null)
+        [Description("Resubmit every failed message on this endpoint reported under this ticket. Resubmit only.")] string? ticketId = null,
+        [Description("For resubmit_with_changes only: the complete edited payload, a JSON object. Pass exactly the same text to nimbus_resubmit_with_changes.")] string? eventContent = null,
+        CancellationToken cancellationToken = default)
     {
         var kind = ParseCommand(action);
+        if (kind != OperatorAction.ResubmitWithChanges && !string.IsNullOrWhiteSpace(eventContent))
+            throw OperatorToolErrors.InvalidArgument("eventContent is only for resubmit_with_changes.");
         await _access.RequireScopeAsync(kind).ConfigureAwait(false);
         var endpoint = await _catalog.RequireReadableAsync(endpointId).ConfigureAwait(false);
         await _access.RequireChangeAllowedOnAsync(kind, endpoint).ConfigureAwait(false);
@@ -87,7 +100,7 @@ public sealed partial class OperatorActionTools
             if (!string.IsNullOrWhiteSpace(eventId) || !string.IsNullOrWhiteSpace(messageVersion))
                 throw OperatorToolErrors.InvalidArgument("Pass ticketId, or eventId with messageVersion, not both.");
             if (kind != OperatorAction.Resubmit)
-                throw OperatorToolErrors.InvalidArgument("Only resubmit can be prepared by ticket; skip one message at a time.");
+                throw OperatorToolErrors.InvalidArgument("Only resubmit can be prepared by ticket; prepare every other action one message at a time.");
             return await PrepareByTicketAsync(endpoint, ticketId.Trim()).ConfigureAwait(false);
         }
 
@@ -98,6 +111,8 @@ public sealed partial class OperatorActionTools
         var target = await FindAsync(endpoint, id).ConfigureAwait(false);
         if (target.Version != expected)
             throw OperatorToolErrors.StaleMessage($"Message '{id}' changed since you read it.");
+        if (OperatorActionAccess.IsRecovery(kind))
+            return await PrepareRecoveryAsync(kind, endpoint, id, target, eventContent, cancellationToken).ConfigureAwait(false);
         if (!OperatorCommandCoordinator.IsActionable(target.Row, OperatorChannel.Mcp))
             throw OperatorToolErrors.ActionNotAllowed($"A {target.Row.ResolutionStatus} message cannot be {Past(kind)} through MCP.");
         if (!await _access.MayAsync(kind, endpoint).ConfigureAwait(false))
@@ -458,12 +473,26 @@ public sealed partial class OperatorActionTools
             ClassificationInfo.From(classification));
     }
 
-    private async Task<OperatorActionResult> ExecuteAsync(OperatorAction kind, string actionToken, string idempotencyKey, string reason)
+    private Task<OperatorActionResult> ExecuteAsync(OperatorAction kind, string actionToken, string idempotencyKey, string reason)
+        => ExecuteAsync(kind, actionToken, idempotencyKey, reason, plan: null);
+
+    /// <summary>
+    /// Runs a prepared, journaled command. <paramref name="plan"/>, when given, checks the grant
+    /// against the current message before the operation is created and returns the command to
+    /// run; a refusal there throws and nothing is journaled.
+    /// </summary>
+    private async Task<OperatorActionResult> ExecuteAsync(OperatorAction kind, string actionToken, string idempotencyKey, string reason,
+        Func<OperatorActionGrant, OperatorCommandTarget, Task<Func<OperatorCommandContext, Task<OperatorCommandResult>>>>? plan)
     {
         await _access.RequireScopeAsync(kind).ConfigureAwait(false);
         var context = Context(reason, idempotencyKey);
         var (caller, tenant, client) = OperatorActionTokens.Identify(User());
-        var action = kind == OperatorAction.Skip ? OperatorOperationAction.Skip : OperatorOperationAction.Resubmit;
+        var action = kind switch
+        {
+            OperatorAction.Skip => OperatorOperationAction.Skip,
+            OperatorAction.ResubmitWithChanges => OperatorOperationAction.ResubmitWithChanges,
+            _ => OperatorOperationAction.Resubmit,
+        };
         var operationId = OperatorOperationJournal.OperationIdFor(tenant, caller, context.IdempotencyKey!);
 
         // Spec 035 Phase 2b: an exact retry is recognized before an expired preview or a changed
@@ -471,31 +500,12 @@ public sealed partial class OperatorActionTools
         if (_journal.IsAvailable && await _journal.GetAsync(operationId).ConfigureAwait(false) is { } earlier)
             return await ReplayAsync(earlier, action).ConfigureAwait(false);
 
-        if (!_tokens.TryRead(actionToken, out var grant) || grant is null)
-            throw OperatorToolErrors.StaleMessage("The actionToken is expired or invalid.");
-
-        if (!string.Equals(grant.Action, OperatorActionAccess.NameOf(kind), StringComparison.Ordinal)
-            || !string.Equals(grant.Caller, caller, StringComparison.Ordinal)
-            || !string.Equals(grant.TenantId, tenant, StringComparison.Ordinal)
-            || !string.Equals(grant.ClientId, client, StringComparison.Ordinal)
-            || !string.Equals(grant.Environment, _catalog.Environment, StringComparison.Ordinal))
-        {
-            throw OperatorToolErrors.StaleMessage($"The actionToken was not issued to you for {OperatorActionAccess.NameOf(kind)}.");
-        }
-
+        var grant = ReadGrant(kind, actionToken, caller, tenant, client);
         if (grant.Members is { } batch)
             return await ExecuteBatchAsync(kind, grant, batch, context, caller, tenant, client).ConfigureAwait(false);
 
-        if (!OperatorMessageVersion.TryDecode(grant.MessageVersion, out var expected))
-            throw OperatorToolErrors.StaleMessage($"The actionToken was not issued to you for {OperatorActionAccess.NameOf(kind)}.");
-
-        var endpoint = await _catalog.RequireReadableAsync(grant.EndpointId).ConfigureAwait(false);
-        await _access.RequireChangeAllowedOnAsync(kind, endpoint).ConfigureAwait(false);
-        _limiter.Acquire(Http());
-
-        var lookup = await _commands.FindCurrentAsync(endpoint, grant.EventId).ConfigureAwait(false);
-        if (lookup.Target is not { } target || target.Version != expected)
-            throw OperatorToolErrors.StaleMessage($"Message '{grant.EventId}' changed since you prepared the action.");
+        var (endpoint, target) = await ResolveGrantTargetAsync(kind, grant).ConfigureAwait(false);
+        var run = plan is null ? null : await plan(grant, target).ConfigureAwait(false);
 
         OperatorOperation? operation = null;
         if (_journal.IsAvailable)
@@ -532,9 +542,11 @@ public sealed partial class OperatorActionTools
         OperatorCommandResult result;
         try
         {
-            result = kind == OperatorAction.Skip
-                ? await _commands.SkipAsync(target, context).ConfigureAwait(false)
-                : await _commands.ResubmitAsync(target, context).ConfigureAwait(false);
+            result = run is not null
+                ? await run(context).ConfigureAwait(false)
+                : kind == OperatorAction.Skip
+                    ? await _commands.SkipAsync(target, context).ConfigureAwait(false)
+                    : await _commands.ResubmitAsync(target, context).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not ModelContextProtocol.McpException)
         {
@@ -694,13 +706,13 @@ public sealed partial class OperatorActionTools
     private async Task<OperatorActionResult> ReplayAsync(OperatorOperation operation, OperatorOperationAction action)
     {
         if (operation.Action != action)
-            throw OperatorToolErrors.InvalidArgument($"idempotencyKey was already used for a {operation.Action.ToString().ToLowerInvariant()}; use a new GUID.");
+            throw OperatorToolErrors.InvalidArgument($"idempotencyKey was already used for a {OperatorActionAccess.NameOf(operation.Action)}; use a new GUID.");
 
         operation = await _journal.ReconcileAsync(operation, repair: false).ConfigureAwait(false);
         if (operation.Status == OperatorOperationStatus.Refused)
             throw OperatorToolErrors.ActionNotAllowed($"Operation '{operation.OperationId}' was refused: {operation.Detail}");
 
-        return new OperatorActionResult(_catalog.Environment, DateTimeOffset.UtcNow, operation.Action.ToString().ToLowerInvariant(),
+        return new OperatorActionResult(_catalog.Environment, DateTimeOffset.UtcNow, OperatorActionAccess.NameOf(operation.Action),
             operation.EndpointId, operation.EventId, "Accepted", operation.DispatchedAtUtc is not null,
             "This idempotencyKey was used before: nothing was sent again. Poll nimbus_get_operation for the outcome.",
             operation.OperationId, operation.Status.ToString(), Replayed: true)
@@ -733,6 +745,48 @@ public sealed partial class OperatorActionTools
         {
             LogMcpRecordingAuditFailed(_logger, ex, endpoint);
         }
+    }
+
+    /// <summary>
+    /// Reads a prepared action token and checks it was issued to this caller, through this
+    /// client, in this environment, for <paramref name="kind"/>.
+    /// </summary>
+    private OperatorActionGrant ReadGrant(OperatorAction kind, string actionToken, string caller, string? tenant, string? client)
+    {
+        if (!_tokens.TryRead(actionToken, out var grant) || grant is null)
+            throw OperatorToolErrors.StaleMessage("The actionToken is expired or invalid.");
+
+        if (!string.Equals(grant.Action, OperatorActionAccess.NameOf(kind), StringComparison.Ordinal)
+            || !string.Equals(grant.Caller, caller, StringComparison.Ordinal)
+            || !string.Equals(grant.TenantId, tenant, StringComparison.Ordinal)
+            || !string.Equals(grant.ClientId, client, StringComparison.Ordinal)
+            || !string.Equals(grant.Environment, _catalog.Environment, StringComparison.Ordinal))
+        {
+            throw OperatorToolErrors.StaleMessage($"The actionToken was not issued to you for {OperatorActionAccess.NameOf(kind)}.");
+        }
+
+        return grant;
+    }
+
+    /// <summary>
+    /// The message a grant for one message names, when the endpoint is still readable and
+    /// changeable, the change limit allows another change, and the message is still at the
+    /// version that was previewed.
+    /// </summary>
+    private async Task<(string Endpoint, OperatorCommandTarget Target)> ResolveGrantTargetAsync(OperatorAction kind, OperatorActionGrant grant)
+    {
+        if (!OperatorMessageVersion.TryDecode(grant.MessageVersion, out var expected))
+            throw OperatorToolErrors.StaleMessage($"The actionToken was not issued to you for {OperatorActionAccess.NameOf(kind)}.");
+
+        var endpoint = await _catalog.RequireReadableAsync(grant.EndpointId).ConfigureAwait(false);
+        await _access.RequireChangeAllowedOnAsync(kind, endpoint).ConfigureAwait(false);
+        _limiter.Acquire(Http());
+
+        var lookup = await _commands.FindCurrentAsync(endpoint, grant.EventId).ConfigureAwait(false);
+        if (lookup.Target is not { } target || target.Version != expected)
+            throw OperatorToolErrors.StaleMessage($"Message '{grant.EventId}' changed since you prepared the action.");
+
+        return (endpoint, target);
     }
 
     private async Task<OperatorCommandTarget> FindAsync(string endpoint, string eventId)
@@ -787,7 +841,12 @@ public sealed partial class OperatorActionTools
     {
         "resubmit" => OperatorAction.Resubmit,
         "skip" => OperatorAction.Skip,
-        _ => throw OperatorToolErrors.InvalidArgument("action must be resubmit or skip."),
+        "settle_handoff" => OperatorAction.SettleHandoff,
+        "reprocess_deferred" => OperatorAction.ReprocessDeferred,
+        "skip_deferred_tracking" => OperatorAction.SkipDeferredTracking,
+        "resubmit_with_changes" => OperatorAction.ResubmitWithChanges,
+        _ => throw OperatorToolErrors.InvalidArgument(
+            "action must be resubmit, skip, settle_handoff, reprocess_deferred, skip_deferred_tracking or resubmit_with_changes."),
     };
 
     private static string RequireEventId(string eventId) => string.IsNullOrWhiteSpace(eventId)
@@ -798,7 +857,14 @@ public sealed partial class OperatorActionTools
         ? key.ToString("D")
         : throw OperatorToolErrors.InvalidArgument("idempotencyKey must be a GUID.");
 
-    private static string Past(OperatorAction kind) => kind == OperatorAction.Skip ? "skipped" : "resubmitted";
+    private static string Past(OperatorAction kind) => kind switch
+    {
+        OperatorAction.Skip => "skipped",
+        OperatorAction.SettleHandoff => "settled",
+        OperatorAction.ReprocessDeferred => "reprocessed",
+        OperatorAction.SkipDeferredTracking => "skipped in tracking",
+        _ => "resubmitted",
+    };
 
     private static string Waiting(int deferred) => deferred switch
     {
@@ -825,16 +891,16 @@ public sealed partial class OperatorActionTools
 /// <summary>Result of <c>nimbus_prepare_action</c>.</summary>
 /// <param name="Environment">The configured NimBus environment name.</param>
 /// <param name="AsOfUtc">When the result was produced.</param>
-/// <param name="Action">resubmit or skip.</param>
+/// <param name="Action">The prepared action.</param>
 /// <param name="EndpointId">The endpoint.</param>
 /// <param name="EventId">The message's event id.</param>
 /// <param name="SessionId">The message's session.</param>
 /// <param name="ExpectedStatus">The status the action runs against.</param>
 /// <param name="MessageVersion">The version the action runs against.</param>
-/// <param name="AffectedMessages">Messages the command is sent for: always 1.</param>
+/// <param name="AffectedMessages">Messages the action acts on: 1, or for reprocess_deferred the deferred messages in the session.</param>
 /// <param name="DeferredInSession">Later messages waiting in the session, which the action may release.</param>
 /// <param name="Impact">What running the action does, for the user to confirm.</param>
-/// <param name="ActionToken">Pass to nimbus_resubmit_message or nimbus_skip_message. Opaque, single caller.</param>
+/// <param name="ActionToken">Pass to the tool that runs the action. Opaque, single caller.</param>
 /// <param name="ExpiresInSeconds">How long the token stays valid.</param>
 /// <param name="TicketId">For a resubmit by ticket, the ticket.</param>
 /// <param name="Members">For a resubmit by ticket, the event ids it will resubmit.</param>
@@ -847,7 +913,29 @@ public sealed record PrepareActionResult(
 {
     /// <summary>What you can do next: run the prepared action after the user's yes (Spec 046).</summary>
     public IReadOnlyList<NextAction> NextActions { get; init; } = [];
+
+    /// <summary>For skip_deferred_tracking: what the broker and history inspection found. Null otherwise.</summary>
+    public DeferredTrackingCheck? Inspection { get; init; }
+
+    /// <summary>
+    /// For resubmit_with_changes: the JSON paths the edited payload adds, removes or changes
+    /// against the latest stored payload. Paths only, never values. Null otherwise.
+    /// </summary>
+    public IReadOnlyList<string>? ChangedPaths { get; init; }
 }
+
+/// <summary>What the inspection behind a prepared skip_deferred_tracking found.</summary>
+/// <param name="HistoryOutcome">The latest stored outcome for this endpoint and session: Completed, Skipped, Failed, DeadLettered or Unknown.</param>
+/// <param name="HasLaterAttempt">Whether a later attempt or deferral exists after that outcome.</param>
+/// <param name="Detail">Why the tracking record may be skipped. Fixed text.</param>
+/// <param name="BrokerChecks">One entry per place inspected in Service Bus.</param>
+public sealed record DeferredTrackingCheck(string? HistoryOutcome, bool HasLaterAttempt, string? Detail, IReadOnlyList<DeferredBrokerLocation> BrokerChecks);
+
+/// <summary>One place inspected in Service Bus for a deferred message. Peeked only.</summary>
+/// <param name="Location">The subscription and queue inspected.</param>
+/// <param name="Status">Present, NotFound or Unknown. Unknown never means absent.</param>
+/// <param name="Scanned">Messages looked at.</param>
+public sealed record DeferredBrokerLocation(string? Location, string Status, int Scanned);
 
 /// <summary>Result of <c>nimbus_record_classification</c>.</summary>
 /// <param name="Environment">The configured NimBus environment name.</param>
@@ -883,6 +971,18 @@ public sealed record OperatorActionResult(
 {
     /// <summary>What you can do next (Spec 046). Empty for a batch: each item carries its own operationId.</summary>
     public IReadOnlyList<NextAction> NextActions { get; init; } = [];
+
+    /// <summary>
+    /// For skip_deferred_tracking: whether the audit row was written. The tracking record is
+    /// Skipped either way. Null for every other action.
+    /// </summary>
+    public bool? AuditRecorded { get; init; }
+
+    /// <summary>For reprocess_deferred: whether the session's blocked state was reset. Null otherwise.</summary>
+    public bool? SessionStateCleared { get; init; }
+
+    /// <summary>For reprocess_deferred: what failed, when a step did. Untrusted text. Null otherwise.</summary>
+    public IReadOnlyList<string>? Errors { get; init; }
 }
 
 /// <summary>One message's result in a batch.</summary>
@@ -952,7 +1052,7 @@ public sealed record OperationResult(
             OperatorOperationStatus.Dispatched when operation.ObservedStatus is not null => "The endpoint parked the message for external work; check again later.",
             _ => "Not finished yet. Check again in about 15 seconds.",
         };
-        return new OperationResult(environment, DateTimeOffset.UtcNow, operation.OperationId, operation.Action.ToString().ToLowerInvariant(),
+        return new OperationResult(environment, DateTimeOffset.UtcNow, operation.OperationId, OperatorActionAccess.NameOf(operation.Action),
             operation.EndpointId, operation.EventId, operation.Status.ToString(), operation.IsTerminal, operation.IsWorkload,
             operation.CreatedAtUtc, operation.DispatchedAtUtc, operation.ObservedStatus, operation.EvidenceMessageId,
             OperatorProjection.Truncate(operation.Detail).Text,

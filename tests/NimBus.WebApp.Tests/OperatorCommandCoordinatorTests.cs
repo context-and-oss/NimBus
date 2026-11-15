@@ -159,6 +159,25 @@ public sealed class OperatorCommandCoordinatorTests
     }
 
     [TestMethod]
+    public async Task A_journaled_resubmit_with_changes_is_published_under_its_operation_id()
+    {
+        // Spec 035 Phase 3: the reconciler finds a command's outcome by the response parented to
+        // the operation id, so an edited resubmit must be sent under it like a plain one.
+        var commands = new CommandManager();
+        var harness = await Harness.CreateAsync(commandManager: commands);
+        var target = await harness.FindAsync();
+        var journal = new StubJournal("op-123");
+
+        var result = await harness.Sut.ResubmitWithChangesAsync(target, "Demo.Type", "{\"v\":2}", "{}",
+            new OperatorCommandContext(OperatorChannel.Mcp, "Corrected the amount", "key-1", "client-1", journal));
+
+        Assert.AreEqual(OperatorCommandStatus.Accepted, result.Status);
+        CollectionAssert.AreEqual(new[] { "op-123" }, commands.CommandIds.ToArray());
+        Assert.AreEqual("{\"v\":2}", commands.Payloads.Single());
+        CollectionAssert.AreEqual(new[] { "claimed", "publishing", "dispatched" }, journal.Steps.ToArray());
+    }
+
+    [TestMethod]
     public async Task The_web_UI_keeps_resubmit_on_deferred_rows()
     {
         var harness = await Harness.CreateAsync(rowStatus: ResolutionStatus.Deferred);
@@ -223,7 +242,8 @@ public sealed class OperatorCommandCoordinatorTests
         public static async Task<Harness> CreateAsync(
             string rowLastMessageId = TerminalMessageId,
             ResolutionStatus rowStatus = ResolutionStatus.Failed,
-            Authorization? authorization = null)
+            Authorization? authorization = null,
+            IManagerClient? commandManager = null)
         {
             var store = new InMemoryMessageStore();
             await store.StoreMessage(new MessageEntity
@@ -249,7 +269,7 @@ public sealed class OperatorCommandCoordinatorTests
             var audit = new RecordingAudit(timeline);
             var sut = new OperatorCommandCoordinator(
                 store,
-                manager,
+                commandManager ?? manager,
                 authorization ?? new Authorization(),
                 audit,
                 new HttpContextAccessor { HttpContext = new DefaultHttpContext() },
@@ -294,6 +314,58 @@ public sealed class OperatorCommandCoordinatorTests
                 throw new InvalidOperationException("Service Bus unavailable");
             Interlocked.Increment(ref _sends);
             timeline.Enqueue("send:" + command);
+        }
+    }
+
+    private sealed class CommandManager : IManagerClient, IManagerCommandClient
+    {
+        public ConcurrentQueue<string> CommandIds { get; } = new();
+
+        public ConcurrentQueue<string> Payloads { get; } = new();
+
+        public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
+        {
+            Payloads.Enqueue(eventJson);
+            return Task.CompletedTask;
+        }
+
+        public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson, string commandMessageId)
+        {
+            CommandIds.Enqueue(commandMessageId);
+            return Resubmit(errorResponse, endpoint, eventTypeId, eventJson);
+        }
+
+        public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId) => Task.CompletedTask;
+
+        public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId, string commandMessageId)
+        {
+            CommandIds.Enqueue(commandMessageId);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubJournal(string operationId) : IOperatorCommandJournal
+    {
+        public ConcurrentQueue<string> Steps { get; } = new();
+
+        public string CommandMessageId => operationId;
+
+        public string OperationId => operationId;
+
+        public Task ClaimedAsync() => Step("claimed");
+
+        public Task PublishingAsync() => Step("publishing");
+
+        public Task DispatchedAsync() => Step("dispatched");
+
+        public Task NotRunAsync(OperatorCommandStatus status, string? detail) => Step("notrun");
+
+        public Task PublishFailedAsync(Exception exception) => Step("publishfailed");
+
+        private Task Step(string name)
+        {
+            Steps.Enqueue(name);
+            return Task.CompletedTask;
         }
     }
 

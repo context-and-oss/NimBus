@@ -53,6 +53,12 @@ public class NextActionsTests
             .Concat(OperatorNextActions.ForGroup(Endpoint, EventId, "v1", eligible, null, false, null))
             .Concat(OperatorNextActions.ForPrepared("resubmit", "token", false))
             .Concat(OperatorNextActions.ForPrepared("skip", "token", false))
+            // Spec 035 Phase 3: the recovery actions and the tools that run them.
+            .Concat(OperatorNextActions.ForMessage(Endpoint, EventId, "v1", ["reprocess_deferred", "skip_deferred_tracking", "report"], "Deferred", null, "https://x/m", false, null))
+            .Concat(OperatorNextActions.ForMessage(Endpoint, EventId, "v1", ["settle_handoff"], "Pending", "Handoff", "https://x/m", false, null))
+            .Concat(OperatorNextActions.ForMessage(Endpoint, EventId, "v1", ["resubmit", "resubmit_with_changes"], "Failed", null, "https://x/m", false, null))
+            .Concat(new[] { "settle_handoff", "reprocess_deferred", "skip_deferred_tracking", "resubmit_with_changes" }
+                .SelectMany(action => OperatorNextActions.ForPrepared(action, "token", false)))
             .Concat(OperatorNextActions.ForSent("op-1"))
             .Concat(Enum.GetValues<OperatorOperationStatus>().SelectMany(s => OperatorNextActions.ForOperation(s, true, "op-1", Endpoint, EventId, "https://x/m")));
 
@@ -70,6 +76,38 @@ public class NextActionsTests
             foreach (var name in option.Arguments.Keys.Concat(option.Needs))
                 Assert.IsTrue(parameters.Contains(name), $"{option.Tool} takes no argument '{name}' ({option.Id}).");
         }
+    }
+
+    [TestMethod]
+    public void A_deferred_message_or_pending_handoff_offers_its_recovery_in_place_of_the_web_ui_link()
+    {
+        // Spec 035 Phase 3: eligibility says whether the Owner switched the action on.
+        var deferred = OperatorNextActions.ForMessage(Endpoint, EventId, "v1", ["reprocess_deferred", "skip_deferred_tracking"], "Deferred", null, "https://x/m", false, null);
+        var handoff = OperatorNextActions.ForMessage(Endpoint, EventId, "v1", ["settle_handoff"], "Pending", "Handoff", "https://x/m", false, null);
+        var notSwitchedOn = OperatorNextActions.ForMessage(Endpoint, EventId, "v1", [], "Deferred", null, "https://x/m", false, null);
+
+        CollectionAssert.AreEqual(new[] { "investigate", "reprocess_deferred", "skip_deferred_tracking" }, deferred.Select(o => o.Id).ToArray());
+        Assert.AreEqual(OperatorNextActions.Kinds.Destructive, deferred.Single(o => o.Id == "skip_deferred_tracking").Kind);
+        CollectionAssert.AreEqual(new[] { "investigate", "settle_handoff" }, handoff.Select(o => o.Id).ToArray());
+        Assert.IsTrue(deferred.Concat(handoff).Where(o => o.Id != "investigate").All(o => o.Confirm && o.Tool == "nimbus_prepare_action"));
+        CollectionAssert.AreEqual(new[] { "investigate", "open_web_ui" }, notSwitchedOn.Select(o => o.Id).ToArray());
+    }
+
+    [TestMethod]
+    public void A_workload_is_never_offered_a_recovery_action_and_an_edit_asks_for_its_payload()
+    {
+        var eligible = new[] { "resubmit", "settle_handoff", "reprocess_deferred", "skip_deferred_tracking", "resubmit_with_changes" };
+
+        var workload = OperatorNextActions.ForMessage(Endpoint, EventId, "v1", eligible, "Failed", null, null, isWorkload: true, null);
+        var person = OperatorNextActions.ForMessage(Endpoint, EventId, "v1", ["resubmit", "resubmit_with_changes"], "Failed", null, null, isWorkload: false, null);
+
+        CollectionAssert.AreEqual(new[] { "investigate", "resubmit" }, workload.Select(o => o.Id).ToArray());
+        var edit = person.Single(o => o.Id == "resubmit_with_changes");
+        CollectionAssert.AreEqual(new[] { "eventContent" }, edit.Needs.ToArray());
+        Assert.AreEqual(OperatorNextActions.Kinds.Destructive, edit.Kind);
+        var run = OperatorNextActions.ForPrepared("settle_handoff", "t", isWorkload: false).Single();
+        CollectionAssert.Contains(run.Needs.ToList(), "outcome");
+        Assert.AreEqual("nimbus_settle_handoff", run.Tool);
     }
 
     [TestMethod]

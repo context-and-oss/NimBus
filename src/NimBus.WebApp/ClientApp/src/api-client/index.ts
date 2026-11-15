@@ -20293,6 +20293,12 @@ export class McpCapabilities implements IMcpCapabilities {
     classify?: boolean;
     resubmit?: boolean;
     skip?: boolean;
+    /** nimbus_settle_handoff (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off. */
+    settleHandoffs?: boolean;
+    /** nimbus_reprocess_deferred and nimbus_skip_deferred_tracking (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off. */
+    recoverDeferred?: boolean;
+    /** nimbus_resubmit_with_changes (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off. */
+    editPayloads?: boolean;
 
     [key: string]: any;
 
@@ -20316,6 +20322,9 @@ export class McpCapabilities implements IMcpCapabilities {
             this.classify = _data["classify"];
             this.resubmit = _data["resubmit"];
             this.skip = _data["skip"];
+            this.settleHandoffs = _data["settleHandoffs"];
+            this.recoverDeferred = _data["recoverDeferred"];
+            this.editPayloads = _data["editPayloads"];
         }
     }
 
@@ -20337,6 +20346,9 @@ export class McpCapabilities implements IMcpCapabilities {
         data["classify"] = this.classify;
         data["resubmit"] = this.resubmit;
         data["skip"] = this.skip;
+        data["settleHandoffs"] = this.settleHandoffs;
+        data["recoverDeferred"] = this.recoverDeferred;
+        data["editPayloads"] = this.editPayloads;
         return data;
     }
 
@@ -20354,6 +20366,12 @@ export interface IMcpCapabilities {
     classify?: boolean;
     resubmit?: boolean;
     skip?: boolean;
+    /** nimbus_settle_handoff (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off. */
+    settleHandoffs?: boolean;
+    /** nimbus_reprocess_deferred and nimbus_skip_deferred_tracking (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off. */
+    recoverDeferred?: boolean;
+    /** nimbus_resubmit_with_changes (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off. */
+    editPayloads?: boolean;
 
     [key: string]: any;
 }
@@ -24313,6 +24331,7 @@ export enum MessageAuditAuditType {
     DashboardTokenRevoked = "dashboardTokenRevoked",
     DashboardTokenRemoved = "dashboardTokenRemoved",
     UpdateEndpointMetadata = "updateEndpointMetadata",
+    ReprocessDeferred = "reprocessDeferred",
 }
 
 export class MessageContent implements IMessageContent {
@@ -24478,6 +24497,7 @@ export enum AuditSearchFilterAuditType {
     DashboardTokenRevoked = "dashboardTokenRevoked",
     DashboardTokenRemoved = "dashboardTokenRemoved",
     UpdateEndpointMetadata = "updateEndpointMetadata",
+    ReprocessDeferred = "reprocessDeferred",
 }
 
 export enum StalePendingRowVerdict {
@@ -24566,6 +24586,7 @@ export enum AuditEntryAuditType {
     DashboardTokenRevoked = "dashboardTokenRevoked",
     DashboardTokenRemoved = "dashboardTokenRemoved",
     UpdateEndpointMetadata = "updateEndpointMetadata",
+    ReprocessDeferred = "reprocessDeferred",
 }
 
 export enum AgentSettleRequestOutcome {

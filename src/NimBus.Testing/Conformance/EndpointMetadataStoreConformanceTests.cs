@@ -291,6 +291,9 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsNull(defaults.Revision);
         Assert.IsTrue(defaults.Enabled);
         Assert.IsTrue(defaults.Capabilities.Skip);
+        Assert.IsFalse(
+            defaults.Capabilities.SettleHandoffs || defaults.Capabilities.RecoverDeferred || defaults.Capabilities.EditPayloads,
+            "The recovery capabilities are off until an Owner turns them on (Spec 035 Phase 3).");
         Assert.IsFalse(defaults.AllowWorkloadClassification, "Workload recording is off until an Owner turns it on (Spec 044 §6.6).");
         Assert.IsFalse(defaults.AllowWorkloadResubmit, "Unattended resubmits are off until an Owner turns them on (Spec 044 Phase 2).");
         Assert.AreEqual(McpAccessSettings.DefaultWorkloadResubmitsPerDay, defaults.WorkloadResubmitsPerDay);
@@ -315,6 +318,9 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsFalse(stored.Capabilities.Classify);
         Assert.IsTrue(stored.Capabilities.Resubmit);
         Assert.IsFalse(stored.Capabilities.Skip);
+        Assert.IsTrue(stored.Capabilities.SettleHandoffs);
+        Assert.IsFalse(stored.Capabilities.RecoverDeferred);
+        Assert.IsTrue(stored.Capabilities.EditPayloads);
         Assert.IsFalse(stored.AllowWorkloads);
         Assert.IsTrue(stored.AllowWorkloadClassification);
         Assert.IsTrue(stored.AllowWorkloadResubmit);
@@ -388,7 +394,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         UpdatedBy = "owner@example.com",
         UpdatedAtUtc = T0,
         Enabled = false,
-        Capabilities = new McpCapabilitySettings { Payloads = false, Report = true, Classify = false, Resubmit = true, Skip = false },
+        Capabilities = new McpCapabilitySettings { Payloads = false, Report = true, Classify = false, Resubmit = true, Skip = false, SettleHandoffs = true, RecoverDeferred = false, EditPayloads = true },
         AllowWorkloads = false,
         AllowWorkloadClassification = true,
         AllowWorkloadResubmit = true,

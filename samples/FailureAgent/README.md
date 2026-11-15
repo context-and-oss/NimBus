@@ -27,7 +27,9 @@ per message. See the [failure agent guide](../../docs/failure-agent.md) for the 
    ```text
    claude -p --strict-mcp-config --mcp-config <file> --permission-mode dontAsk
           --allowedTools mcp__nimbus,Read,Edit,Write,Glob,Grep,Bash(git *),Bash(gh *),Bash(dotnet *)
-          --disallowedTools mcp__nimbus__nimbus_skip_message,WebFetch,WebSearch
+          --disallowedTools mcp__nimbus__nimbus_skip_message,mcp__nimbus__nimbus_settle_handoff,
+                            mcp__nimbus__nimbus_reprocess_deferred,mcp__nimbus__nimbus_skip_deferred_tracking,
+                            mcp__nimbus__nimbus_resubmit_with_changes,WebFetch,WebSearch
           --output-format json --max-budget-usd <n> --no-session-persistence
    ```
 

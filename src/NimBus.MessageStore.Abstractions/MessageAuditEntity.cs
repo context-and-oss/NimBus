@@ -223,4 +223,11 @@ public enum MessageAuditType
     /// technical contacts). Data carries the values before and after. Always recorded.
     /// </summary>
     UpdateEndpointMetadata,
+
+    /// <summary>
+    /// An operator's agent reset a session's deferred state and requested a drain of its deferred
+    /// messages over MCP (Spec 035 Phase 3). Data carries the session, the deferred count the
+    /// caller previewed and the reason. Always recorded: the reset runs only once the row exists.
+    /// </summary>
+    ReprocessDeferred,
 }

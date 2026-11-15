@@ -19,6 +19,10 @@ namespace NimBus.WebApp.Mcp.Operations;
 /// <param name="Environment">The NimBus environment that issued the token.</param>
 /// <param name="TicketId">For a resubmit by ticket (Spec 044 Phase 3), the ticket; null for one message.</param>
 /// <param name="Members">For a resubmit by ticket, each eligible message at the version it was previewed.</param>
+/// <param name="ContentHash">
+/// For a resubmit with changes (Spec 035 Phase 3), the SHA-256 of the edited payload that was
+/// previewed, so the run can send only that payload.
+/// </param>
 public sealed record OperatorActionGrant(
     string Action,
     string EndpointId,
@@ -29,7 +33,8 @@ public sealed record OperatorActionGrant(
     string? ClientId,
     string? Environment,
     string? TicketId = null,
-    IReadOnlyList<OperatorBatchMember>? Members = null);
+    IReadOnlyList<OperatorBatchMember>? Members = null,
+    string? ContentHash = null);
 
 /// <summary>One message of a resubmit by ticket, at the version it was previewed.</summary>
 /// <param name="EventId">The message's event id.</param>

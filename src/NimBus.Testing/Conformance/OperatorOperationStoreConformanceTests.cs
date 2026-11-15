@@ -53,6 +53,20 @@ public abstract class OperatorOperationStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task An_edited_resubmit_round_trips_its_action()
+    {
+        // Spec 035 Phase 3: the journaled action is stored by name, so a provider must take the new one.
+        var store = CreateStore();
+        var operation = New("edit", o => o.Action = OperatorOperationAction.ResubmitWithChanges);
+
+        await store.TryCreateOperatorOperation(operation);
+        var read = await store.GetOperatorOperation(operation.OperationId);
+
+        Assert.IsNotNull(read);
+        Assert.AreEqual(OperatorOperationAction.ResubmitWithChanges, read.Action);
+    }
+
+    [TestMethod]
     public async Task Create_then_get_round_trips_every_field()
     {
         var store = CreateStore();

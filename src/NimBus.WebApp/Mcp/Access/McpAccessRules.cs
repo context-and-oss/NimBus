@@ -69,6 +69,9 @@ public static class McpAccessRules
             ("classifying failures", before.Capabilities.Classify, after.Capabilities.Classify),
             ("resubmitting messages", before.Capabilities.Resubmit, after.Capabilities.Resubmit),
             ("skipping messages", before.Capabilities.Skip, after.Capabilities.Skip),
+            ("settling pending handoffs", before.Capabilities.SettleHandoffs, after.Capabilities.SettleHandoffs),
+            ("recovering deferred messages", before.Capabilities.RecoverDeferred, after.Capabilities.RecoverDeferred),
+            ("resubmitting with an edited payload", before.Capabilities.EditPayloads, after.Capabilities.EditPayloads),
         })
         {
             if (was != now)

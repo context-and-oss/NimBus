@@ -446,7 +446,9 @@ further by sending endpoint and event type, which is the data-quality view for a
 ## 10. Later, not on this path
 
 - **The rest of Spec 035 Phase 3:** `nimbus_settle_handoff`, `nimbus_reprocess_deferred` and
-  `nimbus_skip_deferred_tracking`, for a person's agent.
+  `nimbus_skip_deferred_tracking`, for a person's agent. Delivered on 2026-11-15 with
+  `nimbus_resubmit_with_changes`, all four for delegated callers only; see
+  [Spec 035, Phase 3 as built](../035-mcp-operator-access/spec.md#phase-3-as-built).
 - **Agents view:** one page in the "AI & agents" settings group that shows, per agent, what it may
   do, its budget, and its recordings, retries and reports, linked to the audit trail. It reads the
   MCP activity log (`GET /api/admin/mcp/activity`) and the journal.

@@ -22,11 +22,20 @@ public static class AgentInvocation
         [$"mcp__{ServerName}", "Read", "Edit", "Write", "Glob", "Grep", "Bash(git *)", "Bash(gh *)", "Bash(dotnet *)"];
 
     /// <summary>
-    /// Tools the agent may never use. NimBus refuses skip for workloads anyway; this is defence in
-    /// depth, and keeps the agent off the web.
+    /// Tools the agent may never use. NimBus refuses skip, handoff settlement, deferred recovery
+    /// and payload edits for workloads anyway; this is defence in depth, and keeps the agent off
+    /// the web.
     /// </summary>
     public static readonly IReadOnlyList<string> DisallowedTools =
-        [$"mcp__{ServerName}__nimbus_skip_message", "WebFetch", "WebSearch"];
+    [
+        $"mcp__{ServerName}__nimbus_skip_message",
+        $"mcp__{ServerName}__nimbus_settle_handoff",
+        $"mcp__{ServerName}__nimbus_reprocess_deferred",
+        $"mcp__{ServerName}__nimbus_skip_deferred_tracking",
+        $"mcp__{ServerName}__nimbus_resubmit_with_changes",
+        "WebFetch",
+        "WebSearch",
+    ];
 
     /// <summary>The agent's arguments, with the prompt sent on standard input.</summary>
     /// <param name="options">The runner's settings.</param>

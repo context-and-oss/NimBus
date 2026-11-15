@@ -285,7 +285,9 @@ public sealed class AdminCleanupAuditTests
         Assert.AreEqual(44, (int)MessageAuditType.DashboardTokenRemoved);
         // Endpoint metadata changes were appended after that.
         Assert.AreEqual(45, (int)MessageAuditType.UpdateEndpointMetadata);
-        Assert.AreEqual(MessageAuditType.UpdateEndpointMetadata, Enum.GetValues<MessageAuditType>().Max());
+        // The MCP deferred reprocess (Spec 035 Phase 3) was appended after that.
+        Assert.AreEqual(46, (int)MessageAuditType.ReprocessDeferred);
+        Assert.AreEqual(MessageAuditType.ReprocessDeferred, Enum.GetValues<MessageAuditType>().Max());
     }
 
     [TestMethod]

@@ -65,7 +65,15 @@ public sealed class RunnerTests
         Assert.AreEqual("json", After(arguments, "--output-format"));
         Assert.AreEqual("2.5", After(arguments, "--max-budget-usd"));
         Assert.AreEqual("sonnet", After(arguments, "--model"));
-        StringAssert.Contains(After(arguments, "--disallowedTools"), "mcp__nimbus__nimbus_skip_message", StringComparison.Ordinal);
+        foreach (var tool in new[]
+                 {
+                     "nimbus_skip_message", "nimbus_settle_handoff", "nimbus_reprocess_deferred",
+                     "nimbus_skip_deferred_tracking", "nimbus_resubmit_with_changes",
+                 })
+        {
+            StringAssert.Contains(After(arguments, "--disallowedTools"), $"mcp__nimbus__{tool}", StringComparison.Ordinal);
+        }
+
         StringAssert.Contains(After(arguments, "--allowedTools"), "mcp__nimbus", StringComparison.Ordinal);
     }
 

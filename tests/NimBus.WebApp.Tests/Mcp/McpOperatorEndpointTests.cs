@@ -183,7 +183,11 @@ public class McpOperatorEndpointTests
         var servers = document.RootElement.GetProperty("authorization_servers").EnumerateArray().Select(e => e.GetString()).ToArray();
         CollectionAssert.Contains(servers, McpTestHost.Issuer);
         var scopes = document.RootElement.GetProperty("scopes_supported").EnumerateArray().Select(e => e.GetString()).ToArray();
-        foreach (var scope in new[] { "nimbus.observe", "nimbus.payload.read", "nimbus.resubmit", "nimbus.skip", "nimbus.annotate", "nimbus.classify" })
+        foreach (var scope in new[]
+        {
+            "nimbus.observe", "nimbus.payload.read", "nimbus.resubmit", "nimbus.skip", "nimbus.annotate", "nimbus.classify",
+            "nimbus.settle", "nimbus.recover", "nimbus.edit",
+        })
             CollectionAssert.Contains(scopes, $"api://{McpTestHost.ClientId}/{scope}");
     }
 

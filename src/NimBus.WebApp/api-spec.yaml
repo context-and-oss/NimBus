@@ -1741,8 +1741,8 @@ paths:
         Replaces the disabled audit types. Only types listed in
         configurableAuditTypes can be disabled; access-denied attempts,
         updateAuditSettings itself and the commands that change a message
-        (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent) are
-        always recorded.
+        (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent,
+        reprocessDeferred) are always recorded.
       operationId: put-admin-audit-settings
       tags:
         - Admin
@@ -5713,6 +5713,7 @@ components:
             - dashboardTokenRevoked
             - dashboardTokenRemoved
             - updateEndpointMetadata
+            - reprocessDeferred
         comment:
           type: string
           nullable: true
@@ -7533,6 +7534,7 @@ components:
             - dashboardTokenRevoked
             - dashboardTokenRemoved
             - updateEndpointMetadata
+            - reprocessDeferred
         createdAtFrom:
           type: string
           format: date-time
@@ -8011,6 +8013,15 @@ components:
           type: boolean
         skip:
           type: boolean
+        settleHandoffs:
+          type: boolean
+          description: nimbus_settle_handoff (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
+        recoverDeferred:
+          type: boolean
+          description: nimbus_reprocess_deferred and nimbus_skip_deferred_tracking (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
+        editPayloads:
+          type: boolean
+          description: nimbus_resubmit_with_changes (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
     McpPeopleMode:
       title: McpPeopleMode
       type: string
@@ -8850,6 +8861,7 @@ components:
             - dashboardTokenRevoked
             - dashboardTokenRemoved
             - updateEndpointMetadata
+            - reprocessDeferred
         comment:
           type: string
           nullable: true

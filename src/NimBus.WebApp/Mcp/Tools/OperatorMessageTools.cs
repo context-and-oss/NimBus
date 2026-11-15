@@ -594,7 +594,7 @@ public sealed record MessageSummary(
 /// <param name="WebUiUrl">The message in the NimBus Web UI.</param>
 /// <param name="Payload">The event payload, only when requested and permitted.</param>
 /// <param name="MessageVersion">The message's current state, for nimbus_prepare_action; null when it has no unresolved row.</param>
-/// <param name="EligibleActions">Actions you may take on it now: resubmit, skip, report, classify.</param>
+/// <param name="EligibleActions">Actions you may take on it now: resubmit, skip, report, classify, and where a site Owner switched them on settle_handoff, reprocess_deferred, skip_deferred_tracking and resubmit_with_changes.</param>
 public sealed record MessageDetailResult(string? Environment, DateTimeOffset AsOfUtc, string EndpointId, MessageSummary Message, string? Status, MessageError? LatestError, string? WebUiUrl, PayloadInfo? Payload,
     string? MessageVersion, IReadOnlyList<string> EligibleActions)
 {

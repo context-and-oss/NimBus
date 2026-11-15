@@ -261,5 +261,13 @@ public partial class Startup
         // second settle on another request sees them (per process, not across instances).
         services.AddSingleton(sp => new HandoffSettlementTracker(sp.GetService<TimeProvider>() ?? TimeProvider.System));
         services.AddScoped<NimBus.WebApp.Services.Operations.IOperatorCommands, NimBus.WebApp.Services.Operations.OperatorCommandCoordinator>();
+        // Spec 035 Phase 3: handoff settlement and deferred recovery for the operator MCP tools,
+        // over the same services the Web UI's recovery actions use.
+        services.AddScoped(sp => new DeferredTrackingRecovery(
+            sp.GetRequiredService<NimBus.MessageStore.Abstractions.IMessageTrackingStore>(),
+            sp.GetRequiredService<Azure.Messaging.ServiceBus.ServiceBusClient>(),
+            sp.GetService<Azure.Messaging.ServiceBus.Administration.ServiceBusAdministrationClient>(),
+            sp.GetRequiredService<ILogger<DeferredTrackingRecovery>>()));
+        services.AddScoped<NimBus.WebApp.Services.Operations.IOperatorRecoveryCommands, NimBus.WebApp.Services.Operations.OperatorRecoveryCommands>();
     }
 }

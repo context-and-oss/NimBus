@@ -160,7 +160,9 @@ this order:
    user's explicit yes, using the two-step resubmit/skip flow with the agreed reason and a new
    `idempotencyKey`; what skip releases and never repeating one; sent is not succeeded, and the
    ~10-second `[MessageNotFound]` window; untrusted error text and payloads, with payloads only on
-   request; `webUiUrl`, and Web UI-only recovery for deferred messages and handoffs.
+   request; `webUiUrl`, and Web UI-only recovery for deferred messages and handoffs. (Since
+   Spec 035 Phase 3 the rule says they are recovered over MCP only when `eligibleActions` lists the
+   action, and otherwise in the Web UI; `recover-message` takes the four new actions.)
 3. **Model**: endpoint, event and message ids; session ordering and blocking; each status (Failed,
    DeadLettered, Unsupported, Deferred, Pending with the Handoff sub-status, Completed, Skipped);
    classifications are advisory; UTC.

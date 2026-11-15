@@ -28,8 +28,8 @@ public class PromptCompletionsTests
     [TestMethod]
     [DataRow("triage", "period", "", new[] { "1h", "12h", "1d", "3d", "7d", "30d" })]
     [DataRow("failure-report", "period", "1", new[] { "1h", "12h", "1d" })]
-    [DataRow("recover-message", "action", "", new[] { "resubmit", "skip" })]
-    [DataRow("recover-message", "action", "s", new[] { "skip" })]
+    [DataRow("recover-message", "action", "", new[] { "resubmit", "skip", "settle_handoff", "reprocess_deferred", "skip_deferred_tracking", "resubmit_with_changes" })]
+    [DataRow("recover-message", "action", "s", new[] { "skip", "settle_handoff", "skip_deferred_tracking" })]
     [DataRow("handle-failures", "unattended", "", new[] { "true", "false" })]
     public async Task Fixed_arguments_complete_from_their_allowed_values(string prompt, string argument, string typed, string[] expected)
     {

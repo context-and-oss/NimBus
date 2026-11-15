@@ -112,6 +112,9 @@ public sealed class McpAccessPolicy
         OperatorAction.Skip => Settings.Capabilities.Skip,
         OperatorAction.Report => Settings.Capabilities.Report,
         OperatorAction.Classify => Settings.Capabilities.Classify,
+        OperatorAction.SettleHandoff => Settings.Capabilities.SettleHandoffs,
+        OperatorAction.ReprocessDeferred or OperatorAction.SkipDeferredTracking => Settings.Capabilities.RecoverDeferred,
+        OperatorAction.ResubmitWithChanges => Settings.Capabilities.EditPayloads,
         _ => false,
     };
 
