@@ -254,8 +254,12 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(context);
+        // A journaled command is published under its operation id, like a plain resubmit, so the
+        // reconciler can find the response parented to it.
         return RunAsync(target, context, MessageAuditType.ResubmitWithChanges, eventTypeId, auditData,
-            () => _managerClient.Resubmit(target.Message, target.EndpointId, eventTypeId, eventJson));
+            () => context.Journal is { } journal && _managerClient is IManagerCommandClient commands
+                ? commands.Resubmit(target.Message, target.EndpointId, eventTypeId, eventJson, journal.CommandMessageId)
+                : _managerClient.Resubmit(target.Message, target.EndpointId, eventTypeId, eventJson));
     }
 
     /// <inheritdoc/>

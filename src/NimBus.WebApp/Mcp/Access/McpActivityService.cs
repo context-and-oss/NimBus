@@ -63,8 +63,12 @@ public sealed class McpActivityService
     private static readonly MessageAuditType[] Types =
     [
         MessageAuditType.Resubmit,
+        MessageAuditType.ResubmitWithChanges,
         MessageAuditType.Skip,
         MessageAuditType.ReportEvent,
+        MessageAuditType.CompleteHandoff,
+        MessageAuditType.FailHandoff,
+        MessageAuditType.ReprocessDeferred,
         MessageAuditType.McpAccessRefused,
         MessageAuditType.UpdateMcpSettings,
     ];
@@ -136,6 +140,9 @@ public sealed class McpActivityService
         MessageAuditType.Resubmit => "resubmit",
         MessageAuditType.Skip => "skip",
         MessageAuditType.ReportEvent => "report",
+        MessageAuditType.ResubmitWithChanges => "resubmit_with_changes",
+        MessageAuditType.CompleteHandoff or MessageAuditType.FailHandoff => "settle_handoff",
+        MessageAuditType.ReprocessDeferred => "reprocess_deferred",
         _ => type.ToString(),
     };
 

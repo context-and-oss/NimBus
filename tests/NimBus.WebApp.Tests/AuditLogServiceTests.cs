@@ -223,7 +223,7 @@ public sealed class AuditLogServiceTests
         foreach (var type in new[]
                  {
                      MessageAuditType.Resubmit, MessageAuditType.ResubmitWithChanges, MessageAuditType.Skip,
-                     MessageAuditType.ReportEvent, MessageAuditType.CommandNotSent,
+                     MessageAuditType.ReportEvent, MessageAuditType.CommandNotSent, MessageAuditType.ReprocessDeferred,
                  })
         {
             Assert.Contains(type, AuditSettingsProvider.AlwaysRecorded);

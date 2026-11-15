@@ -1741,8 +1741,8 @@ paths:
         Replaces the disabled audit types. Only types listed in
         configurableAuditTypes can be disabled; access-denied attempts,
         updateAuditSettings itself and the commands that change a message
-        (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent) are
-        always recorded.
+        (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent,
+        reprocessDeferred) are always recorded.
       operationId: put-admin-audit-settings
       tags:
         - Admin
@@ -5713,6 +5713,7 @@ components:
             - dashboardTokenRevoked
             - dashboardTokenRemoved
             - updateEndpointMetadata
+            - reprocessDeferred
         comment:
           type: string
           nullable: true
@@ -7533,6 +7534,7 @@ components:
             - dashboardTokenRevoked
             - dashboardTokenRemoved
             - updateEndpointMetadata
+            - reprocessDeferred
         createdAtFrom:
           type: string
           format: date-time
@@ -8859,6 +8861,7 @@ components:
             - dashboardTokenRevoked
             - dashboardTokenRemoved
             - updateEndpointMetadata
+            - reprocessDeferred
         comment:
           type: string
           nullable: true
