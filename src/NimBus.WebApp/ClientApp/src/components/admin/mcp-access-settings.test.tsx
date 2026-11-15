@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import McpAccessSettings from "./mcp-access-settings";
 import { renderInPanel } from "../../test-utils/render-in-panel";
-import { describeChanges, previewAccess, type McpDeployment, type McpSettings, type McpState } from "./mcp-access-model";
+import { CAPABILITIES, TOTAL_TOOL_COUNT, describeChanges, listedToolCount, previewAccess, type McpDeployment, type McpSettings, type McpState } from "./mcp-access-model";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { cleanup(); globalThis.fetch = originalFetch; });
@@ -251,7 +251,7 @@ describe("MCP access model", () => {
 
     expect(on.find(r => r.name === "nimbus_record_classification")).toEqual(
       { name: "nimbus_record_classification", allowed: true, why: "Nimbus.Classify role + Contributor" });
-    expect(on.filter(r => r.allowed).map(r => r.name)).toEqual(["14 read tools", "nimbus_record_classification"]);
+    expect(on.filter(r => r.allowed).map(r => r.name)).toEqual(["15 read tools", "nimbus_record_classification"]);
     expect(off.find(r => r.name === "nimbus_record_classification")?.why).toBe("workload recording off");
     expect(describeChanges(settings(), s)).toEqual([{ text: "Let workloads record failure classifications", widens: true }]);
   });
@@ -266,6 +266,67 @@ describe("MCP access model", () => {
     expect(on.find(r => r.name === "nimbus_skip_message")).toEqual({ name: "nimbus_skip_message", allowed: false, why: "workloads never skip" });
     expect(off.find(r => r.name === "nimbus_resubmit_message")?.why).toBe("unattended resubmits off");
     expect(describeChanges({ ...s, allowWorkloadResubmit: false }, s)).toEqual([{ text: "Let workloads resubmit failed messages unattended", widens: true }]);
+  });
+
+  describe("recovery capabilities (Spec 035 Phase 3)", () => {
+    const recovery = { settleHandoffs: true, recoverDeferred: true, editPayloads: true };
+    const withRecovery = (): McpSettings => ({ ...settings(), capabilities: { ...settings().capabilities, ...recovery } });
+    const tools = ["nimbus_settle_handoff", "nimbus_reprocess_deferred", "nimbus_skip_deferred_tracking", "nimbus_resubmit_with_changes"];
+    const row = (rows: ReturnType<typeof previewAccess>, name: string) => rows.find(r => r.name === name);
+
+    it("lists a switch for each, with its tools and scope", () => {
+      const byKey = Object.fromEntries(CAPABILITIES.map(c => [c.key, c]));
+
+      expect(byKey.settleHandoffs).toMatchObject({ scope: "nimbus.settle", role: "Contributor", tools: ["nimbus_prepare_action", "nimbus_settle_handoff"] });
+      expect(byKey.recoverDeferred).toMatchObject({ scope: "nimbus.recover", tools: ["nimbus_prepare_action", "nimbus_reprocess_deferred", "nimbus_skip_deferred_tracking"] });
+      expect(byKey.editPayloads).toMatchObject({ scope: "nimbus.edit", role: "Contributor + PiiReader", risk: "high", tools: ["nimbus_prepare_action", "nimbus_resubmit_with_changes"] });
+    });
+
+    it("reviews switching them on as widening", () => {
+      expect(describeChanges(settings(), withRecovery())).toEqual([
+        { text: "Allow settling pending handoffs", widens: true },
+        { text: "Allow recovering deferred messages", widens: true },
+        { text: "Allow resubmitting with an edited payload", widens: true },
+      ]);
+      expect(describeChanges(withRecovery(), settings()).every(c => !c.widens)).toBe(true);
+    });
+
+    it("previews them as switched off until an Owner turns them on", () => {
+      const off = previewAccess(settings(), deployment(), "pii", true);
+      const on = previewAccess(withRecovery(), deployment(), "pii", true);
+
+      for (const tool of tools) {
+        expect(row(off, tool)).toEqual({ name: tool, allowed: false, why: "switched off here" });
+        expect(row(on, tool)?.allowed).toBe(true);
+      }
+    });
+
+    it("needs PiiReader for an edited payload and never admits a workload", () => {
+      const contributor = previewAccess(withRecovery(), deployment(), "contributor", true);
+      const workload = previewAccess({ ...withRecovery(), allowWorkloadResubmit: true }, deployment(), "workload", true);
+
+      expect(row(contributor, "nimbus_settle_handoff")?.allowed).toBe(true);
+      expect(row(contributor, "nimbus_resubmit_with_changes")).toEqual({ name: "nimbus_resubmit_with_changes", allowed: false, why: "needs PiiReader" });
+      for (const tool of tools)
+        expect(row(workload, tool)).toEqual({ name: tool, allowed: false, why: "workloads never recover" });
+    });
+
+    it("keeps nimbus_prepare_action available when a recovery capability is the only change allowed", () => {
+      const only = { ...settings(), capabilities: { payloads: false, report: false, classify: false, resubmit: false, skip: false, settleHandoffs: true } };
+      const none = { ...settings(), capabilities: { payloads: false, report: false, classify: false, resubmit: false, skip: false } };
+
+      expect(row(previewAccess(only, deployment(), "contributor", true), "nimbus_prepare_action")?.allowed).toBe(true);
+      expect(row(previewAccess(none, deployment(), "contributor", true), "nimbus_prepare_action")?.allowed).toBe(false);
+    });
+
+    it("counts the listed tools", () => {
+      const everything = { ...withRecovery(), capabilities: { ...withRecovery().capabilities, payloads: true, skip: true } };
+
+      // 15 read tools, report, the two classify tools, resubmit and prepare.
+      expect(listedToolCount(settings(), deployment())).toBe(20);
+      expect(listedToolCount(everything, deployment())).toBe(TOTAL_TOOL_COUNT);
+      expect(TOTAL_TOOL_COUNT).toBe(25);
+    });
   });
 
   it("reviews raising the unattended limits as widening and lowering them as narrowing", () => {

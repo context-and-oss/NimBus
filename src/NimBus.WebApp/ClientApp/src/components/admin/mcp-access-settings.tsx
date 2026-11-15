@@ -222,7 +222,7 @@ export default function McpAccessSettings() {
                           <span className="rounded bg-nimbus-purple-50 px-1.5 text-nimbus-purple">{cap.role}</span>
                         </p>
                       </div>
-                      <Toggle aria-label={cap.label} checked={draft.capabilities[cap.key]} onChange={v => edit(s => { s.capabilities[cap.key as CapabilityKey] = v; })} />
+                      <Toggle aria-label={cap.label} checked={Boolean(draft.capabilities[cap.key])} onChange={v => edit(s => { s.capabilities[cap.key as CapabilityKey] = v; })} />
                     </div>
                     {draft.capabilities[cap.key] && cap.note && <p className="rounded-md border border-status-warning/40 bg-status-warning/10 p-2 text-xs">{cap.note}</p>}
                   </li>
