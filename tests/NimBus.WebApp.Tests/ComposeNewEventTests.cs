@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
@@ -100,18 +101,47 @@ public sealed class ComposeNewEventTests
         Assert.AreEqual(expected, client.Sender.SentMessages[0].MessageId);
     }
 
-    private static EventImplementation CreateSut(ServiceBusClient client) =>
+    [TestMethod]
+    public async Task Compose_denied_returns_Forbid_writes_accessDenied_audit_and_publishes_nothing()
+    {
+        // GH#402: a caller who is not Contributor on the producing endpoint gets a 403, not
+        // an exception the problem-details middleware turns into a 500.
+        var client = new RecordingServiceBusClient();
+        var store = new InMemoryMessageStore();
+        var sut = CreateSut(client, new DenyAllAuthorizationService(), store,
+            new AuditLogService(NullLogger<AuditLogService>.Instance, store));
+
+        var result = await sut.PostComposeNewEventAsync(new ResubmitWithChanges
+        {
+            EventTypeId = nameof(ComposedOrder),
+            EventContent = "{\"OrderId\":\"order-9\",\"Total\":1}",
+        });
+
+        Assert.IsInstanceOfType<ForbidResult>(result.Result);
+        Assert.AreEqual(0, client.Sender.SentMessages.Count, "A denied compose must publish nothing.");
+        var audits = (await store.SearchAudits(new AuditFilter(), continuationToken: null, maxItemCount: 50)).Audits.ToList();
+        Assert.AreEqual(1, audits.Count);
+        Assert.AreEqual(MessageAuditType.Compose, audits[0].Audit.AuditType);
+        Assert.IsTrue(audits[0].Audit.AccessDenied);
+        Assert.AreEqual(Publisher, audits[0].Audit.EndpointId);
+    }
+
+    private static EventImplementation CreateSut(
+        ServiceBusClient client,
+        IEndpointAuthorizationService? authorization = null,
+        InMemoryMessageStore? store = null,
+        IAuditLogService? auditLog = null) =>
         new(
             applicationInsightsService: null!,
             new ComposePlatform(),
             managerClient: null!,
             handoffClientFactory: null!,
             NullLogger<EventImplementation>.Instance,
-            new InMemoryMessageStore(),
-            new AllowAllAuthorizationService(),
+            store ?? new InMemoryMessageStore(),
+            authorization ?? new AllowAllAuthorizationService(),
             adminService: null!,
             client,
-            new NoOpAuditLogService(),
+            auditLog ?? new NoOpAuditLogService(),
             handoffSettlement: null!,
             new HttpContextAccessor { HttpContext = new DefaultHttpContext() },
             PayloadRedactionTests.NewRedaction(),
@@ -168,6 +198,18 @@ public sealed class ComposeNewEventTests
             string? eventTypeId = null,
             string? auditorNameOverride = null,
             CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class DenyAllAuthorizationService : IEndpointAuthorizationService
+    {
+        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(false);
+
+        public Task<bool> CanReadPiiAsync() => Task.FromResult(false);
+
+        public Task<CurrentUserAccess> GetCurrentUserAccessAsync() =>
+            Task.FromResult(new CurrentUserAccess());
+
+        public string? GetCurrentUserName() => "operator-mallory";
     }
 
     private sealed class AllowAllAuthorizationService : IEndpointAuthorizationService
