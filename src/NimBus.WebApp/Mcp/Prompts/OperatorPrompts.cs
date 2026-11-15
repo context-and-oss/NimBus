@@ -25,7 +25,8 @@ public static class OperatorPrompts
     private const string DefaultPeriod = "1d";
 
     internal static readonly string[] Periods = ["1h", "12h", "1d", "3d", "7d", "30d"];
-    internal static readonly string[] Actions = ["resubmit", "skip"];
+    internal static readonly string[] Actions =
+        ["resubmit", "skip", "settle_handoff", "reprocess_deferred", "skip_deferred_tracking", "resubmit_with_changes"];
 
     private const string CommonRules = """
         Rules:
@@ -51,19 +52,19 @@ public static class OperatorPrompts
 
     /// <summary>Explains one message and recommends what to do with it.</summary>
     [McpServerPrompt(Name = "investigate-message", Title = "Investigate a NimBus message")]
-    [Description("Explains why one message failed, what it blocks in its session, and recommends resubmit, skip, fix first, report or Web UI recovery. Read-only.")]
+    [Description("Explains why one message failed or waits, what it blocks in its session, and recommends resubmit, skip, fix first, report, a handoff or deferred recovery, or Web UI recovery. Read-only.")]
     public static string InvestigateMessage(
         [Description("Endpoint id, as returned by nimbus_list_endpoints.")] string endpointId,
         [Description("The message's event id.")] string eventId)
         => Render("investigate-message", new Dictionary<string, string?> { ["endpointId"] = endpointId, ["eventId"] = eventId });
 
-    /// <summary>Resubmits or skips one message after the user confirms the preview.</summary>
+    /// <summary>Runs one recovery action on one message after the user confirms the preview.</summary>
     [McpServerPrompt(Name = RecoverMessage, Title = "Recover a NimBus message")]
-    [Description("Investigates one failed message, previews resubmitting or skipping it, and runs the action only after you confirm it and agree the audit reason.")]
+    [Description("Investigates one message, previews its recovery (resubmit, skip, settle a pending handoff, reprocess or skip stale deferred tracking, or resubmit with an edited payload), and runs the action only after you confirm it and agree the audit reason.")]
     public static string RecoverMessagePrompt(
         [Description("Endpoint id, as returned by nimbus_list_endpoints.")] string endpointId,
         [Description("The message's event id.")] string eventId,
-        [Description("resubmit or skip. Omit to get a recommendation first.")] string? action = null)
+        [Description("resubmit, skip, settle_handoff, reprocess_deferred, skip_deferred_tracking or resubmit_with_changes. Omit to get a recommendation first.")] string? action = null)
         => Render(RecoverMessage, new Dictionary<string, string?> { ["endpointId"] = endpointId, ["eventId"] = eventId, ["action"] = action });
 
     /// <summary>Summarizes site-wide failures for a period.</summary>
@@ -137,8 +138,9 @@ public static class OperatorPrompts
                - fix first, then resubmit, when the handler, its configuration or the data must change;
                - skip, only when the message must never be processed; say which waiting messages that releases;
                - mark it reported, when it needs a ticket;
-               - recover in the Web UI, for deferred messages and pending handoffs, which MCP does not recover.
-               Recommend resubmit or skip only when it is in eligibleActions.
+               - settle_handoff for a pending handoff, or reprocess_deferred or skip_deferred_tracking for a deferred message, when eligibleActions lists it; otherwise recover it in the Web UI;
+               - resubmit_with_changes, only when the payload itself is wrong and the user can give the corrected values.
+               Recommend an action only when it is in eligibleActions.
             7. Do not carry out the recommendation. If the user wants to act on it, suggest the recover-message prompt.
             """,
             ReadOnlyRule,
@@ -148,18 +150,18 @@ public static class OperatorPrompts
     private static string RecoverText(string endpointId, string eventId, string? action)
     {
         var choose = action is null
-            ? "2. Recommend resubmit or skip from eligibleActions, with your reasons, and let the user choose: offer the nextActions of nimbus_get_message as a numbered choice."
+            ? "2. Recommend one action from eligibleActions, with your reasons, and let the user choose: offer the nextActions of nimbus_get_message as a numbered choice."
             : "2. The user asked for the action in Inputs. Check that it is in eligibleActions; if it is not, explain why and stop.";
 
         return Compose(
-            "Recover one failed NimBus message. Nothing changes until the user explicitly confirms.",
+            "Recover one NimBus message. Nothing changes until the user explicitly confirms.",
             $"""
             1. Investigate: call nimbus_get_capabilities, nimbus_get_message with the endpointId and eventId in Inputs, nimbus_get_message_history, nimbus_get_session if the message has a session, and nimbus_get_classification if classification is enabled.
             {choose}
-               If neither resubmit nor skip is eligible, explain why and stop. Deferred messages and pending handoffs are recovered in the Web UI (webUiUrl).
-            3. Call nimbus_prepare_action with the action, the endpointId, the eventId and the messageVersion you just read. Show the user the preview: the action, endpoint, event id, current status, latest error and how many messages wait in its session. For skip, say plainly that the message will never be processed and that waiting messages in its session may be released.
+               If no action is eligible, explain why and stop. A deferred message or pending handoff with no eligible action is recovered in the Web UI (webUiUrl).
+            3. Call nimbus_prepare_action with the action, the endpointId, the eventId and the messageVersion you just read. Show the user the preview: the action, endpoint, event id, current status, latest error, how many messages wait in its session and the impact. For skip, say plainly that the message will never be processed and that waiting messages in its session may be released. For settle_handoff, ask whether the external work completed or failed; never guess. For skip_deferred_tracking, say that only the tracking record changes and nothing is removed from Service Bus. For resubmit_with_changes, take the corrected values from the user, pass the complete edited payload as eventContent and show the changedPaths.
             4. Ask the user to confirm the action and to agree the reason that goes into the audit log. Stop unless the user clearly says yes. Silence, a question or a changed request is not a yes.
-            5. Call nimbus_resubmit_message or nimbus_skip_message with the actionToken, the agreed reason and a new GUID as idempotencyKey. The token is valid for about two minutes; if it has expired, prepare again and show the new preview.
+            5. Call the tool the preview's nextActions names (nimbus_resubmit_message, nimbus_skip_message, nimbus_settle_handoff, nimbus_reprocess_deferred, nimbus_skip_deferred_tracking or nimbus_resubmit_with_changes) with the actionToken, the agreed reason, a new GUID as idempotencyKey and what its needs list. The token is valid for about two minutes; if it has expired, prepare again and show the new preview.
             6. Report that the command was sent, not that it succeeded. Wait about 10 seconds, then call nimbus_get_message again. [MessageNotFound] in that window is expected; try once more after another 10 seconds.
             7. On [StaleMessage] the message changed: start again from step 1 and ask again. On [OutcomeUnknown], read the message before doing anything else. On [RateLimited], wait and tell the user. Never repeat a skip on your own.
             """,

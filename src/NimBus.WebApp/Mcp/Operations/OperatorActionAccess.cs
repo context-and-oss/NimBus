@@ -84,6 +84,18 @@ public sealed class OperatorActionAccess
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };
 
+    /// <summary>The name agents see for a journaled operation: the same as its <see cref="OperatorAction"/>.</summary>
+    public static string NameOf(NimBus.MessageStore.States.OperatorOperationAction action) => action switch
+    {
+        NimBus.MessageStore.States.OperatorOperationAction.ResubmitWithChanges => NameOf(OperatorAction.ResubmitWithChanges),
+        _ => action.ToString().ToLowerInvariant(),
+    };
+
+    /// <summary>Whether <paramref name="action"/> is one of the Spec 035 Phase 3 recovery actions.</summary>
+    public static bool IsRecovery(OperatorAction action)
+        => action is OperatorAction.SettleHandoff or OperatorAction.ReprocessDeferred
+            or OperatorAction.SkipDeferredTracking or OperatorAction.ResubmitWithChanges;
+
     /// <summary>The name agents see for <paramref name="action"/>.</summary>
     public static string NameOf(OperatorAction action) => action switch
     {
@@ -196,6 +208,21 @@ public sealed class OperatorActionAccess
             if (HasScope(OperatorAction.Skip)) actions.Add(NameOf(OperatorAction.Skip));
         }
 
+        // Spec 035 Phase 3: recovery for the agent of a person. No workload role admits these.
+        if (row.ResolutionStatus == ResolutionStatus.Deferred)
+        {
+            if (HasScope(OperatorAction.ReprocessDeferred)) actions.Add(NameOf(OperatorAction.ReprocessDeferred));
+            if (HasScope(OperatorAction.SkipDeferredTracking)) actions.Add(NameOf(OperatorAction.SkipDeferredTracking));
+        }
+
+        if (OperatorRecoveryCommands.IsPendingHandoff(row) && HasScope(OperatorAction.SettleHandoff))
+            actions.Add(NameOf(OperatorAction.SettleHandoff));
+        if (OperatorCommandCoordinator.IsActionable(row, OperatorChannel.Mcp) && HasScope(OperatorAction.ResubmitWithChanges)
+            && await _authorization.CanReadPiiAsync().ConfigureAwait(false))
+        {
+            actions.Add(NameOf(OperatorAction.ResubmitWithChanges));
+        }
+
         if (HasScope(OperatorAction.Report)) actions.Add(NameOf(OperatorAction.Report));
         if (classificationAvailable && HasScope(OperatorAction.Classify)
             && row.ResolutionStatus is ResolutionStatus.Failed or ResolutionStatus.DeadLettered)
@@ -220,6 +247,8 @@ public sealed class OperatorActionAccess
 
         return Enum.GetValues<OperatorAction>()
             .Where(action => action != OperatorAction.Classify || classificationAvailable)
+            // An edited payload also needs PiiReader.
+            .Where(action => action != OperatorAction.ResubmitWithChanges || access.IsPiiReader)
             .Where(HasScope)
             .Select(NameOf)
             .ToList();

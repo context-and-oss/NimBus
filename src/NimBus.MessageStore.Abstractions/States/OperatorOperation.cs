@@ -128,6 +128,9 @@ public enum OperatorOperationAction
 
     /// <summary>Skip the message; later messages in its session may be released.</summary>
     Skip,
+
+    /// <summary>Replay the message to the endpoint with an edited payload (Spec 035 Phase 3).</summary>
+    ResubmitWithChanges,
 }
 
 /// <summary>How far a journaled operator command got.</summary>

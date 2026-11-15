@@ -7,12 +7,12 @@ namespace NimBus.WebApp.Mcp.Operations;
 /// One option a tool result offers the user (Spec 046 §3): which tool to call next and with which
 /// arguments. A hint only: the tool it names authorizes, audits and rate-limits the call itself.
 /// </summary>
-/// <param name="Id">Stable within the result: investigate, resubmit, skip, report, classify, run, check, open_web_ui or resubmit_ticket.</param>
+/// <param name="Id">Stable within the result: investigate, resubmit, skip, report, classify, run, check, open_web_ui, resubmit_ticket, settle_handoff, reprocess_deferred, skip_deferred_tracking or resubmit_with_changes.</param>
 /// <param name="Label">Fixed text chosen by NimBus, for the user. Never contains data.</param>
-/// <param name="Kind">read; change (changes NimBus state or sends a command); or destructive (skip).</param>
+/// <param name="Kind">read; change (changes NimBus state or sends a command); or destructive (skip, skip a tracking record, or resubmit with an edited payload).</param>
 /// <param name="Tool">The tool to call; null for open_web_ui, which carries <paramref name="Url"/>.</param>
 /// <param name="Arguments">Arguments NimBus already knows: ids, versions and tokens from the same result. Ids are data.</param>
-/// <param name="Needs">Arguments you must add: reason, idempotencyKey or ticketId.</param>
+/// <param name="Needs">Arguments you must add: reason, idempotencyKey, ticketId, outcome or eventContent.</param>
 /// <param name="Confirm">True when a person present must say yes before the change this option leads to runs.</param>
 /// <param name="Url">For open_web_ui, the page in the NimBus Web UI.</param>
 public sealed record NextAction(
@@ -40,7 +40,7 @@ public static class OperatorNextActions
         /// <summary>Changes NimBus state or sends a command.</summary>
         public const string Change = "change";
 
-        /// <summary>Skips a message: it is never processed.</summary>
+        /// <summary>Not undone: skips a message or its tracking record, or replaces its payload.</summary>
         public const string Destructive = "destructive";
     }
 
@@ -83,6 +83,30 @@ public static class OperatorNextActions
         /// <summary>Check an operation.</summary>
         public const string Check = "Check the outcome";
 
+        /// <summary>Settle a pending handoff (Spec 035 Phase 3).</summary>
+        public const string SettleHandoff = "Complete or fail this pending handoff";
+
+        /// <summary>Reprocess the deferred messages of a session.</summary>
+        public const string ReprocessDeferred = "Reprocess the deferred messages in its session";
+
+        /// <summary>Inspect a Deferred row and skip its tracking record when it is stale.</summary>
+        public const string SkipDeferredTracking = "Check for a stale tracking record and skip it";
+
+        /// <summary>Resubmit with an edited payload.</summary>
+        public const string ResubmitWithChanges = "Resubmit it with an edited payload";
+
+        /// <summary>Run a prepared handoff settlement.</summary>
+        public const string RunSettleHandoff = "Settle the handoff";
+
+        /// <summary>Run a prepared reprocess.</summary>
+        public const string RunReprocessDeferred = "Run the reprocess";
+
+        /// <summary>Run a prepared tracking skip.</summary>
+        public const string RunSkipDeferredTracking = "Skip the tracking record (nothing is removed from Service Bus)";
+
+        /// <summary>Run a prepared edited resubmit.</summary>
+        public const string RunResubmitWithChanges = "Run the resubmit with the edited payload";
+
         /// <summary>Open the Web UI.</summary>
         public const string OpenWebUi = "Open it in the NimBus Web UI";
 
@@ -91,11 +115,16 @@ public static class OperatorNextActions
         {
             Investigate, InvestigateExample, ReadAgain, Resubmit, ResubmitExample, ResubmitTicket, Skip, Report, Classify,
             RunResubmit, RunSkip, Check, OpenWebUi,
+            SettleHandoff, ReprocessDeferred, SkipDeferredTracking, ResubmitWithChanges,
+            RunSettleHandoff, RunReprocessDeferred, RunSkipDeferredTracking, RunResubmitWithChanges,
         };
     }
 
     private const string RetryMayHelp = "RetryMayHelp";
     private static readonly string[] ChangeNeeds = ["reason", "idempotencyKey"];
+    private static readonly string[] SettleNeeds = ["reason", "idempotencyKey", "outcome"];
+    private static readonly string[] EditNeeds = ["eventContent"];
+    private static readonly string[] EditRunNeeds = ["reason", "idempotencyKey", "eventContent"];
 
     /// <summary>The options for one message (<c>nimbus_get_message</c>).</summary>
     /// <param name="endpointId">The endpoint.</param>
@@ -128,14 +157,30 @@ public static class OperatorNextActions
             ? Option("report", Labels.Report, Kinds.Change, "nimbus_set_message_reported",
                 Args(("endpointId", endpointId), ("eventId", eventId), ("reported", true)), [.. ChangeNeeds, "ticketId"], confirm: !isWorkload)
             : null;
-        // Deferred messages and pending handoffs are recovered in the Web UI, not over MCP.
-        var webUi = webUiUrl is not null && (Is(status, ResolutionStatus.Deferred)
-                || (Is(status, ResolutionStatus.Pending) && string.Equals(pendingSubStatus, "Handoff", StringComparison.OrdinalIgnoreCase)))
+        // Spec 035 Phase 3: the recovery actions, for the agent of a person only. Eligibility
+        // already says whether the Owner switched each on and the caller holds its scope and role.
+        NextAction? settle = null, reprocess = null, skipTracking = null, edit = null;
+        if (messageVersion is not null && !isWorkload)
+        {
+            if (Has(eligibleActions, OperatorAction.SettleHandoff))
+                settle = Prepare("settle_handoff", Labels.SettleHandoff, Kinds.Change, endpointId, eventId, messageVersion, isWorkload: false);
+            if (Has(eligibleActions, OperatorAction.ReprocessDeferred))
+                reprocess = Prepare("reprocess_deferred", Labels.ReprocessDeferred, Kinds.Change, endpointId, eventId, messageVersion, isWorkload: false);
+            if (Has(eligibleActions, OperatorAction.SkipDeferredTracking))
+                skipTracking = Prepare("skip_deferred_tracking", Labels.SkipDeferredTracking, Kinds.Destructive, endpointId, eventId, messageVersion, isWorkload: false);
+            if (Has(eligibleActions, OperatorAction.ResubmitWithChanges))
+                edit = Prepare("resubmit_with_changes", Labels.ResubmitWithChanges, Kinds.Destructive, endpointId, eventId, messageVersion, isWorkload: false, EditNeeds);
+        }
+
+        // A deferred message or pending handoff the caller cannot recover here is recovered in the Web UI.
+        var webUi = webUiUrl is not null && settle is null && reprocess is null && skipTracking is null
+                && (Is(status, ResolutionStatus.Deferred)
+                    || (Is(status, ResolutionStatus.Pending) && string.Equals(pendingSubStatus, "Handoff", StringComparison.OrdinalIgnoreCase)))
             ? WebUi(webUiUrl)
             : null;
 
         var first = resubmit is not null && string.Equals(guidance, RetryMayHelp, StringComparison.Ordinal) ? resubmit : investigate;
-        return Collect(first, investigate, resubmit, classify, report, skip, webUi);
+        return Collect(first, investigate, resubmit, settle, reprocess, classify, report, skip, skipTracking, edit, webUi);
     }
 
     /// <summary>The options for a group of failures (<c>nimbus_get_worklist</c>), acting on its example.</summary>
@@ -174,17 +219,21 @@ public static class OperatorNextActions
     }
 
     /// <summary>The option after <c>nimbus_prepare_action</c>: run it.</summary>
-    /// <param name="action">resubmit or skip.</param>
+    /// <param name="action">The prepared action, as <see cref="OperatorActionAccess.NameOf(OperatorAction)"/> names it.</param>
     /// <param name="actionToken">The token it returned.</param>
     /// <param name="isWorkload">True for an unattended caller.</param>
     public static IReadOnlyList<NextAction> ForPrepared(string action, string actionToken, bool isWorkload)
     {
-        var skip = string.Equals(action, "skip", StringComparison.Ordinal);
-        return
-        [
-            Option("run", skip ? Labels.RunSkip : Labels.RunResubmit, skip ? Kinds.Destructive : Kinds.Change,
-                skip ? "nimbus_skip_message" : "nimbus_resubmit_message", Args(("actionToken", actionToken)), ChangeNeeds, confirm: !isWorkload),
-        ];
+        var (label, kind, tool, needs) = action switch
+        {
+            "skip" => (Labels.RunSkip, Kinds.Destructive, "nimbus_skip_message", ChangeNeeds),
+            "settle_handoff" => (Labels.RunSettleHandoff, Kinds.Change, "nimbus_settle_handoff", SettleNeeds),
+            "reprocess_deferred" => (Labels.RunReprocessDeferred, Kinds.Change, "nimbus_reprocess_deferred", ChangeNeeds),
+            "skip_deferred_tracking" => (Labels.RunSkipDeferredTracking, Kinds.Destructive, "nimbus_skip_deferred_tracking", ChangeNeeds),
+            "resubmit_with_changes" => (Labels.RunResubmitWithChanges, Kinds.Destructive, "nimbus_resubmit_with_changes", EditRunNeeds),
+            _ => (Labels.RunResubmit, Kinds.Change, "nimbus_resubmit_message", ChangeNeeds),
+        };
+        return [Option("run", label, kind, tool, Args(("actionToken", actionToken)), needs, confirm: !isWorkload)];
     }
 
     /// <summary>The option after a resubmit or skip: check its operation. Empty without one.</summary>
@@ -221,9 +270,10 @@ public static class OperatorNextActions
     private static NextAction WebUi(string url)
         => new("open_web_ui", Labels.OpenWebUi, Kinds.Read, null, Args(), [], false, url);
 
-    private static NextAction Prepare(string action, string label, string kind, string endpointId, string eventId, string messageVersion, bool isWorkload)
+    private static NextAction Prepare(string action, string label, string kind, string endpointId, string eventId, string messageVersion, bool isWorkload,
+        IReadOnlyList<string>? needs = null)
         => Option(action, label, kind, "nimbus_prepare_action",
-            Args(("action", action), ("endpointId", endpointId), ("eventId", eventId), ("messageVersion", messageVersion)), [], confirm: !isWorkload);
+            Args(("action", action), ("endpointId", endpointId), ("eventId", eventId), ("messageVersion", messageVersion)), needs ?? [], confirm: !isWorkload);
 
     private static NextAction Option(string id, string label, string kind, string tool, Dictionary<string, object> arguments,
         IReadOnlyList<string>? needs = null, bool confirm = false)

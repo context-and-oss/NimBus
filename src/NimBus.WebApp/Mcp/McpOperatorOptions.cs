@@ -31,6 +31,13 @@ public sealed class McpOperatorOptions
 
     /// <summary>The MCP resource's own Entra app registration.</summary>
     public McpEntraOptions Entra { get; set; } = new();
+
+    /// <summary>
+    /// The most deferred messages one <c>nimbus_reprocess_deferred</c> may ask an endpoint to
+    /// process again (Spec 035 Phase 3). A session with more is refused, not partly reprocessed:
+    /// a person reprocesses it from the Web UI. Default 200.
+    /// </summary>
+    public int MaxDeferredReprocess { get; set; } = 200;
 }
 
 /// <summary>

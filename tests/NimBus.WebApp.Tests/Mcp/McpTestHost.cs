@@ -133,6 +133,23 @@ internal sealed class McpTestHost : IAsyncDisposable
                     services.AddSingleton<IAuditLogService>(sp => sp.GetRequiredService<RecordingAuditLog>());
                     services.AddScoped<IOperatorCommands, OperatorCommandCoordinator>();
 
+                    // Spec 035 Phase 3: the recovery commands, over recording handoff clients, a
+                    // recording admin service and a fake broker that holds no messages.
+                    services.AddSingleton<RecordingHandoffClients>();
+                    services.AddSingleton<NimBus.SDK.IHandoffClientFactory>(sp => sp.GetRequiredService<RecordingHandoffClients>());
+                    services.AddSingleton<RecordingReprocess>();
+                    services.AddSingleton(sp => sp.GetRequiredService<RecordingReprocess>().Admin);
+                    services.AddSingleton(new HandoffSettlementTracker(TimeProvider.System));
+                    // An instance, so the container never disposes the fake (its base DisposeAsync needs a connection).
+                    services.AddSingleton(new DeferredMessageInspectorTests.FakeClient());
+                    services.AddScoped(sp => new DeferredTrackingRecovery(
+                        sp.GetRequiredService<IMessageTrackingStore>(),
+                        sp.GetRequiredService<DeferredMessageInspectorTests.FakeClient>(),
+                        null,
+                        NullLogger.Instance));
+                    services.AddScoped<IOperatorRecoveryCommands, OperatorRecoveryCommands>();
+                    services.AddSingleton<NimBus.Core.Messages.PII.IEventJsonMasker>(NimBus.Core.Messages.PII.NullEventJsonMasker.Instance);
+
                     // The REST implementations the read tools delegate to. Unconfigured
                     // fakes by default; tests replace them through configureServices.
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IEndpointApiController>.Create().Instance);
@@ -376,6 +393,66 @@ internal sealed class McpTestHost : IAsyncDisposable
             _sent.Enqueue($"skip:{endpoint}:{errorResponse.EventId}");
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>One handoff settlement the recovery commands sent.</summary>
+    public sealed record SentSettlement(string EndpointId, bool Completed, NimBus.SDK.HandoffSettlement Coordinates, string? Details, string? ErrorText, string? ErrorType);
+
+    /// <summary>Records the handoff settlements the recovery commands send.</summary>
+    public sealed class RecordingHandoffClients : NimBus.SDK.IHandoffClientFactory
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<SentSettlement> _sent = new();
+
+        public IReadOnlyList<SentSettlement> Sent => _sent.ToList();
+
+        /// <summary>When set, the next send throws it (once).</summary>
+        public Exception? FailNextSend { get; set; }
+
+        public NimBus.SDK.IHandoffClient ForEndpoint(string endpointId) => new Client(this, endpointId);
+
+        private sealed class Client(RecordingHandoffClients owner, string endpointId) : NimBus.SDK.IHandoffClient
+        {
+            public Task CompleteAsync(NimBus.SDK.HandoffSettlement coords, object? result = null, System.Threading.CancellationToken cancellationToken = default)
+                => Send(new SentSettlement(endpointId, true, coords, result as string, null, null));
+
+            public Task FailAsync(NimBus.SDK.HandoffSettlement coords, string errorText, string? errorType = null, System.Threading.CancellationToken cancellationToken = default)
+                => Send(new SentSettlement(endpointId, false, coords, null, errorText, errorType));
+
+            private Task Send(SentSettlement settlement)
+            {
+                if (owner.FailNextSend is { } failure)
+                {
+                    owner.FailNextSend = null;
+                    return Task.FromException(failure);
+                }
+
+                owner._sent.Enqueue(settlement);
+                return Task.CompletedTask;
+            }
+        }
+    }
+
+    /// <summary>Records the deferred reprocess requests the recovery commands make.</summary>
+    public sealed class RecordingReprocess
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _requests = new();
+
+        public RecordingReprocess()
+        {
+            Admin = InterfaceFake<IAdminService>.Create().On("ReprocessDeferredAsync", args =>
+            {
+                _requests.Enqueue($"{args[0]}/{args[1]}");
+                return Task.FromResult(new NimBus.WebApp.ManagementApi.DeferredReprocessResult
+                {
+                    SessionId = (string)args[1]!, SessionStateCleared = true, ProcessRequestSent = true, Errors = new List<string>(),
+                });
+            }).Instance;
+        }
+
+        public IAdminService Admin { get; }
+
+        /// <summary>The endpoint/session pairs reprocessed, in order.</summary>
+        public IReadOnlyList<string> Requests => _requests.ToList();
     }
 
     /// <summary>One recorded audit row.</summary>
