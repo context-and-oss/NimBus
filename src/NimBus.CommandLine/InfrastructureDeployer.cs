@@ -565,6 +565,12 @@ internal sealed class InfrastructureDeployer
             command.AddSecureParameter("sqlAdminPassword", options.SqlAdminPassword ?? string.Empty);
         }
 
+        // External mode: the Resolver gets the same SqlConnection the WebApp gets (GH#391).
+        if (options.StorageProvider == StorageProviderChoice.SqlServer && options.SqlMode == SqlProvisioningMode.External)
+        {
+            command.AddSecureParameter("sqlConnectionString", ResolveSqlConnectionString(options, names));
+        }
+
         if (options.AlertMail?.SmtpPassword is { } alertMailSmtpPassword)
         {
             command.AddSecureParameter("alertMailSmtpPassword", alertMailSmtpPassword);

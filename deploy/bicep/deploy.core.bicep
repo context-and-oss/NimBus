@@ -54,6 +54,11 @@ param sqlAdminLogin string = ''
 @secure()
 param sqlAdminPassword string = ''
 
+// Connection string for an existing SQL database. Used only when storageProvider == 'sqlserver'
+// and sqlMode == 'external'; it becomes the Resolver's SqlConnection secret setting.
+@secure()
+param sqlConnectionString string = ''
+
 // Optional override for the SQL server name. Azure SQL server names are globally
 // unique across all of Azure and are held in the DNS namespace for 24-72 hours
 // after a delete, so users sometimes need to pick a fresh name to redeploy.
@@ -520,6 +525,8 @@ var elasticPremiumSecretSettings = resolverPlan == 'ElasticPremium' ? {
 
 var sqlResolverSecretSettings = storageProvider == 'sqlserver' && sqlMode == 'provision' ? {
   SqlConnection: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;'
+} : storageProvider == 'sqlserver' && sqlMode == 'external' ? {
+  SqlConnection: sqlConnectionString
 } : {}
 
 var alertMailResolverSecretSettings = alertMailEnabled && !empty(alertMailSmtpPassword) ? {
