@@ -142,6 +142,112 @@ public class McpAccessSettingsTests
             changes.Select(c => (c.Text, c.Widens)).ToArray());
     }
 
+    // ── Spec 035 Phase 3: the recovery capabilities ────────────────────────
+
+    private static readonly NimBus.WebApp.Mcp.Operations.OperatorAction[] RecoveryActions =
+    [
+        NimBus.WebApp.Mcp.Operations.OperatorAction.SettleHandoff,
+        NimBus.WebApp.Mcp.Operations.OperatorAction.ReprocessDeferred,
+        NimBus.WebApp.Mcp.Operations.OperatorAction.SkipDeferredTracking,
+        NimBus.WebApp.Mcp.Operations.OperatorAction.ResubmitWithChanges,
+    ];
+
+    private static readonly string[] RecoveryTools =
+    [
+        "nimbus_settle_handoff", "nimbus_reprocess_deferred", "nimbus_skip_deferred_tracking", "nimbus_resubmit_with_changes",
+    ];
+
+    [TestMethod]
+    public void The_recovery_capabilities_are_off_by_default_and_in_a_policy_saved_before_they_existed()
+    {
+        var unsaved = McpAccessPolicy.From(new McpAccessSettings(), new RateLimitOptions());
+        // What a deployment saved before Phase 3: the document has no recovery switches.
+        var saved = McpAccessPolicy.From(
+            Newtonsoft.Json.JsonConvert.DeserializeObject<McpAccessSettings>(
+                """{"Enabled":true,"Capabilities":{"Payloads":true,"Report":true,"Classify":true,"Resubmit":true,"Skip":true}}""")!,
+            new RateLimitOptions());
+        var caller = McpCaller.From(null, McpAuthenticationMode.LocalDevelopment);
+
+        foreach (var policy in new[] { unsaved, saved })
+        {
+            Assert.IsTrue(policy.AllowsAction(NimBus.WebApp.Mcp.Operations.OperatorAction.Skip));
+            foreach (var action in RecoveryActions)
+                Assert.IsFalse(policy.AllowsAction(action), action.ToString());
+            foreach (var tool in RecoveryTools)
+                Assert.IsFalse(McpToolAccess.IsAvailable(tool, policy, caller), tool);
+        }
+    }
+
+    [TestMethod]
+    public void Each_recovery_capability_switches_on_its_own_tools_and_keeps_prepare_listed()
+    {
+        var caller = McpCaller.From(null, McpAuthenticationMode.LocalDevelopment);
+        McpAccessPolicy With(Action<McpCapabilitySettings> enable)
+        {
+            var settings = new McpAccessSettings();
+            settings.Capabilities.Resubmit = false;
+            settings.Capabilities.Skip = false;
+            enable(settings.Capabilities);
+            return McpAccessPolicy.From(settings, new RateLimitOptions());
+        }
+
+        Assert.IsFalse(McpToolAccess.IsAvailable(McpToolAccess.PrepareTool, With(_ => { }), caller));
+
+        var settle = With(c => c.SettleHandoffs = true);
+        CollectionAssert.AreEqual(new[] { "nimbus_settle_handoff" }, RecoveryTools.Where(t => McpToolAccess.IsAvailable(t, settle, caller)).ToArray());
+        Assert.IsTrue(McpToolAccess.IsAvailable(McpToolAccess.PrepareTool, settle, caller));
+
+        var recover = With(c => c.RecoverDeferred = true);
+        CollectionAssert.AreEqual(
+            new[] { "nimbus_reprocess_deferred", "nimbus_skip_deferred_tracking" },
+            RecoveryTools.Where(t => McpToolAccess.IsAvailable(t, recover, caller)).ToArray());
+        Assert.IsTrue(McpToolAccess.IsAvailable(McpToolAccess.PrepareTool, recover, caller));
+
+        var edit = With(c => c.EditPayloads = true);
+        CollectionAssert.AreEqual(new[] { "nimbus_resubmit_with_changes" }, RecoveryTools.Where(t => McpToolAccess.IsAvailable(t, edit, caller)).ToArray());
+        Assert.IsTrue(McpToolAccess.IsAvailable(McpToolAccess.PrepareTool, edit, caller));
+    }
+
+    [TestMethod]
+    public void The_recovery_actions_have_their_own_scopes_and_names()
+    {
+        string Scope(NimBus.WebApp.Mcp.Operations.OperatorAction a) => NimBus.WebApp.Mcp.Operations.OperatorActionAccess.ScopeOf(a);
+        string Name(NimBus.WebApp.Mcp.Operations.OperatorAction a) => NimBus.WebApp.Mcp.Operations.OperatorActionAccess.NameOf(a);
+
+        Assert.AreEqual("nimbus.settle", Scope(RecoveryActions[0]));
+        Assert.AreEqual("nimbus.recover", Scope(RecoveryActions[1]));
+        Assert.AreEqual("nimbus.recover", Scope(RecoveryActions[2]));
+        Assert.AreEqual("nimbus.edit", Scope(RecoveryActions[3]));
+        CollectionAssert.AreEqual(
+            new[] { "settle_handoff", "reprocess_deferred", "skip_deferred_tracking", "resubmit_with_changes" },
+            RecoveryActions.Select(Name).ToArray());
+        Assert.AreEqual("resubmit", Name(NimBus.WebApp.Mcp.Operations.OperatorAction.Resubmit));
+    }
+
+    [TestMethod]
+    public void Turning_a_recovery_capability_on_widens_and_survives_the_api_mapping()
+    {
+        var before = new McpAccessSettings();
+        var after = before.Clone();
+        after.Capabilities.SettleHandoffs = true;
+        after.Capabilities.RecoverDeferred = true;
+        after.Capabilities.EditPayloads = true;
+
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                ("Allow settling pending handoffs", true),
+                ("Allow recovering deferred messages", true),
+                ("Allow resubmitting with an edited payload", true),
+            },
+            McpAccessRules.Changes(before, after).Select(c => (c.Text, c.Widens)).ToArray());
+
+        var mapped = McpAccessApiMapper.FromApi(McpAccessApiMapper.ToApi(after));
+        Assert.IsTrue(mapped.Capabilities.SettleHandoffs && mapped.Capabilities.RecoverDeferred && mapped.Capabilities.EditPayloads);
+        var untouched = McpAccessApiMapper.FromApi(McpAccessApiMapper.ToApi(before));
+        Assert.IsFalse(untouched.Capabilities.SettleHandoffs || untouched.Capabilities.RecoverDeferred || untouched.Capabilities.EditPayloads);
+    }
+
     // ── Settings service ───────────────────────────────────────────────────
 
     [TestMethod]

@@ -19879,6 +19879,9 @@ namespace NimBus.WebApp.ManagementApi
         private bool _classify;
         private bool _resubmit;
         private bool _skip;
+        private bool _settleHandoffs;
+        private bool _recoverDeferred;
+        private bool _editPayloads;
 
         [Newtonsoft.Json.JsonProperty("payloads", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public bool Payloads    {
@@ -19940,6 +19943,54 @@ namespace NimBus.WebApp.ManagementApi
                 if (_skip != value)
                 {
                     _skip = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// nimbus_settle_handoff (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("settleHandoffs", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool SettleHandoffs    {
+            get { return _settleHandoffs; }
+            set
+            {
+                if (_settleHandoffs != value)
+                {
+                    _settleHandoffs = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// nimbus_reprocess_deferred and nimbus_skip_deferred_tracking (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("recoverDeferred", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool RecoverDeferred    {
+            get { return _recoverDeferred; }
+            set
+            {
+                if (_recoverDeferred != value)
+                {
+                    _recoverDeferred = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// nimbus_resubmit_with_changes (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("editPayloads", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool EditPayloads    {
+            get { return _editPayloads; }
+            set
+            {
+                if (_editPayloads != value)
+                {
+                    _editPayloads = value;
                     RaisePropertyChanged();
                 }
             }

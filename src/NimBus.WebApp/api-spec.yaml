@@ -8011,6 +8011,15 @@ components:
           type: boolean
         skip:
           type: boolean
+        settleHandoffs:
+          type: boolean
+          description: nimbus_settle_handoff (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
+        recoverDeferred:
+          type: boolean
+          description: nimbus_reprocess_deferred and nimbus_skip_deferred_tracking (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
+        editPayloads:
+          type: boolean
+          description: nimbus_resubmit_with_changes (Spec 035 Phase 3). Off unless a site Owner turns it on; a missing value is off.
     McpPeopleMode:
       title: McpPeopleMode
       type: string

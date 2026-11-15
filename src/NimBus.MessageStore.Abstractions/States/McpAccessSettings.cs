@@ -116,6 +116,24 @@ public class McpCapabilitySettings
 
     /// <summary><c>nimbus_skip_message</c>, and <c>nimbus_prepare_action</c> for it.</summary>
     public bool Skip { get; set; } = true;
+
+    /// <summary>
+    /// <c>nimbus_settle_handoff</c>, and <c>nimbus_prepare_action</c> for it (Spec 035 Phase 3).
+    /// Off until a site Owner turns it on, also in a policy saved before the switch existed.
+    /// </summary>
+    public bool SettleHandoffs { get; set; }
+
+    /// <summary>
+    /// <c>nimbus_reprocess_deferred</c> and <c>nimbus_skip_deferred_tracking</c>, and
+    /// <c>nimbus_prepare_action</c> for them (Spec 035 Phase 3). Off until a site Owner turns it on.
+    /// </summary>
+    public bool RecoverDeferred { get; set; }
+
+    /// <summary>
+    /// <c>nimbus_resubmit_with_changes</c>, and <c>nimbus_prepare_action</c> for it (Spec 035
+    /// Phase 3). Off until a site Owner turns it on.
+    /// </summary>
+    public bool EditPayloads { get; set; }
 }
 
 /// <summary>Who may connect.</summary>

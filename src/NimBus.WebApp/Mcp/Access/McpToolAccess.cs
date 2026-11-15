@@ -18,12 +18,23 @@ public static class McpToolAccess
         ["nimbus_set_message_reported"] = OperatorAction.Report,
         ["nimbus_classify_failure"] = OperatorAction.Classify,
         ["nimbus_record_classification"] = OperatorAction.Classify,
+        ["nimbus_settle_handoff"] = OperatorAction.SettleHandoff,
+        ["nimbus_reprocess_deferred"] = OperatorAction.ReprocessDeferred,
+        ["nimbus_skip_deferred_tracking"] = OperatorAction.SkipDeferredTracking,
+        ["nimbus_resubmit_with_changes"] = OperatorAction.ResubmitWithChanges,
     };
+
+    /// <summary>The actions <c>nimbus_prepare_action</c> previews.</summary>
+    public static readonly IReadOnlyList<OperatorAction> PreparedActions =
+    [
+        OperatorAction.Resubmit, OperatorAction.Skip, OperatorAction.SettleHandoff,
+        OperatorAction.ReprocessDeferred, OperatorAction.SkipDeferredTracking, OperatorAction.ResubmitWithChanges,
+    ];
 
     /// <summary>Records a classification; the <c>handle-failures</c> prompt follows it.</summary>
     public const string RecordTool = "nimbus_record_classification";
 
-    /// <summary>Previews resubmit or skip; listed while either is allowed.</summary>
+    /// <summary>Previews a recovery action; listed while at least one of them is allowed.</summary>
     public const string PrepareTool = "nimbus_prepare_action";
 
     /// <summary>Whether <paramref name="tool"/> is available to <paramref name="caller"/> under <paramref name="policy"/>.</summary>
@@ -34,8 +45,7 @@ public static class McpToolAccess
 
         if (string.Equals(tool, PrepareTool, StringComparison.Ordinal))
         {
-            return policy.ClientMayChange(caller)
-                && (policy.AllowsAction(OperatorAction.Resubmit) || policy.AllowsAction(OperatorAction.Skip));
+            return policy.ClientMayChange(caller) && PreparedActions.Any(policy.AllowsAction);
         }
 
         return !ChangeTools.TryGetValue(tool, out var action)
