@@ -42,9 +42,10 @@ public interface IOperatorRecoveryCommands
     /// </summary>
     /// <param name="endpointId">The endpoint, in the platform's casing.</param>
     /// <param name="sessionId">The session.</param>
+    /// <param name="eventId">The deferred message the action was prepared from, which the audit row is filed under.</param>
     /// <param name="deferredCount">How many deferred messages the caller previewed, for the audit row.</param>
     /// <param name="context">Who asks, and why.</param>
-    Task<DeferredReprocessOutcome> ReprocessDeferredAsync(string endpointId, string sessionId, int deferredCount, OperatorCommandContext context);
+    Task<DeferredReprocessOutcome> ReprocessDeferredAsync(string endpointId, string sessionId, string eventId, int deferredCount, OperatorCommandContext context);
 
     /// <summary>
     /// The broker and history inspection of a Deferred tracking row, or null when there is no
@@ -178,7 +179,7 @@ public sealed partial class OperatorRecoveryCommands : IOperatorRecoveryCommands
     }
 
     /// <inheritdoc/>
-    public async Task<DeferredReprocessOutcome> ReprocessDeferredAsync(string endpointId, string sessionId, int deferredCount, OperatorCommandContext context)
+    public async Task<DeferredReprocessOutcome> ReprocessDeferredAsync(string endpointId, string sessionId, string eventId, int deferredCount, OperatorCommandContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
         var httpContext = _httpContextAccessor.HttpContext!;
@@ -194,13 +195,15 @@ public sealed partial class OperatorRecoveryCommands : IOperatorRecoveryCommands
 
         if (!await _authorization.HasRoleFreshAsync(AccessRole.Contributor, endpointId))
         {
-            await _audit.LogAuditAsync(MessageAuditType.ReprocessDeferred, httpContext, accessDenied: true, data: data, endpointId: endpointId);
+            await _audit.LogAuditAsync(MessageAuditType.ReprocessDeferred, httpContext, accessDenied: true, data: data,
+                eventId: eventId, endpointId: endpointId);
             return new(new(OperatorCommandStatus.Forbidden));
         }
 
         try
         {
-            await _audit.LogRequiredAuditAsync(MessageAuditType.ReprocessDeferred, httpContext, data: data, endpointId: endpointId);
+            await _audit.LogRequiredAuditAsync(MessageAuditType.ReprocessDeferred, httpContext, data: data,
+                eventId: eventId, endpointId: endpointId);
         }
         catch (AuditUnavailableException)
         {

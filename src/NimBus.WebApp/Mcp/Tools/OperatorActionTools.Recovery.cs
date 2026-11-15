@@ -79,7 +79,7 @@ public sealed partial class OperatorActionTools
         var sessionId = target.Row.SessionId!;
         var deferred = await RequireReprocessableSessionAsync(endpoint, sessionId).ConfigureAwait(false);
 
-        var outcome = await _recovery.ReprocessDeferredAsync(endpoint, sessionId, deferred, context).ConfigureAwait(false);
+        var outcome = await _recovery.ReprocessDeferredAsync(endpoint, sessionId, grant.EventId, deferred, context).ConfigureAwait(false);
         ThrowUnlessAccepted(outcome.Result, OperatorAction.ReprocessDeferred, endpoint, grant.EventId);
         LogMcpOfAccepted(_logger, OperatorAction.ReprocessDeferred, endpoint, grant.EventId, OperatorActionTokens.Identify(User()).Caller);
 

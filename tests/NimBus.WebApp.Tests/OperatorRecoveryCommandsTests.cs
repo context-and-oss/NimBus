@@ -152,12 +152,13 @@ public sealed class OperatorRecoveryCommandsTests
     {
         var harness = Harness.Create();
 
-        var outcome = await harness.Sut.ReprocessDeferredAsync(Endpoint, Session, deferredCount: 3, Context);
+        var outcome = await harness.Sut.ReprocessDeferredAsync(Endpoint, Session, EventId, deferredCount: 3, Context);
 
         Assert.AreEqual(OperatorCommandStatus.Accepted, outcome.Result.Status);
         Assert.IsTrue(outcome.SessionStateCleared && outcome.ProcessRequestSent);
         CollectionAssert.AreEqual(new[] { "audit:ReprocessDeferred", "reprocess:Crm/sess-1" }, harness.Timeline.ToArray());
         var audit = harness.Audit.Required.Single();
+        Assert.AreEqual(EventId, audit.EventId, "The audit row is filed under the message the action was prepared from.");
         StringAssert.Contains(audit.Data, "\"deferredCount\":3", StringComparison.Ordinal);
         StringAssert.Contains(audit.Data, "\"sessionId\":\"sess-1\"", StringComparison.Ordinal);
         StringAssert.Contains(audit.Data, "\"channel\":\"Mcp\"", StringComparison.Ordinal);
@@ -170,8 +171,8 @@ public sealed class OperatorRecoveryCommandsTests
         unrecordable.Audit.FailRequired = true;
         var denied = Harness.Create(new Authorization(AccessRole.Contributor, fresh: AccessRole.Reader));
 
-        var noAudit = await unrecordable.Sut.ReprocessDeferredAsync(Endpoint, Session, 1, Context);
-        var noRole = await denied.Sut.ReprocessDeferredAsync(Endpoint, Session, 1, Context);
+        var noAudit = await unrecordable.Sut.ReprocessDeferredAsync(Endpoint, Session, EventId, 1, Context);
+        var noRole = await denied.Sut.ReprocessDeferredAsync(Endpoint, Session, EventId, 1, Context);
 
         Assert.AreEqual(OperatorCommandStatus.AuditUnavailable, noAudit.Result.Status);
         Assert.AreEqual(OperatorCommandStatus.Forbidden, noRole.Result.Status);
@@ -346,7 +347,7 @@ public sealed class OperatorRecoveryCommandsTests
         public string GetCurrentUserName() => "operator";
     }
 
-    private sealed record AuditCall(MessageAuditType Type, bool AccessDenied, string? Data);
+    private sealed record AuditCall(MessageAuditType Type, bool AccessDenied, string? Data, string? EventId = null);
 
     private sealed class RecordingAudit(ConcurrentQueue<string> timeline) : IAuditLogService
     {
@@ -360,7 +361,7 @@ public sealed class OperatorRecoveryCommandsTests
             string? eventId = null, string? endpointId = null, string? eventTypeId = null, string? auditorNameOverride = null,
             CancellationToken cancellationToken = default)
         {
-            Logged.Add(new AuditCall(type, accessDenied, data));
+            Logged.Add(new AuditCall(type, accessDenied, data, eventId));
             return Task.CompletedTask;
         }
 
@@ -369,7 +370,7 @@ public sealed class OperatorRecoveryCommandsTests
         {
             if (FailRequired)
                 throw new AuditUnavailableException("The audit row could not be recorded, so the command was not run.");
-            Required.Add(new AuditCall(type, false, data));
+            Required.Add(new AuditCall(type, false, data, eventId));
             timeline.Enqueue("audit:" + type);
             return Task.CompletedTask;
         }

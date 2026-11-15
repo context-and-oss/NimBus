@@ -2,7 +2,10 @@
 
 Status: **implemented** (2026-10-07) on branch `claude/mcp-admin-config-mockup-63fed4`, all three
 slices together; §16 records what the implementation resolved and where it differs from this
-text. Not yet piloted in Azure. The mockup is
+text. Not yet piloted in Azure. [Spec 035](../035-mcp-operator-access/spec.md#phase-3-as-built)
+Phase 3 later added three capabilities to this policy (settle pending handoffs, recover deferred
+messages, resubmit with an edited payload); unlike the capabilities in §5.2 they default to off,
+also in a policy saved before they existed. The mockup is
 [admin-mockup.html](admin-mockup.html). Its bottom bar switches between the four states in §6.1,
 and its Design notes summarize §5.
 Baseline: master `023891a9`. Builds on [Spec 035](../035-mcp-operator-access/spec.md) Phase 1
