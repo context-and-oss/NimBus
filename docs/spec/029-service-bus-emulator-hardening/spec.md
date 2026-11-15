@@ -1,6 +1,6 @@
 # Spec 029 — Service Bus Emulator fidelity hardening
 
-Status: implemented locally
+Status: implemented. Merged as `c0ae474b` and shipped in v3.5.0.
 Depends on: Spec 027 (NimBus Service Bus Emulator)
 Port baseline: DIS commit `98895809` (`fix: harden service bus emulator fidelity`) in `C:\Git\KL\DIS`
 Review status: implementation and local verification complete; protected

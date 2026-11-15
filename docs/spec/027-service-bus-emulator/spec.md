@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for implementation handover |
+| **Status** | Implemented. Merged as context-and-oss/NimBus#110 and shipped in v3.1.0; hardened by [Spec 029](../029-service-bus-emulator-hardening/spec.md). The text below is the design as it was handed over for implementation. |
 | **Date** | 2026-08-09 |
 | **Depends on** | Azure.Messaging.ServiceBus 7.20.1 (repo pin; floor for emulator admin support). Compatibility is *claimed* only for 7.20.x, which the research verified (7.20.2) and TST-3 pins; newer SDK versions must pass TST-3 before the claim extends. Aspire 13.4.6, .NET 10 |
 | **Deliverables** | `src/NimBus.ServiceBusEmulator/`, `src/NimBus.ServiceBusEmulator.AspireHosting/`, `tests/NimBus.ServiceBusEmulator.Tests/`, AppHost integration |

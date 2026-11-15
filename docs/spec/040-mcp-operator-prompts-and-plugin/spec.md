@@ -1,8 +1,8 @@
 # Spec 040 — Operator MCP prompts and server instructions
 
 Status: implemented. PR 1, the server prompts (§3), merged as context-and-oss/NimBus#259 and
-shipped in v4.8.0. PR 2, the server instructions (§4) and docs (§5), is on branch
-`claude/mcp-operator-instructions`. PR 2 replaces the Claude Code plugin of this spec's first
+shipped in v4.8.0. PR 2, the server instructions (§4) and docs (§5), merged as
+context-and-oss/NimBus#266 and shipped in v4.9.0. PR 2 replaces the Claude Code plugin of this spec's first
 revision; §4.4 records why. The folder keeps its original name so links stay valid.
 Baseline: master `1654486b`. Builds on [Spec 035](../035-mcp-operator-access/spec.md) (Phases 1
 and 2a) and [Spec 037](../037-mcp-admin-access/spec.md).

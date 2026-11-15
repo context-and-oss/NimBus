@@ -1,7 +1,9 @@
 # Spec 043 — Intelligent Failed Message Insights
 
-Status: draft for discussion (2026-11-06, revision 2: review findings applied). Phase 1 scope;
-implementation not started.
+Status: Phase 1 implemented (context-and-oss/NimBus#324 to #328, #336, #337 and #345; shipped in
+v4.11.0). Revision 2 (2026-11-06: review findings applied). Of the §12 follow-ups,
+[Spec 044](../044-agent-first/spec.md) withdraws selective analysis, representative pattern
+hypotheses and resumable bulk execution; the others stand.
 Feature area: WebApp Insights and Integration Intelligence.
 Related: [Spec 033 — Failure Classification](../033-integration-intelligence-failure-classification/spec.md),
 [Integration Intelligence](../../integration-intelligence.md).

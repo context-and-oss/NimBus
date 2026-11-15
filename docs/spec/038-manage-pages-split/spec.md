@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved 2026-10-07 (option B). Slices 1–3 merged (context-and-oss/NimBus#218, #219, #231; plans for [slice 2](../../plan/2026-10-08-spec-038-slice-2-settings-panel.md) and [slice 3](../../plan/2026-10-08-spec-038-slice-3-operations.md)). Slice 4 implemented on branch `claude/manage-shortcuts` ([plan](../../plan/2026-10-08-spec-038-slice-4-shortcuts.md)). §13's open decisions take the proposed defaults unless the repo owner says otherwise. |
+| **Status** | Approved 2026-10-07 (option B). Implemented: slices 1–4 merged (context-and-oss/NimBus#218, #219, #231, #235; plans for [slice 2](../../plan/2026-10-08-spec-038-slice-2-settings-panel.md), [slice 3](../../plan/2026-10-08-spec-038-slice-3-operations.md) and [slice 4](../../plan/2026-10-08-spec-038-slice-4-shortcuts.md)). Slice 4 shipped in v4.7.0. §13's open decisions take the proposed defaults unless the repo owner says otherwise. |
 | **Date** | 2026-10-07 |
 | **Baseline** | master `0f3b02ef` |
 | **Mockup** | [mockup.html](mockup.html). Open it in a browser. The yellow **Design notes** cite the sections below. The **Mock state** bar switches between the states in §7.3. [alternative-a.html](alternative-a.html) is the rejected alternative in §15. |
