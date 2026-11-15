@@ -114,7 +114,7 @@ public partial class EventImplementation
             await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext!,
                 accessDenied: true, data: JsonConvert.SerializeObject(body),
                 endpointId: producingEndpoint.Id, eventTypeId: body.EventTypeId);
-            throw new UnauthorizedAccessException($"User is unauthorized to compose events for endpoint '{producingEndpoint.Id}'.");
+            return new ForbidResult();
         }
 
         var type = eventType.GetEventClassType();
@@ -190,7 +190,7 @@ public partial class EventImplementation
             await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext!,
                 accessDenied: true, data: auditData,
                 eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
-            throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
+            return new ForbidResult();
         }
 
         // A non-PiiReader was served a payload whose [Sensitive] fields were masked.
@@ -229,8 +229,6 @@ public partial class EventImplementation
         var forwardedContent = masker.StripMaskedMarker(body.EventContent);
 
         var result = await operatorCommands.ResubmitWithChangesAsync(target, eventTypeId, forwardedContent, auditData, WebAppCommand);
-        if (result.Status == OperatorCommandStatus.Forbidden)
-            throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
         return CommandResult(result);
     }
 

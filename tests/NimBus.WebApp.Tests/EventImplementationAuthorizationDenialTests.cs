@@ -18,19 +18,20 @@ using NimBus.Manager;
 using NimBus.MessageStore;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
+using ResubmitWithChanges = NimBus.WebApp.ManagementApi.ResubmitWithChanges;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.Services.Operations;
 
 namespace NimBus.WebApp.Tests;
 
 /// <summary>
-/// GH#88: a failed Contributor role check on the privileged event operations
-/// must surface as HTTP 403 (<see cref="ForbidResult"/>) — consistent with
-/// every other authorization check in the WebApp — instead of throwing
-/// <see cref="UnauthorizedAccessException"/> (which the exception handler
-/// turned into a 500). Covers resubmit, skip, and deferred reprocess; the
-/// shared handoff-settlement denial path is covered by
-/// <see cref="HandoffOperatorImplementationTests"/>.
+/// GH#88 and GH#402: a failed Contributor role check on the privileged event
+/// operations returns HTTP 403 (<see cref="ForbidResult"/>), as every other
+/// authorization check in the WebApp does, after writing the denial audit row.
+/// Covers resubmit, skip, resubmit with changes (the controller's cached check
+/// and the coordinator's fresh check) and deferred reprocess. Compose is covered
+/// by <see cref="ComposeNewEventTests"/>, and the shared handoff-settlement
+/// denial path by <see cref="HandoffOperatorImplementationTests"/>.
 /// </summary>
 [TestClass]
 public sealed class EventImplementationAuthorizationDenialTests
@@ -70,6 +71,40 @@ public sealed class EventImplementationAuthorizationDenialTests
     }
 
     [TestMethod]
+    public async Task ResubmitWithChanges_denied_returns_Forbid_and_writes_accessDenied_audit()
+    {
+        var harness = await CreateHarness();
+
+        var result = await harness.Controller.PostResubmitWithChangesEventIdsAsync(
+            ChangedPayload(), EventId, TerminalMessageId);
+
+        Assert.IsInstanceOfType<ForbidResult>(result);
+        Assert.AreEqual(0, harness.Manager.ResubmitCount);
+        var audit = AssertSingleAudit(await harness.Store.GetMessageAudits(EventId));
+        Assert.AreEqual(MessageAuditType.ResubmitWithChanges, audit.AuditType);
+        Assert.IsTrue(audit.AccessDenied);
+        Assert.AreEqual(EndpointId, audit.EndpointId);
+    }
+
+    [TestMethod]
+    public async Task ResubmitWithChanges_denied_by_fresh_check_returns_Forbid_and_writes_accessDenied_audit()
+    {
+        // The cached role passes the controller's early check; the role was revoked since,
+        // so the coordinator's fresh check just before publishing denies.
+        var harness = await CreateHarness(new RevokedSinceCachedAuthorizationService());
+
+        var result = await harness.Controller.PostResubmitWithChangesEventIdsAsync(
+            ChangedPayload(), EventId, TerminalMessageId);
+
+        Assert.IsInstanceOfType<ForbidResult>(result);
+        Assert.AreEqual(0, harness.Manager.ResubmitCount);
+        var audit = AssertSingleAudit(await harness.Store.GetMessageAudits(EventId));
+        Assert.AreEqual(MessageAuditType.ResubmitWithChanges, audit.AuditType);
+        Assert.IsTrue(audit.AccessDenied);
+        Assert.AreEqual(EndpointId, audit.EndpointId);
+    }
+
+    [TestMethod]
     public async Task ReprocessDeferred_denied_returns_Forbid_and_writes_no_audit()
     {
         var harness = await CreateHarness();
@@ -86,6 +121,12 @@ public sealed class EventImplementationAuthorizationDenialTests
         Assert.AreEqual(0, audits.Audits.Count());
     }
 
+    private static ResubmitWithChanges ChangedPayload() => new()
+    {
+        EventTypeId = "Demo.Type",
+        EventContent = "{\"v\":2}",
+    };
+
     private static MessageAuditEntity AssertSingleAudit(IEnumerable<MessageAuditEntity> audits)
     {
         var rows = audits.ToList();
@@ -93,7 +134,7 @@ public sealed class EventImplementationAuthorizationDenialTests
         return rows[0];
     }
 
-    private static async Task<Harness> CreateHarness()
+    private static async Task<Harness> CreateHarness(IEndpointAuthorizationService? authorization = null)
     {
         // Terminal ErrorResponse carrying its own event type and payload, so
         // the resubmit/skip paths reach the role check without extra lookups.
@@ -133,7 +174,7 @@ public sealed class EventImplementationAuthorizationDenialTests
             handoffClientFactory: null!,
             NullLogger<EventImplementation>.Instance,
             store,
-            new DenyAllAuthorizationService(),
+            authorization ?? new DenyAllAuthorizationService(),
             adminService: null!,
             serviceBusClient: null!,
             new AuditLogService(NullLogger<AuditLogService>.Instance, store),
@@ -163,6 +204,20 @@ public sealed class EventImplementationAuthorizationDenialTests
         public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(false);
 
         public Task<bool> CanReadPiiAsync() => Task.FromResult(false);
+
+        public Task<CurrentUserAccess> GetCurrentUserAccessAsync() =>
+            Task.FromResult(new CurrentUserAccess());
+
+        public string? GetCurrentUserName() => "operator-mallory";
+    }
+
+    private sealed class RevokedSinceCachedAuthorizationService : IEndpointAuthorizationService
+    {
+        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(true);
+
+        public Task<bool> HasRoleFreshAsync(AccessRole required, string endpointId) => Task.FromResult(false);
+
+        public Task<bool> CanReadPiiAsync() => Task.FromResult(true);
 
         public Task<CurrentUserAccess> GetCurrentUserAccessAsync() =>
             Task.FromResult(new CurrentUserAccess());
