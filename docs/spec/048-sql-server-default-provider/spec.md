@@ -279,11 +279,9 @@ so S0's 250 GB lasts between two months and eight. The fix is [Spec 050](../050-
 - Spec 050 adds Settings → Retention: four periods (open events, resolved events, message history,
   audit trail) and host-configuration pins. SQL rows older than their period are deleted by the
   WebApp retention job that AF-199 (GH#291) is building, which Spec 050 makes configurable.
-- Spec 050 §13 leaves one question open: whether SQL's periods start out unlimited in 4.x, which
-  is proposed, or take Cosmos's values at once, as AF-199 does today. With the proposal, nothing
-  changes on upgrade until an Owner sets periods or a pin does. The rest of this section assumes
-  the proposal. If the owner chooses the other way, SQL has the Cosmos defaults before the flip,
-  and the next bullet is already done.
+- In 4.x SQL's periods default to unlimited, and AF-199's job ships with `RetentionEnabled`
+  defaulting to `false` (repo owner, 2026-11-15; Spec 050 §12 item 6). So nothing changes on
+  upgrade until an Owner sets periods or a pin does.
 - **This spec changes SQL's defaults to Cosmos's** (open events unlimited, resolved events 30
   days, message history 90 days, audit trail 1 year) in the release that flips the default
   provider. That is the next major, or the minor under a recorded exception (§5.6). Existing SQL

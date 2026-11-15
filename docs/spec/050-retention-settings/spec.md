@@ -32,8 +32,8 @@ The repo owner decided three rules on 2026-11-15:
 
 On SQL Server, a cleanup job deletes data older than its period. It builds on AF-199 (GH#291),
 which is in flight and adds a SQL retention job with fixed periods (§2). This spec makes those
-periods configurable. One question is open (§13): whether SQL starts deleting with Cosmos's
-periods on upgrade, as AF-199 does today, or only once a period is set.
+periods configurable. In 4.x SQL deletes nothing until a period is set; the repo owner decided
+that on 2026-11-15 (§12 item 6).
 
 ## 2. Current state
 
@@ -57,7 +57,7 @@ periods on upgrade, as AF-199 does today, or only once a period is set.
 2. Both providers honour them. On SQL Server that means data is actually deleted.
 3. A period pinned in host configuration can't be changed from the page, and the page says why.
 4. The Resolver, the WebApp and the `nb` CLI use the same periods.
-5. Upgrading changes no Cosmos deployment's retention. For SQL, see §13.
+5. Upgrading changes no deployment's retention in 4.x, on either provider.
 
 ## 4. Non-goals
 
@@ -80,15 +80,15 @@ A provider-neutral `RetentionSettings` singleton in `NimBus.MessageStore.Abstrac
 | Field | Unit | Allowed | Cosmos default | SQL default |
 |---|---|---|---|---|
 | `OpenEventsDays` | days | `-1` (unlimited) or 1–3650 | unlimited | unlimited |
-| `ResolvedEventsDays` | days | `-1` or 1–3650 | 30 | unlimited, or 30 (§13) |
-| `MessageHistoryDays` | days | `-1` or 1–3650 | 90 | unlimited, or 90 (§13) |
-| `AuditTrailDays` | days | `-1` or 30–3650 | 365 | unlimited, or 365 (§13) |
+| `ResolvedEventsDays` | days | `-1` or 1–3650 | 30 | unlimited |
+| `MessageHistoryDays` | days | `-1` or 1–3650 | 90 | unlimited |
+| `AuditTrailDays` | days | `-1` or 30–3650 | 365 | unlimited |
 
 - **Cosmos defaults** are what Cosmos does today, so a Cosmos deployment that never sets a period
   behaves as before.
-- **SQL defaults** depend on the open question in §13. Unlimited keeps today's master behaviour
-  until the major, when Spec 048 §5.8 moves them to Cosmos's. The Cosmos values match AF-199's
-  fixed periods.
+- **SQL defaults are unlimited in 4.x** (decided, §12 item 6). That keeps today's master behaviour:
+  an upgraded SQL deployment deletes nothing until an Owner saves a period or a pin is set. The
+  next major moves SQL's defaults to Cosmos's (Spec 048 §5.8).
 - **A saved document holds only the periods an Owner has set.** A field that is absent uses the
   default. "Reset to default" removes the field.
 - **One rule across periods.** A bounded audit trail must be at least as long as every other
@@ -246,8 +246,8 @@ A new Settings feature, `retention`, Site Owner only, like Settings → Audit:
 |---|---|
 | Cosmos, nothing configured | Unchanged: open events unlimited, resolved 30 days, history 90 days, audits 1 year |
 | Cosmos with `NimBus__Cosmos__UnresolvedRetentionDays` on its apps | Unchanged. It is a pin on open events. The next `nb infra apply` carries it into `NimBus__Retention__OpenEventsDays` |
-| SQL Server, before AF-199 | Depends on §13. With option A, nothing expires until an Owner saves a period or a pin is set, and the page shows the "Nothing expires" banner. With option B, the Cosmos periods apply from the first cleanup |
-| SQL Server with AF-199 already deployed | Its periods carry over: AF-199's fixed values equal this spec's Cosmos defaults, and `NimBus:SqlServer:UnresolvedRetentionDays` becomes a pin on open events. One change: Completed and Skipped rows move from the open-events period, which is never by default, to the resolved period of 30 days (§5.4). So old completed rows are deleted at the first run after upgrading, which the release notes say |
+| SQL Server, nothing configured | Unchanged: nothing expires until an Owner saves a period or a pin is set. The page shows the "Nothing expires" banner |
+| SQL Server with AF-199's job turned on (`NimBus:SqlServer:RetentionEnabled = true`) | Its periods carry over. `RetentionEnabled = true` acts as a legacy pin of AF-199's values, which equal Cosmos's: resolved events 30 days, message history 90 and audit trail 365. `NimBus:SqlServer:UnresolvedRetentionDays` pins open events. So the deletions an operator turned on don't stop when the SQL defaults are unlimited. One change: Completed and Skipped rows move from the open-events period, which is never by default, to the resolved period (§5.4). Old completed rows are therefore deleted at the first run after upgrading, which the release notes say |
 
 ## 7. Evaluation
 
@@ -363,22 +363,19 @@ One PR with a commit per phase, released as a 4.x minor.
 3. No per-endpoint retention (repo owner).
 4. Four periods, with today's Cosmos behaviour as Cosmos's default (§5.1).
 5. SQL deletes by age in a WebApp background service, AF-199's job (§5.4).
+6. **SQL retention is off by default in 4.x** (repo owner, 2026-11-15).
+   - AF-199 ships with `RetentionEnabled` defaulting to `false`, so its job deletes nothing unless
+     an operator turns it on.
+   - Once this spec lands, SQL's periods default to unlimited, and the job deletes only what an
+     Owner or a pin has bounded.
+   - SQL takes the Cosmos defaults in the next major (Spec 048 §5.8), as `docs/versioning.md`
+     requires for a change that deletes data on upgrade.
+   - The alternative was AF-199's default-on behaviour in a minor. It was rejected because existing
+     SQL deployments would lose data that nobody chose to delete.
 
-## 13. Open questions for the repo owner
+## 13. Open questions
 
-1. **SQL on upgrade.** AF-199 enables its job by default (`RetentionEnabled = true`), so an
-   upgraded SQL deployment starts deleting messages older than 90 days, audits older than a year
-   and archived rows older than 30 days. Master deletes nothing today. Which way?
-   - **A (proposed): off until set, in 4.x.** AF-199 ships with `RetentionEnabled` defaulting to
-     `false`. Once this spec lands, SQL's periods default to unlimited, and the job deletes only
-     what an Owner or a pin has bounded. SQL takes the Cosmos defaults in the next major (Spec 048
-     §5.8). This follows
-     `docs/versioning.md`, which keeps deleting data on upgrade for a major.
-   - **B: as AF-199 does.** The Cosmos periods apply from the first cleanup after upgrading, in a
-     4.x minor, listed under Compatibility. It closes the storage-growth gap sooner, but existing SQL
-     deployments lose data older than those periods without anyone deciding to.
-
-   The answer changes AF-199 before it merges, so it is needed first.
+None.
 
 ## 14. Facts to verify (Phase 0)
 
@@ -406,3 +403,7 @@ One PR with a commit per phase, released as a 4.x minor.
 - 2026-11-15: drafted, then renumbered from 049 to 050, because PR #393 had already taken 049.
   Revised to build on AF-199's SQL retention job, found on the AgentFactory board while filing
   GH#391, instead of designing a second job. The SQL-on-upgrade question became §13.
+- 2026-11-15: the repo owner chose option A. SQL retention is off by default in 4.x, with AF-199's
+  `RetentionEnabled` defaulting to `false`, and SQL takes the Cosmos defaults in the next major
+  (§5.1, §6, §12 item 6). §13 is closed. `RetentionEnabled = true` carries AF-199's periods over as
+  legacy pins.

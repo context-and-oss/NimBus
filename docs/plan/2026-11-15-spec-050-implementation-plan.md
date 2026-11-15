@@ -68,7 +68,7 @@ On a temporary resource group per provider in the non-production subscription, d
 ## Step 3: SQL cleanup on AF-199's job
 
 **Prerequisite.** AF-199 (GH#291) has merged, with its DbUp script renumbered past `0028` and its
-`RetentionEnabled` default set according to spec §13. If AF-199 is closed instead, this step
+`RetentionEnabled` defaulting to `false` (spec §12 item 6). If AF-199 is closed instead, this step
 builds its `SqlServerRetentionService` and `SqlServerRetentionRunner` first, from the AF-199
 branch.
 
@@ -83,7 +83,9 @@ branch.
   - `SqlServerRetentionRunner` reads `RetentionPolicy.Current` at the start of each run, replacing
     its constants and `UnresolvedRetentionDays`.
   - It calls `PurgeExpiredData` in 5,000-row batches until a batch comes back short, as now.
-  - `NimBus:SqlServer:UnresolvedRetentionDays` is read as a legacy pin by `RetentionPolicy`.
+  - `RetentionPolicy` reads `NimBus:SqlServer:UnresolvedRetentionDays` as a legacy pin on open
+    events. It reads `NimBus:SqlServer:RetentionEnabled = true` as a legacy pin of 30, 90 and 365
+    days on the resolved, history and audit periods (spec §6), with a test for each.
 - **Indexes.** Widen or add an index only if step 0 showed that the resolved-period rule scans.
 - **Metric.** `nimbus.retention.deleted`, tagged by period, next to the existing per-run log entry.
 - **Tests.**
