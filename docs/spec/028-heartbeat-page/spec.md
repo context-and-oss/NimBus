@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved for implementation — review findings incorporated |
+| **Status** | Implemented. Merged as context-and-oss/NimBus#112 and shipped in v3.1.0. The text below is the approved design, with the review findings incorporated. |
 | **Date** | 2026-08-16 (reviewed 2026-08-16) |
 | **Depends on** | Existing platform heartbeat (`docs/heartbeat.md`, `src/NimBus.WebApp/Services/Heartbeat/`), migration floor `0018_PlatformHeartbeat.sql` |
 | **Deliverables** | `src/NimBus.MessageStore.Abstractions/States/HeartbeatUptimeDay.cs`, `HeartbeatGap.cs`, `HeartbeatHistoryFolder.cs`; per-probe interval persistence; a separate `IHeartbeatHistoryStore` implemented by three backends; `Schema/0019_HeartbeatHistory.sql` + `SqlServerSchemaInitializer.RequiredTables`; `CosmosContainerDefaults.ReservedContainerIds`; `GET /api/heartbeat/page`; `ClientApp/src/pages/heartbeat.tsx` + `App.tsx` route + `components/sidebar.tsx`; `src/NimBus.Testing/Conformance/HeartbeatHistoryStoreConformanceTests.cs` |

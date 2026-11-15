@@ -1,11 +1,12 @@
 # Spec 044 — Agent-first NimBus
 
-Status: proposed (2026-11-11, revision 3: organized around the failure-handling agent; all ten
-decisions agreed).
-Phase 1 is merged (#361) and not yet released; Phases 2 to 4 are planned in
-[2026-11-12-spec-044-phases-1-4.md](../../plan/2026-11-12-spec-044-phases-1-4.md), which also lists
-the amendments to this spec that need agreement. Baseline: master `b435e1bb`; the latest release was
-then v4.10.1.
+Status: Phases 1 to 4 implemented (revision 3, 2026-11-11: organized around the failure-handling
+agent; all ten decisions agreed).
+Phase 1 merged as #361 and Phases 2 to 4 as #371; both shipped in v4.12.0. The plan for Phases 2 to
+4 is [2026-11-12-spec-044-phases-1-4.md](../../plan/2026-11-12-spec-044-phases-1-4.md); the
+amendments made while implementing it are in §15. The plan also sets manual runs (the §6.12
+acceptance run, the exit runs and the Azure workload pilot), whose outcome is not recorded here.
+Baseline: master `b435e1bb`; the latest release was then v4.10.1.
 Builds on [Spec 033](../033-integration-intelligence-failure-classification/spec.md),
 [Spec 035](../035-mcp-operator-access/spec.md), [Spec 037](../037-mcp-admin-access/spec.md),
 [Spec 039](../039-agent-api-keys/spec.md), [Spec 040](../040-mcp-operator-prompts-and-plugin/spec.md)

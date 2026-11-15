@@ -1,6 +1,7 @@
 # Spec 039: Agent API keys
 
-Status: proposed (2026-10-11). Issue: context-and-oss/NimBus#241.
+Status: implemented. Merged as context-and-oss/NimBus#247 and #258 and shipped in v4.8.0.
+Proposed 2026-10-11. Issue: context-and-oss/NimBus#241.
 
 ## Problem
 
