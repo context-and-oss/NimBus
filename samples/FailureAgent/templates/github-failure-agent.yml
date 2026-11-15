@@ -43,8 +43,8 @@ jobs:
       - name: Install Claude Code
         run: npm install --global @anthropic-ai/claude-code
 
-      # The runner's app registration: app roles Nimbus.Observe, Nimbus.Classify, Nimbus.Resubmit
-      # and Nimbus.Annotate on the NimBus MCP resource, and no Azure subscription access.
+      # The runner's app registration: app roles Nimbus.Workload.Observe, Nimbus.Workload.Classify, Nimbus.Workload.Resubmit
+      # and Nimbus.Workload.Annotate on the NimBus MCP resource, and no Azure subscription access.
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.RUNNER_CLIENT_ID }}

@@ -32,7 +32,7 @@ public static class CapabilityCheck
             ? actions.EnumerateArray().Select(a => a.GetString()).OfType<string>().ToHashSet(StringComparer.Ordinal)
             : [];
         if (!permitted.Contains("classify"))
-            errors.Add("classify is not in permittedActions: give the runner the Nimbus.Classify app role, Contributor on the endpoints, and turn on Workloads may record classifications.");
+            errors.Add("classify is not in permittedActions: give the runner the Nimbus.Workload.Classify app role, Contributor on the endpoints, and turn on Workloads may record classifications.");
 
         var recordable = capabilities.TryGetProperty("features", out var features)
             && features.TryGetProperty("canRecordClassifications", out var record) && record.ValueKind == JsonValueKind.True;

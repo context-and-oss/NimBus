@@ -25,11 +25,11 @@ export interface McpSettings {
     editPayloads?: boolean;
   };
   allowWorkloads: boolean;
-  /** Spec 044: workloads with the Nimbus.Classify app role may record classifications. Effective only with allowWorkloads. */
+  /** Spec 044: workloads with the Nimbus.Workload.Classify app role may record classifications. Effective only with allowWorkloads. */
   allowWorkloadClassification?: boolean;
-  /** Spec 044 Phase 2: workloads with the Nimbus.Resubmit app role may resubmit unattended. Effective only with allowWorkloads. */
+  /** Spec 044 Phase 2: workloads with the Nimbus.Workload.Resubmit app role may resubmit unattended. Effective only with allowWorkloads. */
   allowWorkloadResubmit?: boolean;
-  /** Spec 044 Phase 3: workloads with the Nimbus.Annotate app role may mark messages reported. */
+  /** Spec 044 Phase 3: workloads with the Nimbus.Workload.Annotate app role may mark messages reported. */
   allowWorkloadAnnotation?: boolean;
   /** Resubmits per workload client in a rolling 24 hours (0-500, default 20). */
   workloadResubmitsPerDay?: number | null;
@@ -264,24 +264,24 @@ export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona
   const p = PERSONAS[persona];
   const local = d.mode === "localDevelopment";
   const gate = d.mode === "disabled" ? "not set up" : !s.enabled ? "endpoint off" : !p.delegated && !s.allowWorkloads ? "workloads off" : undefined;
-  const rows: PreviewRow[] = [{ name: `${READ_TOOL_COUNT} read tools`, allowed: !gate, why: gate ?? (local ? "Reader" : p.delegated ? "nimbus.observe" : "Nimbus.Observe role") }];
+  const rows: PreviewRow[] = [{ name: `${READ_TOOL_COUNT} read tools`, allowed: !gate, why: gate ?? (local ? "Reader" : p.delegated ? "nimbus.observe" : "Nimbus.Workload.Observe role") }];
   const cap = (name: string, key: CapabilityKey): PreviewRow => {
     if (gate) return { name, allowed: false, why: gate };
     if (!s.capabilities[key]) return { name, allowed: false, why: "switched off here" };
     if (key === "classify" && !classifyAvailable) return { name, allowed: false, why: "Failure intelligence off" };
-    // Spec 044 §6.6: a workload may record classifications with the Nimbus.Classify role, when allowed here.
+    // Spec 044 §6.6: a workload may record classifications with the Nimbus.Workload.Classify role, when allowed here.
     if (!p.delegated && key === "classify")
       return s.allowWorkloadClassification
-        ? { name, allowed: true, why: "Nimbus.Classify role + Contributor" }
+        ? { name, allowed: true, why: "Nimbus.Workload.Classify role + Contributor" }
         : { name, allowed: false, why: "workload recording off" };
-    // Spec 044 Phase 2: a workload may resubmit with the Nimbus.Resubmit role, within its budget, when allowed here. Never skip.
+    // Spec 044 Phase 2: a workload may resubmit with the Nimbus.Workload.Resubmit role, within its budget, when allowed here. Never skip.
     if (!p.delegated && key === "report")
       return s.allowWorkloadAnnotation
-        ? { name, allowed: true, why: "Nimbus.Annotate role + Contributor" }
+        ? { name, allowed: true, why: "Nimbus.Workload.Annotate role + Contributor" }
         : { name, allowed: false, why: "workload reporting off" };
     if (!p.delegated && key === "resubmit")
       return s.allowWorkloadResubmit
-        ? { name, allowed: true, why: "Nimbus.Resubmit role + Contributor, within budget" }
+        ? { name, allowed: true, why: "Nimbus.Workload.Resubmit role + Contributor, within budget" }
         : { name, allowed: false, why: "unattended resubmits off" };
     // Spec 035 Phase 3: the recovery tools stay with the agent of a person.
     if (!p.delegated && RECOVERY_KEYS.includes(key)) return { name, allowed: false, why: "workloads never recover" };

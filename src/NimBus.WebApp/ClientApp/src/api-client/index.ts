@@ -20169,11 +20169,11 @@ export class McpAccessSettings implements IMcpAccessSettings {
     enabled?: boolean;
     capabilities?: McpCapabilities;
     allowWorkloads?: boolean;
-    /** Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
+    /** Whether workloads with the Nimbus.Workload.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
     allowWorkloadClassification?: boolean;
-    /** Whether workloads with the Nimbus.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false. */
+    /** Whether workloads with the Nimbus.Workload.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false. */
     allowWorkloadResubmit?: boolean;
-    /** Whether workloads with the Nimbus.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false. */
+    /** Whether workloads with the Nimbus.Workload.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false. */
     allowWorkloadAnnotation?: boolean;
     /** Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20). */
     workloadResubmitsPerDay?: number | undefined;
@@ -20269,11 +20269,11 @@ export interface IMcpAccessSettings {
     enabled?: boolean;
     capabilities?: McpCapabilities;
     allowWorkloads?: boolean;
-    /** Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
+    /** Whether workloads with the Nimbus.Workload.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false. */
     allowWorkloadClassification?: boolean;
-    /** Whether workloads with the Nimbus.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false. */
+    /** Whether workloads with the Nimbus.Workload.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false. */
     allowWorkloadResubmit?: boolean;
-    /** Whether workloads with the Nimbus.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false. */
+    /** Whether workloads with the Nimbus.Workload.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false. */
     allowWorkloadAnnotation?: boolean;
     /** Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20). */
     workloadResubmitsPerDay?: number | undefined;

@@ -19,7 +19,7 @@ namespace NimBus.WebApp.Tests.Mcp;
 /// <summary>
 /// Spec 044 Phase 3, linking failures to a report: <c>nimbus_set_message_reported</c> marks a
 /// batch under one ticket, <c>nimbus_find_reports</c> finds a ticket to reuse, and workloads with
-/// the <c>Nimbus.Annotate</c> app role may mark messages while an Owner allows it.
+/// the <c>Nimbus.Workload.Annotate</c> app role may mark messages while an Owner allows it.
 /// </summary>
 [TestClass]
 public class ReportToolsTests
@@ -100,7 +100,7 @@ public class ReportToolsTests
     {
         await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
             policy: p => p.AllowWorkloadAnnotation = workloadSwitch);
-        await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Observe Nimbus.Annotate", name: null));
+        await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Workload.Observe Nimbus.Workload.Annotate", name: null));
 
         var result = await client.CallToolAsync("nimbus_set_message_reported", Report(eventIds: ["evt-1"], ticketId: "DQ-9"));
 
@@ -165,7 +165,7 @@ public class ReportToolsTests
             await SeedFailureAsync(store, id, "Address was null");
             await store.SetEventReport(Endpoint, id, true, "agent", "BUG-13");
         }
-        await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Observe Nimbus.Resubmit", name: null));
+        await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Workload.Observe Nimbus.Workload.Resubmit", name: null));
 
         var prepared = await CallAsync(client, "nimbus_prepare_action", new() { ["action"] = "resubmit", ["endpointId"] = Endpoint, ["ticketId"] = "BUG-13" });
         var executed = await CallAsync(client, "nimbus_resubmit_message", new()

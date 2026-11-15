@@ -213,7 +213,7 @@ public sealed partial class OperatorActionTools
 
     /// <summary>Runs a prepared resubmit.</summary>
     [McpServerTool(Name = "nimbus_resubmit_message", Title = "Resubmit a NimBus message", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
-    [Description("Resubmits the message an actionToken from nimbus_prepare_action describes, replaying its latest stored payload to its endpoint. Runs only while the message is still in the state you previewed. Repeating the same idempotencyKey returns the same operation and sends nothing again. Requires the nimbus.resubmit scope (workloads: the Nimbus.Resubmit app role, within the budget and per-message cap in nimbus_get_capabilities) and the Contributor role. The result says the command was sent, not that it succeeded: poll nimbus_get_operation with the operationId to see the outcome.")]
+    [Description("Resubmits the message an actionToken from nimbus_prepare_action describes, replaying its latest stored payload to its endpoint. Runs only while the message is still in the state you previewed. Repeating the same idempotencyKey returns the same operation and sends nothing again. Requires the nimbus.resubmit scope (workloads: the Nimbus.Workload.Resubmit app role, within the budget and per-message cap in nimbus_get_capabilities) and the Contributor role. The result says the command was sent, not that it succeeded: poll nimbus_get_operation with the operationId to see the outcome.")]
     public Task<OperatorActionResult> ResubmitMessageAsync(
         [Description("actionToken from nimbus_prepare_action with action resubmit.")] string actionToken,
         [Description("A new GUID for this request, recorded in the audit log.")] string idempotencyKey,
@@ -260,7 +260,7 @@ public sealed partial class OperatorActionTools
 
     /// <summary>Sets or clears the "reported" marker on one message or a batch on one endpoint.</summary>
     [McpServerTool(Name = "nimbus_set_message_reported", Title = "Mark NimBus messages reported", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Marks one message (eventId) or up to 50 messages on one endpoint (eventIds) as reported, for example under the ticket you filed, or clears the marker. It changes nothing on the bus. Each message is audited and gets its own result in items. Before filing a new ticket, look for one to reuse with nimbus_find_reports. Requires the nimbus.annotate scope (workloads: the Nimbus.Annotate app role) and the Contributor role.")]
+    [Description("Marks one message (eventId) or up to 50 messages on one endpoint (eventIds) as reported, for example under the ticket you filed, or clears the marker. It changes nothing on the bus. Each message is audited and gets its own result in items. Before filing a new ticket, look for one to reuse with nimbus_find_reports. Requires the nimbus.annotate scope (workloads: the Nimbus.Workload.Annotate app role) and the Contributor role.")]
     public async Task<OperatorActionResult> SetMessageReportedAsync(
         [Description("Endpoint id, as returned by nimbus_list_endpoints.")] string endpointId,
         [Description("true to mark reported, false to clear the marker.")] bool reported,
@@ -350,7 +350,7 @@ public sealed partial class OperatorActionTools
 
     /// <summary>Records an agent's classification of a failure (Spec 044 §6.4).</summary>
     [McpServerTool(Name = "nimbus_record_classification", Title = "Record a NimBus failure classification", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Records your classification of one Failed or DeadLettered message: your answers to the question set from nimbus_get_failure_evidence. NimBus validates them, composes the guidance itself and stores the result as advisory, with you as its author. It changes no message. Pass the messageId and questionSetVersion the evidence returned. When a classification already exists it is returned unchanged unless supersede is true. Requires the nimbus.classify scope (workloads: the Nimbus.Classify app role) and the Contributor role.")]
+    [Description("Records your classification of one Failed or DeadLettered message: your answers to the question set from nimbus_get_failure_evidence. NimBus validates them, composes the guidance itself and stores the result as advisory, with you as its author. It changes no message. Pass the messageId and questionSetVersion the evidence returned. When a classification already exists it is returned unchanged unless supersede is true. Requires the nimbus.classify scope (workloads: the Nimbus.Workload.Classify app role) and the Contributor role.")]
     public async Task<RecordClassificationResult> RecordClassificationAsync(
         [Description("Endpoint id, as returned by nimbus_list_endpoints.")] string endpointId,
         [Description("The message's event id.")] string eventId,
@@ -441,7 +441,7 @@ public sealed partial class OperatorActionTools
         [Description("Classify again even when a classification exists. Default false.")] bool force = false,
         CancellationToken cancellationToken = default)
     {
-        // A workload's Nimbus.Classify role admits recording only, never a paid provider call.
+        // A workload's Nimbus.Workload.Classify role admits recording only, never a paid provider call.
         await _access.RequireDelegatedScopeAsync(OperatorAction.Classify).ConfigureAwait(false);
         if (!_classifications.IsAvailable)
             throw OperatorToolErrors.FeatureUnavailable("AI failure classification is not enabled in this deployment.");

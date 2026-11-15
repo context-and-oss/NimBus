@@ -226,7 +226,7 @@ public class McpOperatorEndpointTests
 
     [TestMethod]
     [DataRow("nimbus.observe", null)]
-    [DataRow(null, "Nimbus.Observe")]
+    [DataRow(null, "Nimbus.Workload.Observe")]
     public async Task Entra_lists_tools_for_a_delegated_scope_or_workload_role(string? scopes, string? roles)
     {
         await using var host = await McpTestHost.StartEntraAsync();

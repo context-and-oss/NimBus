@@ -40,13 +40,13 @@ public class McpAccessSettings
     public bool AllowWorkloads { get; set; } = true;
 
     /// <summary>
-    /// Let workloads holding the <c>Nimbus.Classify</c> app role record failure classifications
+    /// Let workloads holding the <c>Nimbus.Workload.Classify</c> app role record failure classifications
     /// (Spec 044 §6.6). Effective only while <see cref="AllowWorkloads"/> is on. Default false.
     /// </summary>
     public bool AllowWorkloadClassification { get; set; }
 
     /// <summary>
-    /// Let workloads holding the <c>Nimbus.Resubmit</c> app role resubmit failed messages
+    /// Let workloads holding the <c>Nimbus.Workload.Resubmit</c> app role resubmit failed messages
     /// unattended (Spec 044 Phase 2), within <see cref="WorkloadResubmitsPerDay"/> and
     /// <see cref="WorkloadResubmitsPerMessage"/>. Effective only while <see cref="AllowWorkloads"/>
     /// is on and the operation journal is available. There is no workload switch for skip.
@@ -55,7 +55,7 @@ public class McpAccessSettings
     public bool AllowWorkloadResubmit { get; set; }
 
     /// <summary>
-    /// Let workloads holding the <c>Nimbus.Annotate</c> app role mark messages reported with a
+    /// Let workloads holding the <c>Nimbus.Workload.Annotate</c> app role mark messages reported with a
     /// ticket id (Spec 044 Phase 3). It changes nothing on the bus. Effective only while
     /// <see cref="AllowWorkloads"/> is on. Default false.
     /// </summary>
