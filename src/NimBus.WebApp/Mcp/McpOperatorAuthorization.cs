@@ -33,7 +33,7 @@ public static class McpOperatorPermissions
     public const string ObserveScope = "nimbus.observe";
 
     /// <summary>Application role for workloads using the read-only tools.</summary>
-    public const string ObserveRole = "Nimbus.Observe";
+    public const string ObserveRole = "Nimbus.Workload.Observe";
 
     /// <summary>
     /// Delegated scope for raw payloads. It adds to, and never replaces, the PiiReader grant;
@@ -73,7 +73,7 @@ public static class McpOperatorPermissions
     /// admits <c>nimbus_record_classification</c> only, and only while the Owner allows it; it
     /// changes no message.
     /// </summary>
-    public const string ClassifyRole = "Nimbus.Classify";
+    public const string ClassifyRole = "Nimbus.Workload.Classify";
 
     /// <summary>
     /// Application role for workloads that resubmit failed messages unattended (Spec 044 Phase 2).
@@ -81,13 +81,13 @@ public static class McpOperatorPermissions
     /// the Owner allows it and the operation journal is available, and within the budget and
     /// per-message cap. There is no role for skip.
     /// </summary>
-    public const string ResubmitRole = "Nimbus.Resubmit";
+    public const string ResubmitRole = "Nimbus.Workload.Resubmit";
 
     /// <summary>
     /// Application role for workloads that mark messages reported with a ticket id (Spec 044
     /// Phase 3). It admits <c>nimbus_set_message_reported</c> only, while the Owner allows it.
     /// </summary>
-    public const string AnnotateRole = "Nimbus.Annotate";
+    public const string AnnotateRole = "Nimbus.Workload.Annotate";
 
     /// <summary>
     /// Every delegated scope the endpoint understands, in the order the protected-resource
@@ -97,6 +97,23 @@ public static class McpOperatorPermissions
     /// </summary>
     public static readonly IReadOnlyList<string> AllScopes =
         [ObserveScope, PayloadReadScope, ResubmitScope, SkipScope, AnnotateScope, ClassifyScope, SettleScope, RecoverScope, EditScope];
+
+    /// <summary>
+    /// Every workload app role the endpoint understands. Entra requires app-role and scope values
+    /// on one app registration to be unique ignoring case, so no role may equal a scope in
+    /// <see cref="AllScopes"/> (#407).
+    /// </summary>
+    public static readonly IReadOnlyList<string> AllRoles = [ObserveRole, ClassifyRole, ResubmitRole, AnnotateRole];
+
+    // The role names before #407. Entra refuses them next to the scopes they shadow, so no tenant
+    // can issue them for the MCP resource; they stay accepted so existing tokens keep working.
+    private static readonly Dictionary<string, string> LegacyRoles = new(StringComparer.Ordinal)
+    {
+        [ObserveRole] = "Nimbus.Observe",
+        [ClassifyRole] = "Nimbus.Classify",
+        [ResubmitRole] = "Nimbus.Resubmit",
+        [AnnotateRole] = "Nimbus.Annotate",
+    };
 
     /// <summary>True when <paramref name="user"/> holds the delegated <paramref name="scope"/>.</summary>
     public static bool HasDelegatedScope(ClaimsPrincipal user, string scope)
@@ -110,16 +127,14 @@ public static class McpOperatorPermissions
     {
         ArgumentNullException.ThrowIfNull(user);
 
-        return HasScope(user, ObserveScope)
-            || user.FindAll("roles").Any(claim => string.Equals(claim.Value, ObserveRole, StringComparison.Ordinal));
+        return HasScope(user, ObserveScope) || HasRole(user, ObserveRole);
     }
 
     /// <summary>True when <paramref name="user"/> is a workload (no <c>scp</c>) holding <paramref name="role"/>.</summary>
     public static bool IsWorkloadWithRole(ClaimsPrincipal user, string role)
     {
         ArgumentNullException.ThrowIfNull(user);
-        return !user.HasClaim(claim => claim.Type == "scp")
-            && user.FindAll("roles").Any(claim => string.Equals(claim.Value, role, StringComparison.Ordinal));
+        return !user.HasClaim(claim => claim.Type == "scp") && HasRole(user, role);
     }
 
     /// <summary>True when <paramref name="user"/> holds the delegated payload scope.</summary>
@@ -127,6 +142,14 @@ public static class McpOperatorPermissions
     {
         ArgumentNullException.ThrowIfNull(user);
         return HasScope(user, PayloadReadScope);
+    }
+
+    private static bool HasRole(ClaimsPrincipal user, string role)
+    {
+        var legacy = LegacyRoles.GetValueOrDefault(role);
+        return user.FindAll("roles").Any(claim =>
+            string.Equals(claim.Value, role, StringComparison.Ordinal)
+            || (legacy is not null && string.Equals(claim.Value, legacy, StringComparison.Ordinal)));
     }
 
     private static bool HasScope(ClaimsPrincipal user, string scope)

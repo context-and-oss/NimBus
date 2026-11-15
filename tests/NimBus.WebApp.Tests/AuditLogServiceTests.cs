@@ -76,7 +76,7 @@ public sealed class AuditLogServiceTests
         // Entra app-only tokens carry no name claim; "anonymous" would hide which agent acted.
         var store = new CapturingStore();
         var sut = new AuditLogService(NullLogger(), store);
-        var ctx = MakeContextWithClaims(("oid", "33333333-3333-3333-3333-333333333333"), (clientClaim, "agent-client"), ("roles", "Nimbus.Classify"));
+        var ctx = MakeContextWithClaims(("oid", "33333333-3333-3333-3333-333333333333"), (clientClaim, "agent-client"), ("roles", "Nimbus.Workload.Classify"));
 
         await sut.LogAuditAsync(MessageAuditType.Resubmit, ctx);
 

@@ -44,7 +44,7 @@ Agents classify failures over the operator MCP endpoint (see [MCP server](mcp-se
 
 1. `nimbus_find_messages` with `includeClassification: true` shows, for each Failed or DeadLettered message, whether its latest attempt has a saved classification.
 2. `nimbus_get_failure_evidence` returns the scrubbed evidence for one attempt: its error, dead-letter reason, retry state, recent failures in the same session, the sending endpoint, a redacted payload when an Owner allows it, the current question set and the latest saved result. It needs the Reader role.
-3. `nimbus_record_classification` stores the agent's answers for that attempt. It needs the `nimbus.classify` scope (or, for an approved workload, the `Nimbus.Classify` app role), the Contributor role and the **Classify failures** switch in **Settings → MCP access**.
+3. `nimbus_record_classification` stores the agent's answers for that attempt. It needs the `nimbus.classify` scope (or, for an approved workload, the `Nimbus.Workload.Classify` app role), the Contributor role and the **Classify failures** switch in **Settings → MCP access**.
 
 When NimBus records an answer:
 

@@ -37,8 +37,8 @@ public enum OperatorAction
 /// Decides whether the current MCP caller may take an <see cref="OperatorAction"/>. An Entra
 /// caller needs the action's delegated scope; a workload token, which carries app roles and no
 /// <c>scp</c>, qualifies for <see cref="OperatorAction.Classify"/> (recording) with the
-/// <c>Nimbus.Classify</c> role and the Owner's workload-recording switch (Spec 044 §6.6), and for
-/// <see cref="OperatorAction.Resubmit"/> with the <c>Nimbus.Resubmit</c> role, the Owner's
+/// <c>Nimbus.Workload.Classify</c> role and the Owner's workload-recording switch (Spec 044 §6.6), and for
+/// <see cref="OperatorAction.Resubmit"/> with the <c>Nimbus.Workload.Resubmit</c> role, the Owner's
 /// workload-resubmit switch and an available operation journal (Spec 044 Phase 2). Never for
 /// skip. Local development has no scopes. The site Owner's
 /// MCP access policy (Spec 037) must also allow the action, the caller's client and the
@@ -287,10 +287,10 @@ public sealed class OperatorActionAccess
         return action switch
         {
             // Spec 044 §6.6: an unattended workload may record classifications when it holds the
-            // Nimbus.Classify app role and the Owner allows workload recording. It changes no message.
+            // Nimbus.Workload.Classify app role and the Owner allows workload recording. It changes no message.
             OperatorAction.Classify => _policies.Current?.AllowsWorkloadClassification == true
                 && McpOperatorPermissions.IsWorkloadWithRole(user, McpOperatorPermissions.ClassifyRole),
-            // Spec 044 Phase 2: an unattended workload may resubmit with the Nimbus.Resubmit app role
+            // Spec 044 Phase 2: an unattended workload may resubmit with the Nimbus.Workload.Resubmit app role
             // while the Owner allows it and the journal can record, budget and cap the command.
             OperatorAction.Resubmit => _policies.Current?.AllowsWorkloadResubmit == true
                 && _journal.IsAvailable

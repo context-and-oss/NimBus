@@ -175,7 +175,7 @@ public class OperatorActionToolsTests
 
     [TestMethod]
     [DataRow("nimbus.observe", null, DisplayName = "Observe scope only")]
-    [DataRow(null, "Nimbus.Observe", DisplayName = "Workload app role")]
+    [DataRow(null, "Nimbus.Workload.Observe", DisplayName = "Workload app role")]
     public async Task Entra_callers_need_the_delegated_action_scope(string? scopes, string? roles)
     {
         await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true);

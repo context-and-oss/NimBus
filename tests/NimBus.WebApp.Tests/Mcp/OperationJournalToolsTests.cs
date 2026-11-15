@@ -27,7 +27,7 @@ namespace NimBus.WebApp.Tests.Mcp;
 /// <summary>
 /// Spec 044 Phase 2 over the real MCP pipeline: resubmit and skip are journaled operations, a
 /// retry with the same idempotency key runs nothing again, <c>nimbus_get_operation</c> reads the
-/// outcome from the Resolver's history, and workloads with the <c>Nimbus.Resubmit</c> role
+/// outcome from the Resolver's history, and workloads with the <c>Nimbus.Workload.Resubmit</c> role
 /// resubmit unattended within a budget and a per-message cap.
 /// </summary>
 [TestClass]
@@ -37,7 +37,7 @@ public class OperationJournalToolsTests
     private const string EventId = "evt-journal-1";
     private const string Session = "sess-1";
     private const string Attempt = "err-1";
-    private const string WorkloadRoles = "Nimbus.Observe Nimbus.Resubmit";
+    private const string WorkloadRoles = "Nimbus.Workload.Observe Nimbus.Workload.Resubmit";
 
     [TestMethod]
     public async Task A_resubmit_is_an_operation_whose_outcome_comes_from_the_resolver_history()
@@ -166,7 +166,7 @@ public class OperationJournalToolsTests
     [TestMethod]
     [DataRow(WorkloadRoles, true, true, DisplayName = "workload role, switch on")]
     [DataRow(WorkloadRoles, false, false, DisplayName = "workload role, switch off")]
-    [DataRow("Nimbus.Observe", true, false, DisplayName = "workload without the role")]
+    [DataRow("Nimbus.Workload.Observe", true, false, DisplayName = "workload without the role")]
     public async Task A_workload_resubmits_only_with_the_role_and_the_switch(string roles, bool workloadSwitch, bool allowed)
     {
         await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,

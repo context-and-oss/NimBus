@@ -244,20 +244,20 @@ describe("MCP access model", () => {
   });
 
   it("lets a workload record classifications only when the switch is on", () => {
-    // Spec 044 §6.6: the Nimbus.Classify app role admits recording, nothing else.
+    // Spec 044 §6.6: the Nimbus.Workload.Classify app role admits recording, nothing else.
     const s = { ...settings(), allowWorkloadClassification: true };
     const on = previewAccess(s, deployment(), "workload", true);
     const off = previewAccess({ ...s, allowWorkloadClassification: false }, deployment(), "workload", true);
 
     expect(on.find(r => r.name === "nimbus_record_classification")).toEqual(
-      { name: "nimbus_record_classification", allowed: true, why: "Nimbus.Classify role + Contributor" });
+      { name: "nimbus_record_classification", allowed: true, why: "Nimbus.Workload.Classify role + Contributor" });
     expect(on.filter(r => r.allowed).map(r => r.name)).toEqual(["15 read tools", "nimbus_record_classification"]);
     expect(off.find(r => r.name === "nimbus_record_classification")?.why).toBe("workload recording off");
     expect(describeChanges(settings(), s)).toEqual([{ text: "Let workloads record failure classifications", widens: true }]);
   });
 
   it("lets a workload resubmit, never skip, only when unattended resubmits are on", () => {
-    // Spec 044 Phase 2: the Nimbus.Resubmit app role admits resubmit within a budget; skip stays with a person.
+    // Spec 044 Phase 2: the Nimbus.Workload.Resubmit app role admits resubmit within a budget; skip stays with a person.
     const s = { ...settings(), allowWorkloadResubmit: true, capabilities: { ...settings().capabilities, skip: true } };
     const on = previewAccess(s, deployment(), "workload", true);
     const off = previewAccess({ ...s, allowWorkloadResubmit: false }, deployment(), "workload", true);

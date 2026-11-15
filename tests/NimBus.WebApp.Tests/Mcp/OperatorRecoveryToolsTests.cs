@@ -70,7 +70,7 @@ public class OperatorRecoveryToolsTests
 
     [TestMethod]
     [DataRow("nimbus.observe nimbus.resubmit nimbus.skip", null)]
-    [DataRow(null, "Nimbus.Observe Nimbus.Resubmit Nimbus.Annotate Nimbus.Classify")]
+    [DataRow(null, "Nimbus.Workload.Observe Nimbus.Workload.Resubmit Nimbus.Workload.Annotate Nimbus.Workload.Classify")]
     public async Task A_caller_without_the_delegated_scope_is_refused_and_a_workload_always_is(string? scopes, string? roles)
     {
         await using var host = await StartAsync(

@@ -19709,7 +19709,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Whether workloads with the Nimbus.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false.
+        /// Whether workloads with the Nimbus.Workload.Classify app role may record failure classifications (Spec 044). Effective only while allowWorkloads is on. Default false.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("allowWorkloadClassification", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public bool AllowWorkloadClassification    {
@@ -19725,7 +19725,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Whether workloads with the Nimbus.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false.
+        /// Whether workloads with the Nimbus.Workload.Resubmit app role may resubmit failed messages unattended (Spec 044 Phase 2), within the budget and per-message cap. Effective only while allowWorkloads is on and the operation journal is available. There is no workload switch for skip. Default false.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("allowWorkloadResubmit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public bool AllowWorkloadResubmit    {
@@ -19741,7 +19741,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Whether workloads with the Nimbus.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false.
+        /// Whether workloads with the Nimbus.Workload.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("allowWorkloadAnnotation", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public bool AllowWorkloadAnnotation    {

@@ -36,16 +36,16 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_get_classification` | The stored classification of a failed attempt, with who recorded it, advisory only. A rationale is untrusted | Endpoint Reader; classification enabled |
 | `nimbus_get_failure_evidence` | The scrubbed evidence of one failed attempt, its sending endpoint, a redacted payload when allowed, and the question set to answer | Endpoint Reader; classification recordable |
 | `nimbus_prepare_action` | A read-only preview of one recovery action on one message (`resubmit`, `skip`, `settle_handoff`, `reprocess_deferred`, `skip_deferred_tracking` or `resubmit_with_changes`), or of resubmitting the failed messages reported under one `ticketId` (at most 50), and an `actionToken` to run it | The action's scope and endpoint Contributor |
-| `nimbus_resubmit_message` | Runs a prepared resubmit: replays the latest stored payload to the endpoint. Returns an `operationId` | `nimbus.resubmit` (workloads: the `Nimbus.Resubmit` app role, within a budget) and endpoint Contributor |
+| `nimbus_resubmit_message` | Runs a prepared resubmit: replays the latest stored payload to the endpoint. Returns an `operationId` | `nimbus.resubmit` (workloads: the `Nimbus.Workload.Resubmit` app role, within a budget) and endpoint Contributor |
 | `nimbus_skip_message` | Runs a prepared skip: the message is never processed, and later messages in its session may be released. Returns an `operationId` | Delegated `nimbus.skip` and endpoint Contributor; never a workload |
 | `nimbus_settle_handoff` | Runs a prepared settlement: completes or fails a pending handoff with the outcome you pass. The endpoint records it without running its handler again | Delegated `nimbus.settle` and endpoint Contributor; never a workload; off until an Owner switches it on |
 | `nimbus_reprocess_deferred` | Runs a prepared reprocess: resets the session's blocked state and asks the endpoint to process its deferred messages again, in order | Delegated `nimbus.recover` and endpoint Contributor; never a workload; off until an Owner switches it on |
 | `nimbus_skip_deferred_tracking` | Runs a prepared tracking skip: marks a stale Deferred tracking record Skipped. Nothing is removed from Service Bus. Returns `auditRecorded` | Delegated `nimbus.recover` and endpoint Contributor; never a workload; off until an Owner switches it on |
 | `nimbus_resubmit_with_changes` | Runs a prepared resubmit with the edited payload you previewed, in place of the stored one. Returns an `operationId` | Delegated `nimbus.edit`, endpoint Contributor and PiiReader; never a workload; off until an Owner switches it on |
 | `nimbus_get_operation` | The status and observed outcome of a resubmit, skip or resubmit with changes: Dispatched, Succeeded, Failed, NotSent, OutcomeUnknown or Refused | Endpoint Reader on the operation's endpoint; the operation journal |
-| `nimbus_set_message_reported` | Sets or clears the "reported" marker on one message (`eventId`) or up to 50 on one endpoint (`eventIds`), optionally with an external ticket id | `nimbus.annotate` (workloads: the `Nimbus.Annotate` app role) and endpoint Contributor |
+| `nimbus_set_message_reported` | Sets or clears the "reported" marker on one message (`eventId`) or up to 50 on one endpoint (`eventIds`), optionally with an external ticket id | `nimbus.annotate` (workloads: the `Nimbus.Workload.Annotate` app role) and endpoint Contributor |
 | `nimbus_find_reports` | An endpoint's reported messages, optionally under one ticket, with each one's status and normalized error pattern, to reuse a ticket | Endpoint Reader |
-| `nimbus_record_classification` | Records your answers to the question set for one failed attempt. NimBus composes the guidance. Advisory, changes no message | `nimbus.classify` (workloads: the `Nimbus.Classify` app role) and endpoint Contributor; classification recordable |
+| `nimbus_record_classification` | Records your answers to the question set for one failed attempt. NimBus composes the guidance. Advisory, changes no message | `nimbus.classify` (workloads: the `Nimbus.Workload.Classify` app role) and endpoint Contributor; classification recordable |
 | `nimbus_classify_failure` | **Deprecated, removed in v5.0.0.** Asks the built-in provider to classify a failure, or returns the stored one | Delegated `nimbus.classify` and endpoint Contributor; a configured provider |
 
 Results never contain stack traces, except `nimbus_get_failure_evidence` with `includeStackTrace`
@@ -268,14 +268,14 @@ filed and resubmit them after the fix:
   trace when the adapter stores one and an Owner allows it (see
   [Integration Intelligence](integration-intelligence.md)).
 
-A workload marks messages reported with the `Nimbus.Annotate` app role while the Owner's **Workloads
+A workload marks messages reported with the `Nimbus.Workload.Annotate` app role while the Owner's **Workloads
 may mark messages reported** switch is on.
 
 ## Unattended resubmits
 
 A workload resubmits failed messages without a person when:
 
-- its token carries the `Nimbus.Resubmit` app role;
+- its token carries the `Nimbus.Workload.Resubmit` app role;
 - the Owner turned on **Workloads may resubmit** in **Settings → MCP access** (off by default,
   effective only while workload tokens are accepted and **Resubmit messages** is on);
 - its object id has Contributor on the endpoint in Access Control; and
@@ -324,7 +324,7 @@ the event's metadata remain, so the prompt tells agents never to copy payload va
 reports or tests.
 
 **Unattended recording.** A workload (an app-only token) may record when it holds the
-`Nimbus.Classify` app role, the Owner turned on **Workloads may record classifications** in
+`Nimbus.Workload.Classify` app role, the Owner turned on **Workloads may record classifications** in
 **Settings → MCP access** (off by default, and effective only while workload tokens are accepted),
 and the workload's object id has Contributor on the endpoint in Access Control. The role admits
 `nimbus_record_classification` only: never `nimbus_classify_failure`, resubmit, skip or report.
@@ -348,10 +348,10 @@ The policy covers:
 | Serve the MCP endpoint | When off, every call gets `503 [Disabled]`. The protected-resource metadata keeps working. |
 | Raw payloads, mark reported, classify, resubmit, skip | A switched-off tool is removed from `tools/list` and from `permittedActions`; a direct call gets `[PermissionDenied] … turned off by an administrator`. The read tools have no switch. |
 | Settle pending handoffs, recover deferred messages, resubmit with an edited payload | The same, for `nimbus_settle_handoff`, for `nimbus_reprocess_deferred` and `nimbus_skip_deferred_tracking`, and for `nimbus_resubmit_with_changes`. Off by default, also in a policy saved before the switches existed: nothing changes on upgrade until an Owner turns one on. |
-| Unattended workloads | Whether app-only (`Nimbus.Observe`) tokens are accepted for the read tools. |
-| Workloads may record classifications | Whether workloads with the `Nimbus.Classify` app role may call `nimbus_record_classification`. Off by default; effective only while workload tokens are accepted and **Classify failures** is on. |
-| Workloads may mark messages reported | Whether workloads with the `Nimbus.Annotate` app role may call `nimbus_set_message_reported`. Off by default. |
-| Workloads may resubmit | Whether workloads with the `Nimbus.Resubmit` app role may resubmit unattended, with the resubmits per agent per day and the unsuccessful resubmits per message (see [Unattended resubmits](#unattended-resubmits)). Off by default. |
+| Unattended workloads | Whether app-only (`Nimbus.Workload.Observe`) tokens are accepted for the read tools. |
+| Workloads may record classifications | Whether workloads with the `Nimbus.Workload.Classify` app role may call `nimbus_record_classification`. Off by default; effective only while workload tokens are accepted and **Classify failures** is on. |
+| Workloads may mark messages reported | Whether workloads with the `Nimbus.Workload.Annotate` app role may call `nimbus_set_message_reported`. Off by default. |
+| Workloads may resubmit | Whether workloads with the `Nimbus.Workload.Resubmit` app role may resubmit unattended, with the resubmits per agent per day and the unsuccessful resubmits per message (see [Unattended resubmits](#unattended-resubmits)). Off by default. |
 | People | Everyone with a NimBus role, or only listed users and groups (email, user object id, or a group object id from the `groups` claim). Workloads are governed by the workload switch instead. |
 | Client applications | Any client Entra lets sign in, or only approved ones, matched on `azp` (then `appid`). Each approved client can be allowed or denied the tools that change messages. |
 | Endpoints | Hide endpoints from agents (they answer `[EndpointNotFound]`), and limit where agents may change messages. |
@@ -470,11 +470,15 @@ In the tenant that signs in your operators:
    ```
 4. **Manifest:** set `api.requestedAccessTokenVersion` to `2`, so access tokens carry the client
    id as their audience whichever identifier the client asked for.
-5. **App roles** (optional, for unattended workloads): add `Nimbus.Observe` for applications,
-   `Nimbus.Classify` for workloads that record failure classifications, `Nimbus.Resubmit` for
-   [unattended resubmits](#unattended-resubmits) and `Nimbus.Annotate` for marking messages
-   reported. No app role grants payload access, skip, handoff settlement, deferred recovery or
-   payload edits.
+5. **App roles** (optional, for unattended workloads): add `Nimbus.Workload.Observe` for
+   applications, `Nimbus.Workload.Classify` for workloads that record failure classifications,
+   `Nimbus.Workload.Resubmit` for [unattended resubmits](#unattended-resubmits) and
+   `Nimbus.Workload.Annotate` for marking messages reported, each with allowed member type
+   **Applications**. No app role grants payload access, skip, handoff settlement, deferred
+   recovery or payload edits. Before NimBus 4.19 the roles were named `Nimbus.Observe`,
+   `Nimbus.Classify`, `Nimbus.Resubmit` and `Nimbus.Annotate`. Entra can't create those next to
+   the scopes, because app-role and scope values must be unique ignoring case. NimBus still
+   accepts the old names.
 6. **Token configuration** (optional): add the `groups` claim if your NimBus role grants use Entra
    groups. Grants keyed by object id or email work without it.
 7. **Register an MCP client.** Entra does not support dynamic client registration, so every MCP
@@ -548,6 +552,7 @@ can reach `/mcp`. Cloud-hosted agents need a path through the Application Gatewa
 | `AADSTS9010010`: the resource doesn't match the requested scopes | The endpoint URL isn't an Application ID URI of the MCP resource. Add `https://<webapp>/mcp` ([step 1.3](#1-register-the-mcp-resource)) |
 | `AADSTS500113`: no reply address is registered | The client id is the MCP resource's own app id. Use the separate client registration ([step 1.7](#1-register-the-mcp-resource)) |
 | `AADSTS50011`: the redirect URI doesn't match | Register `http://localhost:<port>/callback` under **Mobile and desktop** on the client registration, with the same port as `--callback-port` |
+| `Request contains a property with duplicate values` when adding an app role | The role's value matches a scope ignoring case, for example `Nimbus.Observe` next to `nimbus.observe`. Use the `Nimbus.Workload.*` names ([step 1.5](#1-register-the-mcp-resource)) |
 | `AADSTS65001`: consent required | Pre-authorize the client on the MCP resource for the scopes it asks for, or grant admin consent |
 | `/.well-known/oauth-protected-resource/mcp` returns the WebApp's HTML page or a sign-in redirect instead of JSON | `/mcp` isn't enabled on this WebApp (`NimBus__Mcp__Enabled`), or its NimBus version predates the endpoint |
 | `403` when connecting | The site Owner's [access policy](#managing-access-in-the-webapp) refuses this person, client application or workload |

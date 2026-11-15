@@ -262,10 +262,10 @@ public class AgentClassificationToolsTests
 
     [TestMethod]
     [DataRow("nimbus.observe nimbus.classify", null, true, true, DisplayName = "delegated scope")]
-    [DataRow(null, "Nimbus.Observe Nimbus.Classify", true, true, DisplayName = "workload role, switch on")]
-    [DataRow(null, "Nimbus.Observe Nimbus.Classify", false, false, DisplayName = "workload role, switch off")]
-    [DataRow(null, "Nimbus.Observe", true, false, DisplayName = "workload without the role")]
-    [DataRow("nimbus.observe", "Nimbus.Classify", true, false, DisplayName = "delegated caller with only the app role")]
+    [DataRow(null, "Nimbus.Workload.Observe Nimbus.Workload.Classify", true, true, DisplayName = "workload role, switch on")]
+    [DataRow(null, "Nimbus.Workload.Observe Nimbus.Workload.Classify", false, false, DisplayName = "workload role, switch off")]
+    [DataRow(null, "Nimbus.Workload.Observe", true, false, DisplayName = "workload without the role")]
+    [DataRow("nimbus.observe", "Nimbus.Workload.Classify", true, false, DisplayName = "delegated caller with only the app role")]
     public async Task Recording_needs_the_classify_scope_or_the_workload_role_with_the_switch_on(
         string? scopes, string? roles, bool workloadSwitch, bool allowed)
     {
@@ -299,7 +299,7 @@ public class AgentClassificationToolsTests
             policy: p => p.AllowWorkloadClassification = true);
         await SeedFailureAsync(host);
         await using var client = await host.CreateClientAsync(
-            McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Observe Nimbus.Classify", name: null));
+            McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Workload.Observe Nimbus.Workload.Classify", name: null));
 
         var result = await client.CallToolAsync("nimbus_record_classification", Answers());
 
@@ -314,7 +314,7 @@ public class AgentClassificationToolsTests
         await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
             policy: p => p.AllowWorkloadClassification = true);
         await SeedFailureAsync(host);
-        await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Observe Nimbus.Classify"));
+        await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Workload.Observe Nimbus.Workload.Classify"));
 
         var result = await client.CallToolAsync("nimbus_classify_failure", new Dictionary<string, object?>
         {
@@ -332,7 +332,7 @@ public class AgentClassificationToolsTests
         {
             await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
                 policy: p => p.AllowWorkloadClassification = on);
-            await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Observe Nimbus.Classify"));
+            await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Workload.Observe Nimbus.Workload.Classify"));
 
             var capabilities = await CallAsync(client, "nimbus_get_capabilities", new());
 

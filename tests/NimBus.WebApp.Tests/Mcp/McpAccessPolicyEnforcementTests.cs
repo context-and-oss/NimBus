@@ -254,7 +254,7 @@ public class McpAccessPolicyEnforcementTests
     public async Task Entra_refuses_workload_tokens_when_workloads_are_off()
     {
         await using var host = await StartEntraAsync(p => p.AllowWorkloads = false);
-        var workload = McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Observe");
+        var workload = McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Workload.Observe");
         var delegated = McpTestHost.CreateToken();
 
         using var refused = await host.PostToolsListAsync(r => r.Headers.Authorization = new("Bearer", workload));

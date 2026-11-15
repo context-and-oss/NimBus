@@ -241,7 +241,7 @@ public class OperatorInsightToolsTests
 
     [TestMethod]
     [DataRow("nimbus.observe", null, false)]
-    [DataRow(null, "Nimbus.Observe", false)]
+    [DataRow(null, "Nimbus.Workload.Observe", false)]
     [DataRow("nimbus.observe nimbus.payload.read", null, true)]
     public async Task Entra_payload_needs_the_delegated_payload_scope(string? scopes, string? roles, bool allowed)
     {

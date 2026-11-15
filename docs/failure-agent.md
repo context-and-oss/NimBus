@@ -30,13 +30,14 @@ The reference runner is [samples/FailureAgent](../samples/FailureAgent/README.md
 
    | Role | Admits |
    | --- | --- |
-   | `Nimbus.Observe` | The read tools |
-   | `Nimbus.Classify` | `nimbus_record_classification` |
-   | `Nimbus.Resubmit` | `nimbus_prepare_action` and `nimbus_resubmit_message`, within the budget |
-   | `Nimbus.Annotate` | `nimbus_set_message_reported` |
+   | `Nimbus.Workload.Observe` | The read tools |
+   | `Nimbus.Workload.Classify` | `nimbus_record_classification` |
+   | `Nimbus.Workload.Resubmit` | `nimbus_prepare_action` and `nimbus_resubmit_message`, within the budget |
+   | `Nimbus.Workload.Annotate` | `nimbus_set_message_reported` |
 
-   Define the last two as app roles on the MCP resource registration first if your registration
-   predates them (allowed member type **Applications**).
+   Define them as app roles on the MCP resource registration first if they are missing (allowed
+   member type **Applications**). Registrations set up before NimBus 4.19 may have none: the older
+   names (`Nimbus.Observe` and so on) collide with the scopes, and Entra refuses to create them.
 4. **Grant its object id a NimBus role** in **Settings → Access Control**: Contributor on the
    endpoints it should act on (Reader is enough to look).
 
