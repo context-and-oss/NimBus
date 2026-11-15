@@ -54,7 +54,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
         if (controller.signal.aborted) return;
         // Spec 043 read-only mode: with no provider configured, saved results stay readable, so the
         // card appears only when one exists and never offers analysis. Spec 044 recordable mode:
-        // agents record over MCP, so the card shows for every eligible failure, without Analyze.
+        // agents record over MCP, so the card likewise appears once a result exists, without Analyze.
         const readOnly = capability.status === "ProviderNotConfigured";
         const recordable = capability.status === "Recordable";
         if ((capability.status !== "Ready" && !readOnly && !recordable) || capability.contractVersion !== 1) return;
@@ -121,6 +121,10 @@ function OccurrenceCard(props: IntelligenceCardProps) {
   };
 
   if (!status || (!eligible && !classification)) return null;
+  // An empty card earns its place only as the entry point to analysis. With no result, nothing
+  // in flight and no Analyze action (recordable mode, or a Reader), there is nothing to show.
+  const canStartAnalysis = status.canAnalyze && eligible;
+  if (!classification && !canStartAnalysis && !analysisActive && !unknownOutcome && !error) return null;
   const probabilities = Object.entries(classification?.categoryProbabilities ?? {})
     .filter(([category]) => category !== classification?.category)
     .sort(([, left], [, right]) => right - left)
@@ -142,7 +146,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
           <CardTitle className="text-base">Failure intelligence{props.occurrenceLabel ? ` · ${props.occurrenceLabel}` : ""}</CardTitle>
           <CardDescription>Advisory analysis of this failure occurrence. It never retries or changes the message.</CardDescription>
         </div>
-        {status.canAnalyze && eligible && <Button size="sm" onClick={analyze} isLoading={busy} disabled={busy}>
+        {canStartAnalysis && <Button size="sm" onClick={analyze} isLoading={busy} disabled={busy}>
           {classification || unknownOutcome ? "Re-analyze" : "Analyze failure"}
         </Button>}
       </CardHeader>
@@ -152,11 +156,11 @@ function OccurrenceCard(props: IntelligenceCardProps) {
           <p className="text-muted-foreground">New analysis is unavailable because no provider is configured.</p>}
         {status.status === "Recordable" &&
           <p className="text-muted-foreground">Agents record classifications over MCP.</p>}
-        {(unknownOutcome || classification) && status.canAnalyze && eligible &&
+        {(unknownOutcome || classification) && canStartAnalysis &&
           <p>Re-analyzing makes a new provider request and may incur an additional charge.</p>}
         {analysisActive && <p role="status">Analyzing failure…</p>}
         {!classification && !analysisActive && !unknownOutcome && !error &&
-          <p>{status.status === "Recordable" ? "No classification has been recorded." : "No analysis has been performed."}</p>}
+          <p>No analysis has been performed.</p>}
         {classification && <>
           {historical && <p role="status" className="text-muted-foreground">Historical result{analysisActive ? "; a newer analysis is running." : "; the latest analysis outcome is unknown."}</p>}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
