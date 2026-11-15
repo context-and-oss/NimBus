@@ -19,25 +19,29 @@ import EventsPanel from "./events-panel";
 // Shared mock handles. `getByFilterMock` resolves the events immediately;
 // `postSessionsBatchMock` returns a promise we resolve by hand so the test can
 // observe the table BEFORE the session-status batch settles.
-const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock, statusCountMock } =
-  vi.hoisted(() => {
-    const sessionsDeferreds: Array<(value: unknown) => void> = [];
-    const postSessionsBatchMock = vi.fn(
-      () =>
-        new Promise((resolve) => {
-          sessionsDeferreds.push(resolve);
-        }),
-    );
-    const getByFilterMock = vi.fn();
-    // The endpoint-wide totals behind the status summary line.
-    const statusCountMock = vi.fn();
-    return {
-      sessionsDeferreds,
-      postSessionsBatchMock,
-      getByFilterMock,
-      statusCountMock,
-    };
-  });
+const {
+  sessionsDeferreds,
+  postSessionsBatchMock,
+  getByFilterMock,
+  statusCountMock,
+} = vi.hoisted(() => {
+  const sessionsDeferreds: Array<(value: unknown) => void> = [];
+  const postSessionsBatchMock = vi.fn(
+    () =>
+      new Promise((resolve) => {
+        sessionsDeferreds.push(resolve);
+      }),
+  );
+  const getByFilterMock = vi.fn();
+  // The endpoint-wide totals behind the status summary line.
+  const statusCountMock = vi.fn();
+  return {
+    sessionsDeferreds,
+    postSessionsBatchMock,
+    getByFilterMock,
+    statusCountMock,
+  };
+});
 
 // DataTable reads the toast provider for action feedback; no-op it.
 vi.mock("components/ui/toast", () => ({
@@ -361,9 +365,7 @@ describe("EventsPanel status summary line", () => {
 
     renderPanel();
 
-    await waitFor(() =>
-      expect(summaryItem(/^13 failed$/)).toBeTruthy(),
-    );
+    await waitFor(() => expect(summaryItem(/^13 failed$/)).toBeTruthy());
     expect(summaryItem(/^3 deferred$/)).toBeTruthy();
     expect(summaryItem(/^17 pending$/)).toBeTruthy();
     expect(statusCountMock).toHaveBeenCalledWith("ep-1");
@@ -456,7 +458,83 @@ describe("EventsPanel view", () => {
     );
 
     await waitFor(() => expect(screen.getByText("OldLinkEvent")).toBeTruthy());
-    expect(screen.queryByRole("button", { name: "Grouped by Error" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Grouped by Error" }),
+    ).toBeNull();
     expect(screen.queryByRole("button", { name: "List" })).toBeNull();
+  });
+});
+
+describe("EventsPanel filter pills", () => {
+  const emptyPage = () =>
+    getByFilterMock.mockResolvedValue({
+      events: [],
+      continuationToken: undefined,
+    });
+  const lastFilter = () =>
+    (getByFilterMock.mock.calls.at(-1)![1] as api.SearchRequest).eventFilter!;
+  const renderPanel = (url = "/") =>
+    render(
+      <MemoryRouter initialEntries={[url]}>
+        <EventsPanel endpointId="ep-1" />
+      </MemoryRouter>,
+    );
+
+  it("starts an updated preset relative to now", async () => {
+    window.sessionStorage.clear();
+    emptyPage();
+    const before = Date.now();
+    renderPanel("/?updatedPeriod=1h");
+
+    await waitFor(() => expect(getByFilterMock).toHaveBeenCalled());
+    const start = lastFilter().updateAtFrom!.valueOf();
+    expect(start).toBeGreaterThanOrEqual(before - 3_600_000);
+    expect(start).toBeLessThanOrEqual(Date.now() - 3_600_000);
+    expect(lastFilter().updatedAtTo).toBeUndefined();
+  });
+
+  it("applies the unresolved statuses from the Status pill", async () => {
+    window.sessionStorage.clear();
+    emptyPage();
+    renderPanel();
+    await waitFor(() => expect(getByFilterMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unresolved" }));
+
+    await waitFor(() => expect(getByFilterMock).toHaveBeenCalledTimes(2));
+    expect(lastFilter().resolutionStatus).toEqual([
+      api.ResolutionStatus.Failed,
+      api.ResolutionStatus.DeadLettered,
+      api.ResolutionStatus.Unsupported,
+    ]);
+  });
+
+  it("searches a session from the search box", async () => {
+    window.sessionStorage.clear();
+    emptyPage();
+    renderPanel();
+    await waitFor(() => expect(getByFilterMock).toHaveBeenCalledTimes(1));
+
+    const box = screen.getByRole("searchbox", { name: "Search events" });
+    fireEvent.change(box, { target: { value: "session:s9" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+
+    await waitFor(() => expect(getByFilterMock).toHaveBeenCalledTimes(2));
+    expect(lastFilter().sessionId).toBe("s9");
+    expect(lastFilter().eventId).toBeUndefined();
+  });
+
+  it("removes the payload filter from its pill", async () => {
+    window.sessionStorage.clear();
+    emptyPage();
+    renderPanel("/?payload=orderId%3A4471");
+    await waitFor(() => expect(lastFilter().payload).toBe("orderId:4471"));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Payload contains" }),
+    );
+
+    await waitFor(() => expect(lastFilter().payload).toBeUndefined());
   });
 });

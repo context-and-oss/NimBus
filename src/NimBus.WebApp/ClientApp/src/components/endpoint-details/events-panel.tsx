@@ -13,12 +13,13 @@ import {
   formatMoment,
   formatResolutionStatus,
 } from "functions/endpoint.functions";
-import EventFiltering from "./filter/event-filtering";
-import type { AdvancedFilters } from "./filter/advanced-filters";
-import AdvancedFiltersPopover, {
-  AdvancedFilterChips,
-} from "./filter/advanced-filters-popover";
-import FilterContext, { IFilterContext } from "./filter/filtering-context";
+import EndpointFilterPills, {
+  EndpointSearchBox,
+  FAILED_STATUS_SET,
+  statusCountsOf,
+  type EndpointPillValues,
+} from "./filter/endpoint-filter-pills";
+import { fromLocalInput, presetStart } from "functions/filter-pills.functions";
 import TruncatedGuid from "components/common/truncated-guid";
 import { useUrlFilters } from "hooks/use-url-filters";
 import { Badge } from "components/ui/badge";
@@ -99,14 +100,10 @@ const ACTIONABLE_STATUSES = [
 // entirely reported; past the cap the operator pages on explicitly via Next.
 const MAX_HIDE_REPORTED_REFILL_PAGES = 3;
 
-// One-click triage set applied by the "Failed" button: the terminal failed
-// statuses an operator acts on. Deliberately narrower than ACTIONABLE_STATUSES
-// (no Deferred — those retry on their own).
-export const FAILED_STATUS_SET = [
-  api.ResolutionStatus.Failed,
-  api.ResolutionStatus.DeadLettered,
-  api.ResolutionStatus.Unsupported,
-];
+// One-click triage set applied by the Status pill's "Unresolved" link.
+// Deliberately narrower than ACTIONABLE_STATUSES (no Deferred — those retry on
+// their own).
+export { FAILED_STATUS_SET } from "./filter/endpoint-filter-pills";
 
 // URL sentinel meaning "user explicitly wants no status filter". The default
 // is already "all statuses", but removing the last status chip still writes
@@ -120,22 +117,24 @@ function isAllStatusesSentinel(status: string[]): boolean {
   return status.length === 1 && status[0] === STATUS_ALL_SENTINEL;
 }
 
-// URL-driven filter shape. Basic fields come from the filter bar; the advanced
-// fields (Updated/Added ranges + payload) come from the Advanced-filters
-// popover and round-trip through the URL like everything else, so a bookmarked
-// or Back-navigated URL restores them. The default `status` is empty — no
-// status predicate — so the page opens showing the *latest* events of every
-// status; operators most often want to see recent traffic first, and the
-// one-click "Failed" button applies the triage set when needed. Declared as a
-// closed `type` so it satisfies the index-signature constraint of
+// URL-driven filter shape, edited by the filter pills and the ID search box;
+// every field round-trips through the URL, so a bookmarked or Back-navigated
+// URL restores it. A time filter is a relative preset (`updatedPeriod`,
+// `addedPeriod`) or an explicit range, which wins. The default `status` is
+// empty — no status predicate — so the page opens showing the *latest* events
+// of every status; operators most often want to see recent traffic first, and
+// the Status pill's "Unresolved" link applies the triage set when needed.
+// Declared as a closed `type` so it satisfies the index-signature constraint of
 // `useUrlFilters<T>`.
 type EndpointFilterParams = {
   status: string[];
   eventTypeId: string[];
   eventId: string;
   sessionId: string;
+  updatedPeriod: string;
   updatedFrom: string;
   updatedTo: string;
+  addedPeriod: string;
   addedFrom: string;
   addedTo: string;
   payload: string;
@@ -147,8 +146,10 @@ export const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
   eventTypeId: [],
   eventId: "",
   sessionId: "",
+  updatedPeriod: "",
   updatedFrom: "",
   updatedTo: "",
+  addedPeriod: "",
   addedFrom: "",
   addedTo: "",
   payload: "",
@@ -231,15 +232,27 @@ export function saveHiddenColumns(hidden: Set<string>): void {
   }
 }
 
-const parseLocalDateTime = (value: string): moment.Moment | undefined =>
-  value ? moment(value, "YYYY-MM-DDTHH:mm") : undefined;
-
-const formatLocalDateTime = (value: moment.Moment | undefined): string =>
-  value ? value.format("YYYY-MM-DDTHH:mm") : "";
+// A time filter's bounds: an explicit range (either end may be open) wins over
+// a relative preset, which starts its span before now and is open-ended.
+function timeBounds(
+  period: string,
+  from: string,
+  to: string,
+  now: Date,
+): { from?: moment.Moment; to?: moment.Moment } {
+  const custom = !!(from || to);
+  const start = custom ? fromLocalInput(from) : presetStart(period, now);
+  const end = custom ? fromLocalInput(to) : undefined;
+  return {
+    from: start ? moment(start) : undefined,
+    to: end ? moment(end) : undefined,
+  };
+}
 
 function buildEventFilterFromParams(
   params: EndpointFilterParams,
   endpointId: string,
+  now: Date = new Date(),
 ): api.EventFilter {
   const filter = new api.EventFilter();
   filter.endpointId = endpointId;
@@ -251,39 +264,26 @@ function buildEventFilterFromParams(
   if (params.eventId) filter.eventId = params.eventId;
   if (params.sessionId) filter.sessionId = params.sessionId;
   // "Updated" → UpdatedAt (note the contract's misspelled `updateAtFrom`);
-  // "Added" → EnqueuedTimeUtc — the same fields the old accordion sub-filters
-  // wrote to the FilterContext draft.
-  if (params.updatedFrom)
-    filter.updateAtFrom = parseLocalDateTime(params.updatedFrom);
-  if (params.updatedTo)
-    filter.updatedAtTo = parseLocalDateTime(params.updatedTo);
-  if (params.addedFrom)
-    filter.enqueuedAtFrom = parseLocalDateTime(params.addedFrom);
-  if (params.addedTo) filter.enqueuedAtTo = parseLocalDateTime(params.addedTo);
+  // "Added" → EnqueuedTimeUtc.
+  const updated = timeBounds(
+    params.updatedPeriod,
+    params.updatedFrom,
+    params.updatedTo,
+    now,
+  );
+  if (updated.from) filter.updateAtFrom = updated.from;
+  if (updated.to) filter.updatedAtTo = updated.to;
+  const added = timeBounds(
+    params.addedPeriod,
+    params.addedFrom,
+    params.addedTo,
+    now,
+  );
+  if (added.from) filter.enqueuedAtFrom = added.from;
+  if (added.to) filter.enqueuedAtTo = added.to;
   const payload = params.payload.trim();
   if (payload) filter.payload = payload;
   return filter;
-}
-
-function paramsFromEventFilter(
-  filter: api.EventFilter,
-  current: EndpointFilterParams,
-): EndpointFilterParams {
-  // Search committed an empty status array → user means "all statuses". Write
-  // the sentinel so the URL preserves intent across navigation.
-  const rawStatus = (filter.resolutionStatus ?? []) as string[];
-  return {
-    status: rawStatus.length === 0 ? [STATUS_ALL_SENTINEL] : rawStatus,
-    eventTypeId: (filter.eventTypeId ?? []) as string[],
-    eventId: filter.eventId ?? "",
-    sessionId: filter.sessionId ?? "",
-    updatedFrom: formatLocalDateTime(filter.updateAtFrom),
-    updatedTo: formatLocalDateTime(filter.updatedAtTo),
-    addedFrom: formatLocalDateTime(filter.enqueuedAtFrom),
-    addedTo: formatLocalDateTime(filter.enqueuedAtTo),
-    payload: filter.payload ?? "",
-    maxResults: current.maxResults,
-  };
 }
 
 const EventsPanel = (props: EventsPanelProps) => {
@@ -303,10 +303,10 @@ const EventsPanel = (props: EventsPanelProps) => {
       persistKey: `endpoint-events-filter:${endpointId}`,
     });
 
-  // Bumped on every explicit Search click. The fetch effect is keyed on the URL
-  // filter (`applied`), which does not change when Search is clicked without
-  // altering any filter — so without this nonce, Search would be a no-op when
-  // nothing changed. Including it in the fetch deps makes Search always refresh.
+  // Bumped on every Enter in the search box. The fetch effect is keyed on the URL
+  // filter (`applied`), which does not change when the same search is submitted
+  // again — so without this nonce, a repeated search would be a no-op. Including
+  // it in the fetch deps makes Enter always refresh.
   const [searchNonce, setSearchNonce] = React.useState(0);
 
   const [events, setEvents] = React.useState<api.Event[]>([]);
@@ -320,6 +320,9 @@ const EventsPanel = (props: EventsPanelProps) => {
   // Endpoint-wide Failed/Deferred/Pending totals; undefined until read (or when
   // the read fails), in which case the summary line falls back to the loaded page.
   const [endpointTotals, setEndpointTotals] = React.useState<SummaryCounts>();
+  // The same totals per status, for the counts in the Status pill.
+  const [statusCounts, setStatusCounts] =
+    React.useState<Partial<Record<string, number>>>();
   // Same ordering guard as fetchTicket, for the totals request.
   const totalsTicket = React.useRef(0);
   const [searchError, setSearchError] = React.useState<string>();
@@ -378,24 +381,6 @@ const EventsPanel = (props: EventsPanelProps) => {
 
   const maxResults = Number(applied.maxResults) || 100;
 
-  // EventFilter (draft) is derived from URL on mount and on URL change. Sub-filters
-  // mutate this via the FilterContext as the user types; URL only updates on Search.
-  const [eventFilter, setEventFilter] = React.useState<api.EventFilter>(() =>
-    buildEventFilterFromParams(applied, endpointId),
-  );
-
-  // When the URL changes (Back/forward, Search, Reset, bookmark load) reset the
-  // draft filter to match. Sub-filter components are also keyed on URL state so
-  // their internal input state re-seeds from the URL-derived initialValue props.
-  React.useEffect(() => {
-    setEventFilter(buildEventFilterFromParams(applied, endpointId));
-  }, [applied, endpointId]);
-
-  const context: IFilterContext = {
-    filterContext: eventFilter,
-    setProjectContext: setEventFilter,
-  };
-
   // NOTE: the defaults are no longer materialised into the URL on first mount.
   // A clean URL re-derives the same default filter deterministically, and the
   // hook's sessionStorage hydration (persistKey above) now owns the "restore
@@ -417,9 +402,11 @@ const EventsPanel = (props: EventsPanelProps) => {
   const fetchEndpointTotals = async (): Promise<void> => {
     const ticket = ++totalsTicket.current;
     let totals: SummaryCounts | undefined;
+    let perStatus: Partial<Record<string, number>> | undefined;
     try {
       const count = await client.getEndpointStatusCountId(endpointId);
       if (count) {
+        perStatus = statusCountsOf(count);
         totals = {
           failed: failureBacklog([count]),
           deferred: count.deferredCount ?? 0,
@@ -431,6 +418,7 @@ const EventsPanel = (props: EventsPanelProps) => {
     }
     if (ticket === totalsTicket.current) {
       setEndpointTotals(totals);
+      setStatusCounts(perStatus);
     }
   };
 
@@ -1022,32 +1010,38 @@ const EventsPanel = (props: EventsPanelProps) => {
     );
   };
 
-  // User clicked Search — write the current draft filter to the URL.
-  // The useEffect on `applied` then refetches.
-  const handleFilterClicked = (filter: api.EventFilter): void => {
-    applyFilters(paramsFromEventFilter(filter, applied));
-    // Force a refresh even when the filter is unchanged (same URL → `applied`
-    // stays referentially stable, so the fetch effect would otherwise not re-run).
-    setSearchNonce((n) => n + 1);
+  // A pill change writes to the URL at once; the useEffect on `applied` refetches.
+  const handlePillChange = (patch: Partial<EndpointPillValues>): void => {
+    applyFilters({ ...applied, ...patch });
   };
 
-  // Reset — clear all URL filter params back to defaults (all statuses).
+  // Enter in the search box — write the IDs, or refresh when they are unchanged
+  // (same URL → `applied` stays referentially stable, so the fetch effect would
+  // otherwise not re-run).
+  const handleIdSearch = (
+    patch: Pick<EndpointPillValues, "eventId" | "sessionId">,
+  ): void => {
+    if (
+      patch.eventId === applied.eventId &&
+      patch.sessionId === applied.sessionId
+    )
+      setSearchNonce((n) => n + 1);
+    else applyFilters({ ...applied, ...patch });
+  };
+
+  // Reset — clear all URL filter params back to defaults (all statuses) and
+  // show reported events again.
   const handleReset = (): void => {
+    setHideReported(false);
     resetFilters();
   };
 
-  // One-click triage view: the actionable failed statuses.
-  const handleFailedOnly = (): void => {
-    applyFilters({ ...applied, status: [...FAILED_STATUS_SET] });
-  };
-
-  // Commit-on-change for the Status combobox: chip add/remove writes to the
-  // URL immediately so browser Back from an event-detail page restores the
-  // exact filter the user had selected, not the page's defaults. Removing the
-  // last chip is treated as "All statuses" (sentinel) for the same reason.
-  const handleStatusChange = (next: api.ResolutionStatus[]): void => {
-    const nextStatus =
-      next.length === 0 ? [STATUS_ALL_SENTINEL] : (next as string[]);
+  // Commit-on-change for the Status pill: writes to the URL immediately so
+  // browser Back from an event-detail page restores the exact filter the user
+  // had selected, not the page's defaults. Clearing every status is treated as
+  // "All statuses" (sentinel) for the same reason.
+  const handleStatusChange = (next: string[]): void => {
+    const nextStatus = next.length === 0 ? [STATUS_ALL_SENTINEL] : next;
     applyFilters({ ...applied, status: nextStatus });
   };
 
@@ -1063,13 +1057,6 @@ const EventsPanel = (props: EventsPanelProps) => {
 
   const setMaxResults = (next: number): void => {
     applyFilters({ ...applied, maxResults: String(next) });
-  };
-
-  // Commit the advanced filters from the popover (Updated/Added ranges +
-  // Payload), leaving the basic filters untouched. Changing these applied
-  // params triggers the fetch effect, so no extra refresh nonce is needed.
-  const handleApplyAdvanced = (next: AdvancedFilters): void => {
-    applyFilters({ ...applied, ...next });
   };
 
   const toggleColumn = (id: string): void => {
@@ -1123,15 +1110,12 @@ const EventsPanel = (props: EventsPanelProps) => {
     },
   ];
 
-  // Hide the sentinel from the combobox — "all statuses" should render as an
-  // empty chip area, not a chip literally labelled "*".
-  const displayedStatuses = isAllStatusesSentinel(applied.status)
-    ? []
-    : (applied.status as api.ResolutionStatus[]);
-
-  // Key the filter subtree on URL state so sub-filter inputs re-mount and re-seed
-  // from `initialValue` props whenever the URL changes (e.g. browser Back/forward).
-  const filterRemountKey = `${applied.status.join(",")}|${applied.eventTypeId.join(",")}|${applied.eventId}|${applied.sessionId}`;
+  // Hide the sentinel from the Status pill — "all statuses" reads as
+  // "All selected", not a status literally named "*".
+  const pillValues: EndpointPillValues = {
+    ...applied,
+    status: isAllStatusesSentinel(applied.status) ? [] : applied.status,
+  };
 
   // Counts derived from the currently-loaded page. Only a fallback: the summary
   // line reads as endpoint totals (Failed opens the endpoint's whole backlog), and a
@@ -1159,21 +1143,13 @@ const EventsPanel = (props: EventsPanelProps) => {
   }, [events]);
   const counts = endpointTotals ?? pageCounts;
 
-  // Applied advanced filters, surfaced through the Advanced-filters popover
-  // (next to the column chooser) and the chip row below the view controls.
-  const advancedValue: AdvancedFilters = {
-    updatedFrom: applied.updatedFrom,
-    updatedTo: applied.updatedTo,
-    addedFrom: applied.addedFrom,
-    addedTo: applied.addedTo,
-    payload: applied.payload,
-  };
-
   const hasActiveFilters =
     (applied.status.length > 0 && !isAllStatusesSentinel(applied.status)) ||
     applied.eventTypeId.length > 0 ||
     applied.eventId.length > 0 ||
     applied.sessionId.length > 0 ||
+    !!presetStart(applied.updatedPeriod, new Date()) ||
+    !!presetStart(applied.addedPeriod, new Date()) ||
     applied.updatedFrom.length > 0 ||
     applied.updatedTo.length > 0 ||
     applied.addedFrom.length > 0 ||
@@ -1216,23 +1192,23 @@ const EventsPanel = (props: EventsPanelProps) => {
   ];
 
   return (
-    <FilterContext.Provider value={context}>
+    <>
       <div className="flex flex-col gap-4 w-full">
-        <EventFiltering
-          key={filterRemountKey}
-          handleFilterClicked={handleFilterClicked}
-          onReset={handleReset}
-          onApplyFailed={handleFailedOnly}
-          onStatusChange={handleStatusChange}
-          initialStatuses={displayedStatuses}
-          initialEventTypes={applied.eventTypeId}
-          initialEventId={applied.eventId}
-          initialSessionId={applied.sessionId}
-          maxResults={maxResults}
-          onMaxResultsChange={setMaxResults}
-        />
+        <div className="flex flex-col gap-3">
+          <EndpointFilterPills
+            endpointId={endpointId}
+            value={pillValues}
+            statusCounts={statusCounts}
+            hideReported={hideReported}
+            onHideReportedChange={setHideReported}
+            onApply={handlePillChange}
+            onStatusChange={handleStatusChange}
+            onReset={handleReset}
+          />
+          <EndpointSearchBox value={applied} onApply={handleIdSearch} />
+        </div>
 
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
           <nav
             aria-label="Endpoint status summary"
             className="flex items-center gap-1"
@@ -1262,13 +1238,20 @@ const EventsPanel = (props: EventsPanelProps) => {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3">
-            <label className="inline-flex cursor-pointer select-none items-center gap-2 text-muted-foreground">
-              <Checkbox
-                checked={hideReported}
-                onChange={(e) => setHideReported(e.target.checked)}
-                aria-label="Hide reported events"
-              />
-              Hide reported
+            <label className="inline-flex items-center gap-2 text-muted-foreground">
+              Rows
+              <select
+                aria-label="Rows to load"
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                value={maxResults}
+                onChange={(e) => setMaxResults(Number(e.target.value))}
+              >
+                {[50, 100, 250, 500].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
             </label>
             <ColumnChooser
               columns={EVENT_COLUMNS}
@@ -1276,17 +1259,8 @@ const EventsPanel = (props: EventsPanelProps) => {
               onToggle={toggleColumn}
               onReset={resetColumns}
             />
-            <AdvancedFiltersPopover
-              value={advancedValue}
-              onApply={handleApplyAdvanced}
-              align="right"
-            />
           </div>
         </div>
-        <AdvancedFilterChips
-          value={advancedValue}
-          onApply={handleApplyAdvanced}
-        />
 
         {searchError ? (
           <div
@@ -1349,7 +1323,7 @@ const EventsPanel = (props: EventsPanelProps) => {
           }}
         />
       )}
-    </FilterContext.Provider>
+    </>
   );
 };
 
