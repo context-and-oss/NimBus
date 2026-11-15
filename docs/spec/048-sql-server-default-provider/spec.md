@@ -32,7 +32,10 @@ it closes the gaps that would make that a step back:
 4. **SQL tier.** `--sql-sku` chooses the database tier, and reruns keep the deployed SKU instead of
    resetting it to S0.
 5. **Pipelines.** `deploy.yml` and the Azure Pipelines template can deploy SQL Server.
-6. **The default flips** once all of that has shipped (§5.6).
+6. **SQL retention.** Today a SQL deployment never deletes anything. Spec 050 adds a cleanup, and
+   this spec gives SQL the same retention defaults as Cosmos in the release that flips the default
+   (§5.8).
+7. **The default flips** once all of that has shipped (§5.6).
 
 ## 2. Current state
 
@@ -51,6 +54,7 @@ it closes the gaps that would make that a step back:
 | SQL tier | `azureSql.bicep:12-18` allows `Basic`, `S0`, `S1`, `S2`, default `S0`. `deploy.core.bicep` passes no SKU, so `nb` always deploys S0, and a rerun redeploys S0 over a database resized in the portal |
 | Network | Public mode: the SQL server's only firewall rule is `AllowAllWindowsAzureIps` (`azureSql.bicep:42-49`), so a workstation can't connect. Private mode: `nb` checks private-endpoint resolution before data-plane steps, not SQL connectivity |
 | Runtime selection | The WebApp and the Resolver use `NimBus:StorageProvider`, or detect it from the connection settings present, falling back to Cosmos (`Startup.Platform.cs:148-165`, `ResolverStorageProvider.cs:20-33`) |
+| Retention | Cosmos expires data by item `ttl`: completed and skipped rows after 30 days, messages after 90, audits after a year. **SQL Server never deletes anything.** `RemoveMessage`, `ArchiveFailedEvent` and both `PurgeMessages` only set `Deleted = 1` (`SqlServerMessageTrackingStore.Writes.cs:276-310`), and no code deletes `UnresolvedEvents`, `Messages` or `MessageAudits` rows by age. A SQL deployment grows until it reaches its tier's limit, 250 GB on S0, which then rejects writes. Found on 2026-11-15; [Spec 050](../050-retention-settings/spec.md) adds the cleanup |
 | Local | The AppHost already defaults to SQL Server (`src/NimBus.AppHost/Program.cs:12-14`), as does the CrmErpDemo AppHost |
 | Cosmos-only tools | `nb container` commands, Copy Endpoint Data and Topology → Storage ([storage providers](../../storage-providers.md#operator-tools-that-are-cosmos-only-in-v1)) |
 
@@ -64,6 +68,7 @@ it closes the gaps that would make that a step back:
    the apps hold no secret.
 5. The SQL tier can be chosen, and the deployed SKU survives reruns.
 6. Both pipelines deploy either provider.
+7. A new deployment on the default provider doesn't grow without bound.
 
 ## 4. Non-goals
 
@@ -264,6 +269,30 @@ These are documented, not built:
 
 None of them is needed to run a deployment. Porting them would be a separate spec.
 
+### 5.8 SQL retention
+
+A SQL deployment keeps every row forever (§2). As the default, that would fill new deployments'
+databases. At the Medium scenario's load, 500,000 deliveries a day, and an assumed 2 to 10 KB
+stored per delivery (messages, tracking row and audits), the database grows by 1 to 5 GB a day,
+so S0's 250 GB lasts between two months and eight. The fix is [Spec 050](../050-retention-settings/spec.md):
+
+- Spec 050 adds Settings → Retention: four periods (open events, resolved events, message history,
+  audit trail) and host-configuration pins. SQL rows older than their period are deleted by the
+  WebApp retention job that AF-199 (GH#291) is building, which Spec 050 makes configurable.
+- Spec 050 §13 leaves one question open: whether SQL's periods start out unlimited in 4.x, which
+  is proposed, or take Cosmos's values at once, as AF-199 does today. With the proposal, nothing
+  changes on upgrade until an Owner sets periods or a pin does. The rest of this section assumes
+  the proposal. If the owner chooses the other way, SQL has the Cosmos defaults before the flip,
+  and the next bullet is already done.
+- **This spec changes SQL's defaults to Cosmos's** (open events unlimited, resolved events 30
+  days, message history 90 days, audit trail 1 year) in the release that flips the default
+  provider. That is the next major, or the minor under a recorded exception (§5.6). Existing SQL
+  deployments then start deleting data older than those defaults, unless an Owner has saved other
+  periods or a pin is set. The release notes list this under ⚠️ Breaking, with the periods and how
+  to keep data longer: save the periods first, or pin them with `--retention-*`.
+- **The flip waits for Spec 050's cleanup** (Spec 050 Phase 2) to have shipped in an earlier minor.
+  So the cleanup has run on opted-in deployments before it runs by default.
+
 ## 6. Existing deployments
 
 | Deployment | After the 4.x groundwork | After the flip |
@@ -273,7 +302,8 @@ None of them is needed to run a deployment. Porting them would be a separate spe
 | SQL, external | Resolved from the WebApp's `SqlConnection` and tagged. The Resolver gets its `SqlConnection` for the first time (§5.2) | Unchanged |
 | Apps disagree or carry no storage setting | Refused until the operator passes `--storage-provider` once; then tagged | Unchanged |
 | A failed or partial discovery | Refused with the `az` error; nothing changes | Unchanged |
-| New resource group, no flag | Cosmos, with a warning | SQL Server, provisioned, SQL authentication off |
+| New resource group, no flag | Cosmos, with a warning | SQL Server, provisioned, SQL authentication off, with the Cosmos retention defaults (§5.8) |
+| SQL, with no retention saved or pinned | Nothing expires (Spec 050's upgrade default) | Starts deleting data older than the Cosmos defaults (§5.8) |
 
 ## 7. Evaluation
 
@@ -310,6 +340,9 @@ measurements (§14).
   mode and the in-network runner in private mode.
 - **One extra deployment pass**, once per existing provisioned deployment, during the move to
   managed identity (§5.3).
+- **Bounded storage on the default.** With §5.8 a new SQL deployment keeps about the same data as a
+  Cosmos one, and the price table's "stored data" column stays realistic over time. Without it,
+  storage would grow until S0's 250 GB stopped writes.
 
 ### 7.3 Alternatives
 
@@ -378,7 +411,7 @@ No store, conformance or WebApp tests change.
 | 2 | SQL managed identity (§5.3) | A new deployment has SQL authentication off and the apps hold no secret. An existing SQL deployment moves to managed identity under traffic with no failed or dead-lettered message, from a workstation (public) and from a pipeline |
 | 3 | SQL tier (§5.4) and pipelines (§5.5) | A rerun keeps a resized SKU; both pipelines deploy SQL |
 | 4.x | Phases 1-3 released in one or more minors, with the warning (§5.6) | Released |
-| Flip | The default changes in the next major (§5.6) | Released |
+| Flip | The default changes in the next major (§5.6), and SQL gets the Cosmos retention defaults (§5.8) | Released. Requires Spec 050's SQL cleanup to have shipped in an earlier minor |
 
 ## 10. Documentation
 
@@ -412,6 +445,10 @@ No store, conformance or WebApp tests change.
 4. **A temporary firewall rule** opens the server to one address for the length of the user step.
    It is removed in a `finally` and swept on the next run.
 5. **Operators who rely on `nb container`** get no CLI on SQL (§5.7).
+6. **Retention defaults on existing SQL deployments.** At the flip, an existing SQL deployment
+   whose Owner hasn't saved periods starts deleting old data (§5.8). The release notes, the
+   warning minors and the Retention page's "Nothing expires" banner (Spec 050 §5.5) all point to
+   this ahead of time.
 
 ## 12. Decisions
 
@@ -423,6 +460,7 @@ No store, conformance or WebApp tests change.
 4. **Provisioned SQL moves to managed identity before the flip**, in stages, with users created by
    SID (§5.3).
 5. **The deployed SQL SKU is pinned whole**, and `--sql-sku` is the only way `nb` resizes (§5.4).
+6. **SQL retention comes from Spec 050**, and SQL takes the Cosmos defaults at the flip (§5.8).
 
 ## 13. Open questions for the repo owner
 
@@ -490,3 +528,6 @@ On temporary resource groups in a non-production subscription, deleted afterward
   - The whole SKU is pinned, and the template parameter has no `@allowed` list (§5.4).
   - The flip moves to the next major, per `docs/versioning.md`, unless the repo owner records an
     exception (§5.6).
+- 2026-11-15: added the SQL retention gap. A SQL deployment never deletes data, so the default
+  would grow until S0's 250 GB stops writes. Spec 050 adds the cleanup, and this spec gives SQL the
+  Cosmos retention defaults at the flip (§2, §5.8, §6, §9, §11).
