@@ -1,0 +1,7 @@
+interface:
+  display_name: "Make PR easy to review"
+  short_description: "Regroup commits and rewrite a PR description without changing the code"
+  default_prompt: "Use $make-pr-easy-to-review to tidy the pull request for the current branch."
+
+policy:
+  allow_implicit_invocation: true
