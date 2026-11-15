@@ -590,7 +590,9 @@ export default function MessageListing(props: IMessageListingProps) {
           )}
 
           {isFailed && failureOccurrences.length > 0 && (
-            <div className="flex flex-col">
+            // Cards render nothing when there is no classification to show; `empty:hidden`
+            // then drops this wrapper so the column's gap is not doubled around it.
+            <div className="flex flex-col empty:hidden">
               {failureOccurrences.map((occurrence, index) => (
                 <IntelligenceCard
                   key={`${occurrence.eventId}/${occurrence.messageId}`}
