@@ -32,7 +32,7 @@ param resolverFunctionAppLocation string = ''
 
 // Storage provider selection. 'cosmos' (default, backwards-compatible) provisions a
 // Cosmos DB account. 'sqlserver' skips Cosmos and may optionally provision Azure SQL
-// when sqlMode is 'provision'; 'external' expects a customer-supplied connection string.
+// when sqlMode is 'provision'; 'external' expects a customer-supplied sqlConnectionString.
 @allowed([
   'cosmos'
   'sqlserver'
@@ -53,6 +53,11 @@ param sqlMode string = 'provision'
 param sqlAdminLogin string = ''
 @secure()
 param sqlAdminPassword string = ''
+
+// External SQL connection string (sqlMode == 'external'), set as the Resolver's SqlConnection.
+// Ignored otherwise: a provisioned server's connection string is built below.
+@secure()
+param sqlConnectionString string = ''
 
 // Optional override for the SQL server name. Azure SQL server names are globally
 // unique across all of Azure and are held in the DNS namespace for 24-72 hours
@@ -518,9 +523,15 @@ var elasticPremiumSecretSettings = resolverPlan == 'ElasticPremium' ? {
   WEBSITE_CONTENTAZUREFILECONNECTIONSTRING: funcstorageaccount.outputs.connectionString
 } : {}
 
-var sqlResolverSecretSettings = storageProvider == 'sqlserver' && sqlMode == 'provision' ? {
-  SqlConnection: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;'
-} : {}
+var sqlResolverSecretSettings = storageProvider != 'sqlserver'
+  ? {}
+  : sqlMode == 'provision'
+      ? {
+          SqlConnection: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;'
+        }
+      : {
+          SqlConnection: sqlConnectionString
+        }
 
 var alertMailResolverSecretSettings = alertMailEnabled && !empty(alertMailSmtpPassword) ? {
   NimBus__Alerts__Mail__Smtp__Password: alertMailSmtpPassword

@@ -40,7 +40,7 @@ in how they scale, in how the apps authenticate, and in a few operator tools.
 | Adding an endpoint | No storage change | `nb topology apply` creates the endpoint's container |
 | Scaling | Change the database tier. `nb` deploys S0, and every `nb infra apply` sets it back to S0, so scale up in the portal again after each run | Raise a container's throughput; each container scales separately |
 | App authentication | SQL login and password in the `SqlConnection` app setting | Managed identity only; no secrets |
-| Bring your own store | Not usable yet: `--sql-mode external` configures the WebApp but not the Resolver ([known gap](#sql-only-deployment)) | No: `nb` always creates the account |
+| Bring your own store | Yes: `--sql-mode external` with the connection string in `NIMBUS_SQL_CONNECTION_STRING` ([details](#sql-only-deployment)) | No: `nb` always creates the account |
 | Data retention | **Nothing is deleted**: tracking rows, messages and audits stay until you remove them, so the database keeps growing toward its tier's limit (250 GB on S0) | Expires automatically: completed rows after 30 days, messages after 90, audits after a year ([details](#retention-of-unresolved-rows)) |
 | Cosmos-only tools | — | `nb container` commands, Copy Endpoint Data, Topology → Storage ([details](#operator-tools-that-are-cosmos-only-in-v1)) |
 | Deploy pipelines (`deploy.yml`, `pipelines/azure-pipelines-deploy.yml`) | Not yet: neither passes `--storage-provider`, so both deploy Cosmos | Yes |
@@ -86,10 +86,8 @@ Choose **SQL Server** when:
 
 - the load is small or medium. It costs a fraction of Cosmos's fixed floor, and endpoints add
   nothing;
-- your organization already runs Azure SQL or SQL Server, or doesn't allow Cosmos DB.
-
-Bringing your own SQL database (`--sql-mode external`) will also be a reason to choose SQL Server,
-once the Resolver gap described under [SQL-only deployment](#sql-only-deployment) is fixed.
+- your organization already runs Azure SQL or SQL Server, or doesn't allow Cosmos DB;
+- you want to bring your own database (`--sql-mode external`). Cosmos DB has no equivalent.
 
 **Plan for SQL storage growth.** The SQL provider never deletes old data. Watch the database's
 used space, and delete old rows yourself before it reaches the tier's limit: Completed and Skipped
@@ -414,11 +412,10 @@ nb infra apply \
 unset NIMBUS_SQL_CONNECTION_STRING
 ```
 
-**Known gap in external mode.** The connection string reaches only the WebApp. The core template
-sets the Resolver's `SqlConnection` only for `--sql-mode provision`. So the Resolver starts with no
-storage setting, falls back to Cosmos and fails. Adding the setting by hand doesn't last, because
-the next `nb infra apply` replaces the Resolver's app settings. Until this is fixed, use
-`--sql-mode provision`.
+The connection string becomes the `SqlConnection` app setting of both the WebApp and the Resolver.
+It travels to the deployment as a secure parameter, never on the command line, and decides how both
+apps authenticate to the database. Every `nb infra apply` sets it again, so set the variable on
+every run.
 
 The Bicep templates skip Cosmos provisioning entirely when `storageProvider == 'sqlserver'`.
 

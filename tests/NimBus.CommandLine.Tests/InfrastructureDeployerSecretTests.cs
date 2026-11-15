@@ -49,6 +49,71 @@ public sealed class InfrastructureDeployerSecretTests
         Assert.Equal(identityPassword, azureCli.Deployments[1].SecureParameters["identityAdminPassword"]);
     }
 
+    /// <summary>
+    /// Issue #391: an external connection string reached only the WebApp, so the Resolver
+    /// started with no storage setting. Both deployments now get it, as a secure parameter.
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_PassesTheExternalSqlConnectionStringToBothDeploymentsAsASecureParameter()
+    {
+        const string connectionString = "Server=tcp:external.example.net,1433;Initial Catalog=MessageDatabase;Password=external-sql-marker;";
+        var azureCli = new RecordingAzureCliRunner();
+        var deployer = new InfrastructureDeployer(new CommandContext(Path.GetTempPath()), azureCli);
+        var options = new InfrastructureOptions(
+            "nimbus",
+            "dev",
+            "rg-nimbus-dev",
+            ResourceNamePostFix: null,
+            Location: null,
+            WebAppVersion: "test",
+            StorageProviderChoice.SqlServer,
+            SqlProvisioningMode.External,
+            SqlConnectionString: connectionString);
+
+        await deployer.ApplyAsync(options, CancellationToken.None);
+
+        Assert.Equal(2, azureCli.Deployments.Count);
+        Assert.All(
+            azureCli.Deployments,
+            deployment =>
+            {
+                Assert.DoesNotContain(deployment.Arguments, argument => argument.Contains("external-sql-marker", StringComparison.Ordinal));
+                Assert.Equal(connectionString, deployment.SecureParameters["sqlConnectionString"]);
+            });
+        Assert.Contains("sqlMode=external", azureCli.Deployments[0].Arguments);
+        Assert.False(azureCli.Deployments[0].SecureParameters.ContainsKey("sqlAdminPassword"));
+    }
+
+    /// <summary>
+    /// The core template builds a provisioned server's connection string itself, and a Cosmos
+    /// deployment has none, so neither passes one to the core deployment.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ApplyAsync_PassesNoSqlConnectionStringToTheCoreDeploymentOutsideExternalMode(bool provisionedSql)
+    {
+        var azureCli = new RecordingAzureCliRunner();
+        var deployer = new InfrastructureDeployer(new CommandContext(Path.GetTempPath()), azureCli);
+        var options = new InfrastructureOptions(
+            "nimbus",
+            "dev",
+            "rg-nimbus-dev",
+            ResourceNamePostFix: null,
+            Location: null,
+            WebAppVersion: "test",
+            provisionedSql ? StorageProviderChoice.SqlServer : StorageProviderChoice.Cosmos,
+            SqlProvisioningMode.Provision,
+            SqlConnectionString: null,
+            SqlAdminLogin: "nimbusadmin",
+            SqlAdminPassword: "sql-password-marker");
+
+        await deployer.ApplyAsync(options, CancellationToken.None);
+
+        Assert.False(azureCli.Deployments[0].SecureParameters.ContainsKey("sqlConnectionString"));
+        Assert.DoesNotContain(azureCli.Deployments[0].Arguments, argument => argument.StartsWith("sqlConnectionString=", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task ApplyAsync_LeavesApplicationInsightsApiKeysAlone()
     {
