@@ -30,10 +30,9 @@ The repo owner decided three rules on 2026-11-15:
 2. **No backfill.** On Cosmos, a new period applies to data written from then on.
 3. **No per-endpoint retention.** One set of periods covers the whole deployment.
 
-On SQL Server, a cleanup job deletes data older than its period. It builds on AF-199 (GH#291),
-which is in flight and adds a SQL retention job with fixed periods (§2). This spec makes those
-periods configurable. One question is open (§13): whether SQL starts deleting with Cosmos's
-periods on upgrade, as AF-199 does today, or only once a period is set.
+On SQL Server, a new cleanup job in the WebApp deletes data older than its period (§5.4). It
+reuses parts of AF-199 (GH#291), a cancelled attempt at a fixed-period job (§2). In 4.x SQL deletes nothing until a period is set; the repo owner decided
+that on 2026-11-15 (§12 item 6).
 
 ## 2. Current state
 
@@ -45,7 +44,7 @@ periods on upgrade, as AF-199 does today, or only once a period is set.
 | Cosmos, audit trail | Constant 365 days, item `ttl` (`CosmosDbMessageTrackingStore.Audits.cs:20`) |
 | SQL Server (master) | Nothing expires. `RemoveMessage`, `ArchiveFailedEvent` and both `PurgeMessages` only set `Deleted = 1` (`SqlServerMessageTrackingStore.Writes.cs:276-310`). No code on master deletes `UnresolvedEvents`, `Messages` or `MessageAudits` rows by age, so the database grows without bound. Completed and Skipped rows have `Deleted = 0` |
 | SQL indexes | `0014_SearchSortIndexes.sql` already has `IX_UnresolvedEvents_UpdatedAtUtc`, `IX_MessageAudits_CreatedAtUtc` and `IX_Messages_EnqueuedTimeUtc`. `Messages` has no index on `CreatedAtUtc` |
-| In flight: AF-199 (GH#291) | Branch `feature/AF-199-gh-291-add-retention-to-the-sql-server-m`, last commit 2026-11-12, at the board's delivering stage, no PR yet:<br>- adds a WebApp-only `SqlServerRetentionService` (hourly, `RetentionInterval`) with `SqlServerRetentionRunner`, which deletes in `DELETE TOP (5000)` batches;<br>- R1 deletes `Messages` older than 90 days by `CreatedAtUtc`; R2 deletes `MessageAudits` older than 365 days; R3 deletes `UnresolvedEvents` with `Deleted = 1` older than 30 days; R4 deletes `Deleted = 0` rows, **any status**, older than `NimBus:SqlServer:UnresolvedRetentionDays` (never by default);<br>- `RetentionEnabled` defaults to `true`, so R1-R3 delete on upgrade;<br>- its index script is numbered `0026`, which master has since taken (`0026_OperatorOperations.sql`, up to `0028`), so it needs renumbering |
+| AF-199 (GH#291), cancelled 2026-11-15 | An unmerged attempt at a SQL retention job with fixed periods. The repo owner cancelled it in favour of this spec. Branch `feature/AF-199-gh-291-add-retention-to-the-sql-server-m` (last commit 2026-11-12) is kept as a starting point. It has:<br>- a WebApp-only `SqlServerRetentionService` (hourly, `RetentionInterval`) with `SqlServerRetentionRunner`, which deletes in `DELETE TOP (5000)` batches;<br>- fixed rules: `Messages` after 90 days, `MessageAudits` after 365, `Deleted = 1` tracking rows after 30, and `Deleted = 0` rows of **any status** after `NimBus:SqlServer:UnresolvedRetentionDays` (never by default);<br>- `RetentionEnabled` defaulting to `true`, so it deleted on upgrade;<br>- an index script numbered `0026`, a number master has since used |
 | Host setting on deployed apps | No template sets `NimBus__Cosmos__UnresolvedRetentionDays`. The Function App templates replace the app settings on every `nb infra apply` (`functionApp.bicep:84`, `flexConsumptionFunctionApp.bicep:81`), and the WebApp keeps only `AzureAd__*` and `ServiceBusManagement__*` (`InfrastructureDeployer.cs:643-645`). So a value set by hand is lost on the next run |
 | CLI | `nb container` commands rewrite Cosmos rows and take `--unresolved-retention-days`, which must match the hosts' value by hand (`CliApplicationFactory.cs:37-41`) |
 | Pattern to follow | Settings → Audit stores a singleton through `IEndpointMetadataStore.GetAuditSettings`/`SetAuditSettings`, in the Cosmos `settings` container and the SQL `AuditSettings` table (`0022_AuditSettings.sql`), behind `GET/PUT /api/v1/admin/audit/settings` (`api-spec.yaml:1719-1746`) |
@@ -57,7 +56,7 @@ periods on upgrade, as AF-199 does today, or only once a period is set.
 2. Both providers honour them. On SQL Server that means data is actually deleted.
 3. A period pinned in host configuration can't be changed from the page, and the page says why.
 4. The Resolver, the WebApp and the `nb` CLI use the same periods.
-5. Upgrading changes no Cosmos deployment's retention. For SQL, see §13.
+5. Upgrading changes no deployment's retention in 4.x, on either provider.
 
 ## 4. Non-goals
 
@@ -80,15 +79,15 @@ A provider-neutral `RetentionSettings` singleton in `NimBus.MessageStore.Abstrac
 | Field | Unit | Allowed | Cosmos default | SQL default |
 |---|---|---|---|---|
 | `OpenEventsDays` | days | `-1` (unlimited) or 1–3650 | unlimited | unlimited |
-| `ResolvedEventsDays` | days | `-1` or 1–3650 | 30 | unlimited, or 30 (§13) |
-| `MessageHistoryDays` | days | `-1` or 1–3650 | 90 | unlimited, or 90 (§13) |
-| `AuditTrailDays` | days | `-1` or 30–3650 | 365 | unlimited, or 365 (§13) |
+| `ResolvedEventsDays` | days | `-1` or 1–3650 | 30 | unlimited |
+| `MessageHistoryDays` | days | `-1` or 1–3650 | 90 | unlimited |
+| `AuditTrailDays` | days | `-1` or 30–3650 | 365 | unlimited |
 
 - **Cosmos defaults** are what Cosmos does today, so a Cosmos deployment that never sets a period
   behaves as before.
-- **SQL defaults** depend on the open question in §13. Unlimited keeps today's master behaviour
-  until the major, when Spec 048 §5.8 moves them to Cosmos's. The Cosmos values match AF-199's
-  fixed periods.
+- **SQL defaults are unlimited in 4.x** (decided, §12 item 6). That keeps today's master behaviour:
+  an upgraded SQL deployment deletes nothing until an Owner saves a period or a pin is set. The
+  next major moves SQL's defaults to Cosmos's (Spec 048 §5.8).
 - **A saved document holds only the periods an Owner has set.** A field that is absent uses the
   default. "Reset to default" removes the field.
 - **One rule across periods.** A bounded audit trail must be at least as long as every other
@@ -161,46 +160,48 @@ rewritten row gets the same `ttl` the hosts would give it. `--unresolved-retenti
 works for one release as a per-run pin, with a deprecation warning, and is removed in the next
 major.
 
-### 5.4 SQL cleanup, built on AF-199
+### 5.4 SQL cleanup
 
-AF-199 (§2) already provides the job: `SqlServerRetentionService` in the WebApp only,
-`SqlServerRetentionRunner`, `DELETE TOP (5000)` batches repeated until a batch comes back short,
-a `RetentionInterval` (default one hour), a `RetentionEnabled` switch, startup validation and
-indexes. This spec keeps all of that and changes three things.
+This spec builds the SQL job itself. AF-199 was cancelled (§2). Its branch is a starting point
+for the parts that don't change: the hosted service, the batching loop, the startup wait for the
+schema, the registration and the live tests.
 
-1. **The periods come from `RetentionPolicy`** (§5.3) instead of AF-199's constants
-   (`MessageRetentionDays`, `AuditRetentionDays`, `ArchivedTrackingRetentionDays`) and its
-   `UnresolvedRetentionDays` option. The runner reads `RetentionPolicy.Current` at the start of
-   each run, so a saved change applies at the next run. AF-199's
-   `NimBus:SqlServer:UnresolvedRetentionDays` becomes a legacy pin on open events, the same way as
-   the Cosmos key (§5.2).
-2. **Completed and Skipped rows move to the resolved period**, as on Cosmos. AF-199's R4 deletes
-   `Deleted = 0` rows of any status by the unresolved period, which by default is never. So
-   completed rows would be kept forever while Cosmos expires them after 30 days. The rules become:
+- **The job.** `SqlServerRetentionService`, a `BackgroundService` registered only on the WebApp's
+  SQL Server path through `AddSqlServerMessageStoreRetention()`:
+  - The Resolver and other hosts never delete. Registering twice still gives one job.
+  - It waits for the schema initializer, then runs every `RetentionInterval` (default one hour,
+    bound from `NimBus:SqlServer:RetentionInterval`).
+  - A failed run is logged at Error, and the next run still happens.
+- **The periods come from `RetentionPolicy`** (§5.3). The job reads `RetentionPolicy.Current` at the
+  start of each run, so a saved change applies at the next run. With every period unlimited, the
+  SQL default in 4.x, a run deletes nothing.
+- **The rules**, each as `DELETE TOP (5000)` repeated until a batch comes back short, so no
+  statement deletes more than 5,000 rows:
 
-   | Period | Rows deleted |
-   |---|---|
-   | Open events (R4) | `UnresolvedEvents` with `Deleted = 0`, a status in Pending, Failed, Deferred, DeadLettered or Unsupported, and `UpdatedAtUtc` older than the period |
-   | Resolved events (R3) | `UnresolvedEvents` with `Deleted = 1`, or a status of Completed or Skipped, and `UpdatedAtUtc` older than the period |
-   | Message history (R1) | `Messages` with `CreatedAtUtc` older than the period |
-   | Audit trail (R2) | `MessageAudits` with `CreatedAtUtc` older than the period |
+  | Period | Rows deleted |
+  |---|---|
+  | Open events | `UnresolvedEvents` with `Deleted = 0`, a status in Pending, Failed, Deferred, DeadLettered or Unsupported, and `UpdatedAtUtc` older than the period |
+  | Resolved events | `UnresolvedEvents` with `Deleted = 1`, or a status of Completed or Skipped, and `UpdatedAtUtc` older than the period |
+  | Message history | `Messages` with `CreatedAtUtc` older than the period |
+  | Audit trail | `MessageAudits` with `CreatedAtUtc` older than the period |
 
-   Unlimited periods are skipped. `UpdatedAtUtc` is the row's last write, which matches Cosmos
-   counting `ttl` from the last write. R3's wider predicate may need its index widened; AF-199's
-   filtered index covers only `Deleted = 1` (§14 item 3).
-3. **A provider-neutral seam.** The runner's statements move behind
-   `IMessageTrackingStore.PurgeExpiredData(RetentionPeriods, DateTime nowUtc, int batchSize)`, so
-   the conformance suite can pin each rule on SQL Server and the in-memory store:
-   - Cosmos returns zeros, because TTL does the work;
-   - the decorator forwards it;
-   - AF-199's service calls it in place of running SQL directly.
-
-The metric `nimbus.retention.deleted`, tagged by period, is added next to AF-199's per-run log
-entry.
-
-**Sequencing.** AF-199 merges first, after renumbering its DbUp script past `0028`. This spec's
-SQL step then changes the runner as above. If AF-199 is closed instead, this spec's SQL step
-builds the same job itself.
+  Unlimited periods are skipped. `UpdatedAtUtc` is the row's last write, which matches Cosmos
+  counting `ttl` from the last write. Completed and Skipped rows fall under the resolved period, as
+  on Cosmos. AF-199 had put them under the open-events period, which keeps them forever by default.
+- **A provider-neutral seam.** The statements sit behind
+  `IMessageTrackingStore.PurgeExpiredData(RetentionPeriods, DateTime nowUtc, int batchSize)`, so the
+  conformance suite can pin each rule on SQL Server and the in-memory store:
+  - Cosmos returns zeros, because TTL does the work;
+  - the decorator forwards it;
+  - the job calls it.
+- **Indexes.** A DbUp script, next free number after `0028`, adds `IX_Messages_CreatedAtUtc`, and
+  whatever the resolved rule needs to seek (§14 item 3). `IX_UnresolvedEvents_UpdatedAtUtc` and
+  `IX_MessageAudits_CreatedAtUtc` already exist (`0014`).
+- **Observability.** Each run writes one Information log entry with the rows deleted per period,
+  and records them in a metric, `nimbus.retention.deleted`, tagged by period.
+- **No SQL-specific retention settings.** There is no `RetentionEnabled` switch and no
+  `NimBus:SqlServer:UnresolvedRetentionDays`. The periods (§5.1) and their pins (§5.2) are the only
+  controls, and an unlimited period is the off switch.
 
 **Consequences of deleting a row** are the same as Cosmos expiry:
   - An expired open-event row takes its resubmit ability with it, as `docs/storage-providers.md`
@@ -246,8 +247,7 @@ A new Settings feature, `retention`, Site Owner only, like Settings → Audit:
 |---|---|
 | Cosmos, nothing configured | Unchanged: open events unlimited, resolved 30 days, history 90 days, audits 1 year |
 | Cosmos with `NimBus__Cosmos__UnresolvedRetentionDays` on its apps | Unchanged. It is a pin on open events. The next `nb infra apply` carries it into `NimBus__Retention__OpenEventsDays` |
-| SQL Server, before AF-199 | Depends on §13. With option A, nothing expires until an Owner saves a period or a pin is set, and the page shows the "Nothing expires" banner. With option B, the Cosmos periods apply from the first cleanup |
-| SQL Server with AF-199 already deployed | Its periods carry over: AF-199's fixed values equal this spec's Cosmos defaults, and `NimBus:SqlServer:UnresolvedRetentionDays` becomes a pin on open events. One change: Completed and Skipped rows move from the open-events period, which is never by default, to the resolved period of 30 days (§5.4). So old completed rows are deleted at the first run after upgrading, which the release notes say |
+| SQL Server, nothing configured | Unchanged: nothing expires until an Owner saves a period or a pin is set. The page shows the "Nothing expires" banner |
 
 ## 7. Evaluation
 
@@ -314,9 +314,13 @@ SQL against seeded rows. The new indexes exist after DbUp.
   - `409` for a pinned period;
   - Owner only;
   - the audit entry with old and new values.
-- AF-199's `SqlServerRetentionService` with the policy: it reads `RetentionPolicy` per run; does
-  nothing on Cosmos or when every period is unlimited; Completed and Skipped rows fall under the
-  resolved period; and the metric is recorded.
+- `SqlServerRetentionService`:
+  - it is registered only on the WebApp's SQL path, and once;
+  - it reads `RetentionPolicy` per run;
+  - it does nothing on Cosmos, or when every period is unlimited;
+  - Completed and Skipped rows fall under the resolved period;
+  - a failed run is logged and the next one runs;
+  - the log entry and the metric carry the counts.
 - The page: pinned rows locked; each provider's note; the confirmation on shortening, with the
   open-events warning; the mismatch warning.
 
@@ -330,7 +334,7 @@ on `--unresolved-retention-days`.
 |---|---|---|
 | 0 | The §14 checks | Results in this folder |
 | 1 | Settings and policy in all providers; Cosmos stamping; the page and API | Release build green; conformance without skips; screenshot |
-| 2 | SQL cleanup: AF-199's job reads `RetentionPolicy`; the resolved-period rule; the `PurgeExpiredData` seam; the metric (§5.4). Starts after AF-199 merges | A seeded SQL deployment is cleaned within the limits on S0 |
+| 2 | SQL cleanup: the job, its rules from `RetentionPolicy`, the `PurgeExpiredData` seam, the index script, the metric (§5.4). Reuses AF-199's branch where it fits | A seeded SQL deployment is cleaned within the limits on S0 |
 | 3 | Pins: template parameters, CLI flags, carry-forward; the mismatch warning; `nb container` | A pin survives two `infra apply` runs; a hand-set mismatch shows on the page |
 
 One PR with a commit per phase, released as a 4.x minor.
@@ -362,23 +366,19 @@ One PR with a commit per phase, released as a 4.x minor.
 2. No backfill (repo owner).
 3. No per-endpoint retention (repo owner).
 4. Four periods, with today's Cosmos behaviour as Cosmos's default (§5.1).
-5. SQL deletes by age in a WebApp background service, AF-199's job (§5.4).
+5. SQL deletes by age in a WebApp background service that this spec builds (§5.4). AF-199, a
+   fixed-period version, was cancelled by the repo owner on 2026-11-15.
+6. **SQL retention is off by default in 4.x** (repo owner, 2026-11-15).
+   - SQL's periods default to unlimited, so the job deletes only what an Owner or a pin has
+     bounded.
+   - SQL takes the Cosmos defaults in the next major (Spec 048 §5.8), as `docs/versioning.md`
+     requires for a change that deletes data on upgrade.
+   - The alternative was AF-199's default-on behaviour in a minor. It was rejected because existing
+     SQL deployments would lose data that nobody chose to delete.
 
-## 13. Open questions for the repo owner
+## 13. Open questions
 
-1. **SQL on upgrade.** AF-199 enables its job by default (`RetentionEnabled = true`), so an
-   upgraded SQL deployment starts deleting messages older than 90 days, audits older than a year
-   and archived rows older than 30 days. Master deletes nothing today. Which way?
-   - **A (proposed): off until set, in 4.x.** AF-199 ships with `RetentionEnabled` defaulting to
-     `false`. Once this spec lands, SQL's periods default to unlimited, and the job deletes only
-     what an Owner or a pin has bounded. SQL takes the Cosmos defaults in the next major (Spec 048
-     §5.8). This follows
-     `docs/versioning.md`, which keeps deleting data on upgrade for a major.
-   - **B: as AF-199 does.** The Cosmos periods apply from the first cleanup after upgrading, in a
-     4.x minor, listed under Compatibility. It closes the storage-growth gap sooner, but existing SQL
-     deployments lose data older than those periods without anyone deciding to.
-
-   The answer changes AF-199 before it merges, so it is needed first.
+None.
 
 ## 14. Facts to verify (Phase 0)
 
@@ -387,9 +387,9 @@ One PR with a commit per phase, released as a 4.x minor.
    a positive default.
 2. **Cleanup cost on S0.** Seed a million rows per table; measure the batch duration, DTU
    percentage and lock waits while Simulation traffic runs. Tune the batch size and the pause.
-3. **Indexes.** Whether AF-199's filtered `IX_UnresolvedEvents_Archived_UpdatedAtUtc` (`Deleted =
-   1`) together with `IX_UnresolvedEvents_UpdatedAtUtc` (`0014`) keeps the widened resolved-period
-   rule a seek. Whether `ONLINE = ON` is available on S0 to S4, and how long an index build takes on
+3. **Indexes.** Which index keeps the resolved-period rule (`Deleted = 1` or Completed or
+   Skipped) a seek: `IX_UnresolvedEvents_UpdatedAtUtc` (`0014`) alone, or a filtered index such as
+   the one on AF-199's branch. Whether `ONLINE = ON` is available on S0 to S4, and how long an index build takes on
    a table of several million rows.
 4. **The beat.** `ServiceHealth` can carry the Resolver's effective periods on both providers; the
    SQL table needs a column.
@@ -399,10 +399,18 @@ One PR with a commit per phase, released as a 4.x minor.
 - [Storage providers: retention](../../storage-providers.md#retention-of-unresolved-rows).
 - [Cosmos DB time to live](https://learn.microsoft.com/azure/cosmos-db/nosql/time-to-live).
 - Spec 048 (SQL Server as the default), GH#94 (archive-style retention), GH#291 and AF-199 (SQL
-  retention job, in flight).
+  retention job, cancelled; its branch is a starting point).
 
 ## 16. Review trail
 
 - 2026-11-15: drafted, then renumbered from 049 to 050, because PR #393 had already taken 049.
   Revised to build on AF-199's SQL retention job, found on the AgentFactory board while filing
   GH#391, instead of designing a second job. The SQL-on-upgrade question became §13.
+- 2026-11-15: the repo owner chose option A. SQL retention is off by default in 4.x, with AF-199's
+  `RetentionEnabled` defaulting to `false`, and SQL takes the Cosmos defaults in the next major
+  (§5.1, §6, §12 item 6). §13 is closed. `RetentionEnabled = true` carries AF-199's periods over as
+  legacy pins.
+- 2026-11-15: the repo owner cancelled AF-199. This spec now builds the SQL job itself, reusing
+  AF-199's branch where it fits. No SQL-specific retention settings ship, so the legacy pins for
+  `RetentionEnabled` and `NimBus:SqlServer:UnresolvedRetentionDays` are gone (§2, §5.4, §6, §8, §9,
+  §12).
