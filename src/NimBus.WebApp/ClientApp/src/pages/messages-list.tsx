@@ -5,11 +5,12 @@ import { formatMessageType } from "functions/message-type.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import Page from "components/page";
 import TruncatedGuid from "components/common/truncated-guid";
-import MessageFilterBar, {
+import MessageFilterPills, {
   EMPTY_MESSAGE_FILTER,
+  MessageSearchBox,
   type MessageFilterValues,
   toMessageSearchFilter,
-} from "components/messages/message-filter-bar";
+} from "components/messages/message-filter-pills";
 import { useUrlFilters } from "hooks/use-url-filters";
 
 enum Column {
@@ -240,17 +241,27 @@ export default function MessagesList() {
   const rows = messages.map((m) => mapMessageToRow(m, filterByField));
 
   return (
-    <Page title="Messages">
-      <div className="flex flex-col w-full">
-        <MessageFilterBar
+    <Page
+      title="Messages"
+      subtitle="Every message on the bus, across the endpoints you can read"
+    >
+      <div className="flex flex-col w-full gap-3">
+        <MessageFilterPills
           value={applied}
-          onSearch={(next) => {
-            applyFilters(next);
-            // Force a refresh even when the filter is unchanged.
-            setSearchNonce((n) => n + 1);
-          }}
+          onApply={(patch) => applyFilters({ ...applied, ...patch })}
           onReset={resetFilters}
-          isLoading={loading}
+        />
+        <MessageSearchBox
+          value={applied}
+          onApply={(patch) => {
+            // Enter with unchanged IDs refreshes; changed IDs refetch through the URL.
+            const unchanged =
+              patch.eventId === applied.eventId &&
+              patch.messageId === applied.messageId &&
+              patch.sessionId === applied.sessionId;
+            if (unchanged) setSearchNonce((n) => n + 1);
+            else applyFilters({ ...applied, ...patch });
+          }}
         />
         <div className="flex justify-end items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
           <label htmlFor="messages-page-size">Rows per page:</label>
