@@ -24,6 +24,12 @@ public static class OperatorProjection
     public static (string? Text, bool Truncated) Truncate(string? text, int maxLength = MaxErrorTextLength)
         => text is not null && text.Length > maxLength ? (text[..maxLength], true) : (text, false);
 
+    /// <summary>The message's page in the NimBus Web UI, on the host the caller used; null outside a request.</summary>
+    public static string? WebUiUrl(HttpRequest? request, string endpointId, string eventId)
+        => request is null
+            ? null
+            : $"{request.Scheme}://{request.Host}{request.PathBase}/Message/Index/{Uri.EscapeDataString(endpointId)}/{Uri.EscapeDataString(eventId)}";
+
     /// <summary>A message's error as type and truncated text, never a stack trace; null when it has none.</summary>
     public static MessageError? Error(Message? message)
     {

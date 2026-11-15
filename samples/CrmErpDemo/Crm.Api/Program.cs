@@ -134,6 +134,9 @@ for (var attempt = 1; attempt <= 10 && !initSucceeded; attempt++)
                 CREATE INDEX IX_Audits_Entity ON dbo.Audits (EntityType, EntityId, Timestamp DESC);
             END");
 
+        // The paged lists sort by CreatedAt. Give a database from before paging the index.
+        await db.Database.ExecuteSqlRawAsync(CrmDbContext.ListIndexUpgradeSql);
+
         initSucceeded = true;
     }
     catch (Exception ex)
@@ -153,6 +156,7 @@ api.MapContactEndpoints();
 api.MapAuditEndpoints();
 api.MapErpIntegrationEndpoints();
 api.MapAdminEndpoints();
+api.MapRegionalHubEndpoints();
 
 api.MapFallbackToFile("index.html");
 

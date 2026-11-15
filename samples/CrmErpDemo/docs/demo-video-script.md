@@ -245,4 +245,4 @@ The circuit-breaker showcase (README → "Showcase: Circuit breaker") is filmabl
 act: crm-web's outage toggle flips ON, the panel goes Open ("Receiver paused") within ~20
 seconds, nimbus-ops shows no DLQ flood, and after the toggle flips OFF the panel walks
 Half-open → Closed inside a minute. Regression equivalent: `../e2e/tests/11-circuit-breaker-recovery.spec.ts`.
-Between takes, reset: CRM API outage OFF (crm-web header panel).
+Between takes, reset: CRM API outage OFF (crm-web Demo controls pane).

@@ -21,8 +21,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const appHost = process.env.E2E_APPHOST;
   if (!appHost) throw new Error('E2E_APPHOST must identify the demo AppHost.');
   mkdirSync('artifacts/logs', { recursive: true });
-  for (const resource of ['servicebus', 'provisioner', 'crm-api', 'erp-api', 'crm-adapter',
-    'erp-adapter', 'resolver', 'nimbus-ops', 'dataplatform-adapter', 'agent-zone', 'enrichment-agent']) {
+  // 'servicebus-emulator' is the emulator process. 'servicebus' is only its connection string
+  // and logs nothing useful: collecting it instead hid a broker-side failure for ten nights.
+  for (const resource of ['servicebus-emulator', 'provisioner', 'crm-api', 'erp-api', 'crm-adapter',
+    'erp-adapter', 'resolver', 'nimbus-ops', 'dataplatform-adapter', 'agent-zone', 'enrichment-agent',
+    'hub-nordic', 'hub-dach', 'hub-unrouted']) {
     let output;
     try {
       output = execFileSync(process.platform === 'win32' ? 'aspire.exe' : 'aspire',

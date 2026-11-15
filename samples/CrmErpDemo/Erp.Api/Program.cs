@@ -163,6 +163,9 @@ for (var attempt = 1; attempt <= 10 && !initSucceeded; attempt++)
                 CREATE INDEX IX_Audits_Entity ON dbo.Audits (EntityType, EntityId, Timestamp DESC);
             END");
 
+        // The paged lists sort by CreatedAt. Give a database from before paging the index.
+        await db.Database.ExecuteSqlRawAsync(ErpDbContext.ListIndexUpgradeSql);
+
         var outbox = (SqlServerOutbox)scope.ServiceProvider.GetRequiredService<NimBus.Core.Outbox.IOutbox>();
         await outbox.EnsureTableExistsAsync();
         initSucceeded = true;

@@ -7,6 +7,8 @@ namespace CrmErpDemo.Contracts.Events;
 
 [Description("Published by CRM when an Account is created.")]
 [SessionKey(nameof(AccountId))]
+// Routing-keys showcase (Spec 045): the country routes the account to its regional hub.
+[RoutingKey(nameof(CountryCode))]
 public class CrmAccountCreated : Event
 {
     public static readonly CrmAccountCreated Example = new()

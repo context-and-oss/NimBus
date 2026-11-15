@@ -1,4 +1,5 @@
 import { apiFetch } from './auth';
+import type { Page } from './usePagedList';
 
 export interface Customer {
   id: string;
@@ -37,6 +38,8 @@ export interface Contact {
   updatedAt?: string | null;
   origin?: string;
   isDeleted?: boolean;
+  /** The customer's name. Only on rows from the list. */
+  customerLegalName?: string | null;
 }
 
 export interface ModeState {
@@ -113,8 +116,41 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Paging and filters every list takes. The server defaults to page 1 here and 100 rows. */
+export interface ListQuery {
+  page?: number;
+  pageSize?: number;
+  /** Keyword, matched by the server. */
+  q?: string;
+  /** false leaves deleted rows out; true returns only those. */
+  deleted?: boolean;
+}
+
+/** One page of a list. The server returns the rows and puts the match count in X-Total-Count. */
+async function listPage<T>(path: string, query: object): Promise<Page<T>> {
+  const params = new URLSearchParams({ page: '1' });
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+  }
+  const res = await apiFetch(`${path}?${params}`);
+  const items = await json<T[]>(res);
+  const total = res.headers.get('X-Total-Count');
+  return { items, total: total === null ? items.length : Number(total) };
+}
+
+/** The customer counts on the Home page. Deleted customers are left out. */
+export interface CustomerSummary {
+  active: number;
+  fromCrmSince: number;
+  onCreditHold: number;
+}
+
 export const api = {
-  listCustomers: () => apiFetch('/api/customers').then(json<Customer[]>),
+  listCustomers: (query: ListQuery & { origin?: string; creditHold?: boolean } = {}) =>
+    listPage<Customer>('/api/customers', query),
+  /** `since` is the start of the day the "from CRM today" count is for, as an ISO instant. */
+  getCustomerSummary: (since: string) =>
+    apiFetch(`/api/customers/summary?since=${encodeURIComponent(since)}`).then(json<CustomerSummary>),
   getCustomer: (id: string) => apiFetch(`/api/customers/${id}`).then(json<Customer>),
   createCustomer: (c: Partial<Customer>) =>
     apiFetch('/api/customers', {
@@ -176,7 +212,8 @@ export const api = {
   deleteAllData: () =>
     apiFetch('/api/admin/data', { method: 'DELETE' }).then(json<DataResetResult>),
 
-  listContacts: () => apiFetch('/api/contacts').then(json<Contact[]>),
+  listContacts: (query: ListQuery & { customerId?: string } = {}) =>
+    listPage<Contact>('/api/contacts', query),
   getContact: (id: string) => apiFetch(`/api/contacts/${id}`).then(json<Contact>),
   createContact: (c: Partial<Contact>) =>
     apiFetch('/api/contacts', {

@@ -143,6 +143,7 @@ public static class Mapper
                 .Select(x => EventPropertyFromEventTypeProperty(x))
                 .ToList(),
             ExamplePayload = includeExamplePayload ? ExamplePayloadFromIEventType(eventType) : null,
+            SessionKeyProperty = eventType.SessionKeyProperty,
             RoutingKeyProperty = eventType.RoutingKeyProperty,
         };
     }
@@ -204,6 +205,7 @@ public static class Mapper
             ConsumerCount = consumerCount,
             Producers = (producers ?? Enumerable.Empty<string>()).ToList(),
             Consumers = (consumers ?? Enumerable.Empty<string>()).ToList(),
+            SessionKeyProperty = eventType.SessionKeyProperty,
             RoutingKeyProperty = eventType.RoutingKeyProperty,
         };
     }

@@ -29,6 +29,7 @@ public class EventType : IEventType
 
     public string? Description => _type.GetCustomAttribute<DescriptionAttribute>()?.Description;
 
+    /// <inheritdoc />
     public string? SessionKeyProperty => _type.GetCustomAttribute<SessionKeyAttribute>()?.PropertyName;
 
     /// <inheritdoc />

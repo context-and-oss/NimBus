@@ -6396,6 +6396,7 @@ namespace NimBus.WebApp.ManagementApi
         private int _consumerCount;
         private System.Collections.Generic.List<string> _producers;
         private System.Collections.Generic.List<string> _consumers;
+        private string _sessionKeyProperty;
         private string _routingKeyProperty;
         private System.Collections.Generic.List<ConsumerRouting> _consumerRouting;
 
@@ -6528,6 +6529,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_consumers != value)
                 {
                     _consumers = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The payload property named by the class's [SessionKey] attribute, whose value is the default session key. Null when the class has no attribute (it overrides GetSessionId, or each event gets its own session).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("sessionKeyProperty", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SessionKeyProperty    {
+            get { return _sessionKeyProperty; }
+            set
+            {
+                if (_sessionKeyProperty != value)
+                {
+                    _sessionKeyProperty = value;
                     RaisePropertyChanged();
                 }
             }
@@ -6672,6 +6689,115 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<ConsumerRouting>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// The routing-key filter of one forward rule on a subscription (Spec 045), read back from the rule's live SQL filter.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SubscriptionRuleRouting : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _ruleName;
+        private System.Collections.Generic.List<string> _routingKeys = new System.Collections.Generic.List<string>();
+        private bool _unmatched;
+        private string _filter;
+
+        /// <summary>
+        /// The rule's name, which is the event type it forwards.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("ruleName", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string RuleName    {
+            get { return _ruleName; }
+            set
+            {
+                if (_ruleName != value)
+                {
+                    _ruleName = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// For a keyed rule, the keys it takes. For the unmatched rule, the keys it excludes because other consumers claim them.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("routingKeys", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required]
+        public System.Collections.Generic.List<string> RoutingKeys    {
+            get { return _routingKeys; }
+            set
+            {
+                if (_routingKeys != value)
+                {
+                    _routingKeys = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True for the unmatched consumer's rule: messages with no key, or a key no consumer claims.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("unmatched", Required = Newtonsoft.Json.Required.Always)]
+        public bool Unmatched    {
+            get { return _unmatched; }
+            set
+            {
+                if (_unmatched != value)
+                {
+                    _unmatched = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The rule's SQL filter as Service Bus holds it.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("filter", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string Filter    {
+            get { return _filter; }
+            set
+            {
+                if (_filter != value)
+                {
+                    _filter = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SubscriptionRuleRouting FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SubscriptionRuleRouting>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
@@ -12489,6 +12615,7 @@ namespace NimBus.WebApp.ManagementApi
         private System.Collections.Generic.List<string> _ruleNames;
         private System.Collections.Generic.List<string> _missingRuleNames;
         private System.Collections.Generic.List<string> _detachableRuleNames;
+        private System.Collections.Generic.List<SubscriptionRuleRouting> _ruleRouting;
         private bool _canRecreate;
         private long _activeMessageCount;
         private long _deadLetterMessageCount;
@@ -12624,6 +12751,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_detachableRuleNames != value)
                 {
                     _detachableRuleNames = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The routing-key filter (Spec 045) of each forward rule that has one, read back from the live rule. Rules that take every key are absent.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("ruleRouting", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<SubscriptionRuleRouting> RuleRouting    {
+            get { return _ruleRouting; }
+            set
+            {
+                if (_ruleRouting != value)
+                {
+                    _ruleRouting = value;
                     RaisePropertyChanged();
                 }
             }

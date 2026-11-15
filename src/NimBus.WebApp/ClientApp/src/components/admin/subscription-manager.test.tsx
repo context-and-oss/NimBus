@@ -190,6 +190,39 @@ describe("SubscriptionManager", () => {
     expect(screen.getByText("$Default")).toBeTruthy();
   });
 
+  it("shows each forward rule's routing keys next to the rule (Spec 045)", async () => {
+    const keyedFilter =
+      "user.EventTypeId = 'AccountCreated' AND user.RoutingKey IN ('AT', 'CH', 'DE')";
+    mocks.getAdminServicebusSubscriptions.mockResolvedValue([
+      subscription("DachHub", {
+        ruleNames: ["AccountCreated", "AccountUpdated"],
+        detachableRuleNames: ["AccountCreated", "AccountUpdated"],
+        ruleRouting: [
+          { ruleName: "AccountCreated", routingKeys: ["AT", "CH", "DE"], unmatched: false, filter: keyedFilter },
+        ],
+      }),
+      subscription("UnroutedHub", {
+        ruleNames: ["AccountCreated"],
+        detachableRuleNames: ["AccountCreated"],
+        ruleRouting: [
+          { ruleName: "AccountCreated", routingKeys: ["DE", "DK"], unmatched: true, filter: "…" },
+        ],
+      }),
+    ]);
+
+    render(<SubscriptionManager />);
+    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+
+    const keyed = await screen.findByText("keys AT, CH, DE");
+    // The live filter is one hover away, for whoever wants the exact SQL.
+    expect(keyed.getAttribute("title")).toBe(keyedFilter);
+    expect(screen.getByText("unmatched · not DE, DK")).toBeTruthy();
+    // The detach button keeps its name; the keys sit beside it, not inside it.
+    expect(screen.getAllByRole("button", { name: "AccountCreated ✕" })).toHaveLength(2);
+    // AccountUpdated takes every key, so it has no label.
+    expect(screen.getAllByText(/^keys |^unmatched/)).toHaveLength(2);
+  });
+
   it("requires an extra acknowledgement to delete something it cannot rebuild", async () => {
     mocks.getAdminServicebusSubscriptions.mockResolvedValue([
       subscription("hand-made", { canRecreate: false }),

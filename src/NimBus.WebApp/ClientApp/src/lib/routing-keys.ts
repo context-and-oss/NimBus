@@ -1,4 +1,4 @@
-import type { ConsumerRouting } from "api-client";
+import type { ConsumerRouting, SubscriptionRuleRouting } from "api-client";
 
 /**
  * Spec 045: a short label for how a consumer takes an event type — its routing keys, or
@@ -24,4 +24,15 @@ export function routingLabels(
     if (routing.endpoint && label) labels[routing.endpoint] = label;
   }
   return labels;
+}
+
+/**
+ * Spec 045: a short label for the routing-key filter of a live forward rule — the keys a
+ * keyed rule takes, or the keys the unmatched rule excludes. Rules that take every key
+ * carry no routing entry and show no label.
+ */
+export function ruleRoutingLabel(routing: SubscriptionRuleRouting): string {
+  const keys = (routing.routingKeys ?? []).join(", ");
+  if (routing.unmatched) return keys ? `unmatched · not ${keys}` : "unmatched";
+  return `${routing.routingKeys?.length === 1 ? "key" : "keys"} ${keys}`;
 }

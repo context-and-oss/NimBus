@@ -162,21 +162,21 @@ class Simulator {
   }
 
   private async updateAccount(): Promise<string> {
-    const target = randomPick((await api.listAccounts()).filter(a => !a.isDeleted));
+    const target = randomPick((await api.listAccounts({ deleted: false })).items);
     if (!target) return this.createAccount();
     const a = await api.updateAccount(target.id, randomCompany());
     return `Updated account ${a.legalName}`;
   }
 
   private async deleteAccount(): Promise<string> {
-    const target = randomPick((await api.listAccounts()).filter(a => !a.isDeleted));
+    const target = randomPick((await api.listAccounts({ deleted: false })).items);
     if (!target) return this.createAccount();
     await api.deleteAccount(target.id);
     return `Deleted account ${target.legalName}`;
   }
 
   private async createContact(): Promise<string> {
-    const accounts = (await api.listAccounts()).filter(a => !a.isDeleted);
+    const accounts = (await api.listAccounts({ deleted: false })).items;
     // ~70% of contacts belong to an existing account; the rest are unlinked.
     const account = Math.random() < 0.7 ? randomPick(accounts) : undefined;
     const c = await api.createContact({ ...randomPerson(), accountId: account?.id ?? null });
@@ -184,14 +184,14 @@ class Simulator {
   }
 
   private async updateContact(): Promise<string> {
-    const target = randomPick((await api.listContacts()).filter(c => !c.isDeleted));
+    const target = randomPick((await api.listContacts({ deleted: false })).items);
     if (!target) return this.createContact();
     const c = await api.updateContact(target.id, { ...randomPerson(), accountId: target.accountId ?? null });
     return `Updated contact ${c.firstName} ${c.lastName}`;
   }
 
   private async deleteContact(): Promise<string> {
-    const target = randomPick((await api.listContacts()).filter(c => !c.isDeleted));
+    const target = randomPick((await api.listContacts({ deleted: false })).items);
     if (!target) return this.createContact();
     await api.deleteContact(target.id);
     return `Deleted contact ${target.firstName} ${target.lastName}`;

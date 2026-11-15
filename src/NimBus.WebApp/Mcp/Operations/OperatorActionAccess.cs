@@ -126,6 +126,13 @@ public sealed class OperatorActionAccess
     public bool IsWorkloadFor(OperatorAction action) => !HoldsDelegatedScope(action) && HoldsScope(action);
 
     /// <summary>
+    /// True when the caller is an app-only workload token, so no person is present to say yes
+    /// (Spec 046 §3.3). Local development is always a person.
+    /// </summary>
+    public bool IsWorkloadCaller
+        => _httpContextAccessor.HttpContext?.User is { } user && McpCaller.From(user, _runtime.Mode).IsWorkload;
+
+    /// <summary>
     /// The Owner's limits on unattended resubmits (Spec 044 Phase 2): resubmits per workload
     /// client in a rolling 24 hours, and unsuccessful workload resubmits per message.
     /// </summary>

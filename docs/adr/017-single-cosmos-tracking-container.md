@@ -1,10 +1,26 @@
 # ADR-017: One Cosmos DB Tracking Container, Partitioned by Endpoint
 
 ## Status
-Proposed (2026-09). Supersedes [ADR-008](008-per-endpoint-cosmos-containers.md) when accepted.
-Target release: v5.0.0. The repo owner settled the open questions on 2026-09-28 (Spec 036 §13).
-The spec was revised on 2026-10-05 after a review. The design, migration and evaluation are in
-[Spec 036](../spec/036-cosmos-single-tracking-container/spec.md).
+Deferred (2026-11-14). [ADR-008](008-per-endpoint-cosmos-containers.md) stays in force.
+
+Proposed in 2026-09 for v5.0.0. On 2026-11-14 the repo owner re-evaluated it against v4.16.0 and
+deferred it. By then the problems it targeted had mostly been solved another way or turned out
+small:
+
+- Purge under data-plane RBAC shipped in v4.16.0 (#375), which deletes documents, not the container.
+- Per-endpoint provisioning runs inside `nb topology apply`, which every new endpoint needs anyway
+  for its Service Bus subscriptions.
+- The 500-resource limit doesn't bind.
+
+What remained was the 400 RU/s minimum per container. That applies to the platform containers
+too, and [Spec 047](../spec/047-cosmos-capacity-modes/spec.md) addresses it for every container
+with serverless accounts and autoscale, with no migration or major release. Against that, this
+decision needs a v5.0.0 major, an offline migration of existing Cosmos deployments, a shared
+throughput budget and divergence from DIS.
+[Spec 036 §0](../spec/036-cosmos-single-tracking-container/spec.md) records the evaluation, the
+stale points for a revival, and the conditions that would reopen this decision.
+
+The rest of this record is the decision as proposed.
 
 ## Context
 
@@ -76,15 +92,15 @@ Options considered:
   migration marker covers every legacy container, with no legacy writes past the recorded
   high-water mark. `nb deploy apps` and `nb setup` check it before deploying, and a rollback resets
   the marker.
-- **Storage containers page.** Admin → Storage containers stays so operators can delete migrated
-  legacy containers. A later 5.x minor retires it, together with the WebApp's Cosmos DB Operator
-  role assignment.
+- **Storage page.** Topology → Storage stays so operators can delete migrated
+  legacy containers. A later 5.x minor deprecates it, and v6.0.0 removes it, together with its API
+  and the WebApp's Cosmos DB Operator role assignment.
 - **Out of scope.** The `messages` and `audits` containers, the other platform containers and the
-  storage contracts' members and signatures are unchanged. A prerequisite fix makes
+  storage contracts' members and signatures are unchanged. A prerequisite fix made
   `GetEventsByFilter`'s endpoint filter exact on the SQL Server and in-memory providers, which
-  match it by prefix today. The WebApp API changes only for the two purge operations, which return
-  `202` (or `409` while a purge runs), and for a `503` on tracking operations while the migration is
-  pending.
+  matched it by prefix; it shipped in v4.3.0 (#196). The WebApp API changes only for the two purge
+  operations, which return `202` (or `409` while a purge runs, `503` when its start can't be
+  audited), and for a `503` on tracking operations while the migration is pending.
 
 ## Consequences
 
@@ -95,7 +111,7 @@ Options considered:
   400 RU/s minimum becomes one autoscale container at ~$35 to ~$350 a month (US list prices).
 - Idle endpoints' capacity is available to busy ones, and the cross-endpoint failed search is one
   query against one container.
-- Once the Storage containers page is retired, the WebApp no longer needs a control-plane Cosmos
+- Once the Storage page is retired, the WebApp no longer needs a control-plane Cosmos
   role.
 - Endpoint-scoped queries stay routed to the endpoint's partitions as the container grows, and no
   endpoint can hit the 20 GB logical partition limit.

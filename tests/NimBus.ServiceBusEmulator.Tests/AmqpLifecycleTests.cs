@@ -234,6 +234,65 @@ public sealed class AmqpLifecycleTests
         Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, exception.Reason);
     }
 
+    // Regression: the nightly CrmErpDemo suite. The deferred-processor trigger subscription is
+    // read by a processor with one concurrent call. While its handler ran for five seconds
+    // with another trigger queued behind it, the receive link closed after 500 ms with "The
+    // broker could not complete the link operation", the trigger's lock was lost, and the
+    // trigger was redelivered in a loop that starved every other session.
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task Processor_keeps_its_lock_while_a_second_message_waits_behind_a_slow_handler()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription("events", new SubscriptionDefinition("triggers"));
+        using var failures = new FailureLogger();
+        using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(failures));
+        var port = GetPort();
+        using var frontend = new AmqpFrontend(port, broker, loggerFactory: loggerFactory);
+        frontend.Start();
+        await using var client = CreateClient(port);
+        await using var sender = client.CreateSender("events");
+        await sender.SendMessageAsync(new ServiceBusMessage("first"));
+        await sender.SendMessageAsync(new ServiceBusMessage("second"));
+
+        var handled = new List<(string Body, int DeliveryCount)>();
+        var errors = new List<Exception>();
+        var bothHandled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var processor = client.CreateProcessor("events", "triggers", new ServiceBusProcessorOptions
+        {
+            MaxConcurrentCalls = 1,
+            AutoCompleteMessages = false,
+        });
+        processor.ProcessMessageAsync += async args =>
+        {
+            // Longer than the pump's 500 ms zero-credit check, with the other message waiting.
+            await Task.Delay(TimeSpan.FromMilliseconds(1500));
+            await args.CompleteMessageAsync(args.Message);
+            lock (handled)
+            {
+                handled.Add((args.Message.Body.ToString(), args.Message.DeliveryCount));
+                if (handled.Count == 2) bothHandled.TrySetResult();
+            }
+        };
+        processor.ProcessErrorAsync += args =>
+        {
+            lock (errors) errors.Add(args.Exception);
+            return Task.CompletedTask;
+        };
+        await processor.StartProcessingAsync();
+
+        await Task.WhenAny(bothHandled.Task, Task.Delay(TimeSpan.FromSeconds(20)));
+        await processor.StopProcessingAsync();
+
+        var pumpFailure = failures.Failure.Task.IsCompleted ? failures.Failure.Task.Result.ToString() : "none";
+        Assert.AreEqual(0, errors.Count, $"Processor errors: {string.Join(" | ", errors.Select(e => e.Message))}. Emulator pump failure: {pumpFailure}");
+        CollectionAssert.AreEqual(
+            new[] { ("first", 1), ("second", 1) },
+            handled,
+            $"Each message is handled once, in order, on its first delivery. Emulator pump failure: {pumpFailure}");
+    }
+
     private static BrokerNamespace CreateBroker()
     {
         var broker = new BrokerNamespace(new BrokerOptions());

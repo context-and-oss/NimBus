@@ -9,6 +9,13 @@ var builder = DistributedApplication.CreateBuilder(args);
 // container, Vite dev servers and the local-dev auth bypass.
 var isPublish = builder.ExecutionContext.IsPublishMode;
 
+// Stamp the images this deploy builds with the checked-out release tag, so the nimbus-ops
+// footer shows the NimBus version instead of the repository's 0.0.0 placeholder.
+if (isPublish)
+{
+    CrmErpDemo.AppHost.DemoBuildVersion.Apply(builder.AppHostDirectory);
+}
+
 // NimBus storage provider toggle. Accepts the same flag names as the slim
 // src/NimBus.AppHost so muscle memory carries between the two sample apphosts:
 //   --NIMBUS_STORAGE_PROVIDER sqlserver  (env or arg)
@@ -460,9 +467,29 @@ var enrichmentAgent = builder.AddProject<Projects.EnrichmentAgent>("enrichment-a
     .WithReference(nimbusOps)
     .WaitFor(nimbusOps);
 
+// Regional hubs — the routing-keys showcase (Spec 045). One adapter project, started once per
+// hub: each instance serves its own endpoint and receives only the CRM accounts whose country
+// (the routing key) that endpoint claims. The unrouted hub is the unmatched consumer: accounts
+// in a country no hub claims are dead-lettered there with a reason naming the country.
+var regionalHubs = new[]
+{
+    (Name: "hub-nordic", Endpoint: nameof(CrmErpDemo.Contracts.Endpoints.NordicHubEndpoint)),
+    (Name: "hub-dach", Endpoint: nameof(CrmErpDemo.Contracts.Endpoints.DachHubEndpoint)),
+    (Name: "hub-unrouted", Endpoint: nameof(CrmErpDemo.Contracts.Endpoints.UnroutedHubEndpoint)),
+}
+.Select(hub => builder.AddProject<Projects.RegionalHub>(hub.Name)
+    .WithReference(servicebus)
+    .WithEnvironment("RegionalHub__Endpoint", hub.Endpoint)
+    .WaitForCompletion(provisioner))
+.ToList();
+
 if (isPublish)
 {
     agentZone.PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
+    foreach (var regionalHub in regionalHubs)
+    {
+        regionalHub.PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
+    }
     enrichmentAgent.PublishAsAzureContainerApp((_, app) => PinToOneReplica(app));
 
     // nimbus-ops requires sign-in in Azure, so the agent needs an agent API key (Spec 039).

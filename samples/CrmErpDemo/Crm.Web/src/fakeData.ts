@@ -10,7 +10,9 @@ const companies = [
 
 const suffixes = ['A/S', 'GmbH', 'Ltd', 'Inc', 'BV', 'AB', 'Oy', 'SA', 'NV'];
 
-const countries = ['DE', 'DK', 'SE', 'NO', 'FI', 'GB', 'FR', 'NL', 'ES', 'IT', 'US'];
+// Countries a regional hub claims (routing-keys showcase), so generated accounts split between
+// the Nordic and DACH hubs. Type another country by hand to see the unrouted hub dead-letter it.
+const countries = ['DE', 'AT', 'CH', 'DK', 'SE', 'NO', 'FI'];
 
 const firstNames = [
   'Anna', 'Bjarke', 'Camilla', 'David', 'Elisabeth', 'Frederik',

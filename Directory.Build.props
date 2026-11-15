@@ -61,7 +61,12 @@
          reserved by another owner on nuget.org, so NimBus.* packages are rejected.
          Assemblies and namespaces stay NimBus.*; only the NuGet package ID changes. -->
     <PackageId>Akaule.$(MSBuildProjectName)</PackageId>
-    <Version>0.0.0</Version>
+    <!-- The version lives in the release tag (docs/versioning.md): release builds pass
+         /p:Version, which wins over everything here. NIMBUS_BUILD_VERSION is for a source
+         build that cannot pass MSBuild properties, such as the images `aspire deploy` builds
+         for the CrmErpDemo. With neither, 0.0.0 marks an unversioned local build. -->
+    <Version Condition="'$(NIMBUS_BUILD_VERSION)' != ''">$(NIMBUS_BUILD_VERSION)</Version>
+    <Version Condition="'$(NIMBUS_BUILD_VERSION)' == ''">0.0.0</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/akakaule/NimBus</PackageProjectUrl>
     <RepositoryUrl>https://github.com/akakaule/NimBus</RepositoryUrl>

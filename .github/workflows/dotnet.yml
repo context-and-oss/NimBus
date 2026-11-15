@@ -78,10 +78,10 @@ jobs:
       # A Debug restore records them as warnings that the --no-restore build replays.
       run: dotnet restore src/NimBus.slnx -p:Configuration=Release
     - name: Prepare the Aspire CLI bundle
-      # CrmErpDemo.AppHost and DynamicsBcDemo.AppHost set AspireUseCliBundle. On a runner
-      # without the bundle, each runs this same setup into ~/.aspire during the parallel
-      # build, and the one that loses the race fails with ASPIRE009. Preparing it once
-      # here lets both resolve it. Keep the version in step with Aspire.AppHost.Sdk.
+      # CrmErpDemo.AppHost sets AspireUseCliBundle. On a runner without the bundle, each
+      # AppHost that sets it runs this same setup into ~/.aspire during the parallel build,
+      # and one that loses the race fails with ASPIRE009. Preparing it once here avoids
+      # that. Keep the version in step with Aspire.AppHost.Sdk.
       run: dotnet dnx --yes aspire.cli@13.5.4 -- setup --install-path "$HOME/.aspire"
     - name: Build
       run: dotnet build src/NimBus.slnx --no-restore --configuration Release
