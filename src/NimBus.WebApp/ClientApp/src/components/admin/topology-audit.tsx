@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import * as api from "api-client";
 import { Button } from "components/ui/button";
 import { Badge } from "components/ui/badge";
-import { Spinner } from "components/ui/spinner";
 import { Combobox } from "components/ui/combobox";
 import ConfirmDestructiveAction from "./confirm-destructive-action";
 import OperationProgress from "./operation-progress";
@@ -10,6 +9,37 @@ import OperationProgress from "./operation-progress";
 interface EndpointOption {
   value: string;
   label: string;
+}
+
+/** One endpoint's row in the "Audit all endpoints" summary. */
+interface EndpointAudit {
+  endpoint: string;
+  result?: api.TopologyAuditResult;
+  error?: string;
+}
+
+/** Each audit lists a topic's subscriptions and rules; keep the admin API calm. */
+const AUDIT_ALL_CONCURRENCY = 4;
+
+/**
+ * Deprecated items an endpoint's cleanup would delete. Rules of a deprecated
+ * subscription go with it, so they aren't counted twice.
+ */
+function deprecatedCount(audit: api.TopologyAuditResult): number {
+  return (audit.subscriptions ?? []).reduce(
+    (n, sub) =>
+      sub.isDeprecated
+        ? n + 1
+        : n + (sub.rules ?? []).filter((r) => r.isDeprecated).length,
+    0,
+  );
+}
+
+/** Drifting endpoints first, then failed audits, then endpoints in sync. */
+function attentionRank(row: EndpointAudit): number {
+  if (row.result?.hasDeprecated) return 0;
+  if (row.error !== undefined) return 1;
+  return 2;
 }
 
 export default function TopologyAudit() {
@@ -22,6 +52,8 @@ export default function TopologyAudit() {
   const [cleaning, setCleaning] = useState(false);
   const [cleanupResult, setCleanupResult] =
     useState<api.TopologyCleanupResult | null>(null);
+  const [allAudits, setAllAudits] = useState<EndpointAudit[] | null>(null);
+  const [auditingAll, setAuditingAll] = useState(false);
 
   useEffect(() => {
     loadEndpoints();
@@ -41,6 +73,16 @@ export default function TopologyAudit() {
     }
   }
 
+  /** Keeps the all-endpoints summary in step with a fresh single audit. */
+  function updateSummaryRow(endpoint: string, result: api.TopologyAuditResult) {
+    setAllAudits(
+      (rows) =>
+        rows?.map((row) =>
+          row.endpoint === endpoint ? { endpoint, result } : row,
+        ) ?? null,
+    );
+  }
+
   async function handleAudit() {
     if (selectedEndpoint.length === 0) return;
     setLoading(true);
@@ -51,11 +93,62 @@ export default function TopologyAudit() {
       const client = new api.Client(api.CookieAuth());
       const result = await client.getAdminTopology(selectedEndpoint[0]);
       setAudit(result);
+      updateSummaryRow(selectedEndpoint[0], result);
     } catch (err: any) {
       setError(err.message ?? "Failed to audit topology");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleAuditAll() {
+    if (endpoints.length === 0) return;
+    setAuditingAll(true);
+    setError(null);
+    setAudit(null);
+    setCleanupResult(null);
+    setAllAudits(null);
+
+    const names = endpoints.map((ep) => ep.value);
+    const rows: EndpointAudit[] = new Array(names.length);
+    let next = 0;
+    async function worker() {
+      const client = new api.Client(api.CookieAuth());
+      while (next < names.length) {
+        const i = next++;
+        try {
+          const result = await client.getAdminTopology(names[i]);
+          rows[i] = { endpoint: names[i], result };
+        } catch (err: any) {
+          rows[i] = {
+            endpoint: names[i],
+            error: err?.message ?? "Audit failed",
+          };
+        }
+      }
+    }
+    try {
+      await Promise.all(
+        Array.from(
+          { length: Math.min(AUDIT_ALL_CONCURRENCY, names.length) },
+          worker,
+        ),
+      );
+      // sort is stable, so catalog order holds within each group.
+      setAllAudits(
+        [...rows].sort((a, b) => attentionRank(a) - attentionRank(b)),
+      );
+    } finally {
+      setAuditingAll(false);
+    }
+  }
+
+  function viewEndpoint(row: EndpointAudit) {
+    if (!row.result) return;
+    setSelectedEndpoint([row.endpoint]);
+    setAudit(row.result);
+    setCleanupResult(null);
+    setError(null);
   }
 
   async function handleRemoveDeprecated() {
@@ -76,6 +169,7 @@ export default function TopologyAudit() {
           selectedEndpoint[0],
         );
         setAudit(auditResult);
+        updateSummaryRow(selectedEndpoint[0], auditResult);
       } finally {
         setLoading(false);
       }
@@ -86,9 +180,14 @@ export default function TopologyAudit() {
     }
   }
 
+  const driftingCount =
+    allAudits?.filter((r) => r.result?.hasDeprecated).length ?? 0;
+  const failedCount =
+    allAudits?.filter((r) => r.error !== undefined).length ?? 0;
+
   return (
     <div className="space-y-6 w-full">
-      <div className="flex gap-4 items-end">
+      <div className="flex flex-wrap gap-4 items-end">
         <div className="flex-1 max-w-md">
           <Combobox
             options={endpoints}
@@ -101,16 +200,89 @@ export default function TopologyAudit() {
         </div>
         <Button
           onClick={handleAudit}
-          disabled={selectedEndpoint.length === 0 || loading}
+          disabled={selectedEndpoint.length === 0 || loading || auditingAll}
           isLoading={loading}
         >
           Audit Topology
+        </Button>
+        <Button
+          variant="outline"
+          onClick={handleAuditAll}
+          disabled={endpoints.length === 0 || loading || auditingAll}
+          isLoading={auditingAll}
+        >
+          Audit all endpoints
         </Button>
       </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-md p-4 text-red-800">
           {error}
+        </div>
+      )}
+
+      {allAudits && (
+        <div className="space-y-2">
+          <p className="m-0 text-sm text-muted-foreground">
+            {driftingCount === 0
+              ? `All ${allAudits.length - failedCount} audited endpoints match the catalog`
+              : `${driftingCount} of ${allAudits.length} endpoints drift from the catalog`}
+            {failedCount > 0 ? `; ${failedCount} could not be audited.` : "."}
+          </p>
+          <div className="border rounded-md overflow-hidden">
+            <table
+              className="w-full text-sm"
+              aria-label="Catalog drift by endpoint"
+            >
+              <thead className="bg-muted text-left">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Endpoint</th>
+                  <th className="px-4 py-2 font-medium">Drift</th>
+                  <th className="px-4 py-2">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {allAudits.map((row) => (
+                  <tr
+                    key={row.endpoint}
+                    className={`border-t ${
+                      audit && row.endpoint === selectedEndpoint[0]
+                        ? "bg-muted/50"
+                        : ""
+                    }`}
+                  >
+                    <td className="px-4 py-2 font-mono">{row.endpoint}</td>
+                    <td className="px-4 py-2">
+                      {row.error !== undefined ? (
+                        <span className="text-red-700">{row.error}</span>
+                      ) : row.result?.hasDeprecated ? (
+                        <Badge variant="warning" size="sm">
+                          {deprecatedCount(row.result)} deprecated
+                        </Badge>
+                      ) : (
+                        <Badge variant="success" size="sm">
+                          In sync
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {row.result && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => viewEndpoint(row)}
+                        >
+                          View
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

@@ -173,7 +173,8 @@ point; outside one, prefer Pause.
 
 - [architecture.md](architecture.md) — endpoint/event topology.
 - **Topology → Catalog drift** — audits subscriptions and rules against the expected
-  topology and removes deprecated leftovers.
+  topology, for one endpoint or all of them at once (*Audit all endpoints*), and
+  removes deprecated leftovers.
 - **Operations** page — message-store operations (resubmit, skip, delete
   by status). Those act on stored events, not on the bus.
 - [stale-pending-reconcile.md](stale-pending-reconcile.md) — Operations →
