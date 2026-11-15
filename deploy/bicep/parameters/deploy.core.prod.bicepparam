@@ -26,7 +26,7 @@ param locationParam = 'westeurope'
 // Function App AND the core plan before switching.
 param resolverPlan = 'FlexConsumption' // or 'ElasticPremium' (EP1, Windows)
 param managementPlanSku = 'S1'
-param storageProvider = 'cosmos' // or 'sqlserver' (+ sqlMode/sqlAdmin* params)
+param storageProvider = 'cosmos' // or 'sqlserver' (+ sqlMode, then sqlAdmin* for provision or sqlConnectionString for external)
 
 // Resolver capacity. The session count is a template-owned host override and
 // wins over host.json. The instance ceiling is plan-specific: only the

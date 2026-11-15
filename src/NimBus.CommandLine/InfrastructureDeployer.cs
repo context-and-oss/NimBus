@@ -565,6 +565,13 @@ internal sealed class InfrastructureDeployer
             command.AddSecureParameter("sqlAdminPassword", options.SqlAdminPassword ?? string.Empty);
         }
 
+        // The Resolver's SqlConnection for an external server (#391). A provisioned server's
+        // connection string is built by the template from the admin password above.
+        if (options.StorageProvider == StorageProviderChoice.SqlServer && options.SqlMode == SqlProvisioningMode.External)
+        {
+            command.AddSecureParameter("sqlConnectionString", ResolveSqlConnectionString(options, names));
+        }
+
         if (options.AlertMail?.SmtpPassword is { } alertMailSmtpPassword)
         {
             command.AddSecureParameter("alertMailSmtpPassword", alertMailSmtpPassword);

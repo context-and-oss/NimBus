@@ -79,6 +79,8 @@ PR 3 opens only after PR 2 has shipped.
 
 ### Step 2: external SQL for the Resolver (spec §5.2)
 
+Done ahead of the rest of PR 1, for issue #391. The live check below is still open.
+
 - `deploy.core.bicep`:
   - a secure `sqlConnectionString` parameter;
   - `sqlResolverSecretSettings` sets `SqlConnection` from it when `sqlMode == 'external'`.
