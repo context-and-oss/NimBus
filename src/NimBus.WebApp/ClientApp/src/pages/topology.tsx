@@ -54,9 +54,10 @@ export default function Topology() {
                 {v.id === "drift" && (
                   <div className="w-full space-y-4">
                     <p className="m-0 text-[13px] text-muted-foreground">
-                      Compare an endpoint's live Service Bus subscriptions and rules
-                      against the declared catalog. Removing deprecated items changes
-                      the namespace and requires typed confirmation.
+                      Compare live Service Bus subscriptions and rules against the
+                      declared catalog, for one endpoint or all of them at once.
+                      Removing deprecated items changes the namespace and requires
+                      typed confirmation.
                     </p>
                     <TopologyAudit />
                   </div>
