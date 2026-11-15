@@ -225,9 +225,10 @@ public enum MessageAuditType
     UpdateEndpointMetadata,
 
     /// <summary>
-    /// An operator's agent reset a session's deferred state and requested a drain of its deferred
-    /// messages over MCP (Spec 035 Phase 3). Data carries the session, the deferred count the
-    /// caller previewed and the reason. Always recorded: the reset runs only once the row exists.
+    /// An operator reset a session's deferred state and requested a drain of its deferred
+    /// messages, from the Web UI (GH#401) or through an agent over MCP (Spec 035 Phase 3). Data
+    /// carries the channel and the session; over MCP also the deferred count the caller
+    /// previewed and the reason. Always recorded: the reset runs only once the row exists.
     /// </summary>
     ReprocessDeferred,
 }

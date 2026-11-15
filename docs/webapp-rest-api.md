@@ -570,9 +570,10 @@ audit row to two independent sinks:
 
 Both writes are best-effort: a failure to either sink is logged as a warning
 and absorbed — the user's action proceeds either way. The commands that change
-a message are the exception: resubmit, resubmit-with-changes, skip and report
-use `IAuditLogService.LogRequiredAuditAsync`, which writes the durable row
-before the command runs and refuses the command (503) if it cannot.
+a message are the exception: resubmit, resubmit-with-changes, skip, report and
+deferred reprocess use `IAuditLogService.LogRequiredAuditAsync`, which writes
+the durable row before the command runs and refuses the command (503) if it
+cannot.
 
 ### Choosing which actions are recorded
 
@@ -582,7 +583,8 @@ fires on every list refresh. A disabled type is skipped by both sinks. Some
 rows are always written regardless: access-denied attempts;
 `UpdateAuditSettings`, which records every change to the selection; and the
 commands that change a message (`Resubmit`, `ResubmitWithChanges`, `Skip`,
-`ReportEvent` and `CommandNotSent`), which are not offered in the selection.
+`ReportEvent`, `CommandNotSent` and `ReprocessDeferred`), which are not offered
+in the selection.
 
 The selection is one record per platform (`IEndpointMetadataStore.GetAuditSettings`),
 cached by each WebApp instance for 30 seconds; a save takes effect at once on
@@ -616,6 +618,7 @@ controller method that fires each one:
 | `McpAccessRefused`    | The operator MCP endpoint — a call refused by the MCP access policy or for a missing scope, with `AccessDenied` set; deduplicated per caller, client, reason and tool for 5 minutes per instance |
 | `DashboardTokenCreated` / `DashboardTokenRevoked` / `DashboardTokenRemoved` | `DashboardTokensImplementation` — the token id, name and expiry as `Data`, never the token; always recorded |
 | `UpdateEndpointMetadata` | `EndpointImplementation.PostMetadataEndpointAsync` — the endpoint owner, team, email and technical contacts before and after as `Data`; always recorded, and the change is refused (503) when the row can't be written |
+| `ReprocessDeferred`   | `EventImplementation.PostReprocessDeferredAsync` and the MCP tool `nimbus_reprocess_deferred` — the channel and session id as `Data` (over MCP also the reason and the deferred count); always recorded, and the reprocess is refused (503) when the row can't be written. The Web UI's row is filed under the endpoint, with no event id |
 
 Resubmit, skip and resubmit-with-changes run through `OperatorCommandCoordinator`, shared with the
 operator MCP tools. Their `Data` records the channel (`WebApp` or `Mcp`), the reason and idempotency

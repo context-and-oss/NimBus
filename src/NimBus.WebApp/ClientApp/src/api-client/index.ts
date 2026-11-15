@@ -1805,6 +1805,13 @@ export class Client extends ApiClientBase {
             result404 = ProblemDetails.fromJS(resultData404);
             return throwException("Endpoint not found", status, _responseText, _headers, result404);
             });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            let result503: any = null;
+            let resultData503 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result503 = ProblemDetails.fromJS(resultData503);
+            return throwException("The audit log could not record the reprocess, so the session was not reset and nothing was sent.", status, _responseText, _headers, result503);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);

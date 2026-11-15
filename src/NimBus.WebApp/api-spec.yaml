@@ -944,6 +944,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: >-
+            The audit log could not record the reprocess, so the session was not
+            reset and nothing was sent.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/me:
     get:
       summary: Get current user info
