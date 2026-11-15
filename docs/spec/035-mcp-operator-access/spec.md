@@ -6,7 +6,12 @@ a read-only pilot in a nonproduction Azure environment, passed on 2026-10-06; se
 complete. It shipped in v4.5.0 (2026-10-06), its stale-state and UI-vs-agent race tests pass, and
 its delegated pilot in a nonproduction Azure environment passed on 2026-10-06; see the
 [Phase 2a plan](../../plan/2026-10-06-mcp-operator-phase2a-plan.md).
-Phases 2b and 3 have not started. Design: rev 2, 2026-09-25. Site Owners manage MCP access
+Phase 2b (the operation journal and receiver-side receipts) was delivered with
+[Spec 044](../044-agent-first/spec.md) Phase 2 in context-and-oss/NimBus#371 and shipped in v4.12.0.
+Phase 3 (Complete) is implemented (2026-11-15) per the
+[Phase 3 plan](../../plan/2026-11-15-mcp-operator-phase3-plan.md); see
+[Phase 3 as built](#phase-3-as-built). Its delegated pilot in a nonproduction Azure environment has
+not run. Design: rev 2, 2026-09-25. Site Owners manage MCP access
 from the WebApp (turn it off, switch tools off, restrict people, clients and endpoints) per
 [Spec 037](../037-mcp-admin-access/spec.md).
 
@@ -55,7 +60,38 @@ authorization, redaction, audit and Resolver command path.
 | 1 Observe | Adapter, bearer scheme, local Aspire mode, read tools, classification reads | Read-only pilot in a nonproduction Azure environment; `NimBus.Mcp` removed |
 | 2a Operate | Shared coordinator, preview, fresh ACL checks, state guard; classify, report, resubmit, skip | Delegated pilot; stale-state and UI-vs-agent race tests |
 | 2b Operate | Operation journal (Cosmos, SQL, in-memory + conformance), receiver-side receipts | Crash/retry tests; bounded workload mutations |
-| 3 Complete | Handoff settlement, deferred recovery, payload edits | Parity with existing UI semantics |
+| 3 Complete | Handoff settlement, deferred recovery, payload edits | Parity with existing UI semantics. Implemented; see [Phase 3 as built](#phase-3-as-built) |
+
+## Phase 3 as built
+
+Phase 3 adds the four tools the design lists as Extended. Each is prepared with
+`nimbus_prepare_action` and run with its token, like resubmit and skip. The user guide is
+[docs/mcp-server.md](../../mcp-server.md#handoffs-deferred-messages-and-edited-payloads).
+
+| # | Decision |
+| --- | --- |
+| U1 | Four tools: `nimbus_settle_handoff`, `nimbus_reprocess_deferred`, `nimbus_skip_deferred_tracking`, `nimbus_resubmit_with_changes`. `nimbus_resubmit_message` and `nimbus_skip_message` still accept only Failed, DeadLettered and Unsupported messages. |
+| U2 | Three delegated scopes: `nimbus.settle`, `nimbus.recover` (both deferred tools) and `nimbus.edit`. No app role: the tools never run for a workload (decision 6, Spec 044 §7 and §12). |
+| U3 | Three Owner switches in the Spec 037 policy (`SettleHandoffs`, `RecoverDeferred`, `EditPayloads`), off by default, also in a policy saved before they existed. This departs from the existing capabilities, which default to on, so that an upgrade changes nothing. |
+| D1 | `nimbus_prepare_action` gains the actions `settle_handoff`, `reprocess_deferred`, `skip_deferred_tracking` and `resubmit_with_changes`. The token, its lifetime and the change limit are unchanged. No by-ticket or batch form. |
+| D2 | Only `resubmit_with_changes` is a journaled operation: it has resubmit's shape (an archive claim and a response parented to the command). The other three return their result directly; the reconciler's assumptions do not hold for them. |
+| D3 | The edited payload is passed to the preview and again to the tool, and the token binds its SHA-256. The preview lists the changed JSON paths, never values. The payload must be one JSON object, the event type cannot change, and the masked-placeholder check runs for every caller: a PiiReader without `nimbus.payload.read` reads masked values over MCP. The audit row stores the paths and the hash, not the payload. |
+| D4 | Settling needs Pending with sub-status Handoff at the previewed version and a fresh Contributor check. The order over MCP is claim (the in-flight tracker), required audit, send; a failed send releases the claim and is audited as `CommandNotSent`. The Web UI and the agent API keep their order (send, then best-effort audit). |
+| D5 | Reprocess is refused when the session has no Deferred row, while a Failed row still blocks it (reprocess resets the block, so later events would overtake the failure), and above `NimBus:Mcp:MaxDeferredReprocess` (default 200). It is audited before the reset as the new `ReprocessDeferred` audit type. |
+| D6 | The preview of a tracking skip runs the broker inspection and returns each check; it is refused unless the skip is allowed. The tool inspects again, makes the conditional Deferred-to-Skipped write, audits after it and returns `auditRecorded`. This is the REST behaviour, moved into `DeferredTrackingRecovery`, which both channels call. |
+
+Where the implementation differs from the plan:
+
+- The MCP commands are a new `IOperatorRecoveryCommands`, not an extension of
+  `IHandoffSettlementService`, and the tools are a partial of `OperatorActionTools`, so they reuse
+  its token, version and limiter checks.
+- The REST resubmit-with-changes path is unchanged. Its checks depend on the caller's PiiReader
+  role and the body's event type, which the MCP rules (D3) do not share, so only the masker and the
+  type resolution are reused.
+- A journaled resubmit-with-changes is now published under its operation id; it was not before.
+
+Not done: the delegated Azure pilot, which needs the three scopes on the deployment's Entra app
+registration and an Owner to switch the capabilities on.
 
 ## Retiring `NimBus.Mcp`
 

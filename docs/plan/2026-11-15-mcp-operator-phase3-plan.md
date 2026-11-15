@@ -1,5 +1,10 @@
 # Spec 035 Phase 3 (Complete): MCP tools for handoff settlement, deferred recovery and payload edits
 
+Status: implemented on branch `feat/mcp-operator-phase3` (2026-11-15). What was built, and where it
+differs from this plan, is recorded in
+[Spec 035, Phase 3 as built](../spec/035-mcp-operator-access/spec.md#phase-3-as-built). The delegated
+Azure pilot has not run.
+
 ## Context
 
 Spec 035 (MCP operator access) has four phases. Phases 1, 2a and 2b are on master (2b's operation

@@ -339,6 +339,9 @@ Acceptance: in each client that passed the pilot, connected to a deployment with
   Reconsider after phase 2.
 - **MCP resources.** Nothing here needs them.
 - **New change actions.** No bulk skip, no resubmit by group, no deferred or handoff recovery.
+  (Spec 035 Phase 3 later added handoff, deferred and payload-edit recovery, with their own
+  options: `nimbus_get_message` offers them in place of `open_web_ui` when the caller may run them;
+  see [Spec 035, Phase 3 as built](../035-mcp-operator-access/spec.md#phase-3-as-built).)
 - **Usage telemetry.** The activity view in Settings → MCP access (`/api/v1/admin/mcp/activity`)
   already reports agent calls.
 - **A client-side package.** Spec 040 §4.4 stands.
