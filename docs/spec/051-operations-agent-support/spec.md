@@ -1,6 +1,6 @@
 # Spec 051 — Platform support for operations agents
 
-Status: proposed, revision 3 (2026-11-15). Revised twice after reviews of an agent design that
+Status: proposed, revision 4 (2026-11-16). Revised three times after reviews of an agent design that
 builds on this spec; the changes are listed in §13. Not yet approved; nothing in it is built.
 Baseline: master `7122b1bd`; the latest release is v4.17.0.
 Builds on [Spec 035](../035-mcp-operator-access/spec.md),
@@ -67,11 +67,18 @@ evidence for the person to judge. NimBus never applies it on its own, and shows 
 | Tool | Does | Needs |
 |---|---|---|
 | `nimbus_request_approval` | Files a request: endpoint id, event id, the message version the caller read, a list of suspect fields, a summary and an idempotency key. Each suspect field has its JSON path, a reason and optional evidence: the value the caller read from the field's bound evidence source (§4), and when | `Nimbus.RequestApproval` for a workload, or, for a person's agent, the delegated scope for payload edits that Spec 035 Phase 3 introduces (`nimbus.edit` in #400); endpoint Contributor |
-| `nimbus_get_approval` | Returns the request's state, its expiry, the reviewer's note and, once the resubmit has been started, the operation id | Endpoint Reader |
+| `nimbus_get_approval` | Takes the request's id, or the idempotency key the caller filed the request with. Returns the request's state, its expiry, the reviewer's note and, once the resubmit has been started, the operation id | Endpoint Reader |
 
 - A request changes no message. It counts against the MCP request limit, not the change limit.
 - Repeating an idempotency key returns the same request, whatever its state.
 - A message has at most one pending request; a second one is refused.
+- A lookup by key finds only a request the caller itself filed: a key belongs to the client that
+  used it. A key under which that client filed nothing is answered with "no request under this
+  key". That is an answer and not a refusal, so a caller can tell a request that never arrived from
+  one that cannot be read.
+- A caller that lost the answer to its request looks the request up by its key. It cannot repeat
+  the call: the evidence may have changed since, and a key reused with other content is refused
+  (§3.3).
 - The caller names no evidence source. NimBus attaches the one the Owner bound to the field, so a
   caller cannot present a value as coming from anywhere else.
 
@@ -86,6 +93,11 @@ evidence for the person to judge. NimBus never applies it on its own, and shows 
 | A caller without the role, the switch or Contributor on the endpoint | `[PermissionDenied]` |
 | A malformed request, or an idempotency key reused with other content | `[InvalidArgument]` |
 
+Every `[ActionNotAllowed]` refusal carries a reason: `path_not_correctable`, `evidence_not_bound` or
+`request_pending`. The refusal for a pending request also carries that request's id and the id of
+the client that filed it, so that a caller can tell its own request from another's. A caller that
+may file a request on an endpoint may also read one there, so this discloses nothing new.
+
 The caller never sends or receives the full payload. What it may see of the payload stays governed
 by the existing evidence and payload switches.
 
@@ -93,7 +105,8 @@ by the existing evidence and payload switches.
 
 One record per request on all three providers, covered by the conformance suite: who asked and
 through which client, the suspect fields with their evidence, the state, who decided, the values
-they entered, the note, the expiry and the operation id.
+they entered, the note, the expiry and the operation id. The idempotency key is kept with the
+client that used it, so that a lookup by key finds only that client's request.
 
 Free text and evidence values from the caller are untrusted. They are bounded, scrubbed and stored
 as plain text, like a classification rationale, and are shown only to people who may act on the
@@ -158,6 +171,11 @@ webhook set in Settings. Mail to the endpoint's alert subscribers is the fallbac
   sends nothing.
 - A caller without the role, with the switch off, or without Contributor on the endpoint is refused
   and audited.
+- A caller finds its own request by the key it filed it with, in any state. Another client's lookup
+  with the same key, and a key under which nothing was filed, are answered with "no request under
+  this key".
+- A second request for a message that has a pending one is refused with the reason, the pending
+  request's id and the client that filed it.
 
 ## 4. Correction settings
 
@@ -310,6 +328,14 @@ belongs with the adapter kit, not in the platform's core.
 | A report marker option that does not overwrite (§9) | A repeated or late marker write could replace another person's ticket |
 | What a batch by ticket does not guarantee (§8) | A caller that needs exactly once has to work message by message |
 | The shared adapter audience as a stated risk and an option (§11, §12) | One resource for all adapters means a token is valid at each |
+
+### 13.3 Revision 4
+
+| Change | Why |
+|---|---|
+| `nimbus_get_approval` finds a request by the key its caller filed it with, and answers an unknown key as "no request under this key" (§3.2) | A caller that lost the answer to its request cannot repeat the call: it does not keep the evidence it sent, the evidence may have changed, and a key reused with other content is refused. It could then neither find its request nor file another |
+| A reason on every `[ActionNotAllowed]` refusal of a request, and the pending request's id and client on the refusal for a pending request (§3.3) | Three different refusals shared one code. A caller needs to know that a request is pending and whether it is its own: from an earlier attempt of the message, or from before it lost its own state |
+| The idempotency key is kept with the client that used it (§3.4) | A lookup by key must not find another client's request |
 
 ## 14. Out of scope
 
