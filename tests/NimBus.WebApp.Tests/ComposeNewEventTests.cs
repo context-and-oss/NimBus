@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json.Linq;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.PII;
@@ -17,6 +19,7 @@ using NimBus.SDK;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Mcp.Operations;
 using NimBus.WebApp.Services;
 
 namespace NimBus.WebApp.Tests;
@@ -100,7 +103,58 @@ public sealed class ComposeNewEventTests
         Assert.AreEqual(expected, client.Sender.SentMessages[0].MessageId);
     }
 
-    private static EventImplementation CreateSut(ServiceBusClient client) =>
+    [TestMethod]
+    public async Task Compose_row_holds_the_hash_and_property_names_and_no_payload_values()
+    {
+        var audit = new ResubmitWithChangesAuditTests.RecordingAudit();
+        var sut = CreateSut(new RecordingServiceBusClient(), audit);
+
+        var result = await sut.PostComposeNewEventAsync(new ResubmitWithChanges
+        {
+            EventTypeId = nameof(ComposedOrder),
+            EventContent = ComposedJson,
+        });
+
+        Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+        var row = audit.Rows.Single(r => r.Type == MessageAuditType.Compose);
+        Assert.IsFalse(row.AccessDenied);
+        AssertDescribesComposedEvent(row.Data);
+    }
+
+    [TestMethod]
+    public async Task Compose_row_refused_for_a_missing_role_has_the_same_shape()
+    {
+        var audit = new ResubmitWithChangesAuditTests.RecordingAudit();
+        var sut = CreateSut(new RecordingServiceBusClient(), audit, isContributor: false);
+
+        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => sut.PostComposeNewEventAsync(new ResubmitWithChanges
+        {
+            EventTypeId = nameof(ComposedOrder),
+            EventContent = ComposedJson,
+        }));
+
+        var row = audit.Rows.Single(r => r.Type == MessageAuditType.Compose);
+        Assert.IsTrue(row.AccessDenied);
+        AssertDescribesComposedEvent(row.Data);
+    }
+
+    private const string ComposedJson = "{\"OrderId\":\"order-composed-99\",\"Total\":12345.67}";
+
+    private static void AssertDescribesComposedEvent(string? data)
+    {
+        Assert.IsNotNull(data, "The row must describe the composed event.");
+        foreach (var value in new[] { "order-composed-99", "12345.67" })
+            Assert.IsFalse(data.Contains(value, StringComparison.Ordinal), $"The row must not hold the payload value '{value}': {data}");
+
+        var json = JObject.Parse(data);
+        Assert.IsNull(json.Property("EventContent", StringComparison.OrdinalIgnoreCase), "The row must not hold the payload.");
+        Assert.AreEqual("WebApp", json.Value<string>("channel"));
+        Assert.AreEqual(nameof(ComposedOrder), json.Value<string>("eventTypeId"));
+        Assert.AreEqual(OperatorPayloadEdit.Hash(ComposedJson), json.Value<string>("contentHash"));
+        CollectionAssert.AreEqual(new[] { "OrderId", "Total" }, json["properties"]!.Values<string>().ToArray());
+    }
+
+    private static EventImplementation CreateSut(ServiceBusClient client, IAuditLogService? audit = null, bool isContributor = true) =>
         new(
             applicationInsightsService: null!,
             new ComposePlatform(),
@@ -108,10 +162,10 @@ public sealed class ComposeNewEventTests
             handoffClientFactory: null!,
             NullLogger<EventImplementation>.Instance,
             new InMemoryMessageStore(),
-            new AllowAllAuthorizationService(),
+            new AllowAllAuthorizationService(isContributor),
             adminService: null!,
             client,
-            new NoOpAuditLogService(),
+            audit ?? new NoOpAuditLogService(),
             handoffSettlement: null!,
             new HttpContextAccessor { HttpContext = new DefaultHttpContext() },
             PayloadRedactionTests.NewRedaction(),
@@ -170,9 +224,9 @@ public sealed class ComposeNewEventTests
             CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class AllowAllAuthorizationService : IEndpointAuthorizationService
+    private sealed class AllowAllAuthorizationService(bool isContributor) : IEndpointAuthorizationService
     {
-        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(true);
+        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(isContributor);
 
         public Task<bool> CanReadPiiAsync() => Task.FromResult(true);
 

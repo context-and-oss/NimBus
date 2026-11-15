@@ -123,6 +123,19 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
             .OrderByDescending(m => m.EnqueuedTimeUtc)
             .FirstOrDefault();
 
+    /// <summary>
+    /// The payload <paramref name="target"/> was last sent with: the latest request message in its
+    /// history that carries one, otherwise the target message's own.
+    /// </summary>
+    internal static async Task<string?> StoredPayloadAsync(IMessageTrackingStore store, OperatorCommandTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(target);
+        var history = await store.GetEventHistory(target.EventId).ConfigureAwait(false);
+        return LatestRequestMessageWithPayload(history)?.MessageContent?.EventContent?.EventJson
+            ?? target.Message.MessageContent?.EventContent?.EventJson;
+    }
+
     /// <inheritdoc/>
     public async Task<OperatorTargetLookup> FindByMessageAsync(string eventId, string messageId)
     {

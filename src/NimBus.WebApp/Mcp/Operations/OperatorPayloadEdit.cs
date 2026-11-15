@@ -60,6 +60,33 @@ public static class OperatorPayloadEdit
         return listed;
     }
 
+    /// <summary>
+    /// <see cref="ChangedPaths(string?, JObject)"/> for an edited payload given as text, or
+    /// <c>null</c> when <paramref name="editedJson"/> is not a JSON object.
+    /// </summary>
+    public static IReadOnlyList<string>? TryChangedPaths(string? originalJson, string? editedJson) =>
+        !string.IsNullOrWhiteSpace(editedJson) && TryParse(editedJson) is JObject edited
+            ? ChangedPaths(originalJson, edited)
+            : null;
+
+    /// <summary>
+    /// The top-level property names of a payload, without their values, at most
+    /// <see cref="MaxChangedPaths"/>; empty when <paramref name="json"/> is not a JSON object.
+    /// </summary>
+    public static IReadOnlyList<string> PropertyNames(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || TryParse(json) is not JObject payload)
+            return [];
+
+        var names = payload.Properties().Select(p => p.Name).ToList();
+        if (names.Count <= MaxChangedPaths)
+            return names;
+
+        var listed = names.Take(MaxChangedPaths).ToList();
+        listed.Add($"… and {names.Count - MaxChangedPaths} more");
+        return listed;
+    }
+
     private static void Compare(string path, JToken? before, JToken? after, List<string> changes)
     {
         if (before is null && after is null)
