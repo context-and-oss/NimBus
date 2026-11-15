@@ -20,6 +20,8 @@ export interface CustomRangeFormProps {
   /** Accessible name of the form. */
   label?: string;
   className?: string;
+  /** Why a range is refused, or undefined when it is valid. Defaults to the server's chart limits. */
+  validate?: (from: Date, to: Date) => string | undefined;
 }
 
 /**
@@ -32,6 +34,7 @@ export default function CustomRangeForm({
   onCancel,
   label,
   className,
+  validate = customRangeError,
 }: CustomRangeFormProps) {
   const [start, setStart] = React.useState(() =>
     moment(initial.from).format(LOCAL_INPUT),
@@ -41,7 +44,7 @@ export default function CustomRangeForm({
   );
   const from = moment(start, LOCAL_INPUT, true).toDate();
   const to = moment(end, LOCAL_INPUT, true).toDate();
-  const error = customRangeError(from, to);
+  const error = validate(from, to);
   const startId = React.useId();
   const endId = React.useId();
 
