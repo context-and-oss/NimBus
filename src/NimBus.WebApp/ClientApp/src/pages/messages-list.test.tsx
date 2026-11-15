@@ -57,7 +57,9 @@ const mocks = vi.hoisted(() => {
     resolve: (value: unknown) => void;
   }
   const deferreds: Deferred[] = [];
-  const enqueueSearch = (): Promise<unknown> => {
+  const requests: unknown[] = [];
+  const enqueueSearch = (request?: unknown): Promise<unknown> => {
+    requests.push(request);
     let resolve!: (value: unknown) => void;
     const promise = new Promise<unknown>((r) => {
       resolve = r;
@@ -65,7 +67,7 @@ const mocks = vi.hoisted(() => {
     deferreds.push({ promise, resolve });
     return promise;
   };
-  return { deferreds, enqueueSearch };
+  return { deferreds, requests, enqueueSearch };
 });
 
 // Capture the rows DataTable is asked to render so we can assert which response
@@ -87,13 +89,14 @@ vi.mock("components/data-table", async () => {
 // Stub the filter bar so it doesn't fire its own catalog/endpoint API calls;
 // the page still drives fetches through the URL-derived filter. Keep the real
 // EMPTY_MESSAGE_FILTER / toMessageSearchFilter exports the page relies on.
-vi.mock("components/messages/message-filter-bar", async () => {
+vi.mock("components/messages/message-filter-pills", async () => {
   const actual = await vi.importActual<
-    typeof import("components/messages/message-filter-bar")
-  >("components/messages/message-filter-bar");
+    typeof import("components/messages/message-filter-pills")
+  >("components/messages/message-filter-pills");
   return {
     ...actual,
     default: () => <div data-testid="filter-bar-stub" />,
+    MessageSearchBox: () => <div data-testid="search-box-stub" />,
   };
 });
 
@@ -101,7 +104,9 @@ vi.mock("api-client", async () => {
   const actual =
     await vi.importActual<typeof import("api-client")>("api-client");
   class FakeClient {
-    postMessagesSearch = vi.fn(() => mocks.enqueueSearch());
+    postMessagesSearch = vi.fn((request: unknown) =>
+      mocks.enqueueSearch(request),
+    );
   }
   return {
     ...actual,
@@ -129,6 +134,7 @@ afterEach(() => {
   cleanup();
   captured.rows = undefined;
   mocks.deferreds.length = 0;
+  mocks.requests.length = 0;
   navigate = undefined;
   vi.clearAllMocks();
 });
@@ -210,5 +216,43 @@ describe("MessagesList type column", () => {
     const cell = await renderWith("brandNewResponse");
 
     expect(cell?.value).toBe("brandNewResponse");
+  });
+});
+
+describe("MessagesList URL filters", () => {
+  it("still applies a bookmarked event type and enqueued range", async () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          "/messages?eventTypeId=CrmAccountCreated&enqueuedFrom=2026-11-01T08:00&messageType=errorResponse",
+        ]}
+      >
+        <MessagesList />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(mocks.requests).toHaveLength(1));
+    const request = mocks.requests[0] as api.MessageSearchRequest;
+    expect(request.filter?.eventTypeId).toEqual(["CrmAccountCreated"]);
+    expect(request.filter?.messageType).toBe("errorResponse");
+    expect(request.filter?.enqueuedAtFrom?.toISOString()).toBe(
+      new Date(2026, 10, 1, 8, 0).toISOString(),
+    );
+    expect(request.filter?.enqueuedAtTo).toBeUndefined();
+  });
+
+  it("starts an enqueued preset relative to now", async () => {
+    const before = Date.now();
+    render(
+      <MemoryRouter initialEntries={["/messages?enqueuedPeriod=1h"]}>
+        <MessagesList />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(mocks.requests).toHaveLength(1));
+    const request = mocks.requests[0] as api.MessageSearchRequest;
+    const start = request.filter!.enqueuedAtFrom!.valueOf();
+    expect(start).toBeGreaterThanOrEqual(before - 3_600_000);
+    expect(start).toBeLessThanOrEqual(Date.now() - 3_600_000);
   });
 });

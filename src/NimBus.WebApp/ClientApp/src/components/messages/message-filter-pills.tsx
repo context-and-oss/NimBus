@@ -1,18 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
-import { Input } from "components/ui/input";
-import { Button } from "components/ui/button";
-import { Select } from "components/ui/select";
-import { Combobox, type ComboboxOption } from "components/ui/combobox";
+import moment from "moment";
 import {
-  Client,
-  CookieAuth,
   MessageSearchFilter,
   MessageSearchFilterMessageType,
 } from "api-client";
+import {
+  AddFilterIcon,
+  ChevronDown,
+  EndpointSelectContent,
+  IdSearchBox,
+  MultiSelectContent,
+  PillPopover,
+  PublisherSubscriberContent,
+  ResetFiltersButton,
+  SingleSelectContent,
+  TimePill,
+  summary,
+  useFilterOptions,
+} from "components/ui/filter-pills";
+import {
+  fromLocalInput,
+  isTimeFiltered,
+  presetStart,
+} from "functions/filter-pills.functions";
 
 /**
  * Plain string-keyed shape of the message filter, suitable for URL-param round-tripping.
- * The page owns this; the bar is a controlled component over it.
+ * The page owns this; the pills are controlled components over it.
  *
  * Declared as a closed `type` (not `interface`) so it satisfies the index-signature
  * constraint of `useUrlFilters<T>`.
@@ -22,11 +35,15 @@ export type MessageFilterValues = {
   eventId: string;
   messageId: string;
   sessionId: string;
-  eventTypeId: string;
+  eventTypeId: string[];
   from: string;
   to: string;
   messageType: string;
+  /** Relative enqueued-time preset ("" for any time); a custom range below wins over it. */
+  enqueuedPeriod: string;
+  /** Custom range start, a datetime-local value in local time. */
   enqueuedFrom: string;
+  /** Custom range end, a datetime-local value in local time. */
   enqueuedTo: string;
 };
 
@@ -35,244 +52,234 @@ export const EMPTY_MESSAGE_FILTER: MessageFilterValues = {
   eventId: "",
   messageId: "",
   sessionId: "",
-  eventTypeId: "",
+  eventTypeId: [],
   from: "",
   to: "",
   messageType: "",
+  enqueuedPeriod: "",
   enqueuedFrom: "",
   enqueuedTo: "",
 };
 
 /**
- * Build a MessageSearchFilter (the API contract type) from the flat filter values.
+ * Build a MessageSearchFilter (the API contract type) from the flat filter values. A preset
+ * window starts its span before `now` and is open-ended.
  */
 export function toMessageSearchFilter(
   v: MessageFilterValues,
+  now: Date = new Date(),
 ): MessageSearchFilter {
   const filter = new MessageSearchFilter();
   if (v.endpointId) filter.endpointId = v.endpointId;
   if (v.eventId) filter.eventId = v.eventId;
   if (v.messageId) filter.messageId = v.messageId;
   if (v.sessionId) filter.sessionId = v.sessionId;
-  if (v.eventTypeId) filter.eventTypeId = [v.eventTypeId];
+  if (v.eventTypeId.length) filter.eventTypeId = [...v.eventTypeId];
   if (v.from) filter.senderEndpoint = v.from;
   if (v.to) filter.receiverEndpoint = v.to;
   if (v.messageType)
     filter.messageType = v.messageType as MessageSearchFilterMessageType;
-  if (v.enqueuedFrom) filter.enqueuedAtFrom = new Date(v.enqueuedFrom) as any;
-  if (v.enqueuedTo) filter.enqueuedAtTo = new Date(v.enqueuedTo) as any;
+  const custom = !!(v.enqueuedFrom || v.enqueuedTo);
+  const start = custom
+    ? fromLocalInput(v.enqueuedFrom)
+    : presetStart(v.enqueuedPeriod, now);
+  const end = custom ? fromLocalInput(v.enqueuedTo) : undefined;
+  if (start) filter.enqueuedAtFrom = moment(start);
+  if (end) filter.enqueuedAtTo = moment(end);
   return filter;
 }
 
-interface MessageFilterBarProps {
-  /** Currently applied filter (URL-driven). The bar's draft state is reset to this whenever it changes. */
+const MESSAGE_TYPE_OPTIONS = [
+  { value: "", label: "Any type" },
+  ...Object.entries(MessageSearchFilterMessageType).map(([key, value]) => ({
+    label: key,
+    value: value as string,
+  })),
+];
+
+const messageTypeLabel = (value: string) =>
+  MESSAGE_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
+
+const ROUTE_FIELDS = [
+  { key: "from", label: "From (publisher)", short: "From" },
+  { key: "to", label: "To (subscriber)", short: "To" },
+] as const;
+
+export interface MessageFilterPillsProps {
+  /** The applied filter (URL-driven). */
   value: MessageFilterValues;
-  /** Called when the user clicks Search. Receives the typed-up draft. */
-  onSearch: (filter: MessageFilterValues) => void;
-  /** Called when the user clicks Reset. */
+  /** Applies a change to the filter. */
+  onApply: (patch: Partial<MessageFilterValues>) => void;
   onReset: () => void;
-  isLoading: boolean;
 }
 
-const messageTypeOptions = Object.entries(MessageSearchFilterMessageType).map(
-  ([key, value]) => ({ label: key, value }),
-);
-
-export default function MessageFilterBar({
+/**
+ * The Messages page's filter row, after the Failed page's: an enqueued-time pill, field pills
+ * that apply on change, publisher/subscriber behind (+), and Reset filters.
+ */
+export default function MessageFilterPills({
   value,
-  onSearch,
+  onApply,
   onReset,
-  isLoading,
-}: MessageFilterBarProps) {
-  const [draft, setDraft] = useState<MessageFilterValues>(value);
-  const [endpoints, setEndpoints] = useState<string[]>([]);
-  const [eventTypeOptions, setEventTypeOptions] = useState<ComboboxOption[]>(
-    [],
-  );
-
-  // When the applied filter changes (new search OR browser Back/forward), reset the draft.
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
-  useEffect(() => {
-    const client = new Client(CookieAuth());
-    client
-      .getEndpointsAll()
-      .then(setEndpoints)
-      .catch(() => setEndpoints([]));
-    client
-      .getEventTypes()
-      .then((types) =>
-        setEventTypeOptions(
-          types
-            .map((t) => t.name)
-            .filter((name): name is string => Boolean(name))
-            .map((name) => ({ value: name, label: name })),
-        ),
-      )
-      .catch(() => setEventTypeOptions([]));
-  }, []);
-
-  const endpointOptions = useMemo(
-    () => [
-      { value: "", label: "All endpoints" },
-      ...endpoints.map((endpoint) => ({ value: endpoint, label: endpoint })),
-    ],
-    [endpoints],
-  );
-
-  const update = <K extends keyof MessageFilterValues>(
-    key: K,
-    next: MessageFilterValues[K],
-  ) => setDraft((d) => ({ ...d, [key]: next }));
-
-  const handleSearch = () => onSearch(draft);
-  const handleReset = () => {
-    setDraft(EMPTY_MESSAGE_FILTER);
-    onReset();
+}: MessageFilterPillsProps) {
+  const { endpoints, eventTypes } = useFilterOptions();
+  const time = {
+    period: value.enqueuedPeriod,
+    from: value.enqueuedFrom,
+    to: value.enqueuedTo,
   };
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSearch();
-  };
+  const filtered =
+    isTimeFiltered(time) ||
+    !!value.messageType ||
+    !!value.endpointId ||
+    value.eventTypeId.length > 0 ||
+    !!value.from ||
+    !!value.to ||
+    !!value.eventId ||
+    !!value.messageId ||
+    !!value.sessionId;
 
   return (
-    <div className="bg-muted border border-border rounded-lg p-4 mb-4">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Endpoint
-          </label>
-          <Select
-            value={draft.endpointId}
-            onChange={(e) => update("endpointId", e.target.value)}
-            options={endpointOptions}
+    <div
+      className="flex flex-wrap items-center gap-2"
+      role="group"
+      aria-label="Filters"
+    >
+      <TimePill
+        label="Enqueued"
+        value={time}
+        onApply={(next) =>
+          onApply({
+            enqueuedPeriod: next.period,
+            enqueuedFrom: next.from,
+            enqueuedTo: next.to,
+          })
+        }
+      />
+
+      <PillPopover
+        label="Message type"
+        active={!!value.messageType}
+        content={(close) => (
+          <SingleSelectContent
+            options={MESSAGE_TYPE_OPTIONS}
+            value={value.messageType}
+            onApply={(messageType) => onApply({ messageType })}
+            close={close}
+            columns={2}
           />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Event ID
-          </label>
-          <Input
-            value={draft.eventId}
-            onChange={(e) => update("eventId", e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Filter by event ID..."
+        )}
+      >
+        Message type ={" "}
+        <b className="font-bold">
+          {value.messageType ? messageTypeLabel(value.messageType) : "Any"}
+        </b>
+        <ChevronDown />
+      </PillPopover>
+
+      <PillPopover
+        label="Endpoint"
+        active={!!value.endpointId}
+        content={(close) => (
+          <SingleSelectContent
+            options={[{ value: "", label: "Any endpoint" }, ...endpoints]}
+            value={value.endpointId}
+            onApply={(endpointId) => onApply({ endpointId })}
+            close={close}
           />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Message ID
-          </label>
-          <Input
-            value={draft.messageId}
-            onChange={(e) => update("messageId", e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Filter by message ID..."
+        )}
+      >
+        Endpoint = <b className="font-bold">{value.endpointId || "Any"}</b>
+        <ChevronDown />
+      </PillPopover>
+
+      <PillPopover
+        label="Event type"
+        active={value.eventTypeId.length > 0}
+        content={(close) => (
+          <MultiSelectContent
+            options={eventTypes}
+            value={value.eventTypeId}
+            placeholder="All event types"
+            onApply={(eventTypeId) => onApply({ eventTypeId })}
+            close={close}
           />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Session ID
-          </label>
-          <Input
-            value={draft.sessionId}
-            onChange={(e) => update("sessionId", e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Filter by session ID..."
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Event Type
-          </label>
-          <Combobox
-            options={eventTypeOptions}
-            value={draft.eventTypeId ? [draft.eventTypeId] : []}
-            onChange={(val) => update("eventTypeId", val[0] ?? "")}
-            placeholder="Filter by event type..."
-            multiple={false}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            From (Publisher)
-          </label>
-          <Select
-            value={draft.from}
-            onChange={(e) => update("from", e.target.value)}
-            options={endpointOptions}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            To (Subscriber)
-          </label>
-          <Select
-            value={draft.to}
-            onChange={(e) => update("to", e.target.value)}
-            options={endpointOptions}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Message Type
-          </label>
-          <select
-            value={draft.messageType}
-            onChange={(e) => update("messageType", e.target.value)}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-offset-0 focus:border-primary focus:ring-primary-200"
-          >
-            <option value="">All types</option>
-            {messageTypeOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Enqueued From
-          </label>
-          <Input
-            type="datetime-local"
-            value={draft.enqueuedFrom}
-            onChange={(e) => update("enqueuedFrom", e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Enqueued To
-          </label>
-          <Input
-            type="datetime-local"
-            value={draft.enqueuedTo}
-            onChange={(e) => update("enqueuedTo", e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
-        </div>
-      </div>
-      <div className="flex gap-2 mt-3">
-        <Button
-          onClick={handleSearch}
-          disabled={isLoading}
-          size="sm"
-          colorScheme="primary"
+        )}
+      >
+        Event type = <b className="font-bold">{summary(value.eventTypeId)}</b>
+        <ChevronDown />
+      </PillPopover>
+
+      {ROUTE_FIELDS.filter((f) => !!value[f.key]).map((f) => (
+        <PillPopover
+          key={f.key}
+          label={f.label}
+          active
+          onRemove={() => onApply({ [f.key]: "" })}
+          content={(close) => (
+            <EndpointSelectContent
+              label={f.label}
+              options={endpoints}
+              value={value[f.key]}
+              onApply={(next) => onApply({ [f.key]: next })}
+              close={close}
+            />
+          )}
         >
-          Search
-        </Button>
-        <Button
-          onClick={handleReset}
-          disabled={isLoading}
-          size="sm"
-          variant="outline"
-          colorScheme="gray"
-        >
-          Reset
-        </Button>
-      </div>
+          {f.short} = <b className="font-bold">{value[f.key]}</b>
+        </PillPopover>
+      ))}
+
+      <PillPopover
+        label="Add filter"
+        className="px-3 text-primary-700"
+        content={(close) => (
+          <PublisherSubscriberContent
+            options={endpoints}
+            from={value.from}
+            to={value.to}
+            note="Event, message and session IDs go in the search box."
+            onApply={onApply}
+            close={close}
+          />
+        )}
+      >
+        <AddFilterIcon />
+      </PillPopover>
+
+      {filtered && <ResetFiltersButton onClick={onReset} />}
     </div>
+  );
+}
+
+const MESSAGE_ID_PREFIXES = {
+  event: "eventId",
+  message: "messageId",
+  session: "sessionId",
+} as const;
+
+/** The Messages page's ID search: `event:`, `message:`, `session:`, or a bare event ID. */
+export function MessageSearchBox({
+  value,
+  onApply,
+}: {
+  value: MessageFilterValues;
+  onApply: (
+    patch: Pick<MessageFilterValues, "eventId" | "messageId" | "sessionId">,
+  ) => void;
+}) {
+  return (
+    <IdSearchBox
+      label="Search messages"
+      placeholder="Search by ID: event:… message:… session:… (a bare value finds an event)"
+      prefixes={MESSAGE_ID_PREFIXES}
+      bare="eventId"
+      value={{
+        eventId: value.eventId,
+        messageId: value.messageId,
+        sessionId: value.sessionId,
+      }}
+      onSubmit={onApply}
+    />
   );
 }
