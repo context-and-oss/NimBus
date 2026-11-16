@@ -306,16 +306,14 @@ public sealed class RecorderTests
     }
 
     [TestMethod]
-    public void Version_Two_Adds_Fault_Origin_And_The_Provider_Keeps_Version_One()
+    public void Version_Two_Adds_Fault_Origin()
     {
         Assert.AreEqual(2, FailureClassificationQuestionSet.Version);
         Assert.IsTrue(FailureClassificationQuestionSet.Items.ContainsKey("fault_origin"));
         CollectionAssert.AreEquivalent(
             new[] { "source_data", "adapter_code", "target_system", "configuration", "platform", "unknown" },
             FailureClassificationQuestionSet.FaultOrigins.ToArray());
-        Assert.AreEqual(1, FailureClassificationQuestionSet.ProviderVersion);
-        Assert.IsFalse(FailureClassificationQuestionSet.ProviderItems.ContainsKey("fault_origin"));
-        Assert.HasCount(4, FailureClassificationQuestionSet.ProviderItems);
+        Assert.HasCount(5, FailureClassificationQuestionSet.Items);
     }
 
     private static FailureClassificationRecording Answers() => new()

@@ -3,13 +3,6 @@ namespace NimBus.Extensions.IntegrationIntelligence;
 /// <summary>Composes operator guidance from classification answers without recovery side effects.</summary>
 public static class FailureGuidanceRules
 {
-    /// <summary>Applies the ordered guidance rules to a provider result. Forwards to the answer overload.</summary>
-    public static FailureGuidance Compose(FailureIntelligenceProviderResult result, FailureClassificationOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(result);
-        return Compose(result.Category, result.CategoryConfidence, result.RetryLikelihood, result.ChangeRequiredLikelihood, options);
-    }
-
     /// <summary>
     /// Applies the ordered guidance rules from the specification to the answers of a question set,
     /// with the saved thresholds. Agents never supply guidance; NimBus composes it (Spec 044 §6.4).

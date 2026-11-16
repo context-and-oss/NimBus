@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace NimBus.Extensions.IntegrationIntelligence.Evidence;
 
-/// <summary>Explicit provider projection: operational identifiers and timestamps stay local.</summary>
+/// <summary>Projection of the evidence used to bound its size (<c>MaximumStateCharacters</c>): operational identifiers and timestamps are left out.</summary>
 public static class OutboundFailureState
 {
     public static object Create(FailureClassificationInput input) => new

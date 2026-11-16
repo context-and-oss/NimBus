@@ -65,15 +65,15 @@ public sealed record FailureClassificationRecording
 }
 
 /// <summary>The evidence an agent classifies, and the latest saved classification of the same attempt.</summary>
-/// <param name="Input">The bounded, redacted evidence the provider would have received, with the sending endpoints.</param>
+/// <param name="Input">The bounded, redacted evidence, with the sending endpoints.</param>
 /// <param name="Latest">The latest saved classification, or null.</param>
 public sealed record FailureEvidence(FailureClassificationInput Input, FailureClassification? Latest);
 
 /// <summary>
 /// Records classifications that agents make over MCP (Spec 044 §6.4). It checks Contributor and
 /// eligibility, scrubs the rationale like evidence text, composes guidance with the saved
-/// thresholds, and stores one revision through the same idempotent operation path as the
-/// deprecated provider analysis. It calls no model.
+/// thresholds, and stores one revision through the idempotent operation path of the store.
+/// It calls no model.
 /// </summary>
 public sealed class FailureClassificationRecorder
 {
@@ -402,7 +402,7 @@ public sealed class FailureClassificationRecorder
         }
         catch
         {
-            // Audit is best-effort here, as for provider analysis: a recording changes no message.
+            // Audit is best-effort: a recording changes no message.
         }
     }
 }

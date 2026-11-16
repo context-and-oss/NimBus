@@ -1,4 +1,4 @@
-#pragma warning disable CA1707, CA2007, CS0618 // CS0618: these tests cover the deprecated provider (Spec 044 §6.10).
+#pragma warning disable CA1707, CA2007
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,12 +17,12 @@ public sealed class ActivationDiagnosticsTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IIntegrationIntelligenceStorageSettings, TestStorageSettings>();
-        services.AddControllers().AddApplicationPart(typeof(IntegrationIntelligenceController).Assembly);
-        services.AddNimBusIntegrationIntelligence(Configuration(true, "20"));
+        services.AddControllers().AddApplicationPart(typeof(IntegrationIntelligenceReadController).Assembly);
+        services.AddNimBusIntegrationIntelligence(Configuration(true, "0.75"));
 
         using var provider = services.BuildServiceProvider();
         var activation = provider.GetRequiredService<IntegrationIntelligenceActivation>();
-        Assert.IsFalse(activation.Ready);
+        Assert.IsFalse(activation.Readable);
         var routes = provider.GetRequiredService<IActionDescriptorCollectionProvider>().ActionDescriptors.Items
             .Select(action => action.AttributeRouteInfo?.Template ?? string.Empty);
         Assert.IsFalse(routes.Any(route => route.Contains("integration-intelligence", StringComparison.OrdinalIgnoreCase)));
@@ -38,8 +38,8 @@ public sealed class ActivationDiagnosticsTests
         services.AddSingleton<ILoggerFactory>(loggerFactory);
         services.AddSingleton<IIntegrationIntelligenceStorageSettings, TestStorageSettings>();
         services.AddSingleton<IIntegrationIntelligenceHost, TestIntelligenceHost>();
-        services.AddControllers().AddApplicationPart(typeof(IntegrationIntelligenceController).Assembly);
-        services.AddNimBusIntegrationIntelligence(Configuration(true, "not-an-integer", "secret-key"));
+        services.AddControllers().AddApplicationPart(typeof(IntegrationIntelligenceReadController).Assembly);
+        services.AddNimBusIntegrationIntelligence(Configuration(true, "not-a-number", "secret-key"));
 
         using var provider = services.BuildServiceProvider();
         var warnings = provider.GetServices<IHostedService>().Where(service => service.GetType().Name == "InvalidConfigurationWarning").ToArray();
@@ -62,17 +62,15 @@ public sealed class ActivationDiagnosticsTests
         var activation = provider.GetRequiredService<IntegrationIntelligenceActivation>();
         Assert.IsTrue(activation.Readable);
         Assert.IsTrue(activation.Recordable);
-        Assert.IsFalse(activation.Ready);
         Assert.IsEmpty(provider.GetServices<IHostedService>().Where(s => s.GetType().Name == "InvalidConfigurationWarning"));
         using var scope = provider.CreateScope();
         Assert.IsNotNull(scope.ServiceProvider.GetService<FailureClassificationRecorder>());
-        Assert.IsNull(scope.ServiceProvider.GetService<FailureClassificationService>());
         var routes = Routes(provider);
         Assert.IsTrue(routes.Any(route => route.Contains("classification", StringComparison.Ordinal)), "Saved results stay readable.");
     }
 
     [TestMethod]
-    public void TypeSafe_Without_A_Key_Is_Recordable_And_Warns()
+    public void Default_Configuration_Is_Recordable_Without_A_Warning()
     {
         using var provider = Build(new Dictionary<string, string?>
         {
@@ -81,8 +79,7 @@ public sealed class ActivationDiagnosticsTests
 
         var activation = provider.GetRequiredService<IntegrationIntelligenceActivation>();
         Assert.IsTrue(activation.Recordable);
-        Assert.IsFalse(activation.Ready);
-        Assert.HasCount(1, provider.GetServices<IHostedService>().Where(s => s.GetType().Name == "InvalidConfigurationWarning"));
+        Assert.IsEmpty(provider.GetServices<IHostedService>().Where(s => s.GetType().Name is "InvalidConfigurationWarning" or "RemovedProviderSettingsWarning"));
     }
 
     [TestMethod]
@@ -102,32 +99,6 @@ public sealed class ActivationDiagnosticsTests
         Assert.IsNull(scope.ServiceProvider.GetService<FailureClassificationRecorder>());
     }
 
-    [TestMethod]
-    public void A_Valid_Key_Is_Ready_And_Recordable()
-    {
-        using var provider = Build(new Dictionary<string, string?>
-        {
-            ["NimBus:IntegrationIntelligence:Enabled"] = "true",
-            ["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:ApiKey"] = "test-key",
-        });
-
-        var activation = provider.GetRequiredService<IntegrationIntelligenceActivation>();
-        Assert.IsTrue(activation.Recordable);
-        Assert.IsTrue(activation.Ready);
-    }
-
-    [TestMethod]
-    [DataRow("None", true)]
-    [DataRow("none", true)]
-    [DataRow("TypeSafe", true)]
-    [DataRow("OpenAI", false)]
-    public void Provider_Accepts_None_Or_TypeSafe(string name, bool valid)
-    {
-        var options = new FailureClassificationOptions { Enabled = true, IntelligenceEnabled = true, Provider = name };
-        Assert.AreEqual(valid, !options.ValidateProvider().Any(error => error.StartsWith("Provider ", StringComparison.Ordinal)));
-        Assert.IsEmpty(options.ValidateEvidence());
-    }
-
     private static ServiceProvider Build(Dictionary<string, string?> settings)
     {
         var services = new ServiceCollection();
@@ -136,7 +107,7 @@ public sealed class ActivationDiagnosticsTests
         services.AddSingleton<IIntegrationIntelligenceHost, TestIntelligenceHost>();
         services.AddSingleton(System.Reflection.DispatchProxy.Create<NimBus.MessageStore.Abstractions.IMessageTrackingStore, MessageSource>());
         services.AddSingleton<NimBus.Core.Messages.PII.IEventJsonMasker, TestMasker>();
-        services.AddControllers().AddApplicationPart(typeof(IntegrationIntelligenceController).Assembly);
+        services.AddControllers().AddApplicationPart(typeof(IntegrationIntelligenceReadController).Assembly);
         services.AddNimBusIntegrationIntelligence(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());
         return services.BuildServiceProvider();
     }
@@ -145,12 +116,13 @@ public sealed class ActivationDiagnosticsTests
         => provider.GetRequiredService<IActionDescriptorCollectionProvider>().ActionDescriptors.Items
             .Select(action => action.AttributeRouteInfo?.Template ?? string.Empty).ToArray();
 
-    private static IConfiguration Configuration(bool enabled, string timeout, string apiKey = "test-key")
+    private static IConfiguration Configuration(bool enabled, string retryLikely, string apiKey = "test-key")
         => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["NimBus:IntegrationIntelligence:Enabled"] = enabled.ToString(),
+            // A removed provider key stays in some deployments; it must never reach a log line.
             ["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:ApiKey"] = apiKey,
-            ["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:TimeoutSeconds"] = timeout,
+            ["NimBus:IntegrationIntelligence:FailureClassification:Thresholds:RetryLikely"] = retryLikely,
         }).Build();
 
     private sealed class TestStorageSettings : IIntegrationIntelligenceStorageSettings

@@ -6,9 +6,9 @@ using NimBus.MessageStore.Abstractions;
 namespace NimBus.Extensions.IntegrationIntelligence;
 
 /// <summary>
-/// Reads saved failure classifications without a provider (spec 043 read-only mode). Registered
+/// Reads saved failure classifications (spec 043 read-only mode and above). Registered
 /// whenever classification storage is readable, so saved results stay visible to the WebApp, the
-/// classification GET routes and the MCP read tool even when no provider is configured.
+/// classification GET routes and the MCP read tool even when recording is unavailable.
 /// </summary>
 public sealed class FailureClassificationReader
 {
@@ -43,8 +43,8 @@ public sealed class FailureClassificationReader
 
     /// <summary>
     /// Loads the latest classification of one failed attempt after checking that its source exists
-    /// and the caller has Reader on its endpoint. Answers 409 while a newer analysis is running or
-    /// its outcome is unknown, and 503 when the latest analysis failed.
+    /// and the caller has Reader on its endpoint. Answers 409 while a newer classification is being stored or
+    /// its outcome is unknown, and 503 when the latest attempt failed.
     /// </summary>
     public async Task<FailureClassification?> GetLatestAsync(string eventId, string messageId, CancellationToken cancellationToken)
     {
@@ -116,7 +116,7 @@ public sealed class FailureClassificationReader
         return new ClassificationBulkReadResult(ClassificationBulkReadStatus.Available, snapshots);
     }
 
-    /// <summary>Loads one failed attempt and checks that its source exists and the caller may read (or analyze) it.</summary>
+    /// <summary>Loads one failed attempt and checks that its source exists and the caller may read (or record) it.</summary>
     internal async Task<MessageEntity> LoadAuthorizedMessageAsync(string eventId, string messageId, bool requireContributor,
         Action<MessageEntity>? loadedMessage = null, CancellationToken cancellationToken = default)
     {

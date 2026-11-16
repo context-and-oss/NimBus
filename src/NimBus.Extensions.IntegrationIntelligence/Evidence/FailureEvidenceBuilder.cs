@@ -142,7 +142,7 @@ public sealed class FailureEvidenceBuilder
 
     /// <summary>
     /// Scrubs free text an agent wrote about <paramref name="row"/> the way error text is scrubbed
-    /// for the provider (Spec 044 §6.4): every value the event's metadata marks sensitive is
+    /// for the evidence (Spec 044 §6.4): every value the event's metadata marks sensitive is
     /// replaced, then credential-shaped values are redacted. Returns null when the text cannot be
     /// verified (the payload's sensitive values could not be read) or holds an exception dump.
     /// </summary>

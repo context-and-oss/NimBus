@@ -34,7 +34,7 @@ public sealed class IntegrationIntelligenceStatusController : ControllerBase
 
 /// <summary>
 /// Serves saved classification results. Available whenever classification storage is readable,
-/// including read-only mode with no provider configured (spec 043).
+/// including read-only mode (spec 043). Agents record new results over MCP.
 /// </summary>
 [ApiController]
 [Authorize]
@@ -57,35 +57,6 @@ public sealed class IntegrationIntelligenceReadController : ControllerBase
         => await ClassificationResults.ExecuteAsync(() => _reader.GetHistoryAsync(eventId, messageId, cancellationToken)).ConfigureAwait(false);
 }
 
-/// <summary>
-/// Serves advisory failure classification requests. Available only when a provider is ready.
-/// Deprecated with the provider (Spec 044 §6.10); removed in v5.0.0. There is no replacement
-/// route: agents record classifications over MCP.
-/// </summary>
-[Obsolete(IntegrationIntelligenceDeprecation.Provider)]
-[ApiController]
-[Authorize]
-[Route("api/integration-intelligence/failures/{eventId}/{messageId}/classification")]
-public sealed class IntegrationIntelligenceController : ControllerBase
-{
-    private readonly FailureClassificationService _service;
-
-    /// <summary>Creates the classification controller.</summary>
-    public IntegrationIntelligenceController(FailureClassificationService service) => _service = service;
-
-    /// <summary>Starts or reuses one idempotent analysis request.</summary>
-    [HttpPost]
-    public async Task<IActionResult> PostClassification(string eventId, string messageId, [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] ClassificationRequest? request, CancellationToken cancellationToken)
-    {
-        HttpContext.Items[IntegrationIntelligenceRequestMarkers.ControllerEntered] = true;
-        return await ClassificationResults.ExecuteAsync(async () =>
-        {
-            var result = await _service.AnalyzeAsync(eventId, messageId, Request.Headers["Idempotency-Key"].ToString(), request?.Force ?? false, cancellationToken).ConfigureAwait(false);
-            return new ClassificationResponse(result.Result, result.Cached);
-        }).ConfigureAwait(false);
-    }
-}
-
 /// <summary>Maps classification outcomes to the routes' stable error bodies.</summary>
 internal static class ClassificationResults
 {
@@ -103,9 +74,3 @@ internal static class ClassificationResults
         catch (Exception) { return new ObjectResult(new { code = "ClassificationUnavailable" }) { StatusCode = 503 }; }
     }
 }
-
-/// <summary>Analyze request body.</summary>
-public sealed record ClassificationRequest(bool Force = false);
-
-/// <summary>Classification response with cache indication.</summary>
-public sealed record ClassificationResponse(FailureClassification Result, bool Cached);

@@ -18,9 +18,8 @@ public sealed class ContractsAndStoreTests
     public void Guidance_Uses_The_Specified_Order(double confidence, double retry, double changeRequired, string category, FailureGuidance expected)
     {
         var options = new FailureClassificationOptions();
-        var result = new FailureIntelligenceProviderResult(category, category, confidence, new Dictionary<string, double> { [category] = 1 }, retry, changeRequired, 0, null, null);
 
-        Assert.AreEqual(expected, FailureGuidanceRules.Compose(result, options));
+        Assert.AreEqual(expected, FailureGuidanceRules.Compose(category, confidence, retry, changeRequired, options));
     }
 
     [TestMethod]
@@ -89,12 +88,8 @@ public sealed class ContractsAndStoreTests
     [TestMethod]
     public void QuestionSet_Contains_All_Version_One_Questions()
     {
-        // Spec 044 §6.2: the deprecated provider keeps asking version 1; agents answer version 2,
-        // which keeps the four version 1 questions and adds fault_origin.
-        Assert.AreEqual(1, FailureClassificationQuestionSet.ProviderVersion);
-        CollectionAssert.AreEquivalent(
-            QuestionIds,
-            FailureClassificationQuestionSet.ProviderItems.Keys.ToArray());
+        // Spec 044 §6.2: agents answer version 2, which keeps the four version 1 questions (asked by
+        // the built-in provider removed in v5.0.0) and adds fault_origin.
         CollectionAssert.AreEquivalent(
             QuestionIds.Append("fault_origin").ToArray(),
             FailureClassificationQuestionSet.Items.Keys.ToArray());
@@ -102,21 +97,11 @@ public sealed class ContractsAndStoreTests
     }
 
     [TestMethod]
-    public void Provider_Question_Wire_Format_Is_Unchanged()
+    public void Question_Wire_Format_Is_Unchanged()
     {
         // The typed choices serialize exactly as the anonymous objects they replaced.
-        var json = System.Text.Json.JsonSerializer.Serialize(FailureClassificationQuestionSet.ProviderItems["failure_category"].Criteria!["unknown"]);
+        var json = System.Text.Json.JsonSerializer.Serialize(FailureClassificationQuestionSet.Items["failure_category"].Criteria!["unknown"]);
         Assert.AreEqual("{\"what\":\"There is insufficient evidence or no category fits.\",\"examples\":[]}", json);
-    }
-
-    [TestMethod]
-    [DataRow(0.59, 0.90, 0.00, "transient_dependency")]
-    [DataRow(0.90, 0.10, 0.90, "business_rule")]
-    public void Compose_Overload_Matches_The_Provider_Result_Overload(double confidence, double retry, double changeRequired, string category)
-    {
-        var options = new FailureClassificationOptions();
-        var result = new FailureIntelligenceProviderResult(category, category, confidence, new Dictionary<string, double> { [category] = 1 }, retry, changeRequired, 0, null, null);
-        Assert.AreEqual(FailureGuidanceRules.Compose(result, options), FailureGuidanceRules.Compose(category, confidence, retry, changeRequired, options));
     }
 
     [TestMethod]

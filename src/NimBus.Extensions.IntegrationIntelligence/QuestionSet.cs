@@ -4,16 +4,14 @@ namespace NimBus.Extensions.IntegrationIntelligence;
 
 /// <summary>
 /// Versioned question sets. <see cref="Items"/> (version <see cref="Version"/>) is what agents
-/// answer when they record a classification over MCP (Spec 044 §6.2). The deprecated provider
-/// keeps asking <see cref="ProviderItems"/> (version <see cref="ProviderVersion"/>).
+/// answer when they record a classification over MCP (Spec 044 §6.2). Version 1, without the
+/// fault-origin question, was asked by the built-in provider removed in v5.0.0; its stored
+/// results stay readable.
 /// </summary>
 public static class FailureClassificationQuestionSet
 {
     /// <summary>Current question-set version, answered by agents.</summary>
     public const int Version = 2;
-
-    /// <summary>The version the deprecated provider asks; it has no fault-origin question.</summary>
-    public const int ProviderVersion = 1;
 
     private static readonly Question FailureCategory = new("choice", "Classify the primary cause of this failure.", new Dictionary<string, object?>
     {
@@ -41,29 +39,22 @@ public static class FailureClassificationQuestionSet
         ["unknown"] = new QuestionChoice("Not enough evidence.", []),
     });
 
-    private static readonly Dictionary<string, Question> ProviderQuestions = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, Question> Questions = new(StringComparer.Ordinal)
     {
         ["failure_category"] = FailureCategory,
         ["retry_likely_to_succeed_unchanged"] = RetryLikely,
         ["change_required_before_success"] = ChangeRequired,
         ["external_dependency_involved"] = ExternalDependency,
-    };
-
-    private static readonly Dictionary<string, Question> Questions = new(ProviderQuestions, StringComparer.Ordinal)
-    {
         ["fault_origin"] = FaultOrigin,
     };
 
     /// <summary>The current (version <see cref="Version"/>) question set, answered by agents.</summary>
     public static IReadOnlyDictionary<string, Question> Items => Questions;
 
-    /// <summary>The version <see cref="ProviderVersion"/> question set the deprecated provider asks.</summary>
-    public static IReadOnlyDictionary<string, Question> ProviderItems => ProviderQuestions;
-
     /// <summary>
     /// Every category name the question sets can return, including <c>unknown</c>. Readers use
     /// it to treat a stored category from a newer question set as unrecognized (spec 043 §5).
-    /// Both versions share the same categories.
+    /// Versions 1 and 2 share the same categories.
     /// </summary>
     public static IReadOnlySet<string> Categories { get; } =
         new HashSet<string>(FailureCategory.Criteria!.Keys, StringComparer.Ordinal);
