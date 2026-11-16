@@ -29,6 +29,11 @@ A site Owner can lower both MCP limits in **Settings → MCP access** without a 
 configured values are the ceiling. The effective limit is part of the partition key, so a changed
 limit starts a new window rather than reusing the cached limiter.
 
+An [agent API key on `/mcp`](mcp-server.md#agent-api-keys-on-mcp) has a partition of its own for both
+MCP limits, keyed by its key id rather than tenant, client and user, so a leaked key that is being
+abused cannot use up its replacement's window during a rotation. A key may also carry a request limit
+of its own; the lowest of the deployment's, the Owner's and the key's applies.
+
 `GET /account/login` — the sign-in *page* — is deliberately not throttled;
 only the credential POST is.
 

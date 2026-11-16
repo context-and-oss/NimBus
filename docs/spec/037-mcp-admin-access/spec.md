@@ -1,6 +1,7 @@
 # Spec 037 — Admin-managed MCP access
 
-Status: **implemented** (2026-10-07) on branch `claude/mcp-admin-config-mockup-63fed4`, all three
+Status: **implemented** (2026-10-07). [Spec 052](../052-mcp-agent-api-keys/spec.md) later added the
+**Agent API keys** switch to this policy. Built on branch `claude/mcp-admin-config-mockup-63fed4`, all three
 slices together; §16 records what the implementation resolved and where it differs from this
 text. Not yet piloted in Azure. [Spec 035](../035-mcp-operator-access/spec.md#phase-3-as-built)
 Phase 3 later added three capabilities to this policy (settle pending handoffs, recover deferred

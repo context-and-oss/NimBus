@@ -1,6 +1,7 @@
 # Spec 039: Agent API keys
 
 Status: implemented. Merged as context-and-oss/NimBus#247 and #258 and shipped in v4.8.0.
+[Spec 052](../052-mcp-agent-api-keys/spec.md) adds a second use: keys issued for `/mcp`.
 Proposed 2026-10-11. Issue: context-and-oss/NimBus#241.
 
 ## Problem
