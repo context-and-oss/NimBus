@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol;
+using ModelContextProtocol.AspNetCore.Authentication;
 using ModelContextProtocol.Authentication;
 using ModelContextProtocol.Protocol;
 using Microsoft.AspNetCore.Authorization;
@@ -165,6 +166,9 @@ public static class McpOperatorServiceCollectionExtensions
     {
         var authority = entra.Authority;
         var applicationIdUri = entra.ResolvedApplicationIdUri;
+        // Validated at startup: a scope the registration lacks makes every client's sign-in fail.
+        var scopes = entra.ResolveScopes().Select(scope => $"{applicationIdUri}/{scope}").ToList();
+        services.AddSingleton(new McpChallengeScope(string.Join(' ', scopes)));
 
         services.AddAuthentication()
             .AddJwtBearer(McpAuthenticationSchemes.Bearer, jwt =>
@@ -177,7 +181,8 @@ public static class McpOperatorServiceCollectionExtensions
                 jwt.TokenValidationParameters.NameClaimType = "name";
                 jwt.TokenValidationParameters.RoleClaimType = "roles";
             })
-            .AddMcp(McpAuthenticationSchemes.Challenge, "NimBus operator MCP", mcp =>
+            // AddMcp registers the SDK's McpAuthenticationHandler; this subclass adds the scope.
+            .AddScheme<McpAuthenticationOptions, McpChallengeHandler>(McpAuthenticationSchemes.Challenge, "NimBus operator MCP", mcp =>
             {
                 // Built per request so the advertised resource matches the host the client used.
                 mcp.Events.OnResourceMetadataRequest = context =>
@@ -187,7 +192,7 @@ public static class McpOperatorServiceCollectionExtensions
                     {
                         Resource = $"{request.Scheme}://{request.Host}{request.PathBase}{McpOperatorOptions.Path}",
                         AuthorizationServers = [authority],
-                        ScopesSupported = McpOperatorPermissions.AllScopes.Select(scope => $"{applicationIdUri}/{scope}").ToList(),
+                        ScopesSupported = scopes,
                         ResourceName = "NimBus operator MCP",
                     };
                     return Task.CompletedTask;
