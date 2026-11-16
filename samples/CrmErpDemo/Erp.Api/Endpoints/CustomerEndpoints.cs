@@ -65,9 +65,8 @@ public static class CustomerEndpoints
         group.MapPost("/", async (Customer input, ErpDbContext db, IPublisherClient publisher) =>
         {
             input.Id = input.Id == Guid.Empty ? Guid.NewGuid() : input.Id;
-            input.CustomerNumber = string.IsNullOrWhiteSpace(input.CustomerNumber)
-                ? $"C-{DateTime.UtcNow:yyMMdd}-{Random.Shared.Next(10000, 99999)}"
-                : input.CustomerNumber;
+            if (string.IsNullOrWhiteSpace(input.CustomerNumber))
+                input.CustomerNumber = await db.NextCustomerNumberAsync();
             input.CreatedAt = DateTimeOffset.UtcNow;
             input.Origin = "Erp";
 
@@ -117,6 +116,7 @@ public static class CustomerEndpoints
 
             var isNew = existing is null;
             Customer entity = existing!;
+            var customerNumber = isNew ? await db.NextCustomerNumberAsync() : null;
 
             await OutboxScope.RunAsync(db, async () =>
             {
@@ -126,7 +126,7 @@ public static class CustomerEndpoints
                     {
                         Id = Guid.NewGuid(),
                         CrmAccountId = crmAccountId,
-                        CustomerNumber = $"C-{DateTime.UtcNow:yyMMdd}-{Random.Shared.Next(10000, 99999)}",
+                        CustomerNumber = customerNumber!,
                         LegalName = req.LegalName,
                         TaxId = req.TaxId,
                         CountryCode = req.CountryCode,

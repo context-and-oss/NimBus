@@ -166,6 +166,9 @@ for (var attempt = 1; attempt <= 10 && !initSucceeded; attempt++)
         // The paged lists sort by CreatedAt. Give a database from before paging the index.
         await db.Database.ExecuteSqlRawAsync(ErpDbContext.ListIndexUpgradeSql);
 
+        // Customer numbers come from a sequence. Give a database from before it the sequence.
+        await db.Database.ExecuteSqlRawAsync(ErpDbContext.CustomerNumberSequenceUpgradeSql);
+
         var outbox = (SqlServerOutbox)scope.ServiceProvider.GetRequiredService<NimBus.Core.Outbox.IOutbox>();
         await outbox.EnsureTableExistsAsync();
         initSucceeded = true;
