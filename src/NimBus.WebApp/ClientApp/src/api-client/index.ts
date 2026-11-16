@@ -16923,7 +16923,7 @@ export class FailedInsightsOverview implements IFailedInsightsOverview {
     enrichment?: InsightsEnrichmentStatus;
     /** The largest scope, in occurrences, that is enriched with saved classifications. */
     enrichmentLimit?: number;
-    /** Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is. */
+    /** Whether agents can record new classifications over MCP. False when failure intelligence is off or only saved classifications can be read (its evidence or threshold settings are invalid), so notAnalyzed occurrences stay unclassified until that is fixed. */
     analysisAvailable?: boolean;
     coverage?: InsightsCoverage | undefined;
     /** Occurrences grouped by likely failure cause. Null unless enrichment is available. */
@@ -17058,7 +17058,7 @@ export interface IFailedInsightsOverview {
     enrichment?: InsightsEnrichmentStatus;
     /** The largest scope, in occurrences, that is enriched with saved classifications. */
     enrichmentLimit?: number;
-    /** Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is. */
+    /** Whether agents can record new classifications over MCP. False when failure intelligence is off or only saved classifications can be read (its evidence or threshold settings are invalid), so notAnalyzed occurrences stay unclassified until that is fixed. */
     analysisAvailable?: boolean;
     coverage?: InsightsCoverage | undefined;
     /** Occurrences grouped by likely failure cause. Null unless enrichment is available. */
@@ -17394,7 +17394,7 @@ export class InsightOccurrence implements IInsightOccurrence {
     guidance?: string | undefined;
     revision?: number | undefined;
     model?: string | undefined;
-    /** Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider). */
+    /** Who made the saved result. Agent (recorded over MCP) or TypeSafe (the built-in provider, for results made before NimBus 5.0). */
     provider?: string | undefined;
     /** The saved fault origin (question set version 2); null when not assessed. */
     faultOrigin?: string | undefined;
@@ -17501,7 +17501,7 @@ export interface IInsightOccurrence {
     guidance?: string | undefined;
     revision?: number | undefined;
     model?: string | undefined;
-    /** Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider). */
+    /** Who made the saved result. Agent (recorded over MCP) or TypeSafe (the built-in provider, for results made before NimBus 5.0). */
     provider?: string | undefined;
     /** The saved fault origin (question set version 2); null when not assessed. */
     faultOrigin?: string | undefined;

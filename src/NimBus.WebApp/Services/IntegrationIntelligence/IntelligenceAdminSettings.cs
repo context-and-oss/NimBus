@@ -5,14 +5,15 @@ using NimBus.Extensions.IntegrationIntelligence;
 
 namespace NimBus.WebApp.Services.IntegrationIntelligence;
 
-/// <summary>Non-secret, administrator-editable settings. Credentials and URLs are deliberately absent.</summary>
+/// <summary>
+/// Non-secret, administrator-editable settings. Records saved before v5.0.0 also carry the removed
+/// provider's model and timeout; the stores read them with Newtonsoft, which ignores those members.
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class IntelligenceAdminSettings
 {
     [JsonRequired]
     public bool Enabled { get; set; }
-    [JsonRequired]
-    public string Model { get; set; } = "jev-1.13.0";
     [JsonRequired]
     public bool IncludeEventPayload { get; set; }
     /// <summary>
@@ -29,8 +30,6 @@ public sealed class IntelligenceAdminSettings
     [JsonRequired]
     public string[] AllowedEndpoints { get; set; } = [];
     [JsonRequired]
-    public int TimeoutSeconds { get; set; } = 20;
-    [JsonRequired]
     public double MinimumCategoryConfidence { get; set; } = 0.60;
     [JsonRequired]
     public double RetryLikely { get; set; } = 0.75;
@@ -44,9 +43,6 @@ public sealed class IntelligenceAdminSettings
     public IReadOnlyList<string> Validate()
     {
         var errors = new List<string>();
-        if (string.IsNullOrWhiteSpace(Model) || Model.Length > 100 || Model.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.')))
-            errors.Add("Model must contain 1–100 letters, digits, dots, underscores or hyphens.");
-        if (TimeoutSeconds is < 1 or > 20) errors.Add("Timeout must be between 1 and 20 seconds.");
         if (MaximumHistoryItems is < 0 or > 5) errors.Add("History limit must be between 0 and 5.");
         if (!Probability(MinimumCategoryConfidence)) errors.Add("Category confidence must be between 0 and 1.");
         if (!Probability(RetryLikely)) errors.Add("Retry threshold must be between 0 and 1.");
@@ -56,29 +52,16 @@ public sealed class IntelligenceAdminSettings
         return errors;
     }
 
-    /// <summary>Accepts a trimmed provider key: 1–512 visible characters, no whitespace or control characters. Never logs the value.</summary>
-    public static bool IsValidApiKey(string? value)
-        => value is { Length: >= 1 and <= 512 } && !value.Any(c => char.IsWhiteSpace(c) || char.IsControl(c));
-
     private static bool Probability(double value) => double.IsFinite(value) && value is >= 0 and <= 1;
     private static bool Names(string[]? values) => values is not null && values.Length <= 100
         && values.All(v => !string.IsNullOrWhiteSpace(v) && v.Length <= 200 && !v.Any(char.IsControl));
 
-    /// <summary>
-    /// Builds an independent configuration snapshot, replacing arrays rather than merging their tails.
-    /// A non-null <paramref name="apiKey"/> (the unsealed administrator-saved key) overrides the deployment key.
-    /// </summary>
-    public IConfiguration ApplyTo(IConfiguration configuration, string? apiKey = null)
+    /// <summary>Builds an independent configuration snapshot, replacing arrays rather than merging their tails.</summary>
+    public IConfiguration ApplyTo(IConfiguration configuration)
     {
         var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-        if (apiKey is not null) values[Module + "TypeSafe:ApiKey"] = apiKey;
         values[Prefix + "Enabled"] = Enabled.ToString();
         values[Module + "Enabled"] = Enabled.ToString();
-        values[Module + "TypeSafe:Model"] = Model;
-        values[Module + "TypeSafe:TimeoutSeconds"] = TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
-        // The extension supports a legacy flat timeout too; a saved default of
-        // 20 must not leave an older flat override active.
-        values[Module + "TimeoutSeconds"] = TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
         values[Module + "Data:IncludeEventPayload"] = IncludeEventPayload.ToString();
         values[Module + "Data:IncludeStackTrace"] = IncludeStackTrace.ToString();
         values[Module + "Data:IncludeRecentFailureHistory"] = IncludeRecentFailureHistory.ToString();
@@ -98,28 +81,26 @@ public sealed class IntelligenceAdminSettings
         var parent = configuration.GetSection(Prefix.TrimEnd(':')).Get<IntegrationIntelligenceOptions>() ?? new();
         var options = parent.FailureClassification;
         options.ApplyNestedSettings();
-#pragma warning disable CS0618 // The deprecated provider's model and timeout stay editable until v5.0.0 (Spec 044 §6.10).
         return new IntelligenceAdminSettings
         {
-            Enabled = parent.Enabled && options.Enabled, Model = options.Model,
+            Enabled = parent.Enabled && options.Enabled,
             IncludeEventPayload = options.IncludeEventPayload,
             IncludeStackTrace = options.IncludeStackTrace,
             IncludeRecentFailureHistory = options.Data.IncludeRecentFailureHistory,
             MaximumHistoryItems = options.MaximumHistoryItems, AdditionalRedactedKeys = options.Data.AdditionalRedactedKeys,
-            AllowedEndpoints = options.AllowedEndpoints, TimeoutSeconds = options.TimeoutSeconds,
+            AllowedEndpoints = options.AllowedEndpoints,
             MinimumCategoryConfidence = options.MinimumCategoryConfidence, RetryLikely = options.RetryLikely,
             ChangeRequired = options.ChangeRequired,
         };
-#pragma warning restore CS0618
     }
 }
 
 /// <summary>
-/// Durable configuration revision. The initial, absent revision is "none".
-/// <paramref name="ProtectedApiKey"/> is the Data Protection payload of the administrator-saved provider key,
-/// or null when deployment configuration supplies it. Records saved before this field existed deserialize with null.
+/// Durable configuration revision. The initial, absent revision is "none". Records saved before
+/// v5.0.0 may still hold the removed provider's sealed key (<c>ProtectedApiKey</c>); it is ignored
+/// on read and dropped by the next save.
 /// </summary>
-public sealed record IntelligenceSettingsDocument(IntelligenceAdminSettings Settings, string Revision, string? ProtectedApiKey = null);
+public sealed record IntelligenceSettingsDocument(IntelligenceAdminSettings Settings, string Revision);
 
 /// <summary>Shared configuration persistence, independent from classification results.</summary>
 public interface IIntelligenceSettingsStore

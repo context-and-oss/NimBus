@@ -351,8 +351,6 @@ public class NextActionsTests
 
         public bool IsAvailable => true;
 
-        public bool CanAnalyze => false;
-
         public Task<FailureClassification?> GetLatestAsync(string eventId, string messageId, CancellationToken cancellationToken)
         {
             Read = (eventId, messageId);
@@ -369,9 +367,5 @@ public class NextActionsTests
                 Guidance = guidance.Value, EventPayloadIncluded = false, RequestedBy = "agent", CreatedAtUtc = DateTimeOffset.UtcNow,
             });
         }
-
-        public Task<(FailureClassification Result, bool Cached)> AnalyzeAsync(string endpointId, string eventId, string messageId,
-            string idempotencyKey, bool force, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
     }
 }

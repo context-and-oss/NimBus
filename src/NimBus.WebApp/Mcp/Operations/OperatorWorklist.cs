@@ -91,7 +91,7 @@ public sealed class OperatorWorklist
         var tickets = await TicketsAsync(groups.Select(g => g.Group).ToList()).ConfigureAwait(false);
         var acknowledgements = await AcknowledgementsAsync(endpointIds).ConfigureAwait(false);
         var totals = await TotalsAsync(endpointIds).ConfigureAwait(false);
-        var classificationAvailable = _classifications.CanRecord || _classifications.CanAnalyze;
+        var classificationAvailable = _classifications.CanRecord;
         var isWorkload = _access.IsWorkloadCaller;
 
         var results = new List<WorklistGroup>(groups.Count);

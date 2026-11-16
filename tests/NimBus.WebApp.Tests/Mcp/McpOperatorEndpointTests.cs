@@ -27,7 +27,7 @@ public class McpOperatorEndpointTests
     // Spec 035 Phase 2a and Spec 044. Listed for every caller; each checks its own scope and role.
     private static readonly string[] WriteTools =
     [
-        "nimbus_resubmit_message", "nimbus_skip_message", "nimbus_set_message_reported", "nimbus_classify_failure",
+        "nimbus_resubmit_message", "nimbus_skip_message", "nimbus_set_message_reported",
         "nimbus_record_classification",
     ];
 

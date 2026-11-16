@@ -431,49 +431,6 @@ public sealed partial class OperatorActionTools
                 : "Recorded. NimBus composed the guidance from your answers; read it from classification.guidance.");
     }
 
-    /// <summary>Requests an AI classification of a failure from the deprecated provider.</summary>
-    [McpServerTool(Name = "nimbus_classify_failure", Title = "Classify a NimBus failure (deprecated)", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = true, UseStructuredContent = true)]
-    [Description("Deprecated; removed in NimBus 5.0. Use nimbus_get_failure_evidence and nimbus_record_classification instead. Asks the deployment's built-in provider to classify a failed message's error, or returns the stored classification. It costs a provider call unless a classification already exists, and it never resubmits or skips anything. The result is advisory only. Requires the delegated nimbus.classify scope, the Contributor role and a configured provider.")]
-    public async Task<ClassificationResult> ClassifyFailureAsync(
-        [Description("Endpoint id, as returned by nimbus_list_endpoints.")] string endpointId,
-        [Description("The message's event id.")] string eventId,
-        [Description("A new GUID for this request. Repeating it returns the same result.")] string idempotencyKey,
-        [Description("The failed attempt's message id. Defaults to the latest attempt.")] string? messageId = null,
-        [Description("Classify again even when a classification exists. Default false.")] bool force = false,
-        CancellationToken cancellationToken = default)
-    {
-        // A workload's Nimbus.Workload.Classify role admits recording only, never a paid provider call.
-        await _access.RequireDelegatedScopeAsync(OperatorAction.Classify).ConfigureAwait(false);
-        if (!_classifications.IsAvailable)
-            throw OperatorToolErrors.FeatureUnavailable("AI failure classification is not enabled in this deployment.");
-        if (!_classifications.CanAnalyze)
-            throw OperatorToolErrors.FeatureUnavailable("AI failure classification can't start a new analysis in this deployment: no provider is configured. Saved classifications can still be read.");
-
-        var endpoint = await _catalog.RequireReadableAsync(endpointId).ConfigureAwait(false);
-        await _access.RequireChangeAllowedOnAsync(OperatorAction.Classify, endpoint).ConfigureAwait(false);
-        if (!await _access.MayFreshAsync(OperatorAction.Classify, endpoint).ConfigureAwait(false))
-            throw OperatorToolErrors.PermissionDenied($"Classifying a failure requires the Contributor role on endpoint '{endpoint}'.");
-        var id = RequireEventId(eventId);
-        var key = RequireGuid(idempotencyKey);
-        var attempt = string.IsNullOrWhiteSpace(messageId)
-            ? (await FindAsync(endpoint, id).ConfigureAwait(false)).Row.LastMessageId
-            : messageId.Trim();
-        if (string.IsNullOrEmpty(attempt))
-            throw OperatorToolErrors.MessageNotFound(endpoint, id);
-
-        var failedMessage = await _store.GetMessage(id, attempt).ConfigureAwait(false);
-        if (!string.Equals(failedMessage?.EndpointId, endpoint, StringComparison.OrdinalIgnoreCase))
-            throw OperatorToolErrors.MessageNotFound(endpoint, id);
-
-        _limiter.Acquire(Http());
-        var (classification, _) = await _classifications.AnalyzeAsync(endpoint, id, attempt, key, force, cancellationToken).ConfigureAwait(false);
-        if (!string.Equals(classification.EndpointId, endpoint, StringComparison.OrdinalIgnoreCase))
-            throw OperatorToolErrors.MessageNotFound(endpoint, id);
-
-        return new ClassificationResult(_catalog.Environment, DateTimeOffset.UtcNow, endpoint, id, attempt, true, true,
-            ClassificationInfo.From(classification));
-    }
-
     private Task<OperatorActionResult> ExecuteAsync(OperatorAction kind, string actionToken, string idempotencyKey, string reason)
         => ExecuteAsync(kind, actionToken, idempotencyKey, reason, plan: null);
 

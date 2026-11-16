@@ -140,13 +140,13 @@ public sealed class FailedInsightsOptions
 /// <summary>Saved-classification access for Insights; disabled when no reader is registered.</summary>
 public interface IInsightsEnrichmentSource
 {
-    /// <summary>True when saved classifications can be read (read-only or ready mode).</summary>
+    /// <summary>True when saved classifications can be read (read-only or recordable mode).</summary>
     bool IsEnabled { get; }
 
-    /// <summary>True when new analysis can be requested (ready mode); false in read-only mode or when intelligence is off.</summary>
-    bool CanAnalyze { get; }
+    /// <summary>True when agents can record new classifications over MCP (recordable mode); false in read-only mode or when intelligence is off.</summary>
+    bool CanRecord { get; }
 
-    /// <summary>False when the endpoint is outside the configured analysis allow-list.</summary>
+    /// <summary>False when the endpoint is outside the configured classification allow-list.</summary>
     bool IsEligible(string endpointId);
 
     /// <summary>Reads the saved state of many failures in bulk.</summary>
@@ -158,7 +158,7 @@ public sealed class InsightsEnrichmentSource : IInsightsEnrichmentSource
 {
     private readonly FailureClassificationReader? _reader;
     private readonly string[] _allowedEndpoints;
-    private readonly bool _canAnalyze;
+    private readonly bool _canRecord;
 
     /// <summary>Creates the source; every sequence is empty when intelligence is not registered.</summary>
     public InsightsEnrichmentSource(IEnumerable<FailureClassificationReader> readers, IEnumerable<FailureClassificationOptions> options,
@@ -166,14 +166,14 @@ public sealed class InsightsEnrichmentSource : IInsightsEnrichmentSource
     {
         _reader = readers.FirstOrDefault();
         _allowedEndpoints = options.FirstOrDefault()?.AllowedEndpoints ?? [];
-        _canAnalyze = activations.FirstOrDefault()?.Ready == true;
+        _canRecord = activations.FirstOrDefault()?.Recordable == true;
     }
 
     /// <inheritdoc />
     public bool IsEnabled => _reader is not null;
 
     /// <inheritdoc />
-    public bool CanAnalyze => _canAnalyze;
+    public bool CanRecord => _canRecord;
 
     /// <inheritdoc />
     public bool IsEligible(string endpointId)
@@ -287,7 +287,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             ClassificationsReadAt = scope.Read?.ReadAt.UtcDateTime,
             Enrichment = scope.Enrichment,
             EnrichmentLimit = _options.EnrichmentCeiling,
-            AnalysisAvailable = _enrichment.IsEnabled && _enrichment.CanAnalyze,
+            AnalysisAvailable = _enrichment.IsEnabled && _enrichment.CanRecord,
             Coverage = assessed is null ? null : Coverage(assessed.Values),
             CauseGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.CauseKey, CauseLabels),
             GuidanceGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.GuidanceKey, GuidanceLabels),

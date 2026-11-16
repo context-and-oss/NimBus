@@ -58,7 +58,7 @@ public static class McpOperatorPermissions
     /// <summary>Delegated scope for <c>nimbus_set_message_reported</c>.</summary>
     public const string AnnotateScope = "nimbus.annotate";
 
-    /// <summary>Delegated scope for <c>nimbus_record_classification</c> and the deprecated <c>nimbus_classify_failure</c>.</summary>
+    /// <summary>Delegated scope for <c>nimbus_record_classification</c>.</summary>
     public const string ClassifyScope = "nimbus.classify";
 
     /// <summary>

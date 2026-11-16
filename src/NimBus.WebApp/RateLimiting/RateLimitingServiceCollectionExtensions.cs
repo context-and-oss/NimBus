@@ -77,9 +77,6 @@ public static partial class RateLimitingServiceCollectionExtensions
             limiter.AddPolicy(RateLimitPolicyNames.Login, context =>
                 FixedWindow("ip:" + ClientIpPartitionKey.Resolve(context, options), options.Login));
 
-            limiter.AddPolicy(RateLimitPolicyNames.Intelligence, context =>
-                FixedWindow(UserPartitionKey(context, options), options.Intelligence));
-
             // Tenant and client application are part of the key, so one agent client
             // cannot exhaust the same operator's budget in another client. Attached to
             // /mcp by MapNimBusOperatorMcp, not by the MVC convention. A site Owner can

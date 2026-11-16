@@ -87,9 +87,9 @@ public sealed class OperatorDiscoveryTools
             },
             _runtime.Mode.ToString(),
             await _catalog.GetReadableEndpointIdsAsync().ConfigureAwait(false),
-            await _actionAccess.PermittedActionsAsync(_classifications.CanRecord || _classifications.CanAnalyze).ConfigureAwait(false),
+            await _actionAccess.PermittedActionsAsync(_classifications.CanRecord).ConfigureAwait(false),
             limits,
-            new FeatureInfo(_classificationEnabled, _classifications.CanRecord, _classifications.CanAnalyze, _journal.IsAvailable),
+            new FeatureInfo(_classificationEnabled, _classifications.CanRecord, _journal.IsAvailable),
             await UnattendedAsync(user).ConfigureAwait(false));
     }
 
@@ -213,9 +213,8 @@ public sealed record RequestLimits(int RequestsPerWindow, int WindowSeconds);
 /// <summary>Optional features.</summary>
 /// <param name="FailureClassification">Whether failure classification is enabled.</param>
 /// <param name="CanRecordClassifications">Whether agents can read evidence with nimbus_get_failure_evidence and record classifications with nimbus_record_classification.</param>
-/// <param name="CanAnalyzeWithProvider">Whether the deprecated built-in provider can analyze a failure with nimbus_classify_failure.</param>
 /// <param name="OperationJournal">Whether resubmits and skips are journaled: nimbus_get_operation reports their outcome.</param>
-public sealed record FeatureInfo(bool FailureClassification, bool CanRecordClassifications, bool CanAnalyzeWithProvider, bool OperationJournal = false);
+public sealed record FeatureInfo(bool FailureClassification, bool CanRecordClassifications, bool OperationJournal = false);
 
 /// <summary>Result of <c>nimbus_list_endpoints</c>.</summary>
 /// <param name="Environment">The configured NimBus environment name.</param>

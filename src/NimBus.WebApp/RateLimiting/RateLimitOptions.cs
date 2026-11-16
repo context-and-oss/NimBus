@@ -42,9 +42,6 @@ public sealed class RateLimitOptions
     /// <summary>Fixed-window limits for <c>POST /account/login</c>.</summary>
     public LoginLimits Login { get; set; } = new();
 
-    /// <summary>Fixed-window limits for provider-backed intelligence requests.</summary>
-    public WindowLimits Intelligence { get; set; } = new() { PermitLimit = 10, WindowSeconds = 60 };
-
     /// <summary>Fixed-window limits for the operator MCP endpoint (Spec 035).</summary>
     public WindowLimits Mcp { get; set; } = new() { PermitLimit = 60, WindowSeconds = 60 };
 

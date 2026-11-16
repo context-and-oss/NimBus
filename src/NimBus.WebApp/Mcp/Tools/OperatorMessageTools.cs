@@ -281,7 +281,7 @@ public sealed partial class OperatorMessageTools
         if (current.Target is { } target)
         {
             messageVersion = target.Version.Encode();
-            eligibleActions = await _actionAccess.EligibleActionsAsync(target.Row, endpoint, _classifications.CanRecord || _classifications.CanAnalyze).ConfigureAwait(false);
+            eligibleActions = await _actionAccess.EligibleActionsAsync(target.Row, endpoint, _classifications.CanRecord).ConfigureAwait(false);
             guidance = await GuidanceAsync(endpoint, target.Row, eligibleActions, cancellationToken).ConfigureAwait(false);
         }
 

@@ -242,7 +242,7 @@ public class AgentClassificationToolsTests
         var capabilities = await CallAsync(client, "nimbus_get_capabilities", new());
 
         Assert.IsTrue(capabilities.GetProperty("features").GetProperty("canRecordClassifications").GetBoolean());
-        Assert.IsFalse(capabilities.GetProperty("features").GetProperty("canAnalyzeWithProvider").GetBoolean());
+        Assert.IsFalse(capabilities.GetProperty("features").TryGetProperty("canAnalyzeWithProvider", out _), "The provider was removed in v5.0.0.");
         CollectionAssert.Contains(capabilities.GetProperty("permittedActions").EnumerateArray().Select(e => e.GetString()).ToList(), "classify");
     }
 
@@ -306,23 +306,6 @@ public class AgentClassificationToolsTests
         Assert.IsFalse(result.IsError == true, ErrorText(result));
         var stored = await store.GetLatestAsync(Attempt);
         Assert.AreEqual("app:" + McpTestHost.AgentClientId, stored!.RequestedBy);
-    }
-
-    [TestMethod]
-    public async Task A_workload_role_never_admits_the_deprecated_provider_analysis()
-    {
-        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
-            policy: p => p.AllowWorkloadClassification = true);
-        await SeedFailureAsync(host);
-        await using var client = await host.CreateClientAsync(McpTestHost.CreateToken(scopes: null, roles: "Nimbus.Workload.Observe Nimbus.Workload.Classify"));
-
-        var result = await client.CallToolAsync("nimbus_classify_failure", new Dictionary<string, object?>
-        {
-            ["endpointId"] = Endpoint, ["eventId"] = EventId, ["idempotencyKey"] = Guid.NewGuid().ToString(),
-        });
-
-        AssertError(result, "PermissionDenied");
-        StringAssert.Contains(ErrorText(result), "can only record classifications", StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -390,7 +373,7 @@ public class AgentClassificationToolsTests
 
         void Configure(IServiceCollection services)
         {
-            var options = new FailureClassificationOptions { Enabled = true, IntelligenceEnabled = true, Provider = FailureClassificationOptions.NoProvider };
+            var options = new FailureClassificationOptions { Enabled = true, IntelligenceEnabled = true };
             services.AddSingleton(access);
             services.AddSingleton(messages);
             services.AddSingleton<IMessageTrackingStore>(messages);

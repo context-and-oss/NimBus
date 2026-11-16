@@ -16,7 +16,6 @@ public static class McpToolAccess
         ["nimbus_resubmit_message"] = OperatorAction.Resubmit,
         ["nimbus_skip_message"] = OperatorAction.Skip,
         ["nimbus_set_message_reported"] = OperatorAction.Report,
-        ["nimbus_classify_failure"] = OperatorAction.Classify,
         ["nimbus_record_classification"] = OperatorAction.Classify,
         ["nimbus_settle_handoff"] = OperatorAction.SettleHandoff,
         ["nimbus_reprocess_deferred"] = OperatorAction.ReprocessDeferred,

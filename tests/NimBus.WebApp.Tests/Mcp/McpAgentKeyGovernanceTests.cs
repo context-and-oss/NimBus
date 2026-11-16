@@ -131,7 +131,6 @@ public sealed class McpAgentKeyGovernanceTests
     [DataRow("nimbus_reprocess_deferred")]
     [DataRow("nimbus_skip_deferred_tracking")]
     [DataRow("nimbus_resubmit_with_changes")]
-    [DataRow("nimbus_classify_failure")]
     public async Task A_key_with_every_permission_and_switch_still_cannot_use_the_delegated_only_tools(string tool)
     {
         await using var host = await McpAgentKeyAuthenticationTests.StartKeysAsync(services =>

@@ -26,7 +26,7 @@ public class McpAccessPolicyEnforcementTests
     private static readonly string[] ChangeTools =
     [
         "nimbus_prepare_action", "nimbus_resubmit_message", "nimbus_skip_message",
-        "nimbus_set_message_reported", "nimbus_classify_failure", "nimbus_record_classification",
+        "nimbus_set_message_reported", "nimbus_record_classification",
     ];
 
     [TestMethod]
@@ -65,7 +65,7 @@ public class McpAccessPolicyEnforcementTests
         var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
 
         CollectionAssert.DoesNotContain(tools, "nimbus_skip_message");
-        CollectionAssert.DoesNotContain(tools, "nimbus_classify_failure");
+        CollectionAssert.DoesNotContain(tools, "nimbus_record_classification");
         CollectionAssert.Contains(tools, "nimbus_resubmit_message");
         CollectionAssert.Contains(tools, "nimbus_prepare_action");
         CollectionAssert.Contains(tools, "nimbus_get_message");
