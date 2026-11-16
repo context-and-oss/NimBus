@@ -119,11 +119,14 @@ builder.Services.AddNimBusReceiver(opts =>
 {
     opts.TopicName = "CrmEndpoint";
     opts.SubscriptionName = "CrmEndpoint";
-    // SDK default is 8 — well below the Erp.Adapter.Functions side, which
-    // allows 200 concurrent sessions (host.json). 32 is a demo-friendly middle
-    // ground: more parallelism than the default, with enough headroom that the
-    // shared SQL Server isn't fighting itself. Per-session ordering still holds.
+    // SDK default is 8; 32 matches Erp.Adapter.Functions (host.json) and gives more
+    // parallelism with enough headroom that the shared SQL Server isn't fighting
+    // itself. Per-session ordering still holds.
     opts.MaxConcurrentSessions = 32;
+    // Most sessions carry one message (one per customer or contact), so a slot that waits
+    // the default 30 s for more caps the adapter at about 32 / 30 s ≈ 1 message a second.
+    // 5 s frees the slot for the next session, see docs/throughput-tuning.md#sessionidletimeout.
+    opts.SessionIdleTimeout = TimeSpan.FromSeconds(5);
     if (E2eSettings.IsEnabled(builder.Configuration, builder.Environment))
         opts.MaxAutoLockRenewalDuration = TimeSpan.Zero;
 });
@@ -136,7 +139,10 @@ builder.Services.AddNimBusReceiver(opts =>
 {
     opts.TopicName = "PartnerInbound";
     opts.SubscriptionName = "CrmEndpoint";
-    opts.MaxConcurrentSessions = 8;
+    // Partner leads are rare, one per session. Idle slots only keep opening receive links
+    // while they wait for a session (about 10,700 a day with 8), so two are plenty.
+    opts.MaxConcurrentSessions = 2;
+    opts.SessionIdleTimeout = TimeSpan.FromSeconds(5);
 });
 
 // Deferred-replay BackgroundService. Worker hosts that own the deferred-processor
