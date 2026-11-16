@@ -28,10 +28,11 @@ UTC time.
 | Unresolved failures | Messages that need an operator now: failed, dead-lettered and unsupported |
 | Blocked sessions | An estimate: sessions with a failed, dead-lettered or pending hand-off message, and the endpoint with most. A message dead-lettered on its first attempt does not block its session but is counted; sessions only waiting for replays are not. The exact state lives on Service Bus and is too slow to read every few seconds |
 | Backlog | Pending plus deferred messages, and how fast that changes per minute |
-| Throughput now | Messages published in the last complete minute. Below it, the success rate over the last 60 minutes: handled ÷ (handled + failed attempts). It counts attempts: a message that failed twice and then succeeded counts two failures and one success. The tile turns amber from 1 % failed attempts and red from 5 % |
+| Throughput now | Messages published in the last complete minute. Below it, the success rate over the last 60 minutes: handled ÷ (handled + failed attempts). It counts attempts: a message that failed twice and then succeeded counts two failures and one success. The tile is marked amber from 1 % failed attempts and red from 5 % |
 | Time to handle · last hour | Average queue wait plus average processing time over the last 60 minutes, each from the messages that recorded it |
 
-The wall spells out what is wrong and stays quiet about what is normal. A breakdown under a figure
+The wall spells out what is wrong and stays quiet about what is normal. A tile that needs attention
+gets a red or amber dot beside its label. A breakdown under a figure
 lists only the parts that are not zero, so "28 failed · 3 dead-lettered" means nothing is
 unsupported.
 
