@@ -50,6 +50,56 @@ public sealed class CosmosDbSubscriptionStoreUnitTests
     }
 
     [TestMethod]
+    public async Task SubscribeToEndpointNotification_WebhookWithoutMail_IsStored()
+    {
+        var store = CreateStore(new RecordingCosmosContainerAdapter());
+
+        var subscription = await store.SubscribeToEndpointNotification(
+            "endpoint", null!, "Webhook", "author", "https://agent.example.com/hook", new List<string>(), null!, 300);
+
+        Assert.AreEqual("webhook", subscription!.Type);
+        Assert.AreEqual("https://agent.example.com/hook", subscription.Url);
+        Assert.IsNull(subscription.Mail);
+    }
+
+    [TestMethod]
+    public async Task SubscribeToEndpointNotification_MailAndWebhook_StoresNormalizedType()
+    {
+        var store = CreateStore(new RecordingCosmosContainerAdapter());
+
+        var subscription = await store.SubscribeToEndpointNotification(
+            "endpoint", "ops@example.com", "Mail, Webhook", "author", "https://agent.example.com/hook", new List<string>(), null!, 300);
+
+        Assert.AreEqual("mail;webhook", subscription!.Type);
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    public async Task SubscribeToEndpointNotification_WebhookWithoutUrl_ThrowsArgumentExceptionForUrl(string? url)
+    {
+        var store = CreateStore(new RecordingCosmosContainerAdapter());
+
+        var exception = await Assert.ThrowsExactlyAsync<ArgumentException>(() =>
+            store.SubscribeToEndpointNotification(
+                "endpoint", null!, "webhook", "author", url!, new List<string>(), null!, 300));
+
+        Assert.AreEqual("url", exception.ParamName);
+    }
+
+    [TestMethod]
+    public async Task SubscribeToEndpointNotification_TeamsWithoutMail_StillThrowsForMail()
+    {
+        var store = CreateStore(new RecordingCosmosContainerAdapter());
+
+        var exception = await Assert.ThrowsExactlyAsync<ArgumentException>(() =>
+            store.SubscribeToEndpointNotification(
+                "endpoint", null!, "teams", "author", "https://example.com", new List<string>(), "payload", 0));
+
+        Assert.AreEqual("mail", exception.ParamName);
+    }
+
+    [TestMethod]
     public async Task UpdateSubscription_CultureWithDotTimeSeparator_WritesInvariantNotifiedAt()
     {
         var container = new RecordingCosmosContainerAdapter();
