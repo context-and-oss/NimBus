@@ -104,10 +104,35 @@ public sealed class ComposeNewEventTests
     }
 
     [TestMethod]
+    public async Task Compose_denied_returns_Forbid_writes_accessDenied_audit_and_publishes_nothing()
+    {
+        // GH#402: a caller who is not Contributor on the producing endpoint gets a 403, not
+        // an exception the problem-details middleware turns into a 500.
+        var client = new RecordingServiceBusClient();
+        var store = new InMemoryMessageStore();
+        var sut = CreateSut(client, new DenyAllAuthorizationService(), store,
+            new AuditLogService(NullLogger<AuditLogService>.Instance, store));
+
+        var result = await sut.PostComposeNewEventAsync(new ResubmitWithChanges
+        {
+            EventTypeId = nameof(ComposedOrder),
+            EventContent = "{\"OrderId\":\"order-9\",\"Total\":1}",
+        });
+
+        Assert.IsInstanceOfType<ForbidResult>(result.Result);
+        Assert.AreEqual(0, client.Sender.SentMessages.Count, "A denied compose must publish nothing.");
+        var audits = (await store.SearchAudits(new AuditFilter(), continuationToken: null, maxItemCount: 50)).Audits.ToList();
+        Assert.AreEqual(1, audits.Count);
+        Assert.AreEqual(MessageAuditType.Compose, audits[0].Audit.AuditType);
+        Assert.IsTrue(audits[0].Audit.AccessDenied);
+        Assert.AreEqual(Publisher, audits[0].Audit.EndpointId);
+    }
+
+    [TestMethod]
     public async Task Compose_row_holds_the_hash_and_property_names_and_no_payload_values()
     {
         var audit = new ResubmitWithChangesAuditTests.RecordingAudit();
-        var sut = CreateSut(new RecordingServiceBusClient(), audit);
+        var sut = CreateSut(new RecordingServiceBusClient(), auditLog: audit);
 
         var result = await sut.PostComposeNewEventAsync(new ResubmitWithChanges
         {
@@ -125,14 +150,15 @@ public sealed class ComposeNewEventTests
     public async Task Compose_row_refused_for_a_missing_role_has_the_same_shape()
     {
         var audit = new ResubmitWithChangesAuditTests.RecordingAudit();
-        var sut = CreateSut(new RecordingServiceBusClient(), audit, isContributor: false);
+        var sut = CreateSut(new RecordingServiceBusClient(), new DenyAllAuthorizationService(), auditLog: audit);
 
-        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => sut.PostComposeNewEventAsync(new ResubmitWithChanges
+        var result = await sut.PostComposeNewEventAsync(new ResubmitWithChanges
         {
             EventTypeId = nameof(ComposedOrder),
             EventContent = ComposedJson,
-        }));
+        });
 
+        Assert.IsInstanceOfType<ForbidResult>(result.Result);
         var row = audit.Rows.Single(r => r.Type == MessageAuditType.Compose);
         Assert.IsTrue(row.AccessDenied);
         AssertDescribesComposedEvent(row.Data);
@@ -154,18 +180,22 @@ public sealed class ComposeNewEventTests
         CollectionAssert.AreEqual(new[] { "OrderId", "Total" }, json["properties"]!.Values<string>().ToArray());
     }
 
-    private static EventImplementation CreateSut(ServiceBusClient client, IAuditLogService? audit = null, bool isContributor = true) =>
+    private static EventImplementation CreateSut(
+        ServiceBusClient client,
+        IEndpointAuthorizationService? authorization = null,
+        InMemoryMessageStore? store = null,
+        IAuditLogService? auditLog = null) =>
         new(
             applicationInsightsService: null!,
             new ComposePlatform(),
             managerClient: null!,
             handoffClientFactory: null!,
             NullLogger<EventImplementation>.Instance,
-            new InMemoryMessageStore(),
-            new AllowAllAuthorizationService(isContributor),
+            store ?? new InMemoryMessageStore(),
+            authorization ?? new AllowAllAuthorizationService(),
             adminService: null!,
             client,
-            audit ?? new NoOpAuditLogService(),
+            auditLog ?? new NoOpAuditLogService(),
             handoffSettlement: null!,
             new HttpContextAccessor { HttpContext = new DefaultHttpContext() },
             PayloadRedactionTests.NewRedaction(),
@@ -224,9 +254,21 @@ public sealed class ComposeNewEventTests
             CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class AllowAllAuthorizationService(bool isContributor) : IEndpointAuthorizationService
+    private sealed class DenyAllAuthorizationService : IEndpointAuthorizationService
     {
-        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(isContributor);
+        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(false);
+
+        public Task<bool> CanReadPiiAsync() => Task.FromResult(false);
+
+        public Task<CurrentUserAccess> GetCurrentUserAccessAsync() =>
+            Task.FromResult(new CurrentUserAccess());
+
+        public string? GetCurrentUserName() => "operator-mallory";
+    }
+
+    private sealed class AllowAllAuthorizationService : IEndpointAuthorizationService
+    {
+        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(true);
 
         public Task<bool> CanReadPiiAsync() => Task.FromResult(true);
 

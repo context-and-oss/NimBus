@@ -85,9 +85,10 @@ public sealed class ResubmitWithChangesAuditTests
     {
         var (sut, audit) = await CreateSutAsync(canReadPii: true, isContributor: false);
 
-        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => sut.PostResubmitWithChangesEventIdsAsync(
-            new ResubmitWithChanges { EventContent = EditedJson }, EventId, TerminalMessageId));
+        var result = await sut.PostResubmitWithChangesEventIdsAsync(
+            new ResubmitWithChanges { EventContent = EditedJson }, EventId, TerminalMessageId);
 
+        Assert.IsInstanceOfType<ForbidResult>(result);
         var row = audit.Rows.Single(r => r.Type == MessageAuditType.ResubmitWithChanges);
         Assert.IsTrue(row.AccessDenied);
         AssertDescribesEdit(row.Data, OperatorPayloadEdit.Hash(EditedJson),
