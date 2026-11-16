@@ -79,6 +79,62 @@ public sealed class ErpFailureReasonsTests
     }
 
     [TestMethod]
+    public void Selectable_IsTheCatalogPlusRandomLast()
+    {
+        CollectionAssert.AreEqual(
+            ErpFailureReasons.All.Select(r => r.Id).Append(ErpFailureReasons.Random).ToList(),
+            ErpFailureReasons.Selectable.Select(r => r.Id).ToList());
+        CollectionAssert.AllItemsAreUnique(ErpFailureReasons.Selectable.Select(r => r.Id).ToList());
+        Assert.AreEqual(ErpFailureReasons.Random, ErpFailureReasons.Find("RANDOM")!.Id);
+        Assert.IsFalse(ErpFailureReasons.All.Any(r => r.Id == ErpFailureReasons.Random), "All holds only failures that can be thrown");
+    }
+
+    [TestMethod]
+    [DataRow(0.0, 0)]
+    [DataRow(1.0, 1000)]
+    public void Decide_RateZeroNeverFailsAndRateOneAlwaysFails(double failureRate, int expectedFailures)
+    {
+        var rng = new Random(17);
+        var failures = Enumerable.Range(0, 1000).Count(_ => ErpFailureReasons.Decide(failureRate, "business_rule", rng) is not null);
+        Assert.AreEqual(expectedFailures, failures);
+    }
+
+    [TestMethod]
+    public void Decide_FailsAboutTheGivenShareOfMessages()
+    {
+        var rng = new Random(42);
+        var failures = Enumerable.Range(0, 10_000).Count(_ => ErpFailureReasons.Decide(0.3, "business_rule", rng) is not null);
+        Assert.IsTrue(failures is > 2_500 and < 3_500, $"expected about 30% of 10,000 to fail, got {failures}");
+    }
+
+    [TestMethod]
+    public void Decide_ConcreteReasonAlwaysThrowsThatReason()
+    {
+        var rng = new Random(3);
+        var picked = Enumerable.Range(0, 200).Select(_ => ErpFailureReasons.Decide(1.0, "contract_schema", rng)!.Id).Distinct().ToList();
+        CollectionAssert.AreEqual(new[] { "contract_schema" }, picked);
+    }
+
+    [TestMethod]
+    public void Decide_RandomPicksEveryConcreteReasonAndNeverRandomItself()
+    {
+        var rng = new Random(7);
+        var picked = Enumerable.Range(0, 2_000).Select(_ => ErpFailureReasons.Decide(1.0, ErpFailureReasons.Random, rng)!.Id).ToHashSet();
+        CollectionAssert.AreEquivalent(ErpFailureReasons.All.Select(r => r.Id).ToList(), picked.ToList());
+    }
+
+    [TestMethod]
+    public void CreateException_Random_ThrowsOneOfTheConcreteFailures()
+    {
+        var concreteTypes = ErpFailureReasons.All.Select(r => ErpFailureReasons.CreateException(r.Id, "CrmAccountCreated").GetType()).ToHashSet();
+        for (var i = 0; i < 50; i++)
+        {
+            var ex = ErpFailureReasons.CreateException(ErpFailureReasons.Random, "CrmAccountCreated");
+            Assert.IsTrue(concreteTypes.Contains(ex.GetType()), $"{ex.GetType().Name} is not a catalog failure");
+        }
+    }
+
+    [TestMethod]
     public void ContractSchema_QuotesTheInboundEventType()
     {
         var message = ErpFailureReasons.CreateException("contract_schema", "CrmAccountUpdated").Message;

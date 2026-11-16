@@ -14,7 +14,8 @@ public sealed class ServiceModeClient(HttpClient http, ILogger<ServiceModeClient
     public async Task<ErrorModeSnapshot> GetErrorModeAsync(CancellationToken cancellationToken)
     {
         var mode = await ReadAsync("/api/admin/error-mode", "error mode", cancellationToken);
-        return mode is null ? ErrorModeSnapshot.Disabled : new ErrorModeSnapshot(mode.Enabled, mode.Reason);
+        // An erp-api from before the failure rate sends none: it meant every message.
+        return mode is null ? ErrorModeSnapshot.Disabled : new ErrorModeSnapshot(mode.Enabled, mode.Reason, mode.FailureRate ?? 1.0);
     }
 
     private async Task<ModeResponse?> ReadAsync(string path, string modeName, CancellationToken cancellationToken)
@@ -32,6 +33,6 @@ public sealed class ServiceModeClient(HttpClient http, ILogger<ServiceModeClient
         }
     }
 
-    // Reason is only present on the error-mode response; service-mode leaves it null.
-    private sealed record ModeResponse(bool Enabled, string? Reason, DateTimeOffset ChangedAt);
+    // Reason and FailureRate are only present on the error-mode response; service-mode leaves them null.
+    private sealed record ModeResponse(bool Enabled, string? Reason, double? FailureRate, DateTimeOffset ChangedAt);
 }

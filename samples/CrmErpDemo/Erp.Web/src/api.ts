@@ -48,8 +48,10 @@ export interface ModeState {
 }
 
 export interface ErrorModeState extends ModeState {
-  /** Id of the selected failure reason; see `getErrorModeReasons`. */
+  /** Id of the selected failure reason; see `getErrorModeReasons`. `random` picks one per failing message. */
   reason: string;
+  /** Share of messages that fail, 0..1; 1 fails every message. */
+  failureRate: number;
 }
 
 /** One selectable failure the ERP adapter simulates while error mode is on. */
@@ -176,11 +178,12 @@ export const api = {
     }).then(json<ModeState>),
 
   getErrorMode: () => apiFetch('/api/admin/error-mode').then(json<ErrorModeState>),
-  setErrorMode: (enabled: boolean, reason?: string) =>
+  /** Omitted `reason` or `failureRate` keeps the current value. */
+  setErrorMode: (enabled: boolean, reason?: string, failureRate?: number) =>
     apiFetch('/api/admin/error-mode', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reason === undefined ? { enabled } : { enabled, reason }),
+      body: JSON.stringify({ enabled, reason, failureRate }),
     }).then(json<ErrorModeState>),
   getErrorModeReasons: () => apiFetch('/api/admin/error-mode/reasons').then(json<FailureReason[]>),
 

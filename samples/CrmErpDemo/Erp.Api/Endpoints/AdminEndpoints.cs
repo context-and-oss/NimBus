@@ -23,29 +23,33 @@ public static class AdminEndpoints
 
         group.MapGet("/error-mode", (ErrorModeState state) =>
         {
-            var (enabled, reason, changedAt) = state.Snapshot();
-            return Results.Ok(new ErrorModeResponse(enabled, reason, changedAt));
+            var (enabled, reason, failureRate, changedAt) = state.Snapshot();
+            return Results.Ok(new ErrorModeResponse(enabled, reason, failureRate, changedAt));
         });
 
-        // Reason is optional so existing callers (e2e helpers, the demo film) that only
-        // send { enabled } keep working; when given it must be a catalog id.
+        // Reason and failureRate are optional so existing callers (e2e helpers, the demo film)
+        // that only send { enabled } keep working; when given, reason must be a selectable id
+        // and failureRate a share in [0, 1].
         group.MapPut("/error-mode", (ErrorModeRequest request, ErrorModeState state) =>
         {
             if (request.Reason is not null && ErpFailureReasons.Find(request.Reason) is null)
             {
                 return Results.BadRequest(new
                 {
-                    error = $"Unknown failure reason '{request.Reason}'. Known: {string.Join(", ", ErpFailureReasons.All.Select(r => r.Id))}.",
+                    error = $"Unknown failure reason '{request.Reason}'. Known: {string.Join(", ", ErpFailureReasons.Selectable.Select(r => r.Id))}.",
                 });
             }
 
-            var (enabled, reason, changedAt) = state.Set(request.Enabled, request.Reason);
-            return Results.Ok(new ErrorModeResponse(enabled, reason, changedAt));
+            if (request.FailureRate is < 0.0 or > 1.0 || (request.FailureRate is { } rate && double.IsNaN(rate)))
+                return Results.BadRequest(new { error = "failureRate must be in [0.0, 1.0]." });
+
+            var (enabled, reason, failureRate, changedAt) = state.Set(request.Enabled, request.Reason, request.FailureRate);
+            return Results.Ok(new ErrorModeResponse(enabled, reason, failureRate, changedAt));
         });
 
-        // The failure catalog behind the erp-web dropdown; shared with the adapter through
-        // CrmErpDemo.Contracts so the API, the thrown exception and the UI cannot drift.
-        group.MapGet("/error-mode/reasons", () => Results.Ok(ErpFailureReasons.All));
+        // The failure catalog behind the erp-web dropdown, with Random last; shared with the
+        // adapter through CrmErpDemo.Contracts so the API, the thrown exception and the UI cannot drift.
+        group.MapGet("/error-mode/reasons", () => Results.Ok(ErpFailureReasons.Selectable));
 
         group.MapGet("/processing-delay", (ProcessingDelayState state) =>
         {
@@ -85,8 +89,8 @@ public static class AdminEndpoints
 
 public record ServiceModeRequest(bool Enabled);
 public record ServiceModeResponse(bool Enabled, DateTimeOffset ChangedAt);
-public record ErrorModeRequest(bool Enabled, string? Reason = null);
-public record ErrorModeResponse(bool Enabled, string Reason, DateTimeOffset ChangedAt);
+public record ErrorModeRequest(bool Enabled, string? Reason = null, double? FailureRate = null);
+public record ErrorModeResponse(bool Enabled, string Reason, double FailureRate, DateTimeOffset ChangedAt);
 public record ProcessingDelayRequest(bool Enabled, int DelayMs);
 public record ProcessingDelayResponse(bool Enabled, int DelayMs, DateTimeOffset ChangedAt);
 public record DataResetResponse(int Customers, int Contacts, int Audits, int OutboxRows);

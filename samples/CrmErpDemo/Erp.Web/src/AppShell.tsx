@@ -8,7 +8,7 @@ import SignedInBadge from './components/SignedInBadge';
 import { useDemoPane } from './components/shell/demo-pane';
 import { CloseIcon, GearIcon, Waffle } from './components/shell/icons';
 import { BarPill } from './components/shell/ui';
-import { formatDelay, useErpDemoState } from './demo-state';
+import { failurePercent, formatDelay, useErpDemoState } from './demo-state';
 
 // Role-center shell: dark app bar, a navigation row under it, the page, and the Demo controls
 // pane on the right (open by default).
@@ -33,13 +33,18 @@ function AppBar() {
   const pane = useDemoPane();
   const { serviceMode, errorMode, reasons, handoff, delay } = useErpDemoState();
   const reason = reasons.find((r) => r.id === errorMode?.reason);
+  const errorPercent = failurePercent(errorMode?.failureRate);
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 bg-bar px-4 text-white">
       <Waffle />
       <Link to="/" className="whitespace-nowrap text-[15px] font-semibold">ERP Demo</Link>
       <div className="ml-auto flex min-w-0 items-center gap-2">
         {serviceMode?.enabled && <BarPill tone="bad">Service mode</BarPill>}
-        {errorMode?.enabled && <BarPill tone="warn" title={reason?.description}>Error mode{reason ? ` · ${reason.title}` : ''}</BarPill>}
+        {errorMode?.enabled && (
+          <BarPill tone="warn" title={reason?.description}>
+            Error mode{reason ? ` · ${reason.title}` : ''}{errorPercent < 100 ? ` · ${errorPercent}%` : ''}
+          </BarPill>
+        )}
         {handoff?.enabled && <BarPill tone="busy">Pending handoff · {handoff.durationSeconds}s</BarPill>}
         {delay?.enabled && <BarPill tone="busy">Delay · {formatDelay(delay.delayMs)}</BarPill>}
         <span className="hidden whitespace-nowrap px-2 text-xs text-white/50 xl:inline">NimBus · CRM + ERP demo</span>
@@ -102,18 +107,23 @@ function ErrorModeBanner() {
   const { errorMode, reasons } = useErpDemoState();
   if (!errorMode?.enabled) return null;
   const selected = reasons.find((r) => r.id === errorMode.reason);
+  const percent = failurePercent(errorMode.failureRate);
+  const random = selected?.id === 'random';
   return (
     <div className="flex shrink-0 flex-col gap-0.5 bg-[#fff4ce] px-5 py-1.5 text-[13px] text-[#5c3a00]">
       <div>
         ERP is in <strong>error mode</strong>
-        {selected ? <>, simulating <strong>{selected.title}</strong></> : null}. Message handlers throw on every inbound
-        message until you turn it off.
+        {selected ? <>, simulating <strong>{selected.title}</strong></> : null}. Message handlers throw on{' '}
+        {percent < 100 ? <>about <strong>{percent}%</strong> of inbound messages</> : 'every inbound message'} until you
+        turn it off.
       </div>
       {selected ? (
         <div className="text-xs">
           {selected.description} NimBus outcome: <strong>{selected.disposition}</strong>. Open the message in the NimBus
-          WebApp and click <em>Analyze failure</em> to see Integration Intelligence classify it (expected:{' '}
-          <code className="font-mono">{selected.expectedCategory}</code>).
+          WebApp and click <em>Analyze failure</em> to see Integration Intelligence classify it
+          {random ? '; the expected category depends on the failure each message drew.' : (
+            <> (expected: <code className="font-mono">{selected.expectedCategory}</code>).</>
+          )}
         </div>
       ) : null}
     </div>
