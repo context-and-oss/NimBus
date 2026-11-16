@@ -140,6 +140,7 @@ internal sealed class HandoffJobBackgroundService(
 
         var existing = await db.Customers.FirstOrDefaultAsync(c => c.CrmAccountId == payload.AccountId, cancellationToken);
         var isNew = existing is null;
+        var customerNumber = isNew ? await db.NextCustomerNumberAsync(cancellationToken) : null;
 
         await OutboxScope.RunAsync(db, async () =>
         {
@@ -150,7 +151,7 @@ internal sealed class HandoffJobBackgroundService(
                 {
                     Id = Guid.NewGuid(),
                     CrmAccountId = payload.AccountId,
-                    CustomerNumber = $"C-{DateTime.UtcNow:yyMMdd}-{Random.Shared.Next(10000, 99999)}",
+                    CustomerNumber = customerNumber!,
                     LegalName = payload.LegalName,
                     TaxId = payload.TaxId,
                     CountryCode = payload.CountryCode,

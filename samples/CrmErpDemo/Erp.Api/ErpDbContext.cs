@@ -1,3 +1,4 @@
+using System.Globalization;
 using Erp.Api.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -23,6 +24,45 @@ public class ErpDbContext(DbContextOptions<ErpDbContext> options) : DbContext(op
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Contacts_CreatedAt_Id' AND object_id = OBJECT_ID('dbo.Contacts'))
             CREATE INDEX IX_Contacts_CreatedAt_Id ON dbo.Contacts (CreatedAt DESC, Id) INCLUDE (CustomerId, FirstName, LastName, Email, Phone, UpdatedAt, Origin, IsDeleted);";
 
+    /// <summary>
+    /// The SQL Server sequence customer numbers are drawn from. A random suffix let two
+    /// customers created on the same day share a number and fail the unique index.
+    /// </summary>
+    public const string CustomerNumberSequence = "CustomerNumbers";
+
+    /// <summary>
+    /// The first sequence value. Numbers issued before the sequence end in five random digits,
+    /// so starting at six digits keeps every new number clear of the ones already stored.
+    /// </summary>
+    public const long FirstCustomerNumber = 100000;
+
+    /// <summary>
+    /// Creates the customer-number sequence on a database that already exists; the model
+    /// declares it for a new one. Safe to run every start.
+    /// </summary>
+    public const string CustomerNumberSequenceUpgradeSql = @"
+        IF OBJECT_ID(N'dbo.CustomerNumbers', N'SO') IS NULL
+            CREATE SEQUENCE dbo.CustomerNumbers AS bigint START WITH 100000 INCREMENT BY 1;";
+
+    /// <summary>Formats a customer number: <c>C-</c>, the UTC date as <c>yyMMdd</c>, and the sequence value.</summary>
+    public static string FormatCustomerNumber(DateTime utcNow, long sequenceValue) =>
+        string.Create(CultureInfo.InvariantCulture, $"C-{utcNow:yyMMdd}-{sequenceValue}");
+
+    /// <summary>
+    /// Issues the next customer number. Never repeats, also across concurrent requests and
+    /// replicas, because SQL Server hands out each sequence value once.
+    /// </summary>
+    public async Task<string> NextCustomerNumberAsync(CancellationToken cancellationToken = default)
+    {
+        // ToListAsync, not FirstAsync: composing wraps the query in a derived table, where
+        // SQL Server does not allow NEXT VALUE FOR.
+        var values = await Database
+            .SqlQueryRaw<long>($"SELECT NEXT VALUE FOR dbo.{CustomerNumberSequence} AS [Value]")
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return FormatCustomerNumber(DateTime.UtcNow, values.Single());
+    }
+
     // Properties that are bookkeeping rather than user-visible state — never
     // emit a field-diff audit row for these. IsDeleted flips become a single
     // Deleted summary row instead (see ProjectAuditEntries).
@@ -31,6 +71,8 @@ public class ErpDbContext(DbContextOptions<ErpDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasSequence<long>(CustomerNumberSequence, "dbo").StartsAt(FirstCustomerNumber).IncrementsBy(1);
+
         modelBuilder.Entity<Customer>(e =>
         {
             e.HasKey(x => x.Id);
