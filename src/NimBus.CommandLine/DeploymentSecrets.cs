@@ -4,12 +4,14 @@ internal sealed record DeploymentSecrets(
     string? SqlConnectionString,
     string? SqlAdminPassword,
     string? IdentityAdminPassword,
-    string? AlertMailSmtpPassword = null)
+    string? AlertMailSmtpPassword = null,
+    string? AlertWebhookSigningKey = null)
 {
     public const string SqlConnectionStringEnvironmentVariable = "NIMBUS_SQL_CONNECTION_STRING";
     public const string SqlAdminPasswordEnvironmentVariable = "NIMBUS_SQL_ADMIN_PASSWORD";
     public const string IdentityAdminPasswordEnvironmentVariable = "NIMBUS_IDENTITY_ADMIN_PASSWORD";
     public const string AlertMailSmtpPasswordEnvironmentVariable = "NIMBUS_ALERT_MAIL_SMTP_PASSWORD";
+    public const string AlertWebhookSigningKeyEnvironmentVariable = "NIMBUS_ALERT_WEBHOOK_SIGNING_KEY";
 
     public static DeploymentSecrets Load() => Load(Environment.GetEnvironmentVariable);
 
@@ -21,7 +23,8 @@ internal sealed record DeploymentSecrets(
             ReadSecret(readEnvironmentVariable, SqlConnectionStringEnvironmentVariable),
             ReadSecret(readEnvironmentVariable, SqlAdminPasswordEnvironmentVariable),
             ReadSecret(readEnvironmentVariable, IdentityAdminPasswordEnvironmentVariable),
-            ReadSecret(readEnvironmentVariable, AlertMailSmtpPasswordEnvironmentVariable));
+            ReadSecret(readEnvironmentVariable, AlertMailSmtpPasswordEnvironmentVariable),
+            ReadSecret(readEnvironmentVariable, AlertWebhookSigningKeyEnvironmentVariable));
     }
 
     internal static void RemoveFrom(IDictionary<string, string?> environment)
@@ -32,6 +35,7 @@ internal sealed record DeploymentSecrets(
         environment.Remove(SqlAdminPasswordEnvironmentVariable);
         environment.Remove(IdentityAdminPasswordEnvironmentVariable);
         environment.Remove(AlertMailSmtpPasswordEnvironmentVariable);
+        environment.Remove(AlertWebhookSigningKeyEnvironmentVariable);
     }
 
     private static string? ReadSecret(Func<string, string?> readEnvironmentVariable, string name)

@@ -35,6 +35,12 @@ param identityAdminEmail string = ''
 @secure()
 param identityAdminPassword string = ''
 
+// Endpoint alert webhooks: the key each webhook subscription's signing secret is derived
+// from. Pass the same value as to deploy.core.bicep, on every deploy. Empty leaves alert
+// webhooks off: the WebApp then refuses webhook subscriptions.
+@secure()
+param alertWebhookSigningKey string = ''
+
 // Per-resource location override. Empty means "use the global locationParam".
 // The CLI pins this to the existing web app's location when one is already
 // present so we don't try to migrate it to a different region.
@@ -243,7 +249,13 @@ var preservedExistingSettings = toObject(
   s => s.key,
   s => s.value)
 
-var webAppSecretSettings = union(preservedExistingSettings, coreWebAppSecretSettings, sqlSecretSettings, identitySecretSettings)
+// The key the Resolver signs alert webhooks with (deploy.core.bicep takes the same value).
+// With it the WebApp accepts webhook subscriptions and shows each its signing secret once.
+var alertWebhookSecretSettings = empty(alertWebhookSigningKey) ? {} : {
+  NimBus__Alerts__Webhook__SigningKey: alertWebhookSigningKey
+}
+
+var webAppSecretSettings = union(preservedExistingSettings, coreWebAppSecretSettings, sqlSecretSettings, identitySecretSettings, alertWebhookSecretSettings)
 
 var developmentDiagnosticSettings = isDevelopmentEnvironment ? [
   {

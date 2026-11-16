@@ -297,6 +297,18 @@ else
         .WithEnvironment("NimBus__Alerts__Mail__Smtp__UseSsl", "false")
         .WithEnvironment("NimBus__Alerts__Mail__From", "nimbus-alerts@crmerp-demo.example")
         .WithEnvironment("NimBus__Alerts__Mail__WebAppUrl", nimbusOps.GetEndpoint("https"));
+
+    // Endpoint alert webhooks (a webhook subscription on the same Alerts tab). A local run
+    // switches them on with a key that is only good for development, and lets the Resolver
+    // call an http receiver on this machine. The Azure deployment leaves alert webhooks off.
+    const string localAlertWebhookSigningKey = "nimbus-local-development-only-signing-key";
+    resolver
+        .WithEnvironment("NimBus__Alerts__Webhook__SigningKey", localAlertWebhookSigningKey)
+        .WithEnvironment("NimBus__Alerts__Webhook__AllowInsecureHttp", "true")
+        .WithEnvironment("NimBus__Alerts__Webhook__AllowPrivateNetworks", "true");
+    nimbusOps
+        .WithEnvironment("NimBus__Alerts__Webhook__SigningKey", localAlertWebhookSigningKey)
+        .WithEnvironment("NimBus__Alerts__Webhook__AllowInsecureHttp", "true");
 }
 
 // Provider-specific wiring. The WebApp/Resolver pick their backend off NimBus__StorageProvider;
