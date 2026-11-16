@@ -118,6 +118,66 @@ public class ResolverCompositionTests
         Assert.IsInstanceOfType<NoopEndpointAlertNotifier>(provider.GetRequiredService<IEndpointAlertNotifier>());
     }
 
+    // ── Endpoint alert webhooks ────────────────────────────────────────────────────────
+
+    private static Dictionary<string, string?> AlertWebhookSettings(string signingKey = "0123456789abcdef0123456789abcdef") => new()
+    {
+        ["NimBus:Alerts:Webhook:SigningKey"] = signingKey,
+    };
+
+    [TestMethod]
+    [DataRow(Registration.ServiceCollection)]
+    [DataRow(Registration.NimBusBuilder)]
+    public async Task AlertNotifier_WithOnlyWebhookSettings_NotifiesSubscribers(Registration registration)
+    {
+        await using var provider = Build(registration, AlertWebhookSettings(), registerSubscriptionStores: true);
+
+        Assert.IsInstanceOfType<SubscriptionAlertNotifier>(provider.GetRequiredService<IEndpointAlertNotifier>());
+    }
+
+    [TestMethod]
+    [DataRow(Registration.ServiceCollection)]
+    [DataRow(Registration.NimBusBuilder)]
+    public async Task AlertNotifier_WithInvalidWebhookSettings_IsTheNoop(Registration registration)
+    {
+        await using var provider = Build(registration, AlertWebhookSettings(signingKey: "too-short"), registerSubscriptionStores: true);
+
+        Assert.IsInstanceOfType<NoopEndpointAlertNotifier>(provider.GetRequiredService<IEndpointAlertNotifier>());
+    }
+
+    [TestMethod]
+    [DataRow(Registration.ServiceCollection)]
+    [DataRow(Registration.NimBusBuilder)]
+    public async Task AlertNotifier_WithInvalidWebhookSettings_StillMails(Registration registration)
+    {
+        // A bad webhook setting turns webhooks off; it must not take alert mail down with it.
+        var settings = AlertMailSettings();
+        settings["NimBus:Alerts:Webhook:SigningKey"] = "too-short";
+        await using var provider = Build(registration, settings, registerSubscriptionStores: true);
+
+        Assert.IsInstanceOfType<SubscriptionAlertNotifier>(provider.GetRequiredService<IEndpointAlertNotifier>());
+    }
+
+    [TestMethod]
+    [DataRow(Registration.ServiceCollection)]
+    [DataRow(Registration.NimBusBuilder)]
+    public async Task AlertNotifier_WithATokenEntry_BindsItFromIndexedSettings(Registration registration)
+    {
+        // App settings can only express a list as Key__0__Name; an entry that does not bind
+        // would silently send requests without their token.
+        var settings = AlertWebhookSettings();
+        settings["NimBus:Alerts:Webhook:BearerTokens:0:UrlPrefix"] = "https://agent.example.com/api/";
+        settings["NimBus:Alerts:Webhook:BearerTokens:0:Audience"] = "https://azuresre.dev";
+        await using var provider = Build(registration, settings, registerSubscriptionStores: true);
+
+        var options = provider.GetRequiredService<IConfiguration>()
+            .GetSection(AlertWebhookOptions.SectionName).Get<AlertWebhookOptions>()!;
+
+        Assert.AreEqual("https://agent.example.com/api/", options.BearerTokens.Single().UrlPrefix);
+        Assert.AreEqual("https://azuresre.dev", options.BearerTokens.Single().Audience);
+        Assert.IsInstanceOfType<SubscriptionAlertNotifier>(provider.GetRequiredService<IEndpointAlertNotifier>());
+    }
+
     [TestMethod]
     [DataRow(Registration.ServiceCollection)]
     [DataRow(Registration.NimBusBuilder)]
