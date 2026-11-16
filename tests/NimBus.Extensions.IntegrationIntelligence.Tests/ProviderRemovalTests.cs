@@ -18,6 +18,7 @@ namespace NimBus.Extensions.IntegrationIntelligence.Tests;
 public sealed class ProviderRemovalTests
 {
     private const string Module = "NimBus:IntegrationIntelligence:FailureClassification:";
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
     [TestMethod]
     public void Legacy_Provider_Settings_Start_Recordable_Without_An_Analyze_Route_Or_Provider_Client()
@@ -74,7 +75,7 @@ public sealed class ProviderRemovalTests
         using var scope = provider.CreateScope();
 
         var status = await scope.ServiceProvider.GetRequiredService<IntegrationIntelligenceStatusService>().GetAsync("endpoint", default);
-        using var json = JsonDocument.Parse(JsonSerializer.Serialize(status, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(status, Web));
 
         Assert.AreEqual("Recordable", json.RootElement.GetProperty("status").GetString());
         Assert.IsTrue(json.RootElement.GetProperty("canRecord").GetBoolean());

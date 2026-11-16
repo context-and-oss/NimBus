@@ -16,6 +16,7 @@ namespace NimBus.Extensions.IntegrationIntelligence;
 public static class IntegrationIntelligenceRegistration
 {
     private const string ModuleSection = "NimBus:IntegrationIntelligence:FailureClassification";
+    private static readonly string[] RemovedFlatProviderKeys = ["ApiKey", "BaseUrl", "Model", "TimeoutSeconds"];
 
     /// <summary>
     /// Reads and validates a contained configuration snapshot, prunes feature controllers when
@@ -142,7 +143,7 @@ public static class IntegrationIntelligenceRegistration
         removed.AddRange(module.GetSection("TypeSafe").GetChildren()
             .Where(child => child.Value is not null || child.GetChildren().Any())
             .Select(child => "TypeSafe:" + child.Key));
-        removed.AddRange(new[] { "ApiKey", "BaseUrl", "Model", "TimeoutSeconds" }.Where(key => module[key] is not null));
+        removed.AddRange(RemovedFlatProviderKeys.Where(key => module[key] is not null));
         return [.. removed];
     }
 
