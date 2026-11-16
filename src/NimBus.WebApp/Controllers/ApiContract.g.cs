@@ -121,11 +121,19 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<SessionStatus>>> PostEndpointSessionsBatchAsync(System.Collections.Generic.IEnumerable<string> body, string endpointId);
 
+        /// <summary>
+        /// Subscribe to an endpoint's alerts
+        /// </summary>
+
+        /// <remarks>
+        /// Creates an alert subscription on the endpoint. Needs Owner on the endpoint. type is mail, webhook, or both separated by a semicolon. A mail subscription needs mail; a webhook subscription needs an https url and a deployment where alert webhooks are configured. The response to a webhook subscription carries its signing secret, once.
+        /// </remarks>
+
 
 
         /// <returns>OK</returns>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostEndpointSubscribeAsync(EndpointSubscription body, string endpointId);
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<EndpointSubscriptionCreated>> PostEndpointSubscribeAsync(EndpointSubscription body, string endpointId);
 
         /// <remarks>
         /// Get all subscribers to given endpoint
@@ -342,9 +350,15 @@ namespace NimBus.WebApp.ManagementApi
             return _implementation.PostEndpointSessionsBatchAsync(body, endpointId);
         }
 
+        /// <summary>
+        /// Subscribe to an endpoint's alerts
+        /// </summary>
+        /// <remarks>
+        /// Creates an alert subscription on the endpoint. Needs Owner on the endpoint. type is mail, webhook, or both separated by a semicolon. A mail subscription needs mail; a webhook subscription needs an https url and a deployment where alert webhooks are configured. The response to a webhook subscription carries its signing secret, once.
+        /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/v1/endpoint/{endpointId}/subscribe")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostEndpointSubscribe([Microsoft.AspNetCore.Mvc.FromBody] EndpointSubscription body, string endpointId)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<EndpointSubscriptionCreated>> PostEndpointSubscribe([Microsoft.AspNetCore.Mvc.FromBody] EndpointSubscription body, string endpointId)
         {
 
             return _implementation.PostEndpointSubscribeAsync(body, endpointId);
@@ -8343,6 +8357,159 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<EndpointSubscription>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// A newly created alert subscription.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class EndpointSubscriptionCreated : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _id;
+        private string _type;
+        private string _mail;
+        private string _url;
+        private string _authorId;
+        private System.Collections.Generic.List<string> _eventTypes;
+        private int _frequency;
+        private string _signingSecret;
+
+        [Newtonsoft.Json.JsonProperty("id", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Id    {
+            get { return _id; }
+            set
+            {
+                if (_id != value)
+                {
+                    _id = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("type", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Type    {
+            get { return _type; }
+            set
+            {
+                if (_type != value)
+                {
+                    _type = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("mail", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Mail    {
+            get { return _mail; }
+            set
+            {
+                if (_mail != value)
+                {
+                    _mail = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("url", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Url    {
+            get { return _url; }
+            set
+            {
+                if (_url != value)
+                {
+                    _url = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("authorId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string AuthorId    {
+            get { return _authorId; }
+            set
+            {
+                if (_authorId != value)
+                {
+                    _authorId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventTypes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> EventTypes    {
+            get { return _eventTypes; }
+            set
+            {
+                if (_eventTypes != value)
+                {
+                    _eventTypes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("frequency", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Frequency    {
+            get { return _frequency; }
+            set
+            {
+                if (_frequency != value)
+                {
+                    _frequency = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Webhook subscriptions only. The secret the subscription's requests are signed with (HMAC-SHA256 over the timestamp header, a dot and the body). Shown once; it cannot be retrieved again.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("signingSecret", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SigningSecret    {
+            get { return _signingSecret; }
+            set
+            {
+                if (_signingSecret != value)
+                {
+                    _signingSecret = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static EndpointSubscriptionCreated FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<EndpointSubscriptionCreated>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;

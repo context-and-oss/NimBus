@@ -10,6 +10,7 @@ import {
 } from "components/ui";
 import { Combobox, type ComboboxOption } from "components/ui/combobox";
 import { getEventTypesByEndpoint } from "hooks/event-types";
+import { ALERT_FREQUENCIES } from "components/endpoint-list/alert-frequencies";
 
 interface IAlertModalProps {
   endpointId: string;
@@ -89,9 +90,11 @@ export default function AlertModal(props: IAlertModalProps) {
           value={props.subscription.frequency?.toString()}
           disabled={!props.editable}
         >
-          <Radio value="3600">Hourly</Radio>
-          <Radio value="86400">Daily</Radio>
-          <Radio value="604800">Weekly</Radio>
+          {ALERT_FREQUENCIES.map((option) => (
+            <Radio key={option.value} value={option.value}>
+              {option.label}
+            </Radio>
+          ))}
         </RadioGroup>
 
         <p className="font-bold mt-3 mb-2">Type</p>

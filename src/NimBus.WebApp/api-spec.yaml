@@ -1077,11 +1077,15 @@ paths:
         in: path
         required: true
     post:
-      summary: ''
+      summary: Subscribe to an endpoint's alerts
       operationId: post-endpoint-subscribe
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndpointSubscriptionCreated'
         '400':
           description: Bad Request
           content:
@@ -1090,7 +1094,11 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       tags:
         - Endpoint
-      description: ''
+      description: >-
+        Creates an alert subscription on the endpoint. Needs Owner on the endpoint. type is mail,
+        webhook, or both separated by a semicolon. A mail subscription needs mail; a webhook
+        subscription needs an https url and a deployment where alert webhooks are configured.
+        The response to a webhook subscription carries its signing secret, once.
       requestBody:
         content:
           application/json:
@@ -5854,6 +5862,33 @@ components:
           type: integer
         id:
           type: string
+    EndpointSubscriptionCreated:
+      title: EndpointSubscriptionCreated
+      type: object
+      description: A newly created alert subscription.
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        mail:
+          type: string
+        url:
+          type: string
+        authorId:
+          type: string
+        eventTypes:
+          type: array
+          items:
+            type: string
+        frequency:
+          type: integer
+        signingSecret:
+          type: string
+          description: >-
+            Webhook subscriptions only. The secret the subscription's requests are signed with
+            (HMAC-SHA256 over the timestamp header, a dot and the body). Shown once; it cannot
+            be retrieved again.
     Subscription:
       title: Subscription
       type: object
