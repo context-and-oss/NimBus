@@ -46,8 +46,9 @@ public sealed partial class AgentApiKeyAuthenticationHandler : AuthenticationHan
         if (settings is null)
             return Refuse("key store unavailable", keyId);
 
+        // A key issued for MCP is refused like an unknown key: it opens /mcp only (Spec 052 §6.1).
         var key = settings.Keys.FirstOrDefault(k => string.Equals(k.KeyId, keyId, StringComparison.Ordinal));
-        if (key is null || !AgentApiKeyFormat.SecretMatches(secret, key.SecretHash))
+        if (key is null || key.Use != NimBus.MessageStore.States.AgentApiKeyUse.AgentApi || !AgentApiKeyFormat.SecretMatches(secret, key.SecretHash))
             return Refuse("unknown key", keyId);
         if (key.RevokedAtUtc is not null)
             return Refuse("revoked", keyId);

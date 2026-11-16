@@ -112,6 +112,23 @@ public class AgentApiKeyAuthenticationTests
     }
 
     [TestMethod]
+    public async Task A_key_issued_for_mcp_fails_on_the_agent_api()
+    {
+        // Spec 052 §6.1: an MCP key authenticates on /mcp and nowhere else.
+        await using var host = await Host.CreateAsync();
+        var key = await host.IssueAsync("sre-agent", k =>
+        {
+            k.Use = AgentApiKeyUse.Mcp;
+            k.Mcp = new AgentApiKeyMcpGrant { Resubmit = true };
+            k.ExpiresAtUtc = Now.UtcDateTime.AddDays(30);
+        });
+
+        var result = await host.AuthenticateAsync(key.Key);
+
+        Assert.IsNotNull(result.Failure);
+    }
+
+    [TestMethod]
     public async Task An_unreadable_store_fails_closed()
     {
         await using var host = await Host.CreateAsync(new UnreadableKeyStore());

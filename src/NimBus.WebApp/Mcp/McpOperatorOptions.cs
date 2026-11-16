@@ -32,12 +32,29 @@ public sealed class McpOperatorOptions
     /// <summary>The MCP resource's own Entra app registration.</summary>
     public McpEntraOptions Entra { get; set; } = new();
 
+    /// <summary>Agent API keys on <c>/mcp</c> (Spec 052).</summary>
+    public McpAgentKeyOptions AgentKeys { get; set; } = new();
+
     /// <summary>
     /// The most deferred messages one <c>nimbus_reprocess_deferred</c> may ask an endpoint to
     /// process again (Spec 035 Phase 3). A session with more is refused, not partly reprocessed:
     /// a person reprocesses it from the Web UI. Default 200.
     /// </summary>
     public int MaxDeferredReprocess { get; set; } = 200;
+}
+
+/// <summary>
+/// The deployment's ceiling for agent API keys on <c>/mcp</c> (Spec 052 §6.5), bound from
+/// <c>NimBus:Mcp:AgentKeys</c>. A key is a credential NimBus mints itself, so accepting one on the
+/// operator tools is a deployment decision; a site Owner then turns keys on in Settings → MCP access.
+/// </summary>
+public sealed class McpAgentKeyOptions
+{
+    /// <summary>
+    /// Accept MCP agent keys on <c>/mcp</c>, in Entra mode only. Default false: a key on <c>/mcp</c>
+    /// then gets 401 whatever the Owner's policy says.
+    /// </summary>
+    public bool Enabled { get; set; }
 }
 
 /// <summary>
