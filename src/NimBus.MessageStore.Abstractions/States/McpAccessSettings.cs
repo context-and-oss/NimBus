@@ -61,6 +61,13 @@ public class McpAccessSettings
     /// </summary>
     public bool AllowWorkloadAnnotation { get; set; }
 
+    /// <summary>
+    /// Accept agent API keys issued for MCP as unattended workloads on <c>/mcp</c> (Spec 052).
+    /// Effective only while <see cref="AllowWorkloads"/> is on and the deployment allows keys
+    /// (<c>NimBus:Mcp:AgentKeys:Enabled</c>). Default false, also in a policy saved before the switch existed.
+    /// </summary>
+    public bool AllowAgentKeys { get; set; }
+
     /// <summary>Resubmits each workload client may make in a rolling 24 hours, 0-500. Default 20.</summary>
     public int WorkloadResubmitsPerDay { get; set; } = DefaultWorkloadResubmitsPerDay;
 

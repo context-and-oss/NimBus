@@ -296,6 +296,7 @@ public abstract class EndpointMetadataStoreConformanceTests
             "The recovery capabilities are off until an Owner turns them on (Spec 035 Phase 3).");
         Assert.IsFalse(defaults.AllowWorkloadClassification, "Workload recording is off until an Owner turns it on (Spec 044 §6.6).");
         Assert.IsFalse(defaults.AllowWorkloadResubmit, "Unattended resubmits are off until an Owner turns them on (Spec 044 Phase 2).");
+        Assert.IsFalse(defaults.AllowAgentKeys, "Agent API keys on /mcp are off until an Owner turns them on (Spec 052).");
         Assert.AreEqual(McpAccessSettings.DefaultWorkloadResubmitsPerDay, defaults.WorkloadResubmitsPerDay);
         Assert.AreEqual(McpAccessSettings.DefaultWorkloadResubmitsPerMessage, defaults.WorkloadResubmitsPerMessage);
     }
@@ -324,6 +325,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.IsFalse(stored.AllowWorkloads);
         Assert.IsTrue(stored.AllowWorkloadClassification);
         Assert.IsTrue(stored.AllowWorkloadResubmit);
+        Assert.IsTrue(stored.AllowAgentKeys);
         Assert.AreEqual(7, stored.WorkloadResubmitsPerDay);
         Assert.AreEqual(3, stored.WorkloadResubmitsPerMessage);
         Assert.AreEqual(McpPeopleMode.Listed, stored.People.Mode);
@@ -398,6 +400,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         AllowWorkloads = false,
         AllowWorkloadClassification = true,
         AllowWorkloadResubmit = true,
+        AllowAgentKeys = true,
         WorkloadResubmitsPerDay = 7,
         WorkloadResubmitsPerMessage = 3,
         People = new McpPeopleSettings
@@ -697,7 +700,7 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.AreEqual(sample.Revision, stored.Revision);
         Assert.AreEqual(sample.UpdatedBy, stored.UpdatedBy);
         Assert.AreEqual(sample.UpdatedAtUtc!.Value.Ticks, stored.UpdatedAtUtc!.Value.Ticks);
-        Assert.AreEqual(2, stored.Keys.Count);
+        Assert.AreEqual(3, stored.Keys.Count);
 
         var active = stored.Keys.Single(k => k.KeyId == "abcdefghijkl");
         Assert.AreEqual("enrichment-agent", active.AgentId);
@@ -708,12 +711,25 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.AreEqual(T0.AddDays(90).Ticks, active.ExpiresAtUtc!.Value.Ticks);
         Assert.IsNull(active.RevokedAtUtc);
         Assert.IsNull(active.RevokedBy);
+        Assert.AreEqual(AgentApiKeyUse.AgentApi, active.Use);
+        Assert.IsNull(active.Mcp);
+        Assert.IsNull(active.Replaces);
 
         var revoked = stored.Keys.Single(k => k.KeyId == "mnopqrstuvwx");
         Assert.IsNull(revoked.Name);
         Assert.IsNull(revoked.ExpiresAtUtc);
         Assert.AreEqual(T0.AddHours(1).Ticks, revoked.RevokedAtUtc!.Value.Ticks);
         Assert.AreEqual("owner@example.com", revoked.RevokedBy);
+
+        // Spec 052: an MCP key keeps its use, grant and predecessor.
+        var mcp = stored.Keys.Single(k => k.KeyId == "yzabcdefghij");
+        Assert.AreEqual(AgentApiKeyUse.Mcp, mcp.Use);
+        Assert.IsNotNull(mcp.Mcp);
+        Assert.IsTrue(mcp.Mcp.Classify);
+        Assert.IsFalse(mcp.Mcp.Annotate);
+        Assert.IsTrue(mcp.Mcp.Resubmit);
+        Assert.AreEqual(12, mcp.Mcp.RequestsPerWindow);
+        Assert.AreEqual("abcdefghijkl", mcp.Replaces);
     }
 
     [TestMethod]
@@ -732,7 +748,7 @@ public abstract class EndpointMetadataStoreConformanceTests
 
         var stored = await store.GetAgentApiKeySettings();
         Assert.AreEqual(saved, stored.Revision);
-        Assert.AreEqual(2, stored.Keys.Count);
+        Assert.AreEqual(3, stored.Keys.Count);
     }
 
     [TestMethod]
@@ -810,6 +826,18 @@ public abstract class EndpointMetadataStoreConformanceTests
                 CreatedBy = "owner@example.com",
                 RevokedAtUtc = T0.AddHours(1),
                 RevokedBy = "owner@example.com",
+            },
+            new AgentApiKey
+            {
+                KeyId = "yzabcdefghij",
+                AgentId = "sre-agent",
+                SecretHash = "Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5ZmY=",
+                CreatedAtUtc = T0,
+                CreatedBy = "owner@example.com",
+                ExpiresAtUtc = T0.AddDays(90),
+                Use = AgentApiKeyUse.Mcp,
+                Mcp = new AgentApiKeyMcpGrant { Classify = true, Annotate = false, Resubmit = true, RequestsPerWindow = 12 },
+                Replaces = "abcdefghijkl",
             },
         },
     };
