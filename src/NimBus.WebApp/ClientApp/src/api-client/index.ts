@@ -3777,6 +3777,82 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Rotate an agent API key
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminAgentKeyRotate(keyId: string, body?: AgentApiKeyRotate | undefined): Promise<AgentApiKeyIssued> {
+        let url_ = this.baseUrl + "/api/v1/admin/agent-keys/{keyId}/rotate";
+        if (keyId === undefined || keyId === null)
+            throw new globalThis.Error("The parameter 'keyId' must be defined.");
+        url_ = url_.replace("{keyId}", encodeURIComponent("" + keyId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminAgentKeyRotate(_response);
+        });
+    }
+
+    protected processPostAdminAgentKeyRotate(response: Response): Promise<AgentApiKeyIssued> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AgentApiKeyIssued.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AgentApiKeyIssued>(null as any);
+    }
+
+    /**
      * Remove a revoked or expired agent API key
      * @return OK
      */
@@ -20182,6 +20258,8 @@ export class McpAccessSettings implements IMcpAccessSettings {
     allowWorkloadResubmit?: boolean;
     /** Whether workloads with the Nimbus.Workload.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false. */
     allowWorkloadAnnotation?: boolean;
+    /** Whether agent API keys issued for MCP may connect as unattended workloads (Spec 052). Effective only while allowWorkloads is on and the deployment allows keys. Default false; an omitted value saves false. */
+    allowAgentKeys?: boolean;
     /** Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20). */
     workloadResubmitsPerDay?: number | undefined;
     /** Unsuccessful workload resubmits of one message, across agents, after which NimBus refuses another; 1-5. Null on a save keeps the default (2). */
@@ -20217,6 +20295,7 @@ export class McpAccessSettings implements IMcpAccessSettings {
             this.allowWorkloadClassification = _data["allowWorkloadClassification"];
             this.allowWorkloadResubmit = _data["allowWorkloadResubmit"];
             this.allowWorkloadAnnotation = _data["allowWorkloadAnnotation"];
+            this.allowAgentKeys = _data["allowAgentKeys"];
             this.workloadResubmitsPerDay = _data["workloadResubmitsPerDay"];
             this.workloadResubmitsPerMessage = _data["workloadResubmitsPerMessage"];
             this.people = _data["people"] ? McpPeople.fromJS(_data["people"]) : undefined as any;
@@ -20248,6 +20327,7 @@ export class McpAccessSettings implements IMcpAccessSettings {
         data["allowWorkloadClassification"] = this.allowWorkloadClassification;
         data["allowWorkloadResubmit"] = this.allowWorkloadResubmit;
         data["allowWorkloadAnnotation"] = this.allowWorkloadAnnotation;
+        data["allowAgentKeys"] = this.allowAgentKeys;
         data["workloadResubmitsPerDay"] = this.workloadResubmitsPerDay;
         data["workloadResubmitsPerMessage"] = this.workloadResubmitsPerMessage;
         data["people"] = this.people ? this.people.toJSON() : undefined as any;
@@ -20282,6 +20362,8 @@ export interface IMcpAccessSettings {
     allowWorkloadResubmit?: boolean;
     /** Whether workloads with the Nimbus.Workload.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false. */
     allowWorkloadAnnotation?: boolean;
+    /** Whether agent API keys issued for MCP may connect as unattended workloads (Spec 052). Effective only while allowWorkloads is on and the deployment allows keys. Default false; an omitted value saves false. */
+    allowAgentKeys?: boolean;
     /** Resubmits each workload client may make in a rolling 24 hours, 0-500. Null on a save keeps the default (20). */
     workloadResubmitsPerDay?: number | undefined;
     /** Unsuccessful workload resubmits of one message, across agents, after which NimBus refuses another; 1-5. Null on a save keeps the default (2). */
@@ -20884,6 +20966,8 @@ export class McpDeployment implements IMcpDeployment {
     authority?: string | undefined;
     allowedOrigins?: string[];
     rateLimitsEnabled?: boolean;
+    /** Whether the deployment accepts agent API keys on /mcp (NimBus__Mcp__AgentKeys__Enabled, Spec 052). Keys also need the Owner's switch. */
+    agentKeysEnabled?: boolean;
     requestLimit?: McpWindowLimit;
     mutationLimit?: McpWindowLimit;
     /** The catalog's endpoint ids, for the endpoint pickers. */
@@ -20920,6 +21004,7 @@ export class McpDeployment implements IMcpDeployment {
                     this.allowedOrigins!.push(item);
             }
             this.rateLimitsEnabled = _data["rateLimitsEnabled"];
+            this.agentKeysEnabled = _data["agentKeysEnabled"];
             this.requestLimit = _data["requestLimit"] ? McpWindowLimit.fromJS(_data["requestLimit"]) : undefined as any;
             this.mutationLimit = _data["mutationLimit"] ? McpWindowLimit.fromJS(_data["mutationLimit"]) : undefined as any;
             if (Array.isArray(_data["endpoints"])) {
@@ -20957,6 +21042,7 @@ export class McpDeployment implements IMcpDeployment {
                 data["allowedOrigins"].push(item);
         }
         data["rateLimitsEnabled"] = this.rateLimitsEnabled;
+        data["agentKeysEnabled"] = this.agentKeysEnabled;
         data["requestLimit"] = this.requestLimit ? this.requestLimit.toJSON() : undefined as any;
         data["mutationLimit"] = this.mutationLimit ? this.mutationLimit.toJSON() : undefined as any;
         if (Array.isArray(this.endpoints)) {
@@ -20987,6 +21073,8 @@ export interface IMcpDeployment {
     authority?: string | undefined;
     allowedOrigins?: string[];
     rateLimitsEnabled?: boolean;
+    /** Whether the deployment accepts agent API keys on /mcp (NimBus__Mcp__AgentKeys__Enabled, Spec 052). Keys also need the Owner's switch. */
+    agentKeysEnabled?: boolean;
     requestLimit?: McpWindowLimit;
     mutationLimit?: McpWindowLimit;
     /** The catalog's endpoint ids, for the endpoint pickers. */
@@ -21283,6 +21371,11 @@ export class AgentApiKeyInfo implements IAgentApiKeyInfo {
     revokedBy?: string | undefined;
     /** Recorded at most every 5 minutes per instance; null when never used. */
     lastUsedAtUtc?: moment.Moment | undefined;
+    use?: AgentApiKeyUse;
+    /** What an mcp key may do; null for an agentApi key. */
+    mcp?: AgentApiKeyMcpGrant | undefined;
+    /** The key id this key rotated, when it was issued by rotate. */
+    replaces?: string | undefined;
 
     [key: string]: any;
 
@@ -21312,6 +21405,9 @@ export class AgentApiKeyInfo implements IAgentApiKeyInfo {
             this.revokedAtUtc = _data["revokedAtUtc"] ? moment(_data["revokedAtUtc"].toString()) : undefined as any;
             this.revokedBy = _data["revokedBy"];
             this.lastUsedAtUtc = _data["lastUsedAtUtc"] ? moment(_data["lastUsedAtUtc"].toString()) : undefined as any;
+            this.use = _data["use"];
+            this.mcp = _data["mcp"] ? AgentApiKeyMcpGrant.fromJS(_data["mcp"]) : undefined as any;
+            this.replaces = _data["replaces"];
         }
     }
 
@@ -21339,6 +21435,9 @@ export class AgentApiKeyInfo implements IAgentApiKeyInfo {
         data["revokedAtUtc"] = this.revokedAtUtc ? this.revokedAtUtc.toISOString() : undefined as any;
         data["revokedBy"] = this.revokedBy;
         data["lastUsedAtUtc"] = this.lastUsedAtUtc ? this.lastUsedAtUtc.toISOString() : undefined as any;
+        data["use"] = this.use;
+        data["mcp"] = this.mcp ? this.mcp.toJSON() : undefined as any;
+        data["replaces"] = this.replaces;
         return data;
     }
 
@@ -21365,6 +21464,157 @@ export interface IAgentApiKeyInfo {
     revokedBy?: string | undefined;
     /** Recorded at most every 5 minutes per instance; null when never used. */
     lastUsedAtUtc?: moment.Moment | undefined;
+    use?: AgentApiKeyUse;
+    /** What an mcp key may do; null for an agentApi key. */
+    mcp?: AgentApiKeyMcpGrant | undefined;
+    /** The key id this key rotated, when it was issued by rotate. */
+    replaces?: string | undefined;
+
+    [key: string]: any;
+}
+
+/** Where a key authenticates, fixed when it is issued (Spec 052). agentApi is /api/v1/agent/*; mcp is /mcp as an unattended workload. */
+export enum AgentApiKeyUse {
+    AgentApi = "agentApi",
+    Mcp = "mcp",
+}
+
+/** The most an mcp key may do (Spec 052). Observe is implied. Each permission still needs its switch in the MCP access policy, and a key never skips, reads payloads or uses the delegated-only tools. */
+export class AgentApiKeyMcpGrant implements IAgentApiKeyMcpGrant {
+    /** Record failure classifications. */
+    classify?: boolean;
+    /** Mark messages reported. */
+    annotate?: boolean;
+    /** Resubmit failed messages unattended, within the workload budget. */
+    resubmit?: boolean;
+    /** MCP requests per window for this key, 1 up to the deployment's limit; null for the deployment's and the Owner's. */
+    requestsPerWindow?: number | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IAgentApiKeyMcpGrant) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.classify = _data["classify"];
+            this.annotate = _data["annotate"];
+            this.resubmit = _data["resubmit"];
+            this.requestsPerWindow = _data["requestsPerWindow"];
+        }
+    }
+
+    static fromJS(data: any): AgentApiKeyMcpGrant {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentApiKeyMcpGrant();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["classify"] = this.classify;
+        data["annotate"] = this.annotate;
+        data["resubmit"] = this.resubmit;
+        data["requestsPerWindow"] = this.requestsPerWindow;
+        return data;
+    }
+
+    clone(): AgentApiKeyMcpGrant {
+        const json = this.toJSON();
+        let result = new AgentApiKeyMcpGrant();
+        result.init(json);
+        return result;
+    }
+}
+
+/** The most an mcp key may do (Spec 052). Observe is implied. Each permission still needs its switch in the MCP access policy, and a key never skips, reads payloads or uses the delegated-only tools. */
+export interface IAgentApiKeyMcpGrant {
+    /** Record failure classifications. */
+    classify?: boolean;
+    /** Mark messages reported. */
+    annotate?: boolean;
+    /** Resubmit failed messages unattended, within the workload budget. */
+    resubmit?: boolean;
+    /** MCP requests per window for this key, 1 up to the deployment's limit; null for the deployment's and the Owner's. */
+    requestsPerWindow?: number | undefined;
+
+    [key: string]: any;
+}
+
+export class AgentApiKeyRotate implements IAgentApiKeyRotate {
+    /** The successor's label; null keeps the old key's. */
+    name?: string | undefined;
+    /** The successor's expiry; null for the old key's length from now. */
+    expiresAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IAgentApiKeyRotate) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+            this.expiresAtUtc = _data["expiresAtUtc"] ? moment(_data["expiresAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): AgentApiKeyRotate {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentApiKeyRotate();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        data["expiresAtUtc"] = this.expiresAtUtc ? this.expiresAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): AgentApiKeyRotate {
+        const json = this.toJSON();
+        let result = new AgentApiKeyRotate();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAgentApiKeyRotate {
+    /** The successor's label; null keeps the old key's. */
+    name?: string | undefined;
+    /** The successor's expiry; null for the old key's length from now. */
+    expiresAtUtc?: moment.Moment | undefined;
 
     [key: string]: any;
 }
@@ -21443,8 +21693,11 @@ export class AgentApiKeyCreate implements IAgentApiKeyCreate {
     agentId?: string;
     /** A label for the Settings page, up to 100 characters. */
     name?: string | undefined;
-    /** When the key stops working; null for no expiry. Must be in the future. */
+    /** When the key stops working; null for no expiry. Must be in the future. Required for an mcp key, at most 365 days ahead. */
     expiresAtUtc?: moment.Moment | undefined;
+    use?: AgentApiKeyUse;
+    /** The grant of an mcp key; refused for an agentApi key. */
+    mcp?: AgentApiKeyMcpGrant | undefined;
 
     [key: string]: any;
 
@@ -21466,6 +21719,8 @@ export class AgentApiKeyCreate implements IAgentApiKeyCreate {
             this.agentId = _data["agentId"];
             this.name = _data["name"];
             this.expiresAtUtc = _data["expiresAtUtc"] ? moment(_data["expiresAtUtc"].toString()) : undefined as any;
+            this.use = _data["use"];
+            this.mcp = _data["mcp"] ? AgentApiKeyMcpGrant.fromJS(_data["mcp"]) : undefined as any;
         }
     }
 
@@ -21485,6 +21740,8 @@ export class AgentApiKeyCreate implements IAgentApiKeyCreate {
         data["agentId"] = this.agentId;
         data["name"] = this.name;
         data["expiresAtUtc"] = this.expiresAtUtc ? this.expiresAtUtc.toISOString() : undefined as any;
+        data["use"] = this.use;
+        data["mcp"] = this.mcp ? this.mcp.toJSON() : undefined as any;
         return data;
     }
 
@@ -21501,8 +21758,11 @@ export interface IAgentApiKeyCreate {
     agentId?: string;
     /** A label for the Settings page, up to 100 characters. */
     name?: string | undefined;
-    /** When the key stops working; null for no expiry. Must be in the future. */
+    /** When the key stops working; null for no expiry. Must be in the future. Required for an mcp key, at most 365 days ahead. */
     expiresAtUtc?: moment.Moment | undefined;
+    use?: AgentApiKeyUse;
+    /** The grant of an mcp key; refused for an agentApi key. */
+    mcp?: AgentApiKeyMcpGrant | undefined;
 
     [key: string]: any;
 }
@@ -22609,7 +22869,10 @@ export class McpActivityItem implements IMcpActivityItem {
     endpointId?: string | undefined;
     eventId?: string | undefined;
     auditor?: string | undefined;
+    /** The client application, or agent:<agentId> for an MCP agent key. */
     clientId?: string | undefined;
+    /** The MCP agent key the call came with (Spec 052); null for Entra callers. */
+    agentKeyId?: string | undefined;
     /** The operator's reason, or the refusal reason. */
     reason?: string | undefined;
     detail?: string | undefined;
@@ -22638,6 +22901,7 @@ export class McpActivityItem implements IMcpActivityItem {
             this.eventId = _data["eventId"];
             this.auditor = _data["auditor"];
             this.clientId = _data["clientId"];
+            this.agentKeyId = _data["agentKeyId"];
             this.reason = _data["reason"];
             this.detail = _data["detail"];
         }
@@ -22663,6 +22927,7 @@ export class McpActivityItem implements IMcpActivityItem {
         data["eventId"] = this.eventId;
         data["auditor"] = this.auditor;
         data["clientId"] = this.clientId;
+        data["agentKeyId"] = this.agentKeyId;
         data["reason"] = this.reason;
         data["detail"] = this.detail;
         return data;
@@ -22685,7 +22950,10 @@ export interface IMcpActivityItem {
     endpointId?: string | undefined;
     eventId?: string | undefined;
     auditor?: string | undefined;
+    /** The client application, or agent:<agentId> for an MCP agent key. */
     clientId?: string | undefined;
+    /** The MCP agent key the call came with (Spec 052); null for Entra callers. */
+    agentKeyId?: string | undefined;
     /** The operator's reason, or the refusal reason. */
     reason?: string | undefined;
     detail?: string | undefined;

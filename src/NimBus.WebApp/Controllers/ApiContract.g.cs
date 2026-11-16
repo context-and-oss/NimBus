@@ -2448,7 +2448,7 @@ namespace NimBus.WebApp.ManagementApi
         /// </summary>
 
         /// <remarks>
-        /// Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full key once; only its hash is stored. The key authenticates as agentId on /api/v1/agent/* and nowhere else, on every instance within 30 seconds.
+        /// Spec 039 and Spec 052. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full key once; only its hash is stored. A key of use agentApi (the default) authenticates as agentId on /api/v1/agent/* and nowhere else. A key of use mcp authenticates on /mcp as an unattended workload and nowhere else; it needs an expiry at most 365 days ahead, carries the grant in mcp, and works only while the deployment and the MCP access policy allow agent keys. Either applies on every instance within 30 seconds.
         /// </remarks>
 
         /// <returns>OK</returns>
@@ -2466,6 +2466,20 @@ namespace NimBus.WebApp.ManagementApi
         /// <returns>OK</returns>
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyState>> PostAdminAgentKeyRevokeAsync(string keyId);
+
+        /// <summary>
+        /// Rotate an agent API key
+        /// </summary>
+
+        /// <remarks>
+        /// Spec 052. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Issues a successor with the same agent, use and grant, and replaces set to the old key. Both keys work until the old one is revoked or expires. The expiry defaults to the old key's length from now. Returns the new key once. 400 for a revoked or expired key.
+        /// </remarks>
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyIssued>> PostAdminAgentKeyRotateAsync(string keyId, AgentApiKeyRotate body);
 
         /// <summary>
         /// Remove a revoked or expired agent API key
@@ -2509,7 +2523,7 @@ namespace NimBus.WebApp.ManagementApi
         /// Issue an agent API key
         /// </summary>
         /// <remarks>
-        /// Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full key once; only its hash is stored. The key authenticates as agentId on /api/v1/agent/* and nowhere else, on every instance within 30 seconds.
+        /// Spec 039 and Spec 052. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the full key once; only its hash is stored. A key of use agentApi (the default) authenticates as agentId on /api/v1/agent/* and nowhere else. A key of use mcp authenticates on /mcp as an unattended workload and nowhere else; it needs an expiry at most 365 days ahead, carries the grant in mcp, and works only while the deployment and the MCP access policy allow agent keys. Either applies on every instance within 30 seconds.
         /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/v1/admin/agent-keys")]
@@ -2531,6 +2545,20 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.PostAdminAgentKeyRevokeAsync(keyId);
+        }
+
+        /// <summary>
+        /// Rotate an agent API key
+        /// </summary>
+        /// <remarks>
+        /// Spec 052. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Issues a successor with the same agent, use and grant, and replaces set to the old key. Both keys work until the old one is revoked or expires. The expiry defaults to the old key's length from now. Returns the new key once. 400 for a revoked or expired key.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/v1/admin/agent-keys/{keyId}/rotate")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentApiKeyIssued>> PostAdminAgentKeyRotate(string keyId, [Microsoft.AspNetCore.Mvc.FromBody] AgentApiKeyRotate body)
+        {
+
+            return _implementation.PostAdminAgentKeyRotateAsync(keyId, body);
         }
 
         /// <summary>
@@ -19614,6 +19642,7 @@ namespace NimBus.WebApp.ManagementApi
         private bool _allowWorkloadClassification;
         private bool _allowWorkloadResubmit;
         private bool _allowWorkloadAnnotation;
+        private bool _allowAgentKeys;
         private int? _workloadResubmitsPerDay;
         private int? _workloadResubmitsPerMessage;
         private McpPeople _people;
@@ -19751,6 +19780,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_allowWorkloadAnnotation != value)
                 {
                     _allowWorkloadAnnotation = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether agent API keys issued for MCP may connect as unattended workloads (Spec 052). Effective only while allowWorkloads is on and the deployment allows keys. Default false; an omitted value saves false.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("allowAgentKeys", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AllowAgentKeys    {
+            get { return _allowAgentKeys; }
+            set
+            {
+                if (_allowAgentKeys != value)
+                {
+                    _allowAgentKeys = value;
                     RaisePropertyChanged();
                 }
             }
@@ -20602,6 +20647,7 @@ namespace NimBus.WebApp.ManagementApi
         private string _authority;
         private System.Collections.Generic.List<string> _allowedOrigins;
         private bool _rateLimitsEnabled;
+        private bool _agentKeysEnabled;
         private McpWindowLimit _requestLimit;
         private McpWindowLimit _mutationLimit;
         private System.Collections.Generic.List<string> _endpoints;
@@ -20732,6 +20778,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_rateLimitsEnabled != value)
                 {
                     _rateLimitsEnabled = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether the deployment accepts agent API keys on /mcp (NimBus__Mcp__AgentKeys__Enabled, Spec 052). Keys also need the Owner's switch.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("agentKeysEnabled", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AgentKeysEnabled    {
+            get { return _agentKeysEnabled; }
+            set
+            {
+                if (_agentKeysEnabled != value)
+                {
+                    _agentKeysEnabled = value;
                     RaisePropertyChanged();
                 }
             }
@@ -21148,6 +21210,9 @@ namespace NimBus.WebApp.ManagementApi
         private System.DateTime? _revokedAtUtc;
         private string _revokedBy;
         private System.DateTime? _lastUsedAtUtc;
+        private AgentApiKeyUse _use;
+        private AgentApiKeyMcpGrant _mcp;
+        private string _replaces;
 
         [Newtonsoft.Json.JsonProperty("keyId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string KeyId    {
@@ -21299,6 +21364,52 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        [Newtonsoft.Json.JsonProperty("use", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public AgentApiKeyUse Use    {
+            get { return _use; }
+            set
+            {
+                if (_use != value)
+                {
+                    _use = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// What an mcp key may do; null for an agentApi key.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("mcp", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public AgentApiKeyMcpGrant Mcp    {
+            get { return _mcp; }
+            set
+            {
+                if (_mcp != value)
+                {
+                    _mcp = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The key id this key rotated, when it was issued by rotate.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("replaces", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Replaces    {
+            get { return _replaces; }
+            set
+            {
+                if (_replaces != value)
+                {
+                    _replaces = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -21318,6 +21429,196 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentApiKeyInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// Where a key authenticates, fixed when it is issued (Spec 052). agentApi is /api/v1/agent/*; mcp is /mcp as an unattended workload.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum AgentApiKeyUse
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"agentApi")]
+        AgentApi = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"mcp")]
+        Mcp = 1,
+
+    }
+
+    /// <summary>
+    /// The most an mcp key may do (Spec 052). Observe is implied. Each permission still needs its switch in the MCP access policy, and a key never skips, reads payloads or uses the delegated-only tools.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentApiKeyMcpGrant : System.ComponentModel.INotifyPropertyChanged
+    {
+        private bool _classify;
+        private bool _annotate;
+        private bool _resubmit;
+        private int? _requestsPerWindow;
+
+        /// <summary>
+        /// Record failure classifications.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("classify", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Classify    {
+            get { return _classify; }
+            set
+            {
+                if (_classify != value)
+                {
+                    _classify = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Mark messages reported.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("annotate", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Annotate    {
+            get { return _annotate; }
+            set
+            {
+                if (_annotate != value)
+                {
+                    _annotate = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resubmit failed messages unattended, within the workload budget.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("resubmit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Resubmit    {
+            get { return _resubmit; }
+            set
+            {
+                if (_resubmit != value)
+                {
+                    _resubmit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// MCP requests per window for this key, 1 up to the deployment's limit; null for the deployment's and the Owner's.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("requestsPerWindow", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? RequestsPerWindow    {
+            get { return _requestsPerWindow; }
+            set
+            {
+                if (_requestsPerWindow != value)
+                {
+                    _requestsPerWindow = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentApiKeyMcpGrant FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentApiKeyMcpGrant>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentApiKeyRotate : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name;
+        private System.DateTime? _expiresAtUtc;
+
+        /// <summary>
+        /// The successor's label; null keeps the old key's.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The successor's expiry; null for the old key's length from now.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("expiresAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ExpiresAtUtc    {
+            get { return _expiresAtUtc; }
+            set
+            {
+                if (_expiresAtUtc != value)
+                {
+                    _expiresAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentApiKeyRotate FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentApiKeyRotate>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
@@ -21402,6 +21703,8 @@ namespace NimBus.WebApp.ManagementApi
         private string _agentId;
         private string _name;
         private System.DateTime? _expiresAtUtc;
+        private AgentApiKeyUse _use;
+        private AgentApiKeyMcpGrant _mcp;
 
         /// <summary>
         /// Letters, digits, '.', '_' or '-', up to 64 characters, starting with a letter or digit.
@@ -21436,7 +21739,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// When the key stops working; null for no expiry. Must be in the future.
+        /// When the key stops working; null for no expiry. Must be in the future. Required for an mcp key, at most 365 days ahead.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("expiresAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.DateTime? ExpiresAtUtc    {
@@ -21446,6 +21749,36 @@ namespace NimBus.WebApp.ManagementApi
                 if (_expiresAtUtc != value)
                 {
                     _expiresAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("use", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public AgentApiKeyUse Use    {
+            get { return _use; }
+            set
+            {
+                if (_use != value)
+                {
+                    _use = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The grant of an mcp key; refused for an agentApi key.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("mcp", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public AgentApiKeyMcpGrant Mcp    {
+            get { return _mcp; }
+            set
+            {
+                if (_mcp != value)
+                {
+                    _mcp = value;
                     RaisePropertyChanged();
                 }
             }
@@ -22888,6 +23221,7 @@ namespace NimBus.WebApp.ManagementApi
         private string _eventId;
         private string _auditor;
         private string _clientId;
+        private string _agentKeyId;
         private string _reason;
         private string _detail;
 
@@ -22975,6 +23309,9 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// The client application, or agent:&lt;agentId&gt; for an MCP agent key.
+        /// </summary>
         [Newtonsoft.Json.JsonProperty("clientId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string ClientId    {
             get { return _clientId; }
@@ -22983,6 +23320,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_clientId != value)
                 {
                     _clientId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The MCP agent key the call came with (Spec 052); null for Entra callers.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("agentKeyId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string AgentKeyId    {
+            get { return _agentKeyId; }
+            set
+            {
+                if (_agentKeyId != value)
+                {
+                    _agentKeyId = value;
                     RaisePropertyChanged();
                 }
             }

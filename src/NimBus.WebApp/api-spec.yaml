@@ -1933,9 +1933,12 @@ paths:
     post:
       summary: Issue an agent API key
       description: >-
-        Spec 039. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Returns the
-        full key once; only its hash is stored. The key authenticates as agentId on
-        /api/v1/agent/* and nowhere else, on every instance within 30 seconds.
+        Spec 039 and Spec 052. Site Owner only; requires the X-NimBus-CSRF antiforgery header.
+        Returns the full key once; only its hash is stored. A key of use agentApi (the default)
+        authenticates as agentId on /api/v1/agent/* and nowhere else. A key of use mcp
+        authenticates on /mcp as an unattended workload and nowhere else; it needs an expiry at
+        most 365 days ahead, carries the grant in mcp, and works only while the deployment and
+        the MCP access policy allow agent keys. Either applies on every instance within 30 seconds.
       operationId: post-admin-agent-keys
       tags:
         - AgentKeys
@@ -1991,6 +1994,59 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentApiKeyState'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
+  /api/v1/admin/agent-keys/{keyId}/rotate:
+    post:
+      summary: Rotate an agent API key
+      description: >-
+        Spec 052. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Issues a
+        successor with the same agent, use and grant, and replaces set to the old key. Both keys
+        work until the old one is revoked or expires. The expiry defaults to the old key's
+        length from now. Returns the new key once. 400 for a revoked or expired key.
+      operationId: post-admin-agent-key-rotate
+      tags:
+        - AgentKeys
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentApiKeyRotate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyIssued'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AgentApiKeyProblem'
         '403':
           description: Forbidden
           content:
@@ -7872,6 +7928,9 @@ components:
             - piiReader
         entry:
           type: string
+          description: >-
+            An email address, an Entra object id, or agent:<agentId> for an MCP agent key's agent
+            (Spec 052). An agent: entry is refused with 400 on the owner and piiReader lists.
           description: Email address or Entra object id
     EndpointRoleInfo:
       title: EndpointRoleInfo
@@ -7989,6 +8048,9 @@ components:
         allowWorkloadAnnotation:
           type: boolean
           description: Whether workloads with the Nimbus.Workload.Annotate app role may mark messages reported with a ticket id (Spec 044 Phase 3). Changes nothing on the bus. Default false.
+        allowAgentKeys:
+          type: boolean
+          description: Whether agent API keys issued for MCP may connect as unattended workloads (Spec 052). Effective only while allowWorkloads is on and the deployment allows keys. Default false; an omitted value saves false.
         workloadResubmitsPerDay:
           type: integer
           format: int32
@@ -8169,6 +8231,9 @@ components:
             type: string
         rateLimitsEnabled:
           type: boolean
+        agentKeysEnabled:
+          type: boolean
+          description: Whether the deployment accepts agent API keys on /mcp (NimBus__Mcp__AgentKeys__Enabled, Spec 052). Keys also need the Owner's switch.
         requestLimit:
           $ref: '#/components/schemas/McpWindowLimit'
         mutationLimit:
@@ -8278,6 +8343,59 @@ components:
           format: date-time
           nullable: true
           description: Recorded at most every 5 minutes per instance; null when never used.
+        use:
+          $ref: '#/components/schemas/AgentApiKeyUse'
+        mcp:
+          nullable: true
+          description: What an mcp key may do; null for an agentApi key.
+          allOf:
+            - $ref: '#/components/schemas/AgentApiKeyMcpGrant'
+        replaces:
+          type: string
+          nullable: true
+          description: The key id this key rotated, when it was issued by rotate.
+    AgentApiKeyUse:
+      title: AgentApiKeyUse
+      type: string
+      description: Where a key authenticates, fixed when it is issued (Spec 052). agentApi is /api/v1/agent/*; mcp is /mcp as an unattended workload.
+      enum:
+        - agentApi
+        - mcp
+    AgentApiKeyMcpGrant:
+      title: AgentApiKeyMcpGrant
+      type: object
+      description: >-
+        The most an mcp key may do (Spec 052). Observe is implied. Each permission still needs
+        its switch in the MCP access policy, and a key never skips, reads payloads or uses the
+        delegated-only tools.
+      properties:
+        classify:
+          type: boolean
+          description: Record failure classifications.
+        annotate:
+          type: boolean
+          description: Mark messages reported.
+        resubmit:
+          type: boolean
+          description: Resubmit failed messages unattended, within the workload budget.
+        requestsPerWindow:
+          type: integer
+          format: int32
+          nullable: true
+          description: MCP requests per window for this key, 1 up to the deployment's limit; null for the deployment's and the Owner's.
+    AgentApiKeyRotate:
+      title: AgentApiKeyRotate
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+          description: The successor's label; null keeps the old key's.
+        expiresAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: The successor's expiry; null for the old key's length from now.
     AgentApiKeyState:
       title: AgentApiKeyState
       type: object
@@ -8304,7 +8422,14 @@ components:
           type: string
           format: date-time
           nullable: true
-          description: When the key stops working; null for no expiry. Must be in the future.
+          description: When the key stops working; null for no expiry. Must be in the future. Required for an mcp key, at most 365 days ahead.
+        use:
+          $ref: '#/components/schemas/AgentApiKeyUse'
+        mcp:
+          nullable: true
+          description: The grant of an mcp key; refused for an agentApi key.
+          allOf:
+            - $ref: '#/components/schemas/AgentApiKeyMcpGrant'
     AgentApiKeyIssued:
       title: AgentApiKeyIssued
       type: object
@@ -8581,6 +8706,11 @@ components:
         clientId:
           type: string
           nullable: true
+          description: The client application, or agent:<agentId> for an MCP agent key.
+        agentKeyId:
+          type: string
+          nullable: true
+          description: The MCP agent key the call came with (Spec 052); null for Entra callers.
         reason:
           type: string
           nullable: true

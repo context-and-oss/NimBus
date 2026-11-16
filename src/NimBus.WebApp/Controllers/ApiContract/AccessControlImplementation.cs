@@ -21,7 +21,7 @@ namespace NimBus.WebApp.Controllers.ApiContract;
 /// GrantRole/RevokeRole, and bump the snapshot cache so grants take effect on
 /// the next request of this instance.
 /// </summary>
-public class AccessControlImplementation : IAccessControlApiController
+public partial class AccessControlImplementation : IAccessControlApiController
 {
     private readonly IAccessControlStore _store;
     private readonly IEndpointAuthorizationService _authorizationService;
@@ -100,6 +100,25 @@ public class AccessControlImplementation : IAccessControlApiController
     public Task<ActionResult<AccessControlSet>> DeleteEndpointAccessControlRoleAsync(RoleEntry body, string endpointId)
         => MutateEndpointAsync(body, endpointId, grant: false);
 
+    /// <summary>
+    /// Spec 052 §6.7: an <c>agent:&lt;agentId&gt;</c> entry names an MCP agent key's agent. It must
+    /// name a valid agent id, and may be a Reader or Contributor but never an Owner or PiiReader.
+    /// Other entries are not newly validated. Null when <paramref name="entry"/> is acceptable.
+    /// </summary>
+    private static string? AgentEntryProblem(RoleEntryRole role, string entry)
+    {
+        if (!entry.StartsWith("agent:", StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (!AgentEntryPattern().IsMatch(entry))
+            return "An agent entry is agent:<agentId>, where the id is 1 to 64 letters, digits, '.', '_' or '-', starting with a letter or digit.";
+        if (role is RoleEntryRole.Owner or RoleEntryRole.PiiReader)
+            return "An agent may be a reader or contributor, never an owner or PII reader.";
+        return null;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("^agent:[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex AgentEntryPattern();
+
     private async Task<ActionResult<AccessControlSet>> MutateSiteAsync(RoleEntry body, bool grant)
     {
         var auditType = grant ? MessageAuditType.GrantRole : MessageAuditType.RevokeRole;
@@ -113,6 +132,8 @@ public class AccessControlImplementation : IAccessControlApiController
         var entry = body?.Entry?.Trim();
         if (string.IsNullOrEmpty(entry))
             return new BadRequestObjectResult("An email address or object id entry is required.");
+        if (grant && AgentEntryProblem(body!.Role, entry) is { } agentProblem)
+            return new BadRequestObjectResult(agentProblem);
 
         var acl = await _store.GetSiteAccessControl() ?? new AccessControlList();
         var list = SelectList(acl, body!.Role);
@@ -146,6 +167,8 @@ public class AccessControlImplementation : IAccessControlApiController
         var entry = body?.Entry?.Trim();
         if (string.IsNullOrEmpty(entry))
             return new BadRequestObjectResult("An email address or object id entry is required.");
+        if (grant && AgentEntryProblem(body!.Role, entry) is { } agentProblem)
+            return new BadRequestObjectResult(agentProblem);
 
         var acl = await _store.GetEndpointAccessControl(endpointId) ?? new AccessControlList();
         var list = SelectList(acl, body!.Role);

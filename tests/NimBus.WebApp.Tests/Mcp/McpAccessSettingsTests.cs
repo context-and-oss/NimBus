@@ -248,6 +248,36 @@ public class McpAccessSettingsTests
         Assert.IsFalse(untouched.Capabilities.SettleHandoffs || untouched.Capabilities.RecoverDeferred || untouched.Capabilities.EditPayloads);
     }
 
+    [TestMethod]
+    public void Allowing_agent_keys_widens_survives_the_api_mapping_and_an_omitted_value_is_off()
+    {
+        // Spec 052 §6.5: a confirmed widening; §16 fact 7: an older page that omits it saves false.
+        var before = new McpAccessSettings();
+        var after = before.Clone();
+        after.AllowAgentKeys = true;
+
+        var change = McpAccessRules.Changes(before, after).Single();
+        Assert.IsTrue(change.Widens);
+        StringAssert.Contains(change.Text, "agent API keys", StringComparison.OrdinalIgnoreCase);
+        Assert.IsTrue(McpAccessApiMapper.FromApi(McpAccessApiMapper.ToApi(after)).AllowAgentKeys);
+
+        var omitted = System.Text.Json.JsonSerializer.Deserialize<NimBus.WebApp.ManagementApi.McpAccessSettings>(
+            """{"enabled":true,"allowWorkloads":true}""",
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        Assert.IsFalse(McpAccessApiMapper.FromApi(omitted).AllowAgentKeys);
+    }
+
+    [TestMethod]
+    public async Task Api_reports_whether_the_deployment_accepts_agent_keys()
+    {
+        using var host = await CreateApiHostAsync(new InMemoryMessageStore(), new RecordingAudit(), owner: true);
+
+        var state = await GetStateAsync(host.GetTestClient());
+
+        Assert.IsFalse(state["deployment"]!["agentKeysEnabled"]!.GetValue<bool>());
+        Assert.IsFalse(state["saved"]!["allowAgentKeys"]!.GetValue<bool>());
+    }
+
     // ── Settings service ───────────────────────────────────────────────────
 
     [TestMethod]

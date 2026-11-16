@@ -175,6 +175,114 @@ public class AgentKeysApiTests
         Assert.AreEqual(HttpStatusCode.NotFound, remove.StatusCode);
     }
 
+    // ---- Spec 052: keys for MCP -----------------------------------------------------------------
+
+    [TestMethod]
+    public async Task An_mcp_key_is_issued_with_its_use_grant_and_expiry_and_audited_with_them()
+    {
+        await using var api = await Api.StartAsync(owner: true);
+        var state = await api.GetStateAsync();
+
+        using var response = await api.SendAsync(HttpMethod.Post, "/api/admin/agent-keys", state.Token, new
+        {
+            agentId = "sre-agent", use = "mcp", expiresAtUtc = Now.AddDays(90),
+            mcp = new { classify = true, annotate = false, resubmit = true, requestsPerWindow = 10 },
+        });
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, await response.Content.ReadAsStringAsync());
+        var issued = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["issued"]!;
+        Assert.AreEqual("mcp", issued["use"]!.GetValue<string>());
+        Assert.IsTrue(issued["mcp"]!["classify"]!.GetValue<bool>());
+        Assert.IsTrue(issued["mcp"]!["resubmit"]!.GetValue<bool>());
+        Assert.AreEqual(10, issued["mcp"]!["requestsPerWindow"]!.GetValue<int>());
+
+        var stored = (await api.Store.GetAgentApiKeySettings()).Keys.Single();
+        Assert.AreEqual(NimBus.MessageStore.States.AgentApiKeyUse.Mcp, stored.Use);
+        Assert.IsTrue(stored.Mcp!.Resubmit);
+        var row = api.Audit.Rows.Single();
+        StringAssert.Contains(row.Data, "\"use\":\"Mcp\"", StringComparison.Ordinal);
+        StringAssert.Contains(row.Data, "\"resubmit\":true", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public async Task An_agent_api_key_stays_the_default_use()
+    {
+        await using var api = await Api.StartAsync(owner: true);
+        var state = await api.GetStateAsync();
+
+        await api.IssueAsync(state.Token, "enrichment-agent");
+
+        var stored = (await api.Store.GetAgentApiKeySettings()).Keys.Single();
+        Assert.AreEqual(NimBus.MessageStore.States.AgentApiKeyUse.AgentApi, stored.Use);
+        Assert.IsNull(stored.Mcp);
+    }
+
+    [TestMethod]
+    [DataRow("no expiry", DisplayName = "an MCP key without an expiry")]
+    [DataRow("too far", DisplayName = "an MCP key beyond 365 days")]
+    [DataRow("grant on agent api", DisplayName = "an MCP grant on an Agent API key")]
+    [DataRow("limit", DisplayName = "an MCP request limit below 1")]
+    public async Task Mcp_key_rules_are_enforced(string rule)
+    {
+        await using var api = await Api.StartAsync(owner: true);
+        var state = await api.GetStateAsync();
+        object body = rule switch
+        {
+            "no expiry" => new { agentId = "sre-agent", use = "mcp", mcp = new { resubmit = true } },
+            "too far" => new { agentId = "sre-agent", use = "mcp", expiresAtUtc = Now.AddDays(366), mcp = new { resubmit = true } },
+            "grant on agent api" => new { agentId = "sre-agent", use = "agentApi", mcp = new { resubmit = true } },
+            _ => new { agentId = "sre-agent", use = "mcp", expiresAtUtc = Now.AddDays(30), mcp = new { requestsPerWindow = 0 } },
+        };
+
+        using var response = await api.SendAsync(HttpMethod.Post, "/api/admin/agent-keys", state.Token, body);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, await response.Content.ReadAsStringAsync());
+        Assert.AreEqual(0, (await api.Store.GetAgentApiKeySettings()).Keys.Count);
+    }
+
+    [TestMethod]
+    public async Task Rotating_issues_a_successor_with_the_same_agent_use_and_grant()
+    {
+        await using var api = await Api.StartAsync(owner: true);
+        var state = await api.GetStateAsync();
+        using var first = await api.SendAsync(HttpMethod.Post, "/api/admin/agent-keys", state.Token, new
+        {
+            agentId = "sre-agent", name = "SRE", use = "mcp", expiresAtUtc = Now.AddDays(30), mcp = new { resubmit = true },
+        });
+        var oldId = JsonNode.Parse(await first.Content.ReadAsStringAsync())!["issued"]!["keyId"]!.GetValue<string>();
+
+        using var response = await api.SendAsync(HttpMethod.Post, $"/api/admin/agent-keys/{oldId}/rotate", state.Token, new { });
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, await response.Content.ReadAsStringAsync());
+        var issued = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        Assert.IsTrue(AgentApiKeyFormat.TryParse(issued["key"]!.GetValue<string>(), out var newId, out _));
+        var keys = (await api.Store.GetAgentApiKeySettings()).Keys;
+        var successor = keys.Single(k => k.KeyId == newId);
+        Assert.AreEqual("sre-agent", successor.AgentId);
+        Assert.AreEqual("SRE", successor.Name);
+        Assert.AreEqual(NimBus.MessageStore.States.AgentApiKeyUse.Mcp, successor.Use);
+        Assert.IsTrue(successor.Mcp!.Resubmit);
+        Assert.AreEqual(oldId, successor.Replaces);
+        Assert.AreEqual(Now.UtcDateTime.AddDays(30), successor.ExpiresAtUtc, "the old key's length from now");
+        Assert.IsNull(keys.Single(k => k.KeyId == oldId).RevokedAtUtc, "the old key keeps working until it is revoked");
+        StringAssert.Contains(api.Audit.Rows[^1].Data, $"\"replaces\":\"{oldId}\"", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public async Task Rotating_an_unknown_or_revoked_key_is_refused()
+    {
+        await using var api = await Api.StartAsync(owner: true);
+        var state = await api.GetStateAsync();
+        var keyId = await api.IssueAsync(state.Token, "enrichment-agent");
+        (await api.SendAsync(HttpMethod.Post, $"/api/admin/agent-keys/{keyId}/revoke", state.Token)).Dispose();
+
+        using var unknown = await api.SendAsync(HttpMethod.Post, "/api/admin/agent-keys/abcdefghijkl/rotate", state.Token, new { });
+        using var revoked = await api.SendAsync(HttpMethod.Post, $"/api/admin/agent-keys/{keyId}/rotate", state.Token, new { });
+
+        Assert.AreEqual(HttpStatusCode.NotFound, unknown.StatusCode);
+        Assert.AreEqual(HttpStatusCode.BadRequest, revoked.StatusCode);
+    }
+
     [TestMethod]
     public async Task An_active_key_must_be_revoked_before_it_is_removed()
     {

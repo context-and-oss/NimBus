@@ -82,17 +82,23 @@ public sealed partial class AgentApiKeyService
         return AgentApiKeyStatus.Active;
     }
 
-    /// <summary>Issues a key for <paramref name="agentId"/>.</summary>
-    public async Task<AgentApiKeyChange> CreateAsync(string? agentId, string? name, DateTime? expiresAtUtc, string? createdBy)
+    /// <summary>The longest an MCP key may stay valid (Spec 052 §6.10).</summary>
+    public static readonly TimeSpan MaxMcpKeyLifetime = TimeSpan.FromDays(365);
+
+    /// <summary>Issues an Agent API key for <paramref name="agentId"/>.</summary>
+    public Task<AgentApiKeyChange> CreateAsync(string? agentId, string? name, DateTime? expiresAtUtc, string? createdBy)
+        => CreateAsync(agentId, name, expiresAtUtc, createdBy, AgentApiKeyUse.AgentApi, mcp: null);
+
+    /// <summary>
+    /// Issues a key for <paramref name="agentId"/> with <paramref name="use"/> (Spec 052). An MCP key
+    /// needs an expiry at most <see cref="MaxMcpKeyLifetime"/> ahead and carries <paramref name="mcp"/>;
+    /// an Agent API key takes no grant.
+    /// </summary>
+    public async Task<AgentApiKeyChange> CreateAsync(
+        string? agentId, string? name, DateTime? expiresAtUtc, string? createdBy, AgentApiKeyUse use, AgentApiKeyMcpGrant? mcp)
     {
         var now = _time.GetUtcNow().UtcDateTime;
-        var errors = new List<string>();
-        if (string.IsNullOrEmpty(agentId) || !AgentIdPattern().IsMatch(agentId))
-            errors.Add("agentId must be 1 to 64 letters, digits, '.', '_' or '-', starting with a letter or digit.");
-        if (name is { Length: > MaxNameLength })
-            errors.Add($"name must be at most {MaxNameLength} characters.");
-        if (expiresAtUtc is { } expires && expires.ToUniversalTime() <= now)
-            errors.Add("expiresAtUtc must be in the future.");
+        var errors = Validate(agentId, name, expiresAtUtc, use, mcp, now);
         if (errors.Count > 0)
             return new AgentApiKeyChange(AgentApiKeyChangeStatus.Invalid, await _store.GetAgentApiKeySettings().ConfigureAwait(false), Errors: errors);
 
@@ -106,6 +112,8 @@ public sealed partial class AgentApiKeyService
             CreatedAtUtc = now,
             CreatedBy = createdBy,
             ExpiresAtUtc = expiresAtUtc?.ToUniversalTime(),
+            Use = use,
+            Mcp = use == AgentApiKeyUse.Mcp ? Copy(mcp ?? new AgentApiKeyMcpGrant()) : null,
         };
 
         var change = await SaveAsync(createdBy, settings =>
@@ -115,6 +123,100 @@ public sealed partial class AgentApiKeyService
         }).ConfigureAwait(false);
         return change.Status == AgentApiKeyChangeStatus.Saved ? change with { FullKey = generated.Key } : change;
     }
+
+    /// <summary>
+    /// Issues a successor of <paramref name="keyId"/> with the same agent, use and grant, and
+    /// <see cref="AgentApiKey.Replaces"/> set (Spec 052 §6.10). Both keys work until the old one is
+    /// revoked or expires. The expiry defaults to the old key's length from now; a key without an
+    /// expiry gets none. A revoked or expired key cannot be rotated.
+    /// </summary>
+    public async Task<AgentApiKeyChange> RotateAsync(string keyId, string? name, DateTime? expiresAtUtc, string? createdBy)
+    {
+        var now = _time.GetUtcNow().UtcDateTime;
+        var generated = AgentApiKeyFormat.Generate();
+        AgentApiKey? successor = null;
+        IReadOnlyList<string>? errors = null;
+
+        var change = await SaveAsync(createdBy, settings =>
+        {
+            var old = Find(settings, keyId);
+            if (old is null)
+                return (AgentApiKeyChangeStatus.NotFound, null);
+            if (StatusOf(old) != AgentApiKeyStatus.Active)
+            {
+                errors = ["Only an active key can be rotated. Issue a new key instead."];
+                return (AgentApiKeyChangeStatus.Invalid, old);
+            }
+
+            var expires = expiresAtUtc?.ToUniversalTime()
+                ?? (old.ExpiresAtUtc is { } oldExpiry ? now + (oldExpiry - old.CreatedAtUtc) : null);
+            var label = string.IsNullOrWhiteSpace(name) ? old.Name : name.Trim();
+            var problems = Validate(old.AgentId, label, expires, old.Use, old.Mcp, now);
+            if (problems.Count > 0)
+            {
+                errors = problems;
+                return (AgentApiKeyChangeStatus.Invalid, old);
+            }
+
+            successor = new AgentApiKey
+            {
+                KeyId = generated.KeyId,
+                AgentId = old.AgentId,
+                Name = label,
+                SecretHash = generated.SecretHash,
+                CreatedAtUtc = now,
+                CreatedBy = createdBy,
+                ExpiresAtUtc = expires,
+                Use = old.Use,
+                Mcp = old.Mcp is null ? null : Copy(old.Mcp),
+                Replaces = old.KeyId,
+            };
+            settings.Keys.Add(successor);
+            return (AgentApiKeyChangeStatus.Saved, successor);
+        }).ConfigureAwait(false);
+
+        return change.Status switch
+        {
+            AgentApiKeyChangeStatus.Saved => change with { FullKey = generated.Key },
+            AgentApiKeyChangeStatus.Invalid => change with { Errors = errors },
+            _ => change,
+        };
+    }
+
+    private static List<string> Validate(string? agentId, string? name, DateTime? expiresAtUtc, AgentApiKeyUse use, AgentApiKeyMcpGrant? mcp, DateTime now)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrEmpty(agentId) || !AgentIdPattern().IsMatch(agentId))
+            errors.Add("agentId must be 1 to 64 letters, digits, '.', '_' or '-', starting with a letter or digit.");
+        if (name is { Length: > MaxNameLength })
+            errors.Add($"name must be at most {MaxNameLength} characters.");
+        if (expiresAtUtc is { } expires && expires.ToUniversalTime() <= now)
+            errors.Add("expiresAtUtc must be in the future.");
+
+        if (use == AgentApiKeyUse.Mcp)
+        {
+            if (expiresAtUtc is null)
+                errors.Add("An MCP key needs expiresAtUtc.");
+            else if (expiresAtUtc.Value.ToUniversalTime() > now + MaxMcpKeyLifetime)
+                errors.Add($"An MCP key may be valid for at most {MaxMcpKeyLifetime.TotalDays:0} days.");
+            if (mcp?.RequestsPerWindow is { } limit && limit < 1)
+                errors.Add("mcp.requestsPerWindow must be at least 1, or null for the deployment's limit.");
+        }
+        else if (mcp is not null)
+        {
+            errors.Add("Only an MCP key carries an mcp grant.");
+        }
+
+        return errors;
+    }
+
+    private static AgentApiKeyMcpGrant Copy(AgentApiKeyMcpGrant grant) => new()
+    {
+        Classify = grant.Classify,
+        Annotate = grant.Annotate,
+        Resubmit = grant.Resubmit,
+        RequestsPerWindow = grant.RequestsPerWindow,
+    };
 
     /// <summary>Revokes a key. Revoking a revoked key keeps the first revocation.</summary>
     public Task<AgentApiKeyChange> RevokeAsync(string keyId, string? revokedBy)

@@ -58,7 +58,9 @@ public class AgentKeysImplementation : Api.IAgentKeysApiController
             return new ForbidResult();
         }
 
-        var change = await _keys.CreateAsync(body?.AgentId, body?.Name, body?.ExpiresAtUtc, _authorization.GetCurrentUserName());
+        var use = body?.Use == Api.AgentApiKeyUse.Mcp ? AgentApiKeyUse.Mcp : AgentApiKeyUse.AgentApi;
+        var change = await _keys.CreateAsync(body?.AgentId, body?.Name, body?.ExpiresAtUtc, _authorization.GetCurrentUserName(),
+            use, FromApi(body?.Mcp));
         if (Refused(change) is { } refused)
             return refused;
 
@@ -87,6 +89,29 @@ public class AgentKeysImplementation : Api.IAgentKeysApiController
 
         await AuditAsync(MessageAuditType.AgentApiKeyRevoked, change.Key!);
         return new OkObjectResult(await StateAsync());
+    }
+
+    /// <inheritdoc />
+    public async Task<ActionResult<Api.AgentApiKeyIssued>> PostAdminAgentKeyRotateAsync(string keyId, Api.AgentApiKeyRotate body)
+    {
+        if (!await IsSiteOwnerAsync())
+        {
+            await _audit.LogAuditAsync(MessageAuditType.AgentApiKeyCreated, _context, accessDenied: true,
+                data: JsonConvert.SerializeObject(new { replaces = keyId }));
+            return new ForbidResult();
+        }
+
+        var change = await _keys.RotateAsync(keyId, body?.Name, body?.ExpiresAtUtc, _authorization.GetCurrentUserName());
+        if (Refused(change) is { } refused)
+            return refused;
+
+        await AuditAsync(MessageAuditType.AgentApiKeyCreated, change.Key!);
+        return new OkObjectResult(new Api.AgentApiKeyIssued
+        {
+            Key = change.FullKey!,
+            Issued = ToApi(change.Key!, lastUsed: null),
+            State = await StateAsync(),
+        });
     }
 
     /// <inheritdoc />
@@ -138,8 +163,30 @@ public class AgentKeysImplementation : Api.IAgentKeysApiController
         RevokedAtUtc = key.RevokedAtUtc,
         RevokedBy = key.RevokedBy,
         LastUsedAtUtc = lastUsed,
+        Use = key.Use == AgentApiKeyUse.Mcp ? Api.AgentApiKeyUse.Mcp : Api.AgentApiKeyUse.AgentApi,
+        Mcp = key.Mcp is { } grant
+            ? new Api.AgentApiKeyMcpGrant
+            {
+                Classify = grant.Classify,
+                Annotate = grant.Annotate,
+                Resubmit = grant.Resubmit,
+                RequestsPerWindow = grant.RequestsPerWindow,
+            }
+            : null,
+        Replaces = key.Replaces,
     };
 
+    private static AgentApiKeyMcpGrant? FromApi(Api.AgentApiKeyMcpGrant? grant) => grant is null
+        ? null
+        : new AgentApiKeyMcpGrant
+        {
+            Classify = grant.Classify,
+            Annotate = grant.Annotate,
+            Resubmit = grant.Resubmit,
+            RequestsPerWindow = grant.RequestsPerWindow,
+        };
+
+    // Spec 052 §6.9: the use, the grant and, for a rotation, the predecessor. Never the key.
     private Task AuditAsync(MessageAuditType type, AgentApiKey key)
         => _audit.LogAuditAsync(type, _context, data: JsonConvert.SerializeObject(new
         {
@@ -147,6 +194,11 @@ public class AgentKeysImplementation : Api.IAgentKeysApiController
             agentId = key.AgentId,
             name = key.Name,
             expiresAtUtc = key.ExpiresAtUtc,
+            use = key.Use.ToString(),
+            mcp = key.Mcp is { } grant
+                ? new { classify = grant.Classify, annotate = grant.Annotate, resubmit = grant.Resubmit, requestsPerWindow = grant.RequestsPerWindow }
+                : null,
+            replaces = key.Replaces,
         }));
 
     private static ObjectResult? Refused(AgentApiKeyChange change) => change.Status switch

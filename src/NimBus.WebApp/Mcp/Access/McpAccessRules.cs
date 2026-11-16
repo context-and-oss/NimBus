@@ -93,6 +93,11 @@ public static class McpAccessRules
             Add(after.AllowWorkloadAnnotation ? "Let workloads mark messages reported" : "Stop workloads marking messages reported",
                 after.AllowWorkloadAnnotation);
 
+        // Spec 052 §6.5: accepting keys is a credential path outside Entra, so it widens access.
+        if (before.AllowAgentKeys != after.AllowAgentKeys)
+            Add(after.AllowAgentKeys ? "Let hosted agents connect with agent API keys" : "Stop accepting agent API keys",
+                after.AllowAgentKeys);
+
         if (before.WorkloadResubmitsPerDay != after.WorkloadResubmitsPerDay)
             Add($"Workload resubmits per day: {before.WorkloadResubmitsPerDay} → {after.WorkloadResubmitsPerDay}",
                 after.WorkloadResubmitsPerDay > before.WorkloadResubmitsPerDay);

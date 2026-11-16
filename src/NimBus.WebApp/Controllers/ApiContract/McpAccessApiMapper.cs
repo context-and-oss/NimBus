@@ -28,6 +28,7 @@ internal static class McpAccessApiMapper
         AllowWorkloadClassification = s.AllowWorkloadClassification,
         AllowWorkloadResubmit = s.AllowWorkloadResubmit,
         AllowWorkloadAnnotation = s.AllowWorkloadAnnotation,
+        AllowAgentKeys = s.AllowAgentKeys,
         WorkloadResubmitsPerDay = s.WorkloadResubmitsPerDay,
         WorkloadResubmitsPerMessage = s.WorkloadResubmitsPerMessage,
         People = new Api.McpPeople
@@ -78,6 +79,8 @@ internal static class McpAccessApiMapper
         AllowWorkloadClassification = a.AllowWorkloadClassification,
         AllowWorkloadResubmit = a.AllowWorkloadResubmit,
         AllowWorkloadAnnotation = a.AllowWorkloadAnnotation,
+        // An older page omits it, which binds as false: it can never turn keys on (Spec 052 §8).
+        AllowAgentKeys = a.AllowAgentKeys,
         WorkloadResubmitsPerDay = a.WorkloadResubmitsPerDay ?? Store.McpAccessSettings.DefaultWorkloadResubmitsPerDay,
         WorkloadResubmitsPerMessage = a.WorkloadResubmitsPerMessage ?? Store.McpAccessSettings.DefaultWorkloadResubmitsPerMessage,
         People = new Store.McpPeopleSettings
@@ -128,6 +131,7 @@ internal static class McpAccessApiMapper
             EventId = i.EventId,
             Auditor = i.Auditor,
             ClientId = i.ClientId,
+            AgentKeyId = i.AgentKeyId,
             Reason = i.Reason,
             Detail = i.Detail,
         }).ToList(),
