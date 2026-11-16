@@ -31,6 +31,8 @@ export interface McpSettings {
   allowWorkloadResubmit?: boolean;
   /** Spec 044 Phase 3: workloads with the Nimbus.Workload.Annotate app role may mark messages reported. */
   allowWorkloadAnnotation?: boolean;
+  /** Agent API keys issued for MCP may connect as workloads (Spec 052). Off by default. */
+  allowAgentKeys?: boolean;
   /** Resubmits per workload client in a rolling 24 hours (0-500, default 20). */
   workloadResubmitsPerDay?: number | null;
   /** Unsuccessful workload resubmits of one message before it stays with a person (1-5, default 2). */
@@ -54,6 +56,8 @@ export interface McpDeployment {
   authority?: string | null;
   allowedOrigins: string[];
   rateLimitsEnabled: boolean;
+  /** Whether the deployment accepts agent API keys on /mcp (NimBus__Mcp__AgentKeys__Enabled, Spec 052). */
+  agentKeysEnabled?: boolean;
   requestLimit: WindowLimit;
   mutationLimit: WindowLimit;
   endpoints: string[];
@@ -84,6 +88,8 @@ export interface McpActivityItem {
   atUtc: string; kind: "action" | "refused" | "settings"; type: string;
   endpointId?: string | null; eventId?: string | null; auditor?: string | null;
   clientId?: string | null; reason?: string | null; detail?: string | null;
+  /** The MCP agent key the call came with (Spec 052); null for Entra callers. */
+  agentKeyId?: string | null;
 }
 export interface McpActivity {
   hours: number; actions: number; refused: number; capped: boolean;
@@ -180,6 +186,9 @@ export function describeChanges(a: McpSettings, b: McpSettings): McpChange[] {
     add(b.allowWorkloadResubmit ? "Let workloads resubmit failed messages unattended" : "Stop workloads resubmitting messages", Boolean(b.allowWorkloadResubmit));
   if (Boolean(a.allowWorkloadAnnotation) !== Boolean(b.allowWorkloadAnnotation))
     add(b.allowWorkloadAnnotation ? "Let workloads mark messages reported" : "Stop workloads marking messages reported", Boolean(b.allowWorkloadAnnotation));
+  // Same wording as the server (McpAccessRules): a credential path outside Entra widens access.
+  if (Boolean(a.allowAgentKeys) !== Boolean(b.allowAgentKeys))
+    add(b.allowAgentKeys ? "Let hosted agents connect with agent API keys" : "Stop accepting agent API keys", Boolean(b.allowAgentKeys));
   const perDay = (s: McpSettings) => s.workloadResubmitsPerDay ?? WORKLOAD_RESUBMITS_PER_DAY;
   const perMessage = (s: McpSettings) => s.workloadResubmitsPerMessage ?? WORKLOAD_RESUBMITS_PER_MESSAGE;
   if (perDay(a) !== perDay(b))
@@ -246,12 +255,14 @@ export function validate(s: McpSettings, d: McpDeployment): string | undefined {
   return undefined;
 }
 
-export type Persona = "reader" | "contributor" | "pii" | "workload";
+export type Persona = "reader" | "contributor" | "pii" | "workload" | "agentKey";
 export const PERSONAS: Record<Persona, { label: string; delegated: boolean; contributor: boolean; pii: boolean }> = {
   reader: { label: "Reader", delegated: true, contributor: false, pii: false },
   contributor: { label: "Contributor", delegated: true, contributor: true, pii: false },
   pii: { label: "Contributor + PiiReader", delegated: true, contributor: true, pii: true },
   workload: { label: "Workload", delegated: false, contributor: false, pii: false },
+  // Spec 052: an MCP agent key is a workload whose grant stands in for the app roles.
+  agentKey: { label: "Agent key", delegated: false, contributor: false, pii: false },
 };
 
 export interface PreviewRow { name: string; allowed: boolean; why: string }
@@ -262,9 +273,16 @@ const RECOVERY_KEYS: CapabilityKey[] = ["settleHandoffs", "recoverDeferred", "ed
 /** What a caller of the given kind could use under `s` — a preview of the server's rules. */
 export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona, classifyAvailable: boolean): PreviewRow[] {
   const p = PERSONAS[persona];
+  const isKey = persona === "agentKey";
   const local = d.mode === "localDevelopment";
-  const gate = d.mode === "disabled" ? "not set up" : !s.enabled ? "endpoint off" : !p.delegated && !s.allowWorkloads ? "workloads off" : undefined;
-  const rows: PreviewRow[] = [{ name: `${READ_TOOL_COUNT} read tools`, allowed: !gate, why: gate ?? (local ? "Reader" : p.delegated ? "nimbus.observe" : "Nimbus.Workload.Observe role") }];
+  const keyGate = !isKey ? undefined
+    : d.mode !== "entra" || !d.agentKeysEnabled ? "deployment refuses keys"
+    : !s.allowWorkloads ? "workloads off"
+    : !s.allowAgentKeys ? "agent keys off" : undefined;
+  const gate = d.mode === "disabled" ? "not set up" : !s.enabled ? "endpoint off" : keyGate ?? (!p.delegated && !s.allowWorkloads ? "workloads off" : undefined);
+  const rows: PreviewRow[] = [{ name: `${READ_TOOL_COUNT} read tools`, allowed: !gate, why: gate ?? (local ? "Reader" : p.delegated ? "nimbus.observe" : isKey ? "agent key" : "Nimbus.Workload.Observe role") }];
+  // The grant of an MCP key stands in for the workload app role (Spec 052 §6.6).
+  const holder = (role: string) => (isKey ? "key grant + switch" : `${role} role`);
   const cap = (name: string, key: CapabilityKey): PreviewRow => {
     if (gate) return { name, allowed: false, why: gate };
     if (!s.capabilities[key]) return { name, allowed: false, why: "switched off here" };
@@ -272,16 +290,16 @@ export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona
     // Spec 044 §6.6: a workload may record classifications with the Nimbus.Workload.Classify role, when allowed here.
     if (!p.delegated && key === "classify")
       return s.allowWorkloadClassification
-        ? { name, allowed: true, why: "Nimbus.Workload.Classify role + Contributor" }
+        ? { name, allowed: true, why: `${holder("Nimbus.Workload.Classify")} + Contributor` }
         : { name, allowed: false, why: "workload recording off" };
     // Spec 044 Phase 2: a workload may resubmit with the Nimbus.Workload.Resubmit role, within its budget, when allowed here. Never skip.
     if (!p.delegated && key === "report")
       return s.allowWorkloadAnnotation
-        ? { name, allowed: true, why: "Nimbus.Workload.Annotate role + Contributor" }
+        ? { name, allowed: true, why: `${holder("Nimbus.Workload.Annotate")} + Contributor` }
         : { name, allowed: false, why: "workload reporting off" };
     if (!p.delegated && key === "resubmit")
       return s.allowWorkloadResubmit
-        ? { name, allowed: true, why: "Nimbus.Workload.Resubmit role + Contributor, within budget" }
+        ? { name, allowed: true, why: `${holder("Nimbus.Workload.Resubmit")} + Contributor, within budget` }
         : { name, allowed: false, why: "unattended resubmits off" };
     // Spec 035 Phase 3: the recovery tools stay with the agent of a person.
     if (!p.delegated && RECOVERY_KEYS.includes(key)) return { name, allowed: false, why: "workloads never recover" };

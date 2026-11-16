@@ -220,6 +220,27 @@ describe("featureStatus", () => {
     it("is unavailable when the keys could not be read", () => {
       expect(status("agent-keys", { agentKeys: "error" })).toMatchObject({ label: "Unavailable" });
     });
+
+    // Spec 052 §9: active keys per use, and attention when an MCP key expires within 14 days.
+    const withUse = (...items: { use: "agentApi" | "mcp"; expiresAtUtc?: string | null }[]) => ({
+      csrfToken: "csrf",
+      keys: items.map((k, i) => ({ keyId: `k${i}`, status: "active", expiresAtUtc: null, ...k }) as never),
+    });
+
+    it("counts active keys per use", () => {
+      const s = status("agent-keys", {
+        agentKeys: withUse({ use: "agentApi" }, { use: "mcp", expiresAtUtc: "2099-01-01T00:00:00Z" }, { use: "mcp", expiresAtUtc: "2099-01-01T00:00:00Z" }),
+      });
+      expect(s).toMatchObject({ tone: "ok", label: "3 active", on: true });
+      expect(s?.summary).toBe("1 for the agent API · 2 for MCP");
+    });
+
+    it("needs attention when an MCP key expires within 14 days", () => {
+      const soon = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+      const s = status("agent-keys", { agentKeys: withUse({ use: "mcp", expiresAtUtc: soon }) });
+      expect(s).toMatchObject({ tone: "warn", label: "Needs attention", on: true });
+      expect(s?.summary).toContain("expires within 14 days");
+    });
   });
 
   describe("Dashboard tokens", () => {

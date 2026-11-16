@@ -43,6 +43,62 @@ function mockFetch(...responses: Response[]) {
   return fetchMock;
 }
 
+// Spec 052: the Owner's switch for agent API keys on /mcp.
+describe("MCP access: agent API keys", () => {
+  it("offers the switch once the deployment accepts keys, and turning it on widens access", async () => {
+    mockFetch(Response.json(state({ deployment: { ...deployment(), agentKeysEnabled: true } })), Response.json(activity));
+    const user = userEvent.setup();
+    renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    const toggle = await screen.findByRole("switch", { name: "Allow agent API keys" });
+    expect((toggle as HTMLButtonElement).disabled).toBe(false);
+    await user.click(toggle);
+
+    expect(describeChanges(settings(), { ...settings(), allowAgentKeys: true })).toEqual([
+      { text: "Let hosted agents connect with agent API keys", widens: true },
+    ]);
+  });
+
+  it("disables the switch with the app setting to set while the deployment refuses keys", async () => {
+    mockFetch(Response.json(state({ deployment: { ...deployment(), agentKeysEnabled: false } })), Response.json(activity));
+    renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    const toggle = await screen.findByRole("switch", { name: "Allow agent API keys" });
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/NimBus__Mcp__AgentKeys__Enabled/)).toBeTruthy();
+  });
+
+  it("disables the switch while unattended workloads are off", async () => {
+    const off = { ...settings(), allowWorkloads: false };
+    mockFetch(Response.json(state({ saved: off, effective: off, deployment: { ...deployment(), agentKeysEnabled: true } })), Response.json(activity));
+    renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    expect(((await screen.findByRole("switch", { name: "Allow agent API keys" })) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("previews an agent key like a workload behind its own switch and the deployment's", () => {
+    const on = { ...settings(), allowAgentKeys: true, allowWorkloadResubmit: true };
+    const keysOn = { ...deployment(), agentKeysEnabled: true };
+
+    const key = previewAccess(on, keysOn, "agentKey", true);
+    expect(key[0]).toEqual({ name: "15 read tools", allowed: true, why: "agent key" });
+    expect(key.find(r => r.name === "nimbus_resubmit_message")).toEqual(
+      { name: "nimbus_resubmit_message", allowed: true, why: "key grant + switch + Contributor, within budget" });
+    expect(key.find(r => r.name === "nimbus_skip_message")?.allowed).toBe(false);
+
+    expect(previewAccess({ ...on, allowAgentKeys: false }, keysOn, "agentKey", true)[0].why).toBe("agent keys off");
+    expect(previewAccess(on, { ...keysOn, agentKeysEnabled: false }, "agentKey", true)[0].why).toBe("deployment refuses keys");
+  });
+
+  it("names the key in recent activity", async () => {
+    const keyed = { ...activity, items: [{ ...activity.items[0], clientId: "agent:sre-agent", auditor: "agent:sre-agent", agentKeyId: "abcdefghijkl" }] };
+    mockFetch(Response.json(state()), Response.json(keyed));
+    renderInPanel(<McpAccessSettings />, "mcp", "activity");
+
+    expect(await screen.findByText(/key abcdefghijkl/)).toBeTruthy();
+  });
+});
+
 // Spec 038 slice 2: inside the Settings panel frame.
 describe("MCP access settings in the Settings panel", () => {
   it("shows one tab at a time", async () => {

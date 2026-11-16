@@ -109,8 +109,9 @@ export default function EndpointAccessModal(props: IEndpointAccessModalProps) {
       <ModalBody>
         <p className="text-sm text-muted-foreground m-0 mb-4">
           Storage-backed roles: Reader &lt; Contributor &lt; Owner. Entries are
-          email addresses or Entra object ids. Site-wide grants apply here too
-          but are managed on the Access Control page.
+          email addresses or Entra object ids, or <code>agent:&lt;agentId&gt;</code> for
+          the agent of an MCP agent key, as Reader or Contributor. Site-wide grants
+          apply here too but are managed on the Access Control page.
         </p>
         <div className="grid gap-4 md:grid-cols-3">
           {CARDS.map((card) => (

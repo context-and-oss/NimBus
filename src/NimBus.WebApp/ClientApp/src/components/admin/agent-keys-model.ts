@@ -19,6 +19,64 @@ export interface AgentKeyInfo {
   revokedBy: string | null;
   /** Recorded at most every 5 minutes per instance; null when never used. */
   lastUsedAtUtc: string | null;
+  /** Where the key authenticates (Spec 052); missing on a server from before keys had a use. */
+  use?: AgentKeyUse;
+  /** What an MCP key may do; null for an Agent API key. */
+  mcp?: AgentKeyMcpGrant | null;
+  /** The key id this key rotated, when it was issued by Rotate. */
+  replaces?: string | null;
+}
+
+/** agentApi opens /api/agent/*; mcp opens /mcp as an unattended workload. */
+export type AgentKeyUse = "agentApi" | "mcp";
+
+/** The most an MCP key may do. Observe is implied; each permission still needs its MCP access switch. */
+export interface AgentKeyMcpGrant {
+  classify: boolean;
+  annotate: boolean;
+  resubmit: boolean;
+  requestsPerWindow: number | null;
+}
+
+/** What the panel reads from the MCP access state to say whether MCP keys can work yet. */
+export interface McpKeyReadiness {
+  deployment: { mode: string; agentKeysEnabled?: boolean; endpointUrl?: string };
+  saved: { allowAgentKeys?: boolean; allowWorkloads?: boolean };
+}
+
+export const MCP_SETTINGS_URL = "/api/v1/admin/mcp/settings";
+
+/** The grant permissions, in the order the form and the table show them. */
+export const MCP_PERMISSIONS = [
+  { key: "classify", label: "Record classifications", needs: "Workloads may record classifications" },
+  { key: "annotate", label: "Mark messages reported", needs: "Workloads may mark messages reported" },
+  { key: "resubmit", label: "Resubmit failed messages", needs: "Workloads may resubmit" },
+] as const;
+
+/** The grant summary for the table, for example "observe, classify, resubmit". */
+export function grantSummary(grant: AgentKeyMcpGrant | null | undefined): string {
+  const held = MCP_PERMISSIONS.filter((p) => grant?.[p.key]).map((p) => p.key);
+  return ["observe", ...held].join(", ");
+}
+
+/** Why an MCP key won't work yet, or undefined when the deployment and the policy allow keys. */
+export function mcpKeyBlocker(readiness: McpKeyReadiness | undefined): string | undefined {
+  if (!readiness) return undefined;
+  if (readiness.deployment.mode !== "entra")
+    return "This deployment has no MCP app registration, and keys work only next to Entra sign-in.";
+  if (!readiness.deployment.agentKeysEnabled)
+    return "The deployment doesn't accept keys on /mcp yet: set the app setting NimBus__Mcp__AgentKeys__Enabled=true.";
+  if (!readiness.saved.allowWorkloads || !readiness.saved.allowAgentKeys)
+    return "Turn on Unattended workloads and Agent API keys in Settings → MCP access.";
+  return undefined;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Whether an active MCP key expires within 14 days, so its owner should rotate it. */
+export function expiresSoon(key: Pick<AgentKeyInfo, "use" | "status" | "expiresAtUtc">, now: Date = new Date()): boolean {
+  if (key.use !== "mcp" || key.status !== "active" || !key.expiresAtUtc) return false;
+  return new Date(key.expiresAtUtc).getTime() - now.getTime() <= 14 * DAY_MS;
 }
 
 export interface AgentKeysState {
@@ -56,6 +114,10 @@ export const EXPIRY_OPTIONS = [
 
 export type ExpiryChoice = (typeof EXPIRY_OPTIONS)[number]["value"];
 
+/** An MCP key always expires, within a year (Spec 052 §6.10); 90 days is the default. */
+export const MCP_EXPIRY_OPTIONS = EXPIRY_OPTIONS.filter((o) => o.value !== "never");
+export const MCP_DEFAULT_EXPIRY: ExpiryChoice = "90";
+
 /** The expiry to send for a choice, as a UTC timestamp; null for no expiry. */
 export function expiryFrom(choice: ExpiryChoice, now: Date = new Date()): string | null {
   if (choice === "never") return null;
@@ -64,6 +126,15 @@ export function expiryFrom(choice: ExpiryChoice, now: Date = new Date()): string
 
 export const activeKeyCount = (state: AgentKeysState) =>
   state.keys.filter((k) => k.status === "active").length;
+
+/** Active keys per use; a key without a use is an Agent API key. */
+export function activeKeysByUse(state: AgentKeysState): Record<AgentKeyUse, number> {
+  const active = state.keys.filter((k) => k.status === "active");
+  return {
+    agentApi: active.filter((k) => (k.use ?? "agentApi") === "agentApi").length,
+    mcp: active.filter((k) => k.use === "mcp").length,
+  };
+}
 
 /** A readable reason for a refused write, from the server's problem body when there is one. */
 export async function problemMessage(response: Response): Promise<string> {

@@ -231,6 +231,13 @@ export default function McpAccessSettings() {
               <SettingRow label="Unattended workloads (app-only tokens)" description="Callers with the Nimbus.Workload.Observe app role may use the read tools. Workloads never skip or read payloads, and change messages only as the switches below allow.">
                 <Toggle aria-label="Allow workload tokens" checked={draft.allowWorkloads} disabled={local} onChange={v => edit(s => { s.allowWorkloads = v; })} />
               </SettingRow>
+              <SettingRow label="Agent API keys" description={
+                local ? "Keys are not accepted in local development, where every loopback caller is the local developer."
+                  : !deployment.agentKeysEnabled ? "This deployment doesn't accept keys on /mcp. Set the app setting NimBus__Mcp__AgentKeys__Enabled=true first."
+                  : "Hosted agents may connect with an MCP key from Settings → Agent keys. A key acts as a workload: the switches below and the budget apply, and a key never skips messages or reads payloads. Off by default."}>
+                <Toggle aria-label="Allow agent API keys" checked={Boolean(draft.allowAgentKeys)}
+                  disabled={local || !deployment.agentKeysEnabled || !draft.allowWorkloads} onChange={v => edit(s => { s.allowAgentKeys = v; })} />
+              </SettingRow>
               <SettingRow label="Workloads may record classifications" description="Workloads with the Nimbus.Workload.Classify app role may call nimbus_record_classification. They still need Contributor on the endpoint in Access Control, and Classify failures must be on. Recording is advisory and changes no message. Off by default.">
                 <Toggle aria-label="Allow workloads to record classifications" checked={Boolean(draft.allowWorkloadClassification)}
                   disabled={local || !draft.allowWorkloads} onChange={v => edit(s => { s.allowWorkloadClassification = v; })} />
@@ -430,7 +437,7 @@ function WhoAndWhere({ draft, state, activity, local, edit }: {
 
       <div className="border-t border-dashed border-border pt-4"><fieldset disabled={local} className="space-y-2">
         <legend className="text-sm font-semibold">Client applications</legend>
-        <p className="text-xs text-muted-foreground">Matched on the token's <code>azp</code> claim. Entra pre-authorization still applies.</p>
+        <p className="text-xs text-muted-foreground">Matched on the token's <code>azp</code> claim. Entra pre-authorization still applies. Agent API keys are not matched against this list: you approve a key by issuing it, and its permissions say what it may change.</p>
         <Select aria-label="Client applications" disabled={local} value={draft.clients.mode} onChange={e => edit(s => { s.clients.mode = e.target.value as McpSettings["clients"]["mode"]; })}>
           <option value="any">Any client pre-authorized in Entra</option>
           <option value="approved">Only approved clients</option>
@@ -546,7 +553,10 @@ function Risk({ risk, text }: { risk: "data" | "low" | "medium" | "high"; text: 
 
 function PreviewCard({ draft, state, dirty }: { draft: McpSettings; state: McpState; dirty: boolean }) {
   const [persona, setPersona] = useState<Persona>("contributor");
-  const personas = (Object.keys(PERSONAS) as Persona[]).filter(p => !(state.deployment.mode === "localDevelopment" && p === "workload"));
+  // Local development admits only the local developer; an agent key needs the deployment's ceiling.
+  const personas = (Object.keys(PERSONAS) as Persona[]).filter(p =>
+    !(state.deployment.mode === "localDevelopment" && (p === "workload" || p === "agentKey"))
+    && !(p === "agentKey" && !state.deployment.agentKeysEnabled));
   const rows = previewAccess(draft, state.deployment, persona, state.failureIntelligenceEnabled);
   return (
     <Card><CardHeader><CardTitle>Effective access</CardTitle><p className="text-xs text-muted-foreground">{dirty ? "Previewing your unsaved edits" : "Saved settings"} · the server is authoritative</p></CardHeader>
@@ -600,7 +610,17 @@ function ConnectCard({ draft, state }: { draft: McpSettings; state: McpState }) 
       {resourceAsClient && <p className="text-xs text-status-danger">This client ID is the MCP resource, which has no redirect URI: Entra refuses its sign-in with AADSTS500113. Approve a separate client registration.</p>}
       <p className="text-xs text-muted-foreground">{d.mode === "localDevelopment"
         ? "No sign-in. Works only on this machine while the Aspire AppHost runs."
-        : "Then run /mcp in a claude session and sign in as yourself. Agents act as the person who signs in; there are no shared keys."}</p>
+        : "Then run /mcp in a claude session and sign in as yourself. The agent acts as the person who signs in."}</p>
+      {d.mode === "entra" && d.agentKeysEnabled && (
+        <div className="space-y-1 border-t border-dashed border-border pt-3">
+          <p className="text-sm font-medium">A hosted agent with an agent API key</p>
+          <pre className="overflow-auto whitespace-pre-wrap break-all rounded-md bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-amber-100">{`${d.endpointUrl}\nAuthorization: Bearer <MCP key from Settings → Agent keys>`}</pre>
+          <p className="text-xs text-muted-foreground">
+            For connectors that offer only a bearer token or API key field, such as Azure SRE Agent. The key acts as an unattended
+            workload{draft.allowAgentKeys ? "" : " once Agent API keys is on under Permissions"}, and its agent needs a grant in Access Control.
+          </p>
+        </div>
+      )}
     </CardContent></Card>
   );
 }
@@ -617,7 +637,7 @@ function ActivityCard({ activity }: { activity?: McpActivity }) {
                 <li key={`${i.atUtc}-${n}`} className="py-2">
                   <p className="font-semibold"><span className={cn("mr-1.5 rounded px-1 font-mono text-[9.5px] uppercase", badge[i.kind])}>{i.kind}</span>
                     {[i.type, i.endpointId, i.detail].filter(Boolean).join(" · ")}</p>
-                  <p className="text-muted-foreground">{when(i.atUtc)} · {[i.auditor, i.clientId, i.reason].filter(Boolean).join(" · ")}</p>
+                  <p className="text-muted-foreground">{when(i.atUtc)} · {[i.auditor, i.clientId, i.agentKeyId ? `key ${i.agentKeyId}` : null, i.reason].filter(Boolean).join(" · ")}</p>
                 </li>
               ))}
             </ul>}
