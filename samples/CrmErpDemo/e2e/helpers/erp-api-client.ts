@@ -165,18 +165,24 @@ export class ErpApiClient {
 
   /**
    * @param reason Optional failure-reason id from `GET /api/admin/error-mode/reasons`
-   * (e.g. `transient_dependency`); omitted keeps the currently selected reason.
+   * (e.g. `transient_dependency`, or `random`); omitted keeps the currently selected reason.
+   * @param failureRate Optional share of messages that fail, 0..1; omitted keeps the current rate.
    */
-  async setErrorMode(enabled: boolean, reason?: string): Promise<ServiceModeState> {
-    const data = reason === undefined ? { enabled } : { enabled, reason };
+  async setErrorMode(enabled: boolean, reason?: string, failureRate?: number): Promise<ServiceModeState> {
+    const data: { enabled: boolean; reason?: string; failureRate?: number } = { enabled };
+    if (reason !== undefined) data.reason = reason;
+    if (failureRate !== undefined) data.failureRate = failureRate;
     const res = await this.api.put("/api/admin/error-mode", { data });
     if (!res.ok()) throw new Error(`ERP PUT error-mode → ${res.status()}`);
     return (await res.json()) as ServiceModeState;
   }
 
-  /** Restore both failure modes to off; safe to call from afterEach hooks. */
+  /**
+   * Restore both failure modes to off; safe to call from afterEach hooks. Also puts the failure
+   * rate back to every message, so error-mode tests never inherit a lower rate.
+   */
   async resetFailureModes(): Promise<void> {
-    await this.setErrorMode(false);
+    await this.setErrorMode(false, undefined, 1);
     await this.setServiceMode(false);
   }
 

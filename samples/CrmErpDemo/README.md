@@ -612,11 +612,18 @@ identifiers, the downstream system, and what would have to change.
 | Customer closed (business rule) | `InvalidOperationException` rule ERP-CUST-017 | Failed | `business_rule` |
 | Customer not found (missing reference) | `KeyNotFoundException` for the CRM account | Failed | `missing_reference_data` |
 | Null reference (application defect) | `NullReferenceException` in the mapper | Failed | `application_defect` |
+| Random (any failure type) | One of the entries above, picked per failing message | Failed | Varies with the failure drawn |
+
+The **Failure rate** slider under the dropdown sets the share of messages that fail (default 100%).
+Each delivery rolls on its own, so at 30% most messages reach ERP, about a third fail, and a
+resubmit rolls again. Together with **Random** this gives a mixed failure picture: some sessions
+blocked, the rest flowing, and failed messages with different error types to classify.
 
 The catalog lives in `CrmErpDemo.Contracts/Demo/ErpFailureReasons.cs` and is shared by `Erp.Api`
-(stores and validates the selection, `GET/PUT /api/admin/error-mode` with `reason`,
-`GET /api/admin/error-mode/reasons`), `Erp.Adapter.Functions` (`ErrorModeGuard` throws the
-matching exception from every handler) and the erp-web dropdown, so the three cannot drift.
+(stores and validates the selection, `GET/PUT /api/admin/error-mode` with `reason` and
+`failureRate` from 0 to 1, `GET /api/admin/error-mode/reasons`), `Erp.Adapter.Functions`
+(`ErrorModeGuard` rolls against the rate and throws the matching exception from every handler) and
+the erp-web dropdown, so the three cannot drift.
 
 The AppHost turns on failure classification (`Provider: None`) and the operator MCP endpoint at
 `https://localhost:18443/mcp`. NimBus calls no model: an agent connected to `/mcp` reads each
@@ -631,7 +638,8 @@ failure's evidence and records its classification (see the
    guidance, fault origin and rationale, and **Insights** groups the failures by cause.
 
 Switch reasons and repeat to compare categories and guidance. `PUT /api/admin/error-mode` still
-accepts a bare `{ "enabled": true }`, so the e2e suite and the demo film keep the generic failure.
+accepts a bare `{ "enabled": true }`, which keeps the current reason and rate, so the e2e suite and
+the demo film keep the generic failure on every message.
 The [failure agent sample](../FailureAgent/README.md) runs the same prompt unattended.
 
 ## Showcase: Circuit breaker (outage → pause → probe → recover)

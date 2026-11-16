@@ -15,7 +15,7 @@ interface ErpDemoState {
   delay: ProcessingDelay | null;
   busy: boolean;
   setServiceMode: (enabled: boolean) => Promise<void>;
-  setErrorMode: (enabled: boolean, reason?: string) => Promise<void>;
+  setErrorMode: (enabled: boolean, reason?: string, failureRate?: number) => Promise<void>;
   refresh: () => void;
 }
 
@@ -51,9 +51,9 @@ export function ErpDemoStateProvider({ children }: { children: ReactNode }) {
     try { setService(await api.setServiceMode(enabled)); } catch { /* the next poll reconciles */ } finally { setBusy(false); }
   }, []);
 
-  const setErrorMode = useCallback(async (enabled: boolean, reason?: string) => {
+  const setErrorMode = useCallback(async (enabled: boolean, reason?: string, failureRate?: number) => {
     setBusy(true);
-    try { setError(await api.setErrorMode(enabled, reason)); } catch { /* the next poll reconciles */ } finally { setBusy(false); }
+    try { setError(await api.setErrorMode(enabled, reason, failureRate)); } catch { /* the next poll reconciles */ } finally { setBusy(false); }
   }, []);
 
   return (
@@ -67,6 +67,11 @@ export function useErpDemoState(): ErpDemoState {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error('useErpDemoState must be used inside ErpDemoStateProvider');
   return ctx;
+}
+
+/** Error mode's failure rate (0..1) as a whole percentage; a missing rate means every message. */
+export function failurePercent(rate: number | undefined): number {
+  return Math.max(0, Math.min(100, Math.round((rate ?? 1) * 100)));
 }
 
 export function formatDelay(ms: number): string {

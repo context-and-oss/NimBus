@@ -85,11 +85,47 @@ public static class ErpFailureReasons
             "Failed"),
     ];
 
-    /// <summary>Looks a reason up by id, case-insensitively. Null when unknown.</summary>
+    /// <summary>The selection that throws a different catalog failure, picked at random, for each failing message.</summary>
+    public const string Random = "random";
+
+    /// <summary>
+    /// The dropdown entry for <see cref="Random"/>. It is not in <see cref="All"/>: it is a way
+    /// to choose among the failures there, never a failure that is thrown.
+    /// </summary>
+    public static readonly ErpFailureReason RandomReason = new(
+        Random,
+        "Random (any failure type)",
+        "Each failing message throws one of the other failure types, picked at random, so NimBus sees a mix of error types to classify.",
+        "varies",
+        "Failed");
+
+    /// <summary>What erp-web offers: every failure in <see cref="All"/>, then <see cref="RandomReason"/>.</summary>
+    public static readonly IReadOnlyList<ErpFailureReason> Selectable = [.. All, RandomReason];
+
+    /// <summary>Looks a selectable reason up by id, case-insensitively. Null when unknown.</summary>
     public static ErpFailureReason? Find(string? id) =>
         string.IsNullOrWhiteSpace(id)
             ? null
-            : All.FirstOrDefault(r => string.Equals(r.Id, id, StringComparison.OrdinalIgnoreCase));
+            : Selectable.FirstOrDefault(r => string.Equals(r.Id, id, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Decides what one message does while error mode is on: null when it goes through, otherwise
+    /// the failure to throw. A message fails when a roll in [0, 1) is below
+    /// <paramref name="failureRate"/>, so 1 fails every message and 0 none. <see cref="Random"/>
+    /// picks one failure from <see cref="All"/>; an unknown id throws the generic failure.
+    /// </summary>
+    /// <param name="failureRate">The share of messages that fail, from 0 to 1.</param>
+    /// <param name="reasonId">The reason selected in erp-web.</param>
+    /// <param name="rng">The source of both the roll and the random pick.</param>
+    public static ErpFailureReason? Decide(double failureRate, string? reasonId, System.Random rng)
+    {
+        ArgumentNullException.ThrowIfNull(rng);
+        if (rng.NextDouble() >= failureRate)
+            return null;
+
+        var reason = Find(reasonId) ?? All[0];
+        return reason.Id == Random ? All[rng.Next(All.Count)] : reason;
+    }
 
     /// <summary>
     /// Creates the exception the adapter throws for <paramref name="reasonId"/>. Unknown ids
@@ -100,6 +136,9 @@ public static class ErpFailureReasons
     public static Exception CreateException(string? reasonId, string eventType)
     {
         var reason = Find(reasonId) ?? All[0];
+        if (reason.Id == Random)
+            reason = All[System.Random.Shared.Next(All.Count)];
+
         return reason.Id switch
         {
             "transient_dependency" => new TimeoutException(
