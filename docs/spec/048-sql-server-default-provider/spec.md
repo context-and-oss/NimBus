@@ -1,8 +1,9 @@
 # Spec 048 — SQL Server as the default storage provider
 
-Status: **proposed** (2026-11-14), revised the same day after a Codex review (§16). Nothing is
-implemented. Target: 4.x minors for the groundwork, and the next major for the default flip
-unless the repo owner records an exception (§5.6, §13).
+Status: **proposed** (2026-11-14), revised the same day after a Codex review (§16). Only §5.2
+(external SQL for the Resolver, issue #391) is implemented, ahead of Phase 1. Target: 4.x minors
+for the groundwork, and the next major for the default flip unless the repo owner records an
+exception (§5.6, §13).
 Implementation plan: [2026-11-14-spec-048-implementation-plan.md](../../plan/2026-11-14-spec-048-implementation-plan.md).
 Baseline: master `015fcb0e` (v4.16.0 + 1).
 Related: [Spec 047](../047-cosmos-capacity-modes/spec.md) (cheaper Cosmos capacity), and
@@ -135,8 +136,8 @@ isn't recorded.
 Resolver's `SqlConnection`, as `deploy.webapp.bicep:23` already does for the WebApp.
 `InfrastructureDeployer` passes the value from `ResolveSqlConnectionString` (`:419`) to both
 templates as a secure parameter, never as a process argument. This is a bug fix on its own and
-ships in the first release (§9). Until then the docs say that external mode doesn't configure the
-Resolver.
+ships in the first release (§9). Implemented ahead of Phase 1 for issue #391; the docs' known-gap
+notes are gone.
 
 ### 5.3 Managed identity for provisioned SQL
 
@@ -415,7 +416,7 @@ No store, conformance or WebApp tests change.
 
 - `docs/storage-providers.md`. The "Choosing a provider" guidance ships ahead of this spec, with
   external SQL's Resolver gap stated. Each phase then updates it:
-  - Phase 1: external SQL works;
+  - Phase 1: external SQL works (done with §5.2, issue #391);
   - Phase 2: SQL's app authentication;
   - Phase 3: the tier flag and the pipelines;
   - the flip release: the default.

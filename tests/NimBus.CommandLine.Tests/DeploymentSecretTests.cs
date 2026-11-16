@@ -262,6 +262,35 @@ public sealed class DeploymentSecretTests
         Assert.Contains("alertMailResolverSecretSettings)", coreDeployment, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Issue #391: the Resolver got <c>SqlConnection</c> only for a provisioned server, so an
+    /// external-SQL Resolver started with no storage setting and fell back to Cosmos.
+    /// </summary>
+    [Fact]
+    public void CoreBicep_GivesTheResolverSqlConnectionInBothSqlModes()
+    {
+        var coreDeployment = ReadNormalized(Path.Combine(FindRepositoryRoot(), "deploy", "bicep", "deploy.core.bicep"));
+
+        Assert.Contains("@secure()\nparam sqlConnectionString string = ''", coreDeployment, StringComparison.Ordinal);
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            coreDeployment,
+            @"^var sqlResolverSecretSettings = (?<body>.*?)\n\n",
+            System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.Singleline);
+        Assert.True(match.Success, "deploy.core.bicep declares no sqlResolverSecretSettings.");
+        var settings = match.Groups["body"].Value;
+
+        Assert.Contains("storageProvider != 'sqlserver'", settings, StringComparison.Ordinal);
+        Assert.Contains("sqlMode == 'provision'", settings, StringComparison.Ordinal);
+        Assert.Contains("SqlConnection: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;", settings, StringComparison.Ordinal);
+        Assert.Contains("SqlConnection: sqlConnectionString", settings, StringComparison.Ordinal);
+
+        // Only the secure settings object may carry the connection string: the plain settings
+        // array is kept in the nested deployment's history.
+        Assert.Contains("  sqlResolverSecretSettings,\n", coreDeployment, StringComparison.Ordinal);
+        Assert.DoesNotContain("value: sqlConnectionString", coreDeployment, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
