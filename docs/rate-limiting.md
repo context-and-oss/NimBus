@@ -188,8 +188,6 @@ a restart, which an App Service application-setting change triggers anyway.
 | `RateLimiting:Login:PermitLimit` | `50` |
 | `RateLimiting:Login:WindowSeconds` | `300` |
 | `RateLimiting:Login:IPv6PrefixBits` | `128` |
-| `RateLimiting:Intelligence:PermitLimit` | `10` |
-| `RateLimiting:Intelligence:WindowSeconds` | `60` |
 | `RateLimiting:Mcp:PermitLimit` | `60` |
 | `RateLimiting:Mcp:WindowSeconds` | `60` |
 | `RateLimiting:McpMutations:PermitLimit` | `5` |

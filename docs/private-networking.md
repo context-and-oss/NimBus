@@ -74,7 +74,6 @@ the store and storage the moment they join the VNet:
 | Microsoft Entra ID (service tag `AzureActiveDirectory`) | Both apps | Managed-identity tokens; WebApp sign-in |
 | Azure Resource Manager (`AzureResourceManager`) | WebApp (Cosmos) | Container administration |
 | Azure Monitor (`AzureMonitor`) | Both apps | Telemetry, with `--monitor-private-link none` |
-| `api.typesafe.ai` | WebApp | Only if Integration Intelligence (TypeSafe) is enabled |
 
 ### Where `nb` runs
 

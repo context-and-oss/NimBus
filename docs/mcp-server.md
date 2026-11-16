@@ -46,7 +46,6 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_set_message_reported` | Sets or clears the "reported" marker on one message (`eventId`) or up to 50 on one endpoint (`eventIds`), optionally with an external ticket id | `nimbus.annotate` (workloads: the `Nimbus.Workload.Annotate` app role) and endpoint Contributor |
 | `nimbus_find_reports` | An endpoint's reported messages, optionally under one ticket, with each one's status and normalized error pattern, to reuse a ticket | Endpoint Reader |
 | `nimbus_record_classification` | Records your answers to the question set for one failed attempt. NimBus composes the guidance. Advisory, changes no message | `nimbus.classify` (workloads: the `Nimbus.Workload.Classify` app role) and endpoint Contributor; classification recordable |
-| `nimbus_classify_failure` | **Deprecated, removed in v5.0.0.** Asks the built-in provider to classify a failure, or returns the stored one | Delegated `nimbus.classify` and endpoint Contributor; a configured provider |
 
 Results never contain stack traces, except `nimbus_get_failure_evidence` with `includeStackTrace`
 when the adapter stores one and an Owner allows it (see
@@ -173,9 +172,8 @@ between the command and the Resolver recording it, `nimbus_get_message` reports 
 later.
 
 Over MCP, resubmit and skip accept Failed, DeadLettered and Unsupported messages. Deferred messages
-and pending handoffs have their own actions, described next. `nimbus_set_message_reported`,
-`nimbus_record_classification` and `nimbus_classify_failure` need no token; they take a reason or an
-idempotency key directly.
+and pending handoffs have their own actions, described next. `nimbus_set_message_reported` and
+`nimbus_record_classification` need no token; they take a reason or an idempotency key directly.
 
 ### Handoffs, deferred messages and edited payloads
 
@@ -327,7 +325,7 @@ reports or tests.
 `Nimbus.Workload.Classify` app role, the Owner turned on **Workloads may record classifications** in
 **Settings → MCP access** (off by default, and effective only while workload tokens are accepted),
 and the workload's object id has Contributor on the endpoint in Access Control. The role admits
-`nimbus_record_classification` only: never `nimbus_classify_failure`, resubmit, skip or report.
+`nimbus_record_classification` only: never resubmit, skip or report.
 
 ## Managing access in the WebApp
 
@@ -405,8 +403,7 @@ A key acts as an **unattended workload**, governed like an app-only token.
 
 What a key can never do, whatever its grant and the switches say: skip a message, read a payload, use
 `nimbus_settle_handoff`, `nimbus_reprocess_deferred`, `nimbus_skip_deferred_tracking` or
-`nimbus_resubmit_with_changes`, run a paid classification through `nimbus_classify_failure`, or open
-any endpoint other than `/mcp`. An Agent API key (for `/api/v1/agent/*`) never works on `/mcp`, and an
+`nimbus_resubmit_with_changes`, or open any endpoint other than `/mcp`. An Agent API key (for `/api/v1/agent/*`) never works on `/mcp`, and an
 MCP key never works there.
 
 - **Audit.** Every action and refusal names the agent as `agent:<agentId>` and records `agentKeyId`.
@@ -457,10 +454,9 @@ With the NimBus Aspire AppHost (`src/NimBus.AppHost`) no setup is needed: it set
 `NimBus__Mcp__EnableForLocalDevelopment=true`, and the
 WebApp serves `/mcp` whenever its local-dev bypass is on (Development and
 `EnableLocalDevAuthentication=true`, which the AppHost sets unless `NIMBUS_IDENTITY` is on). The
-CrmErpDemo AppHost sets it too, and also turns on failure classification
-with `Provider: None`, so an agent can record classifications there. No sign-in
-is involved; every call runs as the "Local Developer" user, with the same role and PII checks as the
-Web UI. Scopes do not apply in this mode, so the tools that change messages need only the
+CrmErpDemo AppHost sets it too, and also turns on failure classification so an agent can record
+classifications there. No sign-in is involved; every call runs as the "Local Developer" user, with
+the same role and PII checks as the Web UI. Scopes do not apply in this mode, so the tools that change messages need only the
 Contributor role. With the bypass off, `/mcp` is not served.
 
 Point the client at the WebApp's HTTPS URL from the Aspire dashboard (by default
@@ -495,7 +491,7 @@ In the tenant that signs in your operators:
      replaces it.
    - `nimbus.resubmit`, `nimbus.skip`, `nimbus.annotate` and `nimbus.classify`: use
      `nimbus_resubmit_message`, `nimbus_skip_message`, `nimbus_set_message_reported` and
-     `nimbus_record_classification` (and the deprecated `nimbus_classify_failure`). Each only adds to
+     `nimbus_record_classification`. Each only adds to
      the Contributor role on the endpoint. Consider making them admin-consent scopes so only clients
      you approve can request them.
    - `nimbus.settle`, `nimbus.recover` and `nimbus.edit` (optional): use `nimbus_settle_handoff`,

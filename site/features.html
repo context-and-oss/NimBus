@@ -604,10 +604,10 @@
             <article class="card">
               <h3>Failure classification</h3>
               <p>
-                Off by default. An operator asks for one failed or dead-lettered
-                message to be classified, sending size-limited, redacted
-                evidence to the TypeSafe provider. The result is stored with its
-                history and comes with fixed guidance: retry may help, change
+                Off by default. An agent reads size-limited, redacted evidence
+                of one failed or dead-lettered message over MCP and records its
+                classification; NimBus calls no model. The result is stored with
+                its history and comes with fixed guidance: retry may help, change
                 likely required, investigate, or uncertain. It never changes
                 message state.
               </p>

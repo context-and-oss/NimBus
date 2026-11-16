@@ -598,7 +598,7 @@ Only the frames are stored (the message is already in the error text), cut at
 it from `nimbus_get_failure_evidence` with `includeStackTrace` only when an Owner
 turns on **Settings → Failure intelligence → Agents may see stack traces**; it is
 then scrubbed (file paths cut to the file name, values marked sensitive and
-credential-shaped text replaced) and never sent to the deprecated provider.
+credential-shaped text replaced).
 
 The message is kept in the audit trail and shown in the WebApp. Use record IDs,
 not names, email addresses or other personal data.
