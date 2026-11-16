@@ -199,7 +199,7 @@ Aspire `WithReference` calls on `erp-adapter`: `servicebus` (as `AzureWebJobsSer
 
 | Source | Content |
 |---|---|
-| `host.json` | Functions Service Bus extension settings: `prefetchCount=0`, `autoCompleteMessages=false`, `maxAutoLockRenewalDuration=00:05:00`, `maxConcurrentSessions=200`, `sessionIdleTimeout=00:00:30`, exponential client retry (3 attempts, 0.8s base, 1m cap) |
+| `host.json` | Functions Service Bus extension settings: `prefetchCount=0`, `autoCompleteMessages=false`, `maxAutoLockRenewalDuration=00:05:00`, `maxConcurrentSessions=32`, `sessionIdleTimeout=00:00:05` (most sessions carry one message, so a long idle wait only holds the slot), exponential client retry (3 attempts, 0.8s base, 1m cap) |
 | `local.settings.json` | `FUNCTIONS_WORKER_RUNTIME=dotnet-isolated`, `AzureWebJobsStorage=UseDevelopmentStorage=true`, `TopicName=ErpEndpoint`, `SubscriptionName=ErpEndpoint` |
 | Connection strings (Aspire-injected) | `AzureWebJobsServiceBus` (used by both `[ServiceBusTrigger]` attributes and the manually-registered `ServiceBusClient`) |
 | Service-discovery keys | `services:erp-api:https:0` / `services:erp-api:http:0` — resolved from Aspire `WithReference(erpApi)`; falls back to `Erp:ApiBaseUrl` if missing |
@@ -245,7 +245,7 @@ The adapter does not publish. `Erp.Api` writes outbox rows in the same SQL trans
 
 | Trigger | Type | Frequency / schedule | Notes |
 |---|---|---|---|
-| `[ServiceBusTrigger("%TopicName%", "%SubscriptionName%", IsSessionsEnabled=true)]` | Continuous | Driven by Service Bus delivery | Session-aware. `maxConcurrentSessions=200`, `prefetchCount=0` (from `host.json`). |
+| `[ServiceBusTrigger("%TopicName%", "%SubscriptionName%", IsSessionsEnabled=true)]` | Continuous | Driven by Service Bus delivery | Session-aware. `maxConcurrentSessions=32`, `sessionIdleTimeout=00:00:05`, `prefetchCount=0` (from `host.json`). |
 | `[ServiceBusTrigger("%TopicName%", "deferredprocessor", IsSessionsEnabled=false)]` | Continuous | Driven by Service Bus delivery on the `deferredprocessor` sub | Non-session. Forwards to `IDeferredMessageProcessor.ProcessDeferredMessagesAsync`. |
 
 ---
@@ -564,7 +564,7 @@ sequenceDiagram
 | Dimension | Target | Source / evidence |
 |---|---|---|
 | Availability | {TBD — demo} | n/a |
-| Throughput — steady state | {TBD} | Bounded by `host.json` `maxConcurrentSessions=200` and `erp-api` upstream capacity |
+| Throughput — steady state | {TBD} | Bounded by `host.json` `maxConcurrentSessions=32` per replica, about 32 / (handler time + 5 s idle) ≈ 6 single-message sessions a second, and by `erp-api` upstream capacity |
 | Throughput — burst | {TBD} | n/a |
 | Latency — sync handler (event → ERP row written) | {TBD} | Single HTTP roundtrip to `erp-api` |
 | Latency — handoff handler (event → MarkPendingHandoff) | {TBD; expected < 200 ms} | Two HTTP roundtrips (`/api/admin/handoff-mode` + `/api/internal/handoff-jobs`) |

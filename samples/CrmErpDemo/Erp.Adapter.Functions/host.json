@@ -1,5 +1,11 @@
 {
   "version": "2.0",
+  "logging": {
+    "logLevel": {
+      "Microsoft.Azure.WebJobs.ServiceBus": "Warning",
+      "Azure.Messaging.ServiceBus": "Warning"
+    }
+  },
   "extensionBundle": {
     "id": "Microsoft.Azure.Functions.ExtensionBundle",
     "version": "[4.*, 5.0.0)"
@@ -9,8 +15,8 @@
       "prefetchCount": 0,
       "autoCompleteMessages": false,
       "maxAutoLockRenewalDuration": "00:05:00",
-      "maxConcurrentSessions": 200,
-      "sessionIdleTimeout": "00:00:30",
+      "maxConcurrentSessions": 32,
+      "sessionIdleTimeout": "00:00:05",
       "clientRetryOptions": {
         "mode": "Exponential",
         "tryTimeout": "00:01:00",
