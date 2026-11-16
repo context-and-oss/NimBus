@@ -311,7 +311,121 @@ public class OperationJournalToolsTests
         return operation;
     }
 
-    private static Task<McpTestHost> StartAsync(McpTestHost.StubAccess access, bool entra = false, Action<McpAccessSettings>? policy = null)
+    // ---- Spec 052: MCP agent keys resubmit as workloads, budgeted per agent ----------------------
+
+    [TestMethod]
+    [DataRow(true, true, true, DisplayName = "grant and switch")]
+    [DataRow(true, false, false, DisplayName = "grant, switch off")]
+    [DataRow(false, true, false, DisplayName = "switch, no grant")]
+    public async Task An_mcp_key_resubmits_only_with_its_grant_and_the_owner_switch(bool grant, bool ownerSwitch, bool allowed)
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
+            policy: p => { p.AllowAgentKeys = true; p.AllowWorkloadResubmit = ownerSwitch; }, agentKeys: true);
+        await SeedFailureAsync(host);
+        var key = await McpAgentKeyAuthenticationTests.IssueAsync(host, "sre-agent", new AgentApiKeyMcpGrant { Resubmit = grant });
+        await using var client = await host.CreateClientAsync(key);
+
+        var prepared = await client.CallToolAsync("nimbus_prepare_action", PrepareArguments(await VersionAsync(client), "resubmit"));
+
+        if (!allowed)
+        {
+            AssertError(prepared, "PermissionDenied");
+            Assert.AreEqual(0, host.Get<McpTestHost.RecordingManagerClient>().Sent.Count);
+            return;
+        }
+
+        var token = JsonSerializer.SerializeToElement(prepared.StructuredContent).GetProperty("actionToken").GetString();
+        var executed = await CallAsync(client, "nimbus_resubmit_message", Execute(token, Guid.NewGuid()));
+        var operation = await host.Get<InMemoryMessageStore>().GetOperatorOperation(executed.GetProperty("operationId").GetString()!);
+        Assert.IsTrue(operation!.IsWorkload);
+        Assert.AreEqual("agent:sre-agent", operation.ClientId);
+        Assert.AreEqual("agent:sre-agent", operation.Caller);
+        Assert.AreEqual(string.Empty, operation.TenantId);
+
+        // §6.9: the command's audit row names the key.
+        var row = host.Get<McpTestHost.RecordingAuditLog>().Rows.Single(r => r.Type == NimBus.MessageStore.MessageAuditType.Resubmit);
+        StringAssert.Contains(row.Data, $"\"agentKeyId\":\"{McpAgentKeyGovernanceTests.KeyIdOf(key)}\"", StringComparison.Ordinal);
+        StringAssert.Contains(row.Data, "\"clientId\":\"agent:sre-agent\"", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public async Task An_mcp_key_can_never_skip()
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
+            policy: p => { p.AllowAgentKeys = true; p.AllowWorkloadResubmit = true; }, agentKeys: true);
+        await SeedFailureAsync(host);
+        var key = await McpAgentKeyAuthenticationTests.IssueAsync(host, "sre-agent", new AgentApiKeyMcpGrant { Classify = true, Annotate = true, Resubmit = true });
+        await using var client = await host.CreateClientAsync(key);
+
+        AssertError(await client.CallToolAsync("nimbus_prepare_action", PrepareArguments(await VersionAsync(client), "skip")), "PermissionDenied");
+    }
+
+    [TestMethod]
+    public async Task Keys_of_one_agent_share_its_budget_and_another_agent_has_its_own()
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
+            policy: p => { p.AllowAgentKeys = true; p.AllowWorkloadResubmit = true; p.WorkloadResubmitsPerDay = 1; }, agentKeys: true);
+        await SeedFailureAsync(host);
+        // One unattended resubmit today by the sre-agent's earlier key, on another message.
+        await host.Get<InMemoryMessageStore>().TryCreateOperatorOperation(Operation("earlier-op".PadRight(32, '0'), o =>
+        {
+            o.EventId = "evt-other";
+            o.TenantId = string.Empty;
+            o.Caller = "agent:sre-agent";
+            o.ClientId = "agent:sre-agent";
+        }));
+        var rotated = await McpAgentKeyAuthenticationTests.IssueAsync(host, "sre-agent", new AgentApiKeyMcpGrant { Resubmit = true });
+        var other = await McpAgentKeyAuthenticationTests.IssueAsync(host, "triage-agent", new AgentApiKeyMcpGrant { Resubmit = true });
+
+        await using (var client = await host.CreateClientAsync(rotated))
+        {
+            var refused = await client.CallToolAsync("nimbus_resubmit_message", Execute(await PrepareAsync(client, "resubmit"), Guid.NewGuid()));
+            AssertError(refused, "ActionNotAllowed");
+            StringAssert.Contains(ErrorText(refused), "budget", StringComparison.Ordinal);
+        }
+
+        await using (var client = await host.CreateClientAsync(other))
+            await CallAsync(client, "nimbus_resubmit_message", Execute(await PrepareAsync(client, "resubmit"), Guid.NewGuid()));
+
+        Assert.AreEqual(1, host.Get<McpTestHost.RecordingManagerClient>().Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task A_token_prepared_under_one_key_is_accepted_under_a_sibling_key()
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
+            policy: p => { p.AllowAgentKeys = true; p.AllowWorkloadResubmit = true; }, agentKeys: true);
+        await SeedFailureAsync(host);
+        var first = await McpAgentKeyAuthenticationTests.IssueAsync(host, "sre-agent", new AgentApiKeyMcpGrant { Resubmit = true });
+        var sibling = await McpAgentKeyAuthenticationTests.IssueAsync(host, "sre-agent", new AgentApiKeyMcpGrant { Resubmit = true });
+
+        string? token;
+        await using (var client = await host.CreateClientAsync(first))
+            token = await PrepareAsync(client, "resubmit");
+        await using (var client = await host.CreateClientAsync(sibling))
+            await CallAsync(client, "nimbus_resubmit_message", Execute(token, Guid.NewGuid()));
+
+        Assert.AreEqual(1, host.Get<McpTestHost.RecordingManagerClient>().Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task Capabilities_name_the_key_and_when_it_expires()
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true }, entra: true,
+            policy: p => p.AllowAgentKeys = true, agentKeys: true);
+        var expires = DateTime.UtcNow.Date.AddDays(20);
+        var key = await McpAgentKeyAuthenticationTests.IssueAsync(host, "sre-agent", customize: k => k.ExpiresAtUtc = expires);
+        await using var client = await host.CreateClientAsync(key);
+
+        var caller = (await CallAsync(client, "nimbus_get_capabilities", new())).GetProperty("caller");
+
+        Assert.IsTrue(caller.GetProperty("isWorkload").GetBoolean());
+        Assert.AreEqual("sre-agent", caller.GetProperty("agentId").GetString());
+        Assert.AreEqual(McpAgentKeyGovernanceTests.KeyIdOf(key), caller.GetProperty("agentKeyId").GetString());
+        Assert.AreEqual(expires, caller.GetProperty("credentialExpiresAtUtc").GetDateTime().ToUniversalTime());
+    }
+
+    private static Task<McpTestHost> StartAsync(McpTestHost.StubAccess access, bool entra = false, Action<McpAccessSettings>? policy = null, bool agentKeys = false)
     {
         var store = new InMemoryMessageStore();
         if (policy is not null)
@@ -340,6 +454,8 @@ public class OperationJournalToolsTests
             services.AddSingleton(endpoints.Instance);
         }
 
+        if (agentKeys)
+            return McpTestHost.StartEntraAsync(new Dictionary<string, string?> { ["NimBus:Mcp:AgentKeys:Enabled"] = "true" }, Configure);
         return entra ? McpTestHost.StartEntraAsync(Configure) : McpTestHost.StartLocalDevelopmentAsync(Configure);
     }
 

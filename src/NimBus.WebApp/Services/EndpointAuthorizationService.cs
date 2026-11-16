@@ -109,6 +109,11 @@ public partial class EndpointAuthorizationService : IEndpointAuthorizationServic
             return new CurrentUserAccess();
         }
 
+        // Spec 052 §6.7: an MCP agent key is matched as its agent only, never as an Owner or
+        // PiiReader, and never through the compat admin marker or code-defined role assignments.
+        if (AgentApiKeys.McpAgentKeyDefaults.Read(user) is { } key)
+            return await ResolveAgentKeyAsync(key);
+
         var emails = ResolveEmails(user);
         var objectId = user.FindFirst(OidClaimType)?.Value ?? user.FindFirst(OidLongClaimType)?.Value;
         var identifiers = objectId == null ? emails : emails.Append(objectId).ToList();
@@ -160,6 +165,35 @@ public partial class EndpointAuthorizationService : IEndpointAuthorizationServic
             EndpointRoles = endpointRoles,
         };
     }
+
+    private async Task<CurrentUserAccess> ResolveAgentKeyAsync(AgentApiKeys.McpAgentKeyCaller key)
+    {
+        IReadOnlyCollection<string> identifiers = [key.Principal];
+
+        // BypassEndpointAuthorization is refused outside Development, and the MCP hard limits
+        // (no skip, no payloads) hold regardless.
+        var siteRole = _configuration.GetValue<bool>("BypassEndpointAuthorization", false) ? AccessRole.Owner : AccessRole.None;
+        var snapshot = await _snapshotProvider.GetSnapshotAsync();
+        siteRole = Max(siteRole, CapForAgentKey(ResolveRole(snapshot.Site, identifiers)));
+
+        var endpointRoles = new Dictionary<string, AccessRole>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (endpointId, acl) in snapshot.Endpoints)
+        {
+            var role = CapForAgentKey(ResolveRole(acl, identifiers));
+            if (role != AccessRole.None)
+                endpointRoles[endpointId] = role;
+        }
+
+        return new CurrentUserAccess
+        {
+            SiteRole = siteRole,
+            IsPiiReader = false,
+            EndpointRoles = endpointRoles,
+        };
+    }
+
+    // An agent: entry on an Owner list is refused by the API; one that slipped in grants nothing.
+    private static AccessRole CapForAgentKey(AccessRole role) => role == AccessRole.Owner ? AccessRole.None : role;
 
     private AccessRole ResolveCompatSiteRole(ClaimsPrincipal user)
     {

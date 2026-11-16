@@ -142,12 +142,28 @@ public static class McpOperatorPermissions
             || McpAgentKeyDefaults.Read(user)?.Holds(McpAgentKeyDefaults.ObservePermission) == true;
     }
 
-    /// <summary>True when <paramref name="user"/> is a workload (no <c>scp</c>) holding <paramref name="role"/>.</summary>
+    /// <summary>
+    /// True when <paramref name="user"/> is a workload (no <c>scp</c>) holding <paramref name="role"/>:
+    /// an Entra app role, or for an MCP agent key the matching permission of its grant (Spec 052 §6.4).
+    /// </summary>
     public static bool IsWorkloadWithRole(ClaimsPrincipal user, string role)
     {
         ArgumentNullException.ThrowIfNull(user);
+        if (McpAgentKeyDefaults.Read(user) is { } key)
+            return KeyPermissionOf(role) is { } permission && key.Holds(permission);
+
         return !user.HasClaim(claim => claim.Type == "scp") && HasRole(user, role);
     }
+
+    // The key permission that stands for a workload app role. NimBus never mints roles claims.
+    private static string? KeyPermissionOf(string role) => role switch
+    {
+        ObserveRole => McpAgentKeyDefaults.ObservePermission,
+        ClassifyRole => McpAgentKeyDefaults.ClassifyPermission,
+        AnnotateRole => McpAgentKeyDefaults.AnnotatePermission,
+        ResubmitRole => McpAgentKeyDefaults.ResubmitPermission,
+        _ => null,
+    };
 
     /// <summary>True when <paramref name="user"/> holds the delegated payload scope.</summary>
     public static bool HasPayloadScope(ClaimsPrincipal user)

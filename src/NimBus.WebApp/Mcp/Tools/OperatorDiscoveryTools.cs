@@ -66,17 +66,25 @@ public sealed class OperatorDiscoveryTools
     public async Task<CapabilitiesResult> GetCapabilitiesAsync()
     {
         var access = await _authorization.GetCurrentUserAccessAsync().ConfigureAwait(false);
+        var user = _http.HttpContext?.User;
+        var key = NimBus.WebApp.Services.AgentApiKeys.McpAgentKeyDefaults.Read(user);
         var limits = _rateLimits.Enabled
-            ? new RequestLimits(_policies.Current?.RequestLimit ?? _rateLimits.Mcp.PermitLimit, _rateLimits.Mcp.WindowSeconds)
+            ? new RequestLimits(
+                Math.Min(_policies.Current?.RequestLimit ?? _rateLimits.Mcp.PermitLimit, key?.RequestsPerWindow ?? int.MaxValue),
+                _rateLimits.Mcp.WindowSeconds)
             : null;
 
-        var user = _http.HttpContext?.User;
         var isWorkload = user is not null && McpCaller.From(user, _runtime.Mode).IsWorkload;
 
         return new CapabilitiesResult(
             _catalog.Environment,
             DateTimeOffset.UtcNow,
-            new CallerInfo(_authorization.GetCurrentUserName(), access.ObjectId, access.SiteRole.ToString(), await _payloadAccess.CanReadPayloadsAsync().ConfigureAwait(false), isWorkload),
+            new CallerInfo(_authorization.GetCurrentUserName(), access.ObjectId, access.SiteRole.ToString(), await _payloadAccess.CanReadPayloadsAsync().ConfigureAwait(false), isWorkload)
+            {
+                AgentId = key?.AgentId,
+                AgentKeyId = key?.KeyId,
+                CredentialExpiresAtUtc = key?.ExpiresAtUtc,
+            },
             _runtime.Mode.ToString(),
             await _catalog.GetReadableEndpointIdsAsync().ConfigureAwait(false),
             await _actionAccess.PermittedActionsAsync(_classifications.CanRecord || _classifications.CanAnalyze).ConfigureAwait(false),
@@ -176,8 +184,18 @@ public sealed record CapabilitiesResult(
 /// <param name="ObjectId">Entra object id, when the caller is an Entra principal.</param>
 /// <param name="SiteRole">Site-wide role: None, Reader, Contributor or Owner.</param>
 /// <param name="CanReadPayloads">Whether nimbus_get_message may return payloads to this caller: PiiReader and, for Entra, the nimbus.payload.read scope.</param>
-/// <param name="IsWorkload">Whether the caller is an unattended app-only (workload) token; no person is present.</param>
-public sealed record CallerInfo(string? Name, string? ObjectId, string SiteRole, bool CanReadPayloads, bool IsWorkload = false);
+/// <param name="IsWorkload">Whether the caller is an unattended app-only (workload) token or an MCP agent key; no person is present.</param>
+public sealed record CallerInfo(string? Name, string? ObjectId, string SiteRole, bool CanReadPayloads, bool IsWorkload = false)
+{
+    /// <summary>The agent of an MCP agent key caller (Spec 052); null for an Entra caller.</summary>
+    public string? AgentId { get; init; }
+
+    /// <summary>The MCP agent key the caller authenticated with; null for an Entra caller.</summary>
+    public string? AgentKeyId { get; init; }
+
+    /// <summary>When the caller's MCP agent key expires, so an agent can warn its owner; null for an Entra caller.</summary>
+    public DateTime? CredentialExpiresAtUtc { get; init; }
+}
 
 /// <summary>Limits on an unattended workload's changes (Spec 044 Phase 2).</summary>
 /// <param name="ResubmitsPerWindow">Resubmits this client may make per window.</param>

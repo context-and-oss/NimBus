@@ -326,7 +326,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
                 return new(OperatorCommandStatus.Invalid, "Ticket id may use letters, digits, '.', '_' and '-' (max 64 chars).");
         }
 
-        var data = JsonConvert.SerializeObject(new
+        var data = OperatorAuditData.Serialize(new
         {
             reported,
             ticketId = normalizedTicket,
@@ -334,7 +334,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
             reason = context.Reason,
             idempotencyKey = context.IdempotencyKey,
             clientId = context.ClientId,
-        });
+        }, context.AgentKeyId);
         try
         {
             await _audit.LogRequiredAuditAsync(MessageAuditType.ReportEvent, _httpContextAccessor.HttpContext!,
@@ -481,7 +481,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
     }
 
     private static string Describe(OperatorCommandTarget target, OperatorCommandContext context) =>
-        JsonConvert.SerializeObject(new
+        OperatorAuditData.Serialize(new
         {
             channel = context.Channel.ToString(),
             reason = context.Reason,
@@ -491,7 +491,7 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
             priorStatus = target.Row.ResolutionStatus.ToString(),
             messageId = target.Version.LastMessageId,
             messageVersion = target.Version.Encode(),
-        });
+        }, context.AgentKeyId);
 
     private static string Verb(MessageAuditType type) => type == MessageAuditType.Skip ? "skipped" : "resubmitted";
 

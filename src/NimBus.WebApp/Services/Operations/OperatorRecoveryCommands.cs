@@ -183,7 +183,7 @@ public sealed partial class OperatorRecoveryCommands : IOperatorRecoveryCommands
     {
         ArgumentNullException.ThrowIfNull(context);
         var httpContext = _httpContextAccessor.HttpContext!;
-        var data = JsonConvert.SerializeObject(new
+        var data = OperatorAuditData.Serialize(new
         {
             channel = context.Channel.ToString(),
             reason = context.Reason,
@@ -191,7 +191,7 @@ public sealed partial class OperatorRecoveryCommands : IOperatorRecoveryCommands
             clientId = context.ClientId,
             sessionId,
             deferredCount,
-        });
+        }, context.AgentKeyId);
 
         if (!await _authorization.HasRoleFreshAsync(AccessRole.Contributor, endpointId))
         {
@@ -236,6 +236,8 @@ public sealed partial class OperatorRecoveryCommands : IOperatorRecoveryCommands
             ["idempotencyKey"] = context.IdempotencyKey,
             ["clientId"] = context.ClientId,
         };
+        if (context.AgentKeyId is { Length: > 0 } agentKeyId)
+            origin["agentKeyId"] = agentKeyId;
 
         if (!await _authorization.HasRoleFreshAsync(AccessRole.Contributor, endpointId))
         {
@@ -260,7 +262,7 @@ public sealed partial class OperatorRecoveryCommands : IOperatorRecoveryCommands
     }
 
     private static string Describe(OperatorCommandTarget target, OperatorCommandContext context, bool complete, string? errorType) =>
-        JsonConvert.SerializeObject(new
+        OperatorAuditData.Serialize(new
         {
             channel = context.Channel.ToString(),
             reason = context.Reason,
@@ -271,7 +273,7 @@ public sealed partial class OperatorRecoveryCommands : IOperatorRecoveryCommands
             priorStatus = target.Row.ResolutionStatus.ToString(),
             messageId = target.Version.LastMessageId,
             messageVersion = target.Version.Encode(),
-        });
+        }, context.AgentKeyId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Sending {AuditType} for event {EventId} on {EndpointId} failed; the settlement claim was released")]
     private static partial void LogSettlementNotSent(ILogger logger, Exception exception, MessageAuditType auditType, string eventId, string endpointId);
