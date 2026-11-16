@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
+import moment from "moment";
 import Monitor, {
   BACKLOG_ELEVATED,
   BACKLOG_HIGH,
@@ -79,6 +80,7 @@ interface EndpointOptions {
   blocked?: number;
   /** Backlog at the oldest sample — lower than current means "growing". */
   pendingWas?: number;
+  heartbeat?: { liveness: string; answeredMsAgo?: number };
 }
 
 function endpoint({
@@ -93,6 +95,7 @@ function endpoint({
   acknowledgedBy,
   blocked,
   pendingWas,
+  heartbeat,
 }: EndpointOptions): MonitorEndpoint {
   const now = Date.now();
   const samples =
@@ -116,6 +119,12 @@ function endpoint({
     firstFailureAt,
     isFreshFailure: false,
     blockedSessionCount: blocked,
+    heartbeat: heartbeat
+      ? ({
+          liveness: heartbeat.liveness,
+          lastAnsweredUtc: heartbeat.answeredMsAgo === undefined ? undefined : moment(now - heartbeat.answeredMsAgo),
+        } as MonitorEndpoint["heartbeat"])
+      : undefined,
     ack: acked
       ? {
           reason: "",
@@ -135,6 +144,10 @@ const counts = (published: number, handled: number, failed: number, queueMs?: nu
   queue: { count: queueMs === undefined ? 0 : 10, avgMs: queueMs ?? 0, minMs: 0, maxMs: 0 },
   processing: { count: processingMs === undefined ? 0 : 10, avgMs: processingMs ?? 0, minMs: 0, maxMs: 0 },
 });
+
+/** A summary tile, found by its label. The endpoint table has a Backlog column too. */
+const tile = (label: string) =>
+  within(screen.getByRole("region", { name: "Fleet summary" })).getByText(label).parentElement!;
 
 afterEach(() => {
   mocks.endpoints = [];
@@ -249,7 +262,7 @@ describe("failedPerMinuteSeries", () => {
 });
 
 describe("Monitor wall", () => {
-  it("summarises the fleet in the health ring", () => {
+  it("summarises the fleet in the health ring and leaves out states no endpoint is in", () => {
     mocks.endpoints = [
       endpoint({ id: "AEndpoint" }),
       endpoint({ id: "BEndpoint", failed: 2, firstFailureAt: Date.now() }),
@@ -260,10 +273,42 @@ describe("Monitor wall", () => {
 
     expect(screen.getByRole("img", { name: "2 of 3 endpoints healthy" })).toBeDefined();
     expect(screen.getByText("failing")).toBeDefined();
-    expect(screen.getByText("queued")).toBeDefined();
+    expect(screen.queryByText("acknowledged")).toBeNull();
+    expect(screen.queryByText("queued")).toBeNull();
   });
 
-  it("names each endpoint's state in plain words with the count behind it", () => {
+  it("says all healthy when no endpoint is failing or queued", () => {
+    mocks.endpoints = [endpoint({ id: "AEndpoint" }), endpoint({ id: "BEndpoint" })];
+
+    render(<Monitor />);
+
+    expect(screen.getByText("all healthy")).toBeDefined();
+  });
+
+  it("keeps the header to the platform name", () => {
+    mocks.endpoints = [endpoint({ id: "AEndpoint" })];
+
+    render(<Monitor />);
+
+    expect(screen.getByText("Test")).toBeDefined();
+    // The footer says when the page last updated; the header no longer repeats the interval.
+    expect(screen.queryByText(/Auto-refresh|ACK to silence|read-only/)).toBeNull();
+    expect(screen.getByText(/every 5 s/)).toBeDefined();
+  });
+
+  it("charts the last hour and the last three days", () => {
+    mocks.endpoints = [endpoint({ id: "AEndpoint" })];
+
+    render(<Monitor />);
+
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "Last hour",
+      "Last 3 days",
+      "Endpoints",
+    ]);
+  });
+
+  it("names each endpoint's state in plain words, with the failed count behind a failing one", () => {
     mocks.token = "nbdt_abc"; // read-only: every row shows its badge
     mocks.endpoints = [
       endpoint({ id: "Billing", failed: 7, firstFailureAt: Date.now() }),
@@ -277,10 +322,19 @@ describe("Monitor wall", () => {
     const badge = (id: string) => within(screen.getByRole("row", { name: new RegExp(id) }));
     expect(badge("Billing").getByText("failing · 7")).toBeDefined();
     expect(badge("Orders").getByText("acked · 2")).toBeDefined();
-    expect(badge("Agent").getByText("queued · 105")).toBeDefined();
+    // A queued endpoint's count is its backlog, which the column beside the badge shows.
+    expect(badge("Agent").getByText("queued")).toBeDefined();
+    expect(badge("Agent").getByText("105")).toBeDefined();
+    expect(badge("Agent").getByText("· 5 deferred")).toBeDefined();
     expect(badge("Erp").getByText("healthy")).toBeDefined();
-    // The badge carries the failed count, so the table no longer repeats it.
-    expect(screen.queryByRole("columnheader", { name: "Unresolved" })).toBeNull();
+    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Endpoint",
+      "State",
+      "Backlog",
+      "In",
+      "Processing",
+      "Heartbeat",
+    ]);
   });
 
   it("splits unresolved failures into failed, dead-lettered and unsupported", () => {
@@ -291,7 +345,26 @@ describe("Monitor wall", () => {
     expect(screen.getByText("210 failed · 16 dead-lettered · 4 unsupported")).toBeDefined();
   });
 
-  it("adds up blocked sessions and names the endpoints with most", () => {
+  it("leaves parts that are zero out of a tile's breakdown", () => {
+    mocks.endpoints = [endpoint({ id: "Billing", failed: 5, pending: 12, firstFailureAt: Date.now() })];
+
+    render(<Monitor />);
+
+    expect(within(tile("Unresolved failures")).getByText("5 failed")).toBeDefined();
+    expect(within(tile("Backlog")).getByText("12 pending")).toBeDefined();
+  });
+
+  it("says so in the tiles when nothing failed, is blocked or is waiting", () => {
+    mocks.endpoints = [endpoint({ id: "Billing", blocked: 0 })];
+
+    render(<Monitor />);
+
+    expect(within(tile("Unresolved failures")).getByText("nothing failed")).toBeDefined();
+    expect(within(tile("Blocked sessions")).getByText("nothing blocked")).toBeDefined();
+    expect(within(tile("Backlog")).getByText("nothing waiting")).toBeDefined();
+  });
+
+  it("adds up blocked sessions and names the endpoint with most", () => {
     mocks.endpoints = [
       endpoint({ id: "Billing", failed: 2, blocked: 9, deferred: 61 }),
       endpoint({ id: "Warehouse", failed: 1, blocked: 8, deferred: 39 }),
@@ -300,9 +373,12 @@ describe("Monitor wall", () => {
 
     render(<Monitor />);
 
-    const tile = screen.getByText("Blocked sessions").parentElement!;
-    expect(within(tile).getByText("17")).toBeDefined();
-    expect(within(tile).getByText("9 Billing · 8 Warehouse · 100 deferred")).toBeDefined();
+    const blocked = tile("Blocked sessions");
+    expect(within(blocked).getByText("17")).toBeDefined();
+    expect(within(blocked).getByText("9 on Billing")).toBeDefined();
+    // Deferred messages are counted once, in the Backlog tile.
+    expect(within(blocked).queryByText(/deferred/)).toBeNull();
+    expect(within(tile("Backlog")).getByText("100 deferred")).toBeDefined();
   });
 
   it("shows a dash for blocked sessions when the server cannot tell", () => {
@@ -310,7 +386,8 @@ describe("Monitor wall", () => {
 
     render(<Monitor />);
 
-    expect(within(screen.getByText("Blocked sessions").parentElement!).getByText("–")).toBeDefined();
+    expect(within(tile("Blocked sessions")).getByText("–")).toBeDefined();
+    expect(within(tile("Blocked sessions")).getByText("not reported")).toBeDefined();
   });
 
   it("works out throughput, success rate and time to handle from the metrics feed", () => {
@@ -328,18 +405,25 @@ describe("Monitor wall", () => {
 
     render(<Monitor />);
 
-    const throughput = screen.getByText("Throughput now").parentElement!;
+    // The last hour's success rate rides on the throughput tile instead of a tile of its own.
+    const throughput = tile("Throughput now");
     expect(within(throughput).getByText("120")).toBeDefined();
-    expect(within(throughput).getByText("90 handled · 10 failed per min")).toBeDefined();
-    const success = screen.getByText("Success rate · last hour").parentElement!;
-    expect(within(success).getByText("90.5%")).toBeDefined();
-    expect(within(success).getByText(`263 of ${(2760).toLocaleString()} attempts failed`)).toBeDefined();
-    const handle = screen.getByText("Time to handle · last hour").parentElement!;
+    expect(within(throughput).getByText("90.5% success over the last hour")).toBeDefined();
+    expect(screen.queryByText("Success rate · last hour")).toBeNull();
+    const handle = tile("Time to handle · last hour");
     expect(within(handle).getByText("5.3 s")).toBeDefined();
     expect(within(handle).getByText("queue 4.0 s · processing 1.3 s")).toBeDefined();
   });
 
-  it("shows per-endpoint figures and calls out processing slower than usual", () => {
+  it("says when the last hour had no attempts to rate", () => {
+    mocks.endpoints = [endpoint({ id: "Billing" })];
+
+    render(<Monitor />);
+
+    expect(within(tile("Throughput now")).getByText("no attempts in the last hour")).toBeDefined();
+  });
+
+  it("shows per-endpoint figures and calls out failures and processing slower than usual", () => {
     mocks.endpoints = [endpoint({ id: "Billing", failed: 4, firstFailureAt: Date.now() })];
     mocks.metrics = {
       metrics: {
@@ -358,10 +442,49 @@ describe("Monitor wall", () => {
 
     const row = screen.getByRole("row", { name: /Billing/ });
     expect(within(row).getByText("878")).toBeDefined();
-    expect(within(row).getByText("14.1%")).toBeDefined();
+    expect(within(row).getByText("· 14.1% failed")).toBeDefined();
     expect(within(row).getByText("1.6 s")).toBeDefined();
     expect(within(row).getByText(/1\.6× usual/)).toBeDefined();
-    expect(within(row).getByText("9.0 s")).toBeDefined();
+    // Queue wait is part of the fleet's time to handle; the table no longer lists it per endpoint.
+    expect(within(row).queryByText("9.0 s")).toBeNull();
+  });
+
+  it("stays quiet about an endpoint that is behaving normally", () => {
+    mocks.endpoints = [endpoint({ id: "Billing", heartbeat: { liveness: "alive", answeredMsAgo: 20_000 } })];
+    mocks.metrics = {
+      metrics: {
+        lastHour: [],
+        fleet: counts(0, 0, 0),
+        endpoints: [{ endpointId: "billing", counts: counts(0, 100, 0, 50, 1000) }],
+      } as never,
+      history: {
+        lastThreeDays: [],
+        latencyLastDay: [],
+        endpoints: [{ endpointId: "Billing", processing: { count: 100, avgMs: 1000, minMs: 0, maxMs: 0 } }],
+      } as never,
+    };
+
+    render(<Monitor />);
+
+    const row = screen.getByRole("row", { name: /Billing/ });
+    expect(within(row).getByText("100")).toBeDefined();
+    expect(within(row).getByText("1.0 s")).toBeDefined();
+    expect(within(row).getByText("ok")).toBeDefined();
+    expect(within(row).queryByText(/usual/)).toBeNull();
+    expect(within(row).queryByText(/%/)).toBeNull();
+    expect(within(row).queryByText(/ago/)).toBeNull();
+  });
+
+  it("calls out a heartbeat that is late or missing, with when it last answered", () => {
+    mocks.endpoints = [
+      endpoint({ id: "Billing", heartbeat: { liveness: "missing", answeredMsAgo: (13 * 60 + 44) * 1000 } }),
+      endpoint({ id: "Orders", heartbeat: { liveness: "late", answeredMsAgo: 95_000 } }),
+    ];
+
+    render(<Monitor />);
+
+    expect(within(screen.getByRole("row", { name: /Billing/ })).getByText("missing · 13m 44s ago")).toBeDefined();
+    expect(within(screen.getByRole("row", { name: /Orders/ })).getByText("late · 1m 35s ago")).toBeDefined();
   });
 
   it("counts failing time from the oldest open failure", () => {
@@ -417,7 +540,7 @@ describe("Monitor wall", () => {
 
     render(<Monitor />);
 
-    expect(within(screen.getByText("Backlog").parentElement!).getByText("stable")).toBeDefined();
+    expect(within(tile("Backlog")).getByText("stable")).toBeDefined();
   });
 });
 
@@ -431,7 +554,6 @@ describe("Monitor with a dashboard token", () => {
     expect(mocks.dataOptions).toHaveBeenCalledWith({ token: "nbdt_abc" });
     expect(mocks.useAccess).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "ack" })).toBeNull();
-    expect(screen.getByText(/read-only dashboard/)).toBeDefined();
   });
 
   it("says when the token is refused and stays on the page", () => {

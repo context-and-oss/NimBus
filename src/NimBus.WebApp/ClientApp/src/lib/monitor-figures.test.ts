@@ -5,7 +5,6 @@ import {
   failRate,
   formatMs,
   formatPercent,
-  hourlySlots,
   lastCompleteMinute,
   successRate,
   timeToHandleMs,
@@ -75,21 +74,6 @@ describe("formatting", () => {
   it("reads bucket keys as UTC", () => {
     expect(bucketStart("2026-11-10T12:34").toISOString()).toBe("2026-11-10T12:34:00.000Z");
     expect(bucketStart("2026-11-10T12").toISOString()).toBe("2026-11-10T12:00:00.000Z");
-  });
-});
-
-describe("hourlySlots", () => {
-  it("fills a sparse series with one slot per hour, ending with the current hour", () => {
-    const now = new Date("2026-11-10T12:34:56Z");
-    const slots = hourlySlots(
-      [{ timestamp: "2026-11-10T10", queue: stats(1, 5), processing: stats(1, 2) } as api.MonitorFeedLatencyPoint],
-      3,
-      now,
-    );
-
-    expect(slots.map((s) => s.timestamp)).toEqual(["2026-11-10T10", "2026-11-10T11", "2026-11-10T12"]);
-    expect(slots[0].point).toBeDefined();
-    expect(slots[1].point).toBeUndefined();
   });
 });
 

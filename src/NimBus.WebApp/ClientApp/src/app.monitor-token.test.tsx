@@ -56,7 +56,7 @@ describe("App on the Monitor with a dashboard token", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText(/read-only dashboard/, {}, { timeout: 5000 })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Live monitor" }, { timeout: 5000 })).toBeTruthy();
     // Let every effect that might fetch on mount run.
     await new Promise((resolve) => setTimeout(resolve, 50));
 
