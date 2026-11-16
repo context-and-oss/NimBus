@@ -13,6 +13,7 @@ using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NimBus.Core.Extensions;
 using NimBus.Core.Pipeline;
 using NimBus.Extensions.Notifications;
@@ -32,6 +33,16 @@ builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = tru
 builder.Services
     .AddOpenTelemetry()
     .UseFunctionsWorkerDefaults();
+
+// Aspire runs the Functions host with telemetryMode=OpenTelemetry, so the host no longer
+// forwards the worker's logs: they leave only through the OTLP exporter, which has no endpoint
+// in Azure. Writing them to the console as well puts the NimBus lines (Processing, Completed,
+// failures) into the container logs and Log Analytics, as for crm-adapter. The filters keep the
+// per-request Azure SDK, HttpClient and Polly chatter out, as crm-adapter's appsettings.json does.
+builder.Logging.AddConsole();
+builder.Logging.AddFilter("Azure", LogLevel.Warning);
+builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
+builder.Logging.AddFilter("Polly", LogLevel.Warning);
 
 // ServiceBusClient uses the same AzureWebJobsServiceBus connection as the triggers: a
 // namespace plus managed identity in Azure, a connection string locally.
