@@ -30,6 +30,13 @@ const DANGER_TEXT = "text-status-danger-ink dark:text-[#E4A096]";
 const WARNING_TEXT = "text-status-warning-ink dark:text-[#E7C783]";
 const SUCCESS_TEXT = "text-status-success-ink dark:text-[#7FD2A6]";
 
+/* The header is an ink band in both themes, like the sidebar, so it takes the lifted hues
+   outright instead of switching on the theme. */
+const ON_INK_MUTED = "text-[#A8A293]";
+const ON_INK_DANGER = "text-[#E4A096]";
+const ON_INK_SUCCESS = "text-[#7FD2A6]";
+const ON_INK_RULE = "border-[#3D3830]";
+
 /** Backlog (pending + deferred) at which an endpoint starts shouting. */
 export const BACKLOG_ELEVATED = 100;
 /** Backlog at which it gets the loudest treatment the amber band has. */
@@ -119,45 +126,49 @@ function MonitorWall({ token, canAck }: { token?: string; canAck: (endpointId: s
     return <AccessRefused readOnly={readOnly} />;
   }
 
+  // Everything but the banners that say so fades while any feed is stale.
+  const staleDim = cn(
+    "transition-[opacity,filter]",
+    data.isStale || metrics?.stale || history?.stale ? "opacity-70 grayscale" : "opacity-100",
+  );
+
   return (
     <div
       className={cn(
-        "min-h-screen flex flex-col gap-[0.8em] p-[0.9em]",
+        "min-h-screen flex flex-col",
         "bg-background text-foreground font-sans font-features-['tnum']",
         showCursor ? "" : "cursor-none",
       )}
       style={{ fontSize: WALL_FONT_SIZE }}
     >
-      {data.isStale && <StaleBanner lastRefreshAt={data.lastRefreshAt} now={nowMs} />}
-      {metrics?.stale && <StaleBanner label="Metrics are stale" lastRefreshAt={metrics.generatedAtUtc?.valueOf()} now={nowMs} retrySeconds={30} />}
-      {history?.stale && <StaleBanner label="History is stale" lastRefreshAt={history.generatedAtUtc?.valueOf()} now={nowMs} retrySeconds={300} />}
-      <div
-        className={cn(
-          // Fills the screen so the footer sits at its bottom edge when the wall has room to spare.
-          "flex-1 flex flex-col gap-[0.8em] transition-[opacity,filter]",
-          data.isStale || metrics?.stale || history?.stale ? "opacity-70 grayscale" : "opacity-100",
-        )}
-      >
-        <Hero
-          feed={data.feed}
-          clock={now}
-          unackedFresh={summary.unackedFreshFailures}
-          openSince={firstOpenFailureAt(data.endpoints)}
-          actionError={data.actionError}
-        />
-        <SummaryRow endpoints={data.endpoints} summary={summary} metrics={metrics} />
-        <ChartsRow metrics={metrics} history={history} />
-        <EndpointTable
-          endpoints={data.endpoints}
-          metrics={metrics}
-          history={history}
-          readOnly={readOnly}
-          canAck={canAck}
-          onAck={data.ack}
-          onUnack={data.unack}
-          now={nowMs}
-        />
-        <WallFoot ticker={data.ticker} lastRefreshAt={data.lastRefreshAt} isStale={data.isStale} now={nowMs} />
+      <Hero
+        className={staleDim}
+        feed={data.feed}
+        clock={now}
+        unackedFresh={summary.unackedFreshFailures}
+        openSince={firstOpenFailureAt(data.endpoints)}
+        actionError={data.actionError}
+      />
+      <div className="flex-1 flex flex-col gap-[0.8em] p-[0.9em]">
+        {data.isStale && <StaleBanner lastRefreshAt={data.lastRefreshAt} now={nowMs} />}
+        {metrics?.stale && <StaleBanner label="Metrics are stale" lastRefreshAt={metrics.generatedAtUtc?.valueOf()} now={nowMs} retrySeconds={30} />}
+        {history?.stale && <StaleBanner label="History is stale" lastRefreshAt={history.generatedAtUtc?.valueOf()} now={nowMs} retrySeconds={300} />}
+        {/* Fills the screen so the footer sits at its bottom edge when the wall has room to spare. */}
+        <div className={cn("flex-1 flex flex-col gap-[0.8em]", staleDim)}>
+          <SummaryRow endpoints={data.endpoints} summary={summary} metrics={metrics} />
+          <ChartsRow metrics={metrics} history={history} />
+          <EndpointTable
+            endpoints={data.endpoints}
+            metrics={metrics}
+            history={history}
+            readOnly={readOnly}
+            canAck={canAck}
+            onAck={data.ack}
+            onUnack={data.unack}
+            now={nowMs}
+          />
+          <WallFoot ticker={data.ticker} lastRefreshAt={data.lastRefreshAt} isStale={data.isStale} now={nowMs} />
+        </div>
       </div>
     </div>
   );
@@ -173,9 +184,10 @@ interface HeroProps {
   unackedFresh: number;
   openSince: number | undefined;
   actionError?: string;
+  className?: string;
 }
 
-const Hero = ({ feed, clock, unackedFresh, openSince, actionError }: HeroProps) => {
+const Hero = ({ feed, clock, unackedFresh, openSince, actionError, className }: HeroProps) => {
   const upperEnv = (feed?.environment ?? "").toUpperCase();
   // Under the title: the platform's name, and only what needs saying right now.
   const alerts = [
@@ -184,16 +196,17 @@ const Hero = ({ feed, clock, unackedFresh, openSince, actionError }: HeroProps) 
   ]
     .filter((alert) => alert !== undefined)
     .join(" · ");
-  // PROD gets a red-tinted pill; anything else borrows the warning amber so it still reads as
-  // "this is not prod".
-  const envClass =
-    upperEnv === "PROD" || upperEnv === "PRD"
-      ? cn("bg-status-danger/[0.14] border-status-danger/50", DANGER_TEXT)
-      : cn("bg-status-warning/12 border-status-warning/50", WARNING_TEXT);
 
   return (
-    <header className="flex flex-wrap items-center gap-x-[1.6em] gap-y-[0.8em] px-[1.4em] py-[0.8em] rounded-nb-md bg-card border border-border">
-      <div className="inline-flex items-center gap-[0.35em] pr-[0.9em] border-r border-border text-[1.8em] font-extrabold tracking-tight">
+    // The site's ink chrome laid across the top of the wall, edge to edge.
+    <header
+      className={cn(
+        "flex flex-wrap items-center gap-x-[1.6em] gap-y-[0.8em] px-[2.1em] py-[0.9em]",
+        "bg-ink text-canvas border-b border-[#2A2620]",
+        className,
+      )}
+    >
+      <div className={cn("inline-flex items-center gap-[0.35em] pr-[0.9em] border-r text-[1.8em] font-extrabold tracking-tight", ON_INK_RULE)}>
         <LogoMark />
         <span>
           NimBus<span className="text-primary">.</span>
@@ -202,38 +215,40 @@ const Hero = ({ feed, clock, unackedFresh, openSince, actionError }: HeroProps) 
       <div className="min-w-0">
         <h1 className="m-0 text-[1.35em] font-bold tracking-tight">Live monitor</h1>
         {(feed?.platformName || alerts) && (
-          <div className="font-mono text-[0.85em] text-muted-foreground mt-[0.3em]">
+          <div className={cn("font-mono text-[0.85em] mt-[0.3em]", ON_INK_MUTED)}>
             {feed?.platformName}
-            {alerts && <span className={DANGER_TEXT}>{`${feed?.platformName ? " · " : ""}${alerts}`}</span>}
+            {alerts && <span className={ON_INK_DANGER}>{`${feed?.platformName ? " · " : ""}${alerts}`}</span>}
           </div>
         )}
       </div>
       <div className="flex-1" />
       {upperEnv && (
+        // The sidebar's environment pill. Coral marks the place, not a status, so every
+        // environment gets the same one.
         <span
           className={cn(
             "font-mono text-[0.9em] tracking-[0.16em] uppercase font-bold",
             "px-[0.9em] py-[0.45em] rounded-nb-sm border inline-flex items-center gap-[0.5em]",
-            envClass,
+            "bg-primary-tint border-primary-200 text-primary-700",
           )}
         >
           <Pulser />
           {upperEnv}
         </span>
       )}
-      <div className="pl-[1.6em] border-l border-border">
-        <Label>{openSince ? "T+ since first failure" : "No open failures"}</Label>
+      <div className={cn("pl-[1.6em] border-l", ON_INK_RULE)}>
+        <Label className={ON_INK_MUTED}>{openSince ? "T+ since first failure" : "No open failures"}</Label>
         <div
           className={cn(
             "font-mono font-medium text-[2.4em] leading-none mt-[0.15em]",
-            openSince ? DANGER_TEXT : SUCCESS_TEXT,
+            openSince ? ON_INK_DANGER : ON_INK_SUCCESS,
           )}
         >
           {openSince ? formatElapsed(clock.getTime() - openSince) : "--:--:--"}
         </div>
       </div>
-      <div className="pl-[1.6em] border-l border-border text-right">
-        <Label>
+      <div className={cn("pl-[1.6em] border-l text-right", ON_INK_RULE)}>
+        <Label className={ON_INK_MUTED}>
           {moment(clock).format("ddd DD MMM")} · UTC {moment(clock).utc().format("HH:mm")}
         </Label>
         <div className="font-mono font-medium text-[2.4em] leading-none mt-[0.15em]">{formatClock(clock)}</div>
@@ -273,10 +288,14 @@ interface SummaryShape {
 
 type Tone = "danger" | "warning" | "neutral";
 
-const TILE_TONE: Record<Tone, string> = {
-  danger: "bg-status-danger/10 border-status-danger border-[1.5px]",
-  warning: "bg-status-warning/10 border-status-warning border-[1.5px]",
-  neutral: "bg-card border-border border",
+/**
+ * The dot beside the label of a tile that needs attention. Tiles keep the card surface, like the
+ * site's stat tiles: the dot and the figure's colour carry the alarm.
+ */
+const TILE_DOT: Record<Tone, string | undefined> = {
+  danger: "bg-status-danger",
+  warning: "bg-status-warning",
+  neutral: undefined,
 };
 
 const SummaryRow = ({
@@ -332,6 +351,7 @@ const SummaryRow = ({
         title="Estimated from stored status: sessions with a failed, dead-lettered or pending hand-off message. A message dead-lettered on its first attempt does not block its session but is counted."
         tone={(summary.blockedSessionsTotal ?? 0) > 0 ? "warning" : "neutral"}
         value={summary.blockedSessionsTotal === undefined ? "–" : formatBigNumber(summary.blockedSessionsTotal)}
+        valueClass={(summary.blockedSessionsTotal ?? 0) > 0 ? WARNING_TEXT : undefined}
         sub={
           summary.blockedSessionsTotal === undefined
             ? "not reported"
@@ -344,6 +364,7 @@ const SummaryRow = ({
         label="Backlog"
         tone={backlog >= BACKLOG_ELEVATED ? "warning" : "neutral"}
         value={formatBigNumber(backlog)}
+        valueClass={backlog >= BACKLOG_ELEVATED ? WARNING_TEXT : undefined}
         aside={trend === 0 ? "stable" : `${trend > 0 ? "▲" : "▼"} ${formatBigNumber(Math.abs(trend))} / min`}
         asideClass={trend > 0 ? WARNING_TEXT : undefined}
         sub={nonZeroParts(
@@ -397,10 +418,13 @@ const Tile = ({
   subClass?: string;
 }) => (
   <div
-    className={cn("flex-[1_1_13em] min-w-0 rounded-nb-md px-[1.1em] py-[0.9em] flex flex-col gap-[0.4em]", TILE_TONE[tone])}
+    className="flex-[1_1_13em] min-w-0 rounded-nb-md bg-card border border-border px-[1.1em] py-[0.9em] flex flex-col gap-[0.4em]"
     title={title}
   >
-    <Label>{label}</Label>
+    <Label className="flex items-center gap-[0.7em]">
+      {TILE_DOT[tone] && <span aria-hidden="true" className={cn("w-[0.8em] h-[0.8em] rounded-full shrink-0", TILE_DOT[tone])} />}
+      {label}
+    </Label>
     <div className="flex items-baseline justify-between gap-[0.6em]">
       <span className={cn("font-mono font-bold text-[2.3em] leading-none tracking-tight tabular-nums", valueClass)}>
         {value}
@@ -625,20 +649,24 @@ const EndpointTable = ({
   const lastHour = new Map((metrics?.endpoints ?? []).map((e) => [(e.endpointId ?? "").toLowerCase(), e.counts]));
   const lastDay = new Map((history?.endpoints ?? []).map((e) => [(e.endpointId ?? "").toLowerCase(), e.processing]));
   const rows = sortForTable(endpoints);
-  const header = "font-mono text-[0.72em] tracking-[0.1em] uppercase font-medium text-muted-foreground px-[0.8em] py-[0.5em]";
+  // The table runs edge to edge in its panel. Each edge cell's padding comes to the panel title's
+  // 1.2em in that cell's own font size, so the columns line up with the title above them.
+  const header =
+    "font-mono text-[0.72em] tracking-[0.1em] uppercase font-semibold text-muted-foreground px-[1.11em] py-[0.7em] first:pl-[1.85em] last:pr-[1.85em]";
 
   return (
-    <section aria-label="Endpoints" className="rounded-nb-md bg-card border border-border pt-[0.9em] pb-[0.3em]">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-[1.5em] gap-y-[0.3em] px-[1.2em] pb-[0.5em]">
+    <section aria-label="Endpoints" className="rounded-nb-md bg-card border border-border overflow-hidden">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-[1.5em] gap-y-[0.3em] px-[1.2em] pt-[0.9em] pb-[0.7em]">
         <h2 className="m-0 text-[0.85em] font-extrabold tracking-[0.12em] uppercase">Endpoints</h2>
         <span className="text-[0.8em] text-muted-foreground">
           {endpoints.length} total · failing first · counts for the last hour
         </span>
       </div>
-      <div className="overflow-x-auto px-[0.4em]">
+      <div className="overflow-x-auto">
         <table className="w-full min-w-[46em] border-collapse font-mono text-[0.9em]">
           <thead>
-            <tr>
+            {/* The header band of the site's tables. */}
+            <tr className="bg-muted border-y border-border">
               <th scope="col" className={cn(header, "text-left")}>Endpoint</th>
               <th scope="col" className={cn(header, "text-left")}>State</th>
               <th scope="col" className={cn(header, "text-right")}>Backlog</th>
@@ -666,13 +694,6 @@ const EndpointTable = ({
       </div>
     </section>
   );
-};
-
-const ROW_TONE: Record<EndpointState, string> = {
-  nogo: "bg-status-danger/10 border-y-[1.5px] border-status-danger",
-  acked: "border-b border-dashed border-border-strong",
-  hold: "bg-status-warning/10 border-b border-border",
-  go: "border-b border-border",
 };
 
 const EndpointRow = ({
@@ -708,11 +729,12 @@ const EndpointRow = ({
   const backlog = backlogTotal(endpoint);
   const deferred = endpoint.status.deferredCount ?? 0;
   const muted = "text-muted-foreground";
-  const cell = "px-[0.8em] py-[0.55em] text-right whitespace-nowrap";
+  const cell = "px-[0.8em] py-[0.55em] text-right whitespace-nowrap last:pr-[1.33em]";
 
   return (
-    <tr className={ROW_TONE[state]}>
-      <th scope="row" className={cn("px-[0.8em] py-[0.55em] text-left font-sans text-[1.1em] font-bold", state === "acked" && muted)}>
+    // Rows stay on the card surface, as in the site's tables: the badge carries the state.
+    <tr className="border-b border-border last:border-b-0">
+      <th scope="row" className={cn("pl-[1.21em] pr-[0.8em] py-[0.55em] text-left font-sans text-[1.1em] font-bold", state === "acked" && muted)}>
         {endpoint.id}
         {unavailable && <span className={cn("ml-[0.6em] font-mono text-[0.65em] font-normal", WARNING_TEXT)}>storage unavailable</span>}
       </th>
@@ -789,22 +811,36 @@ const HeartbeatCell = ({ heartbeat, now }: { heartbeat?: api.MonitorFeedHeartbea
   }
 };
 
-// Plain words a newcomer can read off the wall; the count in the badge says how much.
-const STATE_BADGE: Record<EndpointState, { label: string; className: string }> = {
-  nogo: { label: "failing", className: "bg-status-danger text-white" },
-  acked: { label: "acked", className: "bg-muted text-muted-foreground" },
-  hold: { label: "queued", className: "bg-status-warning text-ink" },
-  go: { label: "healthy", className: cn("bg-status-success/15", SUCCESS_TEXT) },
+// Plain words a newcomer can read off the wall; the count in the badge says how much. The pills
+// are the site's: solid red like the sidebar's failed count, and its paired tints with a dot for
+// the rest.
+const STATE_BADGE: Record<EndpointState, { label: string; className: string; dot?: string }> = {
+  nogo: { label: "failing", className: "bg-status-danger border-status-danger text-white" },
+  acked: { label: "acked", className: "bg-muted border-border-strong text-muted-foreground", dot: "bg-ink-3" },
+  hold: {
+    label: "queued",
+    className: "bg-status-warning-50 border-status-warning/50 text-status-warning-ink dark:bg-yellow-950/40 dark:text-yellow-200",
+    dot: "bg-status-warning",
+  },
+  go: {
+    label: "healthy",
+    className: "bg-status-success-50 border-status-success/35 text-status-success-ink dark:bg-green-950/40 dark:text-green-200",
+    dot: "bg-status-success",
+  },
 };
 
 const StateBadge = ({ state, count, fresh }: { state: EndpointState; count?: number; fresh: boolean }) => (
   <span
     className={cn(
-      "font-mono text-[0.72em] tracking-[0.14em] uppercase font-bold px-[0.7em] py-[0.3em] rounded-nb-sm",
+      "inline-flex items-center gap-[0.6em] font-mono text-[0.72em] tracking-[0.14em] uppercase font-bold",
+      "px-[0.95em] py-[0.35em] rounded-full border",
       STATE_BADGE[state].className,
       fresh && "nb-monitor-pulse-card",
     )}
   >
+    {STATE_BADGE[state].dot && (
+      <span aria-hidden="true" className={cn("w-[0.65em] h-[0.65em] rounded-full", STATE_BADGE[state].dot)} />
+    )}
     {STATE_BADGE[state].label}
     {count !== undefined ? ` · ${formatBigNumber(count)}` : ""}
     {fresh ? " · new" : ""}
@@ -837,12 +873,15 @@ const AckButton = ({
     className={cn(
       "font-mono text-[0.72em] tracking-[0.14em] uppercase font-bold shrink-0",
       "min-h-[2.2em] px-[0.8em] rounded-nb-sm border",
+      // The wall's one action: an operator who can use it sees the site's outline button.
       acked
         ? cn("bg-status-success/[0.14] border-status-success/40", SUCCESS_TEXT)
-        : "bg-transparent text-muted-foreground border-border-strong",
+        : disabled
+          ? "bg-transparent text-muted-foreground border-border-strong"
+          : "bg-transparent text-primary-700 border-primary dark:text-primary-400",
       disabled
         ? "cursor-default"
-        : cn("transition-colors cursor-pointer", !acked && "hover:text-foreground hover:border-foreground/40"),
+        : cn("transition-colors cursor-pointer", !acked && "hover:bg-primary-tint dark:hover:bg-primary-900/40"),
       "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2",
     )}
     title={

@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   access: null as unknown,
   token: undefined as string | undefined,
   accessError: undefined as "unauthorized" | "forbidden" | undefined,
+  environment: "dev",
   metrics: {} as UseMonitorMetricsResult,
   useAccess: vi.fn(),
   dataOptions: vi.fn(),
@@ -39,7 +40,7 @@ vi.mock("hooks/use-monitor-data", () => ({
       loading: false,
       error: undefined,
       accessError: mocks.accessError,
-      feed: { environment: "dev", platformName: "Test", tokenAccess: mocks.token !== undefined, serverStale: false },
+      feed: { environment: mocks.environment, platformName: "Test", tokenAccess: mocks.token !== undefined, serverStale: false },
       isStale: false,
       ticker: [],
       telemetry: mocks.telemetry,
@@ -155,6 +156,7 @@ afterEach(() => {
   mocks.access = null;
   mocks.token = undefined;
   mocks.accessError = undefined;
+  mocks.environment = "dev";
   mocks.metrics = {};
   mocks.useAccess.mockClear();
   mocks.dataOptions.mockClear();
@@ -541,6 +543,69 @@ describe("Monitor wall", () => {
     render(<Monitor />);
 
     expect(within(tile("Backlog")).getByText("stable")).toBeDefined();
+  });
+});
+
+describe("Monitor in the site's colours", () => {
+  it("gives every environment the sidebar's coral pill, production included", () => {
+    mocks.environment = "prod";
+    mocks.endpoints = [endpoint({ id: "AEndpoint" })];
+
+    render(<Monitor />);
+
+    const pill = screen.getByText("PROD");
+    expect(pill.className).toContain("bg-primary-tint");
+    expect(pill.className).not.toMatch(/status-(danger|warning)/);
+  });
+
+  it("marks an alarmed tile with a status dot and leaves its surface plain", () => {
+    mocks.endpoints = [endpoint({ id: "Billing", failed: 5, pending: 200, firstFailureAt: Date.now() })];
+
+    render(<Monitor />);
+
+    const failures = tile("Unresolved failures");
+    expect(failures.className).toContain("bg-card");
+    expect(failures.className).not.toMatch(/bg-status-/);
+    expect(failures.querySelector("[aria-hidden='true']")?.className).toContain("bg-status-danger");
+    expect(tile("Backlog").querySelector("[aria-hidden='true']")?.className).toContain("bg-status-warning");
+    // A tile with nothing to report carries no dot.
+    expect(tile("Time to handle · last hour").querySelector("[aria-hidden='true']")).toBeNull();
+  });
+
+  it("leaves a failing or queued row untinted: the badge carries the state", () => {
+    mocks.token = "nbdt_abc";
+    mocks.endpoints = [
+      endpoint({ id: "Billing", failed: 7, firstFailureAt: Date.now() }),
+      endpoint({ id: "Agent", pending: 100 }),
+    ];
+
+    render(<Monitor />);
+
+    for (const id of ["Billing", "Agent"]) {
+      expect(screen.getByRole("row", { name: new RegExp(id) }).className).not.toMatch(/bg-status-/);
+    }
+    const failing = within(screen.getByRole("row", { name: /Billing/ })).getByText("failing · 7");
+    expect(failing.className).toContain("rounded-full");
+    expect(failing.className).toContain("bg-status-danger");
+  });
+
+  it("offers ACK in the action colour only to someone who can use it", () => {
+    mocks.access = {
+      siteRole: "reader",
+      endpointRoles: [{ endpointId: "billingendpoint", role: "contributor" }],
+    };
+    mocks.endpoints = [
+      endpoint({ id: "BillingEndpoint", failed: 4, firstFailureAt: Date.now() }),
+      endpoint({ id: "OrdersEndpoint", failed: 2, firstFailureAt: Date.now() }),
+    ];
+
+    render(<Monitor />);
+
+    const [billing, orders] = ["BillingEndpoint", "OrdersEndpoint"].map((id) =>
+      within(screen.getByRole("row", { name: new RegExp(id) })).getByRole("button", { name: "ack" }),
+    );
+    expect(billing.className).toContain("border-primary");
+    expect(orders.className).not.toContain("border-primary");
   });
 });
 
