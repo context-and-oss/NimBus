@@ -595,6 +595,23 @@ The Resolver also mails the people who subscribe on an endpoint's **Alerts** tab
 
 The Azure deployment has no Mailpit and leaves alert mail off.
 
+### Endpoint alert webhook (Alerts tab → your receiver)
+
+The same subscription dialog takes a webhook URL
+([how it works](../../docs/notifications.md#webhook-alerts)). A local run switches alert webhooks
+on with a development-only signing key and lets the Resolver call an `http` receiver on your
+machine.
+
+1. Start something that listens for a POST, for example on `http://localhost:8099/hook`.
+2. In **nimbus-ops**, open the endpoint list, choose **Configure alerts…** on ErpEndpoint and
+   subscribe that URL (type *Webhook*, frequency *Every 5 minutes*). Copy the signing secret the
+   dialog shows; it is shown once.
+3. Flip **Error mode** ON in **erp-web** and create an account in **crm-web**. The receiver gets
+   one signed POST with the endpoint, event and session ids. Further failures within the five
+   minutes send nothing.
+
+The Azure deployment leaves alert webhooks off.
+
 ### Failure reasons (Integration Intelligence showcase)
 
 Error mode throws a *selectable* failure so the NimBus WebApp's

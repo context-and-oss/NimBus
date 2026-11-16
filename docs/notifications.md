@@ -14,8 +14,9 @@ routing, rate limiting, and deduplication so a cascading outage cannot bury the 
 > the web UI.
 
 > **Two alert mechanisms.** This extension runs inside an adapter and sends to recipients fixed
-> in code. Separately, the Resolver mails the people who subscribe on an endpoint's **Alerts** tab
-> in the management WebApp; see [Endpoint alerts (Alerts tab)](#endpoint-alerts-alerts-tab).
+> in code. Separately, the Resolver notifies the subscribers on an endpoint's **Alerts** tab in
+> the management WebApp, by mail or by a signed call to a webhook; see
+> [Endpoint alerts (Alerts tab)](#endpoint-alerts-alerts-tab).
 
 ## Quick start
 
@@ -278,44 +279,117 @@ Adding a channel never requires touching the observer or the core handler — ne
 
 ## Endpoint alerts (Alerts tab)
 
-The management WebApp's endpoint page has an **Alerts** tab where an endpoint Owner subscribes an
-email address to the endpoint. The Resolver mails those subscribers; no adapter code is involved.
+An endpoint Owner subscribes an email address or a webhook URL to an endpoint, from the
+endpoint's menu on the endpoint list (**Configure alerts…**). The endpoint page's **Alerts** tab
+lists the subscriptions. The Resolver notifies those subscribers; no adapter code is involved.
 
 | | Notification channels (above) | Endpoint alerts |
 |---|---|---|
 | Runs in | the adapter (`AddNimBusNotifications`) | the Resolver |
-| Recipients | fixed in code (`EmailChannelOptions.To`) | each subscription's address, managed in the WebApp |
+| Recipients | fixed in code (`EmailChannelOptions.To`) | each subscription's address or URL, managed in the WebApp |
 | Triggers | handler failure, dead-letter, session block, circuit change | a recorded Failed or DeadLettered outcome |
-| Delivery | Webhook, Teams, Email (SendGrid or SMTP) | Email over SMTP |
+| Delivery | Webhook, Teams, Email (SendGrid or SMTP) | Email over SMTP, or a signed HTTPS POST |
 
-### When a subscriber is mailed
+### When a subscriber is notified
 
-After the Resolver records an outcome and completes the message, it mails the endpoint's
+After the Resolver records an outcome and completes the message, it notifies the endpoint's
 subscribers when the outcome is **Failed** or **DeadLettered** and it changed the endpoint's
-state. A late duplicate that changed nothing sends no mail. A subscription gets the mail when:
+state. A late duplicate that changed nothing notifies nobody. A subscription is notified when:
 
-- its type includes `mail` (`mail`, or a `;`/`,` list such as `mail;teams`);
+- its type is `mail` and [alert mail](#mail-configuration) is on, or its type is `webhook` and
+  [alert webhooks](#webhook-configuration) are on. A type can name both (`mail;webhook`);
 - its event-type filter is empty or contains the event's type (exact match);
 - it has no payload filter. Payload filters aren't evaluated, so those subscriptions are skipped
   with a warning in the Resolver log.
 
-Webhook and Teams subscriptions aren't delivered yet.
+Teams subscriptions aren't delivered.
 
-**Frequency.** Each subscription is mailed at most once per its frequency (hourly, daily or weekly
-in the WebApp; stored in seconds). Failures inside the window are not mailed and not summarized
-later. Several Resolver instances can process failures at the same time, so the Resolver claims the
-window in the store before it sends: a burst of failures sends one mail. If delivery fails, the
-window is released and the next failure tries again. A frequency of `0` mails every failure.
+**Frequency.** Each subscription is notified at most once per its frequency (every 5 or 15
+minutes, hourly, daily or weekly in the WebApp; stored in seconds). Failures inside the window
+are not sent and not summarized later. Several Resolver instances can process failures at the
+same time, so the Resolver claims the window in the store before it sends: a burst of failures
+notifies once. If nothing could be delivered, the window is released and the next failure tries
+again. A frequency of `0`, which only the REST API can set, notifies about every failure. The
+time of the last notification is stored to the minute, so a short window is accurate to about a
+minute.
 
-**Content.** The subject is `[NimBus] {Endpoint}: {EventType} failed` (or `was dead-lettered`). The
+Notifying is best-effort and happens after the message is settled: a slow or failing mail server
+or webhook never delays or dead-letters a message. Failures are logged under
+`NimBus.Resolver.Alerts`.
+
+### Mail alerts
+
+The subject is `[NimBus] {Endpoint}: {EventType} failed` (or `was dead-lettered`). The
 mail has a plain-text and an HTML part with the endpoint, event type, event ID, session ID, status,
 time, the error text (cut to 500 characters), and links to the event and the endpoint in the
 WebApp. The event payload is never included.
 
-Notifying is best-effort and happens after the message is settled: a slow or failing mail server
-never delays or dead-letters a message. Failures are logged under `NimBus.Resolver.Alerts`.
+### Webhook alerts
 
-### Configuration
+A webhook subscription is meant to wake something up: an automation, an incident bot, or an
+agent that then reads the failure through the [operator MCP endpoint](mcp-server.md) or the REST
+API under its own role. The request therefore carries ids only, never the payload or the error
+text.
+
+```http
+POST /hooks/nimbus HTTP/1.1
+Content-Type: application/json; charset=utf-8
+User-Agent: NimBus-Alerts
+X-NimBus-Subscription: 6f0c0a3e-…
+X-NimBus-Delivery: 0b9a5c1e-…
+X-NimBus-Timestamp: 1795348800
+X-NimBus-Signature: v1=8412512ba26195f25e006213dfd021afb3ef4dba30a1860b413e4dffa5355a90
+
+{"version":1,"endpointId":"ErpEndpoint","eventId":"c709d881-…","sessionId":"344b95f7-…","eventTypeId":"CrmAccountCreated","status":"Failed","occurredAtUtc":"2026-11-16T00:35:55.129Z"}
+```
+
+`status` is `Failed` or `DeadLettered`. `sessionId` and `eventTypeId` can be `null`. Any 2xx
+answer counts as delivered. The Resolver waits 10 seconds, tries once and does not follow
+redirects, so a receiver should also sweep on a timer: a lost request then delays its work and
+does not lose it.
+
+**The signing secret.** When a webhook subscription is created, the WebApp shows its signing
+secret once (`nbwh_…`); the REST call returns it as `signingSecret`. It is not stored: it is
+derived from the deployment's signing key and the subscription id. To replace one subscription's
+secret, delete the subscription and create it again. Replacing the deployment's signing key
+replaces every secret.
+
+**Checking a request.** Compute HMAC-SHA256 over the timestamp header, a dot and the raw body,
+keyed with the secret, and compare it in constant time with the hex after `v1=`. Reject a
+timestamp more than a few minutes old. `X-NimBus-Delivery` is new for every request, for a
+receiver that drops duplicates.
+
+```csharp
+static bool IsFromNimBus(string secret, string timestamp, string body, string signatureHeader)
+{
+    var expected = "v1=" + Convert.ToHexStringLower(HMACSHA256.HashData(
+        Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"{timestamp}.{body}")));
+    return CryptographicOperations.FixedTimeEquals(
+               Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(signatureHeader))
+           && Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - long.Parse(timestamp)) <= 300;
+}
+```
+
+**Where the Resolver connects.** The URL must be HTTPS. The Resolver connects directly, not
+through a proxy, and only to public addresses: a host that resolves to a loopback, private or
+link-local address is refused. A deployment whose receivers are on a private network, or that
+needs a proxy, sets `AllowPrivateNetworks`.
+
+**Receivers that want an Entra token.** Some receivers accept a bearer token and not a
+signature, for example an [Azure SRE Agent HTTP trigger](https://learn.microsoft.com/azure/sre-agent/http-triggers).
+An administrator lists the receiver's URL prefix and the token audience in the Resolver's
+settings (`BearerTokens`). A request to a URL at or below that prefix then also carries
+`Authorization: Bearer <token>` for the Resolver's managed identity, with the scope
+`{Audience}/.default`. A subscription cannot choose the audience, so an endpoint Owner cannot
+have a token sent to a URL of their own. The token is never sent over HTTP. The Resolver's
+identity still needs whatever role the receiver asks for; NimBus assigns none. For an SRE Agent
+trigger that is `Microsoft.App/agents/threads/write` on the agent, and Microsoft documents the
+audience as `https://azuresre.dev`; confirm both against your agent.
+
+Each call to such a trigger starts a run, so pick a frequency of 5 minutes or longer for it: a
+burst of failures then starts one run.
+
+### Mail configuration
 
 Alert mail is off until both `Smtp:Host` and `From` are set. Settings live under
 `NimBus:Alerts:Mail` on the Resolver (app settings use `__`, for example
@@ -358,3 +432,41 @@ The Resolver's app settings are replaced on every deploy, so pass the same optio
 run without them turns alert mail off. Deploying the Bicep directly takes the matching `alertMail*`
 parameters ([deployment guide](deployment.md#41-core-infrastructure)). See the [CLI reference](cli.md)
 for every option.
+
+### Webhook configuration
+
+Alert webhooks are off until `SigningKey` is set. Settings live under `NimBus:Alerts:Webhook`
+(app settings use `__`, for example `NimBus__Alerts__Webhook__SigningKey`). The Resolver and the
+management WebApp must have the same `SigningKey`: the Resolver signs with it, and the WebApp
+needs it to show a new subscription its secret. Without it the WebApp refuses webhook
+subscriptions.
+
+| Setting | On | Default | Notes |
+|---|---|---|---|
+| `SigningKey` | Resolver, WebApp | (unset) | At least 32 characters, from a random generator. Keep it in a secret store |
+| `Timeout` | Resolver | `00:00:10` | Per delivery |
+| `BearerTokens:<n>:UrlPrefix` | Resolver | (none) | An https URL. Requests to a URL on the same host and port, at or below its path, carry a token |
+| `BearerTokens:<n>:Audience` | Resolver | (none) | The audience the token is requested for |
+| `AllowPrivateNetworks` | Resolver | `false` | Allow loopback, private and link-local addresses, and a configured proxy |
+| `AllowInsecureHttp` | Resolver, WebApp | `false` | Accept `http` URLs. For local runs |
+
+The Resolver logs at startup whether alert webhooks are on. Invalid settings (a short key, a
+non-positive `Timeout`, an incomplete `BearerTokens` entry) are logged as an error and leave
+alert webhooks off; they never stop the Resolver or alert mail.
+
+**Locally**, both Aspire AppHosts set a development-only signing key on the Resolver and the
+WebApp, and allow `http` and private addresses, so a receiver on your own machine works.
+
+**In Azure**, put the key in `NIMBUS_ALERT_WEBHOOK_SIGNING_KEY` and, for a receiver that wants a
+token, pass `--alert-webhook-token` to `nb setup` or `nb infra apply`:
+
+```bash
+export NIMBUS_ALERT_WEBHOOK_SIGNING_KEY="$(openssl rand -base64 48)"
+nb setup --solution-id nimbus --environment prod --resource-group rg-nimbus-prod \
+  --alert-webhook-token 'https://<agent host>/api/=https://azuresre.dev'
+```
+
+Keep the key: a run with another key changes every subscription's secret, and a run without it
+turns alert webhooks off. Deploying the Bicep directly takes `alertWebhookSigningKey` on both
+templates and `alertWebhookBearerTokens` on `deploy.core.bicep`
+([deployment guide](deployment.md#41-core-infrastructure)).
