@@ -29,9 +29,10 @@ namespace NimBus.WebApp.Tests;
 /// operations returns HTTP 403 (<see cref="ForbidResult"/>), as every other
 /// authorization check in the WebApp does, after writing the denial audit row.
 /// Covers resubmit, skip, resubmit with changes (the controller's cached check
-/// and the coordinator's fresh check) and deferred reprocess. Compose is covered
-/// by <see cref="ComposeNewEventTests"/>, and the shared handoff-settlement
-/// denial path by <see cref="HandoffOperatorImplementationTests"/>.
+/// and the coordinator's fresh check) and deferred reprocess (audited since
+/// GH#401). Compose is covered by <see cref="ComposeNewEventTests"/>, and the
+/// shared handoff-settlement denial path by
+/// <see cref="HandoffOperatorImplementationTests"/>.
 /// </summary>
 [TestClass]
 public sealed class EventImplementationAuthorizationDenialTests
@@ -105,7 +106,7 @@ public sealed class EventImplementationAuthorizationDenialTests
     }
 
     [TestMethod]
-    public async Task ReprocessDeferred_denied_returns_Forbid_and_writes_no_audit()
+    public async Task ReprocessDeferred_denied_returns_Forbid_and_writes_accessDenied_audit()
     {
         var harness = await CreateHarness();
 
@@ -115,10 +116,17 @@ public sealed class EventImplementationAuthorizationDenialTests
 
         Assert.IsInstanceOfType<ForbidResult>(result.Result);
 
-        // GH#88 deliberately adds no audit write to the deferred-reprocess
-        // denial path — lock in that no row lands anywhere in the store.
+        // GH#88 added no audit write here; GH#401 audits the denial as
+        // resubmit and skip denials are. The route carries no event id, so the
+        // row is filed under the endpoint with the session in its data.
         var audits = await harness.Store.SearchAudits(new AuditFilter(), continuationToken: null, maxItemCount: 50);
-        Assert.AreEqual(0, audits.Audits.Count());
+        var audit = audits.Audits.Single().Audit;
+        Assert.AreEqual(MessageAuditType.ReprocessDeferred, audit.AuditType);
+        Assert.IsTrue(audit.AccessDenied);
+        Assert.AreEqual(EndpointId, audit.EndpointId);
+        Assert.AreEqual("operator-mallory", audit.AuditorName);
+        StringAssert.Contains(audit.Data, "\"channel\":\"WebApp\"", StringComparison.Ordinal);
+        StringAssert.Contains(audit.Data, "\"sessionId\":\"session-1\"", StringComparison.Ordinal);
     }
 
     private static ResubmitWithChanges ChangedPayload() => new()

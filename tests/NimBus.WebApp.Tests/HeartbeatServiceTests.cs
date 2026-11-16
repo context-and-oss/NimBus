@@ -496,9 +496,11 @@ public class HeartbeatServiceTests
 
         Assert.IsFalse(await service.RunScheduledTickAsync());
 
-        var day = (await store.GetHeartbeatUptimeDays(start.Date)).Single(row => row.EndpointId == WorkerA);
-        Assert.AreEqual(1, day.Received);
-        Assert.AreEqual(300, day.ObservedSeconds);
+        // The five observed minutes straddle UTC midnight when the test runs just after it,
+        // and are then split across two day rows, so assert on the endpoint's total.
+        var days = (await store.GetHeartbeatUptimeDays(start.Date)).Where(row => row.EndpointId == WorkerA).ToList();
+        Assert.AreEqual(1, days.Sum(day => day.Received));
+        Assert.AreEqual(300, days.Sum(day => day.ObservedSeconds));
     }
 
     [TestMethod]

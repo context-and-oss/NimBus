@@ -75,8 +75,36 @@ public partial class EventImplementation
         if (!EndpointVerificationService.EndpointExists(platform, endpointId))
             return new NotFoundObjectResult("Endpoint not found");
 
+        // Audited as over MCP (OperatorRecoveryCommands), minus the deferred count the Web UI
+        // doesn't preview. The route carries no event id, so the row is filed under the endpoint.
+        var auditEndpointId = CanonicalEndpointId(endpointId);
+        var auditData = JsonConvert.SerializeObject(new
+        {
+            channel = WebAppCommand.Channel.ToString(),
+            reason = WebAppCommand.Reason,
+            idempotencyKey = WebAppCommand.IdempotencyKey,
+            clientId = WebAppCommand.ClientId,
+            sessionId,
+        });
+
         if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
+        {
+            await auditLogService.LogAuditAsync(MessageAuditType.ReprocessDeferred, httpContextAccessor.HttpContext!,
+                accessDenied: true, data: auditData, endpointId: auditEndpointId);
             return new ForbidResult();
+        }
+
+        // Resetting the session's block lets later events overtake a failure, so it runs only
+        // once its audit row exists.
+        try
+        {
+            await auditLogService.LogRequiredAuditAsync(MessageAuditType.ReprocessDeferred, httpContextAccessor.HttpContext!,
+                data: auditData, endpointId: auditEndpointId);
+        }
+        catch (AuditUnavailableException ex)
+        {
+            return new ObjectResult(ex.Message) { StatusCode = StatusCodes.Status503ServiceUnavailable };
+        }
 
         var result = await adminService.ReprocessDeferredAsync(endpointId, sessionId);
         return new OkObjectResult(result);
