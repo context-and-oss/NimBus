@@ -58,6 +58,44 @@ public sealed class McpEntraOptions
     /// <summary>The App ID URI. Default <c>api://{ClientId}</c>.</summary>
     public string? ApplicationIdUri { get; set; }
 
+    /// <summary>
+    /// The delegated scopes the app registration defines, by short name (<c>nimbus.observe</c>,
+    /// <c>nimbus.resubmit</c>, ...). NimBus advertises them in the protected-resource metadata and
+    /// names them in the 401 challenge, and MCP clients ask Entra for exactly these, so every one
+    /// must exist on the registration or sign-in fails. Empty (the default): every scope NimBus
+    /// understands. List fewer when the registration defines fewer, for example before adding the
+    /// scopes a new release introduces, or only <c>nimbus.observe</c> for read-only access.
+    /// </summary>
+    public string[] Scopes { get; set; } = [];
+
+    /// <summary>
+    /// <see cref="Scopes"/>, or every scope when it is empty, in <see cref="McpOperatorPermissions.AllScopes"/> order.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">An entry is blank or unknown, or <c>nimbus.observe</c> is missing.</exception>
+    public IReadOnlyList<string> ResolveScopes()
+    {
+        if (Scopes.Length == 0)
+            return McpOperatorPermissions.AllScopes;
+
+        var unknown = Scopes.Where(scope => string.IsNullOrWhiteSpace(scope)
+            || !McpOperatorPermissions.AllScopes.Contains(scope.Trim(), StringComparer.Ordinal)).ToList();
+        if (unknown.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"NimBus:Mcp:Entra:Scopes has entries that are blank or not NimBus scopes: '{string.Join("', '", unknown)}'. " +
+                $"Known scopes: {string.Join(", ", McpOperatorPermissions.AllScopes)}.");
+        }
+
+        var configured = Scopes.Select(scope => scope.Trim()).ToHashSet(StringComparer.Ordinal);
+        if (!configured.Contains(McpOperatorPermissions.ObserveScope))
+        {
+            throw new InvalidOperationException(
+                $"NimBus:Mcp:Entra:Scopes must include {McpOperatorPermissions.ObserveScope}: every MCP tool needs it.");
+        }
+
+        return McpOperatorPermissions.AllScopes.Where(configured.Contains).ToList();
+    }
+
     /// <summary>True when both <see cref="TenantId"/> and <see cref="ClientId"/> are set.</summary>
     public bool IsConfigured => !string.IsNullOrWhiteSpace(TenantId) && !string.IsNullOrWhiteSpace(ClientId);
 

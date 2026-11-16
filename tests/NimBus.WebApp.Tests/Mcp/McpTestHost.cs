@@ -84,13 +84,22 @@ internal sealed class McpTestHost : IAsyncDisposable
         }, configureServices);
 
     public static Task<McpTestHost> StartEntraAsync(Action<IServiceCollection>? configureServices = null)
-        => StartAsync("Production", new Dictionary<string, string?>
+        => StartEntraAsync(new Dictionary<string, string?>(), configureServices);
+
+    /// <summary>Entra mode with extra settings, such as <c>NimBus:Mcp:Entra:Scopes:0</c>.</summary>
+    public static Task<McpTestHost> StartEntraAsync(IReadOnlyDictionary<string, string?> extraSettings, Action<IServiceCollection>? configureServices = null)
+    {
+        var settings = new Dictionary<string, string?>
         {
             ["NimBus:Mcp:Enabled"] = "true",
             ["NimBus:Mcp:Entra:TenantId"] = TenantId,
             ["NimBus:Mcp:Entra:ClientId"] = ClientId,
             ["NimBus:Mcp:AllowedOrigins:0"] = "https://agents.example",
-        }, configureServices);
+        };
+        foreach (var (key, value) in extraSettings)
+            settings[key] = value;
+        return StartAsync("Production", settings, configureServices);
+    }
 
     /// <summary>The setting the Aspire AppHost passes, with or without the local-dev bypass.</summary>
     public static Task<McpTestHost> StartAspireAsync(bool localDevBypass)

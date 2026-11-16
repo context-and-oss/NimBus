@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ModelContextProtocol.Protocol;
+using NimBus.WebApp.Mcp;
 
 namespace NimBus.WebApp.Tests.Mcp;
 
@@ -189,6 +190,62 @@ public class McpOperatorEndpointTests
             "nimbus.settle", "nimbus.recover", "nimbus.edit",
         })
             CollectionAssert.Contains(scopes, $"api://{McpTestHost.ClientId}/{scope}");
+    }
+
+    [TestMethod]
+    public async Task Entra_challenge_names_every_scope_by_default()
+    {
+        await using var host = await McpTestHost.StartEntraAsync();
+
+        using var response = await host.PostToolsListAsync();
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        var expected = string.Join(' ', McpOperatorPermissions.AllScopes.Select(scope => $"api://{McpTestHost.ClientId}/{scope}"));
+        CollectionAssert.AreEqual(expected.Split(' '), ChallengeScopes(response));
+    }
+
+    [TestMethod]
+    public async Task Entra_configured_scopes_are_the_only_ones_advertised_and_challenged()
+    {
+        // #416: a registration that defines only some scopes. A client asks for the challenge's
+        // scope, or else every scope in the metadata; one the registration lacks fails sign-in.
+        await using var host = await McpTestHost.StartEntraAsync(new Dictionary<string, string?>
+        {
+            ["NimBus:Mcp:Entra:Scopes:0"] = "nimbus.observe",
+            ["NimBus:Mcp:Entra:Scopes:1"] = "nimbus.resubmit",
+        });
+        var expected = new[] { $"api://{McpTestHost.ClientId}/nimbus.observe", $"api://{McpTestHost.ClientId}/nimbus.resubmit" };
+
+        using var challenged = await host.PostToolsListAsync();
+        CollectionAssert.AreEqual(expected, ChallengeScopes(challenged));
+
+        using var metadata = await host.Server.CreateClient().GetAsync("/.well-known/oauth-protected-resource/mcp");
+        using var document = JsonDocument.Parse(await metadata.Content.ReadAsStringAsync());
+        var advertised = document.RootElement.GetProperty("scopes_supported").EnumerateArray().Select(e => e.GetString()).ToArray();
+        CollectionAssert.AreEqual(expected, advertised);
+    }
+
+    [TestMethod]
+    [DataRow("nimbus.unknown", DisplayName = "unknown scope")]
+    [DataRow("nimbus.resubmit", DisplayName = "without nimbus.observe")]
+    [DataRow(" ", DisplayName = "blank entry")]
+    public async Task Entra_refuses_to_start_with_unusable_configured_scopes(string scope)
+    {
+        var settings = new Dictionary<string, string?> { ["NimBus:Mcp:Entra:Scopes:0"] = scope };
+        if (scope != "nimbus.resubmit")
+            settings["NimBus:Mcp:Entra:Scopes:1"] = "nimbus.observe";
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => McpTestHost.StartEntraAsync(settings));
+
+        StringAssert.Contains(error.Message, "NimBus:Mcp:Entra:Scopes", StringComparison.Ordinal);
+    }
+
+    private static string[] ChallengeScopes(HttpResponseMessage response)
+    {
+        var challenge = string.Join(", ", response.Headers.WwwAuthenticate.Select(h => h.ToString()));
+        var match = System.Text.RegularExpressions.Regex.Match(challenge, "scope=\"([^\"]*)\"");
+        Assert.IsTrue(match.Success, $"The challenge has no scope parameter: {challenge}");
+        return match.Groups[1].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
     }
 
     [TestMethod]

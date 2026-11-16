@@ -458,8 +458,12 @@ In the tenant that signs in your operators:
      `nimbus_resubmit_with_changes`. Add them only if operators' agents should recover handoffs and
      deferred messages or edit payloads. Each only adds to the Contributor role (and, for
      `nimbus.edit`, PiiReader), and each tool also needs its switch in
-     [Settings → MCP access](#managing-access-in-the-webapp). A registration without them keeps
-     working: those tools answer `[PermissionDenied]`.
+     [Settings → MCP access](#managing-access-in-the-webapp). If you leave any scope out, list the
+     ones the registration does define in `NimBus__Mcp__Entra__Scopes`
+     ([step 2](#2-configure-the-webapp)). MCP clients ask Entra for every scope NimBus advertises,
+     and Entra refuses a sign-in that asks for a scope the registration lacks (`AADSTS650053`).
+     A NimBus upgrade that introduces scopes has the same effect: add the new scopes to the
+     registration before upgrading, or keep the list to the ones it has.
 3. **Add the endpoint URL as a second Application ID URI:** `https://<webapp>/mcp`, exactly as
    clients connect to it. MCP clients send that URL as the OAuth `resource` parameter, and Entra
    refuses a sign-in whose `resource` does not belong to the same app as the requested scopes
@@ -510,6 +514,7 @@ Set these app settings on the management WebApp:
 | `NimBus__Mcp__Entra__ClientId` | The MCP resource's client id from step 1.1, not a client from step 1.7 |
 | `NimBus__Mcp__Entra__ApplicationIdUri` | Only if you changed it from `api://<client-id>`. The scopes' identifier, not the endpoint URL from step 1.3 |
 | `NimBus__Mcp__Entra__Instance` | Only for a sovereign cloud; default `https://login.microsoftonline.com/` |
+| `NimBus__Mcp__Entra__Scopes__0`, `__1`, ... | Only when the registration defines fewer than all nine scopes: the short names it defines, for example `nimbus.observe`, `nimbus.resubmit`. Must include `nimbus.observe`. NimBus advertises only these and names them in the `401` challenge, so clients ask for nothing the registration lacks. List only `nimbus.observe` for a read-only endpoint. An unknown or blank entry stops the WebApp from starting |
 | `NimBus__Mcp__AllowedOrigins__0` | Only for browser-based MCP clients: their origin |
 | `NimBus__Mcp__MaxDeferredReprocess` | Only to change it: the most deferred messages one `nimbus_reprocess_deferred` may request. Default 200 |
 
@@ -524,9 +529,10 @@ keys, rather than serving an unauthenticated endpoint.
 ### 3. Verify
 
 - `GET https://<webapp>/.well-known/oauth-protected-resource/mcp` returns the resource metadata:
-  the authorization server and the nine scopes the server understands.
+  the authorization server and the scopes it accepts: all nine, or the ones in
+  `NimBus__Mcp__Entra__Scopes`.
 - `POST https://<webapp>/mcp` without a token returns `401` with a `WWW-Authenticate` header that
-  points at that metadata.
+  points at that metadata (`resource_metadata`) and names the same scopes (`scope`).
 - An MCP client that signs in with the `nimbus.observe` scope can call `nimbus_get_capabilities`.
   For Claude Code, add the server with the client registration from step 1.7 and the port of its
   redirect URI, then run `/mcp` in a `claude` session and authenticate `nimbus` in the browser:
@@ -553,6 +559,7 @@ can reach `/mcp`. Cloud-hosted agents need a path through the Application Gatewa
 | `AADSTS500113`: no reply address is registered | The client id is the MCP resource's own app id. Use the separate client registration ([step 1.7](#1-register-the-mcp-resource)) |
 | `AADSTS50011`: the redirect URI doesn't match | Register `http://localhost:<port>/callback` under **Mobile and desktop** on the client registration, with the same port as `--callback-port` |
 | `Request contains a property with duplicate values` when adding an app role | The role's value matches a scope ignoring case, for example `Nimbus.Observe` next to `nimbus.observe`. Use the `Nimbus.Workload.*` names ([step 1.5](#1-register-the-mcp-resource)) |
+| `AADSTS650053`: the application asked for a scope that doesn't exist (some clients, such as Azure SRE Agent, show only `invalid_client`) | The registration lacks a scope NimBus advertises, typically one a newer release added. Add it ([step 1.2](#1-register-the-mcp-resource)), or list the registration's scopes in `NimBus__Mcp__Entra__Scopes` ([step 2](#2-configure-the-webapp)) |
 | `AADSTS65001`: consent required | Pre-authorize the client on the MCP resource for the scopes it asks for, or grant admin consent |
 | `/.well-known/oauth-protected-resource/mcp` returns the WebApp's HTML page or a sign-in redirect instead of JSON | `/mcp` isn't enabled on this WebApp (`NimBus__Mcp__Enabled`), or its NimBus version predates the endpoint |
 | `403` when connecting | The site Owner's [access policy](#managing-access-in-the-webapp) refuses this person, client application or workload |
