@@ -16,7 +16,11 @@ namespace NimBus.WebApp.Mcp.Access;
 /// <param name="Detail">The tool, ticket or change summary.</param>
 public sealed record McpActivityItem(
     DateTime AtUtc, string Kind, MessageAuditType Type, string? EndpointId, string? EventId,
-    string? Auditor, string? ClientId, string? Reason, string? Detail);
+    string? Auditor, string? ClientId, string? Reason, string? Detail)
+{
+    /// <summary>The MCP agent key the call came with (Spec 052 §6.9); null for Entra callers.</summary>
+    public string? AgentKeyId { get; init; }
+}
 
 /// <summary>A client the policy refused, with how often.</summary>
 /// <param name="ClientId">The client application id.</param>
@@ -123,16 +127,17 @@ public sealed class McpActivityService
             return null;
 
         var clientId = data?.Value<string>("clientId");
+        var agentKeyId = data?.Value<string>("agentKeyId");
         if (audit.AuditType == MessageAuditType.McpAccessRefused)
         {
             return new McpActivityItem(at, RefusedKind, audit.AuditType, endpoint, eventId, audit.AuditorName, clientId,
-                data?.Value<string>("reason"), data?.Value<string>("tool"));
+                data?.Value<string>("reason"), data?.Value<string>("tool")) { AgentKeyId = agentKeyId };
         }
 
         return audit.AccessDenied
-            ? new McpActivityItem(at, RefusedKind, audit.AuditType, endpoint, eventId, audit.AuditorName, clientId, "role", Verb(audit.AuditType))
+            ? new McpActivityItem(at, RefusedKind, audit.AuditType, endpoint, eventId, audit.AuditorName, clientId, "role", Verb(audit.AuditType)) { AgentKeyId = agentKeyId }
             : new McpActivityItem(at, ActionKind, audit.AuditType, endpoint, eventId, audit.AuditorName, clientId,
-                data?.Value<string>("reason"), data?.Value<string>("ticketId"));
+                data?.Value<string>("reason"), data?.Value<string>("ticketId")) { AgentKeyId = agentKeyId };
     }
 
     private static string Verb(MessageAuditType type) => type switch

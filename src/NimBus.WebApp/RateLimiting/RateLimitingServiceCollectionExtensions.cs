@@ -129,14 +129,24 @@ public static partial class RateLimitingServiceCollectionExtensions
 
     // The site Owner's lowered MCP limit, or the deployment's. The policy is loaded by the
     // MCP request guard, which runs before the rate limiter.
-    private static int EffectiveMcpLimit(HttpContext context, RateLimitOptions options)
-        => context.RequestServices.GetService<NimBus.WebApp.Mcp.Access.IMcpAccessPolicyProvider>()?.Current?.RequestLimit
-           ?? options.Mcp.PermitLimit;
+    // An MCP agent key may carry a lower limit of its own (Spec 052 §6.8).
+    internal static int EffectiveMcpLimit(HttpContext context, RateLimitOptions options)
+    {
+        var limit = context.RequestServices.GetService<NimBus.WebApp.Mcp.Access.IMcpAccessPolicyProvider>()?.Current?.RequestLimit
+            ?? options.Mcp.PermitLimit;
+        return NimBus.WebApp.Services.AgentApiKeys.McpAgentKeyDefaults.Read(context.User)?.RequestsPerWindow is { } own && own >= 1
+            ? Math.Min(limit, own)
+            : limit;
+    }
 
-    // MCP tokens keep raw claim names (MapInboundClaims = false).
+    // MCP tokens keep raw claim names (MapInboundClaims = false). An MCP agent key has its own
+    // partition, so a leaked key that is being abused cannot exhaust its replacement's window.
     internal static string McpPartitionKey(HttpContext context, RateLimitOptions options)
     {
         var user = context.User;
+        if (NimBus.WebApp.Services.AgentApiKeys.McpAgentKeyDefaults.Read(user) is { } key)
+            return "mcp:agent-key:" + key.KeyId;
+
         var caller = user.FindFirstValue("oid") ?? user.FindFirstValue("sub") ?? UserPartitionKey(context, options);
         var client = user.FindFirstValue("azp") ?? user.FindFirstValue("appid");
         return $"mcp:{user.FindFirstValue("tid")}:{client}:{caller}";

@@ -15,7 +15,7 @@ are still on the roadmap.
 - **Title** in the spec: *NimBus Management API*.
 - **Spec version:** `1.0.0` — see [Versioning + stability](#versioning--stability) below.
 - **Route prefix:** every operation lives under `/api/v1/…`. The unversioned `/api/…` routes still work but are deprecated.
-- **Surface size:** 153 operations across 19 tags (Admin, Event, Endpoint, AccessControl, Agent, AgentKeys, DashboardTokens, McpAccess, Metrics, Monitor, MonitorFeed, EventType, Failed, Simulation, StorageHook, Application, Message, Audit, Heartbeat).
+- **Surface size:** 154 operations across 19 tags (Admin, Event, Endpoint, AccessControl, Agent, AgentKeys, DashboardTokens, McpAccess, Metrics, Monitor, MonitorFeed, EventType, Failed, Simulation, StorageHook, Application, Message, Audit, Heartbeat).
 - **Auth:** ASP.NET Identity cookie *and/or* Microsoft Entra ID (interactive browser flow + bearer-token flow). Effectively all `/api/…` endpoints require an authenticated principal. Two are reachable anonymously by design: `GET /api/v1/app/stats` (a liveness shape that discloses nothing to an anonymous caller — see [Application](#application)) and `POST /api/v1/storagehook/cosmos/{endpointId}` (gated by a shared webhook key rather than a principal). The agent API (`/api/v1/agent/*`) also accepts an agent API key in `X-NimBus-Agent-Key`, which admits nothing else — see [Agent API keys](authentication.md#agent-api-keys). Beyond `/api/…`, `/health`, `/alive` and `/ready` are anonymous.
 - **Schema generation:** NSwag reads `api-spec.yaml` pre-build and emits server contracts (`Controllers/ApiContract.g.cs`) plus a TypeScript client (`ClientApp/src/api-client/index.ts`) — see [Code generation](#code-generation).
 

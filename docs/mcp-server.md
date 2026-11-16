@@ -352,6 +352,7 @@ The policy covers:
 | Workloads may record classifications | Whether workloads with the `Nimbus.Workload.Classify` app role may call `nimbus_record_classification`. Off by default; effective only while workload tokens are accepted and **Classify failures** is on. |
 | Workloads may mark messages reported | Whether workloads with the `Nimbus.Workload.Annotate` app role may call `nimbus_set_message_reported`. Off by default. |
 | Workloads may resubmit | Whether workloads with the `Nimbus.Workload.Resubmit` app role may resubmit unattended, with the resubmits per agent per day and the unsuccessful resubmits per message (see [Unattended resubmits](#unattended-resubmits)). Off by default. |
+| Agent API keys | Whether hosted agents may connect with an agent API key issued for MCP (see [Agent API keys on /mcp](#agent-api-keys-on-mcp)). Off by default; effective only while workload tokens are accepted and the deployment sets `NimBus__Mcp__AgentKeys__Enabled`. The client list does not apply to keys. |
 | People | Everyone with a NimBus role, or only listed users and groups (email, user object id, or a group object id from the `groups` claim). Workloads are governed by the workload switch instead. |
 | Client applications | Any client Entra lets sign in, or only approved ones, matched on `azp` (then `appid`). Each approved client can be allowed or denied the tools that change messages. |
 | Endpoints | Hide endpoints from agents (they answer `[EndpointNotFound]`), and limit where agents may change messages. |
@@ -372,6 +373,50 @@ The policy is one record in shared storage (`IEndpointMetadataStore.GetMcpAccess
 SQL Server migration `0023_McpAccessSettings.sql`, a fixed-id document in the Cosmos settings
 container). The API is `GET`/`PUT /api/v1/admin/mcp/settings`, `POST /api/v1/admin/mcp/turn-off` and
 `GET /api/v1/admin/mcp/activity`.
+
+## Agent API keys on /mcp
+
+Some hosted agents can send only a fixed secret. Azure SRE Agent's MCP connector, for example,
+offers a bearer token field, and an Entra access token pasted there expires within about an hour.
+Such an agent can connect with an **MCP agent key** instead ([Spec 052](spec/052-mcp-agent-api-keys/spec.md)).
+A key acts as an **unattended workload**, governed like an app-only token.
+
+1. **The deployment** allows keys: set `NimBus__Mcp__AgentKeys__Enabled=true` (Entra mode only; off
+   by default). Without it a key on `/mcp` gets `401`.
+2. **The site Owner** turns on **Unattended workloads** and **Agent API keys** in
+   [Settings → MCP access](#managing-access-in-the-webapp). Until then a key gets `403`, audited as
+   `McpAccessRefused` with reason `key`.
+3. **Issue the key** in **Settings → Agent keys** with use **MCP**: pick what it may do besides
+   reading (record classifications, mark messages reported, resubmit failed messages), an optional
+   request limit, and an expiry of 30, 90 or 365 days. Each permission also needs its workload
+   switch in MCP access, and resubmits count against the per-agent budget and per-message cap.
+4. **Grant the agent** in Access Control: add `agent:<agentId>` as Reader (to read) or Contributor
+   (to change messages), site-wide or on endpoints. An `agent:` entry is refused on the Owner and
+   PiiReader lists.
+5. **Connect the agent** to `https://<webapp>/mcp` with either header:
+
+   ```
+   Authorization: Bearer nbak_<keyId>_<secret>
+   X-NimBus-Agent-Key: nbak_<keyId>_<secret>
+   ```
+
+   For Azure SRE Agent, paste the key in the connector's bearer token field. Send exactly one
+   credential per request.
+
+What a key can never do, whatever its grant and the switches say: skip a message, read a payload, use
+`nimbus_settle_handoff`, `nimbus_reprocess_deferred`, `nimbus_skip_deferred_tracking` or
+`nimbus_resubmit_with_changes`, run a paid classification through `nimbus_classify_failure`, or open
+any endpoint other than `/mcp`. An Agent API key (for `/api/v1/agent/*`) never works on `/mcp`, and an
+MCP key never works there.
+
+- **Audit.** Every action and refusal names the agent as `agent:<agentId>` and records `agentKeyId`.
+- **Limits.** Each key has its own rate-limit partition and may carry a lower request limit. The
+  daily resubmit budget counts per agent, so rotating a key does not refill it.
+- **Rotate** a key in Settings → Agent keys before it expires: the successor keeps the agent, use
+  and grant, and both work until you revoke the old one. A key that expires within 14 days is marked
+  **Expires soon**, and `nimbus_get_capabilities` returns `caller.credentialExpiresAtUtc`.
+- **Revocation** applies at once on the instance that saved it and within 30 seconds elsewhere. An
+  instance that has not read the key list for 5 minutes refuses every MCP key.
 
 ## Connect a client
 
@@ -517,6 +562,7 @@ Set these app settings on the management WebApp:
 | `NimBus__Mcp__Entra__Scopes__0`, `__1`, ... | Only when the registration defines fewer than all nine scopes: the short names it defines, for example `nimbus.observe`, `nimbus.resubmit`. Must include `nimbus.observe`. NimBus advertises only these and names them in the `401` challenge, so clients ask for nothing the registration lacks. List only `nimbus.observe` for a read-only endpoint. An unknown or blank entry stops the WebApp from starting |
 | `NimBus__Mcp__AllowedOrigins__0` | Only for browser-based MCP clients: their origin |
 | `NimBus__Mcp__MaxDeferredReprocess` | Only to change it: the most deferred messages one `nimbus_reprocess_deferred` may request. Default 200 |
+| `NimBus__Mcp__AgentKeys__Enabled` | Only for hosted agents that connect with an agent API key: `true` lets `/mcp` accept MCP keys. Default false ([Agent API keys on /mcp](#agent-api-keys-on-mcp)) |
 
 ```bash
 az webapp config appsettings set --resource-group <resource-group> --name <webapp-name> --settings NimBus__Mcp__Enabled=true NimBus__Mcp__Entra__TenantId=<tenant-id> NimBus__Mcp__Entra__ClientId=<client-id>
@@ -567,6 +613,8 @@ can reach `/mcp`. Cloud-hosted agents need a path through the Application Gatewa
 | `nimbus_get_capabilities` lists no readable endpoints | The user holds no NimBus role on any endpoint |
 | An action you expected is missing from `permittedActions` | The token lacks the action's scope (sign in again after adding it), the user isn't Contributor on the endpoint, or a site Owner switched the action off |
 | New tools or prompts don't appear after an upgrade | Claude Code reads the tool list when it connects. Reconnect the server in `/mcp` or start a new session |
+| An agent API key gets `401` on `/mcp` | The deployment doesn't set `NimBus__Mcp__AgentKeys__Enabled`, the key was issued for the agent API rather than MCP, it is revoked or expired, or the request also carries another credential ([Agent API keys on /mcp](#agent-api-keys-on-mcp)) |
+| An agent API key gets `403` on `/mcp` | Unattended workloads or Agent API keys is off in Settings → MCP access (audited with reason `key`) |
 
 Tool errors start with a code in brackets. What to do about each:
 

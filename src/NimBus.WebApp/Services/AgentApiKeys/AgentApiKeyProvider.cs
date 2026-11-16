@@ -15,6 +15,12 @@ public interface IAgentApiKeyProvider
 
     /// <summary>Replaces this instance's list at once, after a save through the Admin API.</summary>
     void Accept(AgentApiKeySettings settings);
+
+    /// <summary>
+    /// When the list was last read from the store or accepted from a save; null before the first.
+    /// A failed read does not move it, so MCP keys can refuse a list that is too old (Spec 052 §6.10).
+    /// </summary>
+    DateTimeOffset? LastReadAtUtc { get; }
 }
 
 /// <summary>Singleton cache over <see cref="IEndpointMetadataStore.GetAgentApiKeySettings"/>.</summary>
@@ -32,6 +38,7 @@ public sealed partial class AgentApiKeyProvider : IAgentApiKeyProvider, IDisposa
     private readonly TimeProvider _time;
     private readonly SemaphoreSlim _refresh = new(1, 1);
     private Entry? _entry;
+    private long _lastReadTicks;
 
     /// <summary>Creates the provider.</summary>
     public AgentApiKeyProvider(IEndpointMetadataStore store, ILogger<AgentApiKeyProvider> logger, TimeProvider time)
@@ -59,7 +66,9 @@ public sealed partial class AgentApiKeyProvider : IAgentApiKeyProvider, IDisposa
             try
             {
                 var settings = await _store.GetAgentApiKeySettings().ConfigureAwait(false);
-                Volatile.Write(ref _entry, new Entry(settings, _time.GetUtcNow() + SuccessTtl));
+                var readAt = _time.GetUtcNow();
+                Volatile.Write(ref _entry, new Entry(settings, readAt + SuccessTtl));
+                Interlocked.Exchange(ref _lastReadTicks, readAt.UtcTicks);
                 return settings;
             }
             catch (Exception ex)
@@ -80,7 +89,19 @@ public sealed partial class AgentApiKeyProvider : IAgentApiKeyProvider, IDisposa
     public void Accept(AgentApiKeySettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        Volatile.Write(ref _entry, new Entry(settings.Clone(), _time.GetUtcNow() + SuccessTtl));
+        var acceptedAt = _time.GetUtcNow();
+        Volatile.Write(ref _entry, new Entry(settings.Clone(), acceptedAt + SuccessTtl));
+        Interlocked.Exchange(ref _lastReadTicks, acceptedAt.UtcTicks);
+    }
+
+    /// <inheritdoc/>
+    public DateTimeOffset? LastReadAtUtc
+    {
+        get
+        {
+            var ticks = Interlocked.Read(ref _lastReadTicks);
+            return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
     }
 
     /// <inheritdoc/>

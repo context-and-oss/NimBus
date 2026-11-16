@@ -545,6 +545,92 @@ public class AccessControlServiceTests
             : new IRoleAssignment[] { new FakeRoleAssignment(_assignedPrincipalId) };
     }
 
+    // ---- Spec 052 §6.7: Access Control keyed by an MCP key's agent identity ----------------------
+
+    private static ClaimsPrincipal McpKey(string agentId) => new(new ClaimsIdentity(
+        new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "agent:" + agentId),
+            new Claim(ClaimTypes.Name, "agent:" + agentId),
+            new Claim(NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.AgentIdClaim, agentId),
+            new Claim(NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.KeyIdClaim, "abcdefghijkl"),
+        },
+        NimBus.WebApp.Services.AgentApiKeys.McpAgentKeyDefaults.SchemeName));
+
+    [TestMethod]
+    public async Task An_mcp_key_gets_the_grants_of_its_agent_case_insensitively()
+    {
+        await SeedSite(readers: new[] { "agent:SRE-Agent" });
+        await _store.SetEndpointAccessControl("Storefront", new AccessControlList { Contributors = new List<string> { "agent:sre-agent" } });
+
+        var sut = CreateService(McpKey("sre-agent"));
+
+        Assert.IsTrue(await sut.HasRoleAsync(AccessRole.Reader));
+        Assert.IsTrue(await sut.HasRoleAsync(AccessRole.Contributor, "Storefront"));
+        Assert.IsFalse(await sut.HasRoleAsync(AccessRole.Contributor, "Billing"));
+    }
+
+    [TestMethod]
+    public async Task An_mcp_key_is_never_owner_or_pii_reader()
+    {
+        // The API refuses such entries; even if one were stored, a key would not get it.
+        await SeedSite(owners: new[] { "agent:sre-agent" }, piiReaders: new[] { "agent:sre-agent" });
+
+        var sut = CreateService(McpKey("sre-agent"), config: new Dictionary<string, string?>
+        {
+            ["Authorization:GrantPiiReaderInDevelopment"] = "true",
+        });
+
+        var access = await sut.GetCurrentUserAccessAsync();
+        Assert.AreEqual(AccessRole.None, access.SiteRole);
+        Assert.IsFalse(access.IsPiiReader);
+        Assert.IsFalse(await sut.CanReadPiiAsync());
+    }
+
+    [TestMethod]
+    public async Task An_mcp_key_does_not_match_code_defined_role_assignments_or_the_admin_marker()
+    {
+        var principal = McpKey("sre-agent");
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("groups", EndpointAuthorizationService.AdminMarkerClaimValue));
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("oid", UserOid));
+
+        var sut = CreateService(principal, roleAssignmentEndpoints: new[] { "Storefront" });
+
+        Assert.IsFalse(await sut.HasRoleAsync(AccessRole.Reader));
+        Assert.IsFalse(await sut.HasRoleAsync(AccessRole.Reader, "Storefront"));
+    }
+
+    [TestMethod]
+    public async Task An_entra_identity_named_like_an_agent_matches_no_agent_grant()
+    {
+        await SeedSite(contributors: new[] { "agent:sre-agent" });
+        var lookalike = Principal(
+            new Claim("name", "agent:sre-agent"),
+            new Claim(ClaimTypes.Name, "agent:sre-agent"),
+            new Claim(NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.AgentIdClaim, "sre-agent"));
+
+        var sut = CreateService(lookalike);
+
+        Assert.IsFalse(await sut.HasRoleAsync(AccessRole.Reader));
+    }
+
+    [TestMethod]
+    public async Task An_agent_api_key_matches_no_entry()
+    {
+        await SeedSite(contributors: new[] { "agent:enrichment-agent" });
+        var spec039 = new ClaimsPrincipal(new ClaimsIdentity(
+            new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, "agent:enrichment-agent"),
+                new Claim(NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.AgentIdClaim, "enrichment-agent"),
+            },
+            NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.SchemeName));
+
+        var sut = CreateService(spec039);
+
+        Assert.IsFalse(await sut.HasRoleAsync(AccessRole.Reader));
+    }
+
     private sealed class FakeRoleAssignment : IRoleAssignment
     {
         public FakeRoleAssignment(string principalId) => PrincipalId = principalId;

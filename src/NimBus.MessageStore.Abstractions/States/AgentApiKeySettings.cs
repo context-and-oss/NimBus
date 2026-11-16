@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 
 namespace NimBus.MessageStore.States;
 
@@ -64,6 +65,48 @@ public class AgentApiKey
 
     /// <summary>Who revoked the key. Display only.</summary>
     public string? RevokedBy { get; set; }
+
+    /// <summary>
+    /// Where the key authenticates, fixed when it is issued (Spec 052). A key stored before uses
+    /// existed reads as <see cref="AgentApiKeyUse.AgentApi"/>.
+    /// </summary>
+    public AgentApiKeyUse Use { get; set; } = AgentApiKeyUse.AgentApi;
+
+    /// <summary>What an <see cref="AgentApiKeyUse.Mcp"/> key may do; null for an Agent API key.</summary>
+    public AgentApiKeyMcpGrant? Mcp { get; set; }
+
+    /// <summary>The <see cref="KeyId"/> of the key this one rotated, when it was issued by Rotate.</summary>
+    public string? Replaces { get; set; }
+}
+
+/// <summary>Where an agent API key authenticates (Spec 052 §6.3).</summary>
+[JsonConverter(typeof(StringEnumConverter))]
+public enum AgentApiKeyUse
+{
+    /// <summary>The agent API, <c>/api/agent/*</c> (Spec 039). Every key issued before Spec 052.</summary>
+    AgentApi,
+
+    /// <summary>The operator MCP endpoint, <c>/mcp</c>, as an unattended workload.</summary>
+    Mcp,
+}
+
+/// <summary>
+/// The most an MCP key may do (Spec 052 §6.3). Observe is implied. Each permission maps to a
+/// workload app role and still needs the Owner's switch in the MCP access policy.
+/// </summary>
+public class AgentApiKeyMcpGrant
+{
+    /// <summary>Record failure classifications, like <c>Nimbus.Workload.Classify</c>.</summary>
+    public bool Classify { get; set; }
+
+    /// <summary>Mark messages reported, like <c>Nimbus.Workload.Annotate</c>.</summary>
+    public bool Annotate { get; set; }
+
+    /// <summary>Resubmit failed messages unattended, like <c>Nimbus.Workload.Resubmit</c>.</summary>
+    public bool Resubmit { get; set; }
+
+    /// <summary>MCP requests per window for this key, below the deployment's and the Owner's limit; null for theirs.</summary>
+    public int? RequestsPerWindow { get; set; }
 }
 
 /// <summary>When an agent API key last authenticated a request. Kept apart from

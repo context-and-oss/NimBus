@@ -1,6 +1,9 @@
 # Spec 052 — Agent API keys on `/mcp`
 
-Status: proposed (2026-11-16). Not yet approved; nothing in it is built.
+Status: approved (2026-11-16) with every recommendation in §15: the deployment ceiling is
+required and off by default, both uses keep `nbak_`, no keys-only `/mcp`, no IP allowlist in v1,
+the journal does not name the key, the staleness bound for `/api/agent/*` is a follow-up, and MCP
+keys expire within 365 days. Plan: [docs/plan/2026-11-16-spec-052-mcp-agent-api-keys.md](../../plan/2026-11-16-spec-052-mcp-agent-api-keys.md).
 Baseline: master `7068c38c`; the latest release is v4.18.0. Issue: context-and-oss/NimBus#409.
 Builds on [Spec 035](../035-mcp-operator-access/spec.md) (operator MCP),
 [Spec 037](../037-mcp-admin-access/spec.md) (MCP access policy),

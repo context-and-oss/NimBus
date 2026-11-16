@@ -165,6 +165,8 @@ public class McpAccessImplementation : Api.IMcpAccessApiController
             Authority = entra.IsConfigured ? entra.Authority : null,
             AllowedOrigins = _runtime.Options.AllowedOrigins.ToList(),
             RateLimitsEnabled = _rateLimits.Enabled,
+            // Keys are accepted only in Entra mode with the deployment's ceiling on (Spec 052 §6.5).
+            AgentKeysEnabled = isEntra && _runtime.Options.AgentKeys.Enabled,
             RequestLimit = new Api.McpWindowLimit { Permit = _rateLimits.Mcp.PermitLimit, WindowSeconds = _rateLimits.Mcp.WindowSeconds },
             MutationLimit = new Api.McpWindowLimit { Permit = _rateLimits.McpMutations.PermitLimit, WindowSeconds = _rateLimits.McpMutations.WindowSeconds },
             Endpoints = _settings.CatalogEndpoints.ToList(),

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using NimBus.WebApp.Services.AgentApiKeys;
 
 namespace NimBus.WebApp.Mcp;
 
@@ -13,6 +14,13 @@ public static class McpAuthenticationSchemes
     /// pointing clients at it. <see cref="Bearer"/> forwards its challenges here.
     /// </summary>
     public const string Challenge = "NimBusMcpChallenge";
+
+    /// <summary>
+    /// The policy scheme the MCP policy names in Entra mode (Spec 052 §6.2). It forwards a request
+    /// that carries an MCP agent key to the key scheme, when the deployment allows keys, and
+    /// everything else to <see cref="Bearer"/>; so one request is authenticated by exactly one scheme.
+    /// </summary>
+    public const string Auth = "NimBusMcpAuth";
 }
 
 /// <summary>Authorization policy names for the operator MCP endpoint.</summary>
@@ -122,20 +130,40 @@ public static class McpOperatorPermissions
         return HasScope(user, scope);
     }
 
-    /// <summary>True when <paramref name="user"/> holds the observe scope or app role.</summary>
+    /// <summary>
+    /// True when <paramref name="user"/> holds the observe scope or app role, or is an MCP agent key
+    /// (Spec 052), which always holds observe.
+    /// </summary>
     public static bool CanObserve(ClaimsPrincipal user)
     {
         ArgumentNullException.ThrowIfNull(user);
 
-        return HasScope(user, ObserveScope) || HasRole(user, ObserveRole);
+        return HasScope(user, ObserveScope) || HasRole(user, ObserveRole)
+            || McpAgentKeyDefaults.Read(user)?.Holds(McpAgentKeyDefaults.ObservePermission) == true;
     }
 
-    /// <summary>True when <paramref name="user"/> is a workload (no <c>scp</c>) holding <paramref name="role"/>.</summary>
+    /// <summary>
+    /// True when <paramref name="user"/> is a workload (no <c>scp</c>) holding <paramref name="role"/>:
+    /// an Entra app role, or for an MCP agent key the matching permission of its grant (Spec 052 §6.4).
+    /// </summary>
     public static bool IsWorkloadWithRole(ClaimsPrincipal user, string role)
     {
         ArgumentNullException.ThrowIfNull(user);
+        if (McpAgentKeyDefaults.Read(user) is { } key)
+            return KeyPermissionOf(role) is { } permission && key.Holds(permission);
+
         return !user.HasClaim(claim => claim.Type == "scp") && HasRole(user, role);
     }
+
+    // The key permission that stands for a workload app role. NimBus never mints roles claims.
+    private static string? KeyPermissionOf(string role) => role switch
+    {
+        ObserveRole => McpAgentKeyDefaults.ObservePermission,
+        ClassifyRole => McpAgentKeyDefaults.ClassifyPermission,
+        AnnotateRole => McpAgentKeyDefaults.AnnotatePermission,
+        ResubmitRole => McpAgentKeyDefaults.ResubmitPermission,
+        _ => null,
+    };
 
     /// <summary>True when <paramref name="user"/> holds the delegated payload scope.</summary>
     public static bool HasPayloadScope(ClaimsPrincipal user)

@@ -68,6 +68,9 @@ internal sealed class McpTestHost : IAsyncDisposable
     /// <summary>A service from the host, for seeding state and asserting side effects.</summary>
     public T Get<T>() where T : notnull => _host.Services.GetRequiredService<T>();
 
+    /// <summary>A service from the host, or null when it is not registered.</summary>
+    public T? Find<T>() where T : class => _host.Services.GetService<T>();
+
     public static string Issuer => $"https://login.microsoftonline.com/{TenantId}/v2.0";
 
     /// <summary>Endpoints the stub authorization grants Reader on.</summary>

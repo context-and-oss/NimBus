@@ -169,7 +169,7 @@ export default function AccessControl() {
   return (
     <Page
       title="Access Control"
-      subtitle="Storage-backed roles: Reader < Contributor < Owner, plus the orthogonal PII Reader capability. Entries are email addresses or Entra object ids."
+      subtitle="Storage-backed roles: Reader < Contributor < Owner, plus the orthogonal PII Reader capability. Entries are email addresses or Entra object ids, or agent:<agentId> for the agent of an MCP agent key (Reader or Contributor only)."
     >
       {/* Page's content wrapper is a flex ROW — a single column child keeps
           the endpoint section below the site-wide section. */}

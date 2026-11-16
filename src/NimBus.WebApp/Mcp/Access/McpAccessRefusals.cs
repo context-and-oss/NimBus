@@ -35,7 +35,7 @@ public sealed partial class McpAccessRefusals
         ArgumentNullException.ThrowIfNull(caller);
 
         var now = _time.GetUtcNow();
-        var key = string.Join('|', caller.TenantId, caller.CallerId, caller.ClientId, reason, tool, endpointId);
+        var key = string.Join('|', caller.TenantId, caller.CallerId, caller.ClientId, caller.AgentKeyId, reason, tool, endpointId);
         if (_lastWritten.TryGetValue(key, out var last) && now - last < Window)
             return;
         _lastWritten[key] = now;
@@ -54,6 +54,7 @@ public sealed partial class McpAccessRefusals
                 reason = ReasonName(reason),
                 tool,
                 clientId = caller.ClientId,
+                agentKeyId = caller.AgentKeyId,
                 endpointId,
             });
             await audit.LogAuditAsync(MessageAuditType.McpAccessRefused, context, accessDenied: true, data: data, endpointId: endpointId)

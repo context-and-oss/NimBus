@@ -160,6 +160,54 @@ public class AccessControlApiTests
     }
 
     [TestMethod]
+    [DataRow(RoleEntryRole.Owner, DisplayName = "site owner")]
+    [DataRow(RoleEntryRole.PiiReader, DisplayName = "site PII reader")]
+    public async Task An_agent_entry_is_refused_on_the_owner_and_pii_reader_lists(RoleEntryRole role)
+    {
+        // Spec 052 §6.7: an MCP key's agent is a Reader or Contributor, never an Owner or PiiReader.
+        var sut = CreateSut(Admin());
+
+        var result = await sut.PostAccessControlRoleAsync(Entry(role, "agent:sre-agent"));
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
+    }
+
+    [TestMethod]
+    public async Task An_agent_entry_is_refused_as_an_endpoint_owner()
+    {
+        var sut = CreateSut(Admin());
+
+        var result = await sut.PostEndpointAccessControlRoleAsync(Entry(RoleEntryRole.Owner, "agent:sre-agent"), "Storefront");
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
+    }
+
+    [TestMethod]
+    [DataRow("agent:")]
+    [DataRow("agent:-dash-first")]
+    [DataRow("agent:has space")]
+    public async Task A_malformed_agent_entry_is_refused(string entry)
+    {
+        var sut = CreateSut(Admin());
+
+        var result = await sut.PostAccessControlRoleAsync(Entry(RoleEntryRole.Reader, entry));
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
+    }
+
+    [TestMethod]
+    public async Task An_agent_can_be_granted_reader_and_contributor()
+    {
+        var sut = CreateSut(Admin());
+
+        var site = Ok(await sut.PostAccessControlRoleAsync(Entry(RoleEntryRole.Reader, "agent:sre-agent")));
+        var endpoint = Ok(await sut.PostEndpointAccessControlRoleAsync(Entry(RoleEntryRole.Contributor, "agent:sre-agent"), "Storefront"));
+
+        CollectionAssert.Contains(site.Readers.ToList(), "agent:sre-agent");
+        CollectionAssert.Contains(endpoint.Contributors.ToList(), "agent:sre-agent");
+    }
+
+    [TestMethod]
     public async Task Endpoint_grant_rejects_piiReader()
     {
         var sut = CreateSut(Admin());

@@ -38,7 +38,8 @@ Agents built on `NimBus.Agents` call the agent API (`/api/v1/agent/*`) without a
 | Request | Does |
 |---|---|
 | `GET /api/v1/admin/agent-keys` | Lists the keys, without their secrets, and returns the `csrfToken` that the requests below must send as the `X-NimBus-CSRF` header |
-| `POST /api/v1/admin/agent-keys` | Issues a key. Body: `agentId` (required), optional `name` and `expiresAtUtc`. The response's `key` is the full key |
+| `POST /api/v1/admin/agent-keys` | Issues a key. Body: `agentId` (required), optional `name` and `expiresAtUtc`, and `use` with `mcp` for an MCP key (below). The response's `key` is the full key |
+| `POST /api/v1/admin/agent-keys/{keyId}/rotate` | Issues a successor with the same agent, use and grant; both work until the old key is revoked |
 | `POST /api/v1/admin/agent-keys/{keyId}/revoke` | Revokes a key |
 | `DELETE /api/v1/admin/agent-keys/{keyId}` | Removes a revoked or expired key |
 
@@ -60,6 +61,20 @@ builder.Services.AddNimBusAgent<MyHandler, MyEvent>(o =>
 ```
 
 The local Aspire AppHost's development sign-in bypass admits agents without a key.
+
+### Two uses
+
+A key is issued for one use, fixed when it is issued ([Spec 052](spec/052-mcp-agent-api-keys/spec.md)):
+
+| Use | Authenticates on | Sent as |
+|---|---|---|
+| `agentApi` (the default, and every key issued before Spec 052) | `/api/v1/agent/*` | `X-NimBus-Agent-Key` |
+| `mcp` | `/mcp`, as an unattended workload | `Authorization: Bearer nbak_…` or `X-NimBus-Agent-Key` |
+
+Each scheme refuses a key of the other use. An MCP key needs an expiry at most 365 days ahead, carries
+its own permissions, and works only while the deployment (`NimBus__Mcp__AgentKeys__Enabled`) and the
+site Owner (**Settings → MCP access → Agent API keys**) allow keys. See
+[Agent API keys on /mcp](mcp-server.md#agent-api-keys-on-mcp).
 
 ## Dashboard tokens
 

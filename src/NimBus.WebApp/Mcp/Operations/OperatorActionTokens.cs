@@ -101,6 +101,12 @@ public sealed class OperatorActionTokens
     public static (string Caller, string? TenantId, string? ClientId) Identify(ClaimsPrincipal user)
     {
         ArgumentNullException.ThrowIfNull(user);
+
+        // Spec 052 §6.8: a key is named after its agent, as caller and as client, so the budget
+        // counts per agent and a token prepared under one key works under a sibling key.
+        if (NimBus.WebApp.Services.AgentApiKeys.McpAgentKeyDefaults.Read(user) is { } key)
+            return (key.Principal, null, key.Principal);
+
         var caller = user.FindFirstValue("oid")
             ?? user.FindFirstValue("sub")
             ?? user.FindFirstValue(ClaimTypes.NameIdentifier)

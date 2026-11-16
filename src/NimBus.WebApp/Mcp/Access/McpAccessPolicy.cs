@@ -24,6 +24,9 @@ public enum McpRefusalReason
 
     /// <summary>The caller's token lacks the delegated scope.</summary>
     Scope,
+
+    /// <summary>An MCP agent key, while the Owner has not allowed keys or workloads (Spec 052 §6.5).</summary>
+    Key,
 }
 
 /// <summary>
@@ -87,6 +90,12 @@ public sealed class McpAccessPolicy
     public bool AllowsWorkloadAnnotation => Settings.AllowWorkloads && Settings.AllowWorkloadAnnotation;
 
     /// <summary>
+    /// Whether MCP agent keys are admitted: the Owner allowed them and workloads are accepted
+    /// (Spec 052 §6.5). The deployment's ceiling is checked before a key even authenticates.
+    /// </summary>
+    public bool AllowsAgentKeys => Settings.AllowWorkloads && Settings.AllowAgentKeys;
+
+    /// <summary>
     /// Builds the policy from <paramref name="settings"/>, with each limit lowered to the
     /// deployment's value. When rate limiting is off the saved limits are ignored.
     /// </summary>
@@ -128,6 +137,11 @@ public sealed class McpAccessPolicy
         if (caller.LocalDevelopment)
             return null;
 
+        // A key has no Entra client and no person: the Owner approved it by issuing it, and its
+        // grant says what it may change (Spec 052 §6.5).
+        if (caller.IsAgentKey)
+            return AllowsAgentKeys ? null : McpRefusalReason.Key;
+
         if (caller.IsWorkload && !Settings.AllowWorkloads)
             return McpRefusalReason.Workload;
 
@@ -152,7 +166,7 @@ public sealed class McpAccessPolicy
     public bool ClientMayChange(McpCaller caller)
     {
         ArgumentNullException.ThrowIfNull(caller);
-        if (caller.LocalDevelopment || Settings.Clients.Mode == McpClientMode.Any)
+        if (caller.LocalDevelopment || caller.IsAgentKey || Settings.Clients.Mode == McpClientMode.Any)
             return true;
 
         return caller.ClientId is not null && _clients.TryGetValue(caller.ClientId, out var client) && client.MayChange;

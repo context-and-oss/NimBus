@@ -98,12 +98,14 @@ public enum OperatorCommandStatus
 /// The operation journal entry the command reports its progress to (Spec 044 Phase 2), or null
 /// for an unjournaled command (the Web UI, or a deployment without a journal store).
 /// </param>
+/// <param name="AgentKeyId">The MCP agent key that issued the command (Spec 052 §6.9), recorded in its audit row.</param>
 public sealed record OperatorCommandContext(
     OperatorChannel Channel,
     string? Reason = null,
     string? IdempotencyKey = null,
     string? ClientId = null,
-    IOperatorCommandJournal? Journal = null);
+    IOperatorCommandJournal? Journal = null,
+    string? AgentKeyId = null);
 
 /// <summary>
 /// Progress reports from <see cref="IOperatorCommands"/> to a journaled operation. The

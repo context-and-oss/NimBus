@@ -14,6 +14,8 @@ using NimBus.WebApp.Mcp.Operations;
 using NimBus.WebApp.Mcp.Prompts;
 using NimBus.WebApp.Mcp.Tools;
 using NimBus.WebApp.RateLimiting;
+using NimBus.WebApp.Services.AgentApiKeys;
+using Microsoft.AspNetCore.Authentication;
 
 namespace NimBus.WebApp.Mcp;
 
@@ -48,7 +50,7 @@ public static class McpOperatorServiceCollectionExtensions
             return services;
 
         if (mode == McpAuthenticationMode.Entra)
-            AddEntraAuthentication(services, options.Entra);
+            AddEntraAuthentication(services, options.Entra, options.AgentKeys.Enabled);
 
         services.AddAuthorization(authorization => authorization.AddPolicy(McpOperatorPolicies.Observe, policy =>
         {
@@ -58,7 +60,9 @@ public static class McpOperatorServiceCollectionExtensions
                 return;
             }
 
-            policy.AddAuthenticationSchemes(McpAuthenticationSchemes.Bearer)
+            // The policy scheme picks exactly one of the bearer and the key scheme per request, so a
+            // key principal and an Entra principal are never merged (Spec 052 §6.2).
+            policy.AddAuthenticationSchemes(McpAuthenticationSchemes.Auth)
                 .RequireAuthenticatedUser()
                 .RequireAssertion(context => McpOperatorPermissions.CanObserve(context.User))
                 .AddRequirements(new McpAccessRequirement());
@@ -162,7 +166,7 @@ public static class McpOperatorServiceCollectionExtensions
         return string.IsNullOrWhiteSpace(informational) ? "0.0.0" : informational.Split('+')[0];
     }
 
-    private static void AddEntraAuthentication(IServiceCollection services, McpEntraOptions entra)
+    private static void AddEntraAuthentication(IServiceCollection services, McpEntraOptions entra, bool agentKeys)
     {
         var authority = entra.Authority;
         var applicationIdUri = entra.ResolvedApplicationIdUri;
@@ -170,7 +174,26 @@ public static class McpOperatorServiceCollectionExtensions
         var scopes = entra.ResolveScopes().Select(scope => $"{applicationIdUri}/{scope}").ToList();
         services.AddSingleton(new McpChallengeScope(string.Join(' ', scopes)));
 
-        services.AddAuthentication()
+        var authentication = services.AddAuthentication();
+        authentication.AddPolicyScheme(McpAuthenticationSchemes.Auth, "NimBus operator MCP: Entra token or agent key", scheme =>
+        {
+            // By prefix, never by JWT shape: nbak_ names a NimBus key positively (Spec 052 §6.2).
+            scheme.ForwardDefaultSelector = context => agentKeys && McpAgentKeyDefaults.CarriesKey(context.Request)
+                ? McpAgentKeyDefaults.SchemeName
+                : McpAuthenticationSchemes.Bearer;
+            scheme.ForwardChallenge = McpAuthenticationSchemes.Challenge;
+            scheme.ForwardForbid = McpAuthenticationSchemes.Bearer;
+        });
+
+        if (agentKeys)
+        {
+            services.TryAddSingleton<IAgentApiKeyProvider, AgentApiKeyProvider>();
+            services.TryAddSingleton<IAgentApiKeyUsageRecorder, AgentApiKeyUsageRecorder>();
+            authentication.AddScheme<AuthenticationSchemeOptions, McpAgentKeyAuthenticationHandler>(McpAgentKeyDefaults.SchemeName, scheme =>
+                scheme.ForwardChallenge = McpAuthenticationSchemes.Challenge);
+        }
+
+        authentication
             .AddJwtBearer(McpAuthenticationSchemes.Bearer, jwt =>
             {
                 jwt.Authority = authority;

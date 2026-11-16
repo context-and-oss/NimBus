@@ -28,6 +28,12 @@ const key = (overrides: Partial<AgentKeyInfo> = {}): AgentKeyInfo => ({
 
 const state = (keys: AgentKeyInfo[] = [key()]): AgentKeysState => ({ keys, csrfToken: "csrf-test" });
 
+/** What the panel reads from /api/v1/admin/mcp/settings once it lists an MCP key. */
+const mcpStatus = (deployment: { agentKeysEnabled?: boolean } = {}, saved: { allowAgentKeys?: boolean; allowWorkloads?: boolean } = {}) => ({
+  deployment: { mode: "entra", agentKeysEnabled: true, endpointUrl: "https://nimbus.example/mcp", ...deployment },
+  saved: { allowAgentKeys: true, allowWorkloads: true, ...saved },
+});
+
 function mockFetch(...responses: Response[]) {
   const fetchMock = vi.fn();
   for (const r of responses) fetchMock.mockResolvedValueOnce(r);
@@ -172,6 +178,84 @@ describe("Agent keys settings", () => {
     render(<AgentKeysSettings />);
 
     expect((await screen.findByRole("alert")).textContent).toContain("Only site Owners");
+  });
+
+  // ---- Spec 052: keys for MCP ------------------------------------------------------------------
+
+  it("issues an MCP key with its grant and an expiry, and never offers Never", async () => {
+    const issued = key({ keyId: "zyxwvutsrqpo", prefix: "nbak_zyxwvutsrqpo", agentId: "sre-agent", use: "mcp", mcp: { classify: false, annotate: false, resubmit: true, requestsPerWindow: null }, expiresAtUtc: "2099-01-01T00:00:00Z" });
+    const fetchMock = mockFetch(
+      Response.json(state([])),
+      Response.json({ key: "nbak_zyxwvutsrqpo_SECRETSECRETSECRETSECRETSECRETSECRETSEC", issued, state: state([issued]) }),
+      Response.json(mcpStatus()),
+    );
+    const user = userEvent.setup();
+    render(<AgentKeysSettings />);
+
+    await user.type(await screen.findByLabelText("Agent id"), "sre-agent");
+    await user.selectOptions(screen.getByLabelText("Use"), "mcp");
+    expect(within(screen.getByLabelText("Expires")).queryByRole("option", { name: "Never" })).toBeNull();
+    expect((screen.getByLabelText("Expires") as HTMLSelectElement).value).toBe("90");
+    await user.click(screen.getByRole("checkbox", { name: /Resubmit failed messages/ }));
+    await user.click(screen.getByRole("button", { name: "Issue key" }));
+
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(body.use).toBe("mcp");
+    expect(body.mcp).toEqual({ classify: false, annotate: false, resubmit: true, requestsPerWindow: null });
+    expect(body.expiresAtUtc).toBeTruthy();
+
+    // The once-only dialog says how to connect and that the agent needs an Access Control grant.
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/Authorization: Bearer/)).toBeTruthy();
+    expect(within(dialog).getByText(/agent:sre-agent/)).toBeTruthy();
+  });
+
+  it("shows each key's use, rotates an active key and offers to revoke the old one", async () => {
+    const old = key({ agentId: "sre-agent", use: "mcp", mcp: { classify: true, annotate: false, resubmit: true, requestsPerWindow: null }, expiresAtUtc: "2099-01-01T00:00:00Z" });
+    const successor = key({ ...old, keyId: "zyxwvutsrqpo", prefix: "nbak_zyxwvutsrqpo", replaces: old.keyId });
+    const fetchMock = mockFetch(
+      Response.json(state([old])),
+      Response.json(mcpStatus()),
+      Response.json({ key: "nbak_zyxwvutsrqpo_SECRETSECRETSECRETSECRETSECRETSECRETSEC", issued: successor, state: state([successor, old]) }),
+      Response.json(state([successor, { ...old, status: "revoked" }])),
+    );
+    const user = userEvent.setup();
+    render(<AgentKeysSettings />);
+
+    const row = (await screen.findAllByRole("row")).find((r) => within(r).queryByText("nbak_abcdefghijkl"))!;
+    expect(within(row).getByText("MCP")).toBeTruthy();
+    expect(within(row).getByText(/classify, resubmit/)).toBeTruthy();
+
+    await user.click(within(row).getByRole("button", { name: "Rotate key for sre-agent" }));
+    const [url, init] = fetchMock.mock.calls[2];
+    expect(url).toBe("/api/v1/admin/agent-keys/abcdefghijkl/rotate");
+    expect(init.method).toBe("POST");
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Revoke the old key" }));
+    expect(fetchMock.mock.calls[3][0]).toBe("/api/v1/admin/agent-keys/abcdefghijkl/revoke");
+  });
+
+  it("says an MCP key will not work yet while keys are off", async () => {
+    mockFetch(
+      Response.json(state([key({ agentId: "sre-agent", use: "mcp", mcp: { classify: false, annotate: false, resubmit: false, requestsPerWindow: null }, expiresAtUtc: "2099-01-01T00:00:00Z" })])),
+      Response.json(mcpStatus({ agentKeysEnabled: false })),
+    );
+    render(<AgentKeysSettings />);
+
+    expect(await screen.findByText(/won't work yet/i)).toBeTruthy();
+    expect(screen.getByText(/NimBus__Mcp__AgentKeys__Enabled/)).toBeTruthy();
+  });
+
+  it("marks an MCP key that expires within 14 days", async () => {
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    mockFetch(
+      Response.json(state([key({ use: "mcp", mcp: { classify: false, annotate: false, resubmit: false, requestsPerWindow: null }, expiresAtUtc: soon })])),
+      Response.json(mcpStatus()),
+    );
+    render(<AgentKeysSettings />);
+
+    expect(await screen.findByText("Expires soon")).toBeTruthy();
   });
 
   it("guards closing the panel while the form holds input", async () => {

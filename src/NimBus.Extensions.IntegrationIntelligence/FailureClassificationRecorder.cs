@@ -59,6 +59,9 @@ public sealed record FailureClassificationRecording
 
     /// <summary>The calling client application (<c>azp</c>, else <c>appid</c>), supplied by the host.</summary>
     public string? ClientId { get; init; }
+
+    /// <summary>The agent API key the caller authenticated with, when it did; recorded in the audit row.</summary>
+    public string? AgentKeyId { get; init; }
 }
 
 /// <summary>The evidence an agent classifies, and the latest saved classification of the same attempt.</summary>
@@ -385,6 +388,14 @@ public sealed class FailureClassificationRecorder
                 _ => "Rejected",
             },
         });
+        if (!string.IsNullOrWhiteSpace(request.AgentKeyId))
+        {
+            // The MCP agent key that recorded it (NimBus Spec 052 §6.9); other rows keep their shape.
+            var withKey = System.Text.Json.Nodes.JsonNode.Parse(data)!.AsObject();
+            withKey["agentKeyId"] = request.AgentKeyId.Trim();
+            data = withKey.ToJsonString();
+        }
+
         try
         {
             await _host.AuditAsync(MessageAuditType.FailureClassified, request.EventId, endpointId, data, accessDenied, cancellationToken).ConfigureAwait(false);

@@ -4,7 +4,7 @@ import {
   type McpActivity,
   type McpState,
 } from "components/admin/mcp-access-model";
-import { activeKeyCount, type AgentKeysState } from "components/admin/agent-keys-model";
+import { activeKeyCount, activeKeysByUse, expiresSoon, type AgentKeysState } from "components/admin/agent-keys-model";
 import { activeTokenCount, type DashboardTokensState } from "components/admin/dashboard-tokens-model";
 
 // Status, summary, call to action and quick action for each row of the Settings list
@@ -181,9 +181,16 @@ function heartbeat(data: NonNullable<SettingsSnapshot["heartbeat"]>): FeatureSta
 function agentKeys(state: NonNullable<SettingsSnapshot["agentKeys"]>): FeatureStatus {
   if (state === "error") return UNAVAILABLE;
   const active = activeKeyCount(state);
+  const byUse = activeKeysByUse(state);
+  // Spec 052: an MCP key that expires within 14 days needs rotating before its agent stops.
+  if (state.keys.some((k) => expiresSoon(k)))
+    return { tone: "warn", label: "Needs attention", summary: "An MCP key expires within 14 days: rotate it", on: true, cta: { label: "Review keys", tab: "keys" } };
+  const summary = byUse.mcp > 0
+    ? `${byUse.agentApi} for the agent API · ${byUse.mcp} for MCP`
+    : "Agents sign in to the agent API with these keys";
   // Issuing a key widens access, so it is the call to action rather than an inline action.
   return active > 0
-    ? { tone: "ok", label: `${active} active`, summary: "Agents sign in to the agent API with these keys", on: true }
+    ? { tone: "ok", label: `${active} active`, summary, on: true }
     : {
         tone: "off",
         label: "No active keys",

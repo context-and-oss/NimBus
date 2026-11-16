@@ -419,6 +419,7 @@ public sealed partial class OperatorActionTools
             Rationale = rationale,
             Supersede = supersede,
             ClientId = client,
+            AgentKeyId = AgentKeyId(),
         }, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(classification.EndpointId, endpoint, StringComparison.OrdinalIgnoreCase))
             throw OperatorToolErrors.MessageNotFound(endpoint, id);
@@ -728,14 +729,25 @@ public sealed partial class OperatorActionTools
     private async Task AuditRecordingDeniedAsync(string endpoint, string? eventId, string? messageId)
     {
         var (_, _, client) = OperatorActionTokens.Identify(User());
-        var data = System.Text.Json.JsonSerializer.Serialize(new
-        {
-            messageId = messageId?.Trim(),
-            provider = NimBus.Extensions.IntegrationIntelligence.FailureClassificationProviders.Agent,
-            clientId = client,
-            outcome = "Rejected",
-            reason = "Forbidden",
-        });
+        var agentKeyId = AgentKeyId();
+        var data = agentKeyId is null
+            ? System.Text.Json.JsonSerializer.Serialize(new
+            {
+                messageId = messageId?.Trim(),
+                provider = NimBus.Extensions.IntegrationIntelligence.FailureClassificationProviders.Agent,
+                clientId = client,
+                outcome = "Rejected",
+                reason = "Forbidden",
+            })
+            : System.Text.Json.JsonSerializer.Serialize(new
+            {
+                messageId = messageId?.Trim(),
+                provider = NimBus.Extensions.IntegrationIntelligence.FailureClassificationProviders.Agent,
+                clientId = client,
+                outcome = "Rejected",
+                reason = "Forbidden",
+                agentKeyId,
+            });
         try
         {
             await _audit.LogAuditAsync(NimBus.MessageStore.MessageAuditType.FailureClassified, Http(), accessDenied: true, data: data,
@@ -834,8 +846,12 @@ public sealed partial class OperatorActionTools
             throw OperatorToolErrors.InvalidArgument($"reason is required, 1-{MaxReasonLength} characters.");
 
         var (_, _, client) = OperatorActionTokens.Identify(User());
-        return new OperatorCommandContext(OperatorChannel.Mcp, reason.Trim(), RequireGuid(idempotencyKey), client);
+        return new OperatorCommandContext(OperatorChannel.Mcp, reason.Trim(), RequireGuid(idempotencyKey), client,
+            AgentKeyId: AgentKeyId());
     }
+
+    /// <summary>The MCP agent key the caller authenticated with, for audit rows (Spec 052 §6.9).</summary>
+    private string? AgentKeyId() => NimBus.WebApp.Services.AgentApiKeys.McpAgentKeyDefaults.Read(User())?.KeyId;
 
     private static OperatorAction ParseCommand(string action) => action?.Trim().ToLowerInvariant() switch
     {
