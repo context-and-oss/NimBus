@@ -2,6 +2,7 @@ using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.SDK;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Mcp.Operations;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.Services.Operations;
 using Microsoft.AspNetCore.Mvc;
@@ -112,7 +113,7 @@ public partial class EventImplementation
         if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, producingEndpoint.Id))
         {
             await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext!,
-                accessDenied: true, data: JsonConvert.SerializeObject(body),
+                accessDenied: true, data: DescribeComposed(eventType.Id, body.EventContent),
                 endpointId: producingEndpoint.Id, eventTypeId: body.EventTypeId);
             return new ForbidResult();
         }
@@ -139,7 +140,7 @@ public partial class EventImplementation
             var publisher = await PublisherClient.CreateAsync(serviceBusClient, producingEndpoint.Id);
             await publisher.Publish(@event, sessionId, Guid.NewGuid().ToString(), messageId);
             await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext!,
-                data: JsonConvert.SerializeObject(body),
+                data: DescribeComposed(eventType.Id, body.EventContent),
                 endpointId: producingEndpoint.Id, eventTypeId: body.EventTypeId);
             return new OkObjectResult(new ComposeNewEventResult
             {
@@ -175,13 +176,18 @@ public partial class EventImplementation
 
         var target = lookup.Target;
         var endpoint = target.EndpointId;
-        var auditData = JsonConvert.SerializeObject(body);
 
         string eventTypeId = body.EventTypeId;
         if (string.IsNullOrEmpty(body.EventTypeId))
         {
             eventTypeId = await operatorCommands.ResolveEventTypeIdAsync(target);
         }
+
+        // The body may have round-tripped the $piiMasked sidecar marker; strip it so
+        // the marker never leaks into the actual event payload.
+        var forwardedContent = masker.StripMaskedMarker(body.EventContent);
+        var auditData = DescribeEdit(target, eventTypeId, forwardedContent,
+            await OperatorCommandCoordinator.StoredPayloadAsync(messageStore, target));
 
         // Checked here as well as in the coordinator so a caller without the role is refused
         // before the payload checks below reveal anything about the event type.
@@ -224,15 +230,36 @@ public partial class EventImplementation
             }
         }
 
-        // The body may have round-tripped the $piiMasked sidecar marker; strip it so
-        // the marker never leaks into the actual event payload.
-        var forwardedContent = masker.StripMaskedMarker(body.EventContent);
-
         var result = await operatorCommands.ResubmitWithChangesAsync(target, eventTypeId, forwardedContent, auditData, WebAppCommand);
         return CommandResult(result);
     }
 
     private static readonly OperatorCommandContext WebAppCommand = new(OperatorChannel.WebApp);
+
+    // Audit rows record what an operator sent without keeping a copy of the payload: the event
+    // type, the payload's hash and the JSON paths the edit changes, as the MCP tool does.
+    private static string DescribeEdit(OperatorCommandTarget target, string? eventTypeId, string? editedJson, string? originalJson) =>
+        JsonConvert.SerializeObject(new
+        {
+            channel = WebAppCommand.Channel.ToString(),
+            priorStatus = target.Row.ResolutionStatus.ToString(),
+            messageId = target.Version.LastMessageId,
+            messageVersion = target.Version.Encode(),
+            eventTypeId,
+            contentHash = editedJson is null ? null : OperatorPayloadEdit.Hash(editedJson),
+            changedPaths = OperatorPayloadEdit.TryChangedPaths(originalJson, editedJson),
+        });
+
+    // A composed event is recorded by its type, its payload's hash and its top-level property
+    // names, never the values.
+    private static string DescribeComposed(string eventTypeId, string eventContent) =>
+        JsonConvert.SerializeObject(new
+        {
+            channel = WebAppCommand.Channel.ToString(),
+            eventTypeId,
+            contentHash = OperatorPayloadEdit.Hash(eventContent),
+            properties = OperatorPayloadEdit.PropertyNames(eventContent),
+        });
 
     // The composed event type id comes from the caller; strip line breaks so it cannot forge
     // log entries.

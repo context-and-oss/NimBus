@@ -926,7 +926,7 @@ reason, free text) and Reconcile stale pending (`AdminService.Reconcile.cs`, a f
 | Type | On payload list | Written in | `Data` on master / reason |
 |---|---|---|---|
 | Resubmit | **Yes** | `OperatorCommandCoordinator` (`Describe`) | Includes `reason`, operator free text tied to the event, which may quote the payload. |
-| ResubmitWithChanges | **Yes** | `EventImplementation.OperatorActions.cs` (`PostResubmitWithChangesEventIdsAsync`, `JsonConvert.SerializeObject(body)`), then `OperatorCommandCoordinator` | The whole request body, including `EventContent` (the edited payload). |
+| ResubmitWithChanges | **Yes** | `EventImplementation.OperatorActions.cs` (`PostResubmitWithChangesEventIdsAsync`, `JsonConvert.SerializeObject(body)`), then `OperatorCommandCoordinator` | Rows written before #403: the whole request body, including `EventContent` (the edited payload). Rows written since: the event type, the payload hash and the changed JSON paths, no values (still on the list for the older rows and the MCP `reason`). |
 | Skip | **Yes** | `OperatorCommandCoordinator` (`Describe`); `EventImplementation.Deferred.cs` | `reason` free text; the deferred variant's `Comment` is the reason. |
 | Retry | No | `ResolverService` | No `Data`. |
 | Comment | No | `ResolverService` (stale-write note) | A fixed sentence with the message type and message id. |
@@ -937,7 +937,7 @@ reason, free text) and Reconcile stale pending (`AdminService.Reconcile.cs`, a f
 | GetEndpointDetails | No | `EndpointImplementation` | Endpoint id only. |
 | EnableEndpoint, DisableEndpoint, EnableEndpointSend, DisableEndpointSend | No | `EndpointImplementation` | Endpoint state changes. |
 | PurgeMessages | No | `AdminImplementation`, `EndpointImplementation` | Endpoint, subscription, session, counts. |
-| Compose | **Yes** (P5) | `EventImplementation.OperatorActions.cs` (`PostComposeNewEventAsync`, `JsonConvert.SerializeObject(body)`) | The whole body, including `EventContent`. Written without an event id, so matched by content. |
+| Compose | **Yes** (P5) | `EventImplementation.OperatorActions.cs` (`PostComposeNewEventAsync`, `JsonConvert.SerializeObject(body)`) | Rows written before #403: the whole body, including `EventContent`. Written without an event id, so matched by content. Rows written since hold the event type, the payload hash and the top-level property names, no values, and need no redaction. |
 | ReportEvent | **Yes** | `OperatorCommandCoordinator` | Includes `reason` free text and the ticket id. |
 | GrantRole, RevokeRole | No | `AccessControlImplementation` | Scope, role, entry. |
 | ManageSubscription | No | `AdminImplementation` | Topic, subscription, action. |

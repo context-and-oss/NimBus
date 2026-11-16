@@ -318,9 +318,7 @@ public sealed partial class OperatorActionTools
                 "eventContent still holds masked placeholders. Read the payload with nimbus_get_message includePayload (it needs the nimbus.payload.read scope) and pass real values for every field.");
         }
 
-        var history = (await _store.GetEventHistory(target.EventId).ConfigureAwait(false)).ToList();
-        var original = OperatorCommandCoordinator.LatestRequestMessageWithPayload(history)?.MessageContent?.EventContent?.EventJson
-            ?? target.Message.MessageContent?.EventContent?.EventJson;
+        var original = await OperatorCommandCoordinator.StoredPayloadAsync(_store, target).ConfigureAwait(false);
         return new PayloadEdit(eventTypeId, _masker.StripMaskedMarker(eventContent), original);
     }
 

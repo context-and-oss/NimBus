@@ -598,7 +598,7 @@ controller method that fires each one:
 | `AuditType`           | Triggered by                                              |
 |-----------------------|-----------------------------------------------------------|
 | `Resubmit`            | `EventImplementation.PostResubmitEventIdsAsync`           |
-| `ResubmitWithChanges` | `EventImplementation.PostResubmitWithChangesEventIdsAsync`|
+| `ResubmitWithChanges` | `EventImplementation.PostResubmitWithChangesEventIdsAsync` — the event type, the payload's SHA-256 and the JSON paths the edit adds, removes or changes as `Data`, never the payload's values |
 | `Skip`                | `EventImplementation.PostSkipEventIdsAsync`               |
 | `CompleteHandoff`     | `EventImplementation.PostHandoffCompleteAsync`            |
 | `FailHandoff`         | `EventImplementation.PostHandoffFailAsync`                |
@@ -608,7 +608,7 @@ controller method that fires each one:
 | `EnableEndpoint`      | `EndpointImplementation.PostEndpointSubscriptionstatusAsync` (body="enable")  |
 | `DisableEndpoint`     | `EndpointImplementation.PostEndpointSubscriptionstatusAsync` (body="disable") |
 | `PurgeMessages`       | `EndpointImplementation.PostEndpointPurgeAsync`, `AdminImplementation.PostAdminSessionPurgeAsync`, `AdminImplementation.PostAdminPurgeAsync` |
-| `Compose`             | `EventImplementation.PostComposeNewEventAsync`            |
+| `Compose`             | `EventImplementation.PostComposeNewEventAsync` — the event type, the payload's SHA-256 and its top-level property names as `Data`, never the payload's values |
 | `ReconcileStalePending` | `AdminImplementation.PostAdminStalePendingReconcileAsync` — one row per invocation (request + counts as `Data`) plus one per repaired event |
 | `UpdateAuditSettings` | `AdminImplementation.PutAdminAuditSettingsAsync` — the disabled types as `Data`; always recorded |
 | `CommandNotSent`      | `OperatorCommandCoordinator` — a resubmit or skip was audited but publishing it failed, so the event was restored; always recorded |
@@ -619,7 +619,10 @@ controller method that fires each one:
 
 Resubmit, skip and resubmit-with-changes run through `OperatorCommandCoordinator`, shared with the
 operator MCP tools. Their `Data` records the channel (`WebApp` or `Mcp`), the reason and idempotency
-key an MCP caller gave, the client application, the prior status and the message version.
+key an MCP caller gave, the client application, the prior status and the message version. A
+resubmit-with-changes row adds the event type, the SHA-256 of the edited payload and the changed
+JSON paths, on both channels and on refused attempts too; the edited values are not stored. Rows
+written before this change may still hold the request body.
 
 `Retry` and `Comment` remain on the enum for backward compatibility with rows
 written before spec 008.

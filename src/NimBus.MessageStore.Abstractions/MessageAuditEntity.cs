@@ -19,9 +19,9 @@ public class MessageAuditEntity
     public bool AccessDenied { get; set; }
 
     /// <summary>
-    /// Optional structured context for the action: search filter JSON,
-    /// ResubmitWithChanges body, or any other payload the caller wants
-    /// preserved alongside the audit row. Truncated to ~4 KB by the
+    /// Optional structured context for the action: search filter JSON, the
+    /// payload hash and changed paths of a ResubmitWithChanges, or any other
+    /// context the caller wants preserved alongside the audit row. Truncated to ~4 KB by the
     /// <c>NimBus.WebApp.Services</c> audit writer to stay within
     /// every provider's column / document size budget.
     /// </summary>
