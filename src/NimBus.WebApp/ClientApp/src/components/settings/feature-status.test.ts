@@ -28,9 +28,6 @@ const fi = (overrides: Partial<FiSummary> = {}): FiSummary => ({
   active: { enabled: false, includeEventPayload: false },
   restartRequired: false,
   startupLoadFailed: false,
-  credentialConfigured: false,
-  credentialSource: "none",
-  savedApiKey: "none",
   ...overrides,
 });
 
@@ -100,12 +97,12 @@ describe("featureStatus", () => {
   });
 
   describe("Failure intelligence", () => {
-    it("asks for set-up when no key is configured", () => {
+    it("offers to turn it on when off, without asking for a provider key (v5.0.0)", () => {
       expect(status("failure-intelligence", { fi: fi() })).toMatchObject({
         tone: "off",
         label: "Off",
-        summary: "No API key configured",
-        cta: { label: "Set up", tab: "provider" },
+        summary: "Agents can't record classifications",
+        cta: { label: "Turn on", tab: "provider" },
       });
     });
 
@@ -117,32 +114,18 @@ describe("featureStatus", () => {
       expect(s?.quick).toBeUndefined();
     });
 
-    it("flags a saved key this instance cannot read", () => {
-      expect(
-        status("failure-intelligence", {
-          fi: fi({ savedApiKey: "unreadable", credentialConfigured: true }),
-        }),
-      ).toMatchObject({
-        tone: "danger",
-        label: "Key unreadable",
-        cta: { label: "Fix key", tab: "provider" },
-      });
-    });
-
     it("summarises an active configuration", () => {
       expect(
         status("failure-intelligence", {
           fi: fi({
             active: { enabled: true, includeEventPayload: true },
-            credentialConfigured: true,
-            credentialSource: "deployment",
           }),
         }),
       ).toMatchObject({
         tone: "ok",
         label: "On",
         on: true,
-        summary: "Payload included · API key from deployment",
+        summary: "Agents record over MCP · payload included",
       });
     });
   });

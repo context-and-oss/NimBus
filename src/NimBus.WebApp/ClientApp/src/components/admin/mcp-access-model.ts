@@ -108,8 +108,8 @@ export interface CapabilityInfo {
 
 /** The tools that only read, without nimbus_prepare_action. They have no switch. */
 export const READ_TOOL_COUNT = 15;
-/** Every tool the server registers: the read tools, nimbus_prepare_action and the nine that change something. */
-export const TOTAL_TOOL_COUNT = 25;
+/** Every tool the server registers: the read tools, nimbus_prepare_action and the eight that change something. */
+export const TOTAL_TOOL_COUNT = 24;
 
 export const CAPABILITIES: CapabilityInfo[] = [
   { key: "payloads", label: "Raw payloads", risk: "data", riskText: "data", tools: ["nimbus_get_message · includePayload"],
@@ -119,9 +119,9 @@ export const CAPABILITIES: CapabilityInfo[] = [
   { key: "report", label: "Mark reported", risk: "low", riskText: "low", tools: ["nimbus_set_message_reported"],
     scope: "nimbus.annotate", role: "Contributor",
     description: "Set or clear the \"reported\" marker, optionally with an external ticket ID." },
-  { key: "classify", label: "Classify failures", risk: "low", riskText: "low", tools: ["nimbus_record_classification", "nimbus_classify_failure (deprecated)"],
+  { key: "classify", label: "Classify failures", risk: "low", riskText: "low", tools: ["nimbus_record_classification"],
     scope: "nimbus.classify", role: "Contributor",
-    description: "Let agents record their classification of a failure. It is advisory, changes no message, and NimBus composes the guidance. The deprecated nimbus_classify_failure also asks the built-in provider, at a cost." },
+    description: "Let agents record their classification of a failure. It is advisory, changes no message, and NimBus composes the guidance." },
   { key: "resubmit", label: "Resubmit messages", risk: "medium", riskText: "medium", tools: ["nimbus_prepare_action", "nimbus_resubmit_message"],
     scope: "nimbus.resubmit", role: "Contributor",
     description: "Replay the latest stored payload to the endpoint after a preview, with a state guard and an audit row written first." },
@@ -329,9 +329,8 @@ export function previewAccess(s: McpSettings, d: McpDeployment, persona: Persona
 export function listedToolCount(s: McpSettings, d: McpDeployment): number {
   if (d.mode === "disabled" || !s.enabled) return 0;
   const c = s.capabilities;
-  // Classify lists nimbus_record_classification and the deprecated nimbus_classify_failure; recovering
-  // deferred messages lists two tools. nimbus_prepare_action is listed while it can preview anything.
+  // Recovering deferred messages lists two tools. nimbus_prepare_action is listed while it can preview anything.
   const preparable = [c.resubmit, c.skip, c.settleHandoffs, c.recoverDeferred, c.editPayloads].some(Boolean);
-  return READ_TOOL_COUNT + [c.report, c.resubmit, c.skip, c.settleHandoffs, c.editPayloads].filter(Boolean).length
-    + (c.classify ? 2 : 0) + (c.recoverDeferred ? 2 : 0) + (preparable ? 1 : 0);
+  return READ_TOOL_COUNT + [c.report, c.classify, c.resubmit, c.skip, c.settleHandoffs, c.editPayloads].filter(Boolean).length
+    + (c.recoverDeferred ? 2 : 0) + (preparable ? 1 : 0);
 }

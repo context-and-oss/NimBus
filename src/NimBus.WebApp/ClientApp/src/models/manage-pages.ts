@@ -58,12 +58,12 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     group: "AI & agents",
     name: "Failure intelligence",
     description:
-      "On-demand advisory analysis of failed messages. You control the provider, evidence and endpoint scope.",
+      "Advisory classification of failed messages, recorded by agents over MCP. You control the evidence they see and the endpoint scope.",
     applies: "Restart every instance to apply",
     tabs: [
-      { id: "provider", label: "Activation & provider", keywords: "enable provider model api key typesafe" },
+      { id: "provider", label: "Activation", keywords: "enable activation agents mcp" },
       { id: "evidence", label: "Evidence", keywords: "payload redaction redacted keys history evidence" },
-      { id: "scope", label: "Scope & guardrails", keywords: "endpoints timeout scope guardrails limits" },
+      { id: "scope", label: "Scope & guardrails", keywords: "endpoints scope guardrails limits" },
       { id: "classification", label: "How failures are classified", keywords: "thresholds classify confidence guidance" },
     ],
   },

@@ -378,10 +378,10 @@ describe("MCP access model", () => {
     it("counts the listed tools", () => {
       const everything = { ...withRecovery(), capabilities: { ...withRecovery().capabilities, payloads: true, skip: true } };
 
-      // 15 read tools, report, the two classify tools, resubmit and prepare.
-      expect(listedToolCount(settings(), deployment())).toBe(20);
+      // 15 read tools, report, classify, resubmit and prepare.
+      expect(listedToolCount(settings(), deployment())).toBe(19);
       expect(listedToolCount(everything, deployment())).toBe(TOTAL_TOOL_COUNT);
-      expect(TOTAL_TOOL_COUNT).toBe(25);
+      expect(TOTAL_TOOL_COUNT).toBe(24);
     });
   });
 

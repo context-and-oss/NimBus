@@ -24,7 +24,7 @@ vi.mock("api-client", async () => {
 
 const originalFetch = globalThis.fetch;
 const mcpState = { saved: { enabled: true }, policyLoaded: true, deployment: { mode: "entra" }, csrfToken: "csrf-test" };
-const fiState = { active: { enabled: false }, savedApiKey: "none" };
+const fiState = { active: { enabled: false } };
 const agentKeysState = { keys: [{ keyId: "abcdefghijkl", status: "active" }], csrfToken: "csrf-test" };
 
 function routedFetch(overrides: Record<string, () => Response> = {}) {

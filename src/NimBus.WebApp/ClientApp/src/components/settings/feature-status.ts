@@ -44,9 +44,6 @@ export interface FiSummary {
   active: { enabled: boolean; includeEventPayload: boolean };
   restartRequired: boolean;
   startupLoadFailed: boolean;
-  credentialConfigured: boolean;
-  credentialSource: "saved" | "deployment" | "none";
-  savedApiKey: "none" | "configured" | "unreadable";
 }
 
 /** Each feature's loaded state; undefined while loading, "error" when it could not be read. */
@@ -103,29 +100,16 @@ function failureIntelligence(fi: NonNullable<SettingsSnapshot["fi"]>): FeatureSt
   if (fi === "error") return UNAVAILABLE;
   if (fi.startupLoadFailed)
     return { tone: "danger", label: "Unavailable", summary: "Startup settings could not be loaded", on: false };
-  if (fi.savedApiKey === "unreadable")
-    return {
-      tone: "danger",
-      label: "Key unreadable",
-      summary: "Enter the API key again or remove it",
-      on: fi.active.enabled,
-      cta: { label: "Fix key", tab: "provider" },
-    };
   if (fi.restartRequired)
     return { tone: "warn", label: "Restart required", summary: "Saved settings differ from this instance", on: fi.active.enabled };
-  const keyConfigured = fi.credentialConfigured || fi.savedApiKey === "configured";
-  if (fi.active.enabled) {
-    const key = { saved: "saved", deployment: "from deployment", none: "missing" }[fi.credentialSource];
+  if (fi.active.enabled)
     return {
       tone: "ok",
       label: "On",
-      summary: `Payload ${fi.active.includeEventPayload ? "included" : "excluded"} · API key ${key}`,
+      summary: `Agents record over MCP · payload ${fi.active.includeEventPayload ? "included" : "excluded"}`,
       on: true,
     };
-  }
-  return keyConfigured
-    ? { tone: "off", label: "Off", summary: "Contributors can't request analysis", on: false, cta: { label: "Turn on", tab: "provider" } }
-    : { tone: "off", label: "Off", summary: "No API key configured", on: false, cta: { label: "Set up", tab: "provider" } };
+  return { tone: "off", label: "Off", summary: "Agents can't record classifications", on: false, cta: { label: "Turn on", tab: "provider" } };
 }
 
 function simulation(status: NonNullable<SettingsSnapshot["simulation"]>): FeatureStatus {
