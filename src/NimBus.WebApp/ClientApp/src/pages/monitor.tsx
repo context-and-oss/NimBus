@@ -18,7 +18,6 @@ import {
   failRate,
   formatMs,
   formatPercent,
-  hourlySlots,
   lastCompleteMinute,
   successRate,
   timeToHandleMs,
@@ -54,11 +53,14 @@ export type EndpointState = "nogo" | "acked" | "hold" | "go";
  * Live Monitor: a wall display for the whole fleet.
  *
  *  - Header: environment, T+ since the oldest open failure, local + UTC clock
- *  - Summary: GO ring and six tiles (unresolved failures, blocked sessions, backlog,
- *    throughput now, success rate and time to handle over the last hour)
- *  - Charts: last hour per minute, last 3 days per hour, time to handle per hour
+ *  - Summary: GO ring and five tiles (unresolved failures, blocked sessions, backlog,
+ *    throughput now with the last hour's success rate, and time to handle over the last hour)
+ *  - Charts: last hour per minute and last 3 days per hour
  *  - One endpoint table, failing first, with ACK for Contributors
  *  - Footer: ticker of recent events and a refresh heartbeat
+ *
+ * The wall spells out what is wrong and stays quiet about what is normal: counts that are zero,
+ * processing at its usual speed and a heartbeat that answers get no words of their own.
  *
  * Opened as `/Monitor#token=…` it reads the feed with a dashboard token: read-only, no ACK,
  * and no call to any other API. Without a token it needs the site Reader role.
@@ -131,20 +133,20 @@ function MonitorWall({ token, canAck }: { token?: string; canAck: (endpointId: s
       {history?.stale && <StaleBanner label="History is stale" lastRefreshAt={history.generatedAtUtc?.valueOf()} now={nowMs} retrySeconds={300} />}
       <div
         className={cn(
-          "flex flex-col gap-[0.8em] transition-[opacity,filter]",
+          // Fills the screen so the footer sits at its bottom edge when the wall has room to spare.
+          "flex-1 flex flex-col gap-[0.8em] transition-[opacity,filter]",
           data.isStale || metrics?.stale || history?.stale ? "opacity-70 grayscale" : "opacity-100",
         )}
       >
         <Hero
           feed={data.feed}
-          readOnly={readOnly}
           clock={now}
           unackedFresh={summary.unackedFreshFailures}
           openSince={firstOpenFailureAt(data.endpoints)}
           actionError={data.actionError}
         />
         <SummaryRow endpoints={data.endpoints} summary={summary} metrics={metrics} />
-        <ChartsRow metrics={metrics} history={history} now={now} />
+        <ChartsRow metrics={metrics} history={history} />
         <EndpointTable
           endpoints={data.endpoints}
           metrics={metrics}
@@ -167,15 +169,21 @@ function MonitorWall({ token, canAck }: { token?: string; canAck: (endpointId: s
 
 interface HeroProps {
   feed?: MonitorFeedInfo;
-  readOnly: boolean;
   clock: Date;
   unackedFresh: number;
   openSince: number | undefined;
   actionError?: string;
 }
 
-const Hero = ({ feed, readOnly, clock, unackedFresh, openSince, actionError }: HeroProps) => {
+const Hero = ({ feed, clock, unackedFresh, openSince, actionError }: HeroProps) => {
   const upperEnv = (feed?.environment ?? "").toUpperCase();
+  // Under the title: the platform's name, and only what needs saying right now.
+  const alerts = [
+    unackedFresh > 0 ? `${unackedFresh} new failure${unackedFresh === 1 ? "" : "s"}` : undefined,
+    actionError ? `ACK not saved: ${actionError}` : undefined,
+  ]
+    .filter((alert) => alert !== undefined)
+    .join(" · ");
   // PROD gets a red-tinted pill; anything else borrows the warning amber so it still reads as
   // "this is not prod".
   const envClass =
@@ -193,14 +201,12 @@ const Hero = ({ feed, readOnly, clock, unackedFresh, openSince, actionError }: H
       </div>
       <div className="min-w-0">
         <h1 className="m-0 text-[1.35em] font-bold tracking-tight">Live monitor</h1>
-        <div className="font-mono text-[0.85em] text-muted-foreground mt-[0.3em]">
-          {feed?.platformName ? `${feed.platformName} · ` : ""}Auto-refresh every 5 s ·{" "}
-          {readOnly ? "read-only dashboard" : "ACK to silence known failures"}
-          {unackedFresh > 0 && (
-            <span className={DANGER_TEXT}>{` · ${unackedFresh} new failure${unackedFresh === 1 ? "" : "s"}`}</span>
-          )}
-          {actionError && <span className={DANGER_TEXT}>{` · ACK not saved: ${actionError}`}</span>}
-        </div>
+        {(feed?.platformName || alerts) && (
+          <div className="font-mono text-[0.85em] text-muted-foreground mt-[0.3em]">
+            {feed?.platformName}
+            {alerts && <span className={DANGER_TEXT}>{`${feed?.platformName ? " · " : ""}${alerts}`}</span>}
+          </div>
+        )}
       </div>
       <div className="flex-1" />
       {upperEnv && (
@@ -228,7 +234,7 @@ const Hero = ({ feed, readOnly, clock, unackedFresh, openSince, actionError }: H
       </div>
       <div className="pl-[1.6em] border-l border-border text-right">
         <Label>
-          {moment(clock).format("ddd · DD MMM YYYY")} · UTC {moment(clock).utc().format("HH:mm")}
+          {moment(clock).format("ddd DD MMM")} · UTC {moment(clock).utc().format("HH:mm")}
         </Label>
         <div className="font-mono font-medium text-[2.4em] leading-none mt-[0.15em]">{formatClock(clock)}</div>
       </div>
@@ -243,7 +249,7 @@ const Label = ({ children, className }: { children: React.ReactNode; className?:
 );
 
 /* =====================================================================
-   Summary row: GO ring and six tiles
+   Summary row: GO ring and five tiles
    ===================================================================== */
 
 interface SummaryShape {
@@ -261,7 +267,8 @@ interface SummaryShape {
   backlogDeltaPerMin: number;
   /** Undefined when no endpoint reported a count. */
   blockedSessionsTotal: number | undefined;
-  topBlocked: { id: string; count: number }[];
+  /** The endpoint with most blocked sessions; undefined when none are blocked. */
+  topBlocked: { id: string; count: number } | undefined;
 }
 
 type Tone = "danger" | "warning" | "neutral";
@@ -285,11 +292,14 @@ const SummaryRow = ({
   const minute = lastCompleteMinute(metrics?.lastHour);
   const fleet = metrics?.fleet;
   const success = successRate(fleet);
+  // The last hour's failure rate colours the throughput tile: traffic that flows but fails is
+  // not healthy traffic.
   const failures = failRate(fleet) ?? 0;
-  const attempts = (fleet?.handled ?? 0) + (fleet?.failed ?? 0);
+  const flowTone: Tone = failures >= 0.05 ? "danger" : failures >= 0.01 ? "warning" : "neutral";
   const handleMs = timeToHandleMs(fleet);
   const backlog = summary.pendingTotal + summary.deferredTotal;
   const trend = Math.round(summary.backlogDeltaPerMin);
+  const allHealthy = summary.totalEndpoints > 0 && summary.nogoCount + summary.ackedCount + summary.holdCount === 0;
 
   return (
     <section aria-label="Fleet summary" className="flex flex-wrap gap-[0.7em]">
@@ -297,9 +307,10 @@ const SummaryRow = ({
         <FleetRing endpoints={endpoints} />
         <div className="flex flex-col gap-[0.3em] text-[0.95em]">
           <Label>Endpoints</Label>
-          <LegendRow swatch="bg-status-danger" count={summary.nogoCount} label="failing" />
-          <LegendRow swatch="bg-border-strong" count={summary.ackedCount} label="acknowledged" />
-          <LegendRow swatch="bg-status-warning" count={summary.holdCount} label="queued" />
+          {summary.nogoCount > 0 && <LegendRow swatch="bg-status-danger" count={summary.nogoCount} label="failing" />}
+          {summary.ackedCount > 0 && <LegendRow swatch="bg-border-strong" count={summary.ackedCount} label="acknowledged" />}
+          {summary.holdCount > 0 && <LegendRow swatch="bg-status-warning" count={summary.holdCount} label="queued" />}
+          {allHealthy && <span className={SUCCESS_TEXT}>all healthy</span>}
         </div>
       </div>
       <Tile
@@ -307,17 +318,27 @@ const SummaryRow = ({
         tone={summary.unresolvedTotal > 0 ? "danger" : "neutral"}
         value={formatBigNumber(summary.unresolvedTotal)}
         valueClass={summary.unresolvedTotal > 0 ? DANGER_TEXT : undefined}
-        sub={`${formatBigNumber(failedOnly)} failed · ${formatBigNumber(summary.deadletterTotal)} dead-lettered · ${formatBigNumber(summary.unsupportedTotal)} unsupported`}
+        sub={nonZeroParts(
+          [
+            [failedOnly, "failed"],
+            [summary.deadletterTotal, "dead-lettered"],
+            [summary.unsupportedTotal, "unsupported"],
+          ],
+          "nothing failed",
+        )}
       />
       <Tile
         label="Blocked sessions"
         title="Estimated from stored status: sessions with a failed, dead-lettered or pending hand-off message. A message dead-lettered on its first attempt does not block its session but is counted."
         tone={(summary.blockedSessionsTotal ?? 0) > 0 ? "warning" : "neutral"}
         value={summary.blockedSessionsTotal === undefined ? "–" : formatBigNumber(summary.blockedSessionsTotal)}
-        sub={[
-          ...summary.topBlocked.map((b) => `${formatBigNumber(b.count)} ${b.id}`),
-          `${formatBigNumber(summary.deferredTotal)} deferred`,
-        ].join(" · ")}
+        sub={
+          summary.blockedSessionsTotal === undefined
+            ? "not reported"
+            : summary.topBlocked
+              ? `${formatBigNumber(summary.topBlocked.count)} on ${summary.topBlocked.id}`
+              : "nothing blocked"
+        }
       />
       <Tile
         label="Backlog"
@@ -325,21 +346,21 @@ const SummaryRow = ({
         value={formatBigNumber(backlog)}
         aside={trend === 0 ? "stable" : `${trend > 0 ? "▲" : "▼"} ${formatBigNumber(Math.abs(trend))} / min`}
         asideClass={trend > 0 ? WARNING_TEXT : undefined}
-        sub={`${formatBigNumber(summary.pendingTotal)} pending · ${formatBigNumber(summary.deferredTotal)} deferred`}
+        sub={nonZeroParts(
+          [
+            [summary.pendingTotal, "pending"],
+            [summary.deferredTotal, "deferred"],
+          ],
+          "nothing waiting",
+        )}
       />
       <Tile
         label="Throughput now"
-        tone="neutral"
+        tone={flowTone}
         value={minute ? formatBigNumber(minute.published) : "–"}
         unit="/ min in"
-        sub={minute ? `${formatBigNumber(minute.handled)} handled · ${formatBigNumber(minute.failed)} failed per min` : "last complete minute"}
-      />
-      <Tile
-        label="Success rate · last hour"
-        tone={success === undefined ? "neutral" : failures >= 0.05 ? "danger" : failures >= 0.01 ? "warning" : "neutral"}
-        value={formatPercent(success)}
-        valueClass={success !== undefined && failures >= 0.05 ? DANGER_TEXT : undefined}
-        sub={attempts === 0 ? "no attempts" : `${formatBigNumber(fleet?.failed ?? 0)} of ${formatBigNumber(attempts)} attempts failed`}
+        sub={success === undefined ? "no attempts in the last hour" : `${formatPercent(success)} success over the last hour`}
+        subClass={flowTone === "danger" ? cn("font-bold", DANGER_TEXT) : flowTone === "warning" ? cn("font-bold", WARNING_TEXT) : undefined}
       />
       <Tile
         label="Time to handle · last hour"
@@ -361,6 +382,7 @@ const Tile = ({
   aside,
   asideClass,
   sub,
+  subClass,
 }: {
   label: string;
   title?: string;
@@ -371,6 +393,8 @@ const Tile = ({
   aside?: string;
   asideClass?: string;
   sub: string;
+  /** Replaces the muted colour when the line under the figure is itself the warning. */
+  subClass?: string;
 }) => (
   <div
     className={cn("flex-[1_1_13em] min-w-0 rounded-nb-md px-[1.1em] py-[0.9em] flex flex-col gap-[0.4em]", TILE_TONE[tone])}
@@ -384,9 +408,15 @@ const Tile = ({
       </span>
       {aside && <span className={cn("font-mono text-[0.85em] font-bold", asideClass)}>{aside}</span>}
     </div>
-    <div className="text-[0.85em] text-muted-foreground">{sub}</div>
+    <div className={cn("text-[0.85em]", subClass ?? "text-muted-foreground")}>{sub}</div>
   </div>
 );
+
+/** "28 failed · 3 dead-lettered": the parts that are not zero, or `whenNone` if they all are. */
+function nonZeroParts(parts: [count: number, label: string][], whenNone: string): string {
+  const shown = parts.filter(([count]) => count > 0).map(([count, label]) => `${formatBigNumber(count)} ${label}`);
+  return shown.length > 0 ? shown.join(" · ") : whenNone;
+}
 
 const LegendRow = ({ swatch, count, label }: { swatch: string; count: number; label: string }) => (
   <span className="inline-flex items-center gap-[0.5em]">
@@ -460,12 +490,6 @@ const THROUGHPUT_LINES: ChartSeries[] = [
   { key: "handled", label: "Handled", stroke: "stroke-status-success", fill: "fill-status-success" },
 ];
 const FAILED_BAR: ChartSeries = { key: "failed", label: "Failed", stroke: "stroke-status-danger", fill: "fill-status-danger" };
-const PROCESSING_LINE: ChartSeries[] = [
-  { key: "processing", label: "Processing · handler at work", stroke: "stroke-nimbus-purple", fill: "fill-nimbus-purple" },
-];
-const QUEUED_LINE: ChartSeries[] = [
-  { key: "queue", label: "Queued · waiting to be picked up", stroke: "stroke-status-warning", fill: "fill-status-warning" },
-];
 
 const countBuckets = (points: api.TimeSeriesDataPoint[] | undefined) =>
   (points ?? []).map((p) => ({
@@ -476,23 +500,12 @@ const countBuckets = (points: api.TimeSeriesDataPoint[] | undefined) =>
 const ChartsRow = ({
   metrics,
   history,
-  now,
 }: {
   metrics?: api.MonitorFeedMetrics;
   history?: api.MonitorFeedHistory;
-  now: Date;
 }) => {
   const lastHour = countBuckets(metrics?.lastHour);
   const lastDays = countBuckets(history?.lastThreeDays);
-  const latencySlots = hourlySlots(history?.latencyLastDay ?? undefined, 24, now);
-  const latency = latencySlots.map((slot) => ({
-    timestamp: slot.timestamp,
-    values: {
-      processing: slot.point ? (averageMs(slot.point.processing) ?? null) : null,
-      queue: slot.point ? (averageMs(slot.point.queue) ?? null) : null,
-    },
-  }));
-  const latencyNow = latencySlots[latencySlots.length - 1]?.point;
 
   return (
     <section className="flex flex-wrap gap-[0.7em]">
@@ -535,62 +548,9 @@ const ChartsRow = ({
           <ChartPlaceholder />
         )}
       </Panel>
-      <Panel title="Time to handle" note="average per hour · last 24 h · current hour dashed">
-        {history?.latencyLastDay === null ? (
-          <div className="h-[11em] grid place-content-center text-[0.9em] text-muted-foreground">
-            This storage provider does not report timings per hour.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-[0.6em]">
-            <LatencyChart
-              series={PROCESSING_LINE}
-              current={averageMs(latencyNow?.processing)}
-              buckets={latency}
-              ariaLabel="Average processing time per hour over the last 24 hours"
-            />
-            <LatencyChart
-              series={QUEUED_LINE}
-              current={averageMs(latencyNow?.queue)}
-              buckets={latency}
-              ariaLabel="Average queue wait per hour over the last 24 hours"
-            />
-          </div>
-        )}
-      </Panel>
     </section>
   );
 };
-
-const LatencyChart = ({
-  series,
-  current,
-  buckets,
-  ariaLabel,
-}: {
-  series: ChartSeries[];
-  current: number | undefined;
-  buckets: { timestamp: string; values: Record<string, number | null> }[];
-  ariaLabel: string;
-}) => (
-  <div className="flex flex-col gap-[0.9em]">
-    <div className="flex items-baseline justify-between gap-[1em]">
-      <ChartLegend lines={series} />
-      <span className="font-mono text-[0.85em]">
-        <strong>{formatMs(current)}</strong> now
-      </span>
-    </div>
-    <SeriesChart
-      ariaLabel={ariaLabel}
-      buckets={buckets}
-      lines={series}
-      formatY={(v) => (v === 0 ? "0" : formatMs(v))}
-      formatX={(t) => moment(bucketStart(t)).format("HH:mm")}
-      partialLast
-      heightEm={4.2}
-      xTicks={4}
-    />
-  </div>
-);
 
 const Panel = ({
   title,
@@ -672,22 +632,18 @@ const EndpointTable = ({
       <div className="flex flex-wrap items-baseline justify-between gap-x-[1.5em] gap-y-[0.3em] px-[1.2em] pb-[0.5em]">
         <h2 className="m-0 text-[0.85em] font-extrabold tracking-[0.12em] uppercase">Endpoints</h2>
         <span className="text-[0.8em] text-muted-foreground">
-          {endpoints.length} total · failing first, then backlog, then A to Z · counts for the last hour · processing against its 24 h average
+          {endpoints.length} total · failing first · counts for the last hour
         </span>
       </div>
       <div className="overflow-x-auto px-[0.4em]">
-        <table className="w-full min-w-[68em] border-collapse font-mono text-[0.9em]">
+        <table className="w-full min-w-[46em] border-collapse font-mono text-[0.9em]">
           <thead>
             <tr>
               <th scope="col" className={cn(header, "text-left")}>Endpoint</th>
               <th scope="col" className={cn(header, "text-left")}>State</th>
+              <th scope="col" className={cn(header, "text-right")}>Backlog</th>
               <th scope="col" className={cn(header, "text-right")}>In</th>
-              <th scope="col" className={cn(header, "text-right")}>Out</th>
-              <th scope="col" className={cn(header, "text-right")}>Fail %</th>
-              <th scope="col" className={cn(header, "text-right")}>Pending</th>
-              <th scope="col" className={cn(header, "text-right")}>Deferred</th>
               <th scope="col" className={cn(header, "text-right")}>Processing</th>
-              <th scope="col" className={cn(header, "text-right")}>Queue wait</th>
               <th scope="col" className={cn(header, "text-right")}>Heartbeat</th>
             </tr>
           </thead>
@@ -746,9 +702,10 @@ const EndpointRow = ({
   const fail = failRate(counts);
   const processing = averageMs(counts?.processing);
   const usual = averageMs(usualProcessing);
-  const slower = processing !== undefined && usual !== undefined && usual > 0 && processing / usual >= SLOWER_THAN_USUAL;
-  const queue = averageMs(counts?.queue);
-  const pending = endpoint.status.pendingCount ?? 0;
+  // How many times its 24 h average, set only when that is slow enough to call out.
+  const timesUsual = processing !== undefined && usual !== undefined && usual > 0 ? processing / usual : undefined;
+  const slowerBy = timesUsual !== undefined && timesUsual >= SLOWER_THAN_USUAL ? timesUsual : undefined;
+  const backlog = backlogTotal(endpoint);
   const deferred = endpoint.status.deferredCount ?? 0;
   const muted = "text-muted-foreground";
   const cell = "px-[0.8em] py-[0.55em] text-right whitespace-nowrap";
@@ -785,29 +742,26 @@ const EndpointRow = ({
           )}
         </span>
       </td>
-      <td className={cn(cell, received === 0 && muted)}>{received === 0 ? "–" : formatBigNumber(received)}</td>
-      <td className={cn(cell, !counts?.published && muted)}>{counts?.published ? formatBigNumber(counts.published) : "–"}</td>
-      <td className={cn(cell, fail !== undefined && fail > 0 ? cn("font-bold", DANGER_TEXT) : muted)}>
-        {fail === undefined ? "–" : formatPercent(fail)}
+      <td className={cell}>
+        <span className={backlog > 0 ? cn("font-bold", WARNING_TEXT) : muted}>{formatBigNumber(backlog)}</span>
+        {deferred > 0 && <span className={muted}>{` · ${formatBigNumber(deferred)} deferred`}</span>}
       </td>
-      <td className={cn(cell, pending > 0 ? cn("font-bold", WARNING_TEXT) : muted)}>{formatBigNumber(pending)}</td>
-      <td className={cn(cell, deferred > 0 ? cn("font-bold", WARNING_TEXT) : muted)}>{formatBigNumber(deferred)}</td>
+      <td className={cn(cell, received === 0 && muted)}>
+        {received === 0 ? "–" : formatBigNumber(received)}
+        {fail !== undefined && fail > 0 && (
+          <span className={cn("font-bold", DANGER_TEXT)}>{` · ${formatPercent(fail)} failed`}</span>
+        )}
+      </td>
       <td className={cell}>
         {processing === undefined ? (
           <span className={muted}>–</span>
         ) : (
           <>
-            <span className={slower ? cn("font-bold", WARNING_TEXT) : undefined}>{formatMs(processing)}</span>
-            {usual !== undefined && (
-              <span className={muted}>
-                {" · "}
-                {slower ? `${(processing / usual).toFixed(1)}× usual` : "as usual"}
-              </span>
-            )}
+            <span className={slowerBy !== undefined ? cn("font-bold", WARNING_TEXT) : undefined}>{formatMs(processing)}</span>
+            {slowerBy !== undefined && <span className={muted}>{` · ${slowerBy.toFixed(1)}× usual`}</span>}
           </>
         )}
       </td>
-      <td className={cn(cell, queue === undefined && muted)}>{formatMs(queue)}</td>
       <td className={cell}>
         <HeartbeatCell heartbeat={endpoint.heartbeat} now={now} />
       </td>
@@ -820,7 +774,12 @@ const HeartbeatCell = ({ heartbeat, now }: { heartbeat?: api.MonitorFeedHeartbea
   const ago = heartbeat.lastAnsweredUtc ? `${formatDuration(now - heartbeat.lastAnsweredUtc.valueOf())} ago` : "never answered";
   switch (heartbeat.liveness) {
     case "alive":
-      return <span className="text-muted-foreground">{ago}</span>;
+      // An answering endpoint needs no ticking age on the wall; hovering still gives it.
+      return (
+        <span className="text-muted-foreground" title={`Last answered ${ago}`}>
+          ok
+        </span>
+      );
     case "late":
       return <span className={cn("font-bold", WARNING_TEXT)}>late · {ago}</span>;
     case "missing":
@@ -932,7 +891,7 @@ const WallFoot = ({
 }) => {
   const seconds = lastRefreshAt ? Math.max(0, Math.round((now - lastRefreshAt) / 1000)) : undefined;
   return (
-    <footer className="flex flex-wrap items-center gap-x-[1.6em] gap-y-[0.5em] font-mono text-[0.85em] text-muted-foreground">
+    <footer className="mt-auto flex flex-wrap items-center gap-x-[1.6em] gap-y-[0.5em] font-mono text-[0.85em] text-muted-foreground">
       <Ticker events={ticker} />
       <span className="inline-flex items-center gap-[0.5em] pl-[1.6em] border-l border-border">
         <span aria-hidden="true" className={cn("w-[0.55em] h-[0.55em] rounded-full", isStale ? "bg-status-danger" : "bg-status-success")} />
@@ -1067,17 +1026,15 @@ export function failedPerMinuteSeries(telemetry: FleetSample[]): number[] {
   });
 }
 
-/** Pending + deferred: everything queued up in front of an endpoint. */
 /**
- * The number a state badge shows: failed messages for a failing endpoint, pending plus deferred
- * for a queued one, nothing for a healthy one.
+ * The number a state badge shows: failed messages for a failing endpoint. A queued endpoint's
+ * count is its backlog, which the column beside the badge shows, and a healthy one has none.
  */
 export function stateBadgeCount(endpoint: MonitorEndpoint, state: EndpointState): number | undefined {
-  if (state === "nogo" || state === "acked") return endpoint.status.failedCount ?? 0;
-  if (state === "hold") return backlogTotal(endpoint);
-  return undefined;
+  return state === "nogo" || state === "acked" ? (endpoint.status.failedCount ?? 0) : undefined;
 }
 
+/** Pending + deferred: everything queued up in front of an endpoint. */
 export function backlogTotal(endpoint: MonitorEndpoint): number {
   return (endpoint.status.pendingCount ?? 0) + (endpoint.status.deferredCount ?? 0);
 }
@@ -1114,7 +1071,7 @@ function summarize(endpoints: MonitorEndpoint[]): SummaryShape {
     deferredTotal: 0,
     backlogDeltaPerMin: 0,
     blockedSessionsTotal: undefined,
-    topBlocked: [],
+    topBlocked: undefined,
   };
 
   for (const e of endpoints) {
@@ -1146,8 +1103,7 @@ function summarize(endpoints: MonitorEndpoint[]): SummaryShape {
   summary.topBlocked = endpoints
     .filter((e) => (e.blockedSessionCount ?? 0) > 0)
     .sort((a, b) => (b.blockedSessionCount ?? 0) - (a.blockedSessionCount ?? 0) || a.id.localeCompare(b.id))
-    .slice(0, 2)
-    .map((e) => ({ id: e.id, count: e.blockedSessionCount ?? 0 }));
+    .map((e) => ({ id: e.id, count: e.blockedSessionCount ?? 0 }))[0];
   return summary;
 }
 

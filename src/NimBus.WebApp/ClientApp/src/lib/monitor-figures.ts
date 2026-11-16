@@ -77,22 +77,3 @@ export function bucketStart(timestamp: string): Date {
   else if (!timestamp.endsWith("Z")) iso = `${timestamp}Z`;
   return new Date(iso);
 }
-
-/**
- * Fills a sparse hourly latency series into one entry per hour of the last-day window, in order,
- * with undefined where the hour had no timed outcome.
- */
-export function hourlySlots(
-  points: api.MonitorFeedLatencyPoint[] | undefined,
-  hours: number,
-  now: Date,
-): { timestamp: string; point?: api.MonitorFeedLatencyPoint }[] {
-  const byKey = new Map((points ?? []).map((p) => [p.timestamp ?? "", p]));
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours()));
-  const slots: { timestamp: string; point?: api.MonitorFeedLatencyPoint }[] = [];
-  for (let i = hours - 1; i >= 0; i--) {
-    const key = new Date(end.getTime() - i * 3_600_000).toISOString().slice(0, 13);
-    slots.push({ timestamp: key, point: byKey.get(key) });
-  }
-  return slots;
-}

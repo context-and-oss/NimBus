@@ -24,37 +24,38 @@ UTC time.
 
 | Tile | Meaning |
 |---|---|
-| Health ring | One segment per endpoint, coloured by its state (below); the centre counts the healthy ones |
+| Health ring | One segment per endpoint, coloured by its state (below); the centre counts the healthy ones. The legend lists only the states some endpoint is in |
 | Unresolved failures | Messages that need an operator now: failed, dead-lettered and unsupported |
-| Blocked sessions | An estimate: sessions with a failed, dead-lettered or pending hand-off message, and the two endpoints with most. A message dead-lettered on its first attempt does not block its session but is counted; sessions only waiting for replays are not. The exact state lives on Service Bus and is too slow to read every few seconds |
+| Blocked sessions | An estimate: sessions with a failed, dead-lettered or pending hand-off message, and the endpoint with most. A message dead-lettered on its first attempt does not block its session but is counted; sessions only waiting for replays are not. The exact state lives on Service Bus and is too slow to read every few seconds |
 | Backlog | Pending plus deferred messages, and how fast that changes per minute |
-| Throughput now | Messages published in the last complete minute, with handled and failed |
-| Success rate · last hour | Handled ÷ (handled + failed attempts) over the last 60 minutes. Counts attempts: a message that failed twice and then succeeded counts two failures and one success |
+| Throughput now | Messages published in the last complete minute. Below it, the success rate over the last 60 minutes: handled ÷ (handled + failed attempts). It counts attempts: a message that failed twice and then succeeded counts two failures and one success. The tile turns amber from 1 % failed attempts and red from 5 % |
 | Time to handle · last hour | Average queue wait plus average processing time over the last 60 minutes, each from the messages that recorded it |
+
+The wall spells out what is wrong and stays quiet about what is normal. A breakdown under a figure
+lists only the parts that are not zero, so "28 failed · 3 dead-lettered" means nothing is
+unsupported.
 
 **Charts.**
 
 - *Last hour*: published, handled and failed per minute. The last minute is still filling up.
 - *Last 3 days*: the same per hour; the current hour is dashed.
-- *Time to handle*: average processing time and average queue wait per hour over 24 hours. An hour
-  without timed messages leaves a gap. Storage providers that cannot report this show a note
-  instead.
 
 **Endpoints.** One row per endpoint, failing first (largest first), then acknowledged, then
-backlog (deepest first), then the rest A to Z. The state badge says what is happening and how
-much:
+backlog (deepest first), then the rest A to Z. The state badge says what is happening:
 
 | State | Meaning |
 |---|---|
 | Failing · n | n unresolved messages (failed, dead-lettered or unsupported) that nobody has acknowledged |
 | Acked · n | Still failing, but someone has acknowledged it; their name shows beside it |
-| Queued · n | Nothing failing; n messages pending or deferred |
+| Queued | Nothing failing; messages pending or deferred, counted in the Backlog column |
 | Healthy | Nothing failed and nothing waiting |
 
-In, out and fail % cover the last 60 minutes; pending and deferred are the current state and
-break down the queued count. Processing shows the last hour's average
-and calls it out when it is 1.5 times its 24-hour average or more. Heartbeat shows when the
-endpoint last answered a probe.
+| Column | Meaning |
+|---|---|
+| Backlog | Pending plus deferred messages right now, and how many of them are deferred |
+| In | Messages the endpoint handled or failed in the last 60 minutes, and the share that failed when any did |
+| Processing | The last hour's average, called out when it is 1.5 times its 24-hour average or more |
+| Heartbeat | *ok* while the endpoint answers its probes; otherwise *late* or *missing* and when it last answered |
 
 **Footer.** Recent failures, recoveries and acknowledgements, and when the page last updated.
 
