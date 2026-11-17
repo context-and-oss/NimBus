@@ -466,3 +466,44 @@ describe("SubscriptionManager", () => {
     expect(screen.queryByRole("button", { name: "Purge dead letters" })).toBeNull();
   });
 });
+
+// The Topology page lists the topics beside this view and chooses the topic.
+describe("SubscriptionManager with the topic chosen by the page", () => {
+  it("opens the given topic and follows a change without its own back button", async () => {
+    mocks.getAdminServicebusSubscriptions.mockImplementation((name: string) =>
+      Promise.resolve([subscription(`${name}-sub`)]),
+    );
+    const { rerender } = render(<SubscriptionManager topic="orders" onTopicChange={vi.fn()} />);
+
+    expect(await screen.findByText("orders-sub")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "All topics" })).toBeNull();
+
+    rerender(<SubscriptionManager topic="billing" onTopicChange={vi.fn()} />);
+
+    expect(await screen.findByText("billing-sub")).toBeTruthy();
+    expect(screen.queryByText("orders-sub")).toBeNull();
+    expect(mocks.getAdminServicebusSubscriptions).toHaveBeenLastCalledWith("billing");
+  });
+
+  it("asks the page to open a topic from the all-topics table instead of opening it itself", async () => {
+    const onTopicChange = vi.fn();
+    render(<SubscriptionManager topic={null} onTopicChange={onTopicChange} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+
+    expect(onTopicChange).toHaveBeenCalledWith("orders");
+    expect(mocks.getAdminServicebusSubscriptions).not.toHaveBeenCalled();
+  });
+
+  it("reports each topics load, and an inline callback doesn't reload them", async () => {
+    const loaded: unknown[] = [];
+    const { rerender } = render(
+      <SubscriptionManager topic={null} onTopicChange={vi.fn()} onTopicsLoaded={(t) => loaded.push(t)} />,
+    );
+    await waitFor(() => expect(loaded).toHaveLength(1));
+
+    rerender(<SubscriptionManager topic={null} onTopicChange={vi.fn()} onTopicsLoaded={(t) => loaded.push(t)} />);
+
+    expect(mocks.getAdminServicebusTopics).toHaveBeenCalledTimes(1);
+  });
+});

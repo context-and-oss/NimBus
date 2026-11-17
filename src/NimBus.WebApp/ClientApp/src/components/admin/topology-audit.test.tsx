@@ -118,3 +118,62 @@ describe("TopologyAudit", () => {
     expect(screen.getAllByText("In sync")).toHaveLength(2);
   });
 });
+
+// The Topology page lists the topics beside this view and chooses the endpoint.
+describe("TopologyAudit with the endpoint chosen by the page", () => {
+  it("audits the given endpoint at once, without the picker", async () => {
+    configMock.mockResolvedValue({ endpoints: [{ name: "CrmEndpoint" }] });
+    auditMock.mockResolvedValue(inSync("crmendpoint"));
+
+    render(<TopologyAudit endpoint="CrmEndpoint" />);
+
+    expect(await screen.findByText(/Topic: crmendpoint/)).toBeTruthy();
+    expect(auditMock).toHaveBeenCalledWith("CrmEndpoint");
+    expect(screen.queryByRole("button", { name: "Audit Topology" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Audit again" })).toBeTruthy();
+  });
+
+  it("shows only the newest endpoint's audit when the page switches quickly", async () => {
+    configMock.mockResolvedValue({ endpoints: [{ name: "CrmEndpoint" }, { name: "ErpEndpoint" }] });
+    let resolveCrm: (value: unknown) => void = () => {};
+    auditMock.mockImplementation((endpoint: string) =>
+      endpoint === "CrmEndpoint"
+        ? new Promise((resolve) => {
+            resolveCrm = resolve;
+          })
+        : Promise.resolve(inSync("erpendpoint")),
+    );
+
+    const { rerender } = render(<TopologyAudit endpoint="CrmEndpoint" />);
+    rerender(<TopologyAudit endpoint="ErpEndpoint" />);
+    expect(await screen.findByText(/Topic: erpendpoint/)).toBeTruthy();
+    resolveCrm(inSync("crmendpoint"));
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText(/Topic: crmendpoint/)).toBeNull();
+  });
+
+  it("says a topic outside the catalog has nothing to compare", async () => {
+    configMock.mockResolvedValue({ endpoints: [{ name: "CrmEndpoint" }] });
+    auditMock.mockRejectedValue(new Error("Topic not found"));
+
+    render(<TopologyAudit endpoint="legacy-bridge" />);
+
+    expect(await screen.findByText(/isn.t an endpoint in the catalog/)).toBeTruthy();
+    expect(screen.queryByText("Topic not found")).toBeNull();
+  });
+
+  it("asks the page to open an endpoint from the all-endpoints summary", async () => {
+    configMock.mockResolvedValue({ endpoints: [{ name: "CrmEndpoint" }] });
+    auditMock.mockResolvedValue(inSync("crmendpoint"));
+    const onEndpointChange = vi.fn();
+
+    render(<TopologyAudit endpoint={null} onEndpointChange={onEndpointChange} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Audit all endpoints" }));
+    const summary = await screen.findByRole("table", { name: "Catalog drift by endpoint" });
+    await userEvent.click(within(summary).getByRole("button", { name: "View" }));
+
+    expect(onEndpointChange).toHaveBeenCalledWith("CrmEndpoint");
+    expect(screen.queryByText(/Topic: crmendpoint/)).toBeNull();
+  });
+});
