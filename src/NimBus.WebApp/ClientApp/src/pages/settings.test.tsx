@@ -198,14 +198,36 @@ describe("Settings page", () => {
     ).toBe("true");
   });
 
-  it("opens a feature's settings in a side panel from its row", () => {
+  it("opens a feature's settings beside the list of features, not over the page", () => {
     renderAt("/Settings");
 
     fireEvent.click(screen.getByRole("link", { name: /MCP access/ }));
 
     expect(location()).toBe("/Settings/mcp");
-    const dialog = screen.getByRole("dialog", { name: "MCP access" });
-    expect(dialog.textContent).toContain("MCP access settings");
+    expect(screen.getByRole("region", { name: "MCP access" }).textContent).toContain(
+      "MCP access settings",
+    );
+    const list = screen.getByRole("navigation", { name: "Settings" });
+    expect(
+      within(list).getByRole("link", { name: /MCP access/ }).getAttribute("aria-current"),
+    ).toBe("page");
+    expect(within(list).getByRole("link", { name: /Audit logging/ })).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("switches to another feature from the list in one click", () => {
+    renderAt("/Settings", "/Settings/mcp");
+
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Settings" })).getByRole("link", {
+        name: /Heartbeat probing/,
+      }),
+    );
+
+    expect(location()).toBe("/Settings/heartbeat");
+    expect(screen.getByRole("region", { name: "Heartbeat probing" }).textContent).toContain(
+      "Heartbeat probing settings",
+    );
   });
 
   it("switches tabs within the panel and keeps the tab in the URL", () => {
@@ -229,7 +251,7 @@ describe("Settings page", () => {
     renderAt("/Settings/failure-intelligence");
 
     expect(
-      screen.getByRole("dialog", { name: "Failure intelligence" }).textContent,
+      screen.getByRole("region", { name: "Failure intelligence" }).textContent,
     ).toContain("Failure intelligence settings");
   });
 
@@ -239,7 +261,7 @@ describe("Settings page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close Audit logging" }));
 
     expect(location()).toBe("/Settings");
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
   });
 
   it("closes with Escape", () => {
@@ -248,7 +270,7 @@ describe("Settings page", () => {
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(location()).toBe("/Settings");
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
   });
 
   it("returns through history when the panel was opened from the list, so Back does not reopen it", () => {
@@ -258,7 +280,7 @@ describe("Settings page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close Simulation" }));
 
     expect(location()).toBe("/Settings");
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
   });
 
   it("re-reads every feature's status when the panel closes", () => {
@@ -273,7 +295,7 @@ describe("Settings page", () => {
     renderAt("/Settings/nope");
 
     expect(location()).toBe("/Settings");
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
   });
 
   describe("with unsaved changes", () => {
@@ -291,7 +313,7 @@ describe("Settings page", () => {
       fireEvent.click(within(prompt).getByRole("button", { name: "Keep editing" }));
 
       expect(location()).toBe("/Settings/mcp");
-      expect(screen.getByRole("dialog", { name: "MCP access" })).toBeTruthy();
+      expect(screen.getByRole("region", { name: "MCP access" })).toBeTruthy();
     });
 
     it("closes after Discard", () => {
@@ -306,7 +328,27 @@ describe("Settings page", () => {
       );
 
       expect(location()).toBe("/Settings");
-      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
+    });
+
+    it("asks before switching to another feature, and Discard opens it", () => {
+      openWithEdits();
+
+      fireEvent.click(
+        within(screen.getByRole("navigation", { name: "Settings" })).getByRole("link", {
+          name: /Audit logging/,
+        }),
+      );
+      expect(location()).toBe("/Settings/mcp");
+      fireEvent.click(
+        within(screen.getByRole("dialog", { name: "Discard 2 unsaved changes?" })).getByRole(
+          "button",
+          { name: "Discard" },
+        ),
+      );
+
+      expect(location()).toBe("/Settings/audit");
+      expect(screen.getByRole("region", { name: "Audit logging" })).toBeTruthy();
     });
 
     it("lets Escape dismiss only the prompt", () => {
@@ -316,7 +358,7 @@ describe("Settings page", () => {
       fireEvent.keyDown(document, { key: "Escape" });
 
       expect(screen.queryByRole("dialog", { name: "Discard 2 unsaved changes?" })).toBeNull();
-      expect(screen.getByRole("dialog", { name: "MCP access" })).toBeTruthy();
+      expect(screen.getByRole("region", { name: "MCP access" })).toBeTruthy();
     });
 
     it("asks the browser to confirm leaving the page", () => {
