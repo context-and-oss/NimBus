@@ -1,7 +1,6 @@
 using NimBus.WebApp.Hubs;
 using Microsoft.Net.Http.Headers;
 using NimBus.WebApp.Middleware;
-using NimBus.Extensions.IntegrationIntelligence;
 using NimBus.WebApp.Csrf;
 using NimBus.WebApp.Mcp;
 using NimBus.WebApp.Problems;
@@ -115,9 +114,6 @@ public partial class Startup
 
         // Origin and loopback checks for /mcp, ahead of authentication. No-op when MCP is off.
         app.UseNimBusOperatorMcpGuard();
-
-        if (app.ApplicationServices.GetService<IntegrationIntelligenceActivation>()?.Enabled == true)
-            app.UseMiddleware<NimBus.Extensions.IntegrationIntelligence.IntegrationIntelligenceAuditMiddleware>();
 
         app.UseAuthentication();
         app.UseAuthorization();

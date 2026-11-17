@@ -93,9 +93,6 @@ const SNAPSHOT: SettingsSnapshot = {
     active: { enabled: false, includeEventPayload: false },
     restartRequired: false,
     startupLoadFailed: false,
-    credentialConfigured: false,
-    credentialSource: "none",
-    savedApiKey: "none",
   },
   heartbeat: {
     settings: { enabled: true, intervalSeconds: 300 } as never,
@@ -122,7 +119,7 @@ describe("Settings page", () => {
     }
     const links = {
       "MCP access": "/Settings/mcp",
-      // Its row link carries the Set up call to action.
+      // Its row link carries the Turn on call to action.
       "Failure intelligence": "/Settings/failure-intelligence?tab=provider",
       "Heartbeat probing": "/Settings/heartbeat",
       Simulation: "/Settings/simulation",
@@ -141,7 +138,7 @@ describe("Settings page", () => {
 
     expect(row("MCP access").textContent).toContain("Serving");
     expect(row("MCP access").textContent).toContain("2 actions · 0 refused · 24 h");
-    expect(row("Failure intelligence").textContent).toContain("No API key configured");
+    expect(row("Failure intelligence").textContent).toContain("Agents can't record classifications");
     expect(row("Heartbeat probing").textContent).toContain("1 of 2 endpoints · every 5 min");
   });
 
@@ -189,7 +186,7 @@ describe("Settings page", () => {
 
     const links = within(row("Failure intelligence")).getAllByRole("link");
     expect(links).toHaveLength(1);
-    expect(links[0].textContent).toContain("Set up ›");
+    expect(links[0].textContent).toContain("Turn on ›");
     expect(links[0].textContent).not.toContain("Configure");
     expect(within(row("Audit logging")).getByRole("link").textContent).toContain("Configure ›");
 
@@ -197,7 +194,7 @@ describe("Settings page", () => {
 
     expect(location()).toBe("/Settings/failure-intelligence?tab=provider");
     expect(
-      screen.getByRole("tab", { name: "Activation & provider" }).getAttribute("aria-selected"),
+      screen.getByRole("tab", { name: "Activation" }).getAttribute("aria-selected"),
     ).toBe("true");
   });
 

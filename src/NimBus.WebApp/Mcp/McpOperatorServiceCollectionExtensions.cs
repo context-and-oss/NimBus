@@ -103,7 +103,6 @@ public static class McpOperatorServiceCollectionExtensions
         services.AddScoped<OperatorPayloadAccess>();
         services.AddScoped<IOperatorClassificationSource>(sp => new OperatorClassificationSource(
             sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationReader>(),
-            sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationService>(),
             sp.GetServices<NimBus.Extensions.IntegrationIntelligence.FailureClassificationRecorder>()));
         services.AddScoped<OperatorActionAccess>();
         services.AddScoped<OperatorWorklist>();

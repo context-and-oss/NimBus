@@ -8,6 +8,9 @@ namespace NimBus.WebApp;
 
 public partial class Startup
 {
+    /// <summary>The ASP.NET Data Protection application discriminator shared by every WebApp instance.</summary>
+    public const string DataProtectionApplicationName = "NimBus.WebApp";
+
     public Startup(IConfiguration configuration, IWebHostEnvironment webEnv)
     {
         Configuration = configuration;
@@ -37,10 +40,9 @@ public partial class Startup
         services.AddSingleton<IIntelligenceSettingsStore>(sp => IntelligenceSettingsStore.Create(
             sp.GetRequiredService<IIntegrationIntelligenceStorageSettings>()));
         services.AddSingleton(IntelligenceSettingsSnapshot.Create(Configuration));
-        // The same application name is set in IntelligenceSettingsBootstrap so the pre-host
-        // settings read can unseal an Admin-saved provider key.
-        services.AddDataProtection().SetApplicationName(IntelligenceSecretProtector.ApplicationName);
-        services.AddSingleton<IIntelligenceSecretProtector, DataProtectionSecretProtector>();
+        // MCP action tokens and antiforgery tokens are protected with this key ring. Keep the
+        // application name: changing it makes tokens issued before a deploy unreadable.
+        services.AddDataProtection().SetApplicationName(DataProtectionApplicationName);
         services.AddAntiforgery(options => options.HeaderName = "X-NimBus-CSRF");
         // #296: the generated API controllers require that token on writes from a browser session.
         services.AddNimBusCookieAntiforgery();

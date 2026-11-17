@@ -1,4 +1,4 @@
-#pragma warning disable CA1707, CA2007, CS0618 // CS0618: these tests cover the deprecated provider (Spec 044 §6.10).
+#pragma warning disable CA1707, CA2007
 using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
@@ -16,61 +16,29 @@ namespace NimBus.Extensions.IntegrationIntelligence.Tests;
 public sealed class ApiAndRaceTests
 {
     [TestMethod]
-    public async Task Api_Enforces_Anonymous_Reader_Contributor_And_Request_Isolation()
+    public async Task Api_Enforces_Anonymous_Reader_And_Request_Isolation_And_Serves_No_Analyze_Route()
     {
         await using var store = await StoreFixture.CreateAsync("memory");
+        var reservation = await store.First.ReserveAsync("failure", Guid.NewGuid().ToString("D"), false, DateTimeOffset.UtcNow,
+            new ClassificationScope("failure", "event", "endpoint", null));
+        await store.First.CompleteAsync(reservation.OperationId, DurableStoreConformanceTests.Result("failure", reservation.Revision));
         var source = new ServiceFixture();
-        using var host = await CreateHost(store.First, source.Messages, source.Provider);
+        using var host = await CreateHost(store.First, source.Messages);
         using var client = host.GetTestClient();
         Assert.AreEqual(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/integration-intelligence/status?endpointId=endpoint")).StatusCode);
         client.DefaultRequestHeaders.Add("Test-Role", "none");
         Assert.AreEqual(HttpStatusCode.Forbidden, (await client.GetAsync("/api/integration-intelligence/status?endpointId=endpoint")).StatusCode);
-        SetRole(client, "contributor");
-        using var post = await client.SendAsync(Post());
-        Assert.AreEqual(HttpStatusCode.OK, post.StatusCode, await post.Content.ReadAsStringAsync());
         SetRole(client, "reader");
         Assert.AreEqual(HttpStatusCode.OK, (await client.GetAsync(Route)).StatusCode);
-        Assert.AreEqual(HttpStatusCode.Forbidden, (await client.SendAsync(Post())).StatusCode);
+        SetRole(client, "contributor");
+        using var post = new HttpRequestMessage(HttpMethod.Post, Route) { Content = JsonContent.Create(new { force = false }) };
+        post.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("D"));
+        Assert.AreEqual(HttpStatusCode.MethodNotAllowed, (await client.SendAsync(post)).StatusCode, "The analyze route was removed in v5.0.0.");
         SetRole(client, "none");
         Assert.AreEqual(HttpStatusCode.Forbidden, (await client.GetAsync(Route)).StatusCode);
-        Assert.AreEqual(1, source.Provider.Calls);
-    }
-
-    [TestMethod]
-    [DataRow("sql")]
-    [DataRow("cosmos")]
-    public async Task Two_Hosts_Pay_Once_And_Do_Not_Change_Core_Message(string provider)
-    {
-        await using var store = await StoreFixture.CreateAsync(provider);
-        var source = new ServiceFixture();
-        var original = Newtonsoft.Json.JsonConvert.SerializeObject(source.Source.Message);
-        var counter = new BlockingProvider();
-        using var first = await CreateHost(store.First, source.Messages, counter);
-        using var second = await CreateHost(store.Second, source.Messages, counter);
-        using var client1 = first.GetTestClient();
-        using var client2 = second.GetTestClient();
-        SetRole(client1, "contributor");
-        SetRole(client2, "contributor");
-        var pending = client1.SendAsync(Post());
-        await counter.Entered.Task.WaitAsync(TimeSpan.FromSeconds(20));
-        try
-        {
-            Assert.AreEqual(HttpStatusCode.Conflict, (await client2.SendAsync(Post())).StatusCode);
-            Assert.AreEqual(1, counter.Calls);
-        }
-        finally { counter.Release.TrySetResult(); }
-        Assert.AreEqual(HttpStatusCode.OK, (await pending).StatusCode);
-        Assert.AreEqual(HttpStatusCode.OK, (await client2.GetAsync(Route)).StatusCode);
-        Assert.AreEqual(original, Newtonsoft.Json.JsonConvert.SerializeObject(source.Source.Message));
     }
 
     private const string Route = "/api/integration-intelligence/failures/event/failure/classification";
-    private static HttpRequestMessage Post()
-    {
-        var message = new HttpRequestMessage(HttpMethod.Post, Route) { Content = JsonContent.Create(new ClassificationRequest()) };
-        message.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("D"));
-        return message;
-    }
 
     private static void SetRole(HttpClient client, string role)
     {
@@ -78,7 +46,7 @@ public sealed class ApiAndRaceTests
         client.DefaultRequestHeaders.Add("Test-Role", role);
     }
 
-    private static Task<IHost> CreateHost(IFailureClassificationStore store, IMessageTrackingStore messages, IFailureIntelligenceProvider provider)
+    private static Task<IHost> CreateHost(IFailureClassificationStore store, IMessageTrackingStore messages)
         => new HostBuilder().UseDefaultServiceProvider(options => options.ValidateScopes = true)
             .ConfigureWebHost(web =>
             {
@@ -101,12 +69,10 @@ public sealed class ApiAndRaceTests
                     var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["NimBus:IntegrationIntelligence:Enabled"] = "true",
-                        ["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:ApiKey"] = "not-a-live-key",
                     }).Build();
                     services.AddNimBusIntegrationIntelligence(config);
                     services.RemoveAll<IHostedService>();
-                    services.AddSingleton(provider);
-                    services.AddControllers().AddApplicationPart(typeof(IntegrationIntelligenceController).Assembly);
+                    services.AddControllers().AddApplicationPart(typeof(IntegrationIntelligenceReadController).Assembly);
                 });
                 web.Configure(app =>
                 {
@@ -124,22 +90,6 @@ public sealed class ApiAndRaceTests
             if (role.Length == 0) return Task.FromResult(AuthenticateResult.NoResult());
             var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "test"));
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, "test")));
-        }
-    }
-
-    private sealed class BlockingProvider : IFailureIntelligenceProvider
-    {
-        private int _calls;
-        public int Calls => _calls;
-        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public string Name => "TypeSafe";
-        public async Task<FailureIntelligenceProviderResult> ClassifyAsync(FailureClassificationInput input, CancellationToken cancellationToken = default)
-        {
-            Interlocked.Increment(ref _calls);
-            Entered.TrySetResult();
-            await Release.Task.WaitAsync(cancellationToken);
-            return new("test", "unknown", 1, new Dictionary<string, double> { ["unknown"] = 1 }, 0, 0, 0, null, null);
         }
     }
 }

@@ -386,12 +386,12 @@ public sealed partial class FailedInsightsServiceTests
     [DataRow(true, true, true)]
     [DataRow(true, false, false)]
     [DataRow(false, true, false)]
-    public async Task The_overview_says_whether_new_analysis_can_be_requested(bool enabled, bool canAnalyze, bool expected)
+    public async Task The_overview_says_whether_agents_can_record_new_classifications(bool enabled, bool canRecord, bool expected)
     {
         var store = new CountingStore();
         await Fail(store, "orders", "e1", "m1", "x");
 
-        var overview = await Build(store, new FakeEnrichment { IsEnabled = enabled, CanAnalyze = canAnalyze });
+        var overview = await Build(store, new FakeEnrichment { IsEnabled = enabled, CanRecord = canRecord });
 
         Assert.AreEqual(expected, overview.AnalysisAvailable);
     }
@@ -399,12 +399,12 @@ public sealed partial class FailedInsightsServiceTests
     [TestMethod]
     [DataRow(true, true)]
     [DataRow(false, false)]
-    public void The_enrichment_source_can_analyze_only_in_ready_mode(bool ready, bool expected)
+    public void The_enrichment_source_can_record_only_in_recordable_mode(bool recordable, bool expected)
     {
-        var source = new InsightsEnrichmentSource([], [], [new IntegrationIntelligenceActivation(true, ready, [])]);
+        var source = new InsightsEnrichmentSource([], [], [new IntegrationIntelligenceActivation(true, []) { Readable = true, Recordable = recordable }]);
 
-        Assert.AreEqual(expected, source.CanAnalyze);
-        Assert.IsFalse(new InsightsEnrichmentSource([], [], []).CanAnalyze, "Intelligence off: nothing can be analyzed.");
+        Assert.AreEqual(expected, source.CanRecord);
+        Assert.IsFalse(new InsightsEnrichmentSource([], [], []).CanRecord, "Intelligence off: nothing can be recorded.");
     }
 
     [TestMethod]
@@ -683,7 +683,7 @@ public sealed partial class FailedInsightsServiceTests
     {
         private int _reads;
         public bool IsEnabled { get; set; } = true;
-        public bool CanAnalyze { get; set; } = true;
+        public bool CanRecord { get; set; } = true;
         public HashSet<string> Disallowed { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, ClassificationSnapshot> Snapshots { get; } = new(StringComparer.Ordinal);
         public ClassificationBulkReadStatus Status { get; set; } = ClassificationBulkReadStatus.Available;

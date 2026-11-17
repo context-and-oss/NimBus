@@ -15342,7 +15342,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Whether new analysis can be requested. False when failure intelligence is off or only saved classifications can be read (no provider configured), so notAnalyzed occurrences cannot be analyzed until one is.
+        /// Whether agents can record new classifications over MCP. False when failure intelligence is off or only saved classifications can be read (its evidence or threshold settings are invalid), so notAnalyzed occurrences stay unclassified until that is fixed.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("analysisAvailable", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public bool AnalysisAvailable    {
@@ -16131,7 +16131,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Who made the saved result. Agent (recorded over MCP) or TypeSafe (the deprecated provider).
+        /// Who made the saved result. Agent (recorded over MCP) or TypeSafe (the built-in provider, for results made before NimBus 5.0).
         /// </summary>
         [Newtonsoft.Json.JsonProperty("provider", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string Provider    {

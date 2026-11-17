@@ -625,7 +625,7 @@ The catalog lives in `CrmErpDemo.Contracts/Demo/ErpFailureReasons.cs` and is sha
 (`ErrorModeGuard` rolls against the rate and throws the matching exception from every handler) and
 the erp-web dropdown, so the three cannot drift.
 
-The AppHost turns on failure classification (`Provider: None`) and the operator MCP endpoint at
+The AppHost turns on failure classification and the operator MCP endpoint at
 `https://localhost:18443/mcp`. NimBus calls no model: an agent connected to `/mcp` reads each
 failure's evidence and records its classification (see the
 [MCP server guide](../../docs/mcp-server.md)). To run the showcase:

@@ -349,9 +349,5 @@ public class OperatorInsightToolsTests
             LastRequest = (eventId, messageId);
             return Task.FromResult(Result);
         }
-
-        public Task<(FailureClassification Result, bool Cached)> AnalyzeAsync(string endpointId, string eventId, string messageId,
-            string idempotencyKey, bool force, CancellationToken cancellationToken)
-            => throw new NotSupportedException("The insight tools only read classifications.");
     }
 }

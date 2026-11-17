@@ -1,4 +1,4 @@
-#pragma warning disable CA1707, CA2007, CS0618 // CS0618: these tests cover the deprecated analyze route (Spec 044 §6.10).
+#pragma warning disable CA1707, CA2007
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,8 +33,8 @@ public sealed class IntelligenceActivationTests
     {
         var saved = new IntelligenceAdminSettings { Enabled = true, IncludeEventPayload = true };
         var overrides = saved.ApplyTo(new ConfigurationBuilder().Build());
-        using var host = await CreateHost("local", false, "20", overrides: overrides);
-        Assert.IsTrue(host.Services.GetRequiredService<IntegrationIntelligenceActivation>().Ready);
+        using var host = await CreateHost("local", false, "0.75", overrides: overrides);
+        Assert.IsTrue(host.Services.GetRequiredService<IntegrationIntelligenceActivation>().Recordable);
         Assert.IsTrue(host.Services.GetRequiredService<FailureClassificationOptions>().IncludeEventPayload);
         var routes = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().Select(e => e.RoutePattern.RawText).ToList();
         Assert.IsTrue(routes.Any(route => route!.Contains("/classification", StringComparison.Ordinal)));
@@ -48,7 +48,7 @@ public sealed class IntelligenceActivationTests
     [DataRow("entra")]
     public async Task Disabled_Routes_Are_404_Under_Every_Startup_Authentication_Branch(string branch)
     {
-        using var host = await CreateHost(branch, false, "not-an-integer");
+        using var host = await CreateHost(branch, false, "not-a-number");
         using var client = host.GetTestClient();
         foreach (var route in new[] { "/api/integration-intelligence/status?endpointId=endpoint", "/api/integration-intelligence/failures/event/message/classification" })
             Assert.AreEqual(HttpStatusCode.NotFound, (await client.GetAsync(route)).StatusCode);
@@ -58,46 +58,43 @@ public sealed class IntelligenceActivationTests
     [TestMethod]
     public async Task Unbindable_Configuration_Fails_Closed_To_The_Status_Route_Only()
     {
-        using var host = await CreateHost("local", true, "not-an-integer");
+        using var host = await CreateHost("local", true, "not-a-number");
         var routes = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().Select(e => e.RoutePattern.RawText).ToList();
         CollectionAssert.Contains(routes, "api/integration-intelligence/status");
         Assert.IsFalse(routes.Any(r => r!.Contains("/classification", StringComparison.Ordinal)));
         CollectionAssert.Contains(routes, "api/app/stats");
         var activation = host.Services.GetRequiredService<IntegrationIntelligenceActivation>();
-        Assert.IsFalse(activation.Ready);
         Assert.IsFalse(activation.Readable);
         Assert.IsNull(host.Services.GetService<IFailureClassificationStore>());
     }
 
     [TestMethod]
-    [DataRow("999", true)]
-    [DataRow("20", false)]
-    public async Task Invalid_Provider_Settings_Keep_Saved_Classifications_Readable_And_Prune_Only_Analysis(string timeout, bool withApiKey)
+    public async Task Invalid_Thresholds_Keep_Saved_Classifications_Readable_And_Serve_Only_Reads()
     {
-        // Spec 043 §9 read-only mode: an out-of-range timeout or a missing API key blocks analysis,
-        // not reading what was already saved.
-        using var host = await CreateHost("local", true, timeout, apiKey: withApiKey ? "test-only" : null);
+        // Spec 043 §9 read-only mode: an out-of-range threshold blocks recording, not reading what
+        // was already saved.
+        using var host = await CreateHost("local", true, "2");
 
         var activation = host.Services.GetRequiredService<IntegrationIntelligenceActivation>();
         Assert.IsTrue(activation.Readable);
-        Assert.IsFalse(activation.Ready);
+        Assert.IsFalse(activation.Recordable);
         var actions = host.Services.GetRequiredService<EndpointDataSource>().Endpoints
             .Select(e => e.Metadata.GetMetadata<ControllerActionDescriptor>())
-            .Where(d => d is not null && d.ControllerTypeInfo.Namespace == typeof(IntegrationIntelligenceController).Namespace)
+            .Where(d => d is not null && d.ControllerTypeInfo.Namespace == typeof(IntegrationIntelligenceReadController).Namespace)
             .Select(d => d!.ActionName)
+            .Distinct()
             .ToList();
-        CollectionAssert.IsSubsetOf(new[] { "GetStatus", "GetClassification", "GetHistory" }, actions);
-        CollectionAssert.DoesNotContain(actions, nameof(IntegrationIntelligenceController.PostClassification));
+        CollectionAssert.AreEquivalent(new[] { "GetStatus", "GetClassification", "GetHistory" }, actions);
         using var scope = host.Services.CreateScope();
         Assert.IsNotNull(scope.ServiceProvider.GetService<FailureClassificationReader>());
-        Assert.IsNull(scope.ServiceProvider.GetService<FailureClassificationService>());
+        Assert.IsNull(scope.ServiceProvider.GetService<FailureClassificationRecorder>());
     }
 
     [TestMethod]
     public async Task Read_Only_Mode_Registers_Storage_Schema_And_Retention()
     {
         var hosted = new List<Type>();
-        using var host = await CreateHost("local", true, "20", descriptors =>
+        using var host = await CreateHost("local", true, "2", descriptors =>
             hosted.AddRange(descriptors.Where(d => d.ServiceType == typeof(IHostedService)).Select(d => d.ImplementationType ?? typeof(object))),
             apiKey: null);
 
@@ -109,9 +106,9 @@ public sealed class IntelligenceActivationTests
     [TestMethod]
     public async Task Request_Boundary_And_Consumers_Are_Scoped_In_The_Real_Startup()
     {
-        using var host = await CreateHost("local", true, "20", descriptors =>
+        using var host = await CreateHost("local", true, "0.75", descriptors =>
         {
-            foreach (var type in new[] { typeof(IIntegrationIntelligenceHost), typeof(IntegrationIntelligenceStatusService), typeof(FailureClassificationService) })
+            foreach (var type in new[] { typeof(IIntegrationIntelligenceHost), typeof(IntegrationIntelligenceStatusService), typeof(FailureClassificationRecorder) })
                 Assert.AreEqual(ServiceLifetime.Scoped, descriptors.Last(d => d.ServiceType == type).Lifetime, type.Name);
         }, configure: services => services.AddSingleton<IAccessControlSnapshotProvider, EmptySnapshot>());
         using var scope1 = host.Services.CreateScope();
@@ -125,35 +122,33 @@ public sealed class IntelligenceActivationTests
         accessor.HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "unprivileged")], "test")) };
         Assert.IsFalse(await second.HasContributorAsync("endpoint"), "The preceding administrator request must not grant this user access.");
         accessor.HttpContext = null;
-        scope1.ServiceProvider.GetRequiredService<FailureClassificationService>();
+        scope1.ServiceProvider.GetRequiredService<FailureClassificationRecorder>();
         scope2.ServiceProvider.GetRequiredService<IntegrationIntelligenceStatusService>();
     }
 
     [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    public async Task Enabled_Analyze_Policy_Respects_Global_Kill_Switch(bool rateLimit)
+    public async Task Legacy_Provider_Settings_Serve_No_Analyze_Route_And_No_Intelligence_Rate_Limit()
     {
-        using var host = await CreateHost("local", true, "20", rateLimit: rateLimit);
-        // One endpoint per route: /api/v1/… and its deprecated /api/… alias carry the same policy.
-        var endpoints = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.Where(e =>
-            e.Metadata.GetMetadata<Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor>()?.ActionName == "PostClassification").ToList();
-        Assert.AreEqual(2, endpoints.Count);
-        foreach (var endpoint in endpoints)
-        {
-            var policy = endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute>()?.PolicyName;
-            Assert.AreEqual(rateLimit ? RateLimitPolicyNames.Intelligence : null, policy);
-        }
+        // v5.0.0 removed the built-in provider: a TypeSafe key no longer brings back POST analyze.
+        using var host = await CreateHost("local", true, "0.75", apiKey: "legacy-secret");
+
+        var endpoints = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().ToList();
+        Assert.IsFalse(endpoints.Any(e => e.RoutePattern.RawText!.Contains("/classification", StringComparison.Ordinal)
+            && e.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.HttpMethodMetadata>()?.HttpMethods.Contains("POST") == true));
+        Assert.IsFalse(endpoints.Any(e => e.Metadata.GetMetadata<Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute>()?.PolicyName == "nimbus-intelligence"));
+        Assert.IsTrue(host.Services.GetRequiredService<IntegrationIntelligenceActivation>().Recordable);
     }
 
-    private static Task<IHost> CreateHost(string branch, bool enabled, string timeout, Action<IServiceCollection>? inspect = null, bool rateLimit = true, Action<IServiceCollection>? configure = null, IConfiguration? overrides = null, string? apiKey = "test-only")
+    /// <param name="retryLikely">The RetryLikely threshold: "0.75" is valid, "2" is out of range (read-only mode), "not-a-number" cannot be bound.</param>
+    /// <param name="apiKey">A key of the provider removed in v5.0.0, still set in some deployments; it must change nothing.</param>
+    private static Task<IHost> CreateHost(string branch, bool enabled, string retryLikely, Action<IServiceCollection>? inspect = null, bool rateLimit = true, Action<IServiceCollection>? configure = null, IConfiguration? overrides = null, string? apiKey = "test-only")
     {
         var settings = new Dictionary<string, string?>
         {
             ["NimBus:StorageProvider"] = "sqlserver", ["SqlConnection"] = "Server=localhost;Database=unused;Integrated Security=true;TrustServerCertificate=true",
             ["ServiceBusNamespace"] = "unit-test", ["EnableLocalDevAuthentication"] = (branch == "local").ToString(),
             ["NimBus:IntegrationIntelligence:Enabled"] = enabled.ToString(),
-            ["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:TimeoutSeconds"] = timeout,
+            ["NimBus:IntegrationIntelligence:FailureClassification:Thresholds:RetryLikely"] = retryLikely,
             ["RateLimiting:Enabled"] = rateLimit.ToString(),
         };
         // A chained configuration treats an empty value as missing, so "no key" means omitting it.
@@ -179,7 +174,7 @@ public sealed class IntelligenceActivationTests
                     // Exercise real Startup registrations/discovery without background workers reaching external services.
                     services.RemoveAll<IHostedService>();
                     services.AddControllers().AddApplicationPart(typeof(Startup).Assembly)
-                        .AddApplicationPart(typeof(IntegrationIntelligenceController).Assembly);
+                        .AddApplicationPart(typeof(IntegrationIntelligenceReadController).Assembly);
                 });
                 web.Configure(app => { app.UseRouting(); app.UseAuthorization(); app.UseEndpoints(e => e.MapControllers()); });
             }).StartAsync();

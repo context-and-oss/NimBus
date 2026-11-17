@@ -57,7 +57,7 @@ In **Settings → MCP access** (site Owner):
 - Optionally approve the runner's client id under **Client applications**, so no other app-only
   client gets in.
 
-In **Settings → Failure intelligence**: failure classification on with `Provider: None`. Turn on
+In **Settings → Failure intelligence**: failure classification on. Turn on
 **Agents may see redacted payloads** and **Agents may see stack traces** only if your
 data-sharing policy allows it; both are off by default. Stack traces exist only for subscribers that
 set `IncludeStackTraceInErrorResponses` (see [Building adapters](building-adapters.md)).

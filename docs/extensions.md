@@ -23,7 +23,7 @@ When adding a feature to NimBus, ask whether it belongs in core or in an extensi
 
 ### Integration Intelligence
 
-`Akaule.NimBus.Extensions.IntegrationIntelligence` adds the optional WebApp failure-classification API and provider boundary. It is registered with `services.AddNimBusIntegrationIntelligence(configuration)` and stays inactive unless the nested `NimBus:IntegrationIntelligence` configuration is enabled and valid. See [Integration Intelligence](integration-intelligence.md) for configuration, authorization, redaction, storage, and deployment details.
+`Akaule.NimBus.Extensions.IntegrationIntelligence` adds the optional WebApp failure-classification API: saved results, and recording by agents over MCP. It is registered with `services.AddNimBusIntegrationIntelligence(configuration)` and stays inactive unless the nested `NimBus:IntegrationIntelligence` configuration is enabled and valid. See [Integration Intelligence](integration-intelligence.md) for configuration, authorization, redaction, storage, and deployment details.
 
 ## Using extensions
 

@@ -139,22 +139,6 @@ public sealed class OperatorActionAccess
     }
 
     /// <summary>
-    /// Throws <c>[PermissionDenied]</c>, and audits the refusal, unless the caller holds the
-    /// delegated scope itself. A workload app role never qualifies: it admits recording only, not
-    /// a paid provider analysis (Spec 044 §6.6).
-    /// </summary>
-    public async Task RequireDelegatedScopeAsync(OperatorAction action)
-    {
-        await RequireScopeAsync(action).ConfigureAwait(false);
-        if (HoldsDelegatedScope(action))
-            return;
-
-        await RecordAsync(McpRefusalReason.Scope, action, endpointId: null).ConfigureAwait(false);
-        throw OperatorToolErrors.PermissionDenied(
-            $"{NameOf(action)} through this tool requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens can only record classifications.");
-    }
-
-    /// <summary>
     /// True when the caller acts as an unattended workload for <paramref name="action"/>: an
     /// app-only token admitted by its app role, not a delegated scope. Budgets and caps apply.
     /// </summary>

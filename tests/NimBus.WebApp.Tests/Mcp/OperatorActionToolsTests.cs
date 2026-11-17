@@ -256,103 +256,18 @@ public class OperatorActionToolsTests
     }
 
     [TestMethod]
-    public async Task Classify_requests_an_analysis_of_the_latest_attempt()
-    {
-        var classifications = new FakeClassifications();
-        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true },
-            extra: services => services.AddSingleton<IOperatorClassificationSource>(classifications));
-        await SeedFailureAsync(host);
-        await using var client = await host.CreateClientAsync();
-        var key = Guid.NewGuid().ToString();
-
-        var result = await CallAsync(client, "nimbus_classify_failure", new()
-        {
-            ["endpointId"] = Endpoint, ["eventId"] = EventId, ["idempotencyKey"] = key,
-        });
-
-        Assert.AreEqual((EventId, Attempt, key, false), classifications.LastAnalyze);
-        Assert.IsTrue(result.GetProperty("advisory").GetBoolean());
-        Assert.AreEqual("Transient", result.GetProperty("classification").GetProperty("category").GetString());
-    }
-
-    [TestMethod]
-    public async Task Classify_rejects_an_attempt_from_another_endpoint_before_analysis()
-    {
-        var classifications = new FakeClassifications();
-        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true },
-            extra: services => services.AddSingleton<IOperatorClassificationSource>(classifications));
-        await SeedFailureAsync(host);
-        await host.Get<InMemoryMessageStore>().StoreMessage(new MessageEntity
-        {
-            EventId = EventId,
-            MessageId = "err-other",
-            EndpointId = "ErpEndpoint",
-            SessionId = Session,
-            MessageType = MessageType.ErrorResponse,
-        });
-        await using var client = await host.CreateClientAsync();
-
-        var result = await client.CallToolAsync("nimbus_classify_failure", new Dictionary<string, object?>
-        {
-            ["endpointId"] = Endpoint, ["eventId"] = EventId,
-            ["messageId"] = "err-other", ["idempotencyKey"] = Guid.NewGuid().ToString(),
-        });
-
-        AssertError(result, "MessageNotFound");
-        Assert.IsNull(classifications.LastAnalyze);
-    }
-
-    [TestMethod]
-    public async Task Classify_in_read_only_mode_says_no_provider_is_configured_and_does_not_analyze()
-    {
-        // Spec 043 read-only mode: saved classifications are readable, new analyses are not.
-        var classifications = new FakeClassifications { Analyze = false };
-        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true },
-            extra: services => services.AddSingleton<IOperatorClassificationSource>(classifications));
-        await SeedFailureAsync(host);
-        await using var client = await host.CreateClientAsync();
-
-        var result = await client.CallToolAsync("nimbus_classify_failure", new Dictionary<string, object?>
-        {
-            ["endpointId"] = Endpoint, ["eventId"] = EventId, ["idempotencyKey"] = Guid.NewGuid().ToString(),
-        });
-
-        AssertError(result, "FeatureUnavailable");
-        StringAssert.Contains(ErrorText(result), "no provider is configured", StringComparison.Ordinal);
-        Assert.IsNull(classifications.LastAnalyze);
-    }
-
-    [TestMethod]
-    public void Classification_source_reads_in_read_only_mode_and_analyzes_only_when_ready()
+    public void Classification_source_reads_in_read_only_mode_and_records_only_when_recordable()
     {
         var reader = new FailureClassificationReader(InterfaceFake<IIntegrationIntelligenceHost>.Create().Instance,
             InterfaceFake<IFailureClassificationStore>.Create().Instance, new InMemoryMessageStore());
 
         var readOnly = new OperatorClassificationSource([reader], []);
         Assert.IsTrue(readOnly.IsAvailable);
-        Assert.IsFalse(readOnly.CanAnalyze);
+        Assert.IsFalse(readOnly.CanRecord);
 
         var off = new OperatorClassificationSource([], []);
         Assert.IsFalse(off.IsAvailable);
-        Assert.IsFalse(off.CanAnalyze);
-    }
-
-    [TestMethod]
-    public async Task Classify_rejects_a_revoked_contributor_before_analysis()
-    {
-        var classifications = new FakeClassifications();
-        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true, ContributorFresh = false },
-            extra: services => services.AddSingleton<IOperatorClassificationSource>(classifications));
-        await SeedFailureAsync(host);
-        await using var client = await host.CreateClientAsync();
-
-        var result = await client.CallToolAsync("nimbus_classify_failure", new Dictionary<string, object?>
-        {
-            ["endpointId"] = Endpoint, ["eventId"] = EventId, ["idempotencyKey"] = Guid.NewGuid().ToString(),
-        });
-
-        AssertError(result, "PermissionDenied");
-        Assert.IsNull(classifications.LastAnalyze);
+        Assert.IsFalse(off.CanRecord);
     }
 
     private static Task<McpTestHost> StartLocalAsync(bool contributor)
@@ -458,47 +373,5 @@ public class OperatorActionToolsTests
         public override DateTimeOffset GetUtcNow() => _now;
 
         public void Advance(TimeSpan by) => _now += by;
-    }
-
-    private sealed class FakeClassifications : IOperatorClassificationSource
-    {
-        public (string EventId, string MessageId, string Key, bool Force)? LastAnalyze { get; private set; }
-
-        public bool Analyze { get; init; } = true;
-
-        public bool IsAvailable => true;
-
-        public bool CanAnalyze => Analyze;
-
-        public Task<FailureClassification?> GetLatestAsync(string eventId, string messageId, CancellationToken cancellationToken)
-            => Task.FromResult<FailureClassification?>(null);
-
-        public Task<(FailureClassification Result, bool Cached)> AnalyzeAsync(string endpointId, string eventId, string messageId,
-            string idempotencyKey, bool force, CancellationToken cancellationToken)
-        {
-            LastAnalyze = (eventId, messageId, idempotencyKey, force);
-            return Task.FromResult((new FailureClassification
-            {
-                Id = "c-1",
-                FailureMessageId = messageId,
-                Revision = 1,
-                EventId = eventId,
-                EventTypeId = "CustomerChanged",
-                EndpointId = endpointId,
-                Provider = "test",
-                Model = "test-model",
-                QuestionSetVersion = 1,
-                Category = "Transient",
-                CategoryConfidence = 0.9,
-                CategoryProbabilities = new Dictionary<string, double> { ["Transient"] = 0.9 },
-                RetryLikelihood = 0.8,
-                ChangeRequiredLikelihood = 0.1,
-                ExternalDependencyLikelihood = 0.6,
-                Guidance = FailureGuidance.RetryMayHelp,
-                EventPayloadIncluded = false,
-                RequestedBy = "Agent Operator",
-                CreatedAtUtc = DateTimeOffset.UtcNow,
-            }, false));
-        }
     }
 }

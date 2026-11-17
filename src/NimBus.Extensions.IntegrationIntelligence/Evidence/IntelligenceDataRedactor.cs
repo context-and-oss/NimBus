@@ -3,7 +3,7 @@ using Newtonsoft.Json.Linq;
 
 namespace NimBus.Extensions.IntegrationIntelligence.Evidence;
 
-/// <summary>Removes common credential-shaped values from provider evidence.</summary>
+/// <summary>Removes common credential-shaped values from failure evidence.</summary>
 public sealed class IntelligenceDataRedactor
 {
     private readonly HashSet<string> _additionalSecretKeys;

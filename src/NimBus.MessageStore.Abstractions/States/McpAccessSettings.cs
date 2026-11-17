@@ -115,7 +115,7 @@ public class McpCapabilitySettings
     /// <summary><c>nimbus_set_message_reported</c>.</summary>
     public bool Report { get; set; } = true;
 
-    /// <summary><c>nimbus_classify_failure</c>.</summary>
+    /// <summary><c>nimbus_record_classification</c>.</summary>
     public bool Classify { get; set; } = true;
 
     /// <summary><c>nimbus_resubmit_message</c>, and <c>nimbus_prepare_action</c> for it.</summary>

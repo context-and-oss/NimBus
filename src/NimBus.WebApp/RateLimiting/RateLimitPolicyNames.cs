@@ -20,9 +20,6 @@ public static class RateLimitPolicyNames
     /// <summary>Per-client-IP fixed-window limiter guarding <c>POST /account/login</c>.</summary>
     public const string Login = "nimbus-login";
 
-    /// <summary>Fixed-window limiter guarding provider-backed intelligence requests.</summary>
-    public const string Intelligence = "nimbus-intelligence";
-
     /// <summary>
     /// Per-caller fixed window over every <c>/api</c> request, ahead of the named policies. Not
     /// attachable to an endpoint; it names the limit in a rejection's problem and log line.

@@ -355,14 +355,14 @@ describe("Insights page", () => {
 
     const row = (await screen.findByText("Not analyzed")).closest("tr")!;
     expect(within(row).getByText("Includes failures that can no longer be analyzed")).toBeTruthy();
-    expect(screen.queryByText(/no provider is configured/)).toBeNull();
+    expect(screen.queryByText(/can't record new classifications/)).toBeNull();
   });
 
-  it("says when new analysis is unavailable because only saved results can be read", async () => {
+  it("says when agents can't record new classifications because only saved results can be read", async () => {
     mocks.insights.mockResolvedValue(overview({ analysisAvailable: false }));
     renderAt();
 
-    expect(await screen.findByText(/New analysis is unavailable because no provider is configured/)).toBeTruthy();
+    expect(await screen.findByText(/Agents can't record new classifications in this deployment/)).toBeTruthy();
   });
 
   it("says so when the period has no failures", async () => {

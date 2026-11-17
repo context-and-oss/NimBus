@@ -2,8 +2,8 @@
 
 Status: implemented (`45264b15`, `3d6e3cd7` and `016934ab`; shipped in v3.8.0). Proposed 2026-09-19,
 review corrections 2026-09-20, **packaging pivot 2026-09-20**. MVP scope.
-[Spec 044](../044-agent-first/spec.md) deprecates the built-in provider, its key storage and the
-analyze route; they are removed in v5.0.0.
+[Spec 044](../044-agent-first/spec.md) deprecated the built-in provider, its key storage and the
+analyze route; they were removed for v5.0.0 ([plan](../../plan/2026-11-16-remove-typesafe-provider.md)).
 Feature area: **NimBus Integration Intelligence**, first module **Failure Classification**.
 Packaging: optional open-source extension **in this repository**
 (`src/NimBus.Extensions.IntegrationIntelligence`, MIT, in `NimBus.sln`), off by default.

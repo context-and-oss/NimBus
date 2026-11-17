@@ -40,9 +40,9 @@ available the page keeps error patterns and says why: intelligence is off, its s
 read, the message store can't identify failed attempts, or the selection has more failures
 than the enrichment limit (10,000 by default; narrow the range or pick an endpoint). A link that
 asks for causes or guidance in such a selection opens on error patterns. When saved
-classifications can be read but no provider is configured (read-only mode), the page says that
-new analysis is unavailable, so **Not analyzed** failures stay that way until a provider is
-configured.
+classifications can be read but agents can't record new ones (read-only mode: the evidence or
+threshold settings are invalid), the page says so, and **Not analyzed** failures stay that way
+until an Owner fixes the settings.
 
 Saved classifications are read again when the page opens and on **Refresh**. New failures can
 take up to 30 seconds to appear. Changing the range or endpoint clears the page until that

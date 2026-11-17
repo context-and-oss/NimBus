@@ -48,13 +48,13 @@ public sealed class IntelligenceSettingsStoreTests
         try
         {
             Assert.IsNull(await first.ReadAsync(CancellationToken.None));
-            var one = new IntelligenceSettingsDocument(new() { Enabled = true, IncludeEventPayload = true }, Guid.NewGuid().ToString("D"), "sealed-key-payload");
+            var one = new IntelligenceSettingsDocument(new() { Enabled = true, IncludeEventPayload = true }, Guid.NewGuid().ToString("D"));
             var two = new IntelligenceSettingsDocument(new() { Enabled = false }, Guid.NewGuid().ToString("D"));
             var race = await Task.WhenAll(first.TrySaveAsync(one, "none", CancellationToken.None), second.TrySaveAsync(two, "none", CancellationToken.None));
             Assert.AreEqual(1, race.Count(won => won));
             var current = (await second.ReadAsync(CancellationToken.None))!;
             Assert.AreEqual(race[0] ? one.Revision : two.Revision, current.Revision);
-            Assert.AreEqual(race[0] ? "sealed-key-payload" : null, current.ProtectedApiKey, "The sealed key round-trips with its revision.");
+            Assert.AreEqual(race[0], current.Settings.IncludeEventPayload, "The settings round-trip with their revision.");
             var update = new IntelligenceSettingsDocument(new() { IncludeEventPayload = false }, Guid.NewGuid().ToString("D"));
             race = await Task.WhenAll(first.TrySaveAsync(update, current.Revision, CancellationToken.None), second.TrySaveAsync(one with { Revision = Guid.NewGuid().ToString("D") }, current.Revision, CancellationToken.None));
             Assert.AreEqual(1, race.Count(won => won));

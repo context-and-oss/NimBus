@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using NimBus.Extensions.Identity.Controllers;
-using NimBus.Extensions.IntegrationIntelligence.Controllers;
 using NimBus.WebApp.ManagementApi;
 
 namespace NimBus.WebApp.RateLimiting;
@@ -102,14 +101,6 @@ internal sealed class RateLimitPoliciesConvention : IApplicationModelConvention
         {
             return RateLimitPolicyNames.Login;
         }
-
-#pragma warning disable CS0618 // The deprecated analyze route keeps its limit until v5.0.0 (Spec 044 §6.10).
-        if (type == typeof(IntegrationIntelligenceController)
-            && action.ActionMethod.Name == nameof(IntegrationIntelligenceController.PostClassification))
-        {
-            return RateLimitPolicyNames.Intelligence;
-        }
-#pragma warning restore CS0618
 
         return null;
     }

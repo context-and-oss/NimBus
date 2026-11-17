@@ -5,7 +5,6 @@ using System.Security.Claims;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
@@ -85,9 +84,9 @@ public sealed class IntelligenceSettingsApiTests
     }
 
     [TestMethod]
-    public async Task Api_Saves_Provider_Key_Sealed_Never_Echoes_It_And_Applies_It_After_Restart()
+    public async Task Api_Rejects_A_Provider_Key_And_Reports_No_Credential_State()
     {
-        const string plaintext = "ts-live-key-1234567890";
+        // v5.0.0 removed the built-in provider, its key storage and the key fields of this API.
         const string url = "/api/admin/failure-intelligence";
         var store = new FakeStore();
         var audit = new FakeAudit();
@@ -96,73 +95,24 @@ public sealed class IntelligenceSettingsApiTests
         client.DefaultRequestHeaders.Add("TestRole", "Owner");
         var response = await client.GetAsync(url);
         var state = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-        Assert.AreEqual("deployment", state["credentialSource"]!.GetValue<string>());
-        Assert.AreEqual("none", state["savedApiKey"]!.GetValue<string>());
+        foreach (var removed in new[] { "credentialConfigured", "credentialSource", "savedApiKey" })
+            Assert.IsNull(state[removed], removed);
+        Assert.IsNull(state["saved"]!["model"]);
+        Assert.IsNull(state["saved"]!["timeoutSeconds"]);
         client.DefaultRequestHeaders.Add("Cookie", response.Headers.GetValues("Set-Cookie").First().Split(';')[0]);
         client.DefaultRequestHeaders.Add("X-NimBus-CSRF", state["csrfToken"]!.GetValue<string>());
 
-        // Rejected shapes never reach the store: key together with clear, whitespace inside, too long.
-        Assert.AreEqual(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync(url,
-            new SaveIntelligenceSettings { Revision = "none", Settings = new(), ApiKey = plaintext, ClearApiKey = true })).StatusCode);
-        Assert.AreEqual(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync(url,
-            new SaveIntelligenceSettings { Revision = "none", Settings = new(), ApiKey = "has space" })).StatusCode);
-        Assert.AreEqual(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync(url,
-            new SaveIntelligenceSettings { Revision = "none", Settings = new(), ApiKey = new string('k', 513) })).StatusCode);
+        foreach (var field in new[] { "ApiKey", "ClearApiKey" })
+        {
+            var body = JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(new SaveIntelligenceSettings { Settings = new(), Revision = "none" }))!;
+            body[field] = field == "ApiKey" ? "ts-live-key-1234567890" : true;
+            Assert.AreEqual(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync(url, body)).StatusCode, field);
+        }
         Assert.AreEqual(0, store.Writes);
 
-        // Save: sealed at rest, reported as configured, never echoed, audited without the value.
-        var saved = await client.PutAsJsonAsync(url,
-            new SaveIntelligenceSettings { Revision = "none", Settings = new(), ApiKey = "  " + plaintext + "  " });
-        var text = await saved.Content.ReadAsStringAsync();
-        Assert.AreEqual(HttpStatusCode.OK, saved.StatusCode, text);
-        Assert.IsFalse(text.Contains(plaintext, StringComparison.Ordinal));
-        var savedState = JsonNode.Parse(text)!;
-        Assert.AreEqual("configured", savedState["savedApiKey"]!.GetValue<string>());
-        Assert.AreEqual("deployment", savedState["credentialSource"]!.GetValue<string>(), "The running instance keeps its startup credential until restart.");
-        Assert.IsNotNull(store.Document!.ProtectedApiKey);
-        Assert.AreNotEqual(plaintext, store.Document.ProtectedApiKey);
-        Assert.IsFalse(Newtonsoft.Json.JsonConvert.SerializeObject(store.Document).Contains(plaintext, StringComparison.Ordinal));
-        Assert.IsTrue(audit.Data.Last()!.Contains("\"apiKey\":\"replaced\"", StringComparison.Ordinal), audit.Data.Last());
-        Assert.IsFalse(audit.Data.Last()!.Contains(plaintext, StringComparison.Ordinal));
-
-        // Omitting the key carries the sealed value forward unchanged.
-        var sealedKey = store.Document.ProtectedApiKey;
-        saved = await client.PutAsJsonAsync(url,
-            new SaveIntelligenceSettings { Revision = store.Document.Revision, Settings = new() { Enabled = true } });
+        var saved = await client.PutAsJsonAsync(url, new SaveIntelligenceSettings { Revision = "none", Settings = new() { Enabled = true } });
         Assert.AreEqual(HttpStatusCode.OK, saved.StatusCode, await saved.Content.ReadAsStringAsync());
-        Assert.AreEqual(sealedKey, store.Document.ProtectedApiKey);
-        Assert.IsTrue(audit.Data.Last()!.Contains("\"apiKey\":\"unchanged\"", StringComparison.Ordinal));
-
-        // Restart: the saved key overrides the deployment key and the snapshot reports its source.
-        var protector = host.Services.GetRequiredService<IIntelligenceSecretProtector>();
-        var configuration = host.Services.GetRequiredService<IConfiguration>();
-        var restarted = await IntelligenceSettingsBootstrap.LoadAsync(configuration, store, protector, CancellationToken.None);
-        Assert.AreEqual(plaintext, restarted["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:ApiKey"]);
-        Assert.AreEqual("saved", IntelligenceSettingsSnapshot.Create(restarted).CredentialSource);
-        Assert.IsTrue(IntelligenceSettingsSnapshot.Create(restarted).CredentialConfigured);
-        Assert.IsFalse(Newtonsoft.Json.JsonConvert.SerializeObject(IntelligenceAdminSettings.FromConfiguration(restarted)).Contains(plaintext, StringComparison.Ordinal));
-
-        // Clear: the deployment key applies again after restart.
-        saved = await client.PutAsJsonAsync(url,
-            new SaveIntelligenceSettings { Revision = store.Document.Revision, Settings = new(), ClearApiKey = true });
-        text = await saved.Content.ReadAsStringAsync();
-        Assert.AreEqual(HttpStatusCode.OK, saved.StatusCode, text);
-        Assert.IsNull(store.Document.ProtectedApiKey);
-        Assert.AreEqual("none", JsonNode.Parse(text)!["savedApiKey"]!.GetValue<string>());
-        Assert.IsTrue(audit.Data.Last()!.Contains("\"apiKey\":\"cleared\"", StringComparison.Ordinal));
-        restarted = await IntelligenceSettingsBootstrap.LoadAsync(configuration, store, protector, CancellationToken.None);
-        Assert.AreEqual("deployment-secret", restarted["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:ApiKey"]);
-        Assert.AreEqual("deployment", IntelligenceSettingsSnapshot.Create(restarted).CredentialSource);
-
-        // A key sealed by another key ring is reported as unreadable and falls back to deployment without failing closed.
-        store.Seed(new IntelligenceSettingsDocument(new() { Enabled = true }, Guid.NewGuid().ToString("D"),
-            new DataProtectionSecretProtector(new EphemeralDataProtectionProvider()).Protect(plaintext)));
-        response = await client.GetAsync(url);
-        Assert.AreEqual("unreadable", JsonNode.Parse(await response.Content.ReadAsStringAsync())!["savedApiKey"]!.GetValue<string>());
-        restarted = await IntelligenceSettingsBootstrap.LoadAsync(configuration, store, protector, CancellationToken.None);
-        Assert.AreEqual("deployment-secret", restarted["NimBus:IntegrationIntelligence:FailureClassification:TypeSafe:ApiKey"]);
-        Assert.IsTrue(IntelligenceAdminSettings.FromConfiguration(restarted).Enabled, "Other saved settings still apply.");
-        Assert.IsFalse(restarted.GetValue<bool>(IntelligenceSettingsBootstrap.FailureKey));
+        Assert.AreEqual("{\"outcome\":\"Saved\"}", audit.Data.Last());
     }
 
     private static Task<IHost> CreateHost(FakeStore store, FakeAudit audit) => new HostBuilder()
@@ -173,7 +123,6 @@ public sealed class IntelligenceSettingsApiTests
             services.AddLogging(); services.AddRouting(); services.AddAuthorization();
             services.AddAntiforgery(options => options.HeaderName = "X-NimBus-CSRF");
             services.AddSingleton<IIntelligenceSettingsStore>(store); services.AddSingleton<IAuditLogService>(audit);
-            services.AddSingleton<IIntelligenceSecretProtector>(new DataProtectionSecretProtector(new EphemeralDataProtectionProvider()));
             services.AddSingleton(sp => IntelligenceSettingsSnapshot.Create(sp.GetRequiredService<IConfiguration>()));
             services.AddHttpContextAccessor(); services.AddScoped<IEndpointAuthorizationService, FakeAuthorization>();
             services.AddControllers().AddApplicationPart(typeof(IntelligenceSettingsController).Assembly);

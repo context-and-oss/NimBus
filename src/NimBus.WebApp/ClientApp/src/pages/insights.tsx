@@ -262,8 +262,8 @@ export default function Insights() {
 
         {enriched && data?.analysisAvailable === false && (
           <p role="status" className="text-sm text-muted-foreground">
-            New analysis is unavailable because no provider is configured. Saved results are shown; not analyzed failures stay
-            that way until a provider is configured.
+            Agents can't record new classifications in this deployment. Saved results are shown; not analyzed failures stay
+            that way until an Owner fixes the failure-intelligence settings.
           </p>
         )}
         {banner && (

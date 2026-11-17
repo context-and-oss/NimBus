@@ -427,8 +427,8 @@ never starts an analysis.
   Every value except `available` leaves `coverage`, `causeGroups` and `guidanceGroups` null; it
   is never reported as zero coverage. When it is `unavailable`, the WebApp log has a warning
   from `FailureClassificationReader` with the storage exception.
-- `analysisAvailable` is false when new analysis can't be requested: intelligence is off, or
-  only saved classifications can be read because no provider is configured.
+- `analysisAvailable` is false when agents can't record new classifications: intelligence is
+  off, or only saved classifications can be read (read-only mode).
 - `totalFailed` stays for existing clients and always equals `totalOccurrences`.
 
 Two read-only routes page one group of the overview. Both take the overview's `from` and `to`,
