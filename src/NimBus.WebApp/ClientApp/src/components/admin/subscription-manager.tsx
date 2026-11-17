@@ -152,8 +152,28 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge size="sm">{status}</Badge>;
 }
 
-export default function SubscriptionManager() {
+export interface SubscriptionManagerProps {
+  /**
+   * The open topic, when the page chooses it: a name opens that topic, null
+   * shows every topic. Left undefined, the component keeps its own choice.
+   */
+  topic?: string | null;
+  /** Asked to open a topic (or all topics, with null) when `topic` is controlled. */
+  onTopicChange?: (topic: string | null) => void;
+  /** Receives every topics load, so a list beside this one stays in step. */
+  onTopicsLoaded?: (topics: api.ServiceBusTopicOverview[]) => void;
+}
+
+export default function SubscriptionManager({
+  topic,
+  onTopicChange,
+  onTopicsLoaded,
+}: SubscriptionManagerProps = {}) {
   const client = useMemo(() => new api.Client(api.CookieAuth()), []);
+  const controlled = topic !== undefined;
+  // A ref, so an inline callback doesn't make every render reload the topics.
+  const topicsLoaded = useRef(onTopicsLoaded);
+  topicsLoaded.current = onTopicsLoaded;
 
   const [topics, setTopics] = useState<api.ServiceBusTopicOverview[]>([]);
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
@@ -174,7 +194,9 @@ export default function SubscriptionManager() {
 
   const loadTopics = useCallback(async () => {
     try {
-      setTopics(await client.getAdminServicebusTopics());
+      const next = await client.getAdminServicebusTopics();
+      setTopics(next);
+      topicsLoaded.current?.(next);
       setError(null);
     } catch (err: any) {
       setError(err?.message ?? "Failed to load Service Bus topics");
@@ -245,19 +267,39 @@ export default function SubscriptionManager() {
     }
   }
 
-  function openTopic(topicName: string) {
-    setSelectedTopic(topicName);
-    setSubscriptions([]);
-    setFeedback({});
-    loadSubscriptions(topicName);
-  }
+  const showTopic = useCallback(
+    (topicName: string) => {
+      setSelectedTopic(topicName);
+      setSubscriptions([]);
+      setFeedback({});
+      loadSubscriptions(topicName);
+    },
+    [loadSubscriptions],
+  );
 
-  function closeTopic() {
+  const showAllTopics = useCallback(() => {
     // Invalidate anything in flight so a late response can't repopulate the
     // table under the next topic the operator opens.
     subsRequestId.current++;
     setSelectedTopic(null);
     setSubscriptions([]);
+  }, []);
+
+  // Controlled: follow the page's choice. Only a change of topic reloads.
+  useEffect(() => {
+    if (!controlled) return;
+    if (topic) showTopic(topic);
+    else showAllTopics();
+  }, [controlled, topic, showTopic, showAllTopics]);
+
+  function openTopic(topicName: string) {
+    if (controlled) onTopicChange?.(topicName);
+    else showTopic(topicName);
+  }
+
+  function closeTopic() {
+    if (controlled) onTopicChange?.(null);
+    else showAllTopics();
   }
 
   /**
@@ -454,25 +496,28 @@ export default function SubscriptionManager() {
         />
       ) : (
         <div className="space-y-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={closeTopic}
-              leftIcon={<Icon path={CHEVRON_LEFT} className="w-4 h-4" />}
-            >
-              All topics
-            </Button>
-            <h3 className="text-lg font-semibold m-0 font-mono">
-              {selectedTopic}
-            </h3>
-            {activeTopic?.isSystemTopic && (
-              <Badge variant="info" size="sm">
-                system topic
-              </Badge>
-            )}
-            {activeTopic && <StatusBadge status={activeTopic.status ?? ""} />}
-          </div>
+          {/* Controlled, the page's topic list and heading already say this. */}
+          {!controlled && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeTopic}
+                leftIcon={<Icon path={CHEVRON_LEFT} className="w-4 h-4" />}
+              >
+                All topics
+              </Button>
+              <h3 className="text-lg font-semibold m-0 font-mono">
+                {selectedTopic}
+              </h3>
+              {activeTopic?.isSystemTopic && (
+                <Badge variant="info" size="sm">
+                  system topic
+                </Badge>
+              )}
+              {activeTopic && <StatusBadge status={activeTopic.status ?? ""} />}
+            </div>
+          )}
 
           {activeTopic?.isKnownToPlatform === false && (
             // The API refuses mutations on a topic outside the platform

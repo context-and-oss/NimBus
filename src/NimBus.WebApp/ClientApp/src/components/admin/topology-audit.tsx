@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "api-client";
 import { Button } from "components/ui/button";
 import { Badge } from "components/ui/badge";
@@ -42,8 +42,24 @@ function attentionRank(row: EndpointAudit): number {
   return 2;
 }
 
-export default function TopologyAudit() {
+export interface TopologyAuditProps {
+  /**
+   * The audited endpoint, when the page chooses it: a name audits that
+   * endpoint at once, null offers the all-endpoints audit. Left undefined, the
+   * component shows its own endpoint picker.
+   */
+  endpoint?: string | null;
+  /** Asked to open an endpoint from the all-endpoints summary when `endpoint` is controlled. */
+  onEndpointChange?: (endpoint: string) => void;
+}
+
+export default function TopologyAudit({ endpoint, onEndpointChange }: TopologyAuditProps = {}) {
+  const controlled = endpoint !== undefined;
+  // Only the newest single audit may land, so a quick switch between
+  // endpoints can't show (or clean up) the one before.
+  const auditRequest = useRef(0);
   const [endpoints, setEndpoints] = useState<EndpointOption[]>([]);
+  const [endpointsLoaded, setEndpointsLoaded] = useState(false);
   const [selectedEndpoint, setSelectedEndpoint] = useState<string[]>([]);
   const [audit, setAudit] = useState<api.TopologyAuditResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -70,6 +86,8 @@ export default function TopologyAudit() {
       setEndpoints(eps);
     } catch {
       // Endpoints will be empty
+    } finally {
+      setEndpointsLoaded(true);
     }
   }
 
@@ -83,23 +101,49 @@ export default function TopologyAudit() {
     );
   }
 
-  async function handleAudit() {
-    if (selectedEndpoint.length === 0) return;
+  const auditEndpoint = useCallback(async (name: string) => {
+    const request = ++auditRequest.current;
     setLoading(true);
     setError(null);
     setAudit(null);
     setCleanupResult(null);
     try {
       const client = new api.Client(api.CookieAuth());
-      const result = await client.getAdminTopology(selectedEndpoint[0]);
+      const result = await client.getAdminTopology(name);
+      if (request !== auditRequest.current) return;
       setAudit(result);
-      updateSummaryRow(selectedEndpoint[0], result);
+      setAllAudits(
+        (rows) =>
+          rows?.map((row) => (row.endpoint === name ? { endpoint: name, result } : row)) ?? null,
+      );
     } catch (err: any) {
+      if (request !== auditRequest.current) return;
       setError(err.message ?? "Failed to audit topology");
     } finally {
+      if (request === auditRequest.current) setLoading(false);
+    }
+  }, []);
+
+  function handleAudit() {
+    if (selectedEndpoint.length === 0) return;
+    void auditEndpoint(selectedEndpoint[0]);
+  }
+
+  // Controlled: audit the page's endpoint as soon as it is chosen.
+  useEffect(() => {
+    if (!controlled) return;
+    if (endpoint) {
+      setSelectedEndpoint([endpoint]);
+      void auditEndpoint(endpoint);
+    } else {
+      ++auditRequest.current;
+      setSelectedEndpoint([]);
+      setAudit(null);
+      setCleanupResult(null);
+      setError(null);
       setLoading(false);
     }
-  }
+  }, [controlled, endpoint, auditEndpoint]);
 
   async function handleAuditAll() {
     if (endpoints.length === 0) return;
@@ -145,6 +189,10 @@ export default function TopologyAudit() {
 
   function viewEndpoint(row: EndpointAudit) {
     if (!row.result) return;
+    if (controlled) {
+      onEndpointChange?.(row.endpoint);
+      return;
+    }
     setSelectedEndpoint([row.endpoint]);
     setAudit(row.result);
     setCleanupResult(null);
@@ -185,43 +233,77 @@ export default function TopologyAudit() {
   const failedCount =
     allAudits?.filter((r) => r.error !== undefined).length ?? 0;
 
+  // A topic outside the catalog (a system topic, or one NimBus didn't create)
+  // has nothing to be compared with.
+  const notInCatalog =
+    controlled && !!endpoint && endpointsLoaded && !endpoints.some((ep) => ep.value === endpoint);
+
   return (
     <div className="space-y-6 w-full">
-      <div className="flex flex-wrap gap-4 items-end">
-        <div className="flex-1 max-w-md">
-          <Combobox
-            options={endpoints}
-            value={selectedEndpoint}
-            onChange={setSelectedEndpoint}
-            placeholder="Select endpoint..."
-            label="Endpoint"
-            multiple={false}
-          />
+      {!controlled && (
+        <div className="flex flex-wrap gap-4 items-end">
+          <div className="flex-1 max-w-md">
+            <Combobox
+              options={endpoints}
+              value={selectedEndpoint}
+              onChange={setSelectedEndpoint}
+              placeholder="Select endpoint..."
+              label="Endpoint"
+              multiple={false}
+            />
+          </div>
+          <Button
+            onClick={handleAudit}
+            disabled={selectedEndpoint.length === 0 || loading || auditingAll}
+            isLoading={loading}
+          >
+            Audit Topology
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleAuditAll}
+            disabled={endpoints.length === 0 || loading || auditingAll}
+            isLoading={auditingAll}
+          >
+            Audit all endpoints
+          </Button>
         </div>
-        <Button
-          onClick={handleAudit}
-          disabled={selectedEndpoint.length === 0 || loading || auditingAll}
-          isLoading={loading}
-        >
-          Audit Topology
-        </Button>
+      )}
+      {controlled && !endpoint && (
         <Button
           variant="outline"
           onClick={handleAuditAll}
-          disabled={endpoints.length === 0 || loading || auditingAll}
+          disabled={endpoints.length === 0 || auditingAll}
           isLoading={auditingAll}
         >
           Audit all endpoints
         </Button>
-      </div>
+      )}
+      {controlled && endpoint && !notInCatalog && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void auditEndpoint(endpoint)}
+          disabled={loading || cleaning}
+          isLoading={loading}
+        >
+          Audit again
+        </Button>
+      )}
+      {notInCatalog && (
+        <p className="m-0 rounded-nb-md border border-border bg-card p-4 text-sm text-muted-foreground">
+          <span className="font-mono">{endpoint}</span> isn&apos;t an endpoint in the catalog, so
+          there is nothing to compare it with.
+        </p>
+      )}
 
-      {error && (
+      {error && !notInCatalog && (
         <div className="bg-red-50 border border-red-200 rounded-md p-4 text-red-800">
           {error}
         </div>
       )}
 
-      {allAudits && (
+      {allAudits && !(controlled && endpoint) && (
         <div className="space-y-2">
           <p className="m-0 text-sm text-muted-foreground">
             {driftingCount === 0
@@ -286,7 +368,7 @@ export default function TopologyAudit() {
         </div>
       )}
 
-      {audit && (
+      {audit && !notInCatalog && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">
