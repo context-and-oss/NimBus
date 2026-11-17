@@ -37,7 +37,12 @@ const SignOutIcon = () => (
   </svg>
 );
 
-const SidebarUserFooter: React.FC = () => {
+interface SidebarUserFooterProps {
+  /** Icon-only sidebar: show the avatar and sign-out button, stacked, without the name. */
+  compact?: boolean;
+}
+
+const SidebarUserFooter: React.FC<SidebarUserFooterProps> = ({ compact = false }) => {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [endpointMissing, setEndpointMissing] = useState(false);
   const env = useEnv();
@@ -95,8 +100,8 @@ const SidebarUserFooter: React.FC = () => {
   return (
     <div
       className={cn(
-        "mt-auto pt-2.5 px-2 border-t border-[#2A2620]",
-        "flex items-center gap-2.5",
+        "mt-auto pt-2.5 border-t border-[#2A2620]",
+        compact ? "flex flex-col items-center gap-1.5" : "px-2 flex items-center gap-2.5",
       )}
     >
       <span
@@ -104,11 +109,12 @@ const SidebarUserFooter: React.FC = () => {
           "w-7 h-7 rounded-full inline-flex items-center justify-center text-[11px] font-bold text-white shrink-0",
           "bg-linear-to-br from-[#E8743C] to-[#C2412E]",
         )}
+        title={compact ? `${primary} · ${secondary}` : undefined}
         aria-hidden="true"
       >
         {initials}
       </span>
-      <div className="min-w-0 flex-1 leading-tight">
+      <div className={cn("min-w-0 flex-1 leading-tight", compact && "sr-only")}>
         <div className="text-[12px] text-[#F4F2EA] truncate" title={primary}>
           {primary}
         </div>

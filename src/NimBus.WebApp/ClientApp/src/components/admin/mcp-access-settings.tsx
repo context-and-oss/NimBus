@@ -13,6 +13,10 @@ import {
 } from "./mcp-access-model";
 import { PanelFooter, PanelSection, useInPanel, usePanelDirty, usePanelReviewing } from "components/settings/panel-frame";
 
+// One line per capability: what it does, what it needs, and its switch. Tools and
+// warnings fold away so all of them fit on one screen.
+const PERMISSION_GRID = "grid-cols-1 gap-x-4 gap-y-2 md:grid-cols-[minmax(0,1fr)_14rem_5.5rem]";
+
 // Spec 037 — Settings → MCP access. Site Owner only. The policy narrows what the
 // deployment, Entra scopes and NimBus roles allow, and applies to every instance
 // within 30 seconds without a restart.
@@ -204,30 +208,53 @@ export default function McpAccessSettings() {
               <p className="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
                 A tool runs only when <b className="text-primary-600">the switch on this page</b> AND the Entra scope AND the NimBus role on the endpoint AND the message state allow it.
               </p>
-              <ul className="divide-y divide-border rounded-md border border-border">
-                <li className="flex items-start justify-between gap-4 p-3">
-                  <div><p className="text-sm font-semibold">Observe <Risk risk="low" text="read" /></p>
-                    <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics, failure evidence, stored classifications, operation outcomes and reports: {READ_TOOL_COUNT} read tools. Never stack traces.</p></div>
-                  <span className="shrink-0 rounded-full border border-dashed border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">Always on</span>
-                </li>
-                {CAPABILITIES.map(cap => (
-                  <li key={cap.key} className="space-y-2 p-3">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold">{cap.label} <Risk risk={cap.risk} text={cap.riskText} /></p>
-                        <p className="text-xs text-muted-foreground">{cap.description}{cap.key === "classify" && !state.failureIntelligenceEnabled ? " Failure intelligence is off in this deployment." : ""}</p>
-                        <p className="mt-1 flex flex-wrap gap-1 font-mono text-[11px]">
-                          {cap.tools.map(t => <span key={t} className="rounded bg-muted px-1.5">{t}</span>)}
-                          <span className="rounded bg-status-info-50 px-1.5 text-status-info-ink">{cap.scope}</span>
-                          <span className="rounded bg-nimbus-purple-50 px-1.5 text-nimbus-purple">{cap.role}</span>
-                        </p>
-                      </div>
-                      <Toggle aria-label={cap.label} checked={Boolean(draft.capabilities[cap.key])} onChange={v => edit(s => { s.capabilities[cap.key as CapabilityKey] = v; })} />
-                    </div>
-                    {draft.capabilities[cap.key] && cap.note && <p className="rounded-md border border-status-warning/40 bg-status-warning/10 p-2 text-xs">{cap.note}</p>}
+              <div className="overflow-hidden rounded-md border border-border">
+                <div aria-hidden="true" className={cn(PERMISSION_GRID, "hidden border-b border-border px-3 py-2 font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground md:grid")}>
+                  <span>Capability</span><span>Requires</span><span className="text-right">Agents</span>
+                </div>
+                <ul className="divide-y divide-border">
+                  <li className={cn(PERMISSION_GRID, "grid px-3 py-2.5")}>
+                    <div className="min-w-0"><p className="text-sm font-semibold">Observe <Risk risk="low" text="read" /></p>
+                      <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics, failure evidence, stored classifications, operation outcomes and reports. Never stack traces.</p></div>
+                    <p className="flex flex-wrap content-start gap-1 font-mono text-[11px]"><span className="rounded bg-muted px-1.5">{READ_TOOL_COUNT} read tools</span></p>
+                    <span className="justify-self-end self-start rounded-full border border-dashed border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">Always on</span>
                   </li>
-                ))}
-              </ul>
+                  {CAPABILITIES.map(cap => {
+                    const on = Boolean(draft.capabilities[cap.key]);
+                    return (
+                      <li key={cap.key} className={cn(PERMISSION_GRID, "grid px-3 py-2.5")}>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">{cap.label} <Risk risk={cap.risk} text={cap.riskText} /></p>
+                          <p className="text-xs text-muted-foreground">{cap.description}{cap.key === "classify" && !state.failureIntelligenceEnabled ? " Failure intelligence is off in this deployment." : ""}</p>
+                          {on && cap.note && (
+                            <details className="group mt-1 text-xs text-status-warning-ink">
+                              <summary className="flex cursor-pointer list-none items-center gap-1.5 font-semibold [&::-webkit-details-marker]:hidden">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 3 2 21h20L12 3z" /><path d="M12 10v5M12 18h.01" /></svg>
+                                Before you leave this on
+                                <span aria-hidden="true" className="transition-transform group-open:rotate-90">›</span>
+                              </summary>
+                              <p className="mt-1 rounded-md border border-status-warning/40 bg-status-warning/10 p-2 text-foreground">{cap.note}</p>
+                            </details>
+                          )}
+                        </div>
+                        <div className="min-w-0 space-y-1 font-mono text-[11px]">
+                          <p className="flex flex-wrap gap-1">
+                            <span className="rounded bg-status-info-50 px-1.5 text-status-info-ink">{cap.scope}</span>
+                            <span className="rounded bg-nimbus-purple-50 px-1.5 text-nimbus-purple">{cap.role}</span>
+                          </p>
+                          <details>
+                            <summary className="cursor-pointer text-muted-foreground">{cap.tools.length} {cap.tools.length === 1 ? "tool" : "tools"}</summary>
+                            <p className="mt-1 flex flex-wrap gap-1">{cap.tools.map(t => <span key={t} className="rounded bg-muted px-1.5">{t}</span>)}</p>
+                          </details>
+                        </div>
+                        <div className="justify-self-end self-start">
+                          <Toggle aria-label={cap.label} checked={on} onChange={v => edit(s => { s.capabilities[cap.key as CapabilityKey] = v; })} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
               <SettingRow label="Unattended workloads (app-only tokens)" description="Callers with the Nimbus.Workload.Observe app role may use the read tools. Workloads never skip or read payloads, and change messages only as the switches below allow.">
                 <Toggle aria-label="Allow workload tokens" checked={draft.allowWorkloads} disabled={local} onChange={v => edit(s => { s.allowWorkloads = v; })} />
               </SettingRow>

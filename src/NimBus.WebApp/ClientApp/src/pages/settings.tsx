@@ -12,7 +12,6 @@ import { Badge, type BadgeVariant } from "components/ui/badge";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
 import { Modal, ModalBody, ModalFooter, ModalHeader } from "components/ui/modal";
-import { SidePanel } from "components/ui/side-panel";
 import { SettingsPanelFrame } from "components/settings/panel-frame";
 import {
   featureStatus,
@@ -59,6 +58,8 @@ const SHOW: { id: Show; label: string }[] = [
   { id: "attention", label: "Needs attention" },
 ];
 
+const LIST = "/Settings";
+
 /** Set on links into a panel so closing can step back instead of stacking history. */
 interface OpenedFromList {
   fromList?: boolean;
@@ -82,9 +83,10 @@ function StatusBadge({ status }: { status?: FeatureStatus }) {
 
 /**
  * Opt-in capabilities, one row per feature with its live state (Spec 038 §7).
- * Each opens its existing settings in a tabbed side panel at
- * /Settings/:feature?tab=:tab (§8). Site Owner only, like every /api/admin/*
- * call the rows and panels make.
+ * Each opens its existing settings at /Settings/:feature?tab=:tab (§8) in a
+ * split view: the features stay listed on the left, so switching between them
+ * is one click, and the settings take the rest of the width. Site Owner only,
+ * like every /api/admin/* call the rows and panels make.
  */
 export default function Settings() {
   const { feature } = useParams();
@@ -95,7 +97,8 @@ export default function Settings() {
   const [show, setShow] = useState<Show>("all");
   const [query, setQuery] = useState("");
   const [dirty, setDirty] = useState(0);
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // Where to go once the unsaved edits are discarded: the list or another feature.
+  const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
   const [confirmTurnOff, setConfirmTurnOff] = useState(false);
   const [busy, setBusy] = useState<string>();
 
@@ -115,17 +118,40 @@ export default function Settings() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
 
-  // Opened from a row: step back, so Back afterwards doesn't reopen the panel.
-  // Deep-linked: there is no list entry behind it, so replace instead.
-  const close = useCallback(() => {
-    setDirty(0);
-    setConfirmDiscard(false);
-    reload();
-    if ((location.state as OpenedFromList | null)?.fromList) navigate(-1);
-    else navigate("/Settings", { replace: true });
-  }, [location.state, navigate, reload]);
+  // Closing, opened from a row: step back, so Back afterwards doesn't reopen the
+  // panel. Deep-linked: there is no list entry behind it, so replace instead.
+  // Switching to another feature replaces the entry and keeps how it was opened.
+  const leave = useCallback(
+    (to: string) => {
+      setDirty(0);
+      setConfirmDiscard(null);
+      reload();
+      if (to !== LIST) navigate(to, { replace: true, state: location.state });
+      else if ((location.state as OpenedFromList | null)?.fromList) navigate(-1);
+      else navigate(LIST, { replace: true });
+    },
+    [location.state, navigate, reload],
+  );
 
-  const requestClose = () => (dirty > 0 ? setConfirmDiscard(true) : close());
+  const requestLeave = useCallback(
+    (to: string) => (dirty > 0 ? setConfirmDiscard(to) : leave(to)),
+    [dirty, leave],
+  );
+
+  const requestClose = () => requestLeave(LIST);
+
+  // Escape closes the open feature, unless a prompt is up or focus is in a field.
+  useEffect(() => {
+    if (!open || confirmDiscard !== null || confirmTurnOff) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const target = e.target;
+      if (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']")) return;
+      requestLeave(LIST);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, confirmDiscard, confirmTurnOff, requestLeave]);
 
   const selectTab = (next: string) =>
     setSearchParams({ tab: next }, { replace: true, state: location.state });
@@ -183,6 +209,140 @@ export default function Settings() {
   const visible = SETTINGS_FEATURES.filter((f) =>
     matches(f, featureStatus(f.id, snapshot), show, query),
   );
+
+  const dialogs = (
+    <>
+      <Modal
+        isOpen={confirmDiscard !== null}
+        onClose={() => setConfirmDiscard(null)}
+        label={`Discard ${dirty} unsaved ${dirty === 1 ? "change" : "changes"}?`}
+        size="md"
+      >
+        <ModalHeader>
+          Discard {dirty} unsaved {dirty === 1 ? "change" : "changes"}?
+        </ModalHeader>
+        <ModalBody className="text-sm text-muted-foreground">
+          Your edits to {open?.name ?? "these settings"} have not been saved.
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="outline" colorScheme="gray" onClick={() => setConfirmDiscard(null)}>
+            Keep editing
+          </Button>
+          <Button colorScheme="red" onClick={() => leave(confirmDiscard ?? LIST)}>
+            Discard
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal
+        isOpen={confirmTurnOff}
+        onClose={() => setConfirmTurnOff(false)}
+        label="Turn off MCP access now?"
+        size="md"
+      >
+        <ModalHeader>Turn off MCP access now?</ModalHeader>
+        <ModalBody className="space-y-2 text-sm">
+          <p>
+            Every agent call gets 503 [Disabled] within 30 seconds on all instances. The other MCP
+            settings are kept; turning it back on is reviewed as a change that widens access.
+          </p>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="outline" colorScheme="gray" onClick={() => setConfirmTurnOff(false)}>
+            Cancel
+          </Button>
+          <Button
+            colorScheme="red"
+            isLoading={busy === "mcp"}
+            onClick={() =>
+              void run("mcp", async () => {
+                await turnOffMcp();
+                setConfirmTurnOff(false);
+                notifySuccess("MCP access is off. Agents get 503 [Disabled] on every instance within 30 seconds.");
+              })
+            }
+          >
+            Turn off MCP access
+          </Button>
+        </ModalFooter>
+      </Modal>
+    </>
+  );
+
+  if (open) {
+    const openStatus = featureStatus(open.id, snapshot);
+    return (
+      <Page title="Settings" subtitle="Opt-in capabilities for this deployment.">
+        <div className="grid w-full min-w-0 gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
+          <nav
+            aria-label="Settings"
+            className="hidden h-[calc(100vh-13rem)] min-h-[28rem] flex-col gap-4 overflow-y-auto pr-1 lg:flex"
+          >
+            {GROUPS.map((group) => (
+              <div key={group}>
+                <h2 className="m-0 mb-1.5 ml-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  {group}
+                </h2>
+                <ul className="m-0 list-none space-y-0.5 p-0">
+                  {SETTINGS_FEATURES.filter((f) => f.group === group).map((f) => {
+                    const status = featureStatus(f.id, snapshot);
+                    const current = f.id === open.id;
+                    return (
+                      <li key={f.id}>
+                        <Link
+                          to={`/Settings/${f.id}`}
+                          aria-current={current ? "page" : undefined}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (!current) requestLeave(`/Settings/${f.id}`);
+                          }}
+                          className={cn(
+                            "block rounded-nb-md border px-3 py-2.5 text-foreground no-underline hover:no-underline",
+                            current
+                              ? "border-border-strong bg-card"
+                              : "border-transparent hover:bg-muted/60",
+                          )}
+                        >
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold">{f.name}</span>
+                            <StatusBadge status={status} />
+                          </span>
+                          {status && (
+                            <span className="mt-0.5 block truncate font-mono text-[11px] text-muted-foreground">
+                              {status.summary}
+                            </span>
+                          )}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </nav>
+
+          <section
+            aria-label={open.name}
+            className="flex h-[calc(100vh-13rem)] min-h-[28rem] min-w-0 flex-col overflow-hidden rounded-nb-md border border-border bg-background"
+          >
+            <SettingsPanelFrame
+              title={open.name}
+              status={<StatusBadge status={openStatus} />}
+              tabs={open.tabs}
+              activeTab={tab}
+              onTabChange={selectTab}
+              onClose={requestClose}
+              onDirtyChange={setDirty}
+              applies={open.applies}
+            >
+              {PANELS[open.id]()}
+            </SettingsPanelFrame>
+          </section>
+        </div>
+        {dialogs}
+      </Page>
+    );
+  }
 
   return (
     <Page title="Settings" subtitle="Opt-in capabilities for this deployment.">
@@ -267,77 +427,7 @@ export default function Settings() {
         )}
       </div>
 
-      <SidePanel isOpen={!!open} onClose={requestClose} label={open?.name ?? "Settings"} className="max-w-[880px]">
-        {open && (
-          <SettingsPanelFrame
-            title={open.name}
-            status={<StatusBadge status={featureStatus(open.id, snapshot)} />}
-            tabs={open.tabs}
-            activeTab={tab}
-            onTabChange={selectTab}
-            onClose={requestClose}
-            onDirtyChange={setDirty}
-            applies={open.applies}
-          >
-            {PANELS[open.id]()}
-          </SettingsPanelFrame>
-        )}
-      </SidePanel>
-
-      <Modal
-        isOpen={confirmDiscard}
-        onClose={() => setConfirmDiscard(false)}
-        label={`Discard ${dirty} unsaved ${dirty === 1 ? "change" : "changes"}?`}
-        size="md"
-      >
-        <ModalHeader>
-          Discard {dirty} unsaved {dirty === 1 ? "change" : "changes"}?
-        </ModalHeader>
-        <ModalBody className="text-sm text-muted-foreground">
-          Your edits to {open?.name ?? "these settings"} have not been saved.
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="outline" colorScheme="gray" onClick={() => setConfirmDiscard(false)}>
-            Keep editing
-          </Button>
-          <Button colorScheme="red" onClick={close}>
-            Discard
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      <Modal
-        isOpen={confirmTurnOff}
-        onClose={() => setConfirmTurnOff(false)}
-        label="Turn off MCP access now?"
-        size="md"
-      >
-        <ModalHeader>Turn off MCP access now?</ModalHeader>
-        <ModalBody className="space-y-2 text-sm">
-          <p>
-            Every agent call gets 503 [Disabled] within 30 seconds on all instances. The other MCP
-            settings are kept; turning it back on is reviewed as a change that widens access.
-          </p>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="outline" colorScheme="gray" onClick={() => setConfirmTurnOff(false)}>
-            Cancel
-          </Button>
-          <Button
-            colorScheme="red"
-            isLoading={busy === "mcp"}
-            onClick={() =>
-              void run("mcp", async () => {
-                await turnOffMcp();
-                setConfirmTurnOff(false);
-                notifySuccess("MCP access is off. Agents get 503 [Disabled] on every instance within 30 seconds.");
-              })
-            }
-          >
-            Turn off MCP access
-          </Button>
-        </ModalFooter>
-      </Modal>
+      {dialogs}
     </Page>
   );
 }

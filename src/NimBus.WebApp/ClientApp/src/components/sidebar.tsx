@@ -443,9 +443,49 @@ const LogoMark = ({ size = 22 }: { size?: number }) => (
   </svg>
 );
 
+/** Browser storage key for the sidebar's icon-only mode, a per-viewer preference. */
+export const SIDEBAR_COLLAPSED_KEY = "nimbus.sidebar.collapsed";
+
+// Icon-only mode gives wide pages (Settings, Access Control) the room the
+// labels take. It is remembered per browser and is off by default.
+const useCollapsed = (): [boolean, () => void] => {
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return window.localStorage?.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () =>
+    setCollapsed((was) => {
+      try {
+        window.localStorage?.setItem(SIDEBAR_COLLAPSED_KEY, String(!was));
+      } catch {
+        // localStorage can be unavailable (private mode, blocked storage); ignore.
+      }
+      return !was;
+    });
+  return [collapsed, toggle];
+};
+
+const CollapseIcon = ({ collapsed }: { collapsed: boolean }) => (
+  <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <rect x="2" y="2.5" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+    <path d="M6 2.5v11" stroke="currentColor" strokeWidth="1.4" />
+    <path
+      d={collapsed ? "M9 6.5 10.5 8 9 9.5" : "M11 6.5 9.5 8 11 9.5"}
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 const Sidebar = () => {
   const env = useEnv();
   const backlog = useFailedBacklog();
+  const [collapsed, toggleCollapsed] = useCollapsed();
   const nav = useVisibleNav().map((group) => ({
     ...group,
     items: group.items.map((item) =>
@@ -461,22 +501,41 @@ const Sidebar = () => {
     <aside
       className={cn(
         "bg-ink text-[#C9C1AB] flex flex-col gap-0.5 sticky top-0 h-screen",
-        "px-3.5 pt-5 pb-5 border-r border-[#2A2620]",
-        "w-[232px] shrink-0",
+        "pt-5 pb-5 border-r border-[#2A2620] shrink-0",
+        collapsed ? "w-16 px-2" : "w-[232px] px-3.5",
       )}
     >
       <a
         href="/Endpoints"
-        className="flex items-baseline gap-1 px-2 pb-1.5 text-[#F4F2EA] font-extrabold text-xl tracking-tight no-underline hover:no-underline"
+        aria-label={collapsed ? "NimBus" : undefined}
+        className={cn(
+          "flex items-baseline gap-1 pb-1.5 text-[#F4F2EA] font-extrabold text-xl tracking-tight no-underline hover:no-underline",
+          collapsed ? "justify-center" : "px-2",
+        )}
       >
         <LogoMark size={22} />
-        <span className="ml-1">NimBus</span>
-        <span className="text-primary">.</span>
+        {!collapsed && (
+          <>
+            <span className="ml-1">NimBus</span>
+            <span className="text-primary">.</span>
+          </>
+        )}
       </a>
-      <div className="px-2 pb-3.5 mb-2 border-b border-[#2A2620] font-mono text-[10px] text-[#6F6A5C] tracking-wider leading-tight">
-        A nimbus for your Azure cloud.
+      <div
+        className={cn(
+          "pb-3.5 mb-2 border-b border-[#2A2620] font-mono text-[10px] text-[#6F6A5C] tracking-wider leading-tight",
+          collapsed ? "text-center" : "px-2",
+        )}
+      >
+        {!collapsed && "A nimbus for your Azure cloud."}
         {env && (
-          <span className="ml-1.5 inline-block align-middle bg-primary-tint text-primary-600 font-mono text-[9px] uppercase tracking-[0.14em] px-1.5 py-px rounded-nb-sm font-bold">
+          <span
+            className={cn(
+              "inline-block align-middle bg-primary-tint text-primary-600 font-mono text-[9px] uppercase tracking-[0.14em] px-1.5 py-px rounded-nb-sm font-bold",
+              collapsed ? "max-w-full truncate" : "ml-1.5",
+            )}
+            title={collapsed ? env : undefined}
+          >
             {env}
           </span>
         )}
@@ -485,21 +544,28 @@ const Sidebar = () => {
       <div className="flex-1 overflow-y-auto">
         {nav.map((group) => (
           <div key={group.label}>
-            <div className="font-mono text-[9.5px] text-[#6F6A5C] tracking-widest uppercase mt-3.5 mb-1 mx-2.5">
-              {group.label}
+            <div
+              className={cn(
+                "font-mono text-[9.5px] text-[#6F6A5C] tracking-widest uppercase mt-3.5 mb-1",
+                collapsed ? "mx-2 border-t border-[#2A2620]" : "mx-2.5",
+              )}
+            >
+              <span className={collapsed ? "sr-only" : undefined}>{group.label}</span>
             </div>
             {group.items.map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
                 end={!item.matchPrefix}
+                title={collapsed ? item.name : undefined}
                 className={({ isActive }) => {
                   // For prefix-matched items, NavLink's default isActive
                   // already covers the prefix when `end` is false.
                   const active = isActive;
                   return cn(
-                    "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium no-underline",
+                    "relative flex items-center gap-2.5 py-2 rounded-md text-[13px] font-medium no-underline",
                     "transition-colors duration-100",
+                    collapsed ? "justify-center px-0" : "px-2.5",
                     active
                       ? "bg-primary/16 text-primary"
                       : "text-[#C9C1AB] hover:bg-white/4 hover:text-[#F4F2EA]",
@@ -507,10 +573,13 @@ const Sidebar = () => {
                 }}
               >
                 <span className="opacity-90 shrink-0">{item.icon}</span>
-                <span className="flex-1 truncate">{item.name}</span>
+                <span className={collapsed ? "sr-only" : "flex-1 truncate"}>{item.name}</span>
                 {(item.count ?? 0) > 0 && (
                   <span
-                    className="ml-auto font-mono text-[10px] px-1.5 py-px rounded-full font-bold bg-status-danger text-white"
+                    className={cn(
+                      "font-mono text-[10px] px-1.5 py-px rounded-full font-bold bg-status-danger text-white",
+                      collapsed ? "absolute -top-1 right-0 px-1 text-[9px]" : "ml-auto",
+                    )}
                     aria-label={`${item.count} unresolved failures`}
                   >
                     {item.count!.toLocaleString()}
@@ -518,10 +587,13 @@ const Sidebar = () => {
                 )}
                 {(item.paused ?? 0) > 0 && (
                   <span
-                    className="ml-auto font-mono text-[10px] px-1.5 py-px rounded-full font-bold bg-status-warning-50 text-status-warning-ink"
+                    className={cn(
+                      "font-mono text-[10px] rounded-full font-bold bg-status-warning-50 text-status-warning-ink",
+                      collapsed ? "absolute top-0.5 right-1 h-2 w-2 p-0" : "ml-auto px-1.5 py-px",
+                    )}
                     aria-label={`${item.paused} ${item.paused === 1 ? "endpoint" : "endpoints"} paused`}
                   >
-                    {item.paused!.toLocaleString()} paused
+                    {!collapsed && `${item.paused!.toLocaleString()} paused`}
                   </span>
                 )}
                 {item.badge && (
@@ -529,6 +601,7 @@ const Sidebar = () => {
                     className={cn(
                       "ml-auto font-mono text-[10px] uppercase tracking-wider px-1.5 py-px rounded-full font-bold",
                       "bg-primary/22 text-primary",
+                      collapsed && "sr-only",
                     )}
                   >
                     {item.badge}
@@ -540,7 +613,24 @@ const Sidebar = () => {
         ))}
       </div>
 
-      <SidebarUserFooter />
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-expanded={!collapsed}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        className={cn(
+          "mb-2 flex items-center gap-2.5 rounded-md py-2 text-[12px] text-[#C9C1AB]",
+          "hover:bg-white/4 hover:text-[#F4F2EA] transition-colors",
+          "focus:outline-hidden focus:ring-2 focus:ring-primary",
+          collapsed ? "justify-center" : "px-2.5",
+        )}
+      >
+        <CollapseIcon collapsed={collapsed} />
+        {!collapsed && <span>Collapse</span>}
+      </button>
+
+      <SidebarUserFooter compact={collapsed} />
     </aside>
   );
 };
