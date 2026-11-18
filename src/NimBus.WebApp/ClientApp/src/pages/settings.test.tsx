@@ -75,7 +75,8 @@ function renderAt(...entries: string[]) {
 }
 
 const location = () => screen.getByLabelText("location").textContent;
-const row = (name: string) => screen.getByRole("link", { name: new RegExp(name) }).closest("li")!;
+const chips = () => screen.getByRole("group", { name: "Settings" });
+const chip = (name: string) => within(chips()).getByRole("button", { name });
 
 const SNAPSHOT: SettingsSnapshot = {
   mcp: {
@@ -110,127 +111,91 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Settings page", () => {
-  it("lists every opt-in feature, grouped, with no panel open", () => {
+  it("offers every opt-in feature as a chip and opens on the first", () => {
     renderAt("/Settings");
 
-    expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
-    for (const group of ["AI & agents", "Monitoring", "Testing", "Compliance"]) {
-      expect(screen.getByRole("heading", { name: group })).toBeTruthy();
-    }
-    const links = {
-      "MCP access": "/Settings/mcp",
-      // Its row link carries the Turn on call to action.
-      "Failure intelligence": "/Settings/failure-intelligence?tab=provider",
-      "Heartbeat probing": "/Settings/heartbeat",
-      Simulation: "/Settings/simulation",
-      "Audit logging": "/Settings/audit",
-    };
-    for (const [name, href] of Object.entries(links)) {
-      expect(
-        screen.getByRole("link", { name: new RegExp(name) }).getAttribute("href"),
-      ).toBe(href);
-    }
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(within(chips()).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "MCP access",
+      "Failure intelligence",
+      "Agent keys",
+      "Heartbeat probing",
+      "Dashboard tokens",
+      "Simulation",
+      "Audit logging",
+    ]);
+    expect(chip("MCP access").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("heading", { level: 1, name: "MCP access" })).toBeTruthy();
+    expect(screen.getByText("MCP access settings")).toBeTruthy();
+    // No redirect: /Settings is the first feature.
+    expect(location()).toBe("/Settings");
   });
 
-  it("shows each feature's live status and summary", () => {
+  it("shows each feature's live status on its chip and the open one's in the header", () => {
     renderAt("/Settings");
 
-    expect(row("MCP access").textContent).toContain("Serving");
-    expect(row("MCP access").textContent).toContain("2 actions · 0 refused · 24 h");
-    expect(row("Failure intelligence").textContent).toContain("Agents can't record classifications");
-    expect(row("Heartbeat probing").textContent).toContain("1 of 2 endpoints · every 5 min");
+    expect(chip("MCP access").getAttribute("title")).toBe("MCP access: Serving. 2 actions · 0 refused · 24 h");
+    expect(chip("Failure intelligence").getAttribute("title")).toContain("Off");
+    expect(chip("Heartbeat probing").getAttribute("title")).toContain("1 of 2 endpoints · every 5 min");
+    // Not loaded yet: the chip still opens the feature.
+    expect(chip("Simulation").getAttribute("title")).toBe("Simulation");
+
+    expect(screen.getByText("Serving")).toBeTruthy();
+    expect(screen.getByText("2 actions · 0 refused · 24 h")).toBeTruthy();
   });
 
-  it("filters by setting contents, not just names", () => {
-    renderAt("/Settings");
+  it("puts MCP's 24-hour figures in the header as shortcuts to Activity", () => {
+    renderAt("/Settings/mcp");
 
-    fireEvent.change(screen.getByRole("searchbox", { name: "Filter settings" }), {
-      target: { value: "payload" },
-    });
+    const actions = screen.getByRole("button", { name: /Actions · 24 h/ });
+    expect(actions.textContent).toContain("2");
+    fireEvent.click(actions);
 
-    expect(screen.getByRole("link", { name: /MCP access/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Failure intelligence/ })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: /Audit logging/ })).toBeNull();
+    expect(location()).toBe("/Settings/mcp?tab=activity");
+    expect(screen.getByRole("tab", { name: "Activity" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("filters to features that are on", () => {
+  it("turns MCP access off from the header after confirming", async () => {
     renderAt("/Settings");
 
-    fireEvent.click(screen.getByRole("button", { name: "On" }));
-
-    expect(screen.getByRole("link", { name: /MCP access/ })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: /Failure intelligence/ })).toBeNull();
-  });
-
-  it("turns MCP access off from its row after confirming", async () => {
-    renderAt("/Settings");
-
-    fireEvent.click(within(row("MCP access")).getByRole("button", { name: "Turn off now" }));
-    const confirm = screen.getByRole("dialog", { name: "Turn off MCP access now?" });
-    fireEvent.click(within(confirm).getByRole("button", { name: "Turn off MCP access" }));
+    fireEvent.click(screen.getByRole("button", { name: "Turn off now" }));
+    expect(mocks.turnOffMcp).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Turn off MCP access" }));
 
     await waitFor(() => expect(mocks.turnOffMcp).toHaveBeenCalledTimes(1));
   });
 
-  it("sends a heartbeat from its row", async () => {
-    renderAt("/Settings");
+  it("sends a heartbeat from the header", async () => {
+    renderAt("/Settings/heartbeat");
 
-    fireEvent.click(within(row("Heartbeat probing")).getByRole("button", { name: "Send now" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send now" }));
 
     await waitFor(() => expect(mocks.sendHeartbeat).toHaveBeenCalledTimes(1));
   });
 
-  it("labels the row link with an action that needs review, instead of a second control", () => {
+  it("offers no quick action for a change that needs review", () => {
+    mocks.snapshot = {
+      ...SNAPSHOT,
+      mcp: { state: { ...(SNAPSHOT.mcp as { state: object }).state, saved: { enabled: false }, effective: { enabled: false } } as never },
+    };
     renderAt("/Settings");
 
-    const links = within(row("Failure intelligence")).getAllByRole("link");
-    expect(links).toHaveLength(1);
-    expect(links[0].textContent).toContain("Turn on ›");
-    expect(links[0].textContent).not.toContain("Configure");
-    expect(within(row("Audit logging")).getByRole("link").textContent).toContain("Configure ›");
-
-    fireEvent.click(links[0]);
-
-    expect(location()).toBe("/Settings/failure-intelligence?tab=provider");
-    expect(
-      screen.getByRole("tab", { name: "Activation" }).getAttribute("aria-selected"),
-    ).toBe("true");
+    expect(screen.getByText("Off")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Turn o/ })).toBeNull();
   });
 
-  it("opens a feature's settings beside the list of features, not over the page", () => {
-    renderAt("/Settings");
+  it("switches to another feature from its chip in one click and re-reads every status", () => {
+    renderAt("/Settings/mcp");
 
-    fireEvent.click(screen.getByRole("link", { name: /MCP access/ }));
-
-    expect(location()).toBe("/Settings/mcp");
-    expect(screen.getByRole("region", { name: "MCP access" }).textContent).toContain(
-      "MCP access settings",
-    );
-    const list = screen.getByRole("navigation", { name: "Settings" });
-    expect(
-      within(list).getByRole("link", { name: /MCP access/ }).getAttribute("aria-current"),
-    ).toBe("page");
-    expect(within(list).getByRole("link", { name: /Audit logging/ })).toBeTruthy();
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  it("switches to another feature from the list in one click", () => {
-    renderAt("/Settings", "/Settings/mcp");
-
-    fireEvent.click(
-      within(screen.getByRole("navigation", { name: "Settings" })).getByRole("link", {
-        name: /Heartbeat probing/,
-      }),
-    );
+    fireEvent.click(chip("Heartbeat probing"));
 
     expect(location()).toBe("/Settings/heartbeat");
-    expect(screen.getByRole("region", { name: "Heartbeat probing" }).textContent).toContain(
-      "Heartbeat probing settings",
-    );
+    expect(screen.getByRole("heading", { level: 1, name: "Heartbeat probing" })).toBeTruthy();
+    expect(screen.getByText("Heartbeat probing settings")).toBeTruthy();
+    expect(screen.queryByText("MCP access settings")).toBeNull();
+    expect(mocks.reload).toHaveBeenCalledTimes(1);
   });
 
-  it("switches tabs within the panel and keeps the tab in the URL", () => {
+  it("switches tabs and keeps the tab in the URL", () => {
     renderAt("/Settings/mcp");
     expect(screen.getByText("Overview section")).toBeTruthy();
 
@@ -247,122 +212,72 @@ describe("Settings page", () => {
     expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("deep-links to a feature's panel", () => {
-    renderAt("/Settings/failure-intelligence");
+  it("deep-links to a feature and tab", () => {
+    renderAt("/Settings/mcp?tab=permissions");
 
-    expect(
-      screen.getByRole("region", { name: "Failure intelligence" }).textContent,
-    ).toContain("Failure intelligence settings");
+    expect(chip("MCP access").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Permissions section")).toBeTruthy();
   });
 
-  it("closes the panel back to the list", () => {
+  it("has no tab strip for a single-tab feature, and says when its changes apply", () => {
     renderAt("/Settings/audit");
 
-    fireEvent.click(screen.getByRole("button", { name: "Close Audit logging" }));
-
-    expect(location()).toBe("/Settings");
-    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByText(/No unsaved changes · Applies immediately/)).toBeTruthy();
   });
 
-  it("closes with Escape", () => {
-    renderAt("/Settings/heartbeat");
-
-    fireEvent.keyDown(document, { key: "Escape" });
-
-    expect(location()).toBe("/Settings");
-    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
-  });
-
-  it("returns through history when the panel was opened from the list, so Back does not reopen it", () => {
-    renderAt("/Settings");
-    fireEvent.click(screen.getByRole("link", { name: /Simulation/ }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Close Simulation" }));
-
-    expect(location()).toBe("/Settings");
-    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
-  });
-
-  it("re-reads every feature's status when the panel closes", () => {
-    renderAt("/Settings/audit");
-
-    fireEvent.click(screen.getByRole("button", { name: "Close Audit logging" }));
-
-    expect(mocks.reload).toHaveBeenCalled();
-  });
-
-  it("sends an unknown feature back to the list", () => {
+  it("sends an unknown feature back to the first", () => {
     renderAt("/Settings/nope");
 
     expect(location()).toBe("/Settings");
-    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
+    expect(screen.getByText("MCP access settings")).toBeTruthy();
   });
 
   describe("with unsaved changes", () => {
-    function openWithEdits() {
+    const edit = () => {
       renderAt("/Settings/mcp");
       fireEvent.click(screen.getByRole("button", { name: "Make an edit" }));
-      fireEvent.click(screen.getByRole("button", { name: "Make an edit" }));
-    }
+    };
 
-    it("asks before closing, and Keep editing keeps the panel open", () => {
-      openWithEdits();
+    it("counts them in the save bar", () => {
+      edit();
 
-      fireEvent.click(screen.getByRole("button", { name: "Close MCP access" }));
-      const prompt = screen.getByRole("dialog", { name: "Discard 2 unsaved changes?" });
-      fireEvent.click(within(prompt).getByRole("button", { name: "Keep editing" }));
+      expect(screen.getByText("1 unsaved change")).toBeTruthy();
+    });
+
+    it("asks before switching to another feature, and Keep editing stays", () => {
+      edit();
+
+      fireEvent.click(chip("Heartbeat probing"));
+      expect(screen.getByRole("dialog", { name: "Discard 1 unsaved change?" })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
 
       expect(location()).toBe("/Settings/mcp");
-      expect(screen.getByRole("region", { name: "MCP access" })).toBeTruthy();
+      expect(screen.getByText("MCP access settings")).toBeTruthy();
     });
 
-    it("closes after Discard", () => {
-      openWithEdits();
+    it("opens the other feature after Discard", () => {
+      edit();
 
-      fireEvent.keyDown(document, { key: "Escape" });
-      fireEvent.click(
-        within(screen.getByRole("dialog", { name: "Discard 2 unsaved changes?" })).getByRole(
-          "button",
-          { name: "Discard" },
-        ),
-      );
+      fireEvent.click(chip("Heartbeat probing"));
+      fireEvent.click(screen.getByRole("button", { name: "Discard" }));
 
-      expect(location()).toBe("/Settings");
-      expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
+      expect(location()).toBe("/Settings/heartbeat");
+      expect(screen.getByText("Heartbeat probing settings")).toBeTruthy();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
 
-    it("asks before switching to another feature, and Discard opens it", () => {
-      openWithEdits();
+    it("switches tabs within the feature without asking", () => {
+      edit();
 
-      fireEvent.click(
-        within(screen.getByRole("navigation", { name: "Settings" })).getByRole("link", {
-          name: /Audit logging/,
-        }),
-      );
-      expect(location()).toBe("/Settings/mcp");
-      fireEvent.click(
-        within(screen.getByRole("dialog", { name: "Discard 2 unsaved changes?" })).getByRole(
-          "button",
-          { name: "Discard" },
-        ),
-      );
+      fireEvent.click(screen.getByRole("tab", { name: "Permissions" }));
 
-      expect(location()).toBe("/Settings/audit");
-      expect(screen.getByRole("region", { name: "Audit logging" })).toBeTruthy();
-    });
-
-    it("lets Escape dismiss only the prompt", () => {
-      openWithEdits();
-      fireEvent.click(screen.getByRole("button", { name: "Close MCP access" }));
-
-      fireEvent.keyDown(document, { key: "Escape" });
-
-      expect(screen.queryByRole("dialog", { name: "Discard 2 unsaved changes?" })).toBeNull();
-      expect(screen.getByRole("region", { name: "MCP access" })).toBeTruthy();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getByText("1 unsaved change")).toBeTruthy();
     });
 
     it("asks the browser to confirm leaving the page", () => {
-      openWithEdits();
+      edit();
 
       const event = new Event("beforeunload", { cancelable: true });
       window.dispatchEvent(event);

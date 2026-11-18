@@ -19,8 +19,10 @@ export interface SettingsTab {
   /** URL value: /Settings/:feature?tab=:id. */
   id: string;
   label: string;
-  /** Words for the Settings filter, so a search finds the tab holding a setting. */
+  /** Words for the command palette, so a search finds the tab holding a setting. */
   keywords: string;
+  /** The tab is a table whose selected row shows in the Settings inspector. */
+  inspector?: boolean;
 }
 
 export interface SettingsFeature {

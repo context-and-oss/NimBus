@@ -6,7 +6,7 @@ import { SettingsPanelFrame } from "components/settings/panel-frame";
 import { SETTINGS_FEATURES } from "models/manage-pages";
 
 /**
- * Renders a settings component inside the Settings panel frame, as
+ * Renders a settings component inside the Settings frame, as
  * pages/settings.tsx does, on the given tab of the given feature.
  * Returns the spy that receives the frame's unsaved-change count.
  */
@@ -21,7 +21,6 @@ export function renderInPanel(ui: ReactNode, featureId: string, activeTab?: stri
         tabs={feature.tabs}
         activeTab={activeTab ?? feature.tabs[0].id}
         onTabChange={vi.fn()}
-        onClose={vi.fn()}
         onDirtyChange={onDirtyChange}
         applies={feature.applies}
       >
