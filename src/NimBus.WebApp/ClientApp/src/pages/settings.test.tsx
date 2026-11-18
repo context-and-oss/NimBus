@@ -154,14 +154,11 @@ describe("Settings page", () => {
     expect(screen.getByRole("tab", { name: "Activity" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("turns MCP access off from the header after confirming", async () => {
+  it("leaves turning MCP access off to its own settings, which confirm it", () => {
     renderAt("/Settings");
 
-    fireEvent.click(screen.getByRole("button", { name: "Turn off now" }));
-    expect(mocks.turnOffMcp).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Turn off MCP access" }));
-
-    await waitFor(() => expect(mocks.turnOffMcp).toHaveBeenCalledTimes(1));
+    // The MCP settings show "Turn off now" on every tab; the header doesn't repeat it.
+    expect(screen.queryByRole("button", { name: "Turn off now" })).toBeNull();
   });
 
   it("sends a heartbeat from the header", async () => {

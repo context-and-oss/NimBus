@@ -169,7 +169,12 @@ export default function Topology() {
           />
         </>
       }
-      actions={<AsyncApiExport />}
+      // The export sizes itself to the page; in the header it takes only its buttons' width.
+      actions={
+        <div className="shrink-0 [&>div]:w-auto">
+          <AsyncApiExport />
+        </div>
+      }
       tabs={
         index >= 0 && (
           <WorkspaceTabs

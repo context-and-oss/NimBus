@@ -57,7 +57,7 @@ export interface WorkspaceProps {
 }
 
 /**
- * Page frame for Operations, Topology, Settings and Access Control. From `lg`
+ * Page frame for Operations, Topology, Settings and Access Control. From `xl`
  * up the inspector stays in view beside the table while the page scrolls;
  * below that it follows the table.
  */
@@ -133,14 +133,14 @@ export function Workspace({
             "grid min-h-0 flex-1 grid-cols-1",
             hasInspector &&
               (wideInspector
-                ? "lg:grid-cols-[minmax(0,1fr)_minmax(24rem,34rem)]"
-                : "lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]"),
+                ? "xl:grid-cols-[minmax(0,1fr)_minmax(24rem,34rem)]"
+                : "xl:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]"),
           )}
         >
           <div className="min-w-0 space-y-3 px-7 py-5">{children}</div>
           {hasInspector && (
-            <div className="min-w-0 border-t border-border bg-card lg:border-l lg:border-t-0">
-              <div className="lg:sticky lg:top-16 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
+            <div className="min-w-0 border-t border-border bg-card xl:border-l xl:border-t-0">
+              <div className="xl:sticky xl:top-16 xl:max-h-[calc(100vh-4rem)] xl:overflow-y-auto">
                 {inspectorSlot ? <div ref={setSlot} /> : inspector}
               </div>
             </div>

@@ -52,11 +52,10 @@ export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { snapshot, reload, turnOffMcp, sendHeartbeat } = useSettingsStatus();
+  const { snapshot, reload, sendHeartbeat } = useSettingsStatus();
   const [dirty, setDirty] = useState(0);
   // The feature to open once the unsaved edits are discarded.
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
-  const [confirmTurnOff, setConfirmTurnOff] = useState(false);
   const [busy, setBusy] = useState<string>();
 
   const open = feature ? SETTINGS_FEATURES.find((f) => f.id === feature.toLowerCase()) : SETTINGS_FEATURES[0];
@@ -111,12 +110,9 @@ export default function Settings() {
     const quick = status?.quick;
     if (!quick) return null;
     switch (quick.kind) {
+      // MCP access carries its own "Turn off now" on every tab, with its confirmation.
       case "turn-off-mcp":
-        return (
-          <Button size="sm" variant="outline" colorScheme="red" onClick={() => setConfirmTurnOff(true)}>
-            {quick.label}
-          </Button>
-        );
+        return null;
       case "send-heartbeat":
         return (
           <Button
@@ -155,7 +151,7 @@ export default function Settings() {
         description={
           <>
             {open.description}
-            {openStatus && <span className="ml-1.5 font-mono text-[11.5px]">{openStatus.summary}</span>}
+            {openStatus && <span className="mt-0.5 block font-mono text-[11.5px]">{openStatus.summary}</span>}
           </>
         }
         status={<StatusBadge status={openStatus} />}
@@ -217,39 +213,6 @@ export default function Settings() {
           </Button>
           <Button colorScheme="red" onClick={() => confirmDiscard && leave(confirmDiscard)}>
             Discard
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      <Modal
-        isOpen={confirmTurnOff}
-        onClose={() => setConfirmTurnOff(false)}
-        label="Turn off MCP access now?"
-        size="md"
-      >
-        <ModalHeader>Turn off MCP access now?</ModalHeader>
-        <ModalBody className="space-y-2 text-sm">
-          <p>
-            Every agent call gets 503 [Disabled] within 30 seconds on all instances. The other MCP
-            settings are kept; turning it back on is reviewed as a change that widens access.
-          </p>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="outline" colorScheme="gray" onClick={() => setConfirmTurnOff(false)}>
-            Cancel
-          </Button>
-          <Button
-            colorScheme="red"
-            isLoading={busy === "mcp"}
-            onClick={() =>
-              void run("mcp", async () => {
-                await turnOffMcp();
-                setConfirmTurnOff(false);
-                notifySuccess("MCP access is off. Agents get 503 [Disabled] on every instance within 30 seconds.");
-              })
-            }
-          >
-            Turn off MCP access
           </Button>
         </ModalFooter>
       </Modal>

@@ -906,7 +906,7 @@ function TopicTable({
   return (
     <WorkspaceTableFrame>
       <table className="min-w-full text-sm" aria-label="Topics">
-        <thead className="bg-surface-2 text-muted-foreground">
+        <thead className="border-b border-border font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground">
           <tr>
             {TOPIC_COLUMNS.map((column) => {
               const active = column.key === sortKey;
@@ -921,7 +921,7 @@ function TopicTable({
                       : "none"
                   }
                   className={cn(
-                    "font-semibold px-3 py-2 select-none",
+                    "font-medium px-3 py-2 select-none",
                     column.numeric ? "text-right" : "text-left",
                   )}
                 >
@@ -929,7 +929,7 @@ function TopicTable({
                     type="button"
                     onClick={() => toggleSort(column)}
                     className={cn(
-                      "inline-flex items-center gap-1 hover:text-primary focus:outline-hidden",
+                      "inline-flex items-center gap-1 uppercase tracking-[0.1em] hover:text-primary focus:outline-hidden",
                       active && "text-foreground",
                     )}
                   >
@@ -1098,15 +1098,15 @@ function SubscriptionTable({
   return (
     <WorkspaceTableFrame>
       <table className="min-w-full text-sm" aria-label="Subscriptions">
-        <thead className="bg-surface-2 text-muted-foreground">
+        <thead className="border-b border-border font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground">
           <tr>
-            <th className="text-left font-semibold px-3 py-2">Subscription</th>
-            <th className="text-right font-semibold px-3 py-2">Rules</th>
-            <th className="text-left font-semibold px-3 py-2">Forwards to</th>
-            <th className="text-left font-semibold px-3 py-2">Status</th>
-            <th className="text-right font-semibold px-3 py-2">Active</th>
-            <th className="text-right font-semibold px-3 py-2">Dead-letter</th>
-            <th className="text-right font-semibold px-3 py-2">In transit</th>
+            <th className="text-left font-medium px-3 py-2">Subscription</th>
+            <th className="text-right font-medium px-3 py-2">Rules</th>
+            <th className="text-left font-medium px-3 py-2">Forwards to</th>
+            <th className="text-left font-medium px-3 py-2">Status</th>
+            <th className="text-right font-medium px-3 py-2">Active</th>
+            <th className="text-right font-medium px-3 py-2">Dead-letter</th>
+            <th className="text-right font-medium px-3 py-2">In transit</th>
           </tr>
         </thead>
         <tbody>
