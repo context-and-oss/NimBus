@@ -109,6 +109,79 @@ public class AccessControlApiTests
     }
 
     [TestMethod]
+    public async Task Grant_with_label_names_the_entry_and_audits_it()
+    {
+        var sut = CreateSut(Admin());
+        const string Oid = "752D3FD2-5D3E-4DA7-840D-9E368D51E769";
+
+        var set = Ok(await sut.PostAccessControlRoleAsync(
+            new RoleEntry { Role = RoleEntryRole.Reader, Entry = $" {Oid} ", Label = "  Nightly export job " }));
+
+        Assert.AreEqual("Nightly export job", set.Labels[Oid.ToLowerInvariant()]);
+        Assert.AreEqual("Nightly export job", (await _store.GetSiteAccessControl())!.Labels[Oid.ToLowerInvariant()]);
+        StringAssert.Contains(_audit.Entries.Single().Data!, "Nightly export job", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public async Task Regrant_keeps_the_label_unless_one_is_given_and_an_empty_label_clears_it()
+    {
+        var sut = CreateSut(Admin());
+        Ok(await sut.PostAccessControlRoleAsync(
+            new RoleEntry { Role = RoleEntryRole.Reader, Entry = OtherEmail, Label = "Ops" }));
+
+        var kept = Ok(await sut.PostAccessControlRoleAsync(Entry(RoleEntryRole.Contributor, OtherEmail)));
+        Assert.AreEqual("Ops", kept.Labels[OtherEmail]);
+
+        var renamed = Ok(await sut.PostAccessControlRoleAsync(
+            new RoleEntry { Role = RoleEntryRole.Reader, Entry = OtherEmail.ToUpperInvariant(), Label = "Support" }));
+        Assert.AreEqual("Support", renamed.Labels[OtherEmail]);
+        Assert.AreEqual(1, renamed.Labels.Count);
+
+        var cleared = Ok(await sut.PostAccessControlRoleAsync(
+            new RoleEntry { Role = RoleEntryRole.Reader, Entry = OtherEmail, Label = "  " }));
+        Assert.AreEqual(0, cleared.Labels.Count);
+    }
+
+    [TestMethod]
+    public async Task Revoking_the_last_role_drops_the_label_but_another_role_keeps_it()
+    {
+        var sut = CreateSut(Admin());
+        Ok(await sut.PostEndpointAccessControlRoleAsync(
+            new RoleEntry { Role = RoleEntryRole.Reader, Entry = OtherEmail, Label = "Ops" }, "Storefront"));
+        Ok(await sut.PostEndpointAccessControlRoleAsync(Entry(RoleEntryRole.Contributor, OtherEmail), "Storefront"));
+
+        var afterOne = Ok(await sut.DeleteEndpointAccessControlRoleAsync(Entry(RoleEntryRole.Reader, OtherEmail), "Storefront"));
+        Assert.AreEqual("Ops", afterOne.Labels[OtherEmail]);
+
+        var afterLast = Ok(await sut.DeleteEndpointAccessControlRoleAsync(Entry(RoleEntryRole.Contributor, OtherEmail), "Storefront"));
+        Assert.AreEqual(0, afterLast.Labels.Count);
+    }
+
+    [TestMethod]
+    public async Task Label_longer_than_100_characters_is_a_400()
+    {
+        var sut = CreateSut(Admin());
+
+        var result = await sut.PostAccessControlRoleAsync(
+            new RoleEntry { Role = RoleEntryRole.Reader, Entry = OtherEmail, Label = new string('x', 101) });
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
+        Assert.IsNull(await _store.GetSiteAccessControl());
+    }
+
+    [TestMethod]
+    public async Task Stored_document_without_labels_reads_as_empty()
+    {
+        await _store.SetSiteAccessControl(new AccessControlList { Readers = { OtherEmail }, Labels = null! });
+        var sut = CreateSut(Admin());
+
+        var set = Ok(await sut.GetAccessControlAsync());
+
+        Assert.IsNotNull(set.Labels);
+        Assert.AreEqual(0, set.Labels.Count);
+    }
+
+    [TestMethod]
     public async Task Grant_dedupes_case_insensitively_and_trims()
     {
         var sut = CreateSut(Admin());

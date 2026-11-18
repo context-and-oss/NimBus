@@ -167,8 +167,8 @@ export default function AccessControl() {
     setSelectedEndpoint(endpointId);
   }, []);
 
-  const roleEntry = (role: GrantRole, entry: string) =>
-    new api.RoleEntry({ role: toRoleEnum(role), entry });
+  const roleEntry = (role: GrantRole, entry: string, label?: string) =>
+    new api.RoleEntry({ role: toRoleEnum(role), entry, label });
 
   if (access && !canManageSite && ownedEndpoints.length === 0) {
     return (
@@ -278,11 +278,18 @@ export default function AccessControl() {
             currentUser={access?.email ?? undefined}
             principalRef={principalRef}
             onSelect={setSelectedKey}
-            onAdd={(role, entry) =>
+            onAdd={(role, entry, label) =>
               view === "site"
-                ? mutate(() => client.postAccessControlRole(roleEntry(role, entry)), setSiteSet)
+                ? mutate(() => client.postAccessControlRole(roleEntry(role, entry, label)), setSiteSet)
                 : mutateEndpoint(selectedEndpoint, (endpointId) =>
-                    client.postEndpointAccessControlRole(endpointId, roleEntry(role, entry)),
+                    client.postEndpointAccessControlRole(endpointId, roleEntry(role, entry, label)),
+                  )
+            }
+            onRename={(role, entry, label) =>
+              view === "site"
+                ? mutate(() => client.postAccessControlRole(roleEntry(role, entry, label)), setSiteSet)
+                : mutateEndpoint(selectedEndpoint, (endpointId) =>
+                    client.postEndpointAccessControlRole(endpointId, roleEntry(role, entry, label)),
                   )
             }
             onRemove={(role, entry) =>

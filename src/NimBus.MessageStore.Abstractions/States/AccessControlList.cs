@@ -39,6 +39,12 @@ public class AccessControlList
     /// <summary>May view raw event payloads. Meaningful on the site document only.</summary>
     public List<string> PiiReaders { get; set; } = new();
 
+    /// <summary>
+    /// Optional display names for entries, such as what an object id is for. Informational
+    /// only: a name grants nothing. The WebApp keys them by the entry trimmed and lowercased.
+    /// </summary>
+    public Dictionary<string, string> Labels { get; set; } = new();
+
     /// <summary>Last write timestamp, UTC.</summary>
     public DateTime UpdatedAtUtc { get; set; }
 

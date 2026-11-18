@@ -30,6 +30,8 @@ export interface Grant {
   key: string;
   role: GrantRoleInfo;
   entry: string;
+  /** The name an Owner gave the entry in this scope, if any. */
+  label?: string;
 }
 
 const AGENT_PREFIX = "agent:";
@@ -42,9 +44,20 @@ export const entryKind = (entry: string): string =>
 const agentRoleRefused = (entry: string, role: GrantRole) =>
   entry.trim().toLowerCase().startsWith(AGENT_PREFIX) && (role === "owner" || role === "piiReader");
 
+/** Names are keyed by the entry trimmed and lowercased. */
+const labelOf = (set: api.AccessControlSet, entry: string): string | undefined =>
+  set.labels?.[entry.trim().toLowerCase()] || undefined;
+
 /** A scope's grants, one per entry and role, in role order. */
 export const grantsOf = (set: api.AccessControlSet | null, roles: readonly GrantRoleInfo[]): Grant[] =>
-  set ? roles.flatMap((role) => role.pick(set).map((entry) => ({ key: `${role.role}:${entry}`, role, entry }))) : [];
+  set
+    ? roles.flatMap((role) =>
+        role.pick(set).map((entry) => ({ key: `${role.role}:${entry}`, role, entry, label: labelOf(set, entry) })),
+      )
+    : [];
+
+/** The longest name the server accepts. */
+const MAX_LABEL_LENGTH = 100;
 
 const scopeName = (scope: string) => (scope === "Site" ? "Site" : scope);
 
@@ -90,10 +103,19 @@ export function GrantsTable({ scope, grants, loading, selectedKey, onSelect }: G
                 <RowSelect
                   selected={g.key === selectedKey}
                   onSelect={() => onSelect(g.key)}
-                  mono={entryKind(g.entry) !== "Email"}
-                  title={g.entry}
+                  mono={!g.label && entryKind(g.entry) !== "Email"}
+                  title={g.label ? `${g.label} (${g.entry})` : g.entry}
                 >
-                  {g.entry}
+                  {g.label ? (
+                    <>
+                      <span className="block truncate">{g.label}</span>
+                      <span className="block truncate font-mono text-[12px] font-normal text-muted-foreground">
+                        {g.entry}
+                      </span>
+                    </>
+                  ) : (
+                    g.entry
+                  )}
                 </RowSelect>
               </td>
               <td className="whitespace-nowrap px-4 text-muted-foreground">{entryKind(g.entry)}</td>
@@ -125,7 +147,10 @@ export interface GrantInspectorProps {
   /** Receives the Principal field, so the page can focus it. */
   principalRef?: Ref<HTMLInputElement>;
   onSelect: (key: string | undefined) => void;
-  onAdd: (role: GrantRole, entry: string) => void;
+  /** Adds a grant; a non-empty label names the entry. */
+  onAdd: (role: GrantRole, entry: string, label?: string) => void;
+  /** Renames an entry by re-granting its role with the new label; "" removes the name. */
+  onRename: (role: GrantRole, entry: string, label: string) => void;
   onRemove: (role: GrantRole, entry: string) => void;
 }
 
@@ -149,8 +174,11 @@ function SelectedGrant({
   currentUser,
   onSelect,
   onRemove,
+  onRename,
 }: GrantInspectorProps & { selected: Grant }) {
   const [confirming, setConfirming] = useState(false);
+  const [label, setLabel] = useState(selected.label ?? "");
+  const labelChanged = label.trim() !== (selected.label ?? "");
   const others = grants.filter((g) => g.entry === selected.entry && g.key !== selected.key);
   const ownOwner =
     !!currentUser && selected.entry.toLowerCase() === currentUser.toLowerCase() && selected.role.role === "owner";
@@ -158,10 +186,36 @@ function SelectedGrant({
   return (
     <Inspector
       eyebrow="Grant"
-      title={selected.entry}
+      title={selected.label ?? selected.entry}
       badge={<Badge variant={selected.role.badge} withDot={false}>{selected.role.label}</Badge>}
       description={selected.role.description}
     >
+      {selected.label && (
+        <p className="m-0 font-mono text-[12.5px] text-muted-foreground [overflow-wrap:anywhere]">{selected.entry}</p>
+      )}
+      <form
+        aria-label="Rename principal"
+        className="flex items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (labelChanged) onRename(selected.role.role, selected.entry, label.trim());
+        }}
+      >
+        <label className="block min-w-0 flex-1 space-y-1.5">
+          <span className="text-[13px] font-semibold">Name</span>
+          <Input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="What this principal is for"
+            maxLength={MAX_LABEL_LENGTH}
+            disabled={busy}
+            className="text-[13px]"
+          />
+        </label>
+        <Button type="submit" size="sm" variant="outline" colorScheme="gray" disabled={busy || !labelChanged}>
+          Save name
+        </Button>
+      </form>
       <InspectorTiles
         tiles={[
           { label: "Scope", value: scope === "Site" ? "Site (every endpoint)" : scope },
@@ -216,6 +270,7 @@ function SelectedGrant({
 
 function AddGrant({ scope, roles, ready, busy, principalRef, onAdd }: GrantInspectorProps) {
   const [entry, setEntry] = useState("");
+  const [label, setLabel] = useState("");
   const [role, setRole] = useState<GrantRole>("reader");
   const refused = agentRoleRefused(entry, role);
 
@@ -223,8 +278,9 @@ function AddGrant({ scope, roles, ready, busy, principalRef, onAdd }: GrantInspe
     e.preventDefault();
     const value = entry.trim();
     if (!value || refused) return;
-    onAdd(role, value);
+    onAdd(role, value, label.trim() || undefined);
     setEntry("");
+    setLabel("");
   };
 
   return (
@@ -247,6 +303,19 @@ function AddGrant({ scope, roles, ready, busy, principalRef, onAdd }: GrantInspe
             placeholder="email, object id or agent:<agentId>"
             disabled={busy || !ready}
             className="font-mono text-[13px]"
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-[13px] font-semibold">
+            Name <span className="font-normal text-muted-foreground">(optional)</span>
+          </span>
+          <Input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="What this principal is for"
+            maxLength={MAX_LABEL_LENGTH}
+            disabled={busy || !ready}
+            className="text-[13px]"
           />
         </label>
         <InspectorBlock>

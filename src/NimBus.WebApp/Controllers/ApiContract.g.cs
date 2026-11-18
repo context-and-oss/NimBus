@@ -19052,6 +19052,7 @@ namespace NimBus.WebApp.ManagementApi
         private System.Collections.Generic.List<string> _contributors;
         private System.Collections.Generic.List<string> _owners;
         private System.Collections.Generic.List<string> _piiReaders;
+        private System.Collections.Generic.Dictionary<string, string> _labels;
 
         [Newtonsoft.Json.JsonProperty("readers", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<string> Readers    {
@@ -19105,6 +19106,22 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// Optional names that say who or what an entry is, keyed by the entry trimmed and lowercased. Entries without a name are absent. Names are informational and grant nothing.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("labels", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.Dictionary<string, string> Labels    {
+            get { return _labels; }
+            set
+            {
+                if (_labels != value)
+                {
+                    _labels = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -19141,6 +19158,7 @@ namespace NimBus.WebApp.ManagementApi
     {
         private RoleEntryRole _role;
         private string _entry;
+        private string _label;
 
         [Newtonsoft.Json.JsonProperty("role", Required = Newtonsoft.Json.Required.Always)]
         [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
@@ -19158,7 +19176,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Email address or Entra object id
+        /// An email address, an Entra object id, or agent:&lt;agentId&gt; for an MCP agent key's agent (Spec 052). An agent: entry is refused with 400 on the owner and piiReader lists.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("entry", Required = Newtonsoft.Json.Required.Always)]
         [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
@@ -19169,6 +19187,23 @@ namespace NimBus.WebApp.ManagementApi
                 if (_entry != value)
                 {
                     _entry = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// On a grant, an optional name for the entry, such as what an object id is for. Omit it to keep the current name; send an empty string to remove it. The name belongs to the entry in this scope, so it is shared by the entry's roles and dropped when its last role is revoked. Ignored on revoke.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("label", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.StringLength(100)]
+        public string Label    {
+            get { return _label; }
+            set
+            {
+                if (_label != value)
+                {
+                    _label = value;
                     RaisePropertyChanged();
                 }
             }

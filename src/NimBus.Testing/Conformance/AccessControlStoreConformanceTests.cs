@@ -27,6 +27,7 @@ public abstract class AccessControlStoreConformanceTests
         Contributors = new List<string> { " padded@example.com " },
         Owners = new List<string> { "owner@example.com" },
         PiiReaders = new List<string> { "pii@example.com" },
+        Labels = new Dictionary<string, string> { ["102ce428-e204-4048-9f22-9be33f2867ac"] = "Nightly export job" },
         UpdatedAtUtc = new DateTime(2026, 07, 27, 0, 0, 0, DateTimeKind.Utc),
     };
 
@@ -47,6 +48,8 @@ public abstract class AccessControlStoreConformanceTests
         CollectionAssert.AreEqual(acl.Contributors, got.Contributors.ToList());
         CollectionAssert.AreEqual(acl.Owners, got.Owners.ToList());
         CollectionAssert.AreEqual(acl.PiiReaders, got.PiiReaders.ToList());
+        Assert.AreEqual(1, got.Labels.Count);
+        Assert.AreEqual("Nightly export job", got.Labels["102ce428-e204-4048-9f22-9be33f2867ac"]);
     }
 
     [TestMethod]

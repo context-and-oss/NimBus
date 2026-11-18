@@ -134,10 +134,13 @@ public partial class AccessControlImplementation : IAccessControlApiController
             return new BadRequestObjectResult("An email address or object id entry is required.");
         if (grant && AgentEntryProblem(body!.Role, entry) is { } agentProblem)
             return new BadRequestObjectResult(agentProblem);
+        if (grant && body!.Label?.Trim().Length > MaxLabelLength)
+            return new BadRequestObjectResult($"A name is at most {MaxLabelLength} characters.");
 
         var acl = await _store.GetSiteAccessControl() ?? new AccessControlList();
         var list = SelectList(acl, body!.Role);
         Apply(list, entry, grant);
+        ApplyLabel(acl, entry, grant ? body.Label : null);
         acl.UpdatedAtUtc = DateTime.UtcNow;
         await _store.SetSiteAccessControl(acl);
 
@@ -169,10 +172,13 @@ public partial class AccessControlImplementation : IAccessControlApiController
             return new BadRequestObjectResult("An email address or object id entry is required.");
         if (grant && AgentEntryProblem(body!.Role, entry) is { } agentProblem)
             return new BadRequestObjectResult(agentProblem);
+        if (grant && body!.Label?.Trim().Length > MaxLabelLength)
+            return new BadRequestObjectResult($"A name is at most {MaxLabelLength} characters.");
 
         var acl = await _store.GetEndpointAccessControl(endpointId) ?? new AccessControlList();
         var list = SelectList(acl, body!.Role);
         Apply(list, entry, grant);
+        ApplyLabel(acl, entry, grant ? body.Label : null);
         acl.UpdatedAtUtc = DateTime.UtcNow;
         await _store.SetEndpointAccessControl(endpointId, acl);
 
@@ -192,6 +198,32 @@ public partial class AccessControlImplementation : IAccessControlApiController
             list.Add(entry);
     }
 
+    private const int MaxLabelLength = 100;
+
+    /// <summary>
+    /// Names belong to the entry, not one role: a null <paramref name="label"/> keeps the current
+    /// name, a blank one removes it. A name whose entry no longer holds any role is dropped.
+    /// </summary>
+    private static void ApplyLabel(AccessControlList acl, string entry, string? label)
+    {
+        acl.Labels ??= new Dictionary<string, string>();
+        var key = LabelKey(entry);
+        if (label != null)
+        {
+            if (string.IsNullOrWhiteSpace(label))
+                acl.Labels.Remove(key);
+            else
+                acl.Labels[key] = label.Trim();
+        }
+
+        var granted = new[] { acl.Readers, acl.Contributors, acl.Owners, acl.PiiReaders }
+            .Any(l => l?.Any(e => LabelKey(e) == key) == true);
+        if (!granted)
+            acl.Labels.Remove(key);
+    }
+
+    private static string LabelKey(string entry) => entry.Trim().ToLowerInvariant();
+
     private static List<string> SelectList(AccessControlList acl, RoleEntryRole role) => role switch
     {
         RoleEntryRole.Reader => acl.Readers,
@@ -202,7 +234,7 @@ public partial class AccessControlImplementation : IAccessControlApiController
     };
 
     private static string AuditData(string scope, RoleEntry body)
-        => JsonConvert.SerializeObject(new { scope, role = body?.Role.ToString(), entry = body?.Entry });
+        => JsonConvert.SerializeObject(new { scope, role = body?.Role.ToString(), entry = body?.Entry, label = body?.Label });
 
     private static AccessControlSet ToSet(AccessControlList acl) => new AccessControlSet
     {
@@ -210,5 +242,6 @@ public partial class AccessControlImplementation : IAccessControlApiController
         Contributors = acl.Contributors ?? new List<string>(),
         Owners = acl.Owners ?? new List<string>(),
         PiiReaders = acl.PiiReaders ?? new List<string>(),
+        Labels = acl.Labels ?? new Dictionary<string, string>(),
     };
 }
