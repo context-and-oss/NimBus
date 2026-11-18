@@ -20,7 +20,7 @@ Spec 038 still defines the pages' routes, access rules and each feature's save r
 
 | Piece | Role |
 |---|---|
-| `Workspace` | The page frame: chips, header (title, status, figures, actions, tabs), table section, inspector column, sticky footer. From `lg` up the inspector stays in view while the page scrolls; below that it follows the table. |
+| `Workspace` | The page frame: chips, header (title, status, figures, actions, tabs), table section, inspector column, sticky footer. From `xl` up the inspector stays in view while the page scrolls; below that it follows the table. |
 | `WorkspaceChip`, `WorkspaceStat`, `WorkspaceTabs`, `WorkspaceSection` | The chip bar's choices, the header's figures (shortcuts when clickable), the tab strip, and the titled section around a table. |
 | `Inspector`, `InspectorTiles`, `InspectorList`, `InspectorBlock` | The selected row's details and controls, with an empty state. |
 | `InspectorPortal` | Lets the component that owns a selection fill the inspector from where it renders. Outside a workspace it renders in place, so components still work and test on their own. |
@@ -64,8 +64,8 @@ URLs are unchanged: `/Operations/:operation?endpoint=`, `/Topology/:view?topic=`
 ### Settings
 
 - No list page. The seven features are chips with their live state; `/Settings` shows the
-  first. The header carries the open feature's status, description, quick action (Turn off now,
-  Send now, Open Simulate) and, for MCP access, the 24-hour figures.
+  first. The header carries the open feature's status, description, quick action (Send now,
+  Open Simulate) and, for MCP access, the 24-hour figures. MCP access keeps its own Turn off now.
 - `SettingsPanelFrame` renders the workspace. `PanelSection`, `PanelFooter`, `usePanelDirty`
   and `usePanelReviewing` keep their contracts; `PanelInspector` is new. The close button and
   Escape-to-close are gone, since there is nothing to close to. The unsaved-changes prompt
