@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import SimulationSettings from "./simulation-settings";
 import { simulationStatus } from "components/simulate/simulation-fixtures";
@@ -97,6 +97,88 @@ describe("Settings → Simulation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Save simulation settings" }));
 
     expect((await screen.findByRole("alert")).textContent).toMatch(/cannot change while the simulation is running/);
+  });
+
+  describe("consuming endpoints table", () => {
+    const inspector = () => within(screen.getByRole("complementary", { name: "Inspector" }));
+
+    it("lists each consuming endpoint with its ownership", async () => {
+      renderTab();
+
+      const table = within(await screen.findByRole("table", { name: "Consuming endpoints" }));
+      const row = within(table.getByRole("button", { name: "BillingEndpoint" }).closest("tr") as HTMLElement);
+      expect(row.getByText("External")).toBeTruthy();
+      expect(row.getByLabelText("Simulator owns BillingEndpoint")).toBeTruthy();
+      expect(table.queryByRole("button", { name: "StorefrontEndpoint" })).toBeNull();
+    });
+
+    it("asks for a selection while no endpoint is selected", async () => {
+      renderTab();
+
+      await screen.findByRole("table", { name: "Consuming endpoints" });
+      expect(inspector().getByText("Select an endpoint to see who owns it.")).toBeTruthy();
+    });
+
+    it("explains the selected endpoint's ownership in the inspector", async () => {
+      renderTab();
+
+      const select = await screen.findByRole("button", { name: "BillingEndpoint" });
+      fireEvent.click(select);
+
+      expect(select.getAttribute("aria-pressed")).toBe("true");
+      expect(inspector().getByRole("heading", { name: "BillingEndpoint" })).toBeTruthy();
+      expect(inspector().getByText("External")).toBeTruthy();
+      expect(inspector().getByText(/handled by its own process/)).toBeTruthy();
+      expect(inspector().getByText("OrderDeliveryDetailsCaptured")).toBeTruthy();
+      expect(inspector().queryByRole("checkbox")).toBeNull();
+    });
+
+    it("follows the draft when the selected endpoint is handed to the simulator", async () => {
+      renderTab();
+
+      fireEvent.click(await screen.findByRole("button", { name: "BillingEndpoint" }));
+      // getByLabelText throws on a second checkbox with the same name.
+      fireEvent.click(screen.getByLabelText("Simulator owns BillingEndpoint"));
+      fireEvent.click(screen.getByRole("button", { name: "Take ownership" }));
+
+      expect(inspector().getByText("Simulated")).toBeTruthy();
+      expect(inspector().getByText(/simulated handler on this endpoint.s real subscription/)).toBeTruthy();
+      expect(inspector().getByText(/Not saved yet/)).toBeTruthy();
+    });
+
+    it("warns about a live instance in the row and the inspector", async () => {
+      const status = simulationStatus();
+      status.endpoints![0].liveInstanceWarning = true;
+      mocks.getAdminSimulation.mockResolvedValue(status);
+      renderTab();
+
+      const select = await screen.findByRole("button", { name: "BillingEndpoint" });
+      expect(within(select.closest("tr") as HTMLElement).getByText("Live instance")).toBeTruthy();
+      fireEvent.click(select);
+
+      expect(inspector().getByText(/A live instance answered a heartbeat recently/)).toBeTruthy();
+    });
+
+    it("still lets a row be inspected when simulation is blocked", async () => {
+      mocks.getAdminSimulation.mockResolvedValue(simulationStatus({ allowed: false, blockedReason: "notAllowed", environment: "test" }));
+      renderTab();
+
+      fireEvent.click(await screen.findByRole("button", { name: "WarehouseEndpoint" }));
+
+      expect(inspector().getByRole("heading", { name: "WarehouseEndpoint" })).toBeTruthy();
+      expect((screen.getByLabelText("Simulator owns WarehouseEndpoint") as HTMLInputElement).disabled).toBe(true);
+    });
+
+    it("shows the selection in the Settings panel's inspector column", async () => {
+      renderInPanel(<SimulationSettings />, "simulation", "endpoints");
+
+      await screen.findByRole("table", { name: "Consuming endpoints" });
+      expect(inspector().getByText("Select an endpoint to see who owns it.")).toBeTruthy();
+      fireEvent.click(await screen.findByRole("button", { name: "WarehouseEndpoint" }));
+
+      expect(screen.getAllByRole("complementary", { name: "Inspector" })).toHaveLength(1);
+      expect(inspector().getByRole("heading", { name: "WarehouseEndpoint" })).toBeTruthy();
+    });
   });
 
   // Spec 038 slice 2: inside the Settings panel frame.

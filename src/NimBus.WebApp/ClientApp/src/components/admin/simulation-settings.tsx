@@ -16,10 +16,19 @@ import {
 } from "components/simulate/simulation-utils";
 import {
   PanelFooter,
+  PanelInspector,
   PanelSection,
   useInPanel,
   usePanelDirty,
 } from "components/settings/panel-frame";
+import { Inspector, InspectorBlock } from "components/workspace/workspace";
+import {
+  RowSelect,
+  selectableRowClass,
+  WORKSPACE_HEAD_ROW,
+  WORKSPACE_TH,
+  WorkspaceTableFrame,
+} from "components/workspace/selectable-row";
 
 interface Draft {
   enabled: boolean;
@@ -46,6 +55,13 @@ const countChanges = (saved: Draft, draft: Draft): number => {
   );
 };
 
+const LIVE_INSTANCE_WARNING =
+  "A live instance answered a heartbeat recently and may be competing for this subscription.";
+
+const ownershipBadge = (owned: boolean) => (
+  <Badge variant={owned ? "primary" : "secondary"}>{owned ? "Simulated" : "External"}</Badge>
+);
+
 /**
  * Settings → Simulation. Switches simulate mode on, bounds it, and hands
  * consuming endpoints to the simulator. Ownership is explicit and defaults to
@@ -55,6 +71,7 @@ export default function SimulationSettings() {
   const { client, status, accept, error: loadError, loaded, refresh } = useSimulationStatus();
   const [draft, setDraft] = useState<Draft>();
   const [confirmOwn, setConfirmOwn] = useState<string>();
+  const [selectedId, setSelectedId] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
@@ -83,6 +100,11 @@ export default function SimulationSettings() {
   const maxCeiling = status.maxRateCeilingPerMinute ?? 1200;
   const consumers = (status.endpoints ?? []).filter((e) => (e.consumes?.length ?? 0) > 0);
   const ownershipLocked = ["running", "pausing", "stopping"].includes((status.state ?? "").toLowerCase());
+  const selected = selectedId === undefined ? undefined : consumers.find((e) => (e.endpointId ?? "") === selectedId);
+  // The inspector follows the draft, like the row; it says so while that differs from what is saved.
+  const selectedOwned = selected !== undefined && draft.ownedEndpoints.includes(selected.endpointId ?? "");
+  const selectedSavedOwned =
+    selected !== undefined && (status.settings?.ownedEndpoints ?? []).includes(selected.endpointId ?? "");
 
   const edit = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft((current) => (current ? { ...current, [key]: value } : current));
@@ -166,98 +188,118 @@ export default function SimulationSettings() {
       )}
 
       <div className={inPanel ? "space-y-6" : "grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]"}>
-        <fieldset disabled={disabled} className="min-w-0 space-y-5">
-          <PanelSection tab="mode">
-            <Card>
-              <CardHeader>
-                <CardTitle>01 · Simulate mode</CardTitle>
-                <CardDescription>State is kept in this WebApp instance and resets on restart.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-semibold">Enable simulate mode</p>
-                    <p className="text-xs text-muted-foreground">
-                      Adds the Simulate page. Disabling stops a running simulation.
-                    </p>
+        <div className={inPanel ? "min-w-0" : "min-w-0 space-y-5"}>
+          <fieldset disabled={disabled} className="min-w-0">
+            <PanelSection tab="mode">
+              <Card>
+                <CardHeader>
+                  <CardTitle>01 · Simulate mode</CardTitle>
+                  <CardDescription>State is kept in this WebApp instance and resets on restart.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold">Enable simulate mode</p>
+                      <p className="text-xs text-muted-foreground">
+                        Adds the Simulate page. Disabling stops a running simulation.
+                      </p>
+                    </div>
+                    <Toggle
+                      aria-label="Enable simulate mode"
+                      checked={draft.enabled}
+                      disabled={disabled}
+                      onChange={(value) => edit("enabled", value)}
+                    />
                   </div>
-                  <Toggle
-                    aria-label="Enable simulate mode"
-                    checked={draft.enabled}
-                    disabled={disabled}
-                    onChange={(value) => edit("enabled", value)}
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <label className="text-sm">
-                    Auto-stop (minutes)
-                    <Input
-                      type="number"
-                      min={LIMITS.autoStopMin}
-                      max={LIMITS.autoStopMax}
-                      value={draft.autoStopMinutes}
-                      onChange={(e) => edit("autoStopMinutes", Number(e.target.value))}
-                      onBlur={(e) =>
-                        edit("autoStopMinutes", clamp(Number(e.target.value), LIMITS.autoStopMin, LIMITS.autoStopMax))
-                      }
-                    />
-                  </label>
-                  <label className="text-sm">
-                    Rate ceiling (per minute)
-                    <Input
-                      type="number"
-                      min={1}
-                      max={maxCeiling}
-                      value={draft.rateCeilingPerMinute}
-                      onChange={(e) => edit("rateCeilingPerMinute", Number(e.target.value))}
-                      onBlur={(e) => edit("rateCeilingPerMinute", clamp(Number(e.target.value), 1, maxCeiling))}
-                    />
-                    <span className="text-xs text-muted-foreground">Shared by every publisher. Max {maxCeiling}.</span>
-                  </label>
-                  <label className="text-sm">
-                    Session prefix
-                    <Input value={status.sessionPrefix ?? ""} readOnly />
-                    <span className="text-xs text-muted-foreground">Marks simulated sessions and correlations.</span>
-                  </label>
-                </div>
-              </CardContent>
-            </Card>
-          </PanelSection>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <label className="text-sm">
+                      Auto-stop (minutes)
+                      <Input
+                        type="number"
+                        min={LIMITS.autoStopMin}
+                        max={LIMITS.autoStopMax}
+                        value={draft.autoStopMinutes}
+                        onChange={(e) => edit("autoStopMinutes", Number(e.target.value))}
+                        onBlur={(e) =>
+                          edit("autoStopMinutes", clamp(Number(e.target.value), LIMITS.autoStopMin, LIMITS.autoStopMax))
+                        }
+                      />
+                    </label>
+                    <label className="text-sm">
+                      Rate ceiling (per minute)
+                      <Input
+                        type="number"
+                        min={1}
+                        max={maxCeiling}
+                        value={draft.rateCeilingPerMinute}
+                        onChange={(e) => edit("rateCeilingPerMinute", Number(e.target.value))}
+                        onBlur={(e) => edit("rateCeilingPerMinute", clamp(Number(e.target.value), 1, maxCeiling))}
+                      />
+                      <span className="text-xs text-muted-foreground">Shared by every publisher. Max {maxCeiling}.</span>
+                    </label>
+                    <label className="text-sm">
+                      Session prefix
+                      <Input value={status.sessionPrefix ?? ""} readOnly />
+                      <span className="text-xs text-muted-foreground">Marks simulated sessions and correlations.</span>
+                    </label>
+                  </div>
+                </CardContent>
+              </Card>
+            </PanelSection>
+          </fieldset>
 
+          {/* Outside the fieldset: a blocked or saving page must still let a row be selected and read. */}
           <PanelSection tab="endpoints">
-            <Card>
-              <CardHeader>
-                <CardTitle>02 · Consuming endpoints</CardTitle>
-                <CardDescription>
+            <section aria-label="Consuming endpoints" className="min-w-0 space-y-3">
+              <div className="space-y-1">
+                {!inPanel && <h3 className="m-0 text-lg font-semibold">02 · Consuming endpoints</h3>}
+                <p className="m-0 text-sm text-muted-foreground">
                   External endpoints are published to but handled by their own process. Only endpoints the simulator
                   owns get a simulated handler.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {ownershipLocked && (
-                  <p role="status" className="text-sm text-status-warning">
-                    Ownership is locked while the simulation runs. Pause or stop it to change ownership.
-                  </p>
-                )}
-                {consumers.length === 0 && <p className="text-sm text-muted-foreground">No consuming endpoints.</p>}
-                <ul className="divide-y divide-border">
-                  {consumers.map((endpoint) => {
-                    const id = endpoint.endpointId ?? "";
-                    const owned = draft.ownedEndpoints.includes(id);
-                    return (
-                      <li key={id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0 flex-1">
-                          <p className="font-mono text-sm">{id}</p>
-                          <p className="wrap-break-word text-xs text-muted-foreground">Consumes {(endpoint.consumes ?? []).join(", ")}</p>
-                          {endpoint.liveInstanceWarning && (
-                            <p className="text-xs text-status-warning">
-                              A live instance answered a heartbeat recently and may be competing for this subscription.
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3 whitespace-nowrap">
-                          <Badge variant={owned ? "primary" : "secondary"}>{owned ? "Simulated" : "External"}</Badge>
-                          <label className="flex items-center gap-2 text-sm">
+                </p>
+              </div>
+              {ownershipLocked && (
+                <p role="status" className="text-sm text-status-warning">
+                  Ownership is locked while the simulation runs. Pause or stop it to change ownership.
+                </p>
+              )}
+              <WorkspaceTableFrame>
+                <table className="w-full min-w-[28rem] text-sm" aria-label="Consuming endpoints">
+                  <thead>
+                    <tr className={WORKSPACE_HEAD_ROW}>
+                      <th scope="col" className={WORKSPACE_TH}>Endpoint</th>
+                      <th scope="col" className={WORKSPACE_TH}>Ownership</th>
+                      <th scope="col" className={WORKSPACE_TH}>Simulator owns</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {consumers.map((endpoint) => {
+                      const id = endpoint.endpointId ?? "";
+                      const owned = draft.ownedEndpoints.includes(id);
+                      const isSelected = id === selectedId;
+                      return (
+                        <tr key={id} className={selectableRowClass(isSelected)}>
+                          <td className="px-4">
+                            <RowSelect
+                              mono
+                              selected={isSelected}
+                              onSelect={() => setSelectedId(id)}
+                              after={
+                                endpoint.liveInstanceWarning && (
+                                  <span
+                                    title={LIVE_INSTANCE_WARNING}
+                                    className="whitespace-nowrap text-[11px] font-semibold text-status-warning-ink"
+                                  >
+                                    Live instance
+                                  </span>
+                                )
+                              }
+                            >
+                              {id}
+                            </RowSelect>
+                          </td>
+                          <td className="px-4 py-2">{ownershipBadge(owned)}</td>
+                          <td className="px-4 py-2">
                             <input
                               type="checkbox"
                               aria-label={`Simulator owns ${id}`}
@@ -265,17 +307,58 @@ export default function SimulationSettings() {
                               disabled={disabled || ownershipLocked}
                               onChange={(e) => (e.target.checked ? setConfirmOwn(id) : setOwned(id, false))}
                             />
-                            Simulator owns this endpoint
-                          </label>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </CardContent>
-            </Card>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {consumers.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="py-4 text-center text-muted-foreground">
+                          No consuming endpoints.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </WorkspaceTableFrame>
+            </section>
+
+            <PanelInspector>
+              {selected ? (
+                <Inspector
+                  eyebrow="Endpoint"
+                  title={<span className="font-mono text-[16px]">{selected.endpointId}</span>}
+                  state={ownershipBadge(selectedOwned)}
+                  description={
+                    <>
+                      {selectedOwned
+                        ? "The simulator hosts a simulated handler on this endpoint's real subscription. If the endpoint's own process is running, both compete for the same messages and the results mix."
+                        : "This endpoint is published to but handled by its own process. It gets no simulated handler."}
+                      {selectedOwned !== selectedSavedOwned && " Not saved yet. Ownership changes apply at the next Start."}
+                    </>
+                  }
+                >
+                  {selected.liveInstanceWarning && (
+                    <p role="status" className="m-0 text-[13px] text-status-warning-ink">
+                      {LIVE_INSTANCE_WARNING}
+                    </p>
+                  )}
+                  <InspectorBlock label="Consumes">
+                    <ul className="m-0 list-none divide-y divide-border rounded-nb-md border border-border bg-background p-0">
+                      {(selected.consumes ?? []).map((eventType) => (
+                        <li key={eventType} className="px-3 py-2 font-mono text-[12px] [overflow-wrap:anywhere]">
+                          {eventType}
+                        </li>
+                      ))}
+                    </ul>
+                  </InspectorBlock>
+                </Inspector>
+              ) : (
+                <Inspector empty="Select an endpoint to see who owns it." />
+              )}
+            </PanelInspector>
           </PanelSection>
-        </fieldset>
+        </div>
 
         <PanelSection tab="policy">
           <aside className="min-w-0 space-y-5">

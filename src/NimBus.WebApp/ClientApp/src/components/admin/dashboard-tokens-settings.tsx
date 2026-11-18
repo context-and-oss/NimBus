@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Badge, type BadgeVariant } from "components/ui/badge";
 import { Button } from "components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "components/ui/card";
 import { Input } from "components/ui/input";
 import { Label } from "components/ui/label";
 import { Modal, ModalBody, ModalFooter, ModalHeader } from "components/ui/modal";
 import { Select } from "components/ui/select";
-import { PanelSection, useInPanel, usePanelDirty } from "components/settings/panel-frame";
+import { PanelInspector, PanelSection, useInPanel, usePanelDirty } from "components/settings/panel-frame";
+import {
+  RowSelect,
+  selectableRowClass,
+  WORKSPACE_HEAD_ROW,
+  WORKSPACE_TH,
+  WorkspaceTableFrame,
+} from "components/workspace/selectable-row";
+import { Inspector, InspectorTiles, WorkspaceSection } from "components/workspace/workspace";
 import { copyToClipboard } from "lib/clipboard";
 import {
   DASHBOARD_TOKENS_URL,
@@ -51,6 +58,8 @@ export default function DashboardTokensSettings() {
   const [issued, setIssued] = useState<DashboardTokenIssued>();
   const [copied, setCopied] = useState(false);
   const [pending, setPending] = useState<Pending>();
+  // The token shown in the inspector; with none selected the inspector holds the issue form.
+  const [selectedId, setSelectedId] = useState<string>();
   const alive = useRef(true);
   const inPanel = useInPanel();
   usePanelDirty(name.trim() ? 1 : 0);
@@ -158,20 +167,118 @@ export default function DashboardTokensSettings() {
     );
   }
 
+  // Looked up on every render, so a token that is removed gives the inspector back to the form.
+  const selected = state.tokens.find((t) => t.tokenId === selectedId);
+
   return (
     <PanelSection tab="tokens">
-      <div className="space-y-4">
-        <Card>
-          <CardHeader className="px-5 py-4">
-            {!inPanel && <CardTitle className="text-xl">Dashboard tokens</CardTitle>}
-            <CardDescription>
-              A wall display opens the Monitor with a token instead of signing in. The token shows
-              the whole Monitor read-only, cannot acknowledge failures, and reaches no other page or
-              API. Issue one token per wall so each can be revoked on its own.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="px-5 pb-5">
-            <form id={FORM_ID} onSubmit={(e) => void issue(e)} className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+      <WorkspaceSection
+        title={inPanel ? "Tokens" : "Dashboard tokens"}
+        count={state.tokens.length}
+        intro={
+          <>
+            A wall display opens the Monitor with a token instead of signing in. The token shows
+            the whole Monitor read-only, cannot acknowledge failures, and reaches no other page or
+            API. Issue one token per wall so each can be revoked on its own.
+          </>
+        }
+        action={
+          <Button type="button" size="sm" variant="outline" onClick={() => setSelectedId(undefined)}>
+            New token
+          </Button>
+        }
+      >
+        {error && (
+          <p role="alert" className="rounded-md border border-status-error-200 bg-status-error-50 px-3 py-2 text-sm text-status-error-ink">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {message}
+          </p>
+        )}
+
+        <WorkspaceTableFrame>
+          {state.tokens.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="font-medium">No dashboard tokens yet</p>
+              <p className="text-sm text-muted-foreground">Issue one for each wall display.</p>
+            </div>
+          ) : (
+            <table className="w-full min-w-[42rem] border-collapse text-[13px]" aria-label="Dashboard tokens">
+              <thead>
+                <tr className={WORKSPACE_HEAD_ROW}>
+                  <th scope="col" className={WORKSPACE_TH}>Name</th>
+                  <th scope="col" className={WORKSPACE_TH}>Token</th>
+                  <th scope="col" className={WORKSPACE_TH}>Status</th>
+                  <th scope="col" className={WORKSPACE_TH}>Issued</th>
+                  <th scope="col" className={WORKSPACE_TH}>Last used</th>
+                  <th scope="col" className={WORKSPACE_TH}>Expires</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.tokens.map((t) => (
+                  <tr key={t.tokenId} className={selectableRowClass(t.tokenId === selectedId)}>
+                    <td className="max-w-0 px-4">
+                      <RowSelect selected={t.tokenId === selectedId} onSelect={() => setSelectedId(t.tokenId)} title={t.name}>
+                        {t.name}
+                      </RowSelect>
+                    </td>
+                    <td className="px-4 py-2 font-mono text-xs">{t.prefix}</td>
+                    <td className="px-4 py-2">
+                      <Badge variant={STATUS[t.status].variant}>{STATUS[t.status].label}</Badge>
+                    </td>
+                    <td className="px-4 py-2">
+                      <div>{when(t.createdAtUtc)}</div>
+                      {t.createdBy && <div className="text-xs text-muted-foreground">by {t.createdBy}</div>}
+                    </td>
+                    <td className="px-4 py-2">{when(t.lastUsedAtUtc)}</td>
+                    <td className="px-4 py-2">{t.expiresAtUtc ? when(t.expiresAtUtc) : "No expiry"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </WorkspaceTableFrame>
+      </WorkspaceSection>
+
+      <PanelInspector>
+        {selected ? (
+          <Inspector
+            eyebrow="Dashboard token"
+            title={selected.name}
+            state={<Badge variant={STATUS[selected.status].variant}>{STATUS[selected.status].label}</Badge>}
+          >
+            <InspectorTiles
+              tiles={[
+                { label: "Token", value: selected.prefix },
+                { label: "Issued", value: when(selected.createdAtUtc) },
+                ...(selected.createdBy ? [{ label: "Issued by", value: selected.createdBy }] : []),
+                { label: "Last used", value: when(selected.lastUsedAtUtc) },
+                { label: "Expires", value: selected.expiresAtUtc ? when(selected.expiresAtUtc) : "No expiry" },
+              ]}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                aria-label={`${selected.status === "active" ? "Revoke" : "Remove"} token ${selected.name}`}
+                onClick={() => setPending({ kind: selected.status === "active" ? "revoke" : "remove", token: selected })}
+              >
+                {selected.status === "active" ? "Revoke" : "Remove"}
+              </Button>
+            </div>
+          </Inspector>
+        ) : (
+          <Inspector
+            eyebrow="New token"
+            title="Issue token"
+            description="The Monitor link is shown once, when you issue the token. NimBus keeps only its hash."
+          >
+            <form id={FORM_ID} onSubmit={(e) => void issue(e)} className="space-y-3">
               <div className="space-y-1">
                 <Label htmlFor="dashboard-token-name">Name</Label>
                 <Input
@@ -196,83 +303,18 @@ export default function DashboardTokensSettings() {
                   onChange={(e) => setExpiry(e.target.value as ExpiryChoice)}
                 />
               </div>
-              <Button type="submit" disabled={busy}>
+              {formError && (
+                <p id="dashboard-token-name-error" className="text-sm text-status-error-ink">
+                  {formError}
+                </p>
+              )}
+              <Button type="submit" size="sm" disabled={busy}>
                 Issue token
               </Button>
             </form>
-            {formError && (
-              <p id="dashboard-token-name-error" className="mt-2 text-sm text-status-error-ink">
-                {formError}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {error && (
-          <p role="alert" className="rounded-md border border-status-error-200 bg-status-error-50 px-3 py-2 text-sm text-status-error-ink">
-            {error}
-          </p>
+          </Inspector>
         )}
-        {message && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {message}
-          </p>
-        )}
-
-        <Card>
-          <CardContent className="overflow-x-auto p-0">
-            {state.tokens.length === 0 ? (
-              <div className="px-5 py-8 text-center">
-                <p className="font-medium">No dashboard tokens yet</p>
-                <p className="text-sm text-muted-foreground">Issue one above for each wall display.</p>
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="border-b border-border text-left text-xs text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">Name</th>
-                    <th className="px-4 py-2 font-medium">Token</th>
-                    <th className="px-4 py-2 font-medium">Status</th>
-                    <th className="px-4 py-2 font-medium">Issued</th>
-                    <th className="px-4 py-2 font-medium">Last used</th>
-                    <th className="px-4 py-2 font-medium">Expires</th>
-                    <th className="px-4 py-2" aria-label="Actions" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.tokens.map((t) => (
-                    <tr key={t.tokenId} className="border-b border-border last:border-0">
-                      <td className="px-4 py-2 font-medium">{t.name}</td>
-                      <td className="px-4 py-2 font-mono text-xs">{t.prefix}</td>
-                      <td className="px-4 py-2">
-                        <Badge variant={STATUS[t.status].variant}>{STATUS[t.status].label}</Badge>
-                      </td>
-                      <td className="px-4 py-2">
-                        <div>{when(t.createdAtUtc)}</div>
-                        {t.createdBy && <div className="text-xs text-muted-foreground">by {t.createdBy}</div>}
-                      </td>
-                      <td className="px-4 py-2">{when(t.lastUsedAtUtc)}</td>
-                      <td className="px-4 py-2">{t.expiresAtUtc ? when(t.expiresAtUtc) : "No expiry"}</td>
-                      <td className="px-4 py-2 text-right">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          aria-label={`${t.status === "active" ? "Revoke" : "Remove"} token ${t.name}`}
-                          onClick={() => setPending({ kind: t.status === "active" ? "revoke" : "remove", token: t })}
-                        >
-                          {t.status === "active" ? "Revoke" : "Remove"}
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      </PanelInspector>
 
       <Modal isOpen={!!issued} onClose={() => setIssued(undefined)} closeOnOverlayClick={false} label="New dashboard token">
         <ModalHeader>Open this link on {issued?.issued.name}</ModalHeader>

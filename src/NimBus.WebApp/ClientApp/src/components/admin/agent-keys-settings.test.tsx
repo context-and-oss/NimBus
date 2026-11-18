@@ -28,6 +28,12 @@ const key = (overrides: Partial<AgentKeyInfo> = {}): AgentKeyInfo => ({
 
 const state = (keys: AgentKeyInfo[] = [key()]): AgentKeysState => ({ keys, csrfToken: "csrf-test" });
 
+const table = () => screen.getByRole("table", { name: "Agent keys" });
+const inspector = () => screen.getByRole("complementary", { name: "Inspector" });
+/** Selects a key's row, which puts the key and its actions in the inspector. */
+const selectKey = async (user: ReturnType<typeof userEvent.setup>, agentId: string) =>
+  user.click(await within(await screen.findByRole("table", { name: "Agent keys" })).findByRole("button", { name: agentId }));
+
 /** What the panel reads from /api/v1/admin/mcp/settings once it lists an MCP key. */
 const mcpStatus = (deployment: { agentKeysEnabled?: boolean } = {}, saved: { allowAgentKeys?: boolean; allowWorkloads?: boolean } = {}) => ({
   deployment: { mode: "entra", agentKeysEnabled: true, endpointUrl: "https://nimbus.example/mcp", ...deployment },
@@ -64,19 +70,70 @@ describe("Agent keys settings", () => {
       key(),
       key({ keyId: "mnopqrstuvwx", prefix: "nbak_mnopqrstuvwx", agentId: "triage-agent", name: null, status: "revoked", lastUsedAtUtc: null }),
     ])));
+    const user = userEvent.setup();
     render(<AgentKeysSettings />);
 
     const rows = await screen.findAllByRole("row");
     const enrichment = rows.find((r) => within(r).queryByText("enrichment-agent"))!;
     expect(within(enrichment).getByText("nbak_abcdefghijkl")).toBeTruthy();
     expect(within(enrichment).getByText("Active")).toBeTruthy();
-    expect(within(enrichment).getByRole("button", { name: "Revoke key for enrichment-agent" })).toBeTruthy();
+    await selectKey(user, "enrichment-agent");
+    expect(within(inspector()).getByRole("button", { name: "Revoke key for enrichment-agent" })).toBeTruthy();
 
     const triage = rows.find((r) => within(r).queryByText("triage-agent"))!;
     expect(within(triage).getByText("Revoked")).toBeTruthy();
     expect(within(triage).getByText("Never")).toBeTruthy();
-    expect(within(triage).queryByRole("button", { name: /Revoke/ })).toBeNull();
-    expect(within(triage).getByRole("button", { name: "Remove key for triage-agent" })).toBeTruthy();
+    await selectKey(user, "triage-agent");
+    expect(within(inspector()).queryByRole("button", { name: /Revoke/ })).toBeNull();
+    expect(within(inspector()).getByRole("button", { name: "Remove key for triage-agent" })).toBeTruthy();
+  });
+
+  it("keeps the actions out of the table", async () => {
+    mockFetch(Response.json(state()));
+    render(<AgentKeysSettings />);
+
+    const headers = within(await screen.findByRole("table", { name: "Agent keys" })).getAllByRole("columnheader");
+    expect(headers.map((h) => h.textContent)).toEqual(["Agent and key", "Use", "Status", "Issued", "Last used", "Expires"]);
+    expect(within(table()).queryByRole("button", { name: /Rotate|Revoke|Remove/ })).toBeNull();
+  });
+
+  it("shows the issue form until a key is selected, then that key's facts and actions", async () => {
+    mockFetch(Response.json(state()));
+    const user = userEvent.setup();
+    render(<AgentKeysSettings />);
+
+    await screen.findByRole("table", { name: "Agent keys" });
+    expect(within(inspector()).getByRole("heading", { name: "Issue key" })).toBeTruthy();
+    expect(within(inspector()).getByLabelText("Agent id")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Rotate key|Revoke key|Remove key/ })).toBeNull();
+
+    await selectKey(user, "enrichment-agent");
+
+    expect(within(table()).getByRole("button", { name: "enrichment-agent" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(inspector()).getByRole("heading", { name: "enrichment-agent" })).toBeTruthy();
+    expect(within(inspector()).getByText("Agent key")).toBeTruthy();
+    expect(within(inspector()).getByText("Active")).toBeTruthy();
+    expect(within(inspector()).getByText("Agent API")).toBeTruthy();
+    expect(within(inspector()).getByText("nbak_abcdefghijkl")).toBeTruthy();
+    expect(within(inspector()).getByText("owner@contoso.com")).toBeTruthy();
+    expect(within(inspector()).getByText("No expiry")).toBeTruthy();
+    expect(within(inspector()).getByRole("button", { name: "Rotate key for enrichment-agent" })).toBeTruthy();
+    expect(within(inspector()).getByRole("button", { name: "Revoke key for enrichment-agent" })).toBeTruthy();
+    expect(screen.queryByLabelText("Agent id")).toBeNull();
+  });
+
+  it("returns to the issue form, with its draft, from New key", async () => {
+    mockFetch(Response.json(state()));
+    const user = userEvent.setup();
+    render(<AgentKeysSettings />);
+
+    await user.type(await screen.findByLabelText("Agent id"), "draft-agent");
+    await selectKey(user, "enrichment-agent");
+    await user.click(screen.getByRole("button", { name: "New key" }));
+
+    expect((within(inspector()).getByLabelText("Agent id") as HTMLInputElement).value).toBe("draft-agent");
+    expect(within(table()).getByRole("button", { name: "enrichment-agent" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("button", { name: "Revoke key for enrichment-agent" })).toBeNull();
   });
 
   it("says so when there are no keys yet", async () => {
@@ -131,6 +188,7 @@ describe("Agent keys settings", () => {
     const user = userEvent.setup();
     render(<AgentKeysSettings />);
 
+    await selectKey(user, "enrichment-agent");
     await user.click(await screen.findByRole("button", { name: "Revoke key for enrichment-agent" }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -142,7 +200,10 @@ describe("Agent keys settings", () => {
     expect(url).toBe("/api/v1/admin/agent-keys/abcdefghijkl/revoke");
     expect(init.method).toBe("POST");
     expect(init.headers["X-NimBus-CSRF"]).toBe("csrf-test");
-    expect(await screen.findByText("Revoked")).toBeTruthy();
+    expect(await within(table()).findByText("Revoked")).toBeTruthy();
+    // The key stays selected, now with Remove as its only action.
+    expect(within(inspector()).getByText("Revoked")).toBeTruthy();
+    expect(within(inspector()).getByRole("button", { name: "Remove key for enrichment-agent" })).toBeTruthy();
   });
 
   it("removes a revoked key after confirmation", async () => {
@@ -150,6 +211,7 @@ describe("Agent keys settings", () => {
     const user = userEvent.setup();
     render(<AgentKeysSettings />);
 
+    await selectKey(user, "enrichment-agent");
     await user.click(await screen.findByRole("button", { name: "Remove key for enrichment-agent" }));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove key" }));
 
@@ -157,6 +219,8 @@ describe("Agent keys settings", () => {
     expect(url).toBe("/api/v1/admin/agent-keys/abcdefghijkl");
     expect(init.method).toBe("DELETE");
     expect(await screen.findByText("No agent keys yet")).toBeTruthy();
+    // Its row is gone, so the inspector falls back to the issue form.
+    expect(within(inspector()).getByLabelText("Agent id")).toBeTruthy();
   });
 
   it("shows the server's reason when a change is refused", async () => {
@@ -167,6 +231,7 @@ describe("Agent keys settings", () => {
     const user = userEvent.setup();
     render(<AgentKeysSettings />);
 
+    await selectKey(user, "enrichment-agent");
     await user.click(await screen.findByRole("button", { name: "Revoke key for enrichment-agent" }));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke key" }));
 
@@ -226,7 +291,9 @@ describe("Agent keys settings", () => {
     expect(within(row).getByText("MCP")).toBeTruthy();
     expect(within(row).getByText(/classify, resubmit/)).toBeTruthy();
 
-    await user.click(within(row).getByRole("button", { name: "Rotate key for sre-agent" }));
+    await user.click(within(row).getByRole("button", { name: "sre-agent" }));
+    expect(within(inspector()).getByText(/classify, resubmit/)).toBeTruthy();
+    await user.click(within(inspector()).getByRole("button", { name: "Rotate key for sre-agent" }));
     const [url, init] = fetchMock.mock.calls[2];
     expect(url).toBe("/api/v1/admin/agent-keys/abcdefghijkl/rotate");
     expect(init.method).toBe("POST");

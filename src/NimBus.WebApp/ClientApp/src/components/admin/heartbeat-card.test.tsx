@@ -5,8 +5,11 @@ import {
   screen,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import moment from "moment";
+import { formatMoment } from "functions/endpoint.functions";
 import HeartbeatCard from "./heartbeat-card";
 import { renderInPanel } from "../../test-utils/render-in-panel";
 
@@ -250,5 +253,86 @@ describe("HeartbeatCard", () => {
 
     await screen.findByText("Heartbeat sent to 2 endpoint(s).");
     expect(interval.value).toBe("120");
+  });
+
+  describe("endpoints table", () => {
+    const inspector = () => within(screen.getByRole("complementary", { name: "Inspector" }));
+
+    it("shows each endpoint's last status and round trip", async () => {
+      renderCard();
+
+      const table = within(await screen.findByRole("table", { name: "Heartbeat endpoints" }));
+      const row = within((await table.findByRole("button", { name: "crm" })).closest("tr") as HTMLElement);
+      expect(row.getByText("On", { selector: "td > *" })).toBeTruthy();
+      expect(row.getByText("120 ms")).toBeTruthy();
+    });
+
+    it("asks for a selection while no endpoint is selected", async () => {
+      renderCard();
+
+      await screen.findByRole("button", { name: "crm" });
+      expect(inspector().getByText("Select an endpoint to see its last probe.")).toBeTruthy();
+    });
+
+    it("shows the selected endpoint's last probe in the inspector", async () => {
+      mocks.getAdminHeartbeatOverview.mockResolvedValue([
+        overviewRow({ lastStartTime: moment("2026-11-18T09:00:00Z"), lastReceivedTime: moment("2026-11-18T09:00:01Z") }),
+        overviewRow({ endpointId: "erp", isHeartbeatEnabled: false, status: "Off", roundTripMs: undefined }),
+      ]);
+      renderCard();
+
+      const select = await screen.findByRole("button", { name: "crm" });
+      fireEvent.click(select);
+
+      expect(select.getAttribute("aria-pressed")).toBe("true");
+      expect(inspector().getByRole("heading", { name: "crm" })).toBeTruthy();
+      expect(inspector().getByText("Included")).toBeTruthy();
+      expect(inspector().getByText("Answered the last heartbeat.")).toBeTruthy();
+      expect(inspector().getByText("120 ms")).toBeTruthy();
+      expect(inspector().getByText("1.4.2")).toBeTruthy();
+      expect(inspector().getByText(formatMoment(moment("2026-11-18T09:00:00Z"), true))).toBeTruthy();
+      expect(inspector().getByText(formatMoment(moment("2026-11-18T09:00:01Z"), true))).toBeTruthy();
+      expect(inspector().getByRole("link", { name: /Heartbeat page/ }).getAttribute("href")).toBe("/Heartbeat");
+
+      fireEvent.click(screen.getByRole("button", { name: "erp" }));
+      expect(select.getAttribute("aria-pressed")).toBe("false");
+      expect(inspector().getByRole("heading", { name: "erp" })).toBeTruthy();
+      expect(inspector().getByText("Excluded")).toBeTruthy();
+    });
+
+    it("keeps one Included switch per endpoint, and it still saves with the row selected", async () => {
+      renderCard();
+
+      fireEvent.click(await screen.findByRole("button", { name: "crm" }));
+      // getByRole throws on a second switch with the same name.
+      fireEvent.click(screen.getByRole("switch", { name: "Include crm in heartbeat probes" }));
+
+      await waitFor(() =>
+        expect(mocks.putAdminHeartbeatEndpointEnabled).toHaveBeenCalledWith(
+          "crm",
+          expect.objectContaining({ enabled: false }),
+        ),
+      );
+    });
+
+    it("clears the inspector when the filter hides the selected endpoint", async () => {
+      renderCard();
+
+      fireEvent.click(await screen.findByRole("button", { name: "crm" }));
+      fireEvent.change(screen.getByLabelText("Filter endpoints"), { target: { value: "excluded" } });
+
+      expect(inspector().getByText("Select an endpoint to see its last probe.")).toBeTruthy();
+    });
+
+    it("shows the selection in the Settings panel's inspector column", async () => {
+      renderInPanel(<HeartbeatCard />, "heartbeat", "endpoints");
+
+      expect(await inspector().findByText("Select an endpoint to see its last probe.")).toBeTruthy();
+      fireEvent.click(await screen.findByRole("button", { name: "crm" }));
+
+      expect(screen.getAllByRole("complementary", { name: "Inspector" })).toHaveLength(1);
+      expect(inspector().getByRole("heading", { name: "crm" })).toBeTruthy();
+      expect(screen.queryByLabelText("Interval seconds")).toBeNull();
+    });
   });
 });
