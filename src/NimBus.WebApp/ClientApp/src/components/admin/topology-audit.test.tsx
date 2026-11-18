@@ -89,9 +89,9 @@ describe("TopologyAudit", () => {
     ).toBeTruthy();
 
     await userEvent.click(
-      within(rows[0]).getByRole("button", { name: "View" }),
+      within(rows[0]).getByRole("button", { name: "ErpEndpoint" }),
     );
-    expect(await screen.findByText("Topic: erpendpoint")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "erpendpoint" })).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Remove Deprecated" }),
     ).toBeTruthy();
@@ -127,7 +127,7 @@ describe("TopologyAudit with the endpoint chosen by the page", () => {
 
     render(<TopologyAudit endpoint="CrmEndpoint" />);
 
-    expect(await screen.findByText(/Topic: crmendpoint/)).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "crmendpoint" })).toBeTruthy();
     expect(auditMock).toHaveBeenCalledWith("CrmEndpoint");
     expect(screen.queryByRole("button", { name: "Audit Topology" })).toBeNull();
     expect(screen.getByRole("button", { name: "Audit again" })).toBeTruthy();
@@ -146,11 +146,11 @@ describe("TopologyAudit with the endpoint chosen by the page", () => {
 
     const { rerender } = render(<TopologyAudit endpoint="CrmEndpoint" />);
     rerender(<TopologyAudit endpoint="ErpEndpoint" />);
-    expect(await screen.findByText(/Topic: erpendpoint/)).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "erpendpoint" })).toBeTruthy();
     resolveCrm(inSync("crmendpoint"));
 
     await new Promise((r) => setTimeout(r, 0));
-    expect(screen.queryByText(/Topic: crmendpoint/)).toBeNull();
+    expect(screen.queryByRole("heading", { name: "crmendpoint" })).toBeNull();
   });
 
   it("says a topic outside the catalog has nothing to compare", async () => {
@@ -171,9 +171,39 @@ describe("TopologyAudit with the endpoint chosen by the page", () => {
     render(<TopologyAudit endpoint={null} onEndpointChange={onEndpointChange} />);
     await userEvent.click(await screen.findByRole("button", { name: "Audit all endpoints" }));
     const summary = await screen.findByRole("table", { name: "Catalog drift by endpoint" });
-    await userEvent.click(within(summary).getByRole("button", { name: "View" }));
+    await userEvent.click(within(summary).getByRole("button", { name: "CrmEndpoint" }));
 
     expect(onEndpointChange).toHaveBeenCalledWith("CrmEndpoint");
-    expect(screen.queryByText(/Topic: crmendpoint/)).toBeNull();
+    expect(screen.queryByRole("heading", { name: "crmendpoint" })).toBeNull();
+  });
+});
+
+describe("TopologyAudit in the workspace", () => {
+  it("lists the audited endpoint as the table's one selected row and reports the drift count", async () => {
+    configMock.mockResolvedValue({ endpoints: [{ name: "CrmEndpoint" }] });
+    auditMock.mockResolvedValue(inSync("crmendpoint"));
+    const onDriftCount = vi.fn();
+
+    render(<TopologyAudit endpoint="CrmEndpoint" onDriftCount={onDriftCount} />);
+
+    const summary = await screen.findByRole("table", { name: "Catalog drift by endpoint" });
+    expect(within(summary).getByRole("button", { name: "CrmEndpoint" }).getAttribute("aria-pressed")).toBe("true");
+    const inspector = screen.getByRole("complementary", { name: "Inspector" });
+    expect(within(inspector).getByText(/match the declared catalog/)).toBeTruthy();
+    // One endpoint's audit says nothing about the others.
+    expect(onDriftCount).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("reports how many endpoints drift once all are audited", async () => {
+    configMock.mockResolvedValue({ endpoints: [{ name: "CrmEndpoint" }] });
+    auditMock.mockResolvedValue(inSync("crmendpoint"));
+    const onDriftCount = vi.fn();
+
+    render(<TopologyAudit endpoint={null} onDriftCount={onDriftCount} />);
+    expect(screen.getByText("Audit the endpoints, then select one to see its subscriptions and rules.")).toBeTruthy();
+    await userEvent.click(await screen.findByRole("button", { name: "Audit all endpoints" }));
+
+    await screen.findByRole("table", { name: "Catalog drift by endpoint" });
+    expect(onDriftCount).toHaveBeenLastCalledWith(0);
   });
 });

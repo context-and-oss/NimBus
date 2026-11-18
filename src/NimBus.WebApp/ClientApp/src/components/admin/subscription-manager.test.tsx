@@ -107,17 +107,74 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+/** Selects a topic's row, then opens its subscriptions from the inspector. */
+async function openTopic(name: string) {
+  fireEvent.click(await screen.findByRole("button", { name }));
+  fireEvent.click(screen.getByRole("button", { name: "Open subscriptions" }));
+}
+
+/** Selects a subscription's row, which shows it and its actions in the inspector. */
+async function selectSubscription(name: string) {
+  fireEvent.click(await screen.findByRole("button", { name }));
+}
+
 describe("SubscriptionManager", () => {
-  it("lets the subscription guidance use the available horizontal space", () => {
+  it("says what the table is for above it, as a named section", () => {
     render(<SubscriptionManager />);
 
-    const guidance = screen.getByText(
-      /Live message counts straight from Service Bus/,
-    );
+    const section = screen.getByRole("region", { name: "Topics" });
+    expect(within(section).getByText(/Live message counts straight from Service Bus/)).toBeTruthy();
+    expect(within(section).getByRole("button", { name: "Refresh" })).toBeTruthy();
+  });
 
-    expect(guidance.classList.contains("flex-1")).toBe(true);
-    expect(guidance.classList.contains("basis-3xl")).toBe(true);
-    expect(guidance.classList.contains("max-w-3xl")).toBe(false);
+  it("shows a topic's counts in the inspector before opening it", async () => {
+    mocks.getAdminServicebusTopics.mockResolvedValue([
+      topic("orders", { subscriptionCount: 4, activeMessageCount: 12 }),
+    ]);
+    render(<SubscriptionManager />);
+    expect(screen.getByText("Select a topic to see its counts and open its subscriptions.")).toBeTruthy();
+
+    const row = await screen.findByRole("button", { name: "orders" });
+    fireEvent.click(row);
+
+    expect(row.getAttribute("aria-pressed")).toBe("true");
+    const inspector = screen.getByRole("complementary", { name: "Inspector" });
+    expect(within(inspector).getByText("Subscriptions").nextElementSibling?.textContent).toBe("4");
+    expect(mocks.getAdminServicebusSubscriptions).not.toHaveBeenCalled();
+  });
+
+  it("keeps a subscription's actions out of the table until it is selected", async () => {
+    mocks.getAdminServicebusSubscriptions.mockResolvedValue([
+      subscription("Deferred", { activeMessageCount: 3 }),
+    ]);
+    render(<SubscriptionManager />);
+    await openTopic("orders");
+    await screen.findByText("Deferred");
+
+    expect(screen.getByText("Select a subscription to see its rules and act on it.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Purge" })).toBeNull();
+
+    await selectSubscription("Deferred");
+    const inspector = screen.getByRole("complementary", { name: "Inspector" });
+    expect(within(inspector).getByRole("button", { name: "Purge" })).toBeTruthy();
+    expect(within(screen.getByRole("table", { name: "Subscriptions" })).queryByRole("button", { name: "Purge" })).toBeNull();
+  });
+
+  it("keeps a delete's outcome on screen after its row is gone", async () => {
+    mocks.getAdminServicebusSubscriptions
+      .mockResolvedValueOnce([subscription("old-sub")])
+      .mockResolvedValue([]);
+    mocks.deleteAdminServicebusSubscription.mockResolvedValue({ succeeded: true, message: "Deleted old-sub." });
+    render(<SubscriptionManager />);
+    await openTopic("orders");
+    await selectSubscription("old-sub");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.change(await screen.findByPlaceholderText("old-sub"), { target: { value: "old-sub" } });
+    fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
+
+    expect((await screen.findByRole("status")).textContent).toContain("Deleted old-sub.");
+    expect(screen.getByText("No subscriptions on this topic.")).toBeTruthy();
   });
 
   it("shows only the newest subscription response, whatever order they land in", async () => {
@@ -136,9 +193,9 @@ describe("SubscriptionManager", () => {
 
     render(<SubscriptionManager />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    await openTopic("orders");
     fireEvent.click(await screen.findByRole("button", { name: "All topics" }));
-    fireEvent.click(await screen.findByRole("button", { name: "billing" }));
+    await openTopic("billing");
     await screen.findByText("billing-only-sub");
 
     // The first topic's response arrives late.
@@ -161,7 +218,8 @@ describe("SubscriptionManager", () => {
     });
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    await openTopic("orders");
+    await selectSubscription("DeferredProcessor");
 
     fireEvent.click(await screen.findByRole("button", { name: "Purge" }));
     fireEvent.change(await screen.findByPlaceholderText("DeferredProcessor"), {
@@ -182,7 +240,8 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    await openTopic("orders");
+    await selectSubscription("orders");
 
     // The restorable rule is a button; the one-way one is inert text.
     expect(await screen.findByRole("button", { name: "to-orders ✕" })).toBeTruthy();
@@ -211,16 +270,19 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    await openTopic("orders");
 
+    await selectSubscription("DachHub");
     const keyed = await screen.findByText("keys AT, CH, DE");
     // The live filter is one hover away, for whoever wants the exact SQL.
     expect(keyed.getAttribute("title")).toBe(keyedFilter);
-    expect(screen.getByText("unmatched · not DE, DK")).toBeTruthy();
     // The detach button keeps its name; the keys sit beside it, not inside it.
-    expect(screen.getAllByRole("button", { name: "AccountCreated ✕" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "AccountCreated ✕" })).toBeTruthy();
     // AccountUpdated takes every key, so it has no label.
-    expect(screen.getAllByText(/^keys |^unmatched/)).toHaveLength(2);
+    expect(screen.getAllByText(/^keys |^unmatched/)).toHaveLength(1);
+
+    await selectSubscription("UnroutedHub");
+    expect(screen.getByText("unmatched · not DE, DK")).toBeTruthy();
   });
 
   it("requires an extra acknowledgement to delete something it cannot rebuild", async () => {
@@ -229,7 +291,8 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    await openTopic("orders");
+    await selectSubscription("hand-made");
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
 
     const confirm = await screen.findByRole("button", {
@@ -259,9 +322,9 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
-    await screen.findByText("hand-made");
-
+    await openTopic("orders");
+    await selectSubscription("hand-made");
+    expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Delete & recreate/ })).toBeNull();
   });
 
@@ -275,7 +338,8 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    await openTopic("orders");
+    await selectSubscription("Resolver");
 
     const purge = (await screen.findByRole("button", {
       name: "Purge",
@@ -295,10 +359,12 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    await openTopic("orders");
+    await selectSubscription("Resolver");
 
-    expect(await screen.findByText("→ Resolver (detached)")).toBeTruthy();
-    expect(screen.getByText("Paused")).toBeTruthy();
+    const table = screen.getByRole("table", { name: "Subscriptions" });
+    expect(within(table).getByText("→ Resolver (detached)")).toBeTruthy();
+    expect(within(table).getByText("Paused")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
   });
 
@@ -315,7 +381,8 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    await openTopic("orders");
+    await selectSubscription("orders");
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
 
     expect(await screen.findByText(/all 16 message\(s\)/)).toBeTruthy();
@@ -330,7 +397,8 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "someone-elses" }));
+    await openTopic("someone-elses");
+    await selectSubscription("sub-1");
 
     await screen.findByText(/is not part of the platform topology/);
     const pause = (await screen.findByRole("button", {
@@ -401,7 +469,8 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: topicName }));
+    await openTopic(topicName);
+    await selectSubscription("Resolver");
 
     expect(await screen.findByRole("button", { name: "Inspect dead letters" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Inspect dead letters" }));
@@ -422,8 +491,8 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "Resolver" }));
-    await screen.findByText("Resolver", { selector: "td *" });
+    await openTopic("Resolver");
+    await selectSubscription("Resolver");
 
     expect(screen.queryByRole("button", { name: "Inspect dead letters" })).toBeNull();
   });
@@ -442,7 +511,8 @@ describe("SubscriptionManager", () => {
     });
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    await openTopic("orders");
+    await selectSubscription("billing");
     fireEvent.click(await screen.findByRole("button", { name: "Purge dead letters" }));
 
     const dialog = screen.getByRole("dialog", { name: "Purge dead letters" });
@@ -460,8 +530,8 @@ describe("SubscriptionManager", () => {
     mocks.getAdminServicebusSubscriptions.mockResolvedValue([subscription("billing", { activeMessageCount: 4 })]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "orders" }));
-    await screen.findByText("billing", { selector: "td *" });
+    await openTopic("orders");
+    await selectSubscription("billing");
 
     expect(screen.queryByRole("button", { name: "Purge dead letters" })).toBeNull();
   });
@@ -490,6 +560,8 @@ describe("SubscriptionManager with the topic chosen by the page", () => {
     render(<SubscriptionManager topic={null} onTopicChange={onTopicChange} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "orders" }));
+    expect(onTopicChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open subscriptions" }));
 
     expect(onTopicChange).toHaveBeenCalledWith("orders");
     expect(mocks.getAdminServicebusSubscriptions).not.toHaveBeenCalled();
