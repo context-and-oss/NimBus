@@ -52,7 +52,6 @@ function renderFrame(activeTab = "one", onDirtyChange = vi.fn(), onTabChange = v
       tabs={TABS}
       activeTab={activeTab}
       onTabChange={onTabChange}
-      onClose={vi.fn()}
       onDirtyChange={onDirtyChange}
       applies="Applies immediately"
     >
@@ -130,7 +129,6 @@ describe("SettingsPanelFrame", () => {
         tabs={[{ id: "only", label: "Only" }]}
         activeTab="only"
         onTabChange={vi.fn()}
-        onClose={vi.fn()}
         onDirtyChange={vi.fn()}
         applies="Applies immediately"
       >

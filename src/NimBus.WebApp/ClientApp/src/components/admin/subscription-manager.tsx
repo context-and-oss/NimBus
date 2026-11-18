@@ -1,5 +1,4 @@
 import {
-  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -15,6 +14,18 @@ import { Select } from "components/ui/select";
 import { Tooltip } from "components/ui/tooltip";
 import ConfirmDestructiveAction from "./confirm-destructive-action";
 import ResolverDeadLetterDialog from "./resolver-dead-letter-dialog";
+import {
+  Inspector,
+  InspectorBlock,
+  InspectorPortal,
+  InspectorTiles,
+  WorkspaceSection,
+} from "components/workspace/workspace";
+import {
+  RowSelect,
+  selectableRowClass,
+  WorkspaceTableFrame,
+} from "components/workspace/selectable-row";
 import { cn } from "lib/utils";
 import { ruleRoutingLabel } from "lib/routing-keys";
 
@@ -64,7 +75,7 @@ type PendingAction =
       ruleName: string;
     };
 
-type RowFeedback = { tone: "ok" | "error"; message: string };
+type RowFeedback = { subscription: string; tone: "ok" | "error"; message: string };
 type TopicPlatformFilter = "all" | "platform" | "external";
 
 const nf = new Intl.NumberFormat();
@@ -183,7 +194,13 @@ export default function SubscriptionManager({
   const [loadingTopics, setLoadingTopics] = useState(true);
   const [loadingSubs, setLoadingSubs] = useState(false);
   const [busyRow, setBusyRow] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<Record<string, RowFeedback>>({});
+  // The latest action's outcome. It shows in the inspector while its
+  // subscription is selected, and above the table otherwise (after a delete).
+  const [feedback, setFeedback] = useState<RowFeedback | null>(null);
+  // The rows shown in the inspector: a subscription of the open topic, or a
+  // topic of the all-topics table.
+  const [selectedSub, setSelectedSub] = useState<string | null>(null);
+  const [inspectedTopic, setInspectedTopic] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [topicFilter, setTopicFilter] = useState<TopicPlatformFilter>("all");
@@ -271,7 +288,8 @@ export default function SubscriptionManager({
     (topicName: string) => {
       setSelectedTopic(topicName);
       setSubscriptions([]);
-      setFeedback({});
+      setFeedback(null);
+      setSelectedSub(null);
       loadSubscriptions(topicName);
     },
     [loadSubscriptions],
@@ -283,6 +301,8 @@ export default function SubscriptionManager({
     subsRequestId.current++;
     setSelectedTopic(null);
     setSubscriptions([]);
+    setSelectedSub(null);
+    setFeedback(null);
   }, []);
 
   // Controlled: follow the page's choice. Only a change of topic reloads.
@@ -320,27 +340,23 @@ export default function SubscriptionManager({
       const result = await action();
       const errors = result.errors ?? [];
       const failed = result.succeeded === false || errors.length > 0;
-      setFeedback((prev) => ({
-        ...prev,
-        [subscriptionName]: {
-          tone: failed ? "error" : "ok",
-          // Errors are never dropped in favour of the summary: a partly-failed
-          // purge still reports "Purged N message(s)", and the warning it hides
-          // can be "the subscription was left Active".
-          message: errors.length
-            ? [result.message, ...errors].filter(Boolean).join(" — ")
-            : result.message || `${label} completed.`,
-        },
-      }));
+      setFeedback({
+        subscription: subscriptionName,
+        tone: failed ? "error" : "ok",
+        // Errors are never dropped in favour of the summary: a partly-failed
+        // purge still reports "Purged N message(s)", and the warning it hides
+        // can be "the subscription was left Active".
+        message: errors.length
+          ? [result.message, ...errors].filter(Boolean).join(" — ")
+          : result.message || `${label} completed.`,
+      });
       await refresh();
     } catch (err: any) {
-      setFeedback((prev) => ({
-        ...prev,
-        [subscriptionName]: {
-          tone: "error",
-          message: err?.message ?? `${label} failed.`,
-        },
-      }));
+      setFeedback({
+        subscription: subscriptionName,
+        tone: "error",
+        message: err?.message ?? `${label} failed.`,
+      });
     } finally {
       setBusyRow(null);
     }
@@ -432,134 +448,183 @@ export default function SubscriptionManager({
     [topics, topicFilter],
   );
 
+  const selectedSubscription = subscriptions.find((s) => s.name === selectedSub);
+  const topicInInspector = topics.find((t) => t.name === inspectedTopic);
+  const readOnly = activeTopic?.isKnownToPlatform === false;
+  const subsLoading = loadingSubs && subscriptions.length === 0;
+  const strayFeedback = feedback && feedback.subscription !== selectedSubscription?.name ? feedback : null;
+
   return (
-    <div className="space-y-6 w-full">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <p className="text-[13px] text-muted-foreground m-0 flex-1 basis-3xl">
-          Live message counts straight from Service Bus. Use this to find where a
-          backlog actually sits and clear just that subscription. An
-          auto-forwarding subscription (such as each endpoint&apos;s{" "}
-          <span className="font-mono">Resolver</span> fan-out) cannot be drained
-          while it forwards — &ldquo;Delete &amp; recreate&rdquo; discards its
-          backlog in one call, or Pause first (which detaches forwarding) and then
-          Purge if you want the subscription itself left alone.
-        </p>
-        <div className="flex items-center gap-3">
-          {selectedTopic === null && (
-            <Select
-              value={topicFilter}
-              onChange={(event) =>
-                setTopicFilter(event.target.value as TopicPlatformFilter)
-              }
-              aria-label="Filter topics by platform membership"
-              className="h-8 w-[170px] py-1 text-xs"
-            >
-              <option value="all">All topics</option>
-              <option value="platform">In platform</option>
-              <option value="external">Not in platform</option>
-            </Select>
-          )}
-          <Checkbox
-            checked={autoRefresh}
-            onChange={(e) => setAutoRefresh(e.target.checked)}
-            label="Auto-refresh"
-            aria-label="Auto-refresh counts every 10 seconds"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refresh}
-            leftIcon={<Icon path={REFRESH} className="w-4 h-4" />}
-            isLoading={loadingTopics || loadingSubs}
-          >
-            Refresh
-          </Button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="bg-status-danger-50 border border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60 rounded-nb-md p-4 text-status-danger-ink dark:text-red-200">
-          {error}
-        </div>
-      )}
-
-      {selectedTopic === null ? (
-        <TopicTable
-          topics={visibleTopics}
-          loading={loadingTopics}
-          emptyMessage={
-            topics.length === 0
-              ? "No topics found in the namespace."
-              : "No topics match this filter."
-          }
-          onOpen={openTopic}
-        />
-      ) : (
-        <div className="space-y-4">
-          {/* Controlled, the page's topic list and heading already say this. */}
-          {!controlled && (
-            <div className="flex items-center gap-3 flex-wrap">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={closeTopic}
-                leftIcon={<Icon path={CHEVRON_LEFT} className="w-4 h-4" />}
+    <div className="w-full space-y-4">
+      <WorkspaceSection
+        title={selectedTopic === null ? "Topics" : "Subscriptions"}
+        count={
+          selectedTopic === null
+            ? loadingTopics
+              ? undefined
+              : visibleTopics.length
+            : subsLoading
+              ? undefined
+              : subscriptions.length
+        }
+        intro={
+          <>
+            Live message counts straight from Service Bus. Select a row to act on it. An
+            auto-forwarding subscription (such as each endpoint&apos;s{" "}
+            <span className="font-mono">Resolver</span> fan-out) cannot be drained while it forwards
+            — &ldquo;Delete &amp; recreate&rdquo; discards its backlog in one call, or Pause first
+            (which detaches forwarding) and then Purge if you want the subscription itself left alone.
+          </>
+        }
+        action={
+          <>
+            {selectedTopic === null && (
+              <Select
+                value={topicFilter}
+                onChange={(event) =>
+                  setTopicFilter(event.target.value as TopicPlatformFilter)
+                }
+                aria-label="Filter topics by platform membership"
+                className="h-8 w-[170px] py-1 text-xs"
               >
-                All topics
-              </Button>
-              <h3 className="text-lg font-semibold m-0 font-mono">
-                {selectedTopic}
-              </h3>
-              {activeTopic?.isSystemTopic && (
-                <Badge variant="info" size="sm">
-                  system topic
-                </Badge>
-              )}
-              {activeTopic && <StatusBadge status={activeTopic.status ?? ""} />}
-            </div>
-          )}
-
-          {activeTopic?.isKnownToPlatform === false && (
-            // The API refuses mutations on a topic outside the platform
-            // topology, so don't offer buttons that are guaranteed to 404.
-            <div className="bg-status-warning-50 border border-status-warning/30 dark:bg-yellow-950/30 dark:border-yellow-900/60 rounded-nb-md p-3 text-sm text-status-warning-ink dark:text-yellow-200">
-              <span className="font-mono">{selectedTopic}</span> is not part of
-              the platform topology. You can delete this topic and all of its
-              subscriptions and messages.
-              <Button
-                className="ml-3"
-                colorScheme="red"
-                size="sm"
-                onClick={() => setPendingTopic(selectedTopic)}
-                disabled={busyRow !== null}
-              >
-                Delete topic
-              </Button>
-            </div>
-          )}
-
-          {loadingSubs && subscriptions.length === 0 ? (
-            <div className="flex justify-center py-10">
-              <Spinner />
-            </div>
-          ) : (
-            <SubscriptionTable
-              subscriptions={subscriptions}
-              readOnly={activeTopic?.isKnownToPlatform === false}
-              busyRow={busyRow}
-              feedback={feedback}
-              topicName={selectedTopic}
-              onTogglePause={togglePause}
-              onRestoreRules={restoreRules}
-              onInspectDeadLetters={(sub) => setReplaySubscription(sub.name ?? null)}
-              onRequest={(action) => {
-                setAcknowledgeUnknown(false);
-                setPending(action);
-              }}
+                <option value="all">All topics</option>
+                <option value="platform">In platform</option>
+                <option value="external">Not in platform</option>
+              </Select>
+            )}
+            <Checkbox
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              label="Auto-refresh"
+              aria-label="Auto-refresh counts every 10 seconds"
             />
-          )}
-        </div>
-      )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refresh}
+              leftIcon={<Icon path={REFRESH} className="w-4 h-4" />}
+              isLoading={loadingTopics || loadingSubs}
+            >
+              Refresh
+            </Button>
+          </>
+        }
+        foot={autoRefresh ? "Counts refresh every 10 seconds." : undefined}
+      >
+        {error && (
+          <div className="bg-status-danger-50 border border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60 rounded-nb-md p-4 text-status-danger-ink dark:text-red-200">
+            {error}
+          </div>
+        )}
+
+        {selectedTopic === null ? (
+          <TopicTable
+            topics={visibleTopics}
+            loading={loadingTopics}
+            emptyMessage={
+              topics.length === 0
+                ? "No topics found in the namespace."
+                : "No topics match this filter."
+            }
+            selected={inspectedTopic}
+            onSelect={setInspectedTopic}
+          />
+        ) : (
+          <div className="space-y-3">
+            {/* Controlled, the page's topic chips and heading already say this. */}
+            {!controlled && (
+              <div className="flex items-center gap-3 flex-wrap">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={closeTopic}
+                  leftIcon={<Icon path={CHEVRON_LEFT} className="w-4 h-4" />}
+                >
+                  All topics
+                </Button>
+                <h3 className="text-lg font-semibold m-0 font-mono">
+                  {selectedTopic}
+                </h3>
+                {activeTopic?.isSystemTopic && (
+                  <Badge variant="info" size="sm">
+                    system topic
+                  </Badge>
+                )}
+                {activeTopic && <StatusBadge status={activeTopic.status ?? ""} />}
+              </div>
+            )}
+
+            {readOnly && (
+              // The API refuses mutations on a topic outside the platform
+              // topology, so don't offer buttons that are guaranteed to 404.
+              <div className="bg-status-warning-50 border border-status-warning/30 dark:bg-yellow-950/30 dark:border-yellow-900/60 rounded-nb-md p-3 text-sm text-status-warning-ink dark:text-yellow-200">
+                <span className="font-mono">{selectedTopic}</span> is not part of
+                the platform topology. You can delete this topic and all of its
+                subscriptions and messages.
+                <Button
+                  className="ml-3"
+                  colorScheme="red"
+                  size="sm"
+                  onClick={() => setPendingTopic(selectedTopic)}
+                  disabled={busyRow !== null}
+                >
+                  Delete topic
+                </Button>
+              </div>
+            )}
+
+            {strayFeedback && (
+              <p
+                role="status"
+                className={cn(
+                  "m-0 text-[12.5px]",
+                  strayFeedback.tone === "error" ? "text-status-danger" : "text-status-success",
+                )}
+              >
+                <span className="font-mono">{strayFeedback.subscription}</span>: {strayFeedback.message}
+              </p>
+            )}
+
+            {subsLoading ? (
+              <div className="flex justify-center py-10">
+                <Spinner />
+              </div>
+            ) : (
+              <SubscriptionTable
+                subscriptions={subscriptions}
+                selected={selectedSub}
+                onSelect={setSelectedSub}
+              />
+            )}
+          </div>
+        )}
+      </WorkspaceSection>
+
+      <InspectorPortal>
+        {selectedTopic === null ? (
+          <TopicInspector
+            topic={topicInInspector}
+            busy={busyRow !== null}
+            onOpen={openTopic}
+            onDelete={setPendingTopic}
+          />
+        ) : (
+          <SubscriptionInspector
+            sub={selectedSubscription}
+            topicName={selectedTopic}
+            readOnly={readOnly}
+            busyRow={busyRow}
+            feedback={feedback?.subscription === selectedSubscription?.name ? feedback : null}
+            onTogglePause={togglePause}
+            onRestoreRules={restoreRules}
+            onInspectDeadLetters={(sub) => setReplaySubscription(sub.name ?? null)}
+            onRequest={(action) => {
+              setAcknowledgeUnknown(false);
+              setPending(action);
+            }}
+          />
+        )}
+      </InspectorPortal>
 
       <ConfirmDestructiveAction
         isOpen={pending !== null && !needsAcknowledgement(pending)}
@@ -781,12 +846,15 @@ function TopicTable({
   topics,
   loading,
   emptyMessage,
-  onOpen,
+  selected,
+  onSelect,
 }: {
   topics: api.ServiceBusTopicOverview[];
   loading: boolean;
   emptyMessage: string;
-  onOpen: (topicName: string) => void;
+  /** The topic shown in the inspector. */
+  selected: string | null;
+  onSelect: (topicName: string) => void;
 }) {
   // Alphabetical by default: the namespace has dozens of topics and an operator
   // arrives knowing the name they are looking for. Backlog-first orders are one
@@ -836,9 +904,9 @@ function TopicTable({
   }
 
   return (
-    <div className="border border-border rounded-nb-md overflow-x-auto">
-      <table className="min-w-full text-sm">
-        <thead className="bg-surface-2 text-muted-foreground">
+    <WorkspaceTableFrame>
+      <table className="min-w-full text-sm" aria-label="Topics">
+        <thead className="border-b border-border font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground">
           <tr>
             {TOPIC_COLUMNS.map((column) => {
               const active = column.key === sortKey;
@@ -853,7 +921,7 @@ function TopicTable({
                       : "none"
                   }
                   className={cn(
-                    "font-semibold px-3 py-2 select-none",
+                    "font-medium px-3 py-2 select-none",
                     column.numeric ? "text-right" : "text-left",
                   )}
                 >
@@ -861,7 +929,7 @@ function TopicTable({
                     type="button"
                     onClick={() => toggleSort(column)}
                     className={cn(
-                      "inline-flex items-center gap-1 hover:text-primary focus:outline-hidden",
+                      "inline-flex items-center gap-1 uppercase tracking-[0.1em] hover:text-primary focus:outline-hidden",
                       active && "text-foreground",
                     )}
                   >
@@ -885,30 +953,31 @@ function TopicTable({
           {sorted.map((topic) => (
             <tr
               key={topic.name}
-              className="border-t border-border hover:bg-surface-2 cursor-pointer"
-              onClick={() => onOpen(topic.name ?? "")}
+              className={cn(selectableRowClass(topic.name === selected), "cursor-pointer")}
+              onClick={() => onSelect(topic.name ?? "")}
             >
-              <td className="px-3 py-2">
-                <button
-                  type="button"
-                  className="font-mono text-left hover:underline"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpen(topic.name ?? "");
-                  }}
+              <td className="px-3">
+                <RowSelect
+                  mono
+                  selected={topic.name === selected}
+                  onSelect={() => onSelect(topic.name ?? "")}
+                  after={
+                    <>
+                      {topic.isSystemTopic && (
+                        <Badge variant="info" size="sm">
+                          system
+                        </Badge>
+                      )}
+                      {!topic.isKnownToPlatform && (
+                        <Badge variant="warning" size="sm">
+                          not in platform
+                        </Badge>
+                      )}
+                    </>
+                  }
                 >
                   {topic.name}
-                </button>
-                {topic.isSystemTopic && (
-                  <Badge variant="info" size="sm" className="ml-2">
-                    system
-                  </Badge>
-                )}
-                {!topic.isKnownToPlatform && (
-                  <Badge variant="warning" size="sm" className="ml-2">
-                    not in platform
-                  </Badge>
-                )}
+                </RowSelect>
               </td>
               <td className="px-3 py-2">
                 <StatusBadge status={topic.status ?? ""} />
@@ -948,14 +1017,178 @@ function TopicTable({
           )}
         </tbody>
       </table>
-    </div>
+    </WorkspaceTableFrame>
+  );
+}
+
+// ───────────────────────── Topic in the inspector ─────────────────────────
+
+function TopicInspector({
+  topic,
+  busy,
+  onOpen,
+  onDelete,
+}: {
+  topic?: api.ServiceBusTopicOverview;
+  busy: boolean;
+  onOpen: (topicName: string) => void;
+  onDelete: (topicName: string) => void;
+}) {
+  if (!topic) return <Inspector empty="Select a topic to see its counts and open its subscriptions." />;
+  const name = topic.name ?? "";
+  const deadLetter = (topic.deadLetterMessageCount ?? 0) + (topic.transferDeadLetterMessageCount ?? 0);
+  return (
+    <Inspector
+      eyebrow="Topic"
+      title={<span className="font-mono text-[16px]">{name}</span>}
+      badge={
+        topic.isSystemTopic ? (
+          <Badge variant="info" size="sm">
+            system
+          </Badge>
+        ) : undefined
+      }
+      state={<StatusBadge status={topic.status ?? ""} />}
+    >
+      <InspectorTiles
+        tiles={[
+          { label: "Subscriptions", value: nf.format(topic.subscriptionCount ?? 0) },
+          { label: "Active", value: nf.format(topic.activeMessageCount ?? 0) },
+          { label: "Dead-letter", value: nf.format(deadLetter), tone: deadLetter ? "danger" : "default" },
+          { label: "In transit", value: nf.format(topic.transferMessageCount ?? 0) },
+          { label: "Scheduled", value: nf.format(topic.scheduledMessageCount ?? 0) },
+          { label: "Size", value: formatBytes(topic.sizeInBytes ?? 0) },
+        ]}
+      />
+      <Button size="sm" onClick={() => onOpen(name)}>
+        Open subscriptions
+      </Button>
+      {topic.isKnownToPlatform === false && (
+        <div className="space-y-2 rounded-nb-md bg-status-warning-50 p-3 text-[13px] text-status-warning-ink dark:bg-yellow-950/30 dark:text-yellow-200">
+          <p className="m-0">
+            Not part of the platform topology. You can delete this topic with all of its subscriptions and messages.
+          </p>
+          <Button colorScheme="red" size="sm" disabled={busy} onClick={() => onDelete(name)}>
+            Delete topic
+          </Button>
+        </div>
+      )}
+    </Inspector>
   );
 }
 
 // ───────────────────────── Subscription drill-down ─────────────────────────
 
+function forwardText(sub: api.ServiceBusSubscriptionInfo) {
+  if (sub.forwardTo) return `→ ${sub.forwardTo}`;
+  if (sub.expectedForwardTo) return `→ ${sub.expectedForwardTo} (detached)`;
+  return "—";
+}
+
 function SubscriptionTable({
   subscriptions,
+  selected,
+  onSelect,
+}: {
+  subscriptions: api.ServiceBusSubscriptionInfo[];
+  /** The subscription shown in the inspector. */
+  selected: string | null;
+  onSelect: (name: string) => void;
+}) {
+  return (
+    <WorkspaceTableFrame>
+      <table className="min-w-full text-sm" aria-label="Subscriptions">
+        <thead className="border-b border-border font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground">
+          <tr>
+            <th className="text-left font-medium px-3 py-2">Subscription</th>
+            <th className="text-right font-medium px-3 py-2">Rules</th>
+            <th className="text-left font-medium px-3 py-2">Forwards to</th>
+            <th className="text-left font-medium px-3 py-2">Status</th>
+            <th className="text-right font-medium px-3 py-2">Active</th>
+            <th className="text-right font-medium px-3 py-2">Dead-letter</th>
+            <th className="text-right font-medium px-3 py-2">In transit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {subscriptions.map((sub) => {
+            const name = sub.name ?? "";
+            const detached = !sub.forwardTo && !!sub.expectedForwardTo;
+            const missing = sub.missingRuleNames ?? [];
+            return (
+              <tr
+                key={name}
+                className={cn(selectableRowClass(name === selected), "cursor-pointer")}
+                onClick={() => onSelect(name)}
+              >
+                <td className="px-3">
+                  <RowSelect
+                    mono
+                    selected={name === selected}
+                    onSelect={() => onSelect(name)}
+                    after={
+                      !sub.canRecreate && (
+                        <Badge variant="warning" size="sm">
+                          not in platform
+                        </Badge>
+                      )
+                    }
+                  >
+                    {name}
+                  </RowSelect>
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {(sub.ruleNames ?? []).length}
+                  {missing.length > 0 && (
+                    <span className="ml-1.5 text-xs text-status-warning-ink dark:text-yellow-300">
+                      {missing.length} missing
+                    </span>
+                  )}
+                </td>
+                <td
+                  className={cn(
+                    "px-3 py-2 font-mono text-xs",
+                    // Pausing a forwarding subscription detaches its
+                    // destination; say so, so a pause nobody resumed is
+                    // visible rather than looking like a terminal sub.
+                    detached && "text-status-warning-ink dark:text-yellow-300",
+                  )}
+                >
+                  {forwardText(sub)}
+                </td>
+                <td className="px-3 py-2">
+                  <StatusBadge status={sub.status ?? ""} />
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <Count value={sub.activeMessageCount ?? 0} />
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <DeadLetterCount
+                    deadLetter={sub.deadLetterMessageCount ?? 0}
+                    transferDeadLetter={sub.transferDeadLetterMessageCount ?? 0}
+                  />
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <Count value={sub.transferMessageCount ?? 0} />
+                </td>
+              </tr>
+            );
+          })}
+          {subscriptions.length === 0 && (
+            <tr>
+              <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+                No subscriptions on this topic.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </WorkspaceTableFrame>
+  );
+}
+
+/** The selected subscription: its rules, and every action on it. */
+function SubscriptionInspector({
+  sub,
   topicName,
   readOnly,
   busyRow,
@@ -965,298 +1198,222 @@ function SubscriptionTable({
   onInspectDeadLetters,
   onRequest,
 }: {
-  subscriptions: api.ServiceBusSubscriptionInfo[];
+  sub?: api.ServiceBusSubscriptionInfo;
   topicName: string;
   readOnly: boolean;
   busyRow: string | null;
-  feedback: Record<string, RowFeedback>;
+  feedback: RowFeedback | null;
   onTogglePause: (sub: api.ServiceBusSubscriptionInfo) => void;
   onRestoreRules: (sub: api.ServiceBusSubscriptionInfo) => void;
   onInspectDeadLetters: (sub: api.ServiceBusSubscriptionInfo) => void;
   onRequest: (action: PendingAction) => void;
 }) {
+  if (!sub) return <Inspector empty="Select a subscription to see its rules and act on it." />;
+
+  const name = sub.name ?? "";
+  const busy = busyRow === name || readOnly;
+  const forwarding = !!sub.forwardTo;
+  const detached = !sub.forwardTo && !!sub.expectedForwardTo;
+  const backlog = drainableCount(sub);
+  const deadLettered = deadLetteredCount(sub);
+  const missing = sub.missingRuleNames ?? [];
+  const rules = sub.ruleNames ?? [];
+  const canInspectDeadLetters =
+    topicName.toLowerCase() === "resolver" &&
+    sub.requiresSession === true &&
+    !sub.forwardTo &&
+    (sub.deadLetterMessageCount ?? 0) > 0;
+
+  // Detach is only offered where Restore rules can put it back. A $Default
+  // that is a subscription's whole routing, or any rule on a hand-made
+  // subscription, would be a one-way removal — show it, don't arm it.
+  const renderRuleChip = (rule: string) =>
+    (sub.detachableRuleNames ?? []).includes(rule) ? (
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onRequest({ kind: "detach-rule", subscription: sub, ruleName: rule })}
+        title={`Detach rule "${rule}" so no new messages enter through it. Reversible with Restore rules.`}
+        className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 whitespace-nowrap hover:bg-status-danger-50 hover:text-status-danger-ink disabled:opacity-50"
+      >
+        {rule} ✕
+      </button>
+    ) : (
+      <span
+        title="Not part of the platform topology, so NimBus can't restore it — remove it from Topology → Catalog drift if it really is deprecated."
+        className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 whitespace-nowrap text-muted-foreground"
+      >
+        {rule}
+      </span>
+    );
+
   return (
-    <div className="border border-border rounded-nb-md overflow-x-auto">
-      <table className="min-w-full text-sm">
-        <thead className="bg-surface-2 text-muted-foreground">
-          <tr>
-            <th className="text-left font-semibold px-3 py-2">Subscription</th>
-            <th className="text-left font-semibold px-3 py-2">Rules</th>
-            <th className="text-left font-semibold px-3 py-2">Forwards to</th>
-            <th className="text-left font-semibold px-3 py-2">Status</th>
-            <th className="text-right font-semibold px-3 py-2">Active</th>
-            <th className="text-right font-semibold px-3 py-2">Dead-letter</th>
-            <th className="text-right font-semibold px-3 py-2">In transit</th>
-            <th className="text-left font-semibold px-3 py-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {subscriptions.map((sub) => {
-            const name = sub.name ?? "";
-            const busy = busyRow === name || readOnly;
-            const forwarding = !!sub.forwardTo;
-            const detached = !sub.forwardTo && !!sub.expectedForwardTo;
-            const backlog =
-              (sub.activeMessageCount ?? 0) + (sub.transferMessageCount ?? 0);
-            const row = feedback[name];
-            const missing = sub.missingRuleNames ?? [];
-            const canInspectDeadLetters =
-              topicName.toLowerCase() === "resolver" &&
-              sub.requiresSession === true &&
-              !sub.forwardTo &&
-              (sub.deadLetterMessageCount ?? 0) > 0;
-            // Detach is only offered where Restore rules can put it back. A
-            // $Default that is a subscription's whole routing, or any rule on a
-            // hand-made subscription, would be a one-way removal — show it,
-            // don't arm it.
-            const renderRuleChip = (rule: string) =>
-              (sub.detachableRuleNames ?? []).includes(rule) ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    onRequest({
-                      kind: "detach-rule",
-                      subscription: sub,
-                      ruleName: rule,
-                    })
-                  }
-                  title={`Detach rule "${rule}" so no new messages enter through it. Reversible with Restore rules.`}
-                  className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 whitespace-nowrap hover:bg-status-danger-50 hover:text-status-danger-ink disabled:opacity-50"
-                >
-                  {rule} ✕
-                </button>
-              ) : (
-                <span
-                  title="Not part of the platform topology, so NimBus can't restore it — remove it from Topology → Catalog drift if it really is deprecated."
-                  className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 whitespace-nowrap text-muted-foreground"
-                >
-                  {rule}
-                </span>
-              );
+    <Inspector
+      eyebrow="Subscription"
+      title={<span className="font-mono text-[16px]">{name}</span>}
+      state={<StatusBadge status={sub.status ?? ""} />}
+      description={
+        <>
+          {sub.requiresSession ? "Sessions on" : "Sessions off"}
+          {!sub.canRecreate && " · not in platform topology"}
+          {detached && " · forwarding detached while paused"}
+        </>
+      }
+    >
+      <InspectorTiles
+        tiles={[
+          { label: "Topic", value: topicName },
+          { label: "Forwards to", value: sub.forwardTo ?? (detached ? `${sub.expectedForwardTo}, detached` : "nothing") },
+          { label: "Active", value: nf.format(sub.activeMessageCount ?? 0) },
+          { label: "Dead-letter", value: nf.format(deadLettered), tone: deadLettered ? "danger" : "default" },
+          { label: "In transit", value: nf.format(sub.transferMessageCount ?? 0) },
+        ]}
+      />
 
+      <InspectorBlock label={`Rules · ${rules.length}`}>
+        <div className="flex flex-wrap gap-1.5">
+          {rules.map((rule) => {
+            // Spec 045: a keyed forward rule is named after its event type
+            // like any other, so its keys sit beside it.
+            const routing = sub.ruleRouting?.find((entry) => entry.ruleName === rule);
             return (
-              <Fragment key={name}>
-                <tr className="border-t border-border align-top">
-                  <td className="px-3 py-2">
-                    <div className="font-mono">{name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {sub.requiresSession ? "sessions on" : "sessions off"}
-                      {!sub.canRecreate && " · not in platform topology"}
-                    </div>
-                  </td>
-                  <td
-                    className={cn(
-                      "px-3 py-2",
-                      // Routing labels need room beside their chips.
-                      (sub.ruleRouting?.length ?? 0) > 0 && "min-w-[22rem]",
-                    )}
-                  >
-                    <div className="flex flex-wrap gap-1">
-                      {(sub.ruleNames ?? []).map((rule) => {
-                        // Spec 045: a keyed forward rule is named after its
-                        // event type like any other, so its keys sit beside it.
-                        const routing = sub.ruleRouting?.find(
-                          (entry) => entry.ruleName === rule,
-                        );
-                        return (
-                          <span key={rule} className="inline-flex items-baseline gap-1 min-w-0">
-                            {renderRuleChip(rule)}
-                            {routing && (
-                              <span
-                                title={routing.filter}
-                                className="font-mono text-xs text-muted-foreground cursor-help"
-                              >
-                                {ruleRoutingLabel(routing)}
-                              </span>
-                            )}
-                          </span>
-                        );
-                      })}
-                      {(sub.ruleNames ?? []).length === 0 && (
-                        <span className="text-xs text-muted-foreground">
-                          none — receives nothing
-                        </span>
-                      )}
-                    </div>
-                    {missing.length > 0 && (
-                      <div className="text-xs text-status-warning-ink dark:text-yellow-300 mt-1">
-                        missing: {missing.join(", ")}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs">
-                    {forwarding ? (
-                      `→ ${sub.forwardTo}`
-                    ) : detached ? (
-                      // Pausing a forwarding subscription detaches its
-                      // destination; say so, so a pause nobody resumed is
-                      // visible rather than looking like a terminal sub.
-                      <span className="text-status-warning-ink dark:text-yellow-300">
-                        → {sub.expectedForwardTo} (detached)
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <StatusBadge status={sub.status ?? ""} />
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    <Count value={sub.activeMessageCount ?? 0} />
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    <DeadLetterCount
-                      deadLetter={sub.deadLetterMessageCount ?? 0}
-                      transferDeadLetter={sub.transferDeadLetterMessageCount ?? 0}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    <Count value={sub.transferMessageCount ?? 0} />
-                  </td>
-                  <td className="px-3 py-2">
-                    {/* min-w keeps the column from being squeezed to a single
-                        button per line by a wide Rules cell next to it. */}
-                    <div className="flex flex-wrap gap-1.5 items-center min-w-[200px]">
-                      {canInspectDeadLetters && (
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          disabled={busyRow !== null || readOnly}
-                          onClick={() => onInspectDeadLetters(sub)}
-                        >
-                          Inspect dead letters
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        disabled={busy}
-                        onClick={() => onTogglePause(sub)}
-                        title={
-                          sub.status === "Active"
-                            ? forwarding
-                              ? `Stop delivery and detach forwarding to ${sub.forwardTo} — messages collect here instead of moving on. Reversible.`
-                              : "Stop delivery — messages keep arriving but are not handed to consumers. Reversible."
-                            : detached
-                              ? `Resume delivery and restore forwarding to ${sub.expectedForwardTo}`
-                              : "Resume delivery"
-                        }
-                      >
-                        {sub.status === "Active" ? "Pause" : "Resume"}
-                      </Button>
-
-                      {missing.length > 0 && (
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          disabled={busy}
-                          onClick={() => onRestoreRules(sub)}
-                          title="Re-attach the expected rules missing from this subscription"
-                        >
-                          Restore rules
-                        </Button>
-                      )}
-
-                      {forwarding ? (
-                        <Tooltip content="Service Bus rejects receive on an auto-forwarding subscription. Use Delete & recreate to empty it.">
-                          <Button variant="outline" size="xs" disabled>
-                            Purge
-                          </Button>
-                        </Tooltip>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          disabled={busy || backlog === 0}
-                          onClick={() =>
-                            onRequest({ kind: "purge", subscription: sub })
-                          }
-                          title={
-                            backlog > PURGE_ADVISORY_THRESHOLD
-                              ? `${nf.format(backlog)} messages — draining that many one batch at a time is slow; Delete & recreate is faster`
-                              : "Drain every message, leaving the subscription in place"
-                          }
-                        >
-                          Purge
-                        </Button>
-                      )}
-
-                      {deadLetteredCount(sub) > 0 && (
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          disabled={busy}
-                          onClick={() =>
-                            onRequest({ kind: "purge-dead-letters", subscription: sub })
-                          }
-                          title="Remove every message from both dead-letter queues, leaving the subscription and its active messages alone"
-                        >
-                          Purge dead letters
-                        </Button>
-                      )}
-
-                      {sub.canRecreate && (
-                        <Button
-                          variant="outline"
-                          colorScheme="red"
-                          size="xs"
-                          disabled={busy}
-                          onClick={() =>
-                            onRequest({ kind: "recreate", subscription: sub })
-                          }
-                          title="Delete and immediately re-provision — the fastest way to discard a large backlog"
-                        >
-                          Delete &amp; recreate
-                        </Button>
-                      )}
-
-                      <Button
-                        variant="ghost"
-                        colorScheme="red"
-                        size="xs"
-                        disabled={busy}
-                        onClick={() =>
-                          onRequest({ kind: "delete", subscription: sub })
-                        }
-                        title="Delete without putting it back"
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-                {row && (
-                  <tr className="bg-surface-2">
-                    <td colSpan={8} className="px-3 py-1.5">
-                      <span
-                        className={cn(
-                          "text-xs",
-                          row.tone === "error"
-                            ? "text-status-danger"
-                            : "text-status-success",
-                        )}
-                      >
-                        {row.message}
-                      </span>
-                    </td>
-                  </tr>
+              <span key={rule} className="inline-flex min-w-0 items-baseline gap-1">
+                {renderRuleChip(rule)}
+                {routing && (
+                  <span title={routing.filter} className="font-mono text-xs text-muted-foreground cursor-help">
+                    {ruleRoutingLabel(routing)}
+                  </span>
                 )}
-              </Fragment>
+              </span>
             );
           })}
-          {subscriptions.length === 0 && (
-            <tr>
-              <td
-                colSpan={8}
-                className="px-3 py-6 text-center text-muted-foreground"
-              >
-                No subscriptions on this topic.
-              </td>
-            </tr>
+          {rules.length === 0 && <span className="text-xs text-muted-foreground">none — receives nothing</span>}
+        </div>
+        {missing.length > 0 && (
+          <div className="text-xs text-status-warning-ink dark:text-yellow-300">missing: {missing.join(", ")}</div>
+        )}
+      </InspectorBlock>
+
+      <InspectorBlock label="Delivery">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => onTogglePause(sub)}
+            title={
+              sub.status === "Active"
+                ? forwarding
+                  ? `Stop delivery and detach forwarding to ${sub.forwardTo} — messages collect here instead of moving on. Reversible.`
+                  : "Stop delivery — messages keep arriving but are not handed to consumers. Reversible."
+                : detached
+                  ? `Resume delivery and restore forwarding to ${sub.expectedForwardTo}`
+                  : "Resume delivery"
+            }
+          >
+            {sub.status === "Active" ? "Pause" : "Resume"}
+          </Button>
+          {missing.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => onRestoreRules(sub)}
+              title="Re-attach the expected rules missing from this subscription"
+            >
+              Restore rules
+            </Button>
           )}
-        </tbody>
-      </table>
-    </div>
+          {canInspectDeadLetters && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busyRow !== null || readOnly}
+              onClick={() => onInspectDeadLetters(sub)}
+            >
+              Inspect dead letters
+            </Button>
+          )}
+        </div>
+      </InspectorBlock>
+
+      <InspectorBlock label="Messages">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {forwarding ? (
+            <Tooltip content="Service Bus rejects receive on an auto-forwarding subscription. Use Delete & recreate to empty it.">
+              <Button variant="outline" size="sm" disabled>
+                Purge
+              </Button>
+            </Tooltip>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || backlog === 0}
+              onClick={() => onRequest({ kind: "purge", subscription: sub })}
+              title={
+                backlog > PURGE_ADVISORY_THRESHOLD
+                  ? `${nf.format(backlog)} messages — draining that many one batch at a time is slow; Delete & recreate is faster`
+                  : "Drain every message, leaving the subscription in place"
+              }
+            >
+              Purge
+            </Button>
+          )}
+          {deadLettered > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => onRequest({ kind: "purge-dead-letters", subscription: sub })}
+              title="Remove every message from both dead-letter queues, leaving the subscription and its active messages alone"
+            >
+              Purge dead letters
+            </Button>
+          )}
+        </div>
+        {backlog > PURGE_ADVISORY_THRESHOLD && !forwarding && (
+          <p className="m-0 text-[12px] text-muted-foreground">
+            {nf.format(backlog)} messages: Delete &amp; recreate is faster than draining them.
+          </p>
+        )}
+      </InspectorBlock>
+
+      <InspectorBlock label="Subscription">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {sub.canRecreate && (
+            <Button
+              variant="outline"
+              colorScheme="red"
+              size="sm"
+              disabled={busy}
+              onClick={() => onRequest({ kind: "recreate", subscription: sub })}
+              title="Delete and immediately re-provision — the fastest way to discard a large backlog"
+            >
+              Delete &amp; recreate
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            colorScheme="red"
+            size="sm"
+            disabled={busy}
+            onClick={() => onRequest({ kind: "delete", subscription: sub })}
+            title="Delete without putting it back"
+          >
+            Delete
+          </Button>
+        </div>
+      </InspectorBlock>
+
+      {feedback && (
+        <p
+          role="status"
+          className={cn("m-0 text-[12.5px]", feedback.tone === "error" ? "text-status-danger" : "text-status-success")}
+        >
+          {feedback.message}
+        </p>
+      )}
+    </Inspector>
   );
 }

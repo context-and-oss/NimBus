@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "api-client";
-import Page from "components/page";
-import { GrantsPanel, type GrantRole, type GrantRoleInfo } from "components/access-control/grants-panel";
+import {
+  GrantInspector,
+  GrantsTable,
+  grantsOf,
+  type GrantRole,
+  type GrantRoleInfo,
+} from "components/access-control/grants-panel";
+import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
+import { Workspace, WorkspaceChip, WorkspaceSection } from "components/workspace/workspace";
 import { useAccess, invalidateAccess, isOwnerRole } from "hooks/use-access";
 import { useToast } from "components/ui/toast";
-import { cn } from "lib/utils";
 
 const SITE_ROLES: readonly GrantRoleInfo[] = [
   {
@@ -46,7 +52,7 @@ const ENDPOINT_ROLES: readonly GrantRoleInfo[] = SITE_ROLES.filter((r) => r.role
     : r,
 );
 
-/** Above this many endpoints the scope list gets a filter box. */
+/** Above this many endpoints the scope chips get a filter box. */
 const ENDPOINT_FILTER_FROM = 8;
 
 const toRoleEnum = (role: GrantRole): api.RoleEntryRole =>
@@ -83,6 +89,9 @@ export default function AccessControl() {
   const [chosenView, setView] = useState<"site" | "endpoint" | null>(null);
   const view = chosenView ?? (canManageSite ? "site" : null);
   const [endpointFilter, setEndpointFilter] = useState("");
+  // The grant shown in the inspector; none shows the Add grant form.
+  const [selectedKey, setSelectedKey] = useState<string>();
+  const principalRef = useRef<HTMLInputElement>(null);
 
   // Site lists (site Owners only).
   useEffect(() => {
@@ -163,149 +172,162 @@ export default function AccessControl() {
 
   if (access && !canManageSite && ownedEndpoints.length === 0) {
     return (
-      <Page title="Access Control">
+      <Workspace title="Access Control">
         <p className="text-muted-foreground text-sm">
           You need Owner access (site-wide or on an endpoint) to manage roles.
           Ask a site Owner to grant it on this page.
         </p>
-      </Page>
+      </Workspace>
     );
   }
 
   const set = view === "site" ? siteSet : endpointSet;
+  const scope = view === "site" ? "Site" : selectedEndpoint;
+  const roles = view === "site" ? SITE_ROLES : ENDPOINT_ROLES;
+  const grants = grantsOf(set, roles);
+  const selected = grants.find((g) => g.key === selectedKey);
   const visibleEndpoints = endpointFilter.trim()
     ? endpointIds.filter((id) => id.toLowerCase().includes(endpointFilter.trim().toLowerCase()))
     : endpointIds;
 
-  const scopeItem = (key: string, label: string, current: boolean, onSelect: () => void) => (
-    <li key={key}>
-      <button
-        type="button"
-        aria-current={current ? "true" : undefined}
-        onClick={onSelect}
-        className={cn(
-          "block w-full truncate rounded-nb-md border px-3 py-2 text-left text-sm",
-          current
-            ? "border-border-strong bg-card font-semibold text-foreground"
-            : "border-transparent text-foreground hover:bg-muted/60",
-        )}
-        title={label}
-      >
-        {label}
-      </button>
-    </li>
+  const you = access && (
+    <>
+      {" "}You: <span className="font-medium text-foreground">{access.email ?? access.name ?? "current user"}</span>
+      {" · "}site {String(access.siteRole ?? "none")}
+      {" · "}
+      {access.isPiiReader ? "PII Reader" : "no PII access"}.
+    </>
   );
 
   return (
-    <Page
+    <Workspace
       title="Access Control"
-      subtitle="Storage-backed roles: Reader < Contributor < Owner, plus the separate PII Reader capability."
-    >
-      <div className="grid w-full min-w-0 items-start gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
-        <nav aria-label="Access scopes" className="flex min-w-0 flex-col gap-4">
-          {access && (
-            <div className="space-y-1.5 rounded-nb-md border border-border bg-card px-3 py-2.5 text-[12.5px]">
-              <div className="text-muted-foreground">Your access</div>
-              <div className="truncate font-medium" title={access.email ?? access.name ?? undefined}>
-                {access.email ?? access.name ?? "current user"}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                <span className="rounded-full bg-status-danger-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-status-danger-ink dark:bg-red-950/40 dark:text-red-200">
-                  site {String(access.siteRole ?? "none")}
-                </span>
-                <span
-                  className={
-                    access.isPiiReader
-                      ? "rounded-full bg-status-warning-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-status-warning-ink dark:bg-yellow-950/40 dark:text-yellow-200"
-                      : "px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
-                  }
-                >
-                  {access.isPiiReader ? "PII Reader" : "no PII access"}
-                </span>
-              </div>
-            </div>
-          )}
+      subtitle={
+        <>
+          Storage-backed roles: Reader &lt; Contributor &lt; Owner, plus the separate PII Reader capability.{you}
+        </>
+      }
+      chipsLabel="Scope"
+      chips={
+        <>
           {canManageSite && (
-            <div>
-              <h2 className="m-0 mb-1.5 ml-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Site-wide
-              </h2>
-              <ul className="m-0 list-none p-0">
-                {scopeItem("site", "Site roles", view === "site", () => {
-                  selectEndpoint("");
-                  setView("site");
-                })}
-              </ul>
-            </div>
+            <WorkspaceChip
+              selected={view === "site"}
+              onSelect={() => {
+                selectEndpoint("");
+                setView("site");
+                setSelectedKey(undefined);
+              }}
+            >
+              Site
+            </WorkspaceChip>
           )}
-          <div>
-            <h2 className="m-0 mb-1.5 ml-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              Endpoint roles
-            </h2>
-            {endpointIds.length > ENDPOINT_FILTER_FROM && (
-              <Input
-                type="search"
-                aria-label="Filter endpoints"
-                placeholder="Filter endpoints"
-                value={endpointFilter}
-                onChange={(e) => setEndpointFilter(e.target.value)}
-                className="mb-2"
-              />
-            )}
-            <ul className="m-0 list-none space-y-0.5 p-0">
-              {visibleEndpoints.map((id) =>
-                scopeItem(id, id, view === "endpoint" && selectedEndpoint === id, () => {
-                  if (view !== "endpoint" || selectedEndpoint !== id) selectEndpoint(id);
-                  setView("endpoint");
-                }),
-              )}
-              {visibleEndpoints.length === 0 && (
-                <li className="px-3 py-2 text-[12.5px] text-muted-foreground">No endpoints match.</li>
-              )}
-            </ul>
-          </div>
-        </nav>
-
-        <section aria-label={view === "site" ? "Site roles" : selectedEndpoint || "Grants"} className="min-w-0 space-y-4">
-          {view === null ? (
-            <p className="rounded-nb-md border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-              Select an endpoint to see and change its grants.
-            </p>
-          ) : (
+          {visibleEndpoints.map((id) => (
+            <WorkspaceChip
+              key={id}
+              mono
+              title={id}
+              selected={view === "endpoint" && selectedEndpoint === id}
+              onSelect={() => {
+                if (view !== "endpoint" || selectedEndpoint !== id) selectEndpoint(id);
+                setView("endpoint");
+                setSelectedKey(undefined);
+              }}
+            >
+              {id}
+            </WorkspaceChip>
+          ))}
+          {endpointIds.length > 0 && visibleEndpoints.length === 0 && (
+            <span className="text-[12.5px] text-muted-foreground">No endpoints match.</span>
+          )}
+          {endpointIds.length > ENDPOINT_FILTER_FROM && (
+            <Input
+              type="search"
+              aria-label="Filter endpoints"
+              placeholder="Filter endpoints"
+              value={endpointFilter}
+              onChange={(e) => setEndpointFilter(e.target.value)}
+              className="ml-auto h-8 w-48"
+            />
+          )}
+        </>
+      }
+      actions={
+        view !== null && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setSelectedKey(undefined);
+              // The form mounts once the selection clears.
+              requestAnimationFrame(() => principalRef.current?.focus());
+            }}
+          >
+            New grant
+          </Button>
+        )
+      }
+      inspector={
+        view === null ? undefined : (
+          <GrantInspector
+            scope={scope}
+            roles={roles}
+            grants={grants}
+            selected={selected}
+            ready={set !== null}
+            busy={busy}
+            currentUser={access?.email ?? undefined}
+            principalRef={principalRef}
+            onSelect={setSelectedKey}
+            onAdd={(role, entry) =>
+              view === "site"
+                ? mutate(() => client.postAccessControlRole(roleEntry(role, entry)), setSiteSet)
+                : mutateEndpoint(selectedEndpoint, (endpointId) =>
+                    client.postEndpointAccessControlRole(endpointId, roleEntry(role, entry)),
+                  )
+            }
+            onRemove={(role, entry) =>
+              view === "site"
+                ? mutate(() => client.deleteAccessControlRole(roleEntry(role, entry)), setSiteSet)
+                : mutateEndpoint(selectedEndpoint, (endpointId) =>
+                    client.deleteEndpointAccessControlRole(endpointId, roleEntry(role, entry)),
+                  )
+            }
+          />
+        )
+      }
+    >
+      {view === null ? (
+        <p className="m-0 rounded-nb-md border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+          Select an endpoint to see and change its grants.
+        </p>
+      ) : (
+        <WorkspaceSection
+          title="Grants"
+          count={set ? grants.length : undefined}
+          intro={
             <>
-              <div className="space-y-1">
-                <h2 className="m-0 text-[19px] font-bold">{view === "site" ? "Site roles" : selectedEndpoint}</h2>
-                <p className="m-0 text-[13px] text-muted-foreground">
-                  {view === "site"
-                    ? "Apply to every endpoint. Roles granted through configuration (Authorization__AdminUserObjectIds, AdminGroupObjectIds or the EIP_Management claim) apply too but aren't listed; only storage-backed grants are."
-                    : "Grants on this endpoint only, in addition to what site roles allow."}
-                </p>
-              </div>
-              <GrantsPanel
-                scope={view === "site" ? "Site" : selectedEndpoint}
-                roles={view === "site" ? SITE_ROLES : ENDPOINT_ROLES}
-                set={set}
-                busy={busy}
-                currentUser={access?.email ?? undefined}
-                onAdd={(role, entry) =>
-                  view === "site"
-                    ? mutate(() => client.postAccessControlRole(roleEntry(role, entry)), setSiteSet)
-                    : mutateEndpoint(selectedEndpoint, (endpointId) =>
-                        client.postEndpointAccessControlRole(endpointId, roleEntry(role, entry)),
-                      )
-                }
-                onRemove={(role, entry) =>
-                  view === "site"
-                    ? mutate(() => client.deleteAccessControlRole(roleEntry(role, entry)), setSiteSet)
-                    : mutateEndpoint(selectedEndpoint, (endpointId) =>
-                        client.deleteEndpointAccessControlRole(endpointId, roleEntry(role, entry)),
-                      )
-                }
-              />
+              Entries are email addresses, Entra object IDs, or <code>agent:&lt;agentId&gt;</code> for an MCP agent
+              key (Reader or Contributor only).{" "}
+              {view === "site"
+                ? "Site grants apply to every endpoint."
+                : "These apply to this endpoint only, in addition to what site roles allow."}
             </>
-          )}
-        </section>
-      </div>
-    </Page>
+          }
+          foot={
+            view === "site"
+              ? "Roles granted through configuration (Authorization__AdminUserObjectIds, AdminGroupObjectIds or the EIP_Management claim) apply too but aren't listed; only storage-backed grants are."
+              : undefined
+          }
+        >
+          <GrantsTable
+            scope={scope}
+            grants={grants}
+            loading={set === null}
+            selectedKey={selected?.key}
+            onSelect={setSelectedKey}
+          />
+        </WorkspaceSection>
+      )}
+    </Workspace>
   );
 }

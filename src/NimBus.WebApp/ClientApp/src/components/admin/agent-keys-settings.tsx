@@ -1,14 +1,22 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Badge, type BadgeVariant } from "components/ui/badge";
 import { Button } from "components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "components/ui/card";
 import { Checkbox } from "components/ui/checkbox";
 import { Input } from "components/ui/input";
 import { Label } from "components/ui/label";
 import { Modal, ModalBody, ModalFooter, ModalHeader } from "components/ui/modal";
 import { Select } from "components/ui/select";
-import { PanelSection, useInPanel, usePanelDirty } from "components/settings/panel-frame";
+import { PanelInspector, PanelSection, useInPanel, usePanelDirty } from "components/settings/panel-frame";
+import {
+  RowSelect,
+  selectableRowClass,
+  WORKSPACE_HEAD_ROW,
+  WORKSPACE_TH,
+  WorkspaceTableFrame,
+} from "components/workspace/selectable-row";
+import { Inspector, InspectorTiles, WorkspaceSection } from "components/workspace/workspace";
 import { copyToClipboard } from "lib/clipboard";
+import { cn } from "lib/utils";
 import {
   AGENT_KEYS_URL,
   EXPIRY_OPTIONS,
@@ -76,7 +84,9 @@ export default function AgentKeysSettings() {
   const [replaced, setReplaced] = useState<AgentKeyInfo>();
   const [copied, setCopied] = useState(false);
   const [pending, setPending] = useState<Pending>();
-  const [readiness, setReadiness] = useState<McpKeyReadiness>();
+  // The key shown in the inspector; with none selected the inspector holds the issue form.
+  const [selectedId, setSelectedId] = useState<string>();
+  const [readiness,setReadiness] = useState<McpKeyReadiness>();
   const readinessRequested = useRef(false);
   const alive = useRef(true);
   const inPanel = useInPanel();
@@ -240,25 +250,182 @@ export default function AgentKeysSettings() {
     );
   }
 
+  // Looked up on every render, so a key that is removed gives the inspector back to the form.
+  const selected = state.keys.find((k) => k.keyId === selectedId);
   const issuedIsMcp = issued?.issued.use === "mcp";
   const endpointUrl = readiness?.deployment.endpointUrl ?? `${window.location.origin}/mcp`;
 
   return (
     <PanelSection tab="keys">
-      <div className="space-y-4">
-        <Card>
-          <CardHeader className="px-5 py-4">
-            {!inPanel && <CardTitle className="text-xl">Agent keys</CardTitle>}
-            <CardDescription>
-              An Agent API key lets an agent built on NimBus.Agents call /api/agent/*; give it to the
-              agent as <code className="font-mono">NimBus__Agent__ApiKey</code>. An MCP key lets a hosted
-              agent that can only send a fixed secret use the operator MCP endpoint as an unattended
-              workload: it never skips messages or reads payloads. Every key names its agent in the audit
-              log and can be revoked at any time.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 px-5 pb-5">
-            <form id={FORM_ID} onSubmit={(e) => void issue(e)} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto_auto] sm:items-end">
+      <WorkspaceSection
+        title={inPanel ? "Keys" : "Agent keys"}
+        count={state.keys.length}
+        intro={
+          <>
+            An Agent API key lets an agent built on NimBus.Agents call /api/agent/*; give it to the
+            agent as <code className="font-mono">NimBus__Agent__ApiKey</code>. An MCP key lets a hosted
+            agent that can only send a fixed secret use the operator MCP endpoint as an unattended
+            workload: it never skips messages or reads payloads. Every key names its agent in the audit
+            log and can be revoked at any time.
+          </>
+        }
+        action={
+          <Button type="button" size="sm" variant="outline" onClick={() => setSelectedId(undefined)}>
+            New key
+          </Button>
+        }
+      >
+        {error && (
+          <p role="alert" className="rounded-md border border-status-error-200 bg-status-error-50 px-3 py-2 text-sm text-status-error-ink">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {message}
+          </p>
+        )}
+
+        <WorkspaceTableFrame>
+          {state.keys.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="font-medium">No agent keys yet</p>
+              <p className="text-sm text-muted-foreground">
+                Issue one for each agent that calls the agent API or the MCP endpoint.
+              </p>
+            </div>
+          ) : (
+            <table className="w-full min-w-[46rem] border-collapse text-[13px]" aria-label="Agent keys">
+              <thead>
+                <tr className={WORKSPACE_HEAD_ROW}>
+                  <th scope="col" className={WORKSPACE_TH}>Agent and key</th>
+                  <th scope="col" className={WORKSPACE_TH}>Use</th>
+                  <th scope="col" className={WORKSPACE_TH}>Status</th>
+                  <th scope="col" className={WORKSPACE_TH}>Issued</th>
+                  <th scope="col" className={WORKSPACE_TH}>Last used</th>
+                  <th scope="col" className={WORKSPACE_TH}>Expires</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.keys.map((k) => (
+                  <tr key={k.keyId} className={cn(selectableRowClass(k.keyId === selectedId), "align-top")}>
+                    <td className="px-4 pb-2">
+                      <RowSelect selected={k.keyId === selectedId} onSelect={() => setSelectedId(k.keyId)} title={k.agentId}>
+                        {k.agentId}
+                      </RowSelect>
+                      {/* RowSelect pads its button for a one-line row; pull the key's other lines up to it. */}
+                      <div className="-mt-1.5">
+                        {k.name && <div className="text-xs text-muted-foreground">{k.name}</div>}
+                        <div className="font-mono text-xs text-muted-foreground">{k.prefix}</div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {k.use === "mcp" ? (
+                        <>
+                          <div>MCP</div>
+                          <div className="text-xs text-muted-foreground">{grantSummary(k.mcp)}</div>
+                          {k.status === "active" && blocker && (
+                            <div className="mt-1 max-w-xs text-xs text-status-warning-ink">Won't work yet: {blocker}</div>
+                          )}
+                        </>
+                      ) : (
+                        <div>Agent API</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant={STATUS[k.status].variant}>{STATUS[k.status].label}</Badge>
+                        {expiresSoon(k) && <Badge variant="warning">Expires soon</Badge>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div>{when(k.createdAtUtc)}</div>
+                      {k.createdBy && <div className="text-xs text-muted-foreground">by {k.createdBy}</div>}
+                    </td>
+                    <td className="px-4 py-2.5">{when(k.lastUsedAtUtc)}</td>
+                    <td className="px-4 py-2.5">{k.expiresAtUtc ? when(k.expiresAtUtc) : "No expiry"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </WorkspaceTableFrame>
+      </WorkspaceSection>
+
+      <PanelInspector>
+        {selected ? (
+          <Inspector
+            eyebrow="Agent key"
+            title={<span className="font-mono text-[16px]">{selected.agentId}</span>}
+            state={
+              <div className="flex flex-wrap justify-end gap-1">
+                <Badge variant={STATUS[selected.status].variant}>{STATUS[selected.status].label}</Badge>
+                {expiresSoon(selected) && <Badge variant="warning">Expires soon</Badge>}
+              </div>
+            }
+            description={selected.name ?? undefined}
+          >
+            <InspectorTiles
+              tiles={[
+                { label: "Use", value: selected.use === "mcp" ? "MCP" : "Agent API" },
+                ...(selected.use === "mcp" ? [{ label: "Grant", value: grantSummary(selected.mcp) }] : []),
+                { label: "Key", value: selected.prefix },
+                { label: "Issued", value: when(selected.createdAtUtc) },
+                ...(selected.createdBy ? [{ label: "Issued by", value: selected.createdBy }] : []),
+                { label: "Last used", value: when(selected.lastUsedAtUtc) },
+                { label: "Expires", value: selected.expiresAtUtc ? when(selected.expiresAtUtc) : "No expiry" },
+              ]}
+            />
+            {selected.use === "mcp" && selected.status === "active" && blocker && (
+              <p className="m-0 rounded-md bg-status-warning-50 p-2.5 text-[12.5px] text-status-warning-ink">
+                Won't work yet: {blocker}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {selected.status === "active" ? (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    aria-label={`Rotate key for ${selected.agentId}`}
+                    onClick={() => void rotate(selected)}
+                  >
+                    Rotate
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    aria-label={`Revoke key for ${selected.agentId}`}
+                    onClick={() => setPending({ kind: "revoke", key: selected })}
+                  >
+                    Revoke
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  aria-label={`Remove key for ${selected.agentId}`}
+                  onClick={() => setPending({ kind: "remove", key: selected })}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          </Inspector>
+        ) : (
+          <Inspector
+            eyebrow="New key"
+            title="Issue key"
+            description="The key is shown once, when you issue it. NimBus keeps only its hash."
+          >
+            <form id={FORM_ID} onSubmit={(e) => void issue(e)} className="space-y-3">
               <div className="space-y-1">
                 <Label htmlFor="agent-key-agent">Agent id</Label>
                 <Input
@@ -292,6 +459,32 @@ export default function AgentKeysSettings() {
                   onChange={(e) => chooseUse(e.target.value as AgentKeyUse)}
                 />
               </div>
+              {use === "mcp" && (
+                <fieldset className="space-y-2 rounded-md border border-border p-3">
+                  <legend className="px-1 text-xs font-medium text-muted-foreground">What the key may do besides reading</legend>
+                  {MCP_PERMISSIONS.map((p) => (
+                    <div key={p.key}>
+                      <Checkbox
+                        id={`agent-key-${p.key}`}
+                        label={p.label}
+                        checked={grant[p.key]}
+                        onChange={(e) => setGrant({ ...grant, [p.key]: e.target.checked })}
+                      />
+                      <p className="ml-6 text-xs text-muted-foreground">Also needs “{p.needs}” in Settings → MCP access.</p>
+                    </div>
+                  ))}
+                  <div className="space-y-1 pt-1">
+                    <Label htmlFor="agent-key-limit">Requests per window (optional)</Label>
+                    <Input
+                      id="agent-key-limit"
+                      inputMode="numeric"
+                      value={requestLimit}
+                      placeholder="The deployment's limit"
+                      onChange={(e) => setRequestLimit(e.target.value)}
+                    />
+                  </div>
+                </fieldset>
+              )}
               <div className="space-y-1">
                 <Label htmlFor="agent-key-expiry">Expires</Label>
                 <Select
@@ -301,155 +494,18 @@ export default function AgentKeysSettings() {
                   onChange={(e) => setExpiry(e.target.value as ExpiryChoice)}
                 />
               </div>
-              <Button type="submit" disabled={busy}>
+              {formError && (
+                <p id="agent-key-agent-error" className="text-sm text-status-error-ink">
+                  {formError}
+                </p>
+              )}
+              <Button type="submit" size="sm" disabled={busy}>
                 Issue key
               </Button>
             </form>
-            {use === "mcp" && (
-              <fieldset className="space-y-2 rounded-md border border-border p-3">
-                <legend className="px-1 text-xs font-medium text-muted-foreground">What the key may do besides reading</legend>
-                {MCP_PERMISSIONS.map((p) => (
-                  <div key={p.key}>
-                    <Checkbox
-                      id={`agent-key-${p.key}`}
-                      label={p.label}
-                      checked={grant[p.key]}
-                      onChange={(e) => setGrant({ ...grant, [p.key]: e.target.checked })}
-                    />
-                    <p className="ml-6 text-xs text-muted-foreground">Also needs “{p.needs}” in Settings → MCP access.</p>
-                  </div>
-                ))}
-                <div className="max-w-xs space-y-1 pt-1">
-                  <Label htmlFor="agent-key-limit">Requests per window (optional)</Label>
-                  <Input
-                    id="agent-key-limit"
-                    inputMode="numeric"
-                    value={requestLimit}
-                    placeholder="The deployment's limit"
-                    onChange={(e) => setRequestLimit(e.target.value)}
-                  />
-                </div>
-              </fieldset>
-            )}
-            {formError && (
-              <p id="agent-key-agent-error" className="text-sm text-status-error-ink">
-                {formError}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {error && (
-          <p role="alert" className="rounded-md border border-status-error-200 bg-status-error-50 px-3 py-2 text-sm text-status-error-ink">
-            {error}
-          </p>
+          </Inspector>
         )}
-        {message && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {message}
-          </p>
-        )}
-
-        <Card>
-          <CardContent className="overflow-x-auto p-0">
-            {state.keys.length === 0 ? (
-              <div className="px-5 py-8 text-center">
-                <p className="font-medium">No agent keys yet</p>
-                <p className="text-sm text-muted-foreground">
-                  Issue one above for each agent that calls the agent API or the MCP endpoint.
-                </p>
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="border-b border-border text-left text-xs text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">Agent and key</th>
-                    <th className="px-4 py-2 font-medium">Use</th>
-                    <th className="px-4 py-2 font-medium">Status</th>
-                    <th className="px-4 py-2 font-medium">Issued</th>
-                    <th className="px-4 py-2 font-medium">Last used</th>
-                    <th className="px-4 py-2 font-medium">Expires</th>
-                    <th className="px-4 py-2" aria-label="Actions" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.keys.map((k) => (
-                    <tr key={k.keyId} className="border-b border-border align-top last:border-0">
-                      <td className="px-4 py-2">
-                        <div className="whitespace-nowrap font-medium">{k.agentId}</div>
-                        {k.name && <div className="text-xs text-muted-foreground">{k.name}</div>}
-                        <div className="font-mono text-xs text-muted-foreground">{k.prefix}</div>
-                      </td>
-                      <td className="px-4 py-2">
-                        {k.use === "mcp" ? (
-                          <>
-                            <div>MCP</div>
-                            <div className="text-xs text-muted-foreground">{grantSummary(k.mcp)}</div>
-                            {k.status === "active" && blocker && (
-                              <div className="mt-1 max-w-xs text-xs text-status-warning-ink">Won't work yet: {blocker}</div>
-                            )}
-                          </>
-                        ) : (
-                          <div>Agent API</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-2">
-                        <div className="flex flex-wrap gap-1">
-                          <Badge variant={STATUS[k.status].variant}>{STATUS[k.status].label}</Badge>
-                          {expiresSoon(k) && <Badge variant="warning">Expires soon</Badge>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2">
-                        <div>{when(k.createdAtUtc)}</div>
-                        {k.createdBy && <div className="text-xs text-muted-foreground">by {k.createdBy}</div>}
-                      </td>
-                      <td className="px-4 py-2">{when(k.lastUsedAtUtc)}</td>
-                      <td className="px-4 py-2">{k.expiresAtUtc ? when(k.expiresAtUtc) : "No expiry"}</td>
-                      <td className="px-4 py-2 text-right">
-                        {k.status === "active" ? (
-                          <div className="flex flex-col items-end gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={busy}
-                              aria-label={`Rotate key for ${k.agentId}`}
-                              onClick={() => void rotate(k)}
-                            >
-                              Rotate
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={busy}
-                              aria-label={`Revoke key for ${k.agentId}`}
-                              onClick={() => setPending({ kind: "revoke", key: k })}
-                            >
-                              Revoke
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={busy}
-                            aria-label={`Remove key for ${k.agentId}`}
-                            onClick={() => setPending({ kind: "remove", key: k })}
-                          >
-                            Remove
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      </PanelInspector>
 
       <Modal
         isOpen={!!issued}

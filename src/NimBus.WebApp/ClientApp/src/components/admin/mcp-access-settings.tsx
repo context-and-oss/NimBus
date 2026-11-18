@@ -11,11 +11,15 @@ import {
   CAPABILITIES, PERSONAS, READ_TOOL_COUNT, TOTAL_TOOL_COUNT, WORKLOAD_RESUBMITS_PER_DAY, WORKLOAD_RESUBMITS_PER_MESSAGE, describeChanges, listedToolCount, mcpEndpointState, previewAccess, validate,
   type ApprovedClient, type CapabilityKey, type McpActivity, type McpChange, type McpProblem, type McpSettings, type McpState, type Persona,
 } from "./mcp-access-model";
-import { PanelFooter, PanelSection, useInPanel, usePanelDirty, usePanelReviewing } from "components/settings/panel-frame";
+import { PanelFooter, PanelInspector, PanelSection, useInPanel, usePanelDirty, usePanelReviewing } from "components/settings/panel-frame";
+import { Badge } from "components/ui/badge";
+import { Inspector, InspectorBlock, InspectorTiles } from "components/workspace/workspace";
+import { RowSelect, selectableRowClass, WORKSPACE_HEAD_ROW, WORKSPACE_TH, WorkspaceTableFrame } from "components/workspace/selectable-row";
 
-// One line per capability: what it does, what it needs, and its switch. Tools and
-// warnings fold away so all of them fit on one screen.
-const PERMISSION_GRID = "grid-cols-1 gap-x-4 gap-y-2 md:grid-cols-[minmax(0,1fr)_14rem_5.5rem]";
+// The read tools have no switch and no entry in CAPABILITIES, but they are a row like the others.
+const OBSERVE = "observe";
+type SelectedCapability = CapabilityKey | typeof OBSERVE;
+const OBSERVE_DESCRIPTION = "Endpoint health, messages, history, sessions, metrics, failure evidence, stored classifications, operation outcomes and reports. Never stack traces.";
 
 // Spec 037 — Settings → MCP access. Site Owner only. The policy narrows what the
 // deployment, Entra scopes and NimBus roles allow, and applies to every instance
@@ -49,6 +53,8 @@ export default function McpAccessSettings() {
   const [serverChanges, setServerChanges] = useState<McpChange[]>();
   const [turnOffOpen, setTurnOffOpen] = useState(false);
   const [reload, setReload] = useState(0);
+  // Kept here, not in the table, so the selection survives a tab change and the review screen.
+  const [selectedCapability, setSelectedCapability] = useState<SelectedCapability>();
   const alive = useRef(true);
 
   function accept(next: McpState) {
@@ -208,53 +214,9 @@ export default function McpAccessSettings() {
               <p className="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
                 A tool runs only when <b className="text-primary-600">the switch on this page</b> AND the Entra scope AND the NimBus role on the endpoint AND the message state allow it.
               </p>
-              <div className="overflow-hidden rounded-md border border-border">
-                <div aria-hidden="true" className={cn(PERMISSION_GRID, "hidden border-b border-border px-3 py-2 font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground md:grid")}>
-                  <span>Capability</span><span>Requires</span><span className="text-right">Agents</span>
-                </div>
-                <ul className="divide-y divide-border">
-                  <li className={cn(PERMISSION_GRID, "grid px-3 py-2.5")}>
-                    <div className="min-w-0"><p className="text-sm font-semibold">Observe <Risk risk="low" text="read" /></p>
-                      <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics, failure evidence, stored classifications, operation outcomes and reports. Never stack traces.</p></div>
-                    <p className="flex flex-wrap content-start gap-1 font-mono text-[11px]"><span className="rounded bg-muted px-1.5">{READ_TOOL_COUNT} read tools</span></p>
-                    <span className="justify-self-end self-start rounded-full border border-dashed border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">Always on</span>
-                  </li>
-                  {CAPABILITIES.map(cap => {
-                    const on = Boolean(draft.capabilities[cap.key]);
-                    return (
-                      <li key={cap.key} className={cn(PERMISSION_GRID, "grid px-3 py-2.5")}>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold">{cap.label} <Risk risk={cap.risk} text={cap.riskText} /></p>
-                          <p className="text-xs text-muted-foreground">{cap.description}{cap.key === "classify" && !state.failureIntelligenceEnabled ? " Failure intelligence is off in this deployment." : ""}</p>
-                          {on && cap.note && (
-                            <details className="group mt-1 text-xs text-status-warning-ink">
-                              <summary className="flex cursor-pointer list-none items-center gap-1.5 font-semibold [&::-webkit-details-marker]:hidden">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 3 2 21h20L12 3z" /><path d="M12 10v5M12 18h.01" /></svg>
-                                Before you leave this on
-                                <span aria-hidden="true" className="transition-transform group-open:rotate-90">›</span>
-                              </summary>
-                              <p className="mt-1 rounded-md border border-status-warning/40 bg-status-warning/10 p-2 text-foreground">{cap.note}</p>
-                            </details>
-                          )}
-                        </div>
-                        <div className="min-w-0 space-y-1 font-mono text-[11px]">
-                          <p className="flex flex-wrap gap-1">
-                            <span className="rounded bg-status-info-50 px-1.5 text-status-info-ink">{cap.scope}</span>
-                            <span className="rounded bg-nimbus-purple-50 px-1.5 text-nimbus-purple">{cap.role}</span>
-                          </p>
-                          <details>
-                            <summary className="cursor-pointer text-muted-foreground">{cap.tools.length} {cap.tools.length === 1 ? "tool" : "tools"}</summary>
-                            <p className="mt-1 flex flex-wrap gap-1">{cap.tools.map(t => <span key={t} className="rounded bg-muted px-1.5">{t}</span>)}</p>
-                          </details>
-                        </div>
-                        <div className="justify-self-end self-start">
-                          <Toggle aria-label={cap.label} checked={on} onChange={v => edit(s => { s.capabilities[cap.key as CapabilityKey] = v; })} />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
+              <CapabilityTable draft={draft} saved={state.saved} classifyAvailable={state.failureIntelligenceEnabled}
+                selected={selectedCapability} onSelect={setSelectedCapability}
+                onToggle={(key, v) => edit(s => { s.capabilities[key] = v; })} />
               <SettingRow label="Unattended workloads (app-only tokens)" description="Callers with the Nimbus.Workload.Observe app role may use the read tools. Workloads never skip or read payloads, and change messages only as the switches below allow.">
                 <Toggle aria-label="Allow workload tokens" checked={draft.allowWorkloads} disabled={local} onChange={v => edit(s => { s.allowWorkloads = v; })} />
               </SettingRow>
@@ -572,10 +534,97 @@ function SettingRow({ label, description, children }: { label: string; descripti
   return <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold">{label}</p><p className="text-xs text-muted-foreground">{description}</p></div>{children}</div>;
 }
 
+const WARNING_MARK = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 3 2 21h20L12 3z" /><path d="M12 10v5M12 18h.01" /></svg>
+);
+
+/** The capability table of the Permissions tab. The row switches; the inspector describes the selected row. */
+function CapabilityTable({ draft, saved, classifyAvailable, selected, onSelect, onToggle }: {
+  draft: McpSettings; saved: McpSettings; classifyAvailable: boolean;
+  selected?: SelectedCapability; onSelect: (key: SelectedCapability) => void; onToggle: (key: CapabilityKey, on: boolean) => void;
+}) {
+  const inPanel = useInPanel();
+  const cap = CAPABILITIES.find(c => c.key === selected);
+  const capOn = !!cap && Boolean(draft.capabilities[cap.key]);
+  const tools = (names: string[]) => (
+    <InspectorBlock label="Tools it enables">
+      <p className="m-0 flex flex-wrap gap-1 font-mono text-[11px]">{names.map(t => <span key={t} className="rounded bg-muted px-1.5">{t}</span>)}</p>
+    </InspectorBlock>
+  );
+  const inspector = cap ? (
+    <Inspector eyebrow="Capability" title={cap.label} badge={<Risk risk={cap.risk} text={cap.riskText} />}
+      state={<Badge variant={capOn ? "success" : "secondary"}>{capOn ? "On" : "Off"}</Badge>}
+      description={<>{cap.description}{cap.key === "classify" && !classifyAvailable ? " Failure intelligence is off in this deployment." : ""}</>}>
+      <InspectorTiles label="Also requires" tiles={[{ label: "Entra scope", value: cap.scope }, { label: "Role", value: cap.role }]} />
+      {tools(cap.tools)}
+      {cap.note && (
+        <InspectorBlock label={capOn ? "Before you leave this on" : "Before you turn this on"}>
+          <p className="m-0 rounded-md border border-status-warning/40 bg-status-warning/10 p-2 text-xs text-foreground">{cap.note}</p>
+        </InspectorBlock>
+      )}
+    </Inspector>
+  ) : selected === OBSERVE ? (
+    <Inspector eyebrow="Capability" title="Observe" badge={<Risk risk="low" text="read" />}
+      state={<Badge variant="secondary">Always on</Badge>} description={OBSERVE_DESCRIPTION}>
+      {tools([`${READ_TOOL_COUNT} read tools`])}
+    </Inspector>
+  ) : <Inspector empty="Select a capability to see what it allows." />;
+
+  return (
+    <>
+      <WorkspaceTableFrame>
+        <table className="w-full min-w-[36rem] text-sm" aria-label="What agents may do">
+          <thead>
+            <tr className={WORKSPACE_HEAD_ROW}>
+              <th scope="col" className={WORKSPACE_TH}>Capability</th>
+              <th scope="col" className={WORKSPACE_TH}>Risk</th>
+              <th scope="col" className={WORKSPACE_TH}>Entra scope</th>
+              <th scope="col" className={WORKSPACE_TH}>Role</th>
+              <th scope="col" className={cn(WORKSPACE_TH, "text-right")}>Agents</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className={selectableRowClass(selected === OBSERVE)}>
+              <td className="px-4"><RowSelect selected={selected === OBSERVE} onSelect={() => onSelect(OBSERVE)}>Observe</RowSelect></td>
+              <td className="px-4 py-2"><Risk risk="low" text="read" /></td>
+              <td className="px-4 py-2 text-muted-foreground">—</td>
+              <td className="px-4 py-2 text-muted-foreground">—</td>
+              <td className="px-4 py-2 text-right">
+                <span className="whitespace-nowrap rounded-full border border-dashed border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">Always on</span>
+              </td>
+            </tr>
+            {CAPABILITIES.map(c => {
+              const on = Boolean(draft.capabilities[c.key]);
+              // A missing switch is off, as on the server.
+              const changed = on !== Boolean(saved.capabilities[c.key]);
+              return (
+                <tr key={c.key} className={selectableRowClass(selected === c.key)}>
+                  <td className="px-4">
+                    <RowSelect selected={selected === c.key} onSelect={() => onSelect(c.key)} after={<>
+                      {on && c.note && <span className="shrink-0 text-status-warning-ink" title="Has a warning">{WARNING_MARK}<span className="sr-only">Has a warning</span></span>}
+                      {changed && <span className="shrink-0 text-[11px] font-semibold text-status-warning-ink">Changed</span>}
+                    </>}>{c.label}</RowSelect>
+                  </td>
+                  <td className="px-4 py-2"><Risk risk={c.risk} text={c.riskText} /></td>
+                  <td className="px-4 py-2 font-mono text-[11px]"><span className="rounded bg-status-info-50 px-1.5 text-status-info-ink">{c.scope}</span></td>
+                  <td className="px-4 py-2 font-mono text-[11px]"><span className="rounded bg-nimbus-purple-50 px-1.5 text-nimbus-purple">{c.role}</span></td>
+                  <td className="px-4 py-2 text-right"><Toggle aria-label={c.label} checked={on} onChange={v => onToggle(c.key, v)} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </WorkspaceTableFrame>
+      {/* The Settings frame gives the inspector its own column; standalone it follows the table and needs a box. */}
+      <PanelInspector>{inPanel ? inspector : <div className="rounded-nb-md border border-border bg-card">{inspector}</div>}</PanelInspector>
+    </>
+  );
+}
+
 function Risk({ risk, text }: { risk: "data" | "low" | "medium" | "high"; text: string }) {
   const tone = { data: "bg-nimbus-purple-50 text-nimbus-purple", low: "bg-status-success-50 text-status-success-ink",
     medium: "bg-status-warning-50 text-status-warning-ink", high: "bg-status-danger-50 text-status-danger-ink" }[risk];
-  return <span className={cn("ml-1 rounded-full px-1.5 py-px align-middle font-mono text-[9.5px] font-bold uppercase tracking-wider", tone)}>{text}</span>;
+  return <span className={cn("rounded-full px-1.5 py-px align-middle font-mono text-[9.5px] font-bold uppercase tracking-wider", tone)}>{text}</span>;
 }
 
 function PreviewCard({ draft, state, dirty }: { draft: McpSettings; state: McpState; dirty: boolean }) {

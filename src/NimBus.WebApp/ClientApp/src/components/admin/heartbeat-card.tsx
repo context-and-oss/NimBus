@@ -16,10 +16,31 @@ import { subscribeHeartbeatUpdates } from "lib/grid-events-connection";
 import { formatMoment } from "functions/endpoint.functions";
 import {
   PanelFooter,
+  PanelInspector,
   PanelSection,
   useInPanel,
   usePanelDirty,
 } from "components/settings/panel-frame";
+import { Badge } from "components/ui/badge";
+import {
+  Inspector,
+  InspectorTiles,
+  type InspectorTile,
+} from "components/workspace/workspace";
+import {
+  RowSelect,
+  selectableRowClass,
+  WORKSPACE_HEAD_ROW,
+  WORKSPACE_TH,
+  WorkspaceTableFrame,
+} from "components/workspace/selectable-row";
+import { cn } from "lib/utils";
+import {
+  normalizeStatus,
+  statusHints,
+  statusVariants,
+  type HeartbeatStatus,
+} from "./heartbeat-status";
 
 /** Fallback poll cadence while the hub is down (see PlatformServicesCard). */
 const POLL_MS = 30_000;
@@ -108,6 +129,26 @@ function countScheduleChanges(
     .length;
 }
 
+/** Null means "never configured either way", which is included. */
+const isIncluded = (row: api.HeartbeatOverviewRow) =>
+  row.isHeartbeatEnabled !== false;
+
+const roundTrip = (row: api.HeartbeatOverviewRow) =>
+  row.roundTripMs === undefined || row.roundTripMs === null
+    ? "—"
+    : `${row.roundTripMs.toLocaleString()} ms`;
+
+const probeTime = (time: api.HeartbeatOverviewRow["lastStartTime"]) =>
+  time ? formatMoment(time, true) : "—";
+
+const STATUS_TONE: Record<HeartbeatStatus, InspectorTile["tone"]> = {
+  On: "ok",
+  Pending: "warn",
+  Off: "danger",
+  Unsupported: "default",
+  Unknown: "default",
+};
+
 /**
  * Settings → Heartbeat probing. The scheduled endpoint fan-out: its schedule,
  * a manual send, and the per-endpoint answer table. Adapters answer the probe
@@ -129,6 +170,7 @@ export default function HeartbeatCard() {
   const [live, setLive] = useState(false);
   const [inclusionFilter, setInclusionFilter] =
     useState<InclusionFilter>("all");
+  const [selectedId, setSelectedId] = useState<string>();
 
   const client = useMemo(() => new api.Client(api.CookieAuth()), []);
   const inPanel = useInPanel();
@@ -265,9 +307,16 @@ export default function HeartbeatCard() {
   const enabled = settings?.enabled ?? false;
   const filteredOverview = overview.filter((row) => {
     if (inclusionFilter === "all") return true;
-    const included = row.isHeartbeatEnabled !== false;
+    const included = isIncluded(row);
     return inclusionFilter === "included" ? included : !included;
   });
+  // Taken from the filtered rows, so the inspector never shows an endpoint
+  // the table has hidden.
+  const selected =
+    selectedId === undefined
+      ? undefined
+      : filteredOverview.find((row) => (row.endpointId ?? "") === selectedId);
+  const selectedStatus = normalizeStatus(selected?.status);
 
   return (
     <Card>
@@ -426,27 +475,55 @@ export default function HeartbeatCard() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-nb-md border border-border">
-            <table className="w-full text-sm">
+          <WorkspaceTableFrame>
+            <table
+              className="w-full min-w-[32rem] text-sm"
+              aria-label="Heartbeat endpoints"
+            >
               <thead>
-                <tr className="border-b bg-muted">
-                  <th className="text-left p-3 font-medium">Endpoint ↑</th>
-                  <th className="p-3 text-right font-medium">Included</th>
+                <tr className={WORKSPACE_HEAD_ROW}>
+                  <th scope="col" className={WORKSPACE_TH}>
+                    Endpoint ↑
+                  </th>
+                  <th scope="col" className={WORKSPACE_TH}>
+                    Status
+                  </th>
+                  <th scope="col" className={cn(WORKSPACE_TH, "text-right")}>
+                    Round trip
+                  </th>
+                  <th scope="col" className={cn(WORKSPACE_TH, "text-right")}>
+                    Included
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {filteredOverview.map((row) => {
-                  // Null means "never configured either way", which is included.
-                  const included = row.isHeartbeatEnabled !== false;
+                  const included = isIncluded(row);
                   const endpointId = row.endpointId ?? "";
                   const isBusy = busy[endpointId] ?? false;
+                  const isSelected = endpointId === selectedId;
+                  const status = normalizeStatus(row.status);
                   return (
                     <tr
                       key={endpointId}
-                      className="border-b border-border/50 last:border-b-0"
+                      className={selectableRowClass(isSelected)}
                     >
-                      <td className="p-3 font-mono text-sm">{endpointId}</td>
-                      <td className="p-3 text-right">
+                      <td className="px-4">
+                        <RowSelect
+                          mono
+                          selected={isSelected}
+                          onSelect={() => setSelectedId(endpointId)}
+                        >
+                          {endpointId}
+                        </RowSelect>
+                      </td>
+                      <td className="px-4 py-2">
+                        <Badge variant={statusVariants[status]}>{status}</Badge>
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {roundTrip(row)}
+                      </td>
+                      <td className="px-4 py-2 text-right">
                         <Toggle
                           checked={included}
                           onChange={(next) =>
@@ -462,7 +539,7 @@ export default function HeartbeatCard() {
                 {filteredOverview.length === 0 && (
                   <tr>
                     <td
-                      colSpan={2}
+                      colSpan={4}
                       className="p-6 text-center text-muted-foreground"
                     >
                       {/* Never claim "no endpoints" when the load failed — the
@@ -479,7 +556,65 @@ export default function HeartbeatCard() {
                 )}
               </tbody>
             </table>
-          </div>
+          </WorkspaceTableFrame>
+
+          <PanelInspector>
+            {selected ? (
+              <Inspector
+                eyebrow="Endpoint"
+                title={
+                  <span className="font-mono text-[16px]">
+                    {selected.endpointId}
+                  </span>
+                }
+                state={
+                  isIncluded(selected) ? (
+                    <Badge variant="success">Included</Badge>
+                  ) : (
+                    <Badge variant="secondary">Excluded</Badge>
+                  )
+                }
+                description={
+                  isIncluded(selected)
+                    ? statusHints[selectedStatus]
+                    : "Excluded from heartbeat probes. The figures below are from its last probe."
+                }
+              >
+                <InspectorTiles
+                  label="Last probe"
+                  tiles={[
+                    {
+                      label: "Status",
+                      value: selectedStatus,
+                      tone: STATUS_TONE[selectedStatus],
+                    },
+                    { label: "Round trip", value: roundTrip(selected) },
+                    { label: "Sent", value: probeTime(selected.lastStartTime) },
+                    {
+                      label: "Answer received",
+                      value: probeTime(selected.lastReceivedTime),
+                    },
+                    {
+                      label: "SDK version",
+                      value: selected.sdkVersion ?? "—",
+                    },
+                  ]}
+                />
+                <p className="m-0 text-[12.5px] text-muted-foreground">
+                  Uptime and gaps are on the{" "}
+                  <Link
+                    className="text-primary hover:underline"
+                    to="/Heartbeat"
+                  >
+                    Heartbeat page
+                  </Link>
+                  .
+                </p>
+              </Inspector>
+            ) : (
+              <Inspector empty="Select an endpoint to see its last probe." />
+            )}
+          </PanelInspector>
         </PanelSection>
       </CardContent>
     </Card>

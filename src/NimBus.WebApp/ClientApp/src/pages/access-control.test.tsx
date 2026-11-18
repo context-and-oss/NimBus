@@ -95,7 +95,10 @@ const renderPage = async () => {
   );
 };
 
-const scopes = () => screen.getByRole("navigation", { name: "Access scopes" });
+const scopes = () => screen.getByRole("group", { name: "Scope" });
+
+// Looked up each time: the inspector remounts when the selection changes kind.
+const inspector = () => screen.getByRole("complementary", { name: "Inspector" });
 
 const selectEndpoint = (endpointId: string) => {
   fireEvent.click(within(scopes()).getByRole("button", { name: endpointId }));
@@ -255,7 +258,7 @@ describe("AccessControl scopes and grants", () => {
     await renderPage();
 
     expect(screen.getByText("Select an endpoint to see and change its grants.")).toBeTruthy();
-    expect(within(scopes()).queryByRole("button", { name: "Site roles" })).toBeNull();
+    expect(within(scopes()).queryByRole("button", { name: "Site" })).toBeNull();
     expect(mocks.getEndpointAccessControl).not.toHaveBeenCalled();
   });
 
@@ -278,7 +281,7 @@ describe("AccessControl scopes and grants", () => {
 
       const table = await screen.findByRole("table", { name: "Site grants" });
       await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(5));
-      expect(within(scopes()).getByRole("button", { name: "Site roles" }).getAttribute("aria-current")).toBe("true");
+      expect(within(scopes()).getByRole("button", { name: "Site" }).getAttribute("aria-pressed")).toBe("true");
       const agentRow = within(table).getByRole("button", { name: "agent:enrichment" }).closest("tr")!;
       expect(agentRow.textContent).toContain("Agent");
       expect(agentRow.textContent).toContain("Contributor");
@@ -327,5 +330,70 @@ describe("AccessControl scopes and grants", () => {
       await waitFor(() => expect(mocks.deleteAccessControlRole).toHaveBeenCalledTimes(1));
       expect((mocks.deleteAccessControlRole.mock.calls[0][0] as api.RoleEntry).role).toBe(api.RoleEntryRole.Owner);
     });
+  });
+});
+
+describe("AccessControl workspace", () => {
+  const site = new api.AccessControlSet({
+    readers: ["ops@example.test"],
+    owners: ["owner@example.test"],
+    piiReaders: ["owner@example.test"],
+  });
+
+  beforeEach(() => {
+    mocks.access = {
+      ...mocks.endpointOwner,
+      canManageAccessControl: true,
+      endpointRoles: [],
+      siteRole: "Owner",
+      isPiiReader: true,
+    };
+    mocks.getAccessControl.mockResolvedValue(site);
+    mocks.getEndpointsAll.mockResolvedValue(["endpoint-a"]);
+  });
+
+  it("says who you are in the header and offers each scope as a chip", async () => {
+    await renderPage();
+    await screen.findByRole("button", { name: "ops@example.test" });
+
+    expect(screen.getByText("owner@example.test", { selector: "span" })).toBeTruthy();
+    expect(screen.getByText(/site Owner · PII Reader/)).toBeTruthy();
+    expect(within(scopes()).getByRole("button", { name: "endpoint-a" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("shows the Add grant form in the inspector until a grant is selected, and New grant brings it back", async () => {
+    await renderPage();
+    expect(within(inspector()).getByRole("form", { name: "Add grant" })).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", { name: "ops@example.test" }));
+    expect(within(inspector()).queryByRole("form", { name: "Add grant" })).toBeNull();
+    expect(within(inspector()).getByRole("heading", { name: /ops@example\.test/ })).toBeTruthy();
+    expect(within(inspector()).getByText("Site (every endpoint)")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "New grant" }));
+    expect(within(inspector()).getByRole("form", { name: "Add grant" })).toBeTruthy();
+  });
+
+  it("opens a principal's other grant from the inspector", async () => {
+    await renderPage();
+    const table = await screen.findByRole("table", { name: "Site grants" });
+    await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(4));
+
+    const owner = within(table)
+      .getAllByRole("button", { name: "owner@example.test" })
+      .find((b) => !b.closest("tr")!.textContent!.includes("PII"))!;
+    fireEvent.click(owner);
+    fireEvent.click(within(inspector()).getByRole("button", { name: "Open the PII Reader grant" }));
+
+    expect(within(inspector()).getByText(/May reveal payload fields/)).toBeTruthy();
+  });
+
+  it("starts a new scope with nothing selected", async () => {
+    await renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "ops@example.test" }));
+    selectEndpoint("endpoint-a");
+
+    expect(within(inspector()).getByRole("form", { name: "Add grant" })).toBeTruthy();
+    expect(screen.getByRole("table", { name: "endpoint-a grants" })).toBeTruthy();
   });
 });

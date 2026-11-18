@@ -19,8 +19,10 @@ export interface SettingsTab {
   /** URL value: /Settings/:feature?tab=:id. */
   id: string;
   label: string;
-  /** Words for the Settings filter, so a search finds the tab holding a setting. */
+  /** Words for the command palette, so a search finds the tab holding a setting. */
   keywords: string;
+  /** The tab is a table whose selected row shows in the Settings inspector. */
+  inspector?: boolean;
 }
 
 export interface SettingsFeature {
@@ -46,7 +48,7 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     applies: "Applies to every instance within 30 s",
     tabs: [
       { id: "overview", label: "Overview", keywords: "serve endpoint url sign-in entra tenant metadata turn off" },
-      { id: "permissions", label: "Permissions", keywords: "tools payload resubmit skip classify report workload scope role effective access" },
+      { id: "permissions", label: "Permissions", keywords: "tools payload resubmit skip classify report workload scope role effective access", inspector: true },
       { id: "who", label: "Who & where", keywords: "people groups clients client applications endpoints hide" },
       { id: "limits", label: "Limits", keywords: "rate limit tool calls message changes" },
       { id: "connect", label: "Connect", keywords: "claude code connect command url" },
@@ -75,7 +77,7 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
       "Issue and revoke the keys agents built on NimBus.Agents use to call the agent API.",
     applies: "Applies to every instance within 30 s",
     tabs: [
-      { id: "keys", label: "Keys", keywords: "agent api key issue revoke remove expiry last used nimbus.agents" },
+      { id: "keys", label: "Keys", keywords: "agent api key issue revoke remove expiry last used nimbus.agents", inspector: true },
     ],
   },
   {
@@ -86,7 +88,7 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     applies: "Applies on the next probe",
     tabs: [
       { id: "probing", label: "Probing", keywords: "schedule interval timeout send now enabled" },
-      { id: "endpoints", label: "Endpoints", keywords: "endpoints include exclude probe" },
+      { id: "endpoints", label: "Endpoints", keywords: "endpoints include exclude probe", inspector: true },
     ],
   },
   {
@@ -97,7 +99,7 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
       "Issue and revoke the links wall displays use to show the Monitor read-only without signing in.",
     applies: "Applies to every instance within 30 s",
     tabs: [
-      { id: "tokens", label: "Tokens", keywords: "monitor wall display kiosk dashboard token link issue revoke expiry" },
+      { id: "tokens", label: "Tokens", keywords: "monitor wall display kiosk dashboard token link issue revoke expiry", inspector: true },
     ],
   },
   {
@@ -109,7 +111,7 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     applies: "Applies on this instance and resets on restart",
     tabs: [
       { id: "mode", label: "Simulate mode", keywords: "enable auto-stop rate ceiling session prefix" },
-      { id: "endpoints", label: "Consuming endpoints", keywords: "ownership owned consuming endpoints" },
+      { id: "endpoints", label: "Consuming endpoints", keywords: "ownership owned consuming endpoints", inspector: true },
       { id: "policy", label: "Environment policy", keywords: "production environment allowed blocked" },
     ],
   },
@@ -119,7 +121,7 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     name: "Audit logging",
     description: "Which operator actions are written to the audit log and Application Insights.",
     applies: "Applies immediately",
-    tabs: [{ id: "types", label: "Action types", keywords: "audit record action types categories" }],
+    tabs: [{ id: "types", label: "Action types", keywords: "audit record action types categories", inspector: true }],
   },
 ];
 

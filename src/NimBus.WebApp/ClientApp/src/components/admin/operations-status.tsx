@@ -1,8 +1,8 @@
 import type * as api from "api-client";
-import { StatRow, StatTile } from "components/ui/stat-tile";
+import { WorkspaceStat } from "components/workspace/workspace";
 import { failureBacklog } from "functions/failed-messages.functions";
 
-// The Operations page's status strip (Spec 038 §6.1). Each tile is also a shortcut.
+// The Operations page's header figures (Spec 038 §6.1). Each is also a shortcut.
 //
 // Status counts overlap: failedCount already includes dead-lettered and unsupported
 // messages (Mapper.EndpointStatusCountFromEndpointStateCount), so Failed matches the
@@ -28,35 +28,34 @@ export default function OperationsStatus({ counts, paused, onOpen, onShowPaused 
   const deadLettered = counts ? sum(counts, (c) => c.deadletterCount ?? 0) : 0;
 
   return (
-    <StatRow className="max-lg:grid-cols-2">
-      <StatTile
+    <>
+      <WorkspaceStat
         label="Failed"
         value={value(failureBacklog)}
-        tone={failed > 0 ? "danger" : "muted"}
-        delta={failed > 0 ? "Resubmit →" : "None"}
+        tone={failed > 0 ? "danger" : "default"}
+        title="Open Bulk resubmit failed"
         onClick={() => onOpen("resubmit")}
       />
-      <StatTile
+      <WorkspaceStat
         label="Dead-lettered"
         value={value((c) => sum(c, (x) => x.deadletterCount ?? 0))}
-        tone={deadLettered > 0 ? "warning" : "muted"}
-        delta={deadLettered > 0 ? "Delete or resubmit →" : "None"}
+        tone={deadLettered > 0 ? "warn" : "default"}
+        title="Open Delete dead-lettered"
         onClick={() => onOpen("dlq")}
       />
-      <StatTile
-        label="Endpoints paused"
+      <WorkspaceStat
+        label="Paused"
         value={paused === undefined ? "—" : paused.toLocaleString()}
-        tone={paused ? "warning" : "muted"}
-        delta={paused ? "Show them" : "All receiving and sending"}
+        tone={paused ? "warn" : "default"}
+        title="Show the endpoints that need attention"
         onClick={onShowPaused}
       />
-      <StatTile
+      <WorkspaceStat
         label="Pending"
         value={value((c) => sum(c, (x) => x.pendingCount ?? 0))}
-        tone="muted"
-        delta="Reconcile if stuck →"
+        title="Open Reconcile stale pending"
         onClick={() => onOpen("stale")}
       />
-    </StatRow>
+    </>
   );
 }

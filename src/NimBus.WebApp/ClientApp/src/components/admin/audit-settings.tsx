@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import * as api from "api-client";
 import { Button } from "components/ui/button";
 import { Toggle } from "components/ui/toggle";
+import { Badge } from "components/ui/badge";
 import {
   Card,
   CardContent,
@@ -10,7 +11,15 @@ import {
   CardTitle,
 } from "components/ui/card";
 import { formatAuditType } from "functions/audit.functions";
-import { PanelFooter, useInPanel, usePanelDirty } from "components/settings/panel-frame";
+import { PanelFooter, PanelInspector, useInPanel, usePanelDirty } from "components/settings/panel-frame";
+import { Inspector, WorkspaceChip } from "components/workspace/workspace";
+import {
+  RowSelect,
+  selectableRowClass,
+  WORKSPACE_HEAD_ROW,
+  WORKSPACE_TH,
+  WorkspaceTableFrame,
+} from "components/workspace/selectable-row";
 
 // Presentation only: the server's configurableAuditTypes decides what is listed,
 // and a type missing here lands in "Other" rather than disappearing.
@@ -112,6 +121,9 @@ export default function AuditSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState(false);
+  // The chosen group's title; null shows every group.
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
 
   const client = useMemo(() => new api.Client(api.CookieAuth()), []);
 
@@ -185,6 +197,25 @@ export default function AuditSettings() {
 
   const recordedCount = configurable.filter((t) => !disabled.has(t)).length;
 
+  // A group that is no longer listed (the server's types changed) falls back to All.
+  const activeGroup = groups.find((g) => g.title === groupFilter);
+  const rows = (activeGroup ? [activeGroup] : groups).flatMap((g) =>
+    g.types.map((type) => ({ type, group: g.title, label: formatAuditType(type) })),
+  );
+  const activeAllRecorded = activeGroup?.types.every((t) => !disabled.has(t)) ?? false;
+  const isChanged = (type: string) => saved.has(type) !== disabled.has(type);
+
+  const selectedGroup = groups.find((g) => selectedType !== null && g.types.includes(selectedType));
+  const selected =
+    selectedGroup && selectedType !== null
+      ? {
+          group: selectedGroup.title,
+          label: formatAuditType(selectedType),
+          recorded: !disabled.has(selectedType),
+          changed: isChanged(selectedType),
+        }
+      : undefined;
+
   return (
     <Card>
       <CardHeader className="px-5 py-4">
@@ -244,50 +275,109 @@ export default function AuditSettings() {
           </PanelFooter>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          {groups.map((group) => {
-            const allRecorded = group.types.every((t) => !disabled.has(t));
-            return (
-              <section
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div role="group" aria-label="Group" className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <WorkspaceChip selected={!activeGroup} onSelect={() => setGroupFilter(null)}>
+              All
+            </WorkspaceChip>
+            {groups.map((group) => (
+              <WorkspaceChip
                 key={group.title}
-                aria-label={group.title}
-                className="rounded-nb-md border border-border"
+                selected={group.title === activeGroup?.title}
+                onSelect={() => setGroupFilter(group.title)}
               >
-                <div className="flex items-center justify-between border-b bg-muted px-3 py-2">
-                  <h3 className="text-sm font-semibold">{group.title}</h3>
-                  <Button
-                    variant="ghost"
-                    colorScheme="gray"
-                    size="xs"
-                    onClick={() => setGroupRecorded(group.types, !allRecorded)}
-                    disabled={saving}
-                  >
-                    {allRecorded ? "Record none" : "Record all"}
-                  </Button>
-                </div>
-                <ul>
-                  {group.types.map((type) => {
-                    const label = formatAuditType(type);
-                    return (
-                      <li
-                        key={type}
-                        className="flex items-center justify-between border-b border-border/50 px-3 py-2 text-sm last:border-b-0"
-                      >
-                        <span>{label}</span>
-                        <Toggle
-                          checked={!disabled.has(type)}
-                          onChange={(next) => setRecorded(type, next)}
-                          disabled={saving}
-                          aria-label={`Record ${label}`}
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            );
-          })}
+                {group.title}
+              </WorkspaceChip>
+            ))}
+          </div>
+          {activeGroup && (
+            <Button
+              variant="ghost"
+              colorScheme="gray"
+              size="xs"
+              onClick={() => setGroupRecorded(activeGroup.types, !activeAllRecorded)}
+              disabled={saving}
+            >
+              {activeAllRecorded ? "Record none" : "Record all"}
+            </Button>
+          )}
         </div>
+
+        <WorkspaceTableFrame>
+          <table className="w-full min-w-[30rem] text-sm" aria-label="Action types">
+            <thead>
+              <tr className={WORKSPACE_HEAD_ROW}>
+                <th scope="col" className={WORKSPACE_TH}>Action type</th>
+                <th scope="col" className={WORKSPACE_TH}>Group</th>
+                <th scope="col" className={WORKSPACE_TH}>Recorded</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const isSelected = row.type === selectedType;
+                return (
+                  <tr key={row.type} className={selectableRowClass(isSelected)}>
+                    <td className="px-4">
+                      <RowSelect
+                        selected={isSelected}
+                        onSelect={() => setSelectedType(row.type)}
+                        after={
+                          isChanged(row.type) && (
+                            <span className="text-[11px] font-semibold text-status-warning-ink">Changed</span>
+                          )
+                        }
+                      >
+                        {row.label}
+                      </RowSelect>
+                    </td>
+                    <td className="px-4 py-2 text-muted-foreground">{row.group}</td>
+                    <td className="px-4 py-2">
+                      <Toggle
+                        checked={!disabled.has(row.type)}
+                        onChange={(next) => setRecorded(row.type, next)}
+                        disabled={saving}
+                        aria-label={`Record ${row.label}`}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+              {rows.length === 0 && !loading && !error && (
+                <tr>
+                  <td colSpan={3} className="py-4 text-center text-muted-foreground">
+                    No action types to configure.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </WorkspaceTableFrame>
+
+        <PanelInspector>
+          {selected ? (
+            <Inspector
+              eyebrow={selected.group}
+              title={selected.label}
+              state={
+                selected.recorded ? (
+                  <Badge variant="success">Recorded</Badge>
+                ) : (
+                  <Badge variant="secondary">Not recorded</Badge>
+                )
+              }
+              description={
+                <>
+                  {selected.recorded
+                    ? `${selected.label} actions are written to the audit log and Application Insights.`
+                    : `${selected.label} actions are not written to the audit log or Application Insights.`}
+                  {selected.changed && " This change is not saved yet."}
+                </>
+              }
+            />
+          ) : (
+            <Inspector empty="Select an action type to see what recording it means." />
+          )}
+        </PanelInspector>
       </CardContent>
     </Card>
   );

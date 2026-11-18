@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "api-client";
+import { Inspector, InspectorBlock, InspectorPortal } from "components/workspace/workspace";
+import {
+  RowSelect,
+  selectableRowClass,
+  WORKSPACE_HEAD_ROW,
+  WORKSPACE_TH,
+  WorkspaceTableFrame,
+} from "components/workspace/selectable-row";
 import { Button } from "components/ui/button";
 import { Badge } from "components/ui/badge";
 import { Combobox } from "components/ui/combobox";
@@ -51,10 +59,15 @@ export interface TopologyAuditProps {
   endpoint?: string | null;
   /** Asked to open an endpoint from the all-endpoints summary when `endpoint` is controlled. */
   onEndpointChange?: (endpoint: string) => void;
+  /** Receives how many endpoints drift after an all-endpoints audit; undefined before one. */
+  onDriftCount?: (drifting: number | undefined) => void;
 }
 
-export default function TopologyAudit({ endpoint, onEndpointChange }: TopologyAuditProps = {}) {
+export default function TopologyAudit({ endpoint, onEndpointChange, onDriftCount }: TopologyAuditProps = {}) {
   const controlled = endpoint !== undefined;
+  // A ref, so an inline callback doesn't re-run the report below.
+  const driftCount = useRef(onDriftCount);
+  driftCount.current = onDriftCount;
   // Only the newest single audit may land, so a quick switch between
   // endpoints can't show (or clean up) the one before.
   const auditRequest = useRef(0);
@@ -233,6 +246,15 @@ export default function TopologyAudit({ endpoint, onEndpointChange }: TopologyAu
   const failedCount =
     allAudits?.filter((r) => r.error !== undefined).length ?? 0;
 
+  useEffect(() => {
+    driftCount.current?.(allAudits ? driftingCount : undefined);
+  }, [allAudits, driftingCount]);
+
+  // The table's rows: the all-endpoints summary, or the one audited endpoint.
+  const rows: EndpointAudit[] | null =
+    allAudits ?? (audit && selectedEndpoint[0] ? [{ endpoint: selectedEndpoint[0], result: audit }] : null);
+  const viewed = audit ? selectedEndpoint[0] : undefined;
+
   // A topic outside the catalog (a system topic, or one NimBus didn't create)
   // has nothing to be compared with.
   const notInCatalog =
@@ -303,42 +325,39 @@ export default function TopologyAudit({ endpoint, onEndpointChange }: TopologyAu
         </div>
       )}
 
-      {allAudits && !(controlled && endpoint) && (
+      {rows && !notInCatalog && (
         <div className="space-y-2">
-          <p className="m-0 text-sm text-muted-foreground">
-            {driftingCount === 0
-              ? `All ${allAudits.length - failedCount} audited endpoints match the catalog`
-              : `${driftingCount} of ${allAudits.length} endpoints drift from the catalog`}
-            {failedCount > 0 ? `; ${failedCount} could not be audited.` : "."}
-          </p>
-          <div className="border rounded-md overflow-hidden">
-            <table
-              className="w-full text-sm"
-              aria-label="Catalog drift by endpoint"
-            >
-              <thead className="bg-muted text-left">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Endpoint</th>
-                  <th className="px-4 py-2 font-medium">Drift</th>
-                  <th className="px-4 py-2">
-                    <span className="sr-only">Actions</span>
-                  </th>
+          {allAudits && (
+            <p className="m-0 text-sm text-muted-foreground">
+              {driftingCount === 0
+                ? `All ${allAudits.length - failedCount} audited endpoints match the catalog`
+                : `${driftingCount} of ${allAudits.length} endpoints drift from the catalog`}
+              {failedCount > 0 ? `; ${failedCount} could not be audited.` : "."}
+            </p>
+          )}
+          <WorkspaceTableFrame>
+            <table className="w-full text-sm" aria-label="Catalog drift by endpoint">
+              <thead>
+                <tr className={WORKSPACE_HEAD_ROW}>
+                  <th scope="col" className={WORKSPACE_TH}>Endpoint</th>
+                  <th scope="col" className={WORKSPACE_TH}>Drift</th>
                 </tr>
               </thead>
               <tbody>
-                {allAudits.map((row) => (
-                  <tr
-                    key={row.endpoint}
-                    className={`border-t ${
-                      audit && row.endpoint === selectedEndpoint[0]
-                        ? "bg-muted/50"
-                        : ""
-                    }`}
-                  >
-                    <td className="px-4 py-2 font-mono">{row.endpoint}</td>
+                {rows.map((row) => (
+                  <tr key={row.endpoint} className={selectableRowClass(row.endpoint === viewed)}>
+                    <td className="px-4">
+                      {row.result ? (
+                        <RowSelect mono selected={row.endpoint === viewed} onSelect={() => viewEndpoint(row)}>
+                          {row.endpoint}
+                        </RowSelect>
+                      ) : (
+                        <span className="block py-2.5 font-mono text-[13px] font-semibold">{row.endpoint}</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2">
                       {row.error !== undefined ? (
-                        <span className="text-red-700">{row.error}</span>
+                        <span className="text-status-danger">{row.error}</span>
                       ) : row.result?.hasDeprecated ? (
                         <Badge variant="warning" size="sm">
                           {deprecatedCount(row.result)} deprecated
@@ -349,39 +368,79 @@ export default function TopologyAudit({ endpoint, onEndpointChange }: TopologyAu
                         </Badge>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-right">
-                      {row.result && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => viewEndpoint(row)}
-                        >
-                          View
-                        </Button>
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </WorkspaceTableFrame>
         </div>
       )}
 
-      {audit && !notInCatalog && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">
-              Topic: {audit.topicName}
-              {audit.hasDeprecated && (
-                <Badge variant="warning" size="sm" className="ml-2">
+      <InspectorPortal>
+        {audit && !notInCatalog ? (
+          <Inspector
+            eyebrow="Topic"
+            title={<span className="font-mono text-[16px]">{audit.topicName}</span>}
+            state={
+              audit.hasDeprecated ? (
+                <Badge variant="warning" size="sm">
                   Has deprecated items
                 </Badge>
-              )}
-            </h3>
+              ) : (
+                <Badge variant="success" size="sm">
+                  In sync
+                </Badge>
+              )
+            }
+            description={
+              audit.hasDeprecated
+                ? "Deprecated items exist in the namespace but aren't declared in the catalog. Removing them deletes them from Service Bus; messages they would have received are no longer delivered."
+                : "The live subscriptions and rules match the declared catalog."
+            }
+          >
+            <InspectorBlock label="Subscriptions and rules">
+              <div className="overflow-hidden rounded-nb-md border border-border bg-background">
+                {(audit.subscriptions ?? []).map((sub) => (
+                  <div key={sub.name} className="border-b border-border last:border-b-0">
+                    <div
+                      className={`flex items-center gap-2 px-3 py-1.5 text-[13px] font-medium ${
+                        sub.isDeprecated ? "bg-status-danger-50 text-status-danger-ink" : "bg-muted"
+                      }`}
+                    >
+                      <span className="font-mono [overflow-wrap:anywhere]">{sub.name}</span>
+                      {sub.isDeprecated && (
+                        <Badge variant="error" size="sm">
+                          deprecated
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="pl-4">
+                      {(sub.rules ?? []).map((rule) => (
+                        <div
+                          key={`${sub.name}-${rule.name}`}
+                          className={`flex items-center gap-2 border-t border-border px-3 py-1 text-[12.5px] ${
+                            rule.isDeprecated ? "bg-status-danger-50 text-status-danger-ink" : ""
+                          }`}
+                        >
+                          <span className="text-muted-foreground">├─</span>
+                          <span className="font-mono [overflow-wrap:anywhere]">{rule.name}</span>
+                          {rule.isDeprecated && (
+                            <Badge variant="error" size="sm">
+                              deprecated
+                            </Badge>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </InspectorBlock>
+
             {audit.hasDeprecated && (
               <Button
                 colorScheme="red"
+                size="sm"
                 onClick={() => setShowConfirm(true)}
                 disabled={cleaning}
                 isLoading={cleaning}
@@ -389,63 +448,34 @@ export default function TopologyAudit({ endpoint, onEndpointChange }: TopologyAu
                 Remove Deprecated
               </Button>
             )}
-          </div>
 
-          <div className="border rounded-md overflow-hidden">
-            {(audit.subscriptions ?? []).map((sub) => (
-              <div key={sub.name} className="border-b last:border-b-0">
-                <div
-                  className={`flex items-center gap-2 px-4 py-2 font-medium text-sm ${
-                    sub.isDeprecated ? "bg-red-50 text-red-700" : "bg-muted"
-                  }`}
-                >
-                  <span className="font-mono">{sub.name}</span>
-                  {sub.isDeprecated && (
-                    <Badge variant="error" size="sm">
-                      deprecated
-                    </Badge>
-                  )}
-                </div>
-                <div className="pl-8">
-                  {(sub.rules ?? []).map((rule) => (
-                    <div
-                      key={`${sub.name}-${rule.name}`}
-                      className={`flex items-center gap-2 px-4 py-1.5 text-sm border-t ${
-                        rule.isDeprecated ? "bg-red-50 text-red-600" : ""
-                      }`}
-                    >
-                      <span className="text-muted-foreground">├─</span>
-                      <span className="font-mono">{rule.name}</span>
-                      {rule.isDeprecated && (
-                        <Badge variant="error" size="sm">
-                          deprecated
-                        </Badge>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {cleanupResult && (
-            <OperationProgress
-              processed={
-                (cleanupResult.deletedSubscriptions?.length ?? 0) +
-                (cleanupResult.deletedRules?.length ?? 0) +
-                (cleanupResult.errors?.length ?? 0)
-              }
-              succeeded={
-                (cleanupResult.deletedSubscriptions?.length ?? 0) +
-                (cleanupResult.deletedRules?.length ?? 0)
-              }
-              failed={cleanupResult.errors?.length ?? 0}
-              errors={cleanupResult.errors}
-              isComplete={true}
-            />
-          )}
-        </div>
-      )}
+            {cleanupResult && (
+              <OperationProgress
+                processed={
+                  (cleanupResult.deletedSubscriptions?.length ?? 0) +
+                  (cleanupResult.deletedRules?.length ?? 0) +
+                  (cleanupResult.errors?.length ?? 0)
+                }
+                succeeded={
+                  (cleanupResult.deletedSubscriptions?.length ?? 0) +
+                  (cleanupResult.deletedRules?.length ?? 0)
+                }
+                failed={cleanupResult.errors?.length ?? 0}
+                errors={cleanupResult.errors}
+                isComplete={true}
+              />
+            )}
+          </Inspector>
+        ) : (
+          <Inspector
+            empty={
+              loading
+                ? "Auditing…"
+                : "Audit the endpoints, then select one to see its subscriptions and rules."
+            }
+          />
+        )}
+      </InspectorPortal>
 
       <ConfirmDestructiveAction
         isOpen={showConfirm}

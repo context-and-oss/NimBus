@@ -1,4 +1,3 @@
-import Page from "components/page";
 import Operations from "components/admin/operations";
 
 /**
@@ -7,12 +6,5 @@ import Operations from "components/admin/operations";
  * Site Owner only, like every /api/admin/* call it makes.
  */
 export default function OperationsPage() {
-  return (
-    <Page
-      title="Operations"
-      subtitle="Act on endpoints and stored messages. Some actions are irreversible."
-    >
-      <Operations />
-    </Page>
-  );
+  return <Operations />;
 }

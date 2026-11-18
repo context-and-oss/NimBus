@@ -20,19 +20,30 @@ vi.mock("api-client", async () => {
   return { ...actual, Client: FakeClient, CookieAuth: () => ({}) };
 });
 // The stand-ins show the topic the page hands them and can ask for another.
-vi.mock("components/admin/subscription-manager", () => ({
-  default: ({ topic, onTopicChange }: { topic?: string | null; onTopicChange?: (t: string | null) => void }) => (
+vi.mock("components/admin/subscription-manager", async () => {
+  const { InspectorPortal } = await vi.importActual<typeof import("components/workspace/workspace")>(
+    "components/workspace/workspace",
+  );
+  return {
+    default: ({ topic, onTopicChange }: { topic?: string | null; onTopicChange?: (t: string | null) => void }) => (
+      <div>
+        <InspectorPortal>Inspector content</InspectorPortal>
+        Subscription manager for {topic ?? "all topics"}
+        <button type="button" onClick={() => onTopicChange?.("CrmEndpoint")}>
+          Open CrmEndpoint from the table
+        </button>
+      </div>
+    ),
+  };
+});
+vi.mock("components/admin/topology-audit", () => ({
+  default: ({ endpoint, onDriftCount }: { endpoint?: string | null; onDriftCount?: (n: number) => void }) => (
     <div>
-      Subscription manager for {topic ?? "all topics"}
-      <button type="button" onClick={() => onTopicChange?.("CrmEndpoint")}>
-        Open CrmEndpoint from the table
+      Topology audit for {endpoint ?? "all endpoints"}
+      <button type="button" onClick={() => onDriftCount?.(2)}>
+        Report 2 drifting
       </button>
     </div>
-  ),
-}));
-vi.mock("components/admin/topology-audit", () => ({
-  default: ({ endpoint }: { endpoint?: string | null }) => (
-    <div>Topology audit for {endpoint ?? "all endpoints"}</div>
   ),
 }));
 vi.mock("components/admin/asyncapi-export", () => ({
@@ -143,34 +154,61 @@ describe("Topology page", () => {
   });
 });
 
-describe("Topology split view", () => {
+describe("Topology workspace", () => {
   beforeEach(() => storageProviderMock.mockReturnValue("SQL Server"));
 
-  const topicsList = () => screen.getByRole("navigation", { name: "Topics" });
+  const topicChips = () => screen.getByRole("group", { name: "Topic" });
 
-  it("lists the topics by name beside all topics, with what needs attention", async () => {
+  it("offers the topics by name as chips after all topics, marking what needs attention", async () => {
     renderAt("/Topology");
 
-    const list = topicsList();
-    await within(list).findByRole("link", { name: /ErpEndpoint/ });
-    const names = within(list)
-      .getAllByRole("link")
-      .map((l) => l.textContent);
-    expect(names[0]).toBe("All topics");
-    expect(names.slice(1)).toEqual(["CrmEndpointDisabled", "ErpEndpoint", "legacy-bridgenot in platform"]);
-    expect(within(list).getByRole("link", { name: "All topics" }).getAttribute("aria-current")).toBe("page");
-    expect(screen.getByText("Subscription manager for all topics")).toBeTruthy();
+    const chips = topicChips();
+    await within(chips).findByRole("button", { name: "ErpEndpoint" });
+    const names = within(chips)
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+    expect(names).toEqual([
+      "All topics",
+      "CrmEndpoint",
+      "ErpEndpoint",
+      "legacy-bridge",
+    ]);
+    expect(
+      within(chips)
+        .getByRole("button", { name: "All topics" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      within(chips)
+        .getByRole("button", { name: "CrmEndpoint" })
+        .getAttribute("title"),
+    ).toBe("CrmEndpoint: Disabled");
+    expect(
+      within(chips)
+        .getByRole("button", { name: "legacy-bridge" })
+        .getAttribute("title"),
+    ).toBe("legacy-bridge: not in platform");
+    expect(
+      screen.getByText("Subscription manager for all topics"),
+    ).toBeTruthy();
   });
 
-  it("opens a topic from the list and hands it to the view", async () => {
+  it("opens a topic from its chip and hands it to the view", async () => {
     renderAt("/Topology");
 
-    fireEvent.click(await within(topicsList()).findByRole("link", { name: /ErpEndpoint/ }));
+    fireEvent.click(
+      await within(topicChips()).findByRole("button", { name: "ErpEndpoint" }),
+    );
 
     expect(location()).toBe("/Topology?topic=ErpEndpoint");
-    expect(screen.getByRole("region", { name: "ErpEndpoint" })).toBeTruthy();
-    expect(screen.getByText("Subscription manager for ErpEndpoint")).toBeTruthy();
-    expect(within(topicsList()).getByRole("link", { name: /ErpEndpoint/ }).getAttribute("aria-current")).toBe("page");
+    expect(
+      screen.getByText("Subscription manager for ErpEndpoint"),
+    ).toBeTruthy();
+    expect(
+      within(topicChips())
+        .getByRole("button", { name: "ErpEndpoint" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 
   it("keeps the topic when switching to Catalog drift", async () => {
@@ -185,7 +223,9 @@ describe("Topology split view", () => {
   it("keeps the view when switching topics", async () => {
     renderAt("/Topology/drift?topic=ErpEndpoint");
 
-    fireEvent.click(await within(topicsList()).findByRole("link", { name: /CrmEndpoint/ }));
+    fireEvent.click(
+      await within(topicChips()).findByRole("button", { name: "CrmEndpoint" }),
+    );
 
     expect(location()).toBe("/Topology/drift?topic=CrmEndpoint");
     expect(screen.getByText("Topology audit for CrmEndpoint")).toBeTruthy();
@@ -194,7 +234,9 @@ describe("Topology split view", () => {
   it("follows a topic opened from inside the view", () => {
     renderAt("/Topology");
 
-    fireEvent.click(screen.getByRole("button", { name: "Open CrmEndpoint from the table" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open CrmEndpoint from the table" }),
+    );
 
     expect(location()).toBe("/Topology?topic=CrmEndpoint");
   });
@@ -203,7 +245,44 @@ describe("Topology split view", () => {
     getAdminServicebusTopics.mockRejectedValue(new Error("403"));
     renderAt("/Topology");
 
-    expect(await within(topicsList()).findByText("No topics found.")).toBeTruthy();
-    expect(screen.getByText("Subscription manager for all topics")).toBeTruthy();
+    expect(
+      await within(topicChips()).findByText("No topics found."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Subscription manager for all topics"),
+    ).toBeTruthy();
+  });
+
+  it("totals the namespace in the header and counts drift once the endpoints are audited", async () => {
+    renderAt("/Topology/drift");
+
+    expect(
+      (await screen.findByRole("button", { name: /Topics/ })).textContent,
+    ).toContain("3");
+    const drift = screen.getByRole("button", { name: /Drift/ });
+    expect(drift.textContent).toContain("—");
+
+    fireEvent.click(screen.getByRole("button", { name: "Report 2 drifting" }));
+    expect(screen.getByRole("button", { name: /Drift/ }).textContent).toContain(
+      "2",
+    );
+  });
+
+  it("jumps to Catalog drift from the Drift figure, keeping the topic", () => {
+    renderAt("/Topology?topic=ErpEndpoint");
+
+    fireEvent.click(screen.getByRole("button", { name: /Drift/ }));
+
+    expect(location()).toBe("/Topology/drift?topic=ErpEndpoint");
+  });
+
+  it("gives the Subscriptions and Catalog drift views an inspector, and Storage none", () => {
+    storageProviderMock.mockReturnValue("Cosmos DB");
+    const { unmount } = renderAt("/Topology");
+    expect(screen.getByText("Inspector content")).toBeTruthy();
+    unmount();
+
+    renderAt("/Topology/storage");
+    expect(screen.queryByText("Inspector content")).toBeNull();
   });
 });

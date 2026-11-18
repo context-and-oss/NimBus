@@ -151,7 +151,7 @@ export function SessionStateCard({ endpoints, initialEndpoint }: { endpoints: En
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 @md:grid-cols-2 gap-4">
               <Combobox
                 options={endpoints}
                 value={selectedEndpoint}
@@ -216,7 +216,7 @@ export function SessionStateCard({ endpoints, initialEndpoint }: { endpoints: En
                 {view.message && <p className="m-0 text-sm text-muted-foreground">{view.message}</p>}
 
                 {!view.locked && (
-                  <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-sm m-0">
+                  <dl className="grid grid-cols-2 @lg:grid-cols-4 gap-x-4 gap-y-2 text-sm m-0">
                     <Field label="Blocked by event" mono title={view.blockedByEventId}>
                       {view.blockedByEventId ?? "—"}
                       {view.blockingEventStatus && (

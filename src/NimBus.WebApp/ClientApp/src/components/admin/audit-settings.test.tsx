@@ -67,9 +67,7 @@ describe("AuditSettings", () => {
     ).toBe("false");
     // A type the UI does not group yet still shows up rather than vanishing.
     expect(
-      within(screen.getByRole("region", { name: "Other" })).getByText(
-        "Some future type",
-      ),
+      within(screen.getByRole("row", { name: /Some future type/ })).getByText("Other"),
     ).toBeTruthy();
     expect(screen.getByText("4 of 5 action types recorded.")).toBeTruthy();
   });
@@ -83,11 +81,9 @@ describe("AuditSettings", () => {
 
     await screen.findByRole("switch", { name: "Record Copy endpoint data" });
     expect(
-      within(
-        screen.getByRole("region", { name: "Message operations" }),
-      ).getByText("Copy endpoint data"),
+      within(screen.getByRole("row", { name: /Copy endpoint data/ })).getByText("Message operations"),
     ).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "Other" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Other" })).toBeNull();
   });
 
   it("saves the disabled types and only enables Save when something changed", async () => {
@@ -114,16 +110,82 @@ describe("AuditSettings", () => {
   it("switches a whole group with Record none", async () => {
     render(<AuditSettings />);
 
-    const browsing = await screen.findByRole("region", { name: "Browsing" });
+    // The group's action shows once its chip is chosen.
+    fireEvent.click(await screen.findByRole("button", { name: "Browsing" }));
     // Browsing has one type off, so its group action offers Record all.
-    fireEvent.click(within(browsing).getByRole("button", { name: "Record all" }));
-    fireEvent.click(within(browsing).getByRole("button", { name: "Record none" }));
+    fireEvent.click(screen.getByRole("button", { name: "Record all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Record none" }));
+    // Only Browsing changed: Resubmit, in another group, is still recorded.
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    expect(screen.getByRole("switch", { name: "Record Resubmit" }).getAttribute("aria-checked")).toBe("true");
 
     for (const name of ["Record Search events", "Record Get event details"]) {
       expect(
         screen.getByRole("switch", { name }).getAttribute("aria-checked"),
       ).toBe("false");
     }
+  });
+
+  it("filters the table by the chosen group and offers no group action for All", async () => {
+    render(<AuditSettings />);
+
+    await screen.findByRole("switch", { name: "Record Search events" });
+    const chips = screen.getByRole("group", { name: "Group" });
+    expect(within(chips).getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("button", { name: /^Record (all|none)$/ })).toBeNull();
+    const table = screen.getByRole("table", { name: "Action types" });
+    expect(within(table).getAllByRole("switch")).toHaveLength(5);
+
+    fireEvent.click(within(chips).getByRole("button", { name: "Message operations" }));
+
+    expect(within(chips).getByRole("button", { name: "Message operations" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(chips).getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("false");
+    expect(within(table).getAllByRole("switch").map((s) => s.getAttribute("aria-label"))).toEqual([
+      "Record Resubmit",
+      "Record Failure classified",
+    ]);
+    // Both are recorded, so the group action offers to switch them off.
+    expect(screen.getByRole("button", { name: "Record none" })).toBeTruthy();
+    // The count still covers every type, not only the ones shown.
+    expect(screen.getByText("4 of 5 action types recorded.")).toBeTruthy();
+  });
+
+  it("shows the selected action type in the inspector", async () => {
+    render(<AuditSettings />);
+
+    await screen.findByRole("switch", { name: "Record Search events" });
+    const inspector = screen.getByRole("complementary", { name: "Inspector" });
+    expect(within(inspector).getByText("Select an action type to see what recording it means.")).toBeTruthy();
+
+    const select = screen.getByRole("button", { name: "Get event details" });
+    fireEvent.click(select);
+
+    expect(select.getAttribute("aria-pressed")).toBe("true");
+    expect(within(inspector).getByRole("heading", { name: "Get event details" })).toBeTruthy();
+    expect(within(inspector).getByText("Browsing")).toBeTruthy();
+    expect(within(inspector).getByText("Not recorded")).toBeTruthy();
+    // The row's switch is the only control for the type.
+    expect(screen.getAllByRole("switch", { name: "Record Get event details" })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("switch", { name: "Record Get event details" }));
+    expect(within(inspector).getByText("Recorded")).toBeTruthy();
+  });
+
+  it("marks a row whose switch differs from the saved value", async () => {
+    render(<AuditSettings />);
+
+    const search = await screen.findByRole("switch", { name: "Record Search events" });
+    const row = screen.getByRole("row", { name: /Search events/ });
+    expect(within(row).queryByText("Changed")).toBeNull();
+
+    fireEvent.click(search);
+    expect(search.getAttribute("aria-checked")).toBe("false");
+    expect(within(row).getByText("Changed")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(search.getAttribute("aria-checked")).toBe("true");
+    expect(within(row).queryByText("Changed")).toBeNull();
   });
 
   it("shows a load failure instead of an empty list", async () => {
@@ -147,5 +209,15 @@ describe("AuditSettings", () => {
     fireEvent.click(within(footer).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(0));
     expect(mocks.putAdminAuditSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the selected action type in the panel's inspector column", async () => {
+    renderInPanel(<AuditSettings />, "audit");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Resubmit" }));
+
+    const inspector = screen.getByRole("complementary", { name: "Inspector" });
+    expect(within(inspector).getByRole("heading", { name: "Resubmit" })).toBeTruthy();
+    expect(screen.getByRole("table", { name: "Action types" }).contains(inspector)).toBe(false);
   });
 });

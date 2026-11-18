@@ -168,6 +168,112 @@ describe("MCP access settings in the Settings panel", () => {
   });
 });
 
+// The Permissions tab as a workspace: the capability table, with the selected row in the inspector.
+describe("MCP access: capability table and inspector", () => {
+  const inspector = () => within(screen.getByRole("complementary", { name: "Inspector" }));
+
+  it("lists the read tools and every capability as table rows", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    const table = await screen.findByRole("table", { name: "What agents may do" });
+    expect(within(table).getAllByRole("columnheader").map(h => h.textContent)).toEqual(["Capability", "Risk", "Entra scope", "Role", "Agents"]);
+    // The header, the always-on read row and one row per capability.
+    expect(within(table).getAllByRole("row")).toHaveLength(CAPABILITIES.length + 2);
+    const skip = within(table).getByRole("row", { name: /Skip messages/ });
+    expect(within(skip).getByText("nimbus.skip")).toBeTruthy();
+    expect(within(skip).getByText("Contributor")).toBeTruthy();
+    expect(within(skip).getByRole("switch", { name: "Skip messages" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("asks for a selection until a capability is selected", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    await screen.findByRole("table", { name: "What agents may do" });
+    expect(inspector().getByText("Select a capability to see what it allows.")).toBeTruthy();
+  });
+
+  it("shows the selected capability in the inspector, without a second switch", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    const user = userEvent.setup();
+    renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    const select = await screen.findByRole("button", { name: "Skip messages" });
+    expect(select.getAttribute("aria-pressed")).toBe("false");
+    await user.click(select);
+
+    expect(select.getAttribute("aria-pressed")).toBe("true");
+    expect(inspector().getByText("Capability")).toBeTruthy();
+    expect(inspector().getByRole("heading", { name: /Skip messages/ })).toBeTruthy();
+    expect(inspector().getByText("Off")).toBeTruthy();
+    expect(inspector().getByText(/Mark a message as never to be processed/)).toBeTruthy();
+    expect(inspector().getByText("nimbus.skip")).toBeTruthy();
+    expect(inspector().getByText("Contributor")).toBeTruthy();
+    expect(inspector().getByText("nimbus_skip_message")).toBeTruthy();
+    expect(inspector().getByText(/NimBus can't verify that a person approved it/)).toBeTruthy();
+    expect(inspector().queryByRole("switch")).toBeNull();
+    expect(screen.getAllByRole("switch", { name: "Skip messages" })).toHaveLength(1);
+  });
+
+  it("switches from the row and reflects the draft in the row and the inspector", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    const user = userEvent.setup();
+    const { onDirtyChange } = renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    await user.click(await screen.findByRole("button", { name: "Skip messages" }));
+    const row = screen.getByRole("row", { name: /Skip messages/ });
+    expect(within(row).queryByText("Changed")).toBeNull();
+    expect(within(row).queryByText("Has a warning")).toBeNull();
+
+    await user.click(within(row).getByRole("switch", { name: "Skip messages" }));
+
+    expect(onDirtyChange).toHaveBeenLastCalledWith(1);
+    expect(within(row).getByRole("switch", { name: "Skip messages" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(row).getByText("Changed")).toBeTruthy();
+    expect(within(row).getByText("Has a warning")).toBeTruthy();
+    expect(inspector().getByText("On")).toBeTruthy();
+    expect(inspector().getByText("Before you leave this on")).toBeTruthy();
+  });
+
+  it("describes the always-on read tools, which have no switch", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    const user = userEvent.setup();
+    renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    const observe = await screen.findByRole("row", { name: /Observe/ });
+    expect(within(observe).queryByRole("switch")).toBeNull();
+    await user.click(within(observe).getByRole("button", { name: "Observe" }));
+
+    expect(inspector().getByText("Always on")).toBeTruthy();
+    expect(inspector().getByText("15 read tools")).toBeTruthy();
+    expect(inspector().getByText(/Never stack traces/)).toBeTruthy();
+  });
+
+  it("says in the inspector when Failure intelligence is off", async () => {
+    mockFetch(Response.json(state({ failureIntelligenceEnabled: false })), Response.json(activity));
+    const user = userEvent.setup();
+    renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    await user.click(await screen.findByRole("button", { name: "Classify failures" }));
+
+    expect(inspector().getByText(/Failure intelligence is off in this deployment/)).toBeTruthy();
+  });
+
+  it("shows the table and the inspector in place outside the Settings panel", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    const user = userEvent.setup();
+    render(<McpAccessSettings />);
+
+    await screen.findByRole("table", { name: "What agents may do" });
+    expect(inspector().getByText("Select a capability to see what it allows.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Resubmit messages" }));
+
+    expect(inspector().getByText("nimbus_resubmit_message")).toBeTruthy();
+    expect(inspector().getByText("On")).toBeTruthy();
+  });
+});
+
 describe("MCP access settings", () => {
   it("reviews a widening change, requires confirmation and saves with CSRF and the revision", async () => {
     const saved = { ...settings(), capabilities: { ...settings().capabilities, skip: true }, revision: "99999999-0000-0000-0000-000000000000" };

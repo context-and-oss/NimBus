@@ -4,21 +4,28 @@ import { Button } from "components/ui/button";
 import { Badge } from "components/ui/badge";
 import { Input } from "components/ui/input";
 import { Toggle } from "components/ui/toggle";
-import { DropdownItem, DropdownMenu } from "components/ui/dropdown-menu";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "components/ui/card";
+  Inspector,
+  InspectorBlock,
+  InspectorList,
+  InspectorPortal,
+  InspectorTiles,
+  WorkspaceSection,
+} from "components/workspace/workspace";
+import {
+  RowSelect,
+  selectableRowClass,
+  WORKSPACE_HEAD_ROW,
+  WORKSPACE_TH,
+  WorkspaceTableFrame,
+} from "components/workspace/selectable-row";
 import {
   Modal,
   ModalHeader,
   ModalBody,
   ModalFooter,
 } from "components/ui/modal";
-import { OPERATIONS } from "models/manage-pages";
+import { OPERATION_GROUPS, OPERATIONS } from "models/manage-pages";
 import { cn } from "lib/utils";
 
 interface EndpointOption {
@@ -59,8 +66,10 @@ function StatusNote({ status }: { status: Status }): ReactNode {
   }
 }
 
-// The row's "⋯" menu: every operation that starts from an endpoint.
+// The inspector's list: every operation that starts from an endpoint.
 const ROW_OPERATIONS = OPERATIONS.filter((o) => o.takesEndpoint);
+
+const GROUP_CAPTION = Object.fromEntries(OPERATION_GROUPS.map((g) => [g.id, `${g.label} · ${g.caption}`]));
 
 export interface EndpointControlsCardProps {
   endpoints: EndpointOption[];
@@ -68,16 +77,20 @@ export interface EndpointControlsCardProps {
   counts?: api.EndpointStatusCount[];
   /** Show only endpoints with a pause, a failure or a dead letter. */
   attentionOnly?: boolean;
-  onAttentionChange?: (attentionOnly: boolean) => void;
-  /** Opens a bulk operation pre-filled with the endpoint. Row actions appear only when set. */
+  /** Opens a bulk operation pre-filled with the endpoint. The inspector lists them only when set. */
   onOperate?: (operationId: string, endpointId: string) => void;
+  /** The endpoint to start with in the inspector. */
+  initialSelected?: string;
+  /** Keeps loading and reporting statuses but draws nothing. */
+  hidden?: boolean;
   /** Reports every endpoint's loaded receive and send status. */
   onStatusChange?: (statuses: Record<string, EndpointChannelStatus>) => void;
 }
 
 /**
  * The Operations page's Endpoints table (Spec 038 §6.2): each endpoint's kill
- * switch beside its backlog, with row actions that open a bulk operation.
+ * switch beside its backlog. The selected endpoint shows in the inspector with
+ * the operations that start from it.
  * Two independent Service Bus entity-status switches per endpoint:
  *  - Receive: the endpoint's subscription (Active ↔ ReceiveDisabled) — stops processing.
  *  - Send: the endpoint's topic (Active ↔ SendDisabled) — stops publishing.
@@ -89,14 +102,16 @@ export function EndpointControlsCard({
   endpoints,
   counts,
   attentionOnly = false,
-  onAttentionChange,
   onOperate,
   onStatusChange,
+  initialSelected,
+  hidden = false,
 }: EndpointControlsCardProps) {
   const [rows, setRows] = useState<Record<string, EndpointChannelStatus>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState(initialSelected);
 
   const refreshEndpoint = useCallback(async (endpointId: string) => {
     const client = new api.Client(api.CookieAuth());
@@ -193,19 +208,17 @@ export function EndpointControlsCard({
       (!query.trim() || ep.label.toLowerCase().includes(query.trim().toLowerCase())),
   );
 
-  const channelCell = (ep: EndpointOption, channel: Channel, status: Status) => (
-    <td className="py-2 pr-4">
-      <div className="flex items-center gap-2">
-        <Toggle
-          checked={status === "active"}
-          showStateLabel={false}
-          disabled={(status !== "active" && status !== "disabled") || (busy[ep.value] ?? false)}
-          onChange={() => onToggle(ep.value, channel, status)}
-          aria-label={`${channel === "receive" ? "Receive" : "Send"} ${ep.label}`}
-        />
-        <StatusNote status={status} />
-      </div>
-    </td>
+  const channelToggle = (ep: EndpointOption, channel: Channel, status: Status, label: string) => (
+    <div className="flex items-center gap-2">
+      <Toggle
+        checked={status === "active"}
+        showStateLabel={false}
+        disabled={(status !== "active" && status !== "disabled") || (busy[ep.value] ?? false)}
+        onChange={() => onToggle(ep.value, channel, status)}
+        aria-label={label}
+      />
+      <StatusNote status={status} />
+    </div>
   );
 
   const number = (value: number | undefined, tone?: string) =>
@@ -216,20 +229,30 @@ export function EndpointControlsCard({
     );
 
   const confirmIsSend = confirm?.channel === "send";
+  const isPaused = (r?: EndpointChannelStatus) => r?.receive === "disabled" || r?.send === "disabled";
+
+  // The page keeps this mounted while another tab shows, so the statuses it
+  // reports stay loaded; it then draws nothing.
+  if (hidden) return null;
+
+  const selected = endpoints.find((ep) => ep.value === selectedId);
+  const selectedRow = selected ? (rows[selected.value] ?? { receive: "loading", send: "loading" }) : undefined;
+  const selectedBacklog = selected ? backlog(selected.value) : undefined;
+  const tile = (value: number | undefined) => (value === undefined ? "—" : value.toLocaleString());
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
-        <div>
-          <CardTitle>Endpoints</CardTitle>
-          <CardDescription>
-            Switch each endpoint's <strong>receive</strong> (processing) and{" "}
-            <strong>send</strong> (publishing) independently. Disabling send
-            quarantines the endpoint's topic — while off, events forwarded in from
-            other endpoints dead-letter at the source.
-          </CardDescription>
-        </div>
-        <div className="flex items-center gap-2">
+    <>
+      <WorkspaceSection
+        title="Endpoints"
+        count={visible.length}
+        intro={
+          <>
+            Switch each endpoint&apos;s <strong>receive</strong> (processing) and <strong>send</strong> (publishing)
+            independently. Disabling send quarantines the endpoint&apos;s topic — while off, events forwarded in from
+            other endpoints dead-letter at the source. Select an endpoint to run an operation on it.
+          </>
+        }
+        action={
           <Input
             type="search"
             aria-label="Filter endpoints"
@@ -238,150 +261,169 @@ export function EndpointControlsCard({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <button
-            type="button"
-            aria-pressed={attentionOnly}
-            onClick={() => onAttentionChange?.(!attentionOnly)}
-            className={cn(
-              "whitespace-nowrap rounded-full border px-3 py-1 text-[12.5px] transition-colors",
-              attentionOnly
-                ? "border-foreground bg-foreground text-background"
-                : "border-border bg-card text-muted-foreground hover:text-foreground",
-            )}
-          >
-            Needs attention
-          </button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        }
+      >
+        <WorkspaceTableFrame>
+          <table className="w-full min-w-[40rem] text-sm" aria-label="Endpoints">
             <thead>
-              <tr className="text-left text-xs font-medium text-muted-foreground border-b border-border">
-                <th className="py-2 pl-3 pr-4">Endpoint</th>
-                <th className="py-2 pr-4">Receive</th>
-                <th className="py-2 pr-4">Send</th>
-                <th className="py-2 pr-4 text-right">Failed</th>
-                <th className="py-2 pr-4 text-right">Dead-letter</th>
-                <th className="py-2 pr-4 text-right">Pending</th>
-                {onOperate && (
-                  <th className="py-2">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                )}
+              <tr className={WORKSPACE_HEAD_ROW}>
+                <th scope="col" className={WORKSPACE_TH}>Endpoint</th>
+                <th scope="col" className={cn(WORKSPACE_TH, "text-right")}>Failed</th>
+                <th scope="col" className={cn(WORKSPACE_TH, "text-right")}>Dead-letter</th>
+                <th scope="col" className={cn(WORKSPACE_TH, "text-right")}>Pending</th>
+                <th scope="col" className={WORKSPACE_TH}>Receive</th>
+                <th scope="col" className={WORKSPACE_TH}>Send</th>
               </tr>
             </thead>
             <tbody>
               {visible.map((ep) => {
                 const row = rows[ep.value] ?? { receive: "loading", send: "loading" };
                 const b = backlog(ep.value);
+                const isSelected = ep.value === selectedId;
                 return (
-                  <tr
-                    key={ep.value}
-                    className={cn(
-                      "border-b border-border/50",
-                      needsAttention(ep.value) && "[&>td:first-child]:shadow-[inset_3px_0_0_var(--color-status-warning)]",
-                    )}
-                  >
-                    <td className="py-2 pl-3 pr-4 font-mono text-[13px] font-medium">{ep.label}</td>
-                    {channelCell(ep, "receive", row.receive)}
-                    {channelCell(ep, "send", row.send)}
-                    <td className="py-2 pr-4 text-right tabular-nums">
+                  <tr key={ep.value} className={selectableRowClass(isSelected)}>
+                    <td className="px-4">
+                      <RowSelect
+                        mono
+                        selected={isSelected}
+                        onSelect={() => setSelectedId(ep.value)}
+                        after={
+                          isPaused(row) && (
+                            <span className="text-[11px] font-semibold text-status-warning-ink">Paused</span>
+                          )
+                        }
+                      >
+                        {ep.label}
+                      </RowSelect>
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums">
                       {number(b?.failed, "font-semibold text-status-danger")}
                     </td>
-                    <td className="py-2 pr-4 text-right tabular-nums">
+                    <td className="px-4 py-2 text-right tabular-nums">
                       {number(b?.deadLettered, "font-semibold text-status-warning-ink")}
                     </td>
-                    <td className="py-2 pr-4 text-right tabular-nums">{number(b?.pending)}</td>
-                    {onOperate && (
-                      <td className="py-2 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {!!b?.failed && (
-                            <Button
-                              size="xs"
-                              variant="outline"
-                              colorScheme="gray"
-                              aria-label={`Resubmit ${ep.label}…`}
-                              onClick={() => onOperate("resubmit", ep.value)}
-                            >
-                              Resubmit…
-                            </Button>
-                          )}
-                          <DropdownMenu
-                            trigger={<span aria-hidden="true">⋯</span>}
-                            triggerLabel={`More operations for ${ep.label}`}
-                          >
-                            {ROW_OPERATIONS.map((o) => (
-                              <DropdownItem
-                                key={o.id}
-                                destructive={o.group === "danger"}
-                                onSelect={() => onOperate(o.id, ep.value)}
-                              >
-                                {o.label}
-                              </DropdownItem>
-                            ))}
-                          </DropdownMenu>
-                        </div>
-                      </td>
-                    )}
+                    <td className="px-4 py-2 text-right tabular-nums">{number(b?.pending)}</td>
+                    <td className="px-4 py-2">{channelToggle(ep, "receive", row.receive, `Receive ${ep.label}`)}</td>
+                    <td className="px-4 py-2">{channelToggle(ep, "send", row.send, `Send ${ep.label}`)}</td>
                   </tr>
                 );
               })}
               {visible.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={onOperate ? 7 : 6}
-                    className="py-4 text-center text-muted-foreground"
-                  >
-                    {endpoints.length === 0 ? "No endpoints." : "No endpoints match."}
+                  <td colSpan={6} className="py-4 text-center text-muted-foreground">
+                    {endpoints.length === 0
+                      ? "No endpoints."
+                      : attentionOnly && !query.trim()
+                        ? "Nothing needs attention."
+                        : "No endpoints match."}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
-        </div>
+        </WorkspaceTableFrame>
+      </WorkspaceSection>
 
-        <Modal
-          isOpen={confirm !== null}
-          onClose={() => setConfirm(null)}
-          label={`Disable ${confirmIsSend ? "send" : "receive"} for ${confirm?.endpointId}?`}
-        >
-          <ModalHeader onClose={() => setConfirm(null)}>
-            Disable {confirmIsSend ? "send" : "receive"} for {confirm?.endpointId}?
-          </ModalHeader>
-          <ModalBody>
-            {confirmIsSend ? (
-              <p className="text-sm text-muted-foreground m-0">
-                This sets the <strong>{confirm?.endpointId}</strong> topic to
-                <span className="font-mono"> SendDisabled</span>: the endpoint can
-                no longer publish. Note the topic is also this endpoint's inbox —
-                while send is disabled, events auto-forwarded in from other
-                endpoints will dead-letter at the source. Re-enabling restores
-                normal flow.
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground m-0">
-                This sets the <strong>{confirm?.endpointId}</strong> subscription to
-                <span className="font-mono"> ReceiveDisabled</span>: the endpoint
-                stops processing messages. Messages accumulate on the subscription
-                until it is re-enabled.
-              </p>
+      <InspectorPortal>
+        {selected && selectedRow ? (
+          <Inspector
+            eyebrow="Endpoint"
+            title={<span className="font-mono text-[16px]">{selected.label}</span>}
+            state={
+              isPaused(selectedRow) ? (
+                <Badge variant="warning">Paused</Badge>
+              ) : selectedRow.receive === "active" && selectedRow.send === "active" ? (
+                <Badge variant="success">Running</Badge>
+              ) : undefined
+            }
+            description={
+              isPaused(selectedRow)
+                ? "A paused endpoint keeps its messages in Service Bus until it is switched back on."
+                : undefined
+            }
+          >
+            <InspectorTiles
+              tiles={[
+                { label: "Failed", value: tile(selectedBacklog?.failed), tone: selectedBacklog?.failed ? "danger" : "default" },
+                {
+                  label: "Dead-letter",
+                  value: tile(selectedBacklog?.deadLettered),
+                  tone: selectedBacklog?.deadLettered ? "warn" : "default",
+                },
+                { label: "Pending", value: tile(selectedBacklog?.pending) },
+              ]}
+            />
+            <InspectorBlock label="Kill switch">
+              <div className="divide-y divide-border rounded-nb-md border border-border bg-background">
+                <div className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="text-[13.5px] font-semibold">Receive</span>
+                  {channelToggle(selected, "receive", selectedRow.receive, `${selected.label} receives`)}
+                </div>
+                <div className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="text-[13.5px] font-semibold">Send</span>
+                  {channelToggle(selected, "send", selectedRow.send, `${selected.label} sends`)}
+                </div>
+              </div>
+            </InspectorBlock>
+            {onOperate && (
+              <InspectorList
+                label="Operations on this endpoint"
+                items={ROW_OPERATIONS.map((o) => ({
+                  key: o.id,
+                  label: o.label,
+                  meta: GROUP_CAPTION[o.group],
+                  danger: o.group === "danger",
+                  actionLabel: `Open ${o.label} for ${selected.label}`,
+                  onAction: () => onOperate(o.id, selected.value),
+                }))}
+              />
             )}
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="ghost"
-              colorScheme="gray"
-              onClick={() => setConfirm(null)}
-            >
-              Cancel
-            </Button>
-            <Button variant="solid" colorScheme="red" onClick={confirmDisable}>
-              Disable {confirmIsSend ? "send" : "receive"}
-            </Button>
-          </ModalFooter>
-        </Modal>
-      </CardContent>
-    </Card>
+          </Inspector>
+        ) : (
+          <Inspector empty="Select an endpoint to see its switches and the operations that start from it." />
+        )}
+      </InspectorPortal>
+
+      <Modal
+        isOpen={confirm !== null}
+        onClose={() => setConfirm(null)}
+        label={`Disable ${confirmIsSend ? "send" : "receive"} for ${confirm?.endpointId}?`}
+      >
+        <ModalHeader onClose={() => setConfirm(null)}>
+          Disable {confirmIsSend ? "send" : "receive"} for {confirm?.endpointId}?
+        </ModalHeader>
+        <ModalBody>
+          {confirmIsSend ? (
+            <p className="text-sm text-muted-foreground m-0">
+              This sets the <strong>{confirm?.endpointId}</strong> topic to
+              <span className="font-mono"> SendDisabled</span>: the endpoint can
+              no longer publish. Note the topic is also this endpoint's inbox —
+              while send is disabled, events auto-forwarded in from other
+              endpoints will dead-letter at the source. Re-enabling restores
+              normal flow.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground m-0">
+              This sets the <strong>{confirm?.endpointId}</strong> subscription to
+              <span className="font-mono"> ReceiveDisabled</span>: the endpoint
+              stops processing messages. Messages accumulate on the subscription
+              until it is re-enabled.
+            </p>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            variant="ghost"
+            colorScheme="gray"
+            onClick={() => setConfirm(null)}
+          >
+            Cancel
+          </Button>
+          <Button variant="solid" colorScheme="red" onClick={confirmDisable}>
+            Disable {confirmIsSend ? "send" : "receive"}
+          </Button>
+        </ModalFooter>
+      </Modal>
+    </>
   );
 }

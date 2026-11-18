@@ -147,7 +147,7 @@ export function SessionCleanupCard({ endpoints, initialEndpoint }: { endpoints: 
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 @md:grid-cols-3 gap-4">
               <Combobox
                 options={endpoints}
                 value={selectedEndpoint}

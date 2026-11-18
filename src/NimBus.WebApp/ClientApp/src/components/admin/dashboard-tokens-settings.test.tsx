@@ -34,6 +34,12 @@ const token = (overrides: Partial<DashboardTokenInfo> = {}): DashboardTokenInfo 
 
 const state = (tokens: DashboardTokenInfo[] = [token()]): DashboardTokensState => ({ tokens, csrfToken: "csrf-test" });
 
+const table = () => screen.getByRole("table", { name: "Dashboard tokens" });
+const inspector = () => screen.getByRole("complementary", { name: "Inspector" });
+/** Selects a token's row, which puts the token and its action in the inspector. */
+const selectToken = async (user: ReturnType<typeof userEvent.setup>, name: string) =>
+  user.click(await within(await screen.findByRole("table", { name: "Dashboard tokens" })).findByRole("button", { name }));
+
 function mockFetch(...responses: Response[]) {
   const fetchMock = vi.fn();
   for (const r of responses) fetchMock.mockResolvedValueOnce(r);
@@ -66,15 +72,80 @@ describe("Dashboard tokens settings", () => {
         state([token(), token({ tokenId: "mnopqrstuvwx", prefix: "nbdt_mnopqrstuvwx", name: "Old wall", status: "revoked", lastUsedAtUtc: null })]),
       ),
     );
+    const user = userEvent.setup();
     render(<DashboardTokensSettings />);
 
     const rows = await screen.findAllByRole("row");
     const active = rows.find((r) => within(r).queryByText("Operations wall"))!;
     expect(within(active).getByText("nbdt_abcdefghijkl")).toBeTruthy();
-    expect(within(active).getByRole("button", { name: "Revoke token Operations wall" })).toBeTruthy();
+    await selectToken(user, "Operations wall");
+    expect(within(inspector()).getByRole("button", { name: "Revoke token Operations wall" })).toBeTruthy();
     const old = rows.find((r) => within(r).queryByText("Old wall"))!;
     expect(within(old).getByText("Revoked")).toBeTruthy();
-    expect(within(old).getByRole("button", { name: "Remove token Old wall" })).toBeTruthy();
+    await selectToken(user, "Old wall");
+    expect(within(inspector()).getByRole("button", { name: "Remove token Old wall" })).toBeTruthy();
+  });
+
+  it("keeps the actions out of the table", async () => {
+    mockFetch(Response.json(state()));
+    render(<DashboardTokensSettings />);
+
+    const headers = within(await screen.findByRole("table", { name: "Dashboard tokens" })).getAllByRole("columnheader");
+    expect(headers.map((h) => h.textContent)).toEqual(["Name", "Token", "Status", "Issued", "Last used", "Expires"]);
+    expect(within(table()).queryByRole("button", { name: /Revoke|Remove/ })).toBeNull();
+  });
+
+  it("shows the issue form until a token is selected, then that token's facts and action", async () => {
+    mockFetch(Response.json(state()));
+    const user = userEvent.setup();
+    render(<DashboardTokensSettings />);
+
+    await screen.findByRole("table", { name: "Dashboard tokens" });
+    expect(within(inspector()).getByRole("heading", { name: "Issue token" })).toBeTruthy();
+    expect(within(inspector()).getByLabelText("Name")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Revoke token|Remove token/ })).toBeNull();
+
+    await selectToken(user, "Operations wall");
+
+    expect(within(table()).getByRole("button", { name: "Operations wall" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(inspector()).getByRole("heading", { name: "Operations wall" })).toBeTruthy();
+    expect(within(inspector()).getByText("Dashboard token")).toBeTruthy();
+    expect(within(inspector()).getByText("Active")).toBeTruthy();
+    expect(within(inspector()).getByText("nbdt_abcdefghijkl")).toBeTruthy();
+    expect(within(inspector()).getByText("owner@contoso.com")).toBeTruthy();
+    expect(within(inspector()).getByText("No expiry")).toBeTruthy();
+    expect(within(inspector()).getByRole("button", { name: "Revoke token Operations wall" })).toBeTruthy();
+    expect(screen.queryByLabelText("Name")).toBeNull();
+  });
+
+  it("returns to the issue form, with its draft, from New token", async () => {
+    mockFetch(Response.json(state()));
+    const user = userEvent.setup();
+    render(<DashboardTokensSettings />);
+
+    await user.type(await screen.findByLabelText("Name"), "Lobby");
+    await selectToken(user, "Operations wall");
+    await user.click(screen.getByRole("button", { name: "New token" }));
+
+    expect((within(inspector()).getByLabelText("Name") as HTMLInputElement).value).toBe("Lobby");
+    expect(within(table()).getByRole("button", { name: "Operations wall" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("button", { name: "Revoke token Operations wall" })).toBeNull();
+  });
+
+  it("falls back to the issue form when the selected token is removed", async () => {
+    const fetchMock = mockFetch(Response.json(state([token({ status: "revoked" })])), Response.json(state([])));
+    const user = userEvent.setup();
+    render(<DashboardTokensSettings />);
+
+    await selectToken(user, "Operations wall");
+    await user.click(within(inspector()).getByRole("button", { name: "Remove token Operations wall" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove token" }));
+
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toBe("/api/v1/admin/dashboard-tokens/abcdefghijkl");
+    expect(init.method).toBe("DELETE");
+    expect(await screen.findByText("No dashboard tokens yet")).toBeTruthy();
+    expect(within(inspector()).getByLabelText("Name")).toBeTruthy();
   });
 
   it("issues a token, with a one-year expiry by default, and shows the Monitor link once", async () => {
@@ -122,6 +193,7 @@ describe("Dashboard tokens settings", () => {
     const user = userEvent.setup();
     render(<DashboardTokensSettings />);
 
+    await selectToken(user, "Operations wall");
     await user.click(await screen.findByRole("button", { name: "Revoke token Operations wall" }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke token" }));
@@ -129,7 +201,10 @@ describe("Dashboard tokens settings", () => {
     const [url, init] = fetchMock.mock.calls[1];
     expect(url).toBe("/api/v1/admin/dashboard-tokens/abcdefghijkl/revoke");
     expect(init.method).toBe("POST");
-    expect(await screen.findByText("Revoked")).toBeTruthy();
+    expect(await within(table()).findByText("Revoked")).toBeTruthy();
+    // The token stays selected, now with Remove as its action.
+    expect(within(inspector()).getByText("Revoked")).toBeTruthy();
+    expect(within(inspector()).getByRole("button", { name: "Remove token Operations wall" })).toBeTruthy();
   });
 
   it("explains that the storage provider cannot store tokens", async () => {

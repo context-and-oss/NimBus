@@ -20,9 +20,13 @@ platform's own `Resolver` topic.
 | **Scheduled** | Messages with a future enqueue time. |
 
 Columns sort on click; the table is alphabetical by default. Sorting on a count
-column puts the backlog at the top. Click a topic to see the same counters per
-subscription, plus its rules, its auto-forward destination and whether the
-platform can rebuild it.
+column puts the backlog at the top. Pick a topic from the **Topic** chips above
+the table, or select its row and choose **Open subscriptions** in the inspector
+on the right, to see the same counters per subscription.
+
+Select a subscription to see its rules, its auto-forward destination and whether
+the platform can rebuild it. The inspector holds every action in the table
+below; the subscriptions table itself only lists and counts.
 
 ## Reading the NimBus topology
 
