@@ -1,8 +1,22 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import * as api from "api-client";
 import { Badge, type BadgeVariant } from "components/ui/badge";
-import { cn } from "lib/utils";
+import {
+  Inspector,
+  Workspace,
+  WorkspaceChip,
+  WorkspaceSection,
+  WorkspaceTabs,
+  type ChipTone,
+} from "components/workspace/workspace";
+import {
+  RowSelect,
+  selectableRowClass,
+  WORKSPACE_HEAD_ROW,
+  WORKSPACE_TH,
+  WorkspaceTableFrame,
+} from "components/workspace/selectable-row";
 import {
   BulkResubmitCard,
   DeleteDeadLetteredCard,
@@ -51,11 +65,11 @@ const CARDS: Record<string, (props: CardProps) => ReactNode> = {
   all: (p) => <DeleteAllEventsCard {...p} />,
 };
 
-const GROUP_MARKER: Record<OperationGroupId, string> = {
-  recovery: "bg-status-success",
-  cleanup: "bg-status-warning",
-  movement: "bg-status-info",
-  danger: "bg-status-danger",
+const GROUP_TONE: Record<OperationGroupId, ChipTone> = {
+  recovery: "ok",
+  cleanup: "warn",
+  movement: "info",
+  danger: "danger",
 };
 
 const GROUP_BADGE: Record<OperationGroupId, BadgeVariant> = {
@@ -65,15 +79,20 @@ const GROUP_BADGE: Record<OperationGroupId, BadgeVariant> = {
   danger: "error",
 };
 
+const TABS = [
+  { id: "endpoints", label: "Endpoints" },
+  { id: "operations", label: "Operations", count: OPERATIONS.length },
+] as const;
+
 const operationUrl = (operationId: string, endpointId?: string) =>
   `/Operations/${operationId}${endpointId ? `?endpoint=${encodeURIComponent(endpointId)}` : ""}`;
 
 /**
- * The Operations page body (Spec 038 §6): a status strip, the Endpoints table
- * (kill switch, counts and row actions), and one bulk operation at a time,
- * picked from a list grouped by blast radius. Each operation has a URL,
- * /Operations/:operation?endpoint=:id, and keeps its own form, preview and
- * typed confirmation.
+ * The Operations page (Spec 038 §6) as a workspace with two tabs. Endpoints,
+ * at /Operations, is the kill switch and each endpoint's backlog. Operations,
+ * at /Operations/:operation?endpoint=:id, lists the bulk operations by blast
+ * radius; the selected one runs from the inspector and keeps its own form,
+ * preview and typed confirmation.
  */
 export default function Operations() {
   const { operation } = useParams();
@@ -84,8 +103,9 @@ export default function Operations() {
   const [counts, setCounts] = useState<api.EndpointStatusCount[]>();
   const [statuses, setStatuses] = useState<Record<string, EndpointChannelStatus>>();
   const [attentionOnly, setAttentionOnly] = useState(false);
+  const [group, setGroup] = useState<OperationGroupId | "all">("all");
 
-  const current = OPERATIONS.find((o) => o.id === (operation ?? OPERATIONS[0].id).toLowerCase());
+  const current = operation ? OPERATIONS.find((o) => o.id === operation.toLowerCase()) : undefined;
   const endpoint = searchParams.get("endpoint") ?? undefined;
 
   useEffect(() => {
@@ -99,8 +119,8 @@ export default function Operations() {
       .catch(() => undefined);
   }, [client]);
 
-  // Re-read the counts whenever the operation changes, so the strip and table
-  // reflect what the last run did. Fail soft: the strip shows "—".
+  // Re-read the counts whenever the tab or operation changes, so the header
+  // and table reflect what the last run did. Fail soft: the figures show "—".
   const currentId = current?.id;
   useEffect(() => {
     let cancelled = false;
@@ -120,104 +140,143 @@ export default function Operations() {
     [navigate],
   );
 
-  if (!current) return <Navigate to="/Operations" replace />;
+  if (operation && !current) return <Navigate to="/Operations" replace />;
 
   const paused = statuses
     ? Object.values(statuses).filter((s) => s.receive === "disabled" || s.send === "disabled").length
     : undefined;
-  const group = OPERATION_GROUPS.find((g) => g.id === current.group)!;
+  const currentGroup = current && OPERATION_GROUPS.find((g) => g.id === current.group)!;
+  const listed = OPERATIONS.filter((o) => group === "all" || o.group === group);
 
   return (
-    <div className="w-full space-y-6">
-      <OperationsStatus
-        counts={counts}
-        paused={paused}
-        onOpen={(id) => open(id)}
-        onShowPaused={() => setAttentionOnly(true)}
-      />
-
+    <Workspace
+      title="Operations"
+      subtitle="Act on endpoints and stored messages. Some actions are irreversible."
+      chipsLabel={current ? "Group" : "Show"}
+      chips={
+        current ? (
+          <>
+            <WorkspaceChip selected={group === "all"} onSelect={() => setGroup("all")} count={OPERATIONS.length}>
+              All
+            </WorkspaceChip>
+            {OPERATION_GROUPS.map((g) => (
+              <WorkspaceChip
+                key={g.id}
+                tone={GROUP_TONE[g.id]}
+                title={g.caption}
+                selected={group === g.id}
+                onSelect={() => setGroup(g.id)}
+                count={OPERATIONS.filter((o) => o.group === g.id).length}
+              >
+                {g.label}
+              </WorkspaceChip>
+            ))}
+          </>
+        ) : (
+          <>
+            <WorkspaceChip selected={!attentionOnly} onSelect={() => setAttentionOnly(false)}>
+              All endpoints
+            </WorkspaceChip>
+            <WorkspaceChip tone="warn" selected={attentionOnly} onSelect={() => setAttentionOnly(true)}>
+              Needs attention
+            </WorkspaceChip>
+          </>
+        )
+      }
+      stats={
+        <OperationsStatus
+          counts={counts}
+          paused={paused}
+          onOpen={(id) => open(id)}
+          onShowPaused={() => {
+            setAttentionOnly(true);
+            navigate("/Operations");
+          }}
+        />
+      }
+      tabs={
+        <WorkspaceTabs
+          label="Operations views"
+          tabs={TABS}
+          active={current ? "operations" : "endpoints"}
+          onChange={(id) => navigate(id === "endpoints" ? "/Operations" : operationUrl(OPERATIONS[0].id, endpoint))}
+        />
+      }
+      inspectorSlot={!current}
+      inspector={
+        current && currentGroup ? (
+          <Inspector
+            eyebrow="Operation"
+            title={current.label}
+            badge={<Badge variant={GROUP_BADGE[current.group]}>{currentGroup.label}</Badge>}
+            description={
+              <>
+                {current.description} <span className="text-muted-foreground">{currentGroup.caption}.</span>
+              </>
+            }
+          >
+            {/* Keyed so a new operation or pre-filled endpoint starts a fresh form.
+                A container, so each form lays out for the inspector's width. */}
+            <div key={`${current.id}:${endpoint ?? ""}`} className="@container">
+              {CARDS[current.id]({ endpoints, initialEndpoint: current.takesEndpoint ? endpoint : undefined })}
+            </div>
+          </Inspector>
+        ) : undefined
+      }
+      wideInspector={!!current}
+    >
+      {/* Mounted on both tabs, so the Paused figure stays loaded. */}
       <EndpointControlsCard
         endpoints={endpoints}
         counts={counts}
         attentionOnly={attentionOnly}
-        onAttentionChange={setAttentionOnly}
         onOperate={open}
         onStatusChange={setStatuses}
+        initialSelected={endpoint}
+        hidden={!!current}
       />
 
-      <div className="grid items-start gap-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
-        <nav
-          aria-label="Operations"
-          className="hidden overflow-hidden rounded-nb-md border border-border bg-card lg:sticky lg:top-20 lg:block"
+      {current && (
+        <WorkspaceSection
+          title="Operations"
+          count={listed.length}
+          intro="Grouped by blast radius, safest first. Select one to preview and run it."
+          foot="Every run is audit-logged."
         >
-          {OPERATION_GROUPS.map((g) => (
-            <div key={g.id} className="border-t border-border pb-1.5 first:border-t-0">
-              <div className="flex items-center gap-2 px-3.5 pb-1 pt-3">
-                <span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-sm", GROUP_MARKER[g.id])} />
-                <h2 className="m-0 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                  {g.label}
-                </h2>
-                <span className="ml-auto text-[11px] text-muted-foreground">{g.caption}</span>
-              </div>
-              <ul className="m-0 list-none p-0">
-                {OPERATIONS.filter((o) => o.group === g.id).map((o) => {
+          <WorkspaceTableFrame>
+            <table className="w-full min-w-[34rem] text-[13px]" aria-label="Operations">
+              <thead>
+                <tr className={WORKSPACE_HEAD_ROW}>
+                  <th scope="col" className={WORKSPACE_TH}>Operation</th>
+                  <th scope="col" className={WORKSPACE_TH}>Group</th>
+                  <th scope="col" className={WORKSPACE_TH}>What it does</th>
+                </tr>
+              </thead>
+              <tbody>
+                {listed.map((o) => {
+                  const g = OPERATION_GROUPS.find((x) => x.id === o.group)!;
                   const selected = o.id === current.id;
                   return (
-                    <li key={o.id}>
-                      <Link
-                        to={operationUrl(o.id)}
-                        aria-current={selected ? "page" : undefined}
-                        className={cn(
-                          "block py-1.5 pl-[30px] pr-3.5 text-[13.5px] no-underline hover:no-underline",
-                          selected
-                            ? "bg-primary/10 font-semibold text-primary shadow-[inset_3px_0_0_var(--color-primary)]"
-                            : g.id === "danger"
-                              ? "text-status-danger hover:bg-muted"
-                              : "text-foreground hover:bg-muted",
-                        )}
-                      >
-                        {o.label}
-                      </Link>
-                    </li>
+                    <tr key={o.id} className={selectableRowClass(selected)}>
+                      <td className="whitespace-nowrap px-4">
+                        <RowSelect selected={selected} onSelect={() => open(o.id, endpoint)}>
+                          {o.label}
+                        </RowSelect>
+                      </td>
+                      <td className="whitespace-nowrap px-4">
+                        <Badge variant={GROUP_BADGE[o.group]} withDot={false}>
+                          {g.label}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-2 text-muted-foreground">{o.description}</td>
+                    </tr>
                   );
                 })}
-              </ul>
-            </div>
-          ))}
-        </nav>
-
-        <div className="min-w-0 space-y-3">
-          <select
-            aria-label="Operation"
-            className="w-full rounded-nb-md border border-border-strong bg-card px-3 py-2 text-sm lg:hidden"
-            value={current.id}
-            onChange={(e) => open(e.target.value)}
-          >
-            {OPERATION_GROUPS.map((g) => (
-              <optgroup key={g.id} label={g.label}>
-                {OPERATIONS.filter((o) => o.group === g.id).map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-
-          <section aria-label={current.label} className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Badge variant={GROUP_BADGE[current.group]}>
-                {group.label} · {group.caption}
-              </Badge>
-              <p className="m-0 text-sm text-muted-foreground">{current.description}</p>
-            </div>
-            {/* Keyed so a new operation or pre-filled endpoint starts a fresh form. */}
-            <div key={`${current.id}:${endpoint ?? ""}`}>
-              {CARDS[current.id]({ endpoints, initialEndpoint: current.takesEndpoint ? endpoint : undefined })}
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
+              </tbody>
+            </table>
+          </WorkspaceTableFrame>
+        </WorkspaceSection>
+      )}
+    </Workspace>
   );
 }

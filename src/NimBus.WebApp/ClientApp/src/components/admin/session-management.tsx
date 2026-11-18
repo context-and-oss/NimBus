@@ -97,7 +97,7 @@ export function SessionPurgeCard({ endpoints, initialEndpoint }: { endpoints: En
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 @md:grid-cols-2 gap-4">
               <Combobox
                 options={endpoints}
                 value={selectedEndpoint}
@@ -152,7 +152,7 @@ export function SessionPurgeCard({ endpoints, initialEndpoint }: { endpoints: En
                 <h4 className="font-medium text-sm">
                   Session: {preview.sessionId}
                 </h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-2 @lg:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-muted-foreground">Pending:</span>{" "}
                     <Badge variant="pending" size="sm">

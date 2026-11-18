@@ -26,14 +26,17 @@ vi.mock("api-client", async () => {
 vi.mock("components/admin/endpoint-controls", () => ({
   EndpointControlsCard: (props: {
     attentionOnly: boolean;
+    hidden: boolean;
     onOperate: (operation: string, endpointId: string) => void;
     onStatusChange: (rows: Record<string, { receive: string; send: string }>) => void;
   }) => (
     <div>
-      <p>Endpoints table{props.attentionOnly ? " (needs attention)" : ""}</p>
-      <button type="button" onClick={() => props.onOperate("resubmit", "erp")}>
-        Resubmit erp
-      </button>
+      {!props.hidden && <p>Endpoints table{props.attentionOnly ? " (needs attention)" : ""}</p>}
+      {!props.hidden && (
+        <button type="button" onClick={() => props.onOperate("resubmit", "erp")}>
+          Resubmit erp
+        </button>
+      )}
       <button
         type="button"
         onClick={() =>
@@ -43,7 +46,7 @@ vi.mock("components/admin/endpoint-controls", () => ({
           })
         }
       >
-        Report statuses
+        Report statuses{props.hidden ? " (hidden)" : ""}
       </button>
     </div>
   ),
@@ -96,7 +99,9 @@ function renderAt(path: string) {
 }
 
 const location = () => screen.getByLabelText("location").textContent;
-const list = () => screen.getByRole("navigation", { name: "Operations" });
+const operations = () => screen.getByRole("table", { name: "Operations" });
+const inspector = () => screen.getByRole("complementary", { name: "Inspector" });
+const tab = (name: RegExp) => screen.getByRole("tab", { name });
 
 beforeEach(() => {
   mocks.getEndpointStatusCountAll.mockReset().mockResolvedValue([
@@ -108,55 +113,72 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Operations page", () => {
-  it("opens on Bulk resubmit, with the Endpoints table above the operations", () => {
+  it("opens on the Endpoints table, with the operations one tab away", () => {
     renderAt("/Operations");
 
     expect(screen.getByRole("heading", { name: "Operations", level: 1 })).toBeTruthy();
-    expect(within(list()).getByRole("link", { name: "Bulk resubmit failed" }).getAttribute("aria-current")).toBe("page");
+    expect(tab(/Endpoints/).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("Endpoints table")).toBeTruthy();
+    expect(screen.queryByRole("table", { name: "Operations" })).toBeNull();
+
+    fireEvent.click(tab(/Operations/));
+
+    expect(location()).toBe("/Operations/resubmit");
     expect(screen.getByText("Bulk resubmit card · no endpoint")).toBeTruthy();
-    const table = screen.getByText("Endpoints table");
-    expect(table.compareDocumentPosition(list()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText("Endpoints table")).toBeNull();
   });
 
-  it("groups operations by blast radius, safest first", () => {
-    renderAt("/Operations");
+  it("lists operations by blast radius, safest first, and filters them by group", () => {
+    renderAt("/Operations/resubmit");
 
-    const groups = within(list()).getAllByRole("heading").map((h) => h.textContent);
-    expect(groups).toEqual(["Recovery", "Cleanup", "Data movement", "Irreversible"]);
+    const groups = within(operations())
+      .getAllByRole("row")
+      .slice(1)
+      .map((r) => within(r).getAllByRole("cell")[1].textContent);
+    expect([...new Set(groups)]).toEqual(["Recovery", "Cleanup", "Data movement", "Irreversible"]);
+
+    fireEvent.click(within(screen.getByRole("group", { name: "Group" })).getByRole("button", { name: /Irreversible/ }));
+
+    expect(within(operations()).getAllByRole("row").slice(1)).toHaveLength(1);
+    expect(within(operations()).getByRole("button", { name: "Delete all events" })).toBeTruthy();
   });
 
-  it("deep-links to an operation with its endpoint pre-filled", () => {
+  it("deep-links to an operation with its endpoint pre-filled, shown in the inspector", () => {
     renderAt("/Operations/dlq?endpoint=crm");
 
-    expect(screen.getByText("Delete dead-lettered card · crm")).toBeTruthy();
+    expect(tab(/Operations/).getAttribute("aria-selected")).toBe("true");
+    expect(within(operations()).getByRole("button", { name: "Delete dead-lettered" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(within(inspector()).getByRole("heading", { name: /Delete dead-lettered/ })).toBeTruthy();
+    expect(within(inspector()).getByText("Delete dead-lettered card · crm")).toBeTruthy();
     expect(screen.queryByText(/Bulk resubmit card/)).toBeNull();
   });
 
-  it("gives each operation its own URL", () => {
-    renderAt("/Operations");
+  it("gives each operation its own URL and keeps the endpoint when switching", () => {
+    renderAt("/Operations/resubmit?endpoint=erp");
 
-    fireEvent.click(within(list()).getByRole("link", { name: "Skip messages" }));
+    fireEvent.click(within(operations()).getByRole("button", { name: "Skip messages" }));
 
-    expect(location()).toBe("/Operations/skip");
-    expect(screen.getByText("Skip messages card · no endpoint")).toBeTruthy();
+    expect(location()).toBe("/Operations/skip?endpoint=erp");
+    expect(screen.getByText("Skip messages card · erp")).toBeTruthy();
   });
 
-  it("switches operation from the compact picker", () => {
-    renderAt("/Operations");
+  it("does not pre-fill an operation that doesn't start from an endpoint", () => {
+    renderAt("/Operations/to?endpoint=erp");
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Operation" }), { target: { value: "purge" } });
-
-    expect(location()).toBe("/Operations/purge");
+    expect(screen.getByText("Delete by To card · no endpoint")).toBeTruthy();
   });
 
-  it("sends an unknown operation back to the default", () => {
+  it("sends an unknown operation back to the Endpoints table", () => {
     renderAt("/Operations/nope");
 
     expect(location()).toBe("/Operations");
+    expect(screen.getByText("Endpoints table")).toBeTruthy();
   });
 
-  it("opens an operation for an endpoint from the table's row action", () => {
-    renderAt("/Operations/skip");
+  it("opens an operation for an endpoint from the Endpoints table", () => {
+    renderAt("/Operations");
 
     fireEvent.click(screen.getByRole("button", { name: "Resubmit erp" }));
 
@@ -164,27 +186,37 @@ describe("Operations page", () => {
     expect(screen.getByText("Bulk resubmit card · erp")).toBeTruthy();
   });
 
-  describe("status strip", () => {
+  it("filters the Endpoints table from the chips", () => {
+    renderAt("/Operations");
+
+    fireEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: "Needs attention" }));
+    expect(screen.getByText("Endpoints table (needs attention)")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "All endpoints" }));
+    expect(screen.getByText("Endpoints table")).toBeTruthy();
+  });
+
+  describe("header figures", () => {
     it("totals the endpoints' counts without double counting", async () => {
       renderAt("/Operations");
 
       // failedCount already includes dead-lettered and unsupported, and
       // pendingCount is pending only, so nothing is added or taken out.
-      expect((await screen.findByRole("button", { name: /^Failed/ })).textContent).toContain("26");
-      expect(screen.getByRole("button", { name: /^Dead-lettered/ }).textContent).toContain("6");
-      expect(screen.getByRole("button", { name: /^Pending/ }).textContent).toContain("8");
+      await waitFor(() => expect(screen.getByRole("button", { name: /Failed$/ }).textContent).toContain("26"));
+      expect(screen.getByRole("button", { name: /Dead-lettered$/ }).textContent).toContain("6");
+      expect(screen.getByRole("button", { name: /Pending$/ }).textContent).toContain("8");
     });
 
     it("jumps to the matching operation", async () => {
       renderAt("/Operations/skip");
 
-      fireEvent.click(await screen.findByRole("button", { name: /^Dead-lettered/ }));
+      fireEvent.click(await screen.findByRole("button", { name: /Dead-lettered$/ }));
       expect(location()).toBe("/Operations/dlq");
 
-      fireEvent.click(screen.getByRole("button", { name: /^Pending/ }));
+      fireEvent.click(screen.getByRole("button", { name: /Pending$/ }));
       expect(location()).toBe("/Operations/stale");
 
-      fireEvent.click(screen.getByRole("button", { name: /^Failed/ }));
+      fireEvent.click(screen.getByRole("button", { name: /Failed$/ }));
       expect(location()).toBe("/Operations/resubmit");
     });
 
@@ -192,10 +224,23 @@ describe("Operations page", () => {
       renderAt("/Operations");
       fireEvent.click(screen.getByRole("button", { name: "Report statuses" }));
 
-      const paused = await screen.findByRole("button", { name: /^Endpoints paused/ });
+      const paused = await screen.findByRole("button", { name: /Paused$/ });
       await waitFor(() => expect(paused.textContent).toContain("1"));
       fireEvent.click(paused);
 
+      expect(screen.getByText("Endpoints table (needs attention)")).toBeTruthy();
+    });
+
+    it("keeps the paused count while an operation is open, and returns to the endpoints from it", async () => {
+      renderAt("/Operations/skip");
+      // The Endpoints table stays mounted, hidden, so it still reports.
+      fireEvent.click(screen.getByRole("button", { name: "Report statuses (hidden)" }));
+
+      const paused = await screen.findByRole("button", { name: /Paused$/ });
+      await waitFor(() => expect(paused.textContent).toContain("1"));
+      fireEvent.click(paused);
+
+      expect(location()).toBe("/Operations");
       expect(screen.getByText("Endpoints table (needs attention)")).toBeTruthy();
     });
   });

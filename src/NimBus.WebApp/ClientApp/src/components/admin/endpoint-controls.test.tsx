@@ -32,7 +32,10 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-const row = (name: string) => screen.getByRole("cell", { name }).closest("tr")!;
+const table = () => screen.getByRole("table", { name: "Endpoints" });
+const nameButton = (name: string) => within(table()).getByRole("button", { name });
+const row = (name: string) => nameButton(name).closest("tr")!;
+const inspector = () => screen.getByRole("complementary", { name: "Inspector" });
 
 describe("EndpointControlsCard", () => {
   it("disables send only after confirming, calling postEndpointSendstatus('disable')", async () => {
@@ -96,39 +99,62 @@ describe("EndpointControlsCard", () => {
     const cells = within(row("ep-1")).getAllByRole("cell").map((c) => c.textContent);
     // failedCount already includes dead-lettered and unsupported; pendingCount is
     // pending only, so each count is shown as the API sends it.
-    expect(cells.slice(3, 6)).toEqual(["6", "2", "3"]);
-    expect(within(row("ep-2")).getAllByRole("cell").slice(3, 6).map((c) => c.textContent)).toEqual(["—", "—", "—"]);
+    expect(cells.slice(1, 4)).toEqual(["6", "2", "3"]);
+    expect(within(row("ep-2")).getAllByRole("cell").slice(1, 4).map((c) => c.textContent)).toEqual(["—", "—", "—"]);
   });
 
-  it("opens an operation for an endpoint from its row", async () => {
-    const onOperate = vi.fn();
+  it("shows the selected endpoint in the inspector, with its switches and backlog", async () => {
     render(
       <EndpointControlsCard
         endpoints={endpoints}
-        counts={[{ endpointId: "ep-1", failedCount: 5 } as never]}
-        onOperate={onOperate}
-      />,
-    );
-
-    fireEvent.click(await screen.findByRole("button", { name: "Resubmit ep-1…" }));
-    expect(onOperate).toHaveBeenCalledWith("resubmit", "ep-1");
-
-    fireEvent.click(screen.getByRole("button", { name: "More operations for ep-1" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete dead-lettered" }));
-    expect(onOperate).toHaveBeenLastCalledWith("dlq", "ep-1");
-  });
-
-  it("offers Resubmit only when the endpoint has failures", async () => {
-    render(
-      <EndpointControlsCard
-        endpoints={endpoints}
-        counts={[{ endpointId: "ep-1", failedCount: 0 } as never]}
-        onOperate={vi.fn()}
+        counts={[{ endpointId: "ep-1", failedCount: 5, deadletterCount: 1, pendingCount: 0 } as never]}
       />,
     );
     await screen.findByRole("switch", { name: "Receive ep-1" });
+    expect(within(inspector()).getByText(/Select an endpoint/)).toBeTruthy();
 
-    expect(screen.queryByRole("button", { name: "Resubmit ep-1…" })).toBeNull();
+    fireEvent.click(nameButton("ep-1"));
+
+    expect(nameButton("ep-1").getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => expect(within(inspector()).getAllByText("Paused").length).toBeGreaterThan(0));
+    expect(within(inspector()).getByText("Failed").nextElementSibling?.textContent).toBe("5");
+    expect(within(inspector()).getByRole("switch", { name: "ep-1 receives" }).getAttribute("aria-checked")).toBe("false");
+
+    // The inspector's switch is the same switch: enabling applies at once.
+    fireEvent.click(within(inspector()).getByRole("switch", { name: "ep-1 receives" }));
+    await waitFor(() => expect(mocks.postEndpointSubscriptionstatus).toHaveBeenCalledWith("ep-1", "enable"));
+  });
+
+  it("opens an operation for the selected endpoint from the inspector", async () => {
+    const onOperate = vi.fn();
+    render(<EndpointControlsCard endpoints={endpoints} onOperate={onOperate} initialSelected="ep-1" />);
+    await screen.findByRole("switch", { name: "Receive ep-1" });
+
+    fireEvent.click(within(inspector()).getByRole("button", { name: "Open Bulk resubmit failed for ep-1" }));
+    expect(onOperate).toHaveBeenCalledWith("resubmit", "ep-1");
+
+    fireEvent.click(within(inspector()).getByRole("button", { name: "Open Delete dead-lettered for ep-1" }));
+    expect(onOperate).toHaveBeenLastCalledWith("dlq", "ep-1");
+    // An operation that doesn't start from an endpoint isn't offered.
+    expect(within(inspector()).queryByRole("button", { name: /Delete by To field/ })).toBeNull();
+  });
+
+  it("lists no operations when the page can't open them", async () => {
+    render(<EndpointControlsCard endpoints={endpoints} initialSelected="ep-1" />);
+    await screen.findByRole("switch", { name: "Receive ep-1" });
+
+    expect(within(inspector()).queryByText("Operations on this endpoint")).toBeNull();
+  });
+
+  it("keeps reporting statuses while hidden, and draws nothing", async () => {
+    const onStatusChange = vi.fn();
+    render(<EndpointControlsCard endpoints={endpoints} onStatusChange={onStatusChange} hidden />);
+
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith({ "ep-1": { receive: "disabled", send: "active" } }),
+    );
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByRole("complementary")).toBeNull();
   });
 
   describe("filtering", () => {
@@ -150,26 +176,27 @@ describe("EndpointControlsCard", () => {
 
       fireEvent.change(screen.getByRole("searchbox", { name: "Filter endpoints" }), { target: { value: "crm" } });
 
-      expect(screen.getByRole("cell", { name: "crm-adapter" })).toBeTruthy();
-      expect(screen.queryByRole("cell", { name: "erp-adapter" })).toBeNull();
+      expect(nameButton("crm-adapter")).toBeTruthy();
+      expect(within(table()).queryByRole("button", { name: "erp-adapter" })).toBeNull();
     });
 
-    it("shows only endpoints needing attention when asked", async () => {
-      const onAttentionChange = vi.fn();
-      const { rerender } = render(
-        <EndpointControlsCard endpoints={two} onAttentionChange={onAttentionChange} />,
-      );
+    it("shows only endpoints needing attention when asked, marking the paused one", async () => {
+      const { rerender } = render(<EndpointControlsCard endpoints={two} />);
       await waitFor(() =>
         expect(screen.getByRole("switch", { name: "Receive erp-adapter" }).getAttribute("aria-checked")).toBe("false"),
       );
 
-      fireEvent.click(screen.getByRole("button", { name: "Needs attention" }));
-      expect(onAttentionChange).toHaveBeenCalledWith(true);
+      rerender(<EndpointControlsCard endpoints={two} attentionOnly />);
+      expect(nameButton("erp-adapter")).toBeTruthy();
+      expect(within(row("erp-adapter")).getAllByRole("cell")[0].textContent).toContain("Paused");
+      expect(within(table()).queryByRole("button", { name: "crm-adapter" })).toBeNull();
+    });
 
-      rerender(<EndpointControlsCard endpoints={two} attentionOnly onAttentionChange={onAttentionChange} />);
-      expect(screen.getByRole("cell", { name: "erp-adapter" })).toBeTruthy();
-      expect(screen.queryByRole("cell", { name: "crm-adapter" })).toBeNull();
-      expect(screen.getByRole("button", { name: "Needs attention" }).getAttribute("aria-pressed")).toBe("true");
+    it("says so when nothing needs attention", async () => {
+      mocks.getEndpointSubscriptionstatus.mockResolvedValue("active");
+      render(<EndpointControlsCard endpoints={two} attentionOnly />);
+
+      expect(await screen.findByText("Nothing needs attention.")).toBeTruthy();
     });
   });
 });

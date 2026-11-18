@@ -262,7 +262,7 @@ export function StalePendingReconcileCard({
       <CardContent>
         <div className="space-y-4">
           {/* Filters and Preview on one line: the button sits at the end of the row it acts on. */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+          <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] @2xl:items-end">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">
                 Endpoint

@@ -122,7 +122,7 @@ export function SubscriptionPurgeCard({ endpoints, initialEndpoint }: { endpoint
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 @sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Endpoint</label>
               <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setPreview(null); setResult(null); setError(null); }} placeholder="Select endpoint..." multiple={false} />
@@ -375,7 +375,7 @@ export function SkipMessagesCard({ endpoints, initialEndpoint }: { endpoints: En
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 @sm:grid-cols-2 gap-4">
             <div>
               <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setPreviewCount(null); setResult(null); setError(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
             </div>
@@ -561,7 +561,7 @@ export function CopyEndpointCard({ endpoints, initialEndpoint }: { endpoints: En
       <CardContent>
         <div className="space-y-4">
           {unavailable && <CosmosOnlyNotice provider={provider} />}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 @sm:grid-cols-2 gap-4">
             <div>
               <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setResult(null); setError(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
             </div>
@@ -570,7 +570,7 @@ export function CopyEndpointCard({ endpoints, initialEndpoint }: { endpoints: En
               <Input type="password" value={targetConnStr} onChange={(e) => { setTargetConnStr(e.target.value); setError(null); }} placeholder="AccountEndpoint=..." />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 @sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">From (optional)</label>
               <Input type="datetime-local" value={from} onChange={(e) => { setFrom(e.target.value); setError(null); }} />
