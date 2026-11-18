@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved 2026-10-07 (option B). Implemented: slices 1–4 merged (context-and-oss/NimBus#218, #219, #231, #235; plans for [slice 2](../../plan/2026-10-08-spec-038-slice-2-settings-panel.md), [slice 3](../../plan/2026-10-08-spec-038-slice-3-operations.md) and [slice 4](../../plan/2026-10-08-spec-038-slice-4-shortcuts.md)). Slice 4 shipped in v4.7.0. §13's open decisions take the proposed defaults unless the repo owner says otherwise. |
+| **Status** | Approved 2026-10-07 (option B). Implemented: slices 1–4 merged (context-and-oss/NimBus#218, #219, #231, #235; plans for [slice 2](../../plan/2026-10-08-spec-038-slice-2-settings-panel.md), [slice 3](../../plan/2026-10-08-spec-038-slice-3-operations.md) and [slice 4](../../plan/2026-10-08-spec-038-slice-4-shortcuts.md)). Slice 4 shipped in v4.7.0. §13's open decisions take the proposed defaults unless the repo owner says otherwise. **Layout superseded 2026-11-18:** Operations, Topology, Settings and Access Control now share a workspace layout (chips, a table and an inspector for the selected row); see the [plan](../../plan/2026-11-18-manage-workspace-layout.md). Routes, access rules and each feature's save rules are as specified here; §6.3's operation list, §7's Settings list and §8's drawer describe the earlier layout. |
 | **Date** | 2026-10-07 |
 | **Baseline** | master `0f3b02ef` |
 | **Mockup** | [mockup.html](mockup.html). Open it in a browser. The yellow **Design notes** cite the sections below. The **Mock state** bar switches between the states in §7.3. [alternative-a.html](alternative-a.html) is the rejected alternative in §15. |
