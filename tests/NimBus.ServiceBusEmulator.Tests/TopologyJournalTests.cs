@@ -109,11 +109,14 @@ public sealed class TopologyJournalTests
     }
 
     [TestMethod]
-    public async Task Corrupt_journal_is_renamed_and_broker_starts_empty()
+    [DataRow("{ definitely-not-json")]
+    [DataRow("{\"version\":1,\"topics\":null}")]
+    [DataRow("{\"version\":1,\"topics\":[{\"definition\":{\"name\":\"valid\"},\"subscriptions\":[]},null]}")]
+    public async Task Corrupt_journal_is_renamed_and_broker_starts_empty(string contents)
     {
         using var directory = new TemporaryDirectory();
         var path = Path.Combine(directory.Path, "topology.json");
-        await File.WriteAllTextAsync(path, "{ definitely-not-json");
+        await File.WriteAllTextAsync(path, contents);
         var broker = new BrokerNamespace(new BrokerOptions());
 
         using var journal = new TopologyJournal(path);

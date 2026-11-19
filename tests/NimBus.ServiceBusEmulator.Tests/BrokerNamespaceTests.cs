@@ -602,6 +602,132 @@ public sealed class BrokerNamespaceTests
         Assert.AreEqual(topicName, forwarded.Message.ApplicationProperties["From"]);
     }
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void Expired_dead_letter_lock_rejects_completion_and_replay(bool replay)
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var broker = new BrokerNamespace(new BrokerOptions { TimeProvider = clock });
+        broker.CreateTopic(new("events"));
+        broker.CreateSubscription("events", new("consumer"));
+        broker.Publish("events", NewMessage("test"));
+        var delivery = broker.TryAcquire("events", "consumer", null, "owner")!;
+        broker.DeadLetter("events", "consumer", delivery.LockToken, "owner", null, null);
+        var dead = broker.TryAcquireDeadLetter("events", "consumer", "owner")!;
+        clock.Advance(TimeSpan.FromMinutes(1));
+
+        Assert.ThrowsExactly<KeyNotFoundException>(() =>
+        {
+            if (replay)
+                broker.CommitDeadLetterReplay("events", "consumer", dead.LockToken, "owner", "events", NewMessage("retry"));
+            else
+                broker.CompleteDeadLetter("events", "consumer", dead.LockToken, "owner");
+        });
+        Assert.AreEqual(1L, broker.GetSubscriptionRuntimeProperties("events", "consumer").DeadLetterMessageCount);
+    }
+
+    [TestMethod]
+    public void Lock_expiry_cannot_redeliver_an_expired_message()
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var broker = new BrokerNamespace(new BrokerOptions { TimeProvider = clock });
+        broker.CreateTopic(new("events"));
+        broker.CreateSubscription("events", new("consumer"));
+        broker.Publish("events", NewMessage("test") with { TimeToLive = TimeSpan.FromSeconds(1) });
+        Assert.IsNotNull(broker.TryAcquire("events", "consumer", null, "owner"));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.IsNull(broker.TryAcquire("events", "consumer", null, "another"));
+    }
+
+    [TestMethod]
+    public void Scheduled_fanout_waits_for_capacity_then_delivers_atomically()
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var broker = new BrokerNamespace(new BrokerOptions { TimeProvider = clock, MaxStoredBytes = 14 });
+        broker.CreateTopic(new("events"));
+        broker.CreateSubscription("events", new("first"));
+        broker.Publish("events", NewMessage("occupant"));
+        broker.CreateSubscription("events", new("second"));
+        broker.Publish("events", NewMessage("scheduled") with { ScheduledEnqueueTime = clock.GetUtcNow().AddMinutes(1) });
+        clock.Advance(TimeSpan.FromMinutes(2));
+        Assert.AreEqual(1L, broker.GetTopicRuntimeProperties("events").ScheduledMessageCount);
+        Assert.AreEqual(0L, broker.GetSubscriptionRuntimeProperties("events", "second").ActiveMessageCount);
+        var delivery = broker.TryAcquire("events", "first", null, "owner")!;
+        broker.Complete("events", "first", delivery.LockToken, "owner");
+        Assert.AreEqual(0L, broker.GetTopicRuntimeProperties("events").ScheduledMessageCount);
+        Assert.AreEqual(14L, broker.GetTopicRuntimeProperties("events").SizeInBytes);
+    }
+
+    [TestMethod]
+    public void Forwarded_fanout_respects_the_shared_budget()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions { MaxStoredBytes = 10 });
+        broker.CreateTopic(new("source"));
+        broker.CreateTopic(new("target"));
+        broker.CreateSubscription("source", new("forward") { ForwardTo = "target" });
+        broker.CreateSubscription("target", new("first") { RequiresSession = true });
+        broker.CreateSubscription("target", new("second"));
+        Assert.ThrowsExactly<BrokerQuotaExceededException>(() => broker.Publish("source", NewMessage("fanout", "s")));
+        Assert.AreEqual(0L, broker.GetTopicRuntimeProperties("target").SizeInBytes);
+    }
+
+    [TestMethod]
+    public void Replacing_session_state_charges_only_its_size_change()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions { MaxStoredBytes = 10 });
+        broker.CreateTopic(new("target"));
+        broker.CreateSubscription("target", new("first") { RequiresSession = true });
+        broker.TryAcceptSession("target", "first", "s", "owner");
+        broker.SetSessionState("target", "first", "s", "owner", new byte[6]);
+        broker.SetSessionState("target", "first", "s", "owner", new byte[8]);
+        Assert.ThrowsExactly<BrokerQuotaExceededException>(() =>
+            broker.SetSessionState("target", "first", "s", "owner", new byte[11]));
+        Assert.AreEqual(8, broker.GetSessionState("target", "first", "s", "owner")!.Value.Length);
+    }
+
+    [TestMethod]
+    public void Forwarding_a_paused_backlog_at_capacity_preserves_the_source_copy()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions { MaxStoredBytes = 7 });
+        broker.CreateTopic(new("source"));
+        broker.CreateTopic(new("target"));
+        broker.CreateSubscription("source", new("forward"));
+        broker.CreateSubscription("target", new("first"));
+        broker.CreateSubscription("target", new("second"));
+        broker.Publish("source", NewMessage("waiting"));
+
+        broker.UpdateSubscription("source", new("forward") { ForwardTo = "target" });
+        Assert.AreEqual(1L, broker.GetSubscriptionRuntimeProperties("source", "forward").TransferDeadLetterMessageCount);
+        Assert.AreEqual(0L, broker.GetTopicRuntimeProperties("target").SizeInBytes);
+        broker.DeleteTopic("source");
+        broker.DeleteSubscription("target", "second");
+        broker.Publish("target", NewMessage("after-delete"));
+        Assert.AreEqual(7L, broker.GetTopicRuntimeProperties("target").SizeInBytes);
+    }
+
+    [TestMethod]
+    public void Replay_reuses_source_capacity_and_rolls_back_a_failed_fanout()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions { MaxStoredBytes = 7 });
+        broker.CreateTopic(new("events"));
+        broker.CreateSubscription("events", new("first"));
+        broker.Publish("events", NewMessage("before"));
+        var active = broker.TryAcquire("events", "first", null, "owner")!;
+        broker.DeadLetter("events", "first", active.LockToken, "owner", null, null);
+        var dead = broker.TryAcquireDeadLetter("events", "first", "owner")!;
+        broker.CreateSubscription("events", new("second"));
+
+        Assert.ThrowsExactly<BrokerQuotaExceededException>(() =>
+            broker.CommitDeadLetterReplay("events", "first", dead.LockToken, "owner", "events", NewMessage("after")));
+        Assert.AreEqual(1L, broker.GetSubscriptionRuntimeProperties("events", "first").DeadLetterMessageCount);
+        Assert.AreEqual(0L, broker.GetSubscriptionRuntimeProperties("events", "second").TotalMessageCount);
+        broker.DeleteSubscription("events", "second");
+        broker.CommitDeadLetterReplay("events", "first", dead.LockToken, "owner", "events", NewMessage("after"));
+        Assert.AreEqual(0L, broker.GetSubscriptionRuntimeProperties("events", "first").DeadLetterMessageCount);
+        Assert.AreEqual("after", broker.TryAcquire("events", "first", null, "owner")!.Message.MessageId);
+    }
+
     private static readonly NimBus.Core.Events.EventType ContactCreatedType = new(typeof(ContactCreated));
 
     private static BrokerMessage ToBrokerMessage(IMessage message)

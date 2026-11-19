@@ -36,6 +36,7 @@ internal sealed class TopologyJournal(string path) : IDisposable
             {
                 throw new InvalidDataException($"Topology journal version {snapshot.Version} is not supported.");
             }
+            Validate(snapshot);
         }
         catch (Exception exception) when (exception is JsonException or InvalidDataException)
         {
@@ -61,6 +62,46 @@ internal sealed class TopologyJournal(string path) : IDisposable
                 if (defaultRule is null)
                 {
                     broker.DeleteRule(topic.Definition.Name, subscription.Definition.Name, "$Default");
+                }
+            }
+        }
+    }
+
+    // Validate the entire document before replay so an invalid later entry cannot
+    // leave the live namespace partially provisioned.
+    private static void Validate(VersionedTopologySnapshot snapshot)
+    {
+        if (snapshot.Topics is null)
+            throw new InvalidDataException("Missing topology topics.");
+
+        var topics = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var topic in snapshot.Topics)
+        {
+            if (topic?.Definition is not { } definition || string.IsNullOrWhiteSpace(definition.Name)
+                || !topics.Add(definition.Name) || topic.Subscriptions is null)
+                throw new InvalidDataException("Invalid or duplicate topology topic.");
+
+            var subscriptions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var subscription in topic.Subscriptions)
+            {
+                if (subscription?.Definition is not { } sub || string.IsNullOrWhiteSpace(sub.Name)
+                    || !subscriptions.Add(sub.Name) || subscription.Rules is null)
+                    throw new InvalidDataException("Invalid or duplicate topology subscription.");
+
+                var rules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var rule in subscription.Rules)
+                {
+                    if (rule is null || string.IsNullOrWhiteSpace(rule.Name) || !rules.Add(rule.Name)
+                        || string.IsNullOrWhiteSpace(rule.FilterExpression))
+                        throw new InvalidDataException("Invalid or duplicate topology rule.");
+                    try
+                    {
+                        SqlRuleEngine.Compile(rule.FilterExpression, rule.ActionExpression);
+                    }
+                    catch (FormatException exception)
+                    {
+                        throw new InvalidDataException($"Invalid topology rule '{rule.Name}'.", exception);
+                    }
                 }
             }
         }

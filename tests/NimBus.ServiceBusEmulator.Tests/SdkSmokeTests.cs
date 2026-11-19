@@ -19,6 +19,36 @@ namespace NimBus.ServiceBusEmulator.Tests;
 public sealed class SdkSmokeTests
 {
     [TestMethod]
+    [TestCategory("EmulatorOnly")]
+    [Timeout(60_000)]
+    public async Task Batch_and_scheduling_enforce_limits_without_partial_delivery()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync(environment: new Dictionary<string, string>
+        {
+            ["NIMBUS_SBEMULATOR_MAX_STORED_BYTES"] = "3000",
+            ["NIMBUS_SBEMULATOR_MAX_MESSAGE_SIZE"] = "2048",
+        });
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync("limits");
+        await admin.CreateSubscriptionAsync("limits", "consumer");
+        await using var client = new ServiceBusClient(emulator.ConnectionString,
+            new ServiceBusClientOptions { RetryOptions = { MaxRetries = 0 } });
+        await using var sender = client.CreateSender("limits");
+        await sender.SendMessageAsync(new ServiceBusMessage(new byte[1500]));
+        await sender.SendMessageAsync(new ServiceBusMessage(new byte[900]));
+        var quota = await Assert.ThrowsExactlyAsync<ServiceBusException>(() => sender.SendMessagesAsync(
+            new[] { new ServiceBusMessage(new byte[400]), new ServiceBusMessage(new byte[400]) }));
+        Assert.AreEqual(ServiceBusFailureReason.QuotaExceeded, quota.Reason);
+        Assert.AreEqual(2L, (await admin.GetSubscriptionRuntimePropertiesAsync("limits", "consumer")).Value.ActiveMessageCount);
+
+        await admin.DeleteSubscriptionAsync("limits", "consumer");
+        var size = await Assert.ThrowsExactlyAsync<ServiceBusException>(() => sender.ScheduleMessageAsync(
+            new ServiceBusMessage(new byte[2090]), DateTimeOffset.UtcNow.AddMinutes(5)));
+        Assert.AreEqual(ServiceBusFailureReason.MessageSizeExceeded, size.Reason);
+        Assert.AreEqual(0L, (await admin.GetTopicRuntimePropertiesAsync("limits")).Value.ScheduledMessageCount);
+    }
+
+    [TestMethod]
     [TestCategory("CommonFidelity")]
     [Timeout(60_000)]
     public async Task Stock_sdk_can_enumerate_an_empty_namespace()

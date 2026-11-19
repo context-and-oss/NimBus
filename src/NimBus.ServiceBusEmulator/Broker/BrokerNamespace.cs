@@ -8,6 +8,10 @@ internal sealed class BrokerNamespace
     private readonly List<ScheduledMessage> _scheduled = [];
     private readonly List<AdminOperation> _operationLog = [];
     private long _nextScheduleSequence;
+    private long _storedBytes;
+    private DateTimeOffset _nextExpiry = DateTimeOffset.MaxValue;
+    private DateTimeOffset _nextActivation = DateTimeOffset.MaxValue;
+    private bool _activationWaitingForSpace;
 
     public BrokerNamespace(BrokerOptions options)
     {
@@ -215,12 +219,19 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
-            if (!_topics.Remove(topicName))
+            if (!_topics.Remove(topicName, out var removed))
             {
                 throw new KeyNotFoundException($"Topic '{topicName}' does not exist.");
             }
 
-            _scheduled.RemoveAll(message => string.Equals(message.TopicName, topicName, StringComparison.OrdinalIgnoreCase));
+            ChangeStoredBytes(-removed.Subscriptions.Values.Sum(subscription => subscription.StoredBytes));
+            _scheduled.RemoveAll(message =>
+            {
+                if (!NamesEqual(message.TopicName, topicName))
+                    return false;
+                ChangeStoredBytes(-message.Message.Body.Length);
+                return true;
+            });
             Log("DELETE", topicName, "Delete");
         }
     }
@@ -314,11 +325,12 @@ internal sealed class BrokerNamespace
         lock (_gate)
         {
             var topic = GetTopic(topicName);
-            if (!topic.Subscriptions.Remove(subscriptionName))
+            if (!topic.Subscriptions.Remove(subscriptionName, out var removed))
             {
                 throw new KeyNotFoundException($"Subscription '{topicName}/{subscriptionName}' does not exist.");
             }
 
+            ChangeStoredBytes(-removed.StoredBytes);
             Log("DELETE", $"{topicName}/Subscriptions/{subscriptionName}", "Delete");
         }
     }
@@ -329,8 +341,11 @@ internal sealed class BrokerNamespace
         lock (_gate)
         {
             var subscription = GetSubscription(topicName, subscriptionName);
+            var rule = new RuleState(definition);
             subscription.Rules.Clear();
-            subscription.Rules.Add(new RuleState(definition));
+            subscription.Rules.Add(rule);
+            if (_activationWaitingForSpace)
+                _nextActivation = DateTimeOffset.MinValue;
         }
     }
 
@@ -391,27 +406,37 @@ internal sealed class BrokerNamespace
         }
     }
 
-    public long Publish(string topicName, BrokerMessage message)
+    public long Publish(string topicName, BrokerMessage message) => PublishBatch(topicName, [message])[0];
+
+    public long[] PublishBatch(string topicName, IReadOnlyList<BrokerMessage> messages)
     {
-        ArgumentNullException.ThrowIfNull(message);
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var topic = GetTopic(topicName);
             if (topic.Definition.Status == BrokerEntityStatus.SendDisabled)
-            {
                 throw new InvalidOperationException($"Topic '{topicName}' is send-disabled.");
-            }
 
             var now = _options.TimeProvider.GetUtcNow();
-            EnsureCapacityForPublish(topic, message);
-            if (message.ScheduledEnqueueTime is { } scheduled && scheduled > now)
+            var batch = new PendingWrites(this);
+            var sequences = new long[messages.Count];
+            for (var index = 0; index < messages.Count; index++)
             {
-                var scheduleSequence = ++_nextScheduleSequence;
-                _scheduled.Add(new ScheduledMessage(scheduleSequence, topicName, message.Copy(), scheduled));
-                return scheduleSequence;
+                var message = messages[index];
+                if (message.ScheduledEnqueueTime is { } due && due > now)
+                {
+                    sequences[index] = _nextScheduleSequence + batch.Schedules.Count + 1;
+                    batch.Reserve(message.Body.Length);
+                    batch.Schedules.Add(new ScheduledMessage(sequences[index], topicName, message.Copy(), due));
+                }
+                else
+                {
+                    sequences[index] = Enqueue(topic, message, now, batch);
+                }
             }
 
-            return Enqueue(topic, message, now);
+            batch.Commit();
+            return sequences;
         }
     }
 
@@ -427,6 +452,7 @@ internal sealed class BrokerNamespace
                 throw new KeyNotFoundException($"Scheduled message '{scheduleSequence}' does not exist.");
             }
 
+            ChangeStoredBytes(-_scheduled[index].Message.Body.Length);
             _scheduled.RemoveAt(index);
         }
     }
@@ -473,6 +499,7 @@ internal sealed class BrokerNamespace
             stored.Message.DeliveryCount = stored.PriorFailedAttempts + 1;
             stored.Message.LockToken = stored.LockToken;
             stored.Message.LockedUntil = stored.LockedUntil;
+            WatchExpiry(subscription, stored.LockedUntil);
             return new BrokerDelivery(stored.Message.CloneForDelivery(), stored.LockToken);
         }
     }
@@ -499,6 +526,7 @@ internal sealed class BrokerNamespace
             }
 
             var lockedUntil = now.Add(subscription.Definition.LockDuration);
+            WatchExpiry(subscription, lockedUntil);
             subscription.Sessions[sessionId] = new SessionLock(owner, lockedUntil);
             return new AcceptedSession(sessionId, lockedUntil);
         }
@@ -539,6 +567,7 @@ internal sealed class BrokerNamespace
                          string.Equals(message.Message.SessionId, sessionId, StringComparison.Ordinal)))
             {
                 message.ReleaseWithoutFailure();
+                WatchExpiry(subscription, message.ExpiresAt);
             }
         }
     }
@@ -552,6 +581,7 @@ internal sealed class BrokerNamespace
             var session = FindOwnedSession(subscription, sessionId, owner);
 
             var expiration = _options.TimeProvider.GetUtcNow().Add(subscription.Definition.LockDuration);
+            WatchExpiry(subscription, expiration);
             subscription.Sessions[sessionId] = session with { LockedUntil = expiration };
             foreach (var message in subscription.Messages.Where(message =>
                          message.State == MessageState.Locked &&
@@ -597,6 +627,8 @@ internal sealed class BrokerNamespace
 
             var subscription = GetSubscription(topicName, subscriptionName);
             FindOwnedSession(subscription, sessionId, owner);
+            var delta = (state?.Length ?? 0) - subscription.SessionState.GetValueOrDefault(sessionId).Length;
+            EnsureCapacity(delta);
             if (state is null || state.Value.IsEmpty)
             {
                 subscription.SessionState.Remove(sessionId);
@@ -605,6 +637,7 @@ internal sealed class BrokerNamespace
             {
                 subscription.SessionState[sessionId] = state.Value.ToArray();
             }
+            ChangeStoredBytes(delta);
         }
     }
 
@@ -624,6 +657,7 @@ internal sealed class BrokerNamespace
 
             stored.LockedUntil = _options.TimeProvider.GetUtcNow().Add(subscription.Definition.LockDuration);
             stored.Message.LockedUntil = stored.LockedUntil;
+            WatchExpiry(subscription, stored.LockedUntil);
             return stored.LockedUntil;
         }
     }
@@ -667,7 +701,8 @@ internal sealed class BrokerNamespace
         lock (_gate)
         {
             ProcessDueWorkCore();
-            var stored = GetSubscription(topicName, subscriptionName).DeadLetter
+            var subscription = GetSubscription(topicName, subscriptionName);
+            var stored = subscription.DeadLetter
                 .FirstOrDefault(candidate => candidate.State == MessageState.DeadLetter);
             if (stored is null)
             {
@@ -681,6 +716,7 @@ internal sealed class BrokerNamespace
             stored.Message.DeliveryCount = stored.PriorFailedAttempts + 1;
             stored.Message.LockToken = stored.LockToken;
             stored.Message.LockedUntil = stored.LockedUntil;
+            WatchExpiry(subscription, stored.LockedUntil);
             return new BrokerDelivery(stored.Message.CloneForDelivery(), stored.LockToken);
         }
     }
@@ -690,7 +726,10 @@ internal sealed class BrokerNamespace
         lock (_gate)
         {
             var subscription = GetSubscription(topicName, subscriptionName);
-            subscription.DeadLetter.Remove(FindLockedIn(subscription.DeadLetter, lockToken, owner));
+            ProcessDueWorkCore();
+            var stored = FindLockedIn(subscription.DeadLetter, lockToken, owner);
+            subscription.DeadLetter.Remove(stored);
+            ChangeStoredBytes(-stored.Message.Body.Length);
         }
     }
 
@@ -698,6 +737,7 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var stored = FindLockedIn(GetSubscription(topicName, subscriptionName).DeadLetter, lockToken, owner);
             stored.ReleaseWithoutFailure();
             stored.State = MessageState.DeadLetter;
@@ -715,6 +755,7 @@ internal sealed class BrokerNamespace
                 ?? throw new KeyNotFoundException($"Lock token '{lockToken}' is not active.");
             stored.LockedUntil = _options.TimeProvider.GetUtcNow().Add(subscription.Definition.LockDuration);
             stored.Message.LockedUntil = stored.LockedUntil;
+            WatchExpiry(subscription, stored.LockedUntil);
             return stored.LockedUntil;
         }
     }
@@ -729,12 +770,16 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(sourceTopic, sourceSubscription);
             var source = FindLockedIn(subscription.DeadLetter, lockToken, owner);
             var topic = GetTopic(destinationTopic);
-            EnsureCapacityForPublish(topic, message);
+            if (topic.Definition.Status == BrokerEntityStatus.SendDisabled)
+                throw new InvalidOperationException($"Topic '{destinationTopic}' is send-disabled.");
+            var batch = new PendingWrites(this, source.Message.Body.Length);
+            Enqueue(topic, message, _options.TimeProvider.GetUtcNow(), batch);
             subscription.DeadLetter.Remove(source);
-            Enqueue(topic, message, _options.TimeProvider.GetUtcNow());
+            batch.Commit();
         }
     }
 
@@ -746,6 +791,7 @@ internal sealed class BrokerNamespace
             var subscription = GetSubscription(topicName, subscriptionName);
             var stored = FindLocked(subscription, lockToken, owner);
             subscription.Messages.Remove(stored);
+            ChangeStoredBytes(-stored.Message.Body.Length);
         }
     }
 
@@ -783,7 +829,9 @@ internal sealed class BrokerNamespace
         {
             ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
-            FindLocked(subscription, lockToken, owner).ReleaseWithoutFailure();
+            var stored = FindLocked(subscription, lockToken, owner);
+            stored.ReleaseWithoutFailure();
+            WatchExpiry(subscription, stored.ExpiresAt);
         }
     }
 
@@ -793,7 +841,9 @@ internal sealed class BrokerNamespace
         {
             ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
-            subscription.Messages.Remove(FindLocked(subscription, lockToken));
+            var stored = FindLocked(subscription, lockToken);
+            subscription.Messages.Remove(stored);
+            ChangeStoredBytes(-stored.Message.Body.Length);
         }
     }
 
@@ -864,9 +914,9 @@ internal sealed class BrokerNamespace
         }
     }
 
-    private long Enqueue(TopicState topic, BrokerMessage source, DateTimeOffset now)
+    private long Enqueue(TopicState topic, BrokerMessage source, DateTimeOffset now, PendingWrites batch)
     {
-        var sequence = ++topic.NextSequence;
+        var sequence = batch.NextSequence(topic);
         foreach (var subscription in topic.Subscriptions.Values)
         {
             var actionMatches = new List<RuleState>();
@@ -892,13 +942,14 @@ internal sealed class BrokerNamespace
                 catch (Exception) when (subscription.Definition.DeadLetterOnFilterEvaluationExceptions)
                 {
                     var failed = NewStoredCopy(topic, subscription, source, sequence, now);
-                    MoveToDeadLetter(subscription, failed, "FilterEvaluationException", "A rule filter could not be evaluated.");
+                    MarkDeadLetter(failed, "FilterEvaluationException", "A rule filter could not be evaluated.");
+                    batch.Store(subscription, subscription.DeadLetter, failed);
                 }
             }
 
             if (matchedWithoutAction)
             {
-                EnqueueOrForward(subscription, NewStoredCopy(topic, subscription, source, sequence, now));
+                EnqueueOrForward(subscription, NewStoredCopy(topic, subscription, source, sequence, now), batch);
             }
 
             foreach (var rule in actionMatches)
@@ -906,45 +957,89 @@ internal sealed class BrokerNamespace
                 var copy = NewStoredCopy(topic, subscription, source, sequence, now);
                 rule.Compiled.Apply(copy.Message.ApplicationProperties);
                 copy.Message.ApplicationProperties["RuleName"] = rule.Definition.Name;
-                EnqueueOrForward(subscription, copy);
+                EnqueueOrForward(subscription, copy, batch);
             }
         }
 
         return sequence;
     }
 
-    private void EnsureCapacityForPublish(TopicState topic, BrokerMessage message)
+    private void EnsureCapacity(long delta)
     {
-        var currentBytes = _scheduled.Sum(item => (long)item.Message.Body.Length) +
-                           _topics.Values.SelectMany(item => item.Subscriptions.Values).Sum(subscription =>
-                               subscription.Messages.Sum(item => (long)item.Message.Body.Length) +
-                               subscription.DeadLetter.Sum(item => (long)item.Message.Body.Length) +
-                               subscription.TransferDeadLetter.Sum(item => (long)item.Message.Body.Length) +
-                               subscription.SessionState.Values.Sum(state => (long)state.Length));
-        var scheduled = message.ScheduledEnqueueTime is { } due && due > _options.TimeProvider.GetUtcNow();
-        var copies = scheduled
-            ? 1L
-            : topic.Subscriptions.Values.Sum(subscription => Math.Max(1L, subscription.Rules.Count));
-        var requiredBytes = checked(message.Body.Length * copies);
-        if (currentBytes > _options.MaxStoredBytes - requiredBytes)
+        if (delta > _options.MaxStoredBytes - _storedBytes)
+            throw new BrokerQuotaExceededException($"The emulator's {_options.MaxStoredBytes}-byte broker memory budget would be exceeded.");
+    }
+
+    private void ChangeStoredBytes(long delta)
+    {
+        _storedBytes += delta;
+        if (delta < 0 && _activationWaitingForSpace)
+            _nextActivation = DateTimeOffset.MinValue;
+    }
+
+    // Prepare fan-out and forwarding under the namespace lock. Replacing an existing
+    // body (activation, replay or resume) credits its bytes in the same commit.
+    private sealed class PendingWrites(BrokerNamespace broker, int replacedBytes = 0)
+    {
+        private long _delta = -replacedBytes;
+        private readonly List<(SubscriptionState Subscription, List<StoredMessage> Target, StoredMessage Message)> _writes = [];
+        private readonly Dictionary<TopicState, long> _sequences = [];
+
+        public List<ScheduledMessage> Schedules { get; } = [];
+
+        public long NextSequence(TopicState topic)
         {
-            throw new BrokerQuotaExceededException(
-                $"The emulator's {_options.MaxStoredBytes}-byte broker memory budget would be exceeded.");
+            var next = _sequences.GetValueOrDefault(topic, topic.NextSequence) + 1;
+            _sequences[topic] = next;
+            return next;
+        }
+
+        public void Reserve(int bytes)
+        {
+            _delta += bytes;
+            broker.EnsureCapacity(_delta);
+        }
+
+        public void Store(SubscriptionState subscription, List<StoredMessage> target, StoredMessage message)
+        {
+            Reserve(message.Message.Body.Length);
+            _writes.Add((subscription, target, message));
+        }
+
+        public void Commit()
+        {
+            foreach (var (subscription, target, message) in _writes)
+            {
+                target.Add(message);
+                if (message.State == MessageState.Active)
+                    broker.WatchExpiry(subscription, message.ExpiresAt);
+            }
+
+            foreach (var (topic, sequence) in _sequences)
+                topic.NextSequence = sequence;
+            broker._nextScheduleSequence += Schedules.Count;
+            foreach (var scheduled in Schedules)
+            {
+                broker._scheduled.Add(scheduled);
+                if (scheduled.Due < broker._nextActivation)
+                    broker._nextActivation = scheduled.Due;
+            }
+            broker.ChangeStoredBytes(_delta);
         }
     }
 
-    private void EnqueueOrForward(SubscriptionState subscription, StoredMessage message)
+    private void EnqueueOrForward(SubscriptionState subscription, StoredMessage message, PendingWrites batch)
     {
         if (subscription.Definition.Status != BrokerEntityStatus.Active || string.IsNullOrEmpty(subscription.Definition.ForwardTo))
         {
-            subscription.Messages.Add(message);
+            batch.Store(subscription, subscription.Messages, message);
             return;
         }
 
-        Forward(subscription, message);
+        Forward(subscription, message, batch);
     }
 
-    private void Forward(SubscriptionState source, StoredMessage stored)
+    private void Forward(SubscriptionState source, StoredMessage stored, PendingWrites batch)
     {
         var targetName = source.Definition.ForwardTo!;
         if (stored.Message.ForwardHopCount >= 4 ||
@@ -952,13 +1047,13 @@ internal sealed class BrokerNamespace
             target.Definition.Status == BrokerEntityStatus.SendDisabled)
         {
             stored.State = MessageState.DeadLetter;
-            source.TransferDeadLetter.Add(stored);
+            batch.Store(source, source.TransferDeadLetter, stored);
             return;
         }
 
         var forwarded = stored.Message.Copy();
         forwarded.ForwardHopCount = stored.Message.ForwardHopCount + 1;
-        Enqueue(target, forwarded, _options.TimeProvider.GetUtcNow());
+        Enqueue(target, forwarded, _options.TimeProvider.GetUtcNow(), batch);
     }
 
     private void ForwardPending(SubscriptionState subscription)
@@ -967,7 +1062,17 @@ internal sealed class BrokerNamespace
         foreach (var message in pending)
         {
             subscription.Messages.Remove(message);
-            Forward(subscription, message);
+            var batch = new PendingWrites(this, message.Message.Body.Length);
+            try
+            {
+                Forward(subscription, message, batch);
+                batch.Commit();
+            }
+            catch (BrokerQuotaExceededException)
+            {
+                MarkDeadLetter(message, "QuotaExceeded", "The forwarding destination exceeds the broker budget.");
+                subscription.TransferDeadLetter.Add(message);
+            }
         }
     }
 
@@ -986,62 +1091,129 @@ internal sealed class BrokerNamespace
         return new StoredMessage(copy, ttl is null ? null : now.Add(ttl.Value));
     }
 
+    private void WatchExpiry(SubscriptionState subscription, DateTimeOffset? deadline)
+    {
+        if (deadline is not { } due)
+            return;
+        if (due < subscription.NextExpiry)
+            subscription.NextExpiry = due;
+        if (due < _nextExpiry)
+            _nextExpiry = due;
+    }
+
     private void ProcessDueWorkCore()
     {
         var now = _options.TimeProvider.GetUtcNow();
-        var dueMessages = new List<ScheduledMessage>();
-        for (var index = _scheduled.Count - 1; index >= 0; index--)
+        if (now >= _nextExpiry)
         {
-            var scheduled = _scheduled[index];
-            if (scheduled.Due > now)
+            _nextExpiry = DateTimeOffset.MaxValue;
+            foreach (var topic in _topics.Values)
             {
-                continue;
-            }
-
-            _scheduled.RemoveAt(index);
-            dueMessages.Add(scheduled);
-        }
-
-        for (var index = dueMessages.Count - 1; index >= 0; index--)
-        {
-            var scheduled = dueMessages[index];
-            Enqueue(GetTopic(scheduled.TopicName), scheduled.Message, now);
-        }
-
-        foreach (var subscription in _topics.Values.SelectMany(topic => topic.Subscriptions.Values))
-        {
-            subscription.Messages.RemoveAll(message =>
-                message.State != MessageState.Locked && message.ExpiresAt is { } expires && expires <= now);
-
-            foreach (var session in subscription.Sessions.Where(pair => pair.Value.LockedUntil <= now).ToArray())
-            {
-                subscription.Sessions.Remove(session.Key);
-                foreach (var message in subscription.Messages.Where(message =>
-                             message.State == MessageState.Locked &&
-                             string.Equals(message.Message.SessionId, session.Key, StringComparison.Ordinal)).ToArray())
+                foreach (var subscription in topic.Subscriptions.Values)
                 {
-                    FailDelivery(subscription, message, "MaxDeliveryCountExceeded", null);
+                    if (now >= subscription.NextExpiry)
+                        ProcessExpiry(subscription, now);
+                    if (subscription.NextExpiry < _nextExpiry)
+                        _nextExpiry = subscription.NextExpiry;
                 }
             }
+        }
 
-            foreach (var message in subscription.Messages.Where(message =>
-                         message.State == MessageState.Locked &&
-                         !subscription.Definition.RequiresSession &&
-                         message.LockedUntil <= now).ToArray())
+        if (now >= _nextActivation)
+        {
+            _nextActivation = DateTimeOffset.MaxValue;
+            _activationWaitingForSpace = false;
+            _scheduled.RemoveAll(scheduled =>
             {
-                FailDelivery(subscription, message, "MaxDeliveryCountExceeded", null);
-            }
+                if (scheduled.Due > now)
+                {
+                    if (scheduled.Due < _nextActivation)
+                        _nextActivation = scheduled.Due;
+                    return false;
+                }
 
-            foreach (var message in subscription.DeadLetter.Where(message =>
-                         message.State == MessageState.Locked && message.LockedUntil <= now).ToArray())
-            {
-                message.ReleaseWithoutFailure();
-                message.State = MessageState.DeadLetter;
-            }
+                var batch = new PendingWrites(this, scheduled.Message.Body.Length);
+                try
+                {
+                    Enqueue(GetTopic(scheduled.TopicName), scheduled.Message, now, batch);
+                    batch.Commit();
+                    return true;
+                }
+                catch (BrokerQuotaExceededException)
+                {
+                    // Keep the accepted schedule cancellable and retry after space or topology changes.
+                    _activationWaitingForSpace = true;
+                    return false;
+                }
+            });
         }
     }
 
-    private static void FailDelivery(
+    private void ProcessExpiry(SubscriptionState subscription, DateTimeOffset now)
+    {
+        subscription.NextExpiry = DateTimeOffset.MaxValue;
+        foreach (var session in subscription.Sessions.ToArray())
+        {
+            if (session.Value.LockedUntil <= now)
+                subscription.Sessions.Remove(session.Key);
+            else
+                WatchExpiry(subscription, session.Value.LockedUntil);
+        }
+
+        // Expiry may move a message to the DLQ. Compact the active list in one pass.
+        subscription.Messages.RemoveAll(message =>
+        {
+            if (message.State == MessageState.Locked)
+            {
+                if (subscription.Definition.RequiresSession)
+                {
+                    if (message.Message.SessionId is { } id && subscription.Sessions.ContainsKey(id))
+                        return false;
+                }
+                else if (message.LockedUntil > now)
+                {
+                    WatchExpiry(subscription, message.LockedUntil);
+                    return false;
+                }
+
+                if (message.ExpiresAt is null || message.ExpiresAt > now)
+                {
+                    message.PriorFailedAttempts++;
+                    if (message.PriorFailedAttempts >= subscription.Definition.MaxDeliveryCount)
+                    {
+                        MarkDeadLetter(message, "MaxDeliveryCountExceeded", null);
+                        subscription.DeadLetter.Add(message);
+                        return true;
+                    }
+                    message.ReleaseWithoutFailure();
+                }
+            }
+
+            if (message.ExpiresAt <= now)
+            {
+                ChangeStoredBytes(-message.Message.Body.Length);
+                return true;
+            }
+
+            WatchExpiry(subscription, message.ExpiresAt);
+            return false;
+        });
+
+        foreach (var message in subscription.DeadLetter)
+        {
+            if (message.State != MessageState.Locked)
+                continue;
+            if (message.LockedUntil > now)
+            {
+                WatchExpiry(subscription, message.LockedUntil);
+                continue;
+            }
+            message.ReleaseWithoutFailure();
+            message.State = MessageState.DeadLetter;
+        }
+    }
+
+    private void FailDelivery(
         SubscriptionState subscription,
         StoredMessage stored,
         string reason,
@@ -1055,6 +1227,7 @@ internal sealed class BrokerNamespace
         else
         {
             stored.ReleaseWithoutFailure();
+            WatchExpiry(subscription, stored.ExpiresAt);
         }
     }
 
@@ -1065,6 +1238,12 @@ internal sealed class BrokerNamespace
         string? description)
     {
         subscription.Messages.Remove(stored);
+        MarkDeadLetter(stored, reason, description);
+        subscription.DeadLetter.Add(stored);
+    }
+
+    private static void MarkDeadLetter(StoredMessage stored, string? reason, string? description)
+    {
         stored.State = MessageState.DeadLetter;
         stored.Message.DeliveryCount = Math.Max(1, stored.PriorFailedAttempts);
         if (!string.IsNullOrEmpty(reason))
@@ -1076,8 +1255,6 @@ internal sealed class BrokerNamespace
         {
             stored.Message.ApplicationProperties["DeadLetterErrorDescription"] = description;
         }
-
-        subscription.DeadLetter.Add(stored);
     }
 
     private static StoredMessage FindLocked(SubscriptionState subscription, Guid lockToken, string owner)
@@ -1119,8 +1296,12 @@ internal sealed class BrokerNamespace
             ? topic
             : throw new KeyNotFoundException($"Topic '{topicName}' does not exist.");
 
-    private void Log(string verb, string entityPath, string kind) =>
+    private void Log(string verb, string entityPath, string kind)
+    {
+        if (_activationWaitingForSpace)
+            _nextActivation = DateTimeOffset.MinValue;
         _operationLog.Add(new AdminOperation(verb, entityPath, kind, _options.TimeProvider.GetUtcNow()));
+    }
 
     private SubscriptionState GetSubscription(string topicName, string subscriptionName)
     {
@@ -1263,6 +1444,13 @@ internal sealed class BrokerNamespace
         public DateTimeOffset UpdatedAt { get; set; } = createdAt;
 
         public DateTimeOffset AccessedAt { get; set; } = createdAt;
+
+        public DateTimeOffset NextExpiry { get; set; } = DateTimeOffset.MaxValue;
+
+        public long StoredBytes => Messages.Sum(item => (long)item.Message.Body.Length)
+            + DeadLetter.Sum(item => (long)item.Message.Body.Length)
+            + TransferDeadLetter.Sum(item => (long)item.Message.Body.Length)
+            + SessionState.Values.Sum(state => (long)state.Length);
 
         public List<RuleState> Rules { get; } = [new(initialRule ?? new RuleDefinition("$Default", "1=1"))];
 

@@ -9,7 +9,8 @@ namespace NimBus.ServiceBusEmulator.Protocol;
 internal sealed class ManagementRequestProcessor(
     BrokerNamespace broker,
     SessionLinkRegistry sessionLinks,
-    string? fixedEntityPath = null) : IRequestProcessor
+    string? fixedEntityPath = null,
+    int maxMessageSize = 262_144) : IRequestProcessor
 {
     internal const string ManagementStatusCode = "statusCode";
 
@@ -38,6 +39,14 @@ internal sealed class ManagementRequestProcessor(
                 : null;
             var responseBody = Dispatch(operation, entityPath, body, owner);
             requestContext.Complete(Response(200, "OK", responseBody));
+        }
+        catch (MessageSizeExceededException exception)
+        {
+            requestContext.Complete(Response(413, exception.Message, errorCondition: "amqp:link:message-size-exceeded"));
+        }
+        catch (BrokerQuotaExceededException exception)
+        {
+            requestContext.Complete(Response(403, exception.Message, errorCondition: "amqp:resource-limit-exceeded"));
         }
         catch (NotSupportedException exception)
         {
@@ -93,7 +102,7 @@ internal sealed class ManagementRequestProcessor(
             throw new FormatException("schedule-message requires messages.");
         }
 
-        var sequences = new List<long>();
+        var messages = new List<BrokerMessage>();
         foreach (var value in values)
         {
             if (value is not Map item || GetValue(item, "message") is not byte[] bytes)
@@ -102,11 +111,16 @@ internal sealed class ManagementRequestProcessor(
             }
 
             var message = Message.Decode(new ByteBuffer(bytes, 0, bytes.Length, bytes.Length));
-            sequences.Add(broker.Publish(topicName, AmqpMessageConverter.FromAmqp(message)));
+            var decoded = AmqpMessageConverter.FromAmqp(message);
+            if (decoded.Body.Length > maxMessageSize)
+                throw new MessageSizeExceededException($"Message exceeds the configured {maxMessageSize}-byte limit.");
+            messages.Add(decoded);
         }
 
-        return new Map { ["sequence-numbers"] = sequences.ToArray() };
+        return new Map { ["sequence-numbers"] = broker.PublishBatch(topicName, messages) };
     }
+
+    private sealed class MessageSizeExceededException(string message) : Exception(message);
 
     private Map CancelScheduled(string topicName, Map body)
     {

@@ -251,16 +251,15 @@ internal sealed class BrokerLinkProcessor(
                     return;
                 }
 
-                foreach (var brokerMessage in messages)
+                if (messageContext.DeliveryState is TransactionalState transaction)
                 {
-                    if (messageContext.DeliveryState is TransactionalState transaction)
-                    {
-                        transactions.StageSend(transaction.TxnId, topicName, brokerMessage);
-                    }
-                    else
-                    {
-                        broker.Publish(topicName, brokerMessage);
-                    }
+                    if (messages.Count != 1)
+                        throw new NotSupportedException("Replay transactions require exactly one send.");
+                    transactions.StageSend(transaction.TxnId, topicName, messages[0]);
+                }
+                else
+                {
+                    broker.PublishBatch(topicName, messages);
                 }
                 Complete(messageContext);
             }

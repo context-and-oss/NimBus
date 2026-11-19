@@ -33,6 +33,8 @@ Messages, locks, and session state are in memory and are lost on restart. Topolo
 
 The broker memory budget defaults to 512 MiB and can be set with `NIMBUS_SBEMULATOR_MAX_STORED_BYTES`. The per-message limit defaults to 256 KiB and can be raised, up to 1 MiB, with `NIMBUS_SBEMULATOR_MAX_MESSAGE_SIZE`. Invalid or incompatible topology journals are renamed with a `.corrupt-{timestamp}` suffix and the broker starts empty so the provisioner can recover it.
 
+Batch sends are atomic across subscriptions and forwarding destinations. Each stored body copy and session state value counts toward the shared budget. A scheduled message that reaches its activation time without room for all delivery copies stays scheduled and cancellable. The broker retries activation when space becomes available or the topology changes. When resuming a paused forwarding subscription, a pending message whose destination exceeds the budget goes to the source transfer dead-letter queue.
+
 The emulator supports the NimBus topic/subscription surface: SQL rules and SET actions, sessions and session state, peek, scheduling/cancellation, settlement, delivery limits, TTL, runtime properties, auto-forwarding, regular dead-letter browsing, and the narrow cross-entity transaction used to complete and replay one dead-lettered Resolver message. Queues, general-purpose transactions, transfer dead-letter browsing, WebSockets, Entra ID, duplicate-detection enforcement, and Service Bus message deferral are intentionally unsupported.
 
 Explicit receivers can lock an empty session id immediately. Transactional completion outside the supported dead-letter replay path is rejected with `amqp:not-implemented` instead of leaving the SDK waiting for settlement.
