@@ -61,7 +61,7 @@ internal sealed class AmqpFrontend : IDisposable
             {
                 if (_managementNodes.Add(node))
                 {
-                    _host.RegisterRequestProcessor(node, new ManagementRequestProcessor(broker, sessionLinks, entityPath));
+                    _host.RegisterRequestProcessor(node, new ManagementRequestProcessor(broker, sessionLinks, entityPath, maxMessageSize));
                 }
             }
         }
