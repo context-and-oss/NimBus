@@ -104,6 +104,8 @@ export default function Operations() {
   const [statuses, setStatuses] = useState<Record<string, EndpointChannelStatus>>();
   const [attentionOnly, setAttentionOnly] = useState(false);
   const [group, setGroup] = useState<OperationGroupId | "all">("all");
+  // The operation whose drawer was closed; the list stays on its URL.
+  const [closed, setClosed] = useState<string>();
 
   const current = operation ? OPERATIONS.find((o) => o.id === operation.toLowerCase()) : undefined;
   const endpoint = searchParams.get("endpoint") ?? undefined;
@@ -136,7 +138,10 @@ export default function Operations() {
   }, [client, currentId]);
 
   const open = useCallback(
-    (operationId: string, endpointId?: string) => navigate(operationUrl(operationId, endpointId)),
+    (operationId: string, endpointId?: string) => {
+      setClosed(undefined);
+      navigate(operationUrl(operationId, endpointId));
+    },
     [navigate],
   );
 
@@ -146,6 +151,8 @@ export default function Operations() {
     ? Object.values(statuses).filter((s) => s.receive === "disabled" || s.send === "disabled").length
     : undefined;
   const currentGroup = current && OPERATION_GROUPS.find((g) => g.id === current.group)!;
+  const drawerKey = current ? `${current.id}:${endpoint ?? ""}` : undefined;
+  const drawerOpen = drawerKey !== undefined && drawerKey !== closed;
   const listed = OPERATIONS.filter((o) => group === "all" || o.group === group);
 
   return (
@@ -204,7 +211,7 @@ export default function Operations() {
       }
       inspectorSlot={!current}
       inspector={
-        current && currentGroup ? (
+        current && currentGroup && drawerOpen ? (
           <Inspector
             eyebrow="Operation"
             title={current.label}
@@ -214,6 +221,7 @@ export default function Operations() {
                 {current.description} <span className="text-muted-foreground">{currentGroup.caption}.</span>
               </>
             }
+            onClose={() => setClosed(drawerKey)}
           >
             {/* Keyed so a new operation or pre-filled endpoint starts a fresh form.
                 A container, so each form lays out for the inspector's width. */}
@@ -255,7 +263,7 @@ export default function Operations() {
               <tbody>
                 {listed.map((o) => {
                   const g = OPERATION_GROUPS.find((x) => x.id === o.group)!;
-                  const selected = o.id === current.id;
+                  const selected = o.id === current.id && drawerOpen;
                   return (
                     <tr key={o.id} className={selectableRowClass(selected)}>
                       <td className="whitespace-nowrap px-4">

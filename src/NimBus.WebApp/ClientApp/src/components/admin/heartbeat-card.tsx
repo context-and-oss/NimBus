@@ -579,6 +579,7 @@ export default function HeartbeatCard() {
                     ? statusHints[selectedStatus]
                     : "Excluded from heartbeat probes. The figures below are from its last probe."
                 }
+                onClose={() => setSelectedId(undefined)}
               >
                 <InspectorTiles
                   label="Last probe"

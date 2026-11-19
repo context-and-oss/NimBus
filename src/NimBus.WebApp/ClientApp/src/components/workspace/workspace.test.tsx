@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import {
   Inspector,
@@ -9,8 +10,9 @@ import {
   WorkspaceSection,
   WorkspaceStat,
   WorkspaceTabs,
+  InspectorPortal,
 } from "./workspace";
-import { RowSelect, selectableRowClass } from "./selectable-row";
+import { RowActionsCell, RowSelect, selectableRowClass } from "./selectable-row";
 
 afterEach(cleanup);
 
@@ -44,7 +46,7 @@ describe("Workspace", () => {
     expect(screen.getByText("No unsaved changes")).toBeTruthy();
   });
 
-  it("has no inspector column unless one is given", () => {
+  it("has no inspector drawer unless one is given", () => {
     render(
       <Workspace title="Settings">
         <p>form</p>
@@ -143,5 +145,113 @@ describe("RowSelect", () => {
     expect(button.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(button);
     expect(onSelect).toHaveBeenCalledOnce();
+  });
+});
+
+// A workspace whose table owns the selection, as the Manage pages' tables do.
+function Topics({ onAction = () => undefined }: { onAction?: (name: string) => void }) {
+  const [selected, setSelected] = useState<string>();
+  const names = ["billing", "orders", "shipping"];
+  return (
+    <Workspace title="Topology" inspectorSlot>
+      <table aria-label="Topics">
+        <tbody>
+          {names.map((name) => (
+            <tr key={name} className={selectableRowClass(name === selected)}>
+              <td>
+                <RowSelect selected={name === selected} onSelect={() => setSelected(name)}>
+                  {name}
+                </RowSelect>
+              </td>
+              <td>{`${name} count`}</td>
+              <RowActionsCell label={`Actions for ${name}`} actions={[{ label: "Purge…", destructive: true, onSelect: () => onAction(name) }]} />
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <InspectorPortal>
+        {selected ? <Inspector eyebrow="Topic" title={selected} onClose={() => setSelected(undefined)} /> : <Inspector />}
+      </InspectorPortal>
+    </Workspace>
+  );
+}
+
+const drawerOpen = () => screen.getByTestId("inspector-drawer").getAttribute("data-open") === "true";
+const inspectorHeading = () => within(screen.getByRole("complementary", { name: "Inspector" })).getByRole("heading", { level: 3 });
+
+describe("Workspace inspector drawer", () => {
+  it("stays closed until a row is selected, and a click anywhere on the row selects it", () => {
+    render(<Topics />);
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
+
+    fireEvent.click(screen.getByText("orders count"));
+
+    expect(inspectorHeading().textContent).toBe("orders");
+    expect(screen.getByRole("button", { name: "orders" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("opens once the selection has rendered into it", async () => {
+    render(<Topics />);
+    expect(drawerOpen()).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "orders" }));
+    await vi.waitFor(() => expect(drawerOpen()).toBe(true));
+  });
+
+  it("closes from its close button and from Escape, and hands focus back to the row", () => {
+    render(<Topics />);
+    fireEvent.click(screen.getByRole("button", { name: "orders" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close inspector" }));
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "orders" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "billing" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
+  });
+
+  it("steps through the rows with its buttons and the arrow keys, stopping at either end", async () => {
+    render(<Topics />);
+    fireEvent.click(screen.getByRole("button", { name: "orders" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Next row" }));
+    expect(inspectorHeading().textContent).toBe("shipping");
+    await vi.waitFor(() =>
+      expect((screen.getByRole("button", { name: "Next row" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    expect(inspectorHeading().textContent).toBe("billing");
+    await vi.waitFor(() =>
+      expect((screen.getByRole("button", { name: "Previous row" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+  });
+
+  it("leaves the arrow keys to a field that has focus", () => {
+    render(
+      <>
+        <Topics />
+        <input aria-label="Filter" />
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "orders" }));
+    fireEvent.keyDown(screen.getByLabelText("Filter"), { key: "ArrowDown" });
+    expect(inspectorHeading().textContent).toBe("orders");
+  });
+
+  it("runs a row's menu action without selecting the row, and Escape closes only the menu", () => {
+    const onAction = vi.fn();
+    render(<Topics onAction={onAction} />);
+    fireEvent.click(screen.getByRole("button", { name: "orders" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for billing" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(inspectorHeading().textContent).toBe("orders");
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for billing" }));
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Purge…" }));
+    expect(onAction).toHaveBeenCalledWith("billing");
+    expect(inspectorHeading().textContent).toBe("orders");
   });
 });

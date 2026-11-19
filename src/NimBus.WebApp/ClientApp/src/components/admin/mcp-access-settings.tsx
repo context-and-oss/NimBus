@@ -541,7 +541,7 @@ const WARNING_MARK = (
 /** The capability table of the Permissions tab. The row switches; the inspector describes the selected row. */
 function CapabilityTable({ draft, saved, classifyAvailable, selected, onSelect, onToggle }: {
   draft: McpSettings; saved: McpSettings; classifyAvailable: boolean;
-  selected?: SelectedCapability; onSelect: (key: SelectedCapability) => void; onToggle: (key: CapabilityKey, on: boolean) => void;
+  selected?: SelectedCapability; onSelect: (key: SelectedCapability | undefined) => void; onToggle: (key: CapabilityKey, on: boolean) => void;
 }) {
   const inPanel = useInPanel();
   const cap = CAPABILITIES.find(c => c.key === selected);
@@ -554,7 +554,8 @@ function CapabilityTable({ draft, saved, classifyAvailable, selected, onSelect, 
   const inspector = cap ? (
     <Inspector eyebrow="Capability" title={cap.label} badge={<Risk risk={cap.risk} text={cap.riskText} />}
       state={<Badge variant={capOn ? "success" : "secondary"}>{capOn ? "On" : "Off"}</Badge>}
-      description={<>{cap.description}{cap.key === "classify" && !classifyAvailable ? " Failure intelligence is off in this deployment." : ""}</>}>
+      description={<>{cap.description}{cap.key === "classify" && !classifyAvailable ? " Failure intelligence is off in this deployment." : ""}</>}
+      onClose={() => onSelect(undefined)}>
       <InspectorTiles label="Also requires" tiles={[{ label: "Entra scope", value: cap.scope }, { label: "Role", value: cap.role }]} />
       {tools(cap.tools)}
       {cap.note && (
@@ -565,7 +566,8 @@ function CapabilityTable({ draft, saved, classifyAvailable, selected, onSelect, 
     </Inspector>
   ) : selected === OBSERVE ? (
     <Inspector eyebrow="Capability" title="Observe" badge={<Risk risk="low" text="read" />}
-      state={<Badge variant="secondary">Always on</Badge>} description={OBSERVE_DESCRIPTION}>
+      state={<Badge variant="secondary">Always on</Badge>} description={OBSERVE_DESCRIPTION}
+      onClose={() => onSelect(undefined)}>
       {tools([`${READ_TOOL_COUNT} read tools`])}
     </Inspector>
   ) : <Inspector empty="Select a capability to see what it allows." />;
@@ -615,7 +617,7 @@ function CapabilityTable({ draft, saved, classifyAvailable, selected, onSelect, 
           </tbody>
         </table>
       </WorkspaceTableFrame>
-      {/* The Settings frame gives the inspector its own column; standalone it follows the table and needs a box. */}
+      {/* The Settings frame shows the inspector as a drawer; standalone it follows the table and needs a box. */}
       <PanelInspector>{inPanel ? inspector : <div className="rounded-nb-md border border-border bg-card">{inspector}</div>}</PanelInspector>
     </>
   );

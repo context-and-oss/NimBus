@@ -21,12 +21,14 @@ platform's own `Resolver` topic.
 
 Columns sort on click; the table is alphabetical by default. Sorting on a count
 column puts the backlog at the top. Pick a topic from the **Topic** chips above
-the table, or select its row and choose **Open subscriptions** in the inspector
-on the right, to see the same counters per subscription.
+the table, or choose **Open subscriptions** from its row's **⋯** menu or from the
+inspector, to see the same counters per subscription.
 
-Select a subscription to see its rules, its auto-forward destination and whether
-the platform can rebuild it. The inspector holds every action in the table
-below; the subscriptions table itself only lists and counts.
+Click a subscription's row to open the inspector, a panel that slides in from
+the right with its rules, its auto-forward destination and whether the platform
+can rebuild it. ↑ and ↓ step to the previous and next row; Esc closes it. Every
+action in the table below is in both the inspector and the row's **⋯** menu,
+with the same confirmations.
 
 ## Reading the NimBus topology
 

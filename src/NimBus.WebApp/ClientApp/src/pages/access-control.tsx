@@ -91,6 +91,15 @@ export default function AccessControl() {
   const [endpointFilter, setEndpointFilter] = useState("");
   // The grant shown in the inspector; none shows the Add grant form.
   const [selectedKey, setSelectedKey] = useState<string>();
+  // The drawer shows the selected grant, or the Add grant form while adding.
+  const [adding, setAdding] = useState(false);
+  // A grant opened from its ⋯ menu's Remove, with the removal to confirm.
+  const [removing, setRemoving] = useState<string>();
+  const selectGrant = (key: string | undefined) => {
+    setSelectedKey(key);
+    setAdding(false);
+    setRemoving(undefined);
+  };
   const principalRef = useRef<HTMLInputElement>(null);
 
   // Site lists (site Owners only).
@@ -216,7 +225,7 @@ export default function AccessControl() {
               onSelect={() => {
                 selectEndpoint("");
                 setView("site");
-                setSelectedKey(undefined);
+                selectGrant(undefined);
               }}
             >
               Site
@@ -231,7 +240,7 @@ export default function AccessControl() {
               onSelect={() => {
                 if (view !== "endpoint" || selectedEndpoint !== id) selectEndpoint(id);
                 setView("endpoint");
-                setSelectedKey(undefined);
+                selectGrant(undefined);
               }}
             >
               {id}
@@ -257,7 +266,8 @@ export default function AccessControl() {
           <Button
             size="sm"
             onClick={() => {
-              setSelectedKey(undefined);
+              selectGrant(undefined);
+              setAdding(true);
               // The form mounts once the selection clears.
               requestAnimationFrame(() => principalRef.current?.focus());
             }}
@@ -267,7 +277,7 @@ export default function AccessControl() {
         )
       }
       inspector={
-        view === null ? undefined : (
+        view === null ? undefined : !selected && !adding ? null : (
           <GrantInspector
             scope={scope}
             roles={roles}
@@ -277,7 +287,9 @@ export default function AccessControl() {
             busy={busy}
             currentUser={access?.email ?? undefined}
             principalRef={principalRef}
-            onSelect={setSelectedKey}
+            confirmRemoval={removing !== undefined && removing === selected?.key}
+            onClose={() => selectGrant(undefined)}
+            onSelect={selectGrant}
             onAdd={(role, entry, label) =>
               view === "site"
                 ? mutate(() => client.postAccessControlRole(roleEntry(role, entry, label)), setSiteSet)
@@ -331,7 +343,11 @@ export default function AccessControl() {
             grants={grants}
             loading={set === null}
             selectedKey={selected?.key}
-            onSelect={setSelectedKey}
+            onSelect={selectGrant}
+            onRemove={(key) => {
+              selectGrant(key);
+              setRemoving(key);
+            }}
           />
         </WorkspaceSection>
       )}

@@ -186,12 +186,20 @@ describe("MCP access: capability table and inspector", () => {
     expect(within(skip).getByRole("switch", { name: "Skip messages" }).getAttribute("aria-checked")).toBe("false");
   });
 
-  it("asks for a selection until a capability is selected", async () => {
+  it("keeps the inspector drawer closed until a capability is selected, and closes it again", async () => {
     mockFetch(Response.json(state()), Response.json(activity));
+    const user = userEvent.setup();
     renderInPanel(<McpAccessSettings />, "mcp", "permissions");
 
     await screen.findByRole("table", { name: "What agents may do" });
-    expect(inspector().getByText("Select a capability to see what it allows.")).toBeTruthy();
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
+
+    const select = screen.getByRole("button", { name: "Skip messages" });
+    await user.click(select);
+    await user.click(inspector().getByRole("button", { name: "Close inspector" }));
+
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
+    expect(select.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("shows the selected capability in the inspector, without a second switch", async () => {

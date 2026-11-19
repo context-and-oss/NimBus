@@ -373,6 +373,7 @@ export default function AuditSettings() {
                   {selected.changed && " This change is not saved yet."}
                 </>
               }
+              onClose={() => setSelectedType(null)}
             />
           ) : (
             <Inspector empty="Select an action type to see what recording it means." />

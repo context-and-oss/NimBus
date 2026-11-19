@@ -5,6 +5,8 @@ import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
 import { Inspector, InspectorBlock, InspectorList, InspectorTiles } from "components/workspace/workspace";
 import {
+  RowActionsCell,
+  RowActionsHeader,
   RowSelect,
   selectableRowClass,
   WORKSPACE_HEAD_ROW,
@@ -69,10 +71,13 @@ export interface GrantsTableProps {
   loading: boolean;
   selectedKey?: string;
   onSelect: (key: string) => void;
+  /** Opens the grant with its removal to confirm, from the row's ⋯ menu. */
+  onRemove?: (key: string) => void;
 }
 
 /** A scope's grants as one table, one row per entry and role. */
-export function GrantsTable({ scope, grants, loading, selectedKey, onSelect }: GrantsTableProps) {
+export function GrantsTable({ scope, grants, loading, selectedKey, onSelect, onRemove }: GrantsTableProps) {
+  const columns = onRemove ? 5 : 4;
   return (
     <WorkspaceTableFrame>
       <table className="w-full min-w-[34rem] border-collapse text-[13px]" aria-label={`${scope} grants`}>
@@ -82,17 +87,18 @@ export function GrantsTable({ scope, grants, loading, selectedKey, onSelect }: G
             <th scope="col" className={WORKSPACE_TH}>Type</th>
             <th scope="col" className={WORKSPACE_TH}>Role</th>
             <th scope="col" className={WORKSPACE_TH}>Scope</th>
+            {onRemove && <RowActionsHeader />}
           </tr>
         </thead>
         <tbody>
           {loading && (
             <tr>
-              <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">Loading grants…</td>
+              <td colSpan={columns} className="px-4 py-6 text-center text-muted-foreground">Loading grants…</td>
             </tr>
           )}
           {!loading && grants.length === 0 && (
             <tr>
-              <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
+              <td colSpan={columns} className="px-4 py-6 text-center text-muted-foreground">
                 No grants stored for {scope === "Site" ? "the site" : scope}.
               </td>
             </tr>
@@ -125,6 +131,15 @@ export function GrantsTable({ scope, grants, loading, selectedKey, onSelect }: G
               <td className={cn("whitespace-nowrap px-4", scope !== "Site" && "font-mono text-[12.5px] text-muted-foreground")}>
                 {scopeName(scope)}
               </td>
+              {onRemove && (
+                <RowActionsCell
+                  label={`Actions for ${g.label ?? g.entry} (${g.role.label})`}
+                  actions={[
+                    { label: "Open", onSelect: () => onSelect(g.key) },
+                    { label: "Remove grant…", destructive: true, onSelect: () => onRemove(g.key) },
+                  ]}
+                />
+              )}
             </tr>
           ))}
         </tbody>
@@ -152,6 +167,10 @@ export interface GrantInspectorProps {
   /** Renames an entry by re-granting its role with the new label; "" removes the name. */
   onRename: (role: GrantRole, entry: string, label: string) => void;
   onRemove: (role: GrantRole, entry: string) => void;
+  /** Opens the selected grant with its removal waiting to be confirmed. */
+  confirmRemoval?: boolean;
+  /** Closes the inspector drawer. */
+  onClose?: () => void;
 }
 
 /**
@@ -160,7 +179,11 @@ export interface GrantInspectorProps {
  */
 export function GrantInspector(props: GrantInspectorProps) {
   return props.selected ? (
-    <SelectedGrant key={`${props.scope}:${props.selected.key}`} {...props} selected={props.selected} />
+    <SelectedGrant
+      key={`${props.scope}:${props.selected.key}:${props.confirmRemoval ? "remove" : ""}`}
+      {...props}
+      selected={props.selected}
+    />
   ) : (
     <AddGrant key={props.scope} {...props} />
   );
@@ -175,8 +198,10 @@ function SelectedGrant({
   onSelect,
   onRemove,
   onRename,
+  confirmRemoval,
+  onClose,
 }: GrantInspectorProps & { selected: Grant }) {
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState(confirmRemoval ?? false);
   const [label, setLabel] = useState(selected.label ?? "");
   const labelChanged = label.trim() !== (selected.label ?? "");
   const others = grants.filter((g) => g.entry === selected.entry && g.key !== selected.key);
@@ -189,6 +214,7 @@ function SelectedGrant({
       title={selected.label ?? selected.entry}
       badge={<Badge variant={selected.role.badge} withDot={false}>{selected.role.label}</Badge>}
       description={selected.role.description}
+      onClose={onClose}
     >
       {selected.label && (
         <p className="m-0 font-mono text-[12.5px] text-muted-foreground [overflow-wrap:anywhere]">{selected.entry}</p>
@@ -268,7 +294,7 @@ function SelectedGrant({
   );
 }
 
-function AddGrant({ scope, roles, ready, busy, principalRef, onAdd }: GrantInspectorProps) {
+function AddGrant({ scope, roles, ready, busy, principalRef, onAdd, onClose }: GrantInspectorProps) {
   const [entry, setEntry] = useState("");
   const [label, setLabel] = useState("");
   const [role, setRole] = useState<GrantRole>("reader");
@@ -292,6 +318,7 @@ function AddGrant({ scope, roles, ready, busy, principalRef, onAdd }: GrantInspe
           ? "Grants a role on every endpoint. It takes effect on the next request."
           : `Grants a role on ${scope} only. It takes effect on the next request.`
       }
+      onClose={onClose}
     >
       <form onSubmit={submit} aria-label="Add grant" className="space-y-4">
         <label className="block space-y-1.5">

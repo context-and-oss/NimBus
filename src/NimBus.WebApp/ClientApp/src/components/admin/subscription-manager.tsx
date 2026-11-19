@@ -22,9 +22,13 @@ import {
   WorkspaceSection,
 } from "components/workspace/workspace";
 import {
+  RowActions,
+  RowActionsCell,
+  RowActionsHeader,
   RowSelect,
   selectableRowClass,
   WorkspaceTableFrame,
+  type RowAction,
 } from "components/workspace/selectable-row";
 import { cn } from "lib/utils";
 import { ruleRoutingLabel } from "lib/routing-keys";
@@ -451,6 +455,21 @@ export default function SubscriptionManager({
   const selectedSubscription = subscriptions.find((s) => s.name === selectedSub);
   const topicInInspector = topics.find((t) => t.name === inspectedTopic);
   const readOnly = activeTopic?.isKnownToPlatform === false;
+
+  const request = (action: PendingAction) => {
+    setAcknowledgeUnknown(false);
+    setPending(action);
+  };
+  const topicActions = (t: api.ServiceBusTopicOverview): RowAction[] =>
+    topicRowActions(t, { busy: busyRow !== null, onOpen: openTopic, onDelete: setPendingTopic });
+  const handlers: SubscriptionHandlers = {
+    busyRow,
+    readOnly,
+    onTogglePause: togglePause,
+    onRestoreRules: restoreRules,
+    onInspectDeadLetters: (sub) => setReplaySubscription(sub.name ?? null),
+    onRequest: request,
+  };
   const subsLoading = loadingSubs && subscriptions.length === 0;
   const strayFeedback = feedback && feedback.subscription !== selectedSubscription?.name ? feedback : null;
 
@@ -528,6 +547,7 @@ export default function SubscriptionManager({
             }
             selected={inspectedTopic}
             onSelect={setInspectedTopic}
+            actions={topicActions}
           />
         ) : (
           <div className="space-y-3">
@@ -594,6 +614,7 @@ export default function SubscriptionManager({
                 subscriptions={subscriptions}
                 selected={selectedSub}
                 onSelect={setSelectedSub}
+                actions={(sub) => subscriptionActions(sub, selectedTopic ?? "", handlers)}
               />
             )}
           </div>
@@ -605,23 +626,18 @@ export default function SubscriptionManager({
           <TopicInspector
             topic={topicInInspector}
             busy={busyRow !== null}
+            actions={topicInInspector ? topicActions(topicInInspector) : []}
             onOpen={openTopic}
             onDelete={setPendingTopic}
+            onClose={() => setInspectedTopic(null)}
           />
         ) : (
           <SubscriptionInspector
             sub={selectedSubscription}
             topicName={selectedTopic}
-            readOnly={readOnly}
-            busyRow={busyRow}
             feedback={feedback?.subscription === selectedSubscription?.name ? feedback : null}
-            onTogglePause={togglePause}
-            onRestoreRules={restoreRules}
-            onInspectDeadLetters={(sub) => setReplaySubscription(sub.name ?? null)}
-            onRequest={(action) => {
-              setAcknowledgeUnknown(false);
-              setPending(action);
-            }}
+            {...handlers}
+            onClose={() => setSelectedSub(null)}
           />
         )}
       </InspectorPortal>
@@ -848,6 +864,7 @@ function TopicTable({
   emptyMessage,
   selected,
   onSelect,
+  actions,
 }: {
   topics: api.ServiceBusTopicOverview[];
   loading: boolean;
@@ -855,6 +872,8 @@ function TopicTable({
   /** The topic shown in the inspector. */
   selected: string | null;
   onSelect: (topicName: string) => void;
+  /** The topic's ⋯ menu. */
+  actions: (topic: api.ServiceBusTopicOverview) => RowAction[];
 }) {
   // Alphabetical by default: the namespace has dozens of topics and an operator
   // arrives knowing the name they are looking for. Backlog-first orders are one
@@ -906,7 +925,7 @@ function TopicTable({
   return (
     <WorkspaceTableFrame>
       <table className="min-w-full text-sm" aria-label="Topics">
-        <thead className="border-b border-border font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground">
+        <thead className="border-b border-border text-[12.5px] text-muted-foreground">
           <tr>
             {TOPIC_COLUMNS.map((column) => {
               const active = column.key === sortKey;
@@ -929,7 +948,7 @@ function TopicTable({
                     type="button"
                     onClick={() => toggleSort(column)}
                     className={cn(
-                      "inline-flex items-center gap-1 uppercase tracking-[0.1em] hover:text-primary focus:outline-hidden",
+                      "inline-flex items-center gap-1 hover:text-primary focus:outline-hidden",
                       active && "text-foreground",
                     )}
                   >
@@ -947,15 +966,12 @@ function TopicTable({
                 </th>
               );
             })}
+            <RowActionsHeader />
           </tr>
         </thead>
         <tbody>
           {sorted.map((topic) => (
-            <tr
-              key={topic.name}
-              className={cn(selectableRowClass(topic.name === selected), "cursor-pointer")}
-              onClick={() => onSelect(topic.name ?? "")}
-            >
+            <tr key={topic.name} className={selectableRowClass(topic.name === selected)}>
               <td className="px-3">
                 <RowSelect
                   mono
@@ -1003,12 +1019,13 @@ function TopicTable({
               <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                 {formatBytes(topic.sizeInBytes ?? 0)}
               </td>
+              <RowActionsCell label={`Actions for ${topic.name ?? "topic"}`} actions={actions(topic)} />
             </tr>
           ))}
           {topics.length === 0 && (
             <tr>
               <td
-                colSpan={8}
+                colSpan={9}
                 className="px-3 py-6 text-center text-muted-foreground"
               >
                 {emptyMessage}
@@ -1026,13 +1043,17 @@ function TopicTable({
 function TopicInspector({
   topic,
   busy,
+  actions,
   onOpen,
   onDelete,
+  onClose,
 }: {
   topic?: api.ServiceBusTopicOverview;
   busy: boolean;
+  actions: readonly RowAction[];
   onOpen: (topicName: string) => void;
   onDelete: (topicName: string) => void;
+  onClose: () => void;
 }) {
   if (!topic) return <Inspector empty="Select a topic to see its counts and open its subscriptions." />;
   const name = topic.name ?? "";
@@ -1049,6 +1070,8 @@ function TopicInspector({
         ) : undefined
       }
       state={<StatusBadge status={topic.status ?? ""} />}
+      menu={<RowActions label={`Actions for ${name}`} actions={actions} />}
+      onClose={onClose}
     >
       <InspectorTiles
         tiles={[
@@ -1089,16 +1112,19 @@ function SubscriptionTable({
   subscriptions,
   selected,
   onSelect,
+  actions,
 }: {
   subscriptions: api.ServiceBusSubscriptionInfo[];
   /** The subscription shown in the inspector. */
   selected: string | null;
   onSelect: (name: string) => void;
+  /** The subscription's ⋯ menu. */
+  actions: (sub: api.ServiceBusSubscriptionInfo) => RowAction[];
 }) {
   return (
     <WorkspaceTableFrame>
       <table className="min-w-full text-sm" aria-label="Subscriptions">
-        <thead className="border-b border-border font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground">
+        <thead className="border-b border-border text-[12.5px] text-muted-foreground">
           <tr>
             <th className="text-left font-medium px-3 py-2">Subscription</th>
             <th className="text-right font-medium px-3 py-2">Rules</th>
@@ -1107,6 +1133,7 @@ function SubscriptionTable({
             <th className="text-right font-medium px-3 py-2">Active</th>
             <th className="text-right font-medium px-3 py-2">Dead-letter</th>
             <th className="text-right font-medium px-3 py-2">In transit</th>
+            <RowActionsHeader />
           </tr>
         </thead>
         <tbody>
@@ -1115,11 +1142,7 @@ function SubscriptionTable({
             const detached = !sub.forwardTo && !!sub.expectedForwardTo;
             const missing = sub.missingRuleNames ?? [];
             return (
-              <tr
-                key={name}
-                className={cn(selectableRowClass(name === selected), "cursor-pointer")}
-                onClick={() => onSelect(name)}
-              >
+              <tr key={name} className={selectableRowClass(name === selected)}>
                 <td className="px-3">
                   <RowSelect
                     mono
@@ -1170,12 +1193,13 @@ function SubscriptionTable({
                 <td className="px-3 py-2 text-right tabular-nums">
                   <Count value={sub.transferMessageCount ?? 0} />
                 </td>
+                <RowActionsCell label={`Actions for ${name}`} actions={actions(sub)} />
               </tr>
             );
           })}
           {subscriptions.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+              <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
                 No subscriptions on this topic.
               </td>
             </tr>
@@ -1186,43 +1210,120 @@ function SubscriptionTable({
   );
 }
 
-/** The selected subscription: its rules, and every action on it. */
-function SubscriptionInspector({
-  sub,
-  topicName,
-  readOnly,
-  busyRow,
-  feedback,
-  onTogglePause,
-  onRestoreRules,
-  onInspectDeadLetters,
-  onRequest,
-}: {
-  sub?: api.ServiceBusSubscriptionInfo;
-  topicName: string;
+/** What can be done to a subscription, and the handlers that do it. */
+interface SubscriptionHandlers {
   readOnly: boolean;
   busyRow: string | null;
-  feedback: RowFeedback | null;
   onTogglePause: (sub: api.ServiceBusSubscriptionInfo) => void;
   onRestoreRules: (sub: api.ServiceBusSubscriptionInfo) => void;
   onInspectDeadLetters: (sub: api.ServiceBusSubscriptionInfo) => void;
   onRequest: (action: PendingAction) => void;
+}
+
+/** The facts the inspector's buttons and the row's ⋯ menu both decide on. */
+function subscriptionFacts(sub: api.ServiceBusSubscriptionInfo, topicName: string, h: SubscriptionHandlers) {
+  const name = sub.name ?? "";
+  return {
+    name,
+    busy: h.busyRow === name || h.readOnly,
+    forwarding: !!sub.forwardTo,
+    detached: !sub.forwardTo && !!sub.expectedForwardTo,
+    backlog: drainableCount(sub),
+    deadLettered: deadLetteredCount(sub),
+    missing: sub.missingRuleNames ?? [],
+    canInspectDeadLetters:
+      topicName.toLowerCase() === "resolver" &&
+      sub.requiresSession === true &&
+      !sub.forwardTo &&
+      (sub.deadLetterMessageCount ?? 0) > 0,
+  };
+}
+
+const FORWARDING_PURGE =
+  "Service Bus rejects receive on an auto-forwarding subscription. Use Delete & recreate to empty it.";
+
+/** A subscription's ⋯ menu: the inspector's actions, with the same confirmations. */
+function subscriptionActions(
+  sub: api.ServiceBusSubscriptionInfo,
+  topicName: string,
+  h: SubscriptionHandlers,
+): RowAction[] {
+  const f = subscriptionFacts(sub, topicName, h);
+  const actions: RowAction[] = [
+    { label: sub.status === "Active" ? "Pause" : "Resume", disabled: f.busy, onSelect: () => h.onTogglePause(sub) },
+  ];
+  if (f.missing.length > 0)
+    actions.push({ label: "Restore rules", disabled: f.busy, onSelect: () => h.onRestoreRules(sub) });
+  if (f.canInspectDeadLetters)
+    actions.push({
+      label: "Inspect dead letters",
+      disabled: h.busyRow !== null || h.readOnly,
+      onSelect: () => h.onInspectDeadLetters(sub),
+    });
+  actions.push(
+    f.forwarding
+      ? { label: "Purge", destructive: true, disabled: true, title: FORWARDING_PURGE, onSelect: () => undefined }
+      : {
+          label: "Purge…",
+          destructive: true,
+          disabled: f.busy || f.backlog === 0,
+          onSelect: () => h.onRequest({ kind: "purge", subscription: sub }),
+        },
+  );
+  if (f.deadLettered > 0)
+    actions.push({
+      label: "Purge dead letters…",
+      destructive: true,
+      disabled: f.busy,
+      onSelect: () => h.onRequest({ kind: "purge-dead-letters", subscription: sub }),
+    });
+  if (sub.canRecreate)
+    actions.push({
+      label: "Delete & recreate…",
+      destructive: true,
+      disabled: f.busy,
+      onSelect: () => h.onRequest({ kind: "recreate", subscription: sub }),
+    });
+  actions.push({
+    label: "Delete…",
+    destructive: true,
+    disabled: f.busy,
+    onSelect: () => h.onRequest({ kind: "delete", subscription: sub }),
+  });
+  return actions;
+}
+
+/** A topic's ⋯ menu. */
+function topicRowActions(
+  topic: api.ServiceBusTopicOverview,
+  h: { busy: boolean; onOpen: (name: string) => void; onDelete: (name: string) => void },
+): RowAction[] {
+  const name = topic.name ?? "";
+  const actions: RowAction[] = [{ label: "Open subscriptions", onSelect: () => h.onOpen(name) }];
+  if (topic.isKnownToPlatform === false)
+    actions.push({ label: "Delete topic…", destructive: true, disabled: h.busy, onSelect: () => h.onDelete(name) });
+  return actions;
+}
+
+/** The selected subscription: its rules, and every action on it. */
+function SubscriptionInspector({
+  sub,
+  topicName,
+  feedback,
+  onClose,
+  ...handlers
+}: SubscriptionHandlers & {
+  sub?: api.ServiceBusSubscriptionInfo;
+  topicName: string;
+  feedback: RowFeedback | null;
+  onClose: () => void;
 }) {
   if (!sub) return <Inspector empty="Select a subscription to see its rules and act on it." />;
 
-  const name = sub.name ?? "";
-  const busy = busyRow === name || readOnly;
-  const forwarding = !!sub.forwardTo;
-  const detached = !sub.forwardTo && !!sub.expectedForwardTo;
-  const backlog = drainableCount(sub);
-  const deadLettered = deadLetteredCount(sub);
-  const missing = sub.missingRuleNames ?? [];
+  const { busyRow, readOnly, onTogglePause, onRestoreRules, onInspectDeadLetters, onRequest } = handlers;
+  const { name, busy, forwarding, detached, backlog, deadLettered, missing, canInspectDeadLetters } =
+    subscriptionFacts(sub, topicName, handlers);
   const rules = sub.ruleNames ?? [];
-  const canInspectDeadLetters =
-    topicName.toLowerCase() === "resolver" &&
-    sub.requiresSession === true &&
-    !sub.forwardTo &&
-    (sub.deadLetterMessageCount ?? 0) > 0;
 
   // Detach is only offered where Restore rules can put it back. A $Default
   // that is a subscription's whole routing, or any rule on a hand-made
@@ -1259,6 +1360,8 @@ function SubscriptionInspector({
           {detached && " · forwarding detached while paused"}
         </>
       }
+      menu={<RowActions label={`Actions for ${name}`} actions={subscriptionActions(sub, topicName, handlers)} />}
+      onClose={onClose}
     >
       <InspectorTiles
         tiles={[
