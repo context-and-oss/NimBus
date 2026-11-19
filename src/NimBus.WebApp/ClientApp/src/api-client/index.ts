@@ -19728,6 +19728,8 @@ export class AccessControlSet implements IAccessControlSet {
     contributors?: string[];
     owners?: string[];
     piiReaders?: string[];
+    /** Optional names that say who or what an entry is, keyed by the entry trimmed and lowercased. Entries without a name are absent. Names are informational and grant nothing. */
+    labels?: { [key: string]: string; };
 
     [key: string]: any;
 
@@ -19766,6 +19768,13 @@ export class AccessControlSet implements IAccessControlSet {
                 for (let item of _data["piiReaders"])
                     this.piiReaders!.push(item);
             }
+            if (_data["labels"]) {
+                this.labels = {} as any;
+                for (let key in _data["labels"]) {
+                    if (_data["labels"].hasOwnProperty(key))
+                        (this.labels as any)![key] = _data["labels"][key];
+                }
+            }
         }
     }
 
@@ -19802,6 +19811,13 @@ export class AccessControlSet implements IAccessControlSet {
             for (let item of this.piiReaders)
                 data["piiReaders"].push(item);
         }
+        if (this.labels) {
+            data["labels"] = {};
+            for (let key in this.labels) {
+                if (this.labels.hasOwnProperty(key))
+                    (data["labels"] as any)[key] = (this.labels as any)[key];
+            }
+        }
         return data;
     }
 
@@ -19819,14 +19835,18 @@ export interface IAccessControlSet {
     contributors?: string[];
     owners?: string[];
     piiReaders?: string[];
+    /** Optional names that say who or what an entry is, keyed by the entry trimmed and lowercased. Entries without a name are absent. Names are informational and grant nothing. */
+    labels?: { [key: string]: string; };
 
     [key: string]: any;
 }
 
 export class RoleEntry implements IRoleEntry {
     role!: RoleEntryRole;
-    /** Email address or Entra object id */
+    /** An email address, an Entra object id, or agent:<agentId> for an MCP agent key's agent (Spec 052). An agent: entry is refused with 400 on the owner and piiReader lists. */
     entry!: string;
+    /** On a grant, an optional name for the entry, such as what an object id is for. Omit it to keep the current name; send an empty string to remove it. The name belongs to the entry in this scope, so it is shared by the entry's roles and dropped when its last role is revoked. Ignored on revoke. */
+    label?: string | undefined;
 
     [key: string]: any;
 
@@ -19847,6 +19867,7 @@ export class RoleEntry implements IRoleEntry {
             }
             this.role = _data["role"];
             this.entry = _data["entry"];
+            this.label = _data["label"];
         }
     }
 
@@ -19865,6 +19886,7 @@ export class RoleEntry implements IRoleEntry {
         }
         data["role"] = this.role;
         data["entry"] = this.entry;
+        data["label"] = this.label;
         return data;
     }
 
@@ -19878,8 +19900,10 @@ export class RoleEntry implements IRoleEntry {
 
 export interface IRoleEntry {
     role: RoleEntryRole;
-    /** Email address or Entra object id */
+    /** An email address, an Entra object id, or agent:<agentId> for an MCP agent key's agent (Spec 052). An agent: entry is refused with 400 on the owner and piiReader lists. */
     entry: string;
+    /** On a grant, an optional name for the entry, such as what an object id is for. Omit it to keep the current name; send an empty string to remove it. The name belongs to the entry in this scope, so it is shared by the entry's roles and dropped when its last role is revoked. Ignored on revoke. */
+    label?: string | undefined;
 
     [key: string]: any;
 }

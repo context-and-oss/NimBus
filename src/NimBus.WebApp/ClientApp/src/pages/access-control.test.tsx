@@ -301,6 +301,47 @@ describe("AccessControl scopes and grants", () => {
       expect(entry.role).toBe(api.RoleEntryRole.Contributor);
     });
 
+    it("sends an optional name with a new grant", async () => {
+      mocks.postAccessControlRole.mockResolvedValue(site);
+      await renderPage();
+      await screen.findByRole("button", { name: "ops@example.test" });
+
+      fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: "  Nightly export job " } });
+      addGrant("752d3fd2-5d3e-4da7-840d-9e368d51e769");
+
+      await waitFor(() => expect(mocks.postAccessControlRole).toHaveBeenCalledTimes(1));
+      const entry = mocks.postAccessControlRole.mock.calls[0][0] as api.RoleEntry;
+      expect(entry.label).toBe("Nightly export job");
+    });
+
+    it("shows a principal's name in the table and renames it from the inspector", async () => {
+      const oid = "752d3fd2-5d3e-4da7-840d-9e368d51e769";
+      const labelled = new api.AccessControlSet({
+        readers: [oid.toUpperCase()],
+        labels: { [oid]: "Nightly export job" },
+      });
+      mocks.getAccessControl.mockResolvedValue(labelled);
+      mocks.postAccessControlRole.mockResolvedValue(labelled);
+      await renderPage();
+      const table = await screen.findByRole("table", { name: "Site grants" });
+
+      const row = await within(table).findByRole("button", { name: /Nightly export job/ });
+      expect(row.textContent).toContain(oid.toUpperCase());
+      fireEvent.click(row);
+
+      expect(screen.getByRole("heading", { name: /Nightly export job/ })).toBeTruthy();
+      const save = screen.getByRole("button", { name: "Save name" }) as HTMLButtonElement;
+      expect(save.disabled).toBe(true);
+      fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Export job (prod)" } });
+      fireEvent.click(save);
+
+      await waitFor(() => expect(mocks.postAccessControlRole).toHaveBeenCalledTimes(1));
+      const entry = mocks.postAccessControlRole.mock.calls[0][0] as api.RoleEntry;
+      expect(entry.entry).toBe(oid.toUpperCase());
+      expect(entry.role).toBe(api.RoleEntryRole.Reader);
+      expect(entry.label).toBe("Export job (prod)");
+    });
+
     it("refuses an agent key as Owner before sending it", async () => {
       await renderPage();
       await screen.findByRole("button", { name: "ops@example.test" });

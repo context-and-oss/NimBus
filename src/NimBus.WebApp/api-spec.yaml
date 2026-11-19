@@ -7912,6 +7912,13 @@ components:
           type: array
           items:
             type: string
+        labels:
+          type: object
+          description: >-
+            Optional names that say who or what an entry is, keyed by the entry trimmed and
+            lowercased. Entries without a name are absent. Names are informational and grant nothing.
+          additionalProperties:
+            type: string
     RoleEntry:
       title: RoleEntry
       type: object
@@ -7931,7 +7938,14 @@ components:
           description: >-
             An email address, an Entra object id, or agent:<agentId> for an MCP agent key's agent
             (Spec 052). An agent: entry is refused with 400 on the owner and piiReader lists.
-          description: Email address or Entra object id
+        label:
+          type: string
+          maxLength: 100
+          nullable: true
+          description: >-
+            On a grant, an optional name for the entry, such as what an object id is for. Omit it to keep
+            the current name; send an empty string to remove it. The name belongs to the entry in this scope,
+            so it is shared by the entry's roles and dropped when its last role is revoked. Ignored on revoke.
     EndpointRoleInfo:
       title: EndpointRoleInfo
       type: object
