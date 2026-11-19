@@ -155,6 +155,20 @@ describe("Operations page", () => {
     expect(screen.queryByText(/Bulk resubmit card/)).toBeNull();
   });
 
+  it("closes the operation's drawer back to the list, and its row opens it again", () => {
+    renderAt("/Operations/dlq?endpoint=crm");
+
+    fireEvent.click(within(inspector()).getByRole("button", { name: "Close inspector" }));
+
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
+    const row = within(operations()).getByRole("button", { name: "Delete dead-lettered" });
+    expect(row.getAttribute("aria-pressed")).toBe("false");
+    expect(location()).toBe("/Operations/dlq?endpoint=crm");
+
+    fireEvent.click(row);
+    expect(within(inspector()).getByText("Delete dead-lettered card · crm")).toBeTruthy();
+  });
+
   it("gives each operation its own URL and keeps the endpoint when switching", () => {
     renderAt("/Operations/resubmit?endpoint=erp");
 

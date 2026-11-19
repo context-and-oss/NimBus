@@ -169,11 +169,11 @@ describe("Settings → Simulation", () => {
       expect((screen.getByLabelText("Simulator owns WarehouseEndpoint") as HTMLInputElement).disabled).toBe(true);
     });
 
-    it("shows the selection in the Settings panel's inspector column", async () => {
+    it("opens the Settings panel's inspector drawer on the selected endpoint", async () => {
       renderInPanel(<SimulationSettings />, "simulation", "endpoints");
 
       await screen.findByRole("table", { name: "Consuming endpoints" });
-      expect(inspector().getByText("Select an endpoint to see who owns it.")).toBeTruthy();
+      expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
       fireEvent.click(await screen.findByRole("button", { name: "WarehouseEndpoint" }));
 
       expect(screen.getAllByRole("complementary", { name: "Inspector" })).toHaveLength(1);

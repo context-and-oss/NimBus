@@ -324,10 +324,9 @@ describe("HeartbeatCard", () => {
       expect(inspector().getByText("Select an endpoint to see its last probe.")).toBeTruthy();
     });
 
-    it("shows the selection in the Settings panel's inspector column", async () => {
+    it("opens the Settings panel's inspector drawer on the selected endpoint", async () => {
       renderInPanel(<HeartbeatCard />, "heartbeat", "endpoints");
 
-      expect(await inspector().findByText("Select an endpoint to see its last probe.")).toBeTruthy();
       fireEvent.click(await screen.findByRole("button", { name: "crm" }));
 
       expect(screen.getAllByRole("complementary", { name: "Inspector" })).toHaveLength(1);

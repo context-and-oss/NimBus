@@ -104,7 +104,13 @@ const selectEndpoint = (endpointId: string) => {
   fireEvent.click(within(scopes()).getByRole("button", { name: endpointId }));
 };
 
+// The Add grant form opens in the inspector drawer on New grant.
+const openAddGrant = () => {
+  if (!screen.queryByLabelText("Principal")) fireEvent.click(screen.getByRole("button", { name: "New grant" }));
+};
+
 const addGrant = (entry: string, role?: string) => {
+  openAddGrant();
   fireEvent.change(screen.getByLabelText("Principal"), { target: { value: entry } });
   if (role) fireEvent.click(screen.getByRole("radio", { name: role }));
   fireEvent.click(screen.getByRole("button", { name: "Add grant" }));
@@ -306,6 +312,7 @@ describe("AccessControl scopes and grants", () => {
       await renderPage();
       await screen.findByRole("button", { name: "ops@example.test" });
 
+      openAddGrant();
       fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: "  Nightly export job " } });
       addGrant("752d3fd2-5d3e-4da7-840d-9e368d51e769");
 
@@ -325,7 +332,7 @@ describe("AccessControl scopes and grants", () => {
       await renderPage();
       const table = await screen.findByRole("table", { name: "Site grants" });
 
-      const row = await within(table).findByRole("button", { name: /Nightly export job/ });
+      const row = await within(table).findByRole("button", { name: /^Nightly export job/ });
       expect(row.textContent).toContain(oid.toUpperCase());
       fireEvent.click(row);
 
@@ -346,6 +353,7 @@ describe("AccessControl scopes and grants", () => {
       await renderPage();
       await screen.findByRole("button", { name: "ops@example.test" });
 
+      openAddGrant();
       fireEvent.change(screen.getByLabelText("Principal"), { target: { value: "agent:x" } });
       fireEvent.click(screen.getByRole("radio", { name: "Owner" }));
 
@@ -402,17 +410,33 @@ describe("AccessControl workspace", () => {
     expect(within(scopes()).getByRole("button", { name: "endpoint-a" }).getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("shows the Add grant form in the inspector until a grant is selected, and New grant brings it back", async () => {
+  it("opens the Add grant form on New grant, a selected grant in its place, and closes", async () => {
     await renderPage();
+    await screen.findByRole("button", { name: "ops@example.test" });
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "New grant" }));
     expect(within(inspector()).getByRole("form", { name: "Add grant" })).toBeTruthy();
 
-    fireEvent.click(await screen.findByRole("button", { name: "ops@example.test" }));
+    fireEvent.click(screen.getByRole("button", { name: "ops@example.test" }));
     expect(within(inspector()).queryByRole("form", { name: "Add grant" })).toBeNull();
     expect(within(inspector()).getByRole("heading", { name: /ops@example\.test/ })).toBeTruthy();
     expect(within(inspector()).getByText("Site (every endpoint)")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "New grant" }));
-    expect(within(inspector()).getByRole("form", { name: "Add grant" })).toBeTruthy();
+    fireEvent.click(within(inspector()).getByRole("button", { name: "Close inspector" }));
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
+  });
+
+  it("opens a grant's removal to confirm from its row menu", async () => {
+    await renderPage();
+    const table = await screen.findByRole("table", { name: "Site grants" });
+
+    fireEvent.click(within(table).getByRole("button", { name: "Actions for ops@example.test (Reader)" }));
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Remove grant…" }));
+
+    expect(within(inspector()).getByRole("heading", { name: /ops@example\.test/ })).toBeTruthy();
+    expect(within(inspector()).getByRole("button", { name: "Remove ops@example.test from Reader" })).toBeTruthy();
+    expect(mocks.deleteAccessControlRole).not.toHaveBeenCalled();
   });
 
   it("opens a principal's other grant from the inspector", async () => {
@@ -434,7 +458,7 @@ describe("AccessControl workspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: "ops@example.test" }));
     selectEndpoint("endpoint-a");
 
-    expect(within(inspector()).getByRole("form", { name: "Add grant" })).toBeTruthy();
+    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
     expect(screen.getByRole("table", { name: "endpoint-a grants" })).toBeTruthy();
   });
 });

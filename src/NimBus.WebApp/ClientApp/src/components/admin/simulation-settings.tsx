@@ -337,6 +337,7 @@ export default function SimulationSettings() {
                       {selectedOwned !== selectedSavedOwned && " Not saved yet. Ownership changes apply at the next Start."}
                     </>
                   }
+                  onClose={() => setSelectedId(undefined)}
                 >
                   {selected.liveInstanceWarning && (
                     <p role="status" className="m-0 text-[13px] text-status-warning-ink">

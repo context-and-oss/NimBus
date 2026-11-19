@@ -8,13 +8,17 @@ import { Modal, ModalBody, ModalFooter, ModalHeader } from "components/ui/modal"
 import { Select } from "components/ui/select";
 import { PanelInspector, PanelSection, useInPanel, usePanelDirty } from "components/settings/panel-frame";
 import {
+  RowActions,
+  RowActionsCell,
+  RowActionsHeader,
   RowSelect,
+  type RowAction,
   selectableRowClass,
   WORKSPACE_HEAD_ROW,
   WORKSPACE_TH,
   WorkspaceTableFrame,
 } from "components/workspace/selectable-row";
-import { Inspector, InspectorTiles, WorkspaceSection } from "components/workspace/workspace";
+import { Inspector, InspectorTiles, useInspectorDrawer, WorkspaceSection } from "components/workspace/workspace";
 import { copyToClipboard } from "lib/clipboard";
 import { cn } from "lib/utils";
 import {
@@ -86,6 +90,13 @@ export default function AgentKeysSettings() {
   const [pending, setPending] = useState<Pending>();
   // The key shown in the inspector; with none selected the inspector holds the issue form.
   const [selectedId, setSelectedId] = useState<string>();
+  // In the drawer, the Issue key form shows only after New key.
+  const [creating, setCreating] = useState(false);
+  const inDrawer = useInspectorDrawer();
+  const closeInspector = () => {
+    setSelectedId(undefined);
+    setCreating(false);
+  };
   const [readiness,setReadiness] = useState<McpKeyReadiness>();
   const readinessRequested = useRef(false);
   const alive = useRef(true);
@@ -183,6 +194,7 @@ export default function AgentKeysSettings() {
     const result = (await response.json()) as AgentKeyIssued;
     setState(result.state);
     setIssued(result);
+    setCreating(false);
     setReplaced(undefined);
     setCopied(false);
     setAgentId("");
@@ -252,6 +264,14 @@ export default function AgentKeysSettings() {
 
   // Looked up on every render, so a key that is removed gives the inspector back to the form.
   const selected = state.keys.find((k) => k.keyId === selectedId);
+  // A key's ⋯ menu: the inspector's actions.
+  const keyActions = (k: AgentKeyInfo): RowAction[] =>
+    k.status === "active"
+      ? [
+          { label: "Rotate", disabled: busy, onSelect: () => void rotate(k) },
+          { label: "Revoke…", destructive: true, disabled: busy, onSelect: () => setPending({ kind: "revoke", key: k }) },
+        ]
+      : [{ label: "Remove…", destructive: true, disabled: busy, onSelect: () => setPending({ kind: "remove", key: k }) }];
   const issuedIsMcp = issued?.issued.use === "mcp";
   const endpointUrl = readiness?.deployment.endpointUrl ?? `${window.location.origin}/mcp`;
 
@@ -270,7 +290,15 @@ export default function AgentKeysSettings() {
           </>
         }
         action={
-          <Button type="button" size="sm" variant="outline" onClick={() => setSelectedId(undefined)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSelectedId(undefined);
+              setCreating(true);
+            }}
+          >
             New key
           </Button>
         }
@@ -304,6 +332,7 @@ export default function AgentKeysSettings() {
                   <th scope="col" className={WORKSPACE_TH}>Issued</th>
                   <th scope="col" className={WORKSPACE_TH}>Last used</th>
                   <th scope="col" className={WORKSPACE_TH}>Expires</th>
+                  <RowActionsHeader />
                 </tr>
               </thead>
               <tbody>
@@ -344,6 +373,7 @@ export default function AgentKeysSettings() {
                     </td>
                     <td className="px-4 py-2.5">{when(k.lastUsedAtUtc)}</td>
                     <td className="px-4 py-2.5">{k.expiresAtUtc ? when(k.expiresAtUtc) : "No expiry"}</td>
+                    <RowActionsCell label={`Actions for ${k.agentId}`} actions={keyActions(k)} />
                   </tr>
                 ))}
               </tbody>
@@ -364,6 +394,8 @@ export default function AgentKeysSettings() {
               </div>
             }
             description={selected.name ?? undefined}
+            menu={<RowActions label={`Actions for ${selected.agentId}`} actions={keyActions(selected)} />}
+            onClose={closeInspector}
           >
             <InspectorTiles
               tiles={[
@@ -419,11 +451,12 @@ export default function AgentKeysSettings() {
               )}
             </div>
           </Inspector>
-        ) : (
+        ) : creating || !inDrawer ? (
           <Inspector
             eyebrow="New key"
             title="Issue key"
             description="The key is shown once, when you issue it. NimBus keeps only its hash."
+            onClose={closeInspector}
           >
             <form id={FORM_ID} onSubmit={(e) => void issue(e)} className="space-y-3">
               <div className="space-y-1">
@@ -504,6 +537,8 @@ export default function AgentKeysSettings() {
               </Button>
             </form>
           </Inspector>
+        ) : (
+          <Inspector />
         )}
       </PanelInspector>
 

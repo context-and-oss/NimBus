@@ -7,13 +7,17 @@ import { Modal, ModalBody, ModalFooter, ModalHeader } from "components/ui/modal"
 import { Select } from "components/ui/select";
 import { PanelInspector, PanelSection, useInPanel, usePanelDirty } from "components/settings/panel-frame";
 import {
+  RowActions,
+  RowActionsCell,
+  RowActionsHeader,
   RowSelect,
+  type RowAction,
   selectableRowClass,
   WORKSPACE_HEAD_ROW,
   WORKSPACE_TH,
   WorkspaceTableFrame,
 } from "components/workspace/selectable-row";
-import { Inspector, InspectorTiles, WorkspaceSection } from "components/workspace/workspace";
+import { Inspector, InspectorTiles, useInspectorDrawer, WorkspaceSection } from "components/workspace/workspace";
 import { copyToClipboard } from "lib/clipboard";
 import {
   DASHBOARD_TOKENS_URL,
@@ -60,6 +64,13 @@ export default function DashboardTokensSettings() {
   const [pending, setPending] = useState<Pending>();
   // The token shown in the inspector; with none selected the inspector holds the issue form.
   const [selectedId, setSelectedId] = useState<string>();
+  // In the drawer, the Issue token form shows only after New token.
+  const [creating, setCreating] = useState(false);
+  const inDrawer = useInspectorDrawer();
+  const closeInspector = () => {
+    setSelectedId(undefined);
+    setCreating(false);
+  };
   const alive = useRef(true);
   const inPanel = useInPanel();
   usePanelDirty(name.trim() ? 1 : 0);
@@ -126,6 +137,7 @@ export default function DashboardTokensSettings() {
     const result = (await response.json()) as DashboardTokenIssued;
     setState(result.state);
     setIssued(result);
+    setCreating(false);
     setCopied(false);
     setName("");
     setExpiry("365");
@@ -169,6 +181,12 @@ export default function DashboardTokensSettings() {
 
   // Looked up on every render, so a token that is removed gives the inspector back to the form.
   const selected = state.tokens.find((t) => t.tokenId === selectedId);
+  // A token's ⋯ menu: the inspector's action.
+  const tokenActions = (t: DashboardTokenInfo): RowAction[] => [
+    t.status === "active"
+      ? { label: "Revoke…", destructive: true, disabled: busy, onSelect: () => setPending({ kind: "revoke", token: t }) }
+      : { label: "Remove…", destructive: true, disabled: busy, onSelect: () => setPending({ kind: "remove", token: t }) },
+  ];
 
   return (
     <PanelSection tab="tokens">
@@ -183,7 +201,15 @@ export default function DashboardTokensSettings() {
           </>
         }
         action={
-          <Button type="button" size="sm" variant="outline" onClick={() => setSelectedId(undefined)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSelectedId(undefined);
+              setCreating(true);
+            }}
+          >
             New token
           </Button>
         }
@@ -215,6 +241,7 @@ export default function DashboardTokensSettings() {
                   <th scope="col" className={WORKSPACE_TH}>Issued</th>
                   <th scope="col" className={WORKSPACE_TH}>Last used</th>
                   <th scope="col" className={WORKSPACE_TH}>Expires</th>
+                  <RowActionsHeader />
                 </tr>
               </thead>
               <tbody>
@@ -235,6 +262,7 @@ export default function DashboardTokensSettings() {
                     </td>
                     <td className="px-4 py-2">{when(t.lastUsedAtUtc)}</td>
                     <td className="px-4 py-2">{t.expiresAtUtc ? when(t.expiresAtUtc) : "No expiry"}</td>
+                    <RowActionsCell label={`Actions for ${t.name}`} actions={tokenActions(t)} />
                   </tr>
                 ))}
               </tbody>
@@ -249,6 +277,8 @@ export default function DashboardTokensSettings() {
             eyebrow="Dashboard token"
             title={selected.name}
             state={<Badge variant={STATUS[selected.status].variant}>{STATUS[selected.status].label}</Badge>}
+            menu={<RowActions label={`Actions for ${selected.name}`} actions={tokenActions(selected)} />}
+            onClose={closeInspector}
           >
             <InspectorTiles
               tiles={[
@@ -272,9 +302,10 @@ export default function DashboardTokensSettings() {
               </Button>
             </div>
           </Inspector>
-        ) : (
+        ) : creating || !inDrawer ? (
           <Inspector
             eyebrow="New token"
+            onClose={closeInspector}
             title="Issue token"
             description="The Monitor link is shown once, when you issue the token. NimBus keeps only its hash."
           >
@@ -313,6 +344,8 @@ export default function DashboardTokensSettings() {
               </Button>
             </form>
           </Inspector>
+        ) : (
+          <Inspector />
         )}
       </PanelInspector>
 

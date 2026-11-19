@@ -92,20 +92,24 @@ export function DropdownMenu({
         close();
       }
     };
+    // Capture phase, and mark the key handled, so Escape closes this menu
+    // and not an inspector drawer or side panel it sits in.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      close();
     };
     // Capture scroll on any ancestor (the table's scroll container) so the
     // menu can't drift away from its trigger; dismissing is the simplest
     // correct behaviour.
     const onReflow = () => close();
     document.addEventListener("mousedown", onDocMouseDown);
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", onReflow, true);
     window.addEventListener("resize", onReflow);
     return () => {
       document.removeEventListener("mousedown", onDocMouseDown);
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", onKey, true);
       window.removeEventListener("scroll", onReflow, true);
       window.removeEventListener("resize", onReflow);
     };

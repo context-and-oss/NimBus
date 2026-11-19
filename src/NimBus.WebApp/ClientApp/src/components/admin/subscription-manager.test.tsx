@@ -526,6 +526,46 @@ describe("SubscriptionManager", () => {
     expect((await screen.findByText(/Purged 3 dead-lettered message/)).textContent).toContain("3");
   });
 
+  it("runs a subscription's actions from its row menu, through the same confirmation", async () => {
+    mocks.getAdminServicebusSubscriptions.mockResolvedValue([
+      subscription("billing", { deadLetterMessageCount: 2 }),
+    ]);
+    mocks.postAdminServicebusSubscriptionDeadlettersPurge.mockResolvedValue({
+      processed: 2,
+      succeeded: 2,
+      failed: 0,
+      errors: [],
+    });
+
+    render(<SubscriptionManager />);
+    await openTopic("orders");
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for billing" }));
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Pause",
+      "Purge…",
+      "Purge dead letters…",
+      "Delete & recreate…",
+      "Delete…",
+    ]);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Purge dead letters…" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Purge dead letters" });
+    fireEvent.change(within(dialog).getByPlaceholderText("billing"), { target: { value: "billing" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Purge dead letters now" }));
+    await waitFor(() =>
+      expect(mocks.postAdminServicebusSubscriptionDeadlettersPurge).toHaveBeenCalledWith("orders", "billing"),
+    );
+  });
+
+  it("opens a topic's subscriptions from its row menu", async () => {
+    render(<SubscriptionManager />);
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for orders" }));
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Open subscriptions" }));
+
+    await waitFor(() => expect(mocks.getAdminServicebusSubscriptions).toHaveBeenCalledWith("orders"));
+  });
+
   it("offers no dead-letter purge when both dead-letter queues are empty", async () => {
     mocks.getAdminServicebusSubscriptions.mockResolvedValue([subscription("billing", { activeMessageCount: 4 })]);
 

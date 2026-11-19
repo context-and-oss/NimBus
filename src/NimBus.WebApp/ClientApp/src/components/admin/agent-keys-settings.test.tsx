@@ -88,13 +88,20 @@ describe("Agent keys settings", () => {
     expect(within(inspector()).getByRole("button", { name: "Remove key for triage-agent" })).toBeTruthy();
   });
 
-  it("keeps the actions out of the table", async () => {
+  it("offers each key's actions in its row menu, not as row buttons", async () => {
     mockFetch(Response.json(state()));
+    const user = userEvent.setup();
     render(<AgentKeysSettings />);
 
     const headers = within(await screen.findByRole("table", { name: "Agent keys" })).getAllByRole("columnheader");
-    expect(headers.map((h) => h.textContent)).toEqual(["Agent and key", "Use", "Status", "Issued", "Last used", "Expires"]);
+    expect(headers.map((h) => h.textContent)).toEqual(["Agent and key", "Use", "Status", "Issued", "Last used", "Expires", "Actions"]);
     expect(within(table()).queryByRole("button", { name: /Rotate|Revoke|Remove/ })).toBeNull();
+
+    await user.click(within(table()).getByRole("button", { name: "Actions for enrichment-agent" }));
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Rotate", "Revoke…"]);
+    await user.click(within(menu).getByRole("menuitem", { name: "Revoke…" }));
+    expect(within(await screen.findByRole("dialog")).getByRole("button", { name: "Revoke key" })).toBeTruthy();
   });
 
   it("shows the issue form until a key is selected, then that key's facts and actions", async () => {
@@ -330,6 +337,9 @@ describe("Agent keys settings", () => {
     const user = userEvent.setup();
     const { onDirtyChange } = renderInPanel(<AgentKeysSettings />, "agent-keys");
 
+    // In the Settings frame the issue form opens in the drawer on request.
+    expect(screen.queryByLabelText("Agent id")).toBeNull();
+    await user.click(await screen.findByRole("button", { name: "New key" }));
     await user.type(await screen.findByLabelText("Agent id"), "draft");
 
     expect(onDirtyChange).toHaveBeenLastCalledWith(1);

@@ -1,16 +1,22 @@
 import {
   createContext,
+  useCallback,
   useContext,
+  useEffect,
   useId,
+  useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "lib/utils";
 
 // The Manage pages' shared layout: a chip bar, a header with stat tiles and
-// tabs, a table that takes the width, and an inspector for the selected row.
+// tabs, a table that takes the full width, and an inspector drawer that slides
+// in over the table's right side while a row is selected.
 
 const MICRO =
   "font-mono text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground";
@@ -31,6 +37,37 @@ export function InspectorPortal({ children }: { children: ReactNode }) {
   return slot ? createPortal(children, slot) : null;
 }
 
+interface DrawerValue {
+  /** Marks the drawer open until the returned cleanup runs. */
+  register: () => () => void;
+  /** Selects the visible row before (-1) or after (1) the selected one. */
+  step: (direction: -1 | 1) => void;
+  canStep: { previous: boolean; next: boolean };
+  /** The selected row's select button, which takes focus back when the drawer closes. */
+  selectedRow: () => HTMLElement | undefined;
+}
+
+// Set inside a workspace that has an inspector: an Inspector there is a drawer.
+const DrawerContext = createContext<DrawerValue | null>(null);
+
+/**
+ * True inside a workspace whose inspector is a drawer. A component whose
+ * inspector holds a form when nothing is selected (Add grant, Issue key) shows
+ * that form only on request there; rendered on its own it shows it always.
+ */
+export const useInspectorDrawer = (): boolean => useContext(DrawerContext) !== null;
+
+/** Marks the button in a row's first cell that selects the row (see RowSelect). */
+export const ROW_SELECT_ATTRIBUTE = "data-row-select";
+
+// A click on one of these inside a row belongs to the control, not the row.
+const INTERACTIVE =
+  'button, a, input, select, textarea, label, summary, [role="menu"], [role="menuitem"], [contenteditable="true"]';
+
+// Up and Down belong to these while they have focus.
+const OWNS_ARROWS =
+  'input, textarea, select, [contenteditable="true"], [role="menu"], [role="listbox"], [role="radiogroup"], [role="slider"]';
+
 export interface WorkspaceProps {
   title: string;
   /** Rendered beside the title, e.g. a status badge. */
@@ -45,11 +82,14 @@ export interface WorkspaceProps {
   actions?: ReactNode;
   /** A WorkspaceTabs element. */
   tabs?: ReactNode;
-  /** The right-hand column. Left out, the table section takes the full width. */
+  /**
+   * The inspector drawer's content. The drawer is open while it holds an
+   * Inspector with a title, i.e. while a row is selected.
+   */
   inspector?: ReactNode;
-  /** Shows the inspector column for the children to fill through InspectorPortal. */
+  /** Gives the children an inspector drawer to fill through InspectorPortal. */
   inspectorSlot?: boolean;
-  /** A wider inspector, for one that hosts a form. */
+  /** A wider drawer, for one that hosts a form. */
   wideInspector?: boolean;
   /** Sticks to the bottom of the viewport, e.g. a save bar. */
   footer?: ReactNode;
@@ -57,9 +97,11 @@ export interface WorkspaceProps {
 }
 
 /**
- * Page frame for Operations, Topology, Settings and Access Control. From `xl`
- * up the inspector stays in view beside the table while the page scrolls;
- * below that it follows the table.
+ * Page frame for Operations, Topology, Settings and Access Control. The table
+ * takes the full width; a click anywhere on a row selects it, and the selected
+ * row's Inspector slides in from the right over the table, like Claude
+ * Console's. Up and Down step through the rows while it is open; Escape and
+ * its close button close it.
  */
 export function Workspace({
   title,
@@ -77,82 +119,167 @@ export function Workspace({
   children,
 }: WorkspaceProps) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const [openCount, setOpenCount] = useState(0);
+  const [canStep, setCanStep] = useState({ previous: false, next: false });
+  const tableRef = useRef<HTMLDivElement>(null);
   const hasInspector = inspectorSlot || inspector !== undefined;
+  const open = hasInspector && openCount > 0;
+
+  // The visible rows' select buttons, in table order. A table hidden on
+  // another tab keeps its rows mounted, so leave those out.
+  const rowButtons = useCallback(
+    () =>
+      Array.from(
+        tableRef.current?.querySelectorAll<HTMLElement>(`[${ROW_SELECT_ATTRIBUTE}]`) ?? [],
+      ).filter((b) => !b.closest("[hidden]")),
+    [],
+  );
+
+  const selectedRow = useCallback(
+    () => rowButtons().find((b) => b.getAttribute("aria-pressed") === "true"),
+    [rowButtons],
+  );
+
+  const step = useCallback(
+    (direction: -1 | 1) => {
+      const rows = rowButtons();
+      const at = rows.findIndex((b) => b.getAttribute("aria-pressed") === "true");
+      const target = at < 0 ? undefined : rows[at + direction];
+      if (!target) return;
+      target.click();
+      target.closest("tr")?.scrollIntoView?.({ block: "nearest" });
+    },
+    [rowButtons],
+  );
+
+  // Keep the drawer's Up and Down buttons in step with the selection.
+  useEffect(() => {
+    const table = tableRef.current;
+    if (!open || !table) return;
+    const update = () => {
+      const rows = rowButtons();
+      const at = rows.findIndex((b) => b.getAttribute("aria-pressed") === "true");
+      setCanStep((prev) => {
+        const next = { previous: at > 0, next: at >= 0 && at < rows.length - 1 };
+        return prev.previous === next.previous && prev.next === next.next ? prev : next;
+      });
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(table, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["aria-pressed", "hidden"],
+    });
+    return () => observer.disconnect();
+  }, [open, rowButtons]);
+
+  const register = useCallback(() => {
+    setOpenCount((c) => c + 1);
+    return () => setOpenCount((c) => c - 1);
+  }, []);
+
+  const drawer = useMemo<DrawerValue>(
+    () => ({ register, step, canStep, selectedRow }),
+    [register, step, canStep, selectedRow],
+  );
+
+  // A click anywhere on a row selects it, unless it lands on one of the row's
+  // own controls or ends a text selection.
+  const onTableClick = (e: MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest(INTERACTIVE)) return;
+    if (window.getSelection?.()?.toString()) return;
+    const row = target.closest("tr");
+    if (!row || !tableRef.current?.contains(row)) return;
+    row.querySelector<HTMLElement>(`[${ROW_SELECT_ATTRIBUTE}]`)?.click();
+  };
+
   return (
     <InspectorSlotContext.Provider value={inspectorSlot ? slot : undefined}>
-      <div className="flex min-h-0 flex-1 flex-col">
-        {chips && (
-          <div className="flex min-h-[3.25rem] flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-7 py-2.5">
-            {chipsLabel && (
-              <span aria-hidden="true" className={MICRO}>
-                {chipsLabel}
-              </span>
-            )}
-            <div
-              role="group"
-              aria-label={chipsLabel}
-              className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5"
-            >
-              {chips}
-            </div>
-          </div>
-        )}
-
-        <header
-          className={cn(
-            "border-b border-border bg-card px-7 pt-5",
-            !tabs && "pb-4",
-          )}
-        >
-          <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
-            <div className="min-w-[min(100%,18rem)] flex-1">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h1 className="m-0 text-[26px] font-bold tracking-tight">
-                  {title}
-                </h1>
-                {pill}
+      <DrawerContext.Provider value={hasInspector ? drawer : null}>
+        <div className="flex min-h-0 flex-1 flex-col">
+          {chips && (
+            <div className="flex min-h-[3.25rem] flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-7 py-2.5">
+              {chipsLabel && (
+                <span aria-hidden="true" className={MICRO}>
+                  {chipsLabel}
+                </span>
+              )}
+              <div
+                role="group"
+                aria-label={chipsLabel}
+                className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5"
+              >
+                {chips}
               </div>
-              {subtitle && (
-                <div className="mt-1 max-w-3xl text-[13px] text-muted-foreground">
-                  {subtitle}
+            </div>
+          )}
+
+          <header
+            className={cn(
+              "border-b border-border bg-card px-7 pt-5",
+              !tabs && "pb-4",
+            )}
+          >
+            <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
+              <div className="min-w-[min(100%,18rem)] flex-1">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <h1 className="m-0 text-[26px] font-bold tracking-tight">
+                    {title}
+                  </h1>
+                  {pill}
+                </div>
+                {subtitle && (
+                  <div className="mt-1 max-w-3xl text-[13px] text-muted-foreground">
+                    {subtitle}
+                  </div>
+                )}
+              </div>
+              {(stats || actions) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {stats}
+                  {actions}
                 </div>
               )}
             </div>
-            {(stats || actions) && (
-              <div className="flex flex-wrap items-center gap-2">
-                {stats}
-                {actions}
-              </div>
-            )}
-          </div>
-          {tabs && <div className="mt-3">{tabs}</div>}
-        </header>
+            {tabs && <div className="mt-3">{tabs}</div>}
+          </header>
 
-        <div
-          className={cn(
-            "grid min-h-0 flex-1 grid-cols-1",
-            hasInspector &&
-              (wideInspector
-                ? "xl:grid-cols-[minmax(0,1fr)_minmax(24rem,34rem)]"
-                : "xl:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]"),
-          )}
-        >
-          <div className="min-w-0 space-y-3 px-7 py-5">{children}</div>
-          {hasInspector && (
-            <div className="min-w-0 border-t border-border bg-card xl:border-l xl:border-t-0">
-              <div className="xl:sticky xl:top-16 xl:max-h-[calc(100vh-4rem)] xl:overflow-y-auto">
-                {inspectorSlot ? <div ref={setSlot} /> : inspector}
-              </div>
+          {/* Each row's select button is the keyboard path; this only widens the mouse target. */}
+          <div
+            ref={tableRef}
+            onClick={onTableClick}
+            className="min-h-0 min-w-0 flex-1 space-y-3 px-7 py-5"
+          >
+            {children}
+          </div>
+
+          {footer && (
+            <div className="sticky bottom-0 z-10 border-t border-border bg-card">
+              {footer}
             </div>
           )}
         </div>
 
-        {footer && (
-          <div className="sticky bottom-0 z-10 border-t border-border bg-card">
-            {footer}
+        {hasInspector && (
+          <div
+            data-testid="inspector-drawer"
+            data-open={open}
+            className={cn(
+              "fixed inset-y-0 right-0 z-40 flex w-full max-w-full flex-col border-l border-border bg-card shadow-nb-lg",
+              "transition-[transform,visibility] duration-200 ease-out motion-reduce:transition-none",
+              wideInspector ? "sm:w-[40rem]" : "sm:w-[32rem]",
+              open ? "visible translate-x-0" : "invisible translate-x-full",
+            )}
+          >
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {inspectorSlot ? <div ref={setSlot} /> : inspector}
+            </div>
           </div>
         )}
-      </div>
+      </DrawerContext.Provider>
     </InspectorSlotContext.Provider>
   );
 }
@@ -406,13 +533,127 @@ export interface InspectorProps {
   /** At the top right, e.g. On, Paused. */
   state?: ReactNode;
   description?: ReactNode;
-  /** Shown when nothing is selected. */
+  /** Shown when nothing is selected. In a workspace the drawer is closed instead. */
   empty?: ReactNode;
+  /** In the drawer's top bar after the eyebrow, e.g. the selected row's id. */
+  reference?: ReactNode;
+  /** Beside the title, e.g. the row's ⋯ menu (RowActions). */
+  menu?: ReactNode;
+  /** Closes the drawer, usually by clearing the selection. */
+  onClose?: () => void;
   children?: ReactNode;
 }
 
-/** Details and actions for the selected row. */
-export function Inspector({
+/**
+ * Details and actions for the selected row. In a workspace it is the drawer:
+ * open while it has a title, with a top bar to step through the rows and close
+ * it. Elsewhere it renders in place.
+ */
+export function Inspector(props: InspectorProps) {
+  const drawer = useContext(DrawerContext);
+  if (drawer && props.title !== undefined)
+    return <DrawerInspector {...props} drawer={drawer} />;
+  // A workspace's drawer stays closed while nothing is selected.
+  if (drawer) return null;
+  return <InlineInspector {...props} />;
+}
+
+const DRAWER_BUTTON =
+  "inline-flex h-8 w-8 items-center justify-center rounded-nb-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-35";
+
+function ChevronIcon({ up }: { up?: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={up ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} />
+    </svg>
+  );
+}
+
+function DrawerInspector({
+  eyebrow,
+  title,
+  badge,
+  state,
+  description,
+  reference,
+  menu,
+  onClose,
+  children,
+  drawer,
+}: InspectorProps & { drawer: DrawerValue }) {
+  const { register, step, canStep, selectedRow } = drawer;
+  useEffect(register, [register]);
+
+  const close = useCallback(() => {
+    if (!onClose) return;
+    const row = selectedRow();
+    onClose();
+    // The close button goes with the drawer; give focus back to the row.
+    row?.focus();
+  }, [onClose, selectedRow]);
+
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      // A modal or menu on top takes its own keys (they mark them handled).
+      if (e.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
+      if (e.key === "Escape") {
+        close();
+        return;
+      }
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.target instanceof Element && e.target.closest(OWNS_ARROWS)) return;
+      e.preventDefault();
+      step(e.key === "ArrowUp" ? -1 : 1);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [close, step]);
+
+  return (
+    <aside aria-label="Inspector" className="flex min-h-full flex-col">
+      <div className="sticky top-0 z-10 flex items-center gap-2.5 bg-card py-3 pl-6 pr-3">
+        {eyebrow && <span className="shrink-0 text-[13px] font-semibold">{eyebrow}</span>}
+        {reference && (
+          <span className="min-w-0 truncate font-mono text-[12px] text-muted-foreground">{reference}</span>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <button type="button" aria-label="Previous row" title="Previous row (↑)" disabled={!canStep.previous} onClick={() => step(-1)} className={DRAWER_BUTTON}>
+            <ChevronIcon up />
+          </button>
+          <button type="button" aria-label="Next row" title="Next row (↓)" disabled={!canStep.next} onClick={() => step(1)} className={DRAWER_BUTTON}>
+            <ChevronIcon />
+          </button>
+          {onClose && (
+            <button type="button" aria-label="Close inspector" title="Close (Esc)" onClick={close} className={DRAWER_BUTTON}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex items-start gap-3 border-b border-border px-6 pb-4">
+        <h3 className="m-0 flex min-w-0 flex-1 flex-wrap items-center gap-2 text-[19px] font-semibold [overflow-wrap:anywhere]">
+          {title}
+          {badge}
+        </h3>
+        {state && <div className="shrink-0 pt-0.5">{state}</div>}
+        {menu && <div className="-mr-2 shrink-0">{menu}</div>}
+      </div>
+      <div className="space-y-4 px-6 py-5">
+        {description && (
+          <p className="m-0 text-[13.5px] leading-relaxed text-foreground/90">
+            {description}
+          </p>
+        )}
+        {children}
+      </div>
+    </aside>
+  );
+}
+
+function InlineInspector({
   eyebrow,
   title,
   badge,

@@ -86,13 +86,18 @@ describe("Dashboard tokens settings", () => {
     expect(within(inspector()).getByRole("button", { name: "Remove token Old wall" })).toBeTruthy();
   });
 
-  it("keeps the actions out of the table", async () => {
+  it("offers each token's action in its row menu, not as a row button", async () => {
     mockFetch(Response.json(state()));
+    const user = userEvent.setup();
     render(<DashboardTokensSettings />);
 
     const headers = within(await screen.findByRole("table", { name: "Dashboard tokens" })).getAllByRole("columnheader");
-    expect(headers.map((h) => h.textContent)).toEqual(["Name", "Token", "Status", "Issued", "Last used", "Expires"]);
+    expect(headers.map((h) => h.textContent)).toEqual(["Name", "Token", "Status", "Issued", "Last used", "Expires", "Actions"]);
     expect(within(table()).queryByRole("button", { name: /Revoke|Remove/ })).toBeNull();
+
+    await user.click(within(table()).getByRole("button", { name: "Actions for Operations wall" }));
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Revoke…" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 
   it("shows the issue form until a token is selected, then that token's facts and action", async () => {

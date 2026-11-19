@@ -13,7 +13,10 @@ import {
   WorkspaceSection,
 } from "components/workspace/workspace";
 import {
+  RowActionsCell,
+  RowActionsHeader,
   RowSelect,
+  type RowAction,
   selectableRowClass,
   WORKSPACE_HEAD_ROW,
   WORKSPACE_TH,
@@ -239,6 +242,15 @@ export function EndpointControlsCard({
   const selectedRow = selected ? (rows[selected.value] ?? { receive: "loading", send: "loading" }) : undefined;
   const selectedBacklog = selected ? backlog(selected.value) : undefined;
   const tile = (value: number | undefined) => (value === undefined ? "—" : value.toLocaleString());
+  // The operations that start from an endpoint, for its ⋯ menu.
+  const rowActions = (ep: EndpointOption): RowAction[] =>
+    onOperate
+      ? ROW_OPERATIONS.map((o) => ({
+          label: `${o.label}…`,
+          destructive: o.group === "danger",
+          onSelect: () => onOperate(o.id, ep.value),
+        }))
+      : [];
 
   return (
     <>
@@ -273,6 +285,7 @@ export function EndpointControlsCard({
                 <th scope="col" className={cn(WORKSPACE_TH, "text-right")}>Pending</th>
                 <th scope="col" className={WORKSPACE_TH}>Receive</th>
                 <th scope="col" className={WORKSPACE_TH}>Send</th>
+                {onOperate && <RowActionsHeader />}
               </tr>
             </thead>
             <tbody>
@@ -305,12 +318,13 @@ export function EndpointControlsCard({
                     <td className="px-4 py-2 text-right tabular-nums">{number(b?.pending)}</td>
                     <td className="px-4 py-2">{channelToggle(ep, "receive", row.receive, `Receive ${ep.label}`)}</td>
                     <td className="px-4 py-2">{channelToggle(ep, "send", row.send, `Send ${ep.label}`)}</td>
+                    {onOperate && <RowActionsCell label={`Operations on ${ep.label}`} actions={rowActions(ep)} />}
                   </tr>
                 );
               })}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-center text-muted-foreground">
+                  <td colSpan={onOperate ? 7 : 6} className="py-4 text-center text-muted-foreground">
                     {endpoints.length === 0
                       ? "No endpoints."
                       : attentionOnly && !query.trim()
@@ -341,6 +355,7 @@ export function EndpointControlsCard({
                 ? "A paused endpoint keeps its messages in Service Bus until it is switched back on."
                 : undefined
             }
+            onClose={() => setSelectedId(undefined)}
           >
             <InspectorTiles
               tiles={[

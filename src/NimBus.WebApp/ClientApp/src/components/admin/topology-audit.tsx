@@ -57,8 +57,11 @@ export interface TopologyAuditProps {
    * component shows its own endpoint picker.
    */
   endpoint?: string | null;
-  /** Asked to open an endpoint from the all-endpoints summary when `endpoint` is controlled. */
-  onEndpointChange?: (endpoint: string) => void;
+  /**
+   * Asked to open an endpoint from the all-endpoints summary when `endpoint` is
+   * controlled, or with null to close the inspector.
+   */
+  onEndpointChange?: (endpoint: string | null) => void;
   /** Receives how many endpoints drift after an all-endpoints audit; undefined before one. */
   onDriftCount?: (drifting: number | undefined) => void;
 }
@@ -210,6 +213,15 @@ export default function TopologyAudit({ endpoint, onEndpointChange, onDriftCount
     setAudit(row.result);
     setCleanupResult(null);
     setError(null);
+  }
+
+  function closeInspector() {
+    if (controlled) {
+      onEndpointChange?.(null);
+      return;
+    }
+    setAudit(null);
+    setCleanupResult(null);
   }
 
   async function handleRemoveDeprecated() {
@@ -397,6 +409,7 @@ export default function TopologyAudit({ endpoint, onEndpointChange, onDriftCount
                 ? "Deprecated items exist in the namespace but aren't declared in the catalog. Removing them deletes them from Service Bus; messages they would have received are no longer delivered."
                 : "The live subscriptions and rules match the declared catalog."
             }
+            onClose={closeInspector}
           >
             <InspectorBlock label="Subscriptions and rules">
               <div className="overflow-hidden rounded-nb-md border border-border bg-background">
