@@ -345,7 +345,7 @@ Each phase is its own pull request; a phase's parts are commits in it.
 - **Mail volume when many rules fire at once** (one outage, many endpoints). Notices are per rule
   state change, so the volume is bounded by the number of rules, not of failures.
 
-## 12. Decisions (proposed, for the repo owner)
+## 12. Decisions (approved by the repo owner, 2026-11-20)
 
 1. Evaluate in the WebApp, not the Resolver (§5.3).
 2. Rules own their targets; subscriptions are unchanged until v6 (§5.2, §13 answer 1).
@@ -397,4 +397,4 @@ Each phase is its own pull request; a phase's parts are commits in it.
 - 2026-11-20: first draft.
 - 2026-11-20, revision 2: the repo owner answered §13. Subscriptions become a built-in rule in v6;
   no site-wide rules in Phase 1; no reminders while firing (removed from Phase 3); the
-  classification filter stays in Phase 3.
+  classification filter stays in Phase 3. The repo owner approved every decision in §12.
