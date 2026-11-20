@@ -1,6 +1,7 @@
 # Spec 053 — Alert rules
 
-Status: **proposed** (2026-11-20). Nothing is implemented. Target: a 5.x minor.
+Status: **proposed** (2026-11-20, revision 2). Nothing is implemented. Target: a 5.x minor.
+The open questions were answered on 2026-11-20 (§13); the decisions in §12 await confirmation.
 Baseline: master `108dd6c2` plus the endpoint alert webhooks delivered in the same pull request as
 this spec ([plan](../../plan/2026-11-16-alert-webhook.md)).
 Related: [Spec 051](../051-operations-agent-support/spec.md) §2 (the webhook this spec reuses),
@@ -70,7 +71,8 @@ Store queries a rule evaluator can reuse:
   incident tool (or an Azure Monitor action group) does that.
 - A query language or arbitrary expressions. Conditions are a fixed set of kinds with parameters.
 - Alerts on message payload content. Payloads stay out of alerting, as they are today.
-- Rules across endpoints or site-wide rules in Phase 1 (§13, question 2).
+- Site-wide rules and rules across endpoints in Phase 1 (§13, answer 2). A later phase may add them.
+- Reminders while a rule is firing (§13, answer 3).
 - Teams delivery. It remains unimplemented for subscriptions too.
 - Changing how the Resolver processes or settles messages.
 
@@ -176,7 +178,8 @@ docs recommend one for the critical endpoints (§11).
 - **Firing → Ok** when the condition has been false for `resolveAfterMinutes` without a break.
   Notice: *resolved*. A true evaluation during that time clears `conditionFalseSinceUtc`. This
   stops a count hovering around the threshold from sending an opened/resolved pair every minute.
-- No repeated notices while Firing in Phase 1 (§13, question 3).
+- No repeated notices while Firing: one *opened* notice, and the receiving tool tracks the incident
+  (§13, answer 3).
 - Editing a rule's condition or disabling it resets the state to Ok without a notice. The edit is
   recorded in `transitions`.
 - A rule whose endpoint is deleted is deleted with it.
@@ -317,7 +320,8 @@ endpoint with the same filters share one query.
 | 0 | Verify §14. Move the senders to the shared library with no behaviour change |
 | 1 | Store, evaluator, `failure_count`, state machine, mail and webhook notices, API, the Rules section, deploy settings, docs |
 | 2 | `blocked_session`: a Failed or handoff event has held its session for more than *T* minutes, or more than *N* events wait behind it. Needs a new store query for the oldest blocking event per endpoint (all providers, conformance). `silence`: no message handled on the endpoint for *T* minutes, from `GetEndpointMetrics(from, to)` |
-| 3 | Preview over the last 24 h; a failure-classification category filter (only when Integration Intelligence is on, and only for classified failures); firing rules in the Monitor and in MCP `nimbus_get_worklist`; repeat notices while firing |
+| 3 | Preview over the last 24 h; a failure-classification category filter (only when Integration Intelligence is on, and only for classified failures); firing rules in the Monitor and in MCP `nimbus_get_worklist` |
+| v6 | Subscriptions become a built-in rule (§13, answer 1): deprecated with `[Obsolete]` and a bridge in a 5.x minor once rules ship, migrated and removed in v6 (`docs/versioning.md`). How a subscription's per-window notice maps onto a rule needs its own spec before v6 |
 
 Each phase is its own pull request; a phase's parts are commits in it.
 
@@ -344,22 +348,26 @@ Each phase is its own pull request; a phase's parts are commits in it.
 ## 12. Decisions (proposed, for the repo owner)
 
 1. Evaluate in the WebApp, not the Resolver (§5.3).
-2. Rules own their targets; subscriptions are unchanged (§5.2).
+2. Rules own their targets; subscriptions are unchanged until v6 (§5.2, §13 answer 1).
 3. Phase 1 has one condition kind, `failure_count`, counting unresolved failures (§5.1).
-4. Notices only on state changes; no repeat while firing in Phase 1 (§5.4).
+4. Notices only on state changes; no repeat while firing (§5.4, §13 answer 3).
 5. Rules are per endpoint and managed by the endpoint's Owner (§5.8).
 
-## 13. Open questions
+## 13. Open questions (answered 2026-11-20)
 
 1. Should the subscriptions become a built-in rule ("any failure, notify per window") in v6, so
-   there is one alert model? This spec leaves them alone.
+   there is one alert model?
+   **Answer: yes.** Rules are the one alert model in v6; see the v6 row in §9.
 2. Are site-wide rules needed ("any endpoint, ≥ 20 failures in 10 min")? They need Site Owner
    permission and a cross-endpoint histogram; the store call already takes several endpoint ids.
+   **Answer: not in Phase 1.** A later phase may add them.
 3. Should a firing rule remind its recipients (for example every 4 h), or is one *opened* notice
    enough when the receiving tool tracks the incident?
+   **Answer: no reminders.** One *opened* and one *resolved* notice per incident.
 4. Should the failure-classification category be a Phase 1 filter? It is the strongest signal
    ("infrastructure, not data"), but it exists only when Integration Intelligence is on and arrives
    after the failure, so a rule would count a failure only once it is classified.
+   **Answer: no, Phase 3** (§9).
 
 ## 14. Facts to verify (Phase 0)
 
@@ -387,3 +395,6 @@ Each phase is its own pull request; a phase's parts are commits in it.
 ## 16. Review trail
 
 - 2026-11-20: first draft.
+- 2026-11-20, revision 2: the repo owner answered §13. Subscriptions become a built-in rule in v6;
+  no site-wide rules in Phase 1; no reminders while firing (removed from Phase 3); the
+  classification filter stays in Phase 3.
