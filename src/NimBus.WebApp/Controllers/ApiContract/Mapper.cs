@@ -228,7 +228,8 @@ public static class Mapper
         {
             AuditorName = audit.AuditorName,
             AuditTimestamp = audit.AuditTimestamp,
-            AuditType = Enum.Parse<MessageAuditAuditType>(audit.AuditType.ToString())
+            AuditType = Enum.Parse<MessageAuditAuditType>(audit.AuditType.ToString()),
+            Comment = audit.Comment
         };
     }
 
