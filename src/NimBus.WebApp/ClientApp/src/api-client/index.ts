@@ -2033,10 +2033,11 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Subscribe to an endpoint's alerts
      * @param body (optional) 
      * @return OK
      */
-    postEndpointSubscribe(endpointId: string, body?: EndpointSubscription | undefined): Promise<void> {
+    postEndpointSubscribe(endpointId: string, body?: EndpointSubscription | undefined): Promise<EndpointSubscriptionCreated> {
         let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/subscribe";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
@@ -2050,6 +2051,7 @@ export class Client extends ApiClientBase {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                "Accept": "application/json"
             }
         };
 
@@ -2060,12 +2062,15 @@ export class Client extends ApiClientBase {
         });
     }
 
-    protected processPostEndpointSubscribe(response: Response): Promise<void> {
+    protected processPostEndpointSubscribe(response: Response): Promise<EndpointSubscriptionCreated> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = EndpointSubscriptionCreated.fromJS(resultData200);
+            return result200;
             });
         } else if (status === 400) {
             return response.text().then((_responseText) => {
@@ -2079,7 +2084,7 @@ export class Client extends ApiClientBase {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<EndpointSubscriptionCreated>(null as any);
     }
 
     /**
@@ -11947,6 +11952,101 @@ export interface IEndpointSubscription {
     payload?: string;
     frequency?: number;
     id?: string;
+
+    [key: string]: any;
+}
+
+/** A newly created alert subscription. */
+export class EndpointSubscriptionCreated implements IEndpointSubscriptionCreated {
+    id?: string;
+    type?: string;
+    mail?: string;
+    url?: string;
+    authorId?: string;
+    eventTypes?: string[];
+    frequency?: number;
+    /** Webhook subscriptions only. The secret the subscription's requests are signed with (HMAC-SHA256 over the timestamp header, a dot and the body). Shown once; it cannot be retrieved again. */
+    signingSecret?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IEndpointSubscriptionCreated) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.id = _data["id"];
+            this.type = _data["type"];
+            this.mail = _data["mail"];
+            this.url = _data["url"];
+            this.authorId = _data["authorId"];
+            if (Array.isArray(_data["eventTypes"])) {
+                this.eventTypes = [] as any;
+                for (let item of _data["eventTypes"])
+                    this.eventTypes!.push(item);
+            }
+            this.frequency = _data["frequency"];
+            this.signingSecret = _data["signingSecret"];
+        }
+    }
+
+    static fromJS(data: any): EndpointSubscriptionCreated {
+        data = typeof data === 'object' ? data : {};
+        let result = new EndpointSubscriptionCreated();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["id"] = this.id;
+        data["type"] = this.type;
+        data["mail"] = this.mail;
+        data["url"] = this.url;
+        data["authorId"] = this.authorId;
+        if (Array.isArray(this.eventTypes)) {
+            data["eventTypes"] = [];
+            for (let item of this.eventTypes)
+                data["eventTypes"].push(item);
+        }
+        data["frequency"] = this.frequency;
+        data["signingSecret"] = this.signingSecret;
+        return data;
+    }
+
+    clone(): EndpointSubscriptionCreated {
+        const json = this.toJSON();
+        let result = new EndpointSubscriptionCreated();
+        result.init(json);
+        return result;
+    }
+}
+
+/** A newly created alert subscription. */
+export interface IEndpointSubscriptionCreated {
+    id?: string;
+    type?: string;
+    mail?: string;
+    url?: string;
+    authorId?: string;
+    eventTypes?: string[];
+    frequency?: number;
+    /** Webhook subscriptions only. The secret the subscription's requests are signed with (HMAC-SHA256 over the timestamp header, a dot and the body). Shown once; it cannot be retrieved again. */
+    signingSecret?: string;
 
     [key: string]: any;
 }

@@ -51,6 +51,7 @@ internal static class SetupCommand
                 CommandOptionType.SingleValue);
             var setupNetworkOptions = NetworkCommandOptions.Register(setupCommand);
             var setupAlertMailOptions = AlertMailCommandOptions.Register(setupCommand);
+            var setupAlertWebhookOptions = AlertWebhookCommandOptions.Register(setupCommand);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
@@ -64,7 +65,9 @@ internal static class SetupCommand
                 var setupServiceBusCapacity = setupNetworkOptions.ServiceBusCapacity;
                 var setupDnsWait = setupNetworkOptions.DnsWait;
                 NetworkSelection.ValidateSyntax(setupNetwork);
-                var setupAlertMail = setupAlertMailOptions.Build(DeploymentSecrets.Load());
+                var setupDeploymentSecrets = DeploymentSecrets.Load();
+                var setupAlertMail = setupAlertMailOptions.Build(setupDeploymentSecrets);
+                var setupAlertWebhook = setupAlertWebhookOptions.Build(setupDeploymentSecrets);
                 var setupPlatformPackage = setupPackage.HasValue()
                     ? await PlatformPackage.ResolveAsync(PlatformHttpClient, setupPackage.Value()!, setupFeed.Value(), setupPlatform.Value(), cancellationToken).ConfigureAwait(false)
                     : null;
@@ -122,7 +125,8 @@ internal static class SetupCommand
                     ServiceBusNamespaceName: setupNetworkOptions.ServiceBusNamespaceName,
                     DnsWait: setupDnsWait,
                     AlertMail: setupAlertMail,
-                    FuncStorageAccountName: setupFuncStorageAccountName.Value());
+                    FuncStorageAccountName: setupFuncStorageAccountName.Value(),
+                    AlertWebhook: setupAlertWebhook);
 
                 var topologyOptions = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, setupNetworkOptions.ServiceBusNamespaceName, setupDnsWait, resourceNamePostfix.Value());
                 var appOptions = new AppDeploymentOptions(

@@ -197,6 +197,17 @@ param alertMailFrom string = ''
 // https://webapp-{solutionId}-{environment}-management.azurewebsites.net.
 param alertMailWebAppUrl string = ''
 
+// Endpoint alert webhooks: the Resolver posts a signed request to the webhook subscriptions
+// on an endpoint's Alerts tab. Off unless alertWebhookSigningKey is set (at least 32
+// characters). deploy.webapp.bicep takes the same key, so the WebApp can show a subscription
+// its signing secret. Like alert mail, pass these on every deploy.
+@secure()
+param alertWebhookSigningKey string = ''
+// URL prefixes whose webhook requests also carry a bearer token for the Resolver's managed
+// identity: [{ urlPrefix: 'https://my-agent.example.com/api/', audience: 'https://azuresre.dev' }].
+// The identity still needs a role at the receiver; this template assigns none.
+param alertWebhookBearerTokens array = []
+
 //##############################################
 // Define names Azure resource names
 //##############################################
@@ -504,7 +515,21 @@ var alertMailResolverSettings = alertMailEnabled ? concat([
   }
 ]) : []
 
-var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, cosmosResolverSetting, alertMailResolverSettings)
+var alertWebhookEnabled = !empty(alertWebhookSigningKey)
+
+// App settings express a list as Key__<index>__Name.
+var alertWebhookResolverSettings = alertWebhookEnabled ? flatten(map(range(0, length(alertWebhookBearerTokens)), i => [
+  {
+    name: 'NimBus__Alerts__Webhook__BearerTokens__${i}__UrlPrefix'
+    value: string(alertWebhookBearerTokens[i].urlPrefix)
+  }
+  {
+    name: 'NimBus__Alerts__Webhook__BearerTokens__${i}__Audience'
+    value: string(alertWebhookBearerTokens[i].audience)
+  }
+])) : []
+
+var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, cosmosResolverSetting, alertMailResolverSettings, alertWebhookResolverSettings)
 
 // Secrets must remain secure across the nested module boundary. Passing them in
 // the ordinary settings array would retain their values in nested deployment
@@ -537,10 +562,15 @@ var alertMailResolverSecretSettings = alertMailEnabled && !empty(alertMailSmtpPa
   NimBus__Alerts__Mail__Smtp__Password: alertMailSmtpPassword
 } : {}
 
+var alertWebhookResolverSecretSettings = alertWebhookEnabled ? {
+  NimBus__Alerts__Webhook__SigningKey: alertWebhookSigningKey
+} : {}
+
 var resolverSecretSettings = union(
   sharedResolverSecretSettings,
   elasticPremiumSecretSettings,
   sqlResolverSecretSettings,
+  alertWebhookResolverSecretSettings,
   alertMailResolverSecretSettings)
 
 //##############################################

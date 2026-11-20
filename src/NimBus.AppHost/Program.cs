@@ -129,6 +129,18 @@ resolver
     .WithEnvironment("NimBus__Alerts__Mail__From", "nimbus-alerts@nimbus.example")
     .WithEnvironment("NimBus__Alerts__Mail__WebAppUrl", webapp.GetEndpoint("https"));
 
+// Endpoint alert webhooks (a webhook subscription on the same Alerts tab). This AppHost only
+// runs locally, so it switches them on with a key that is only good for development and lets
+// the Resolver call an http receiver on this machine. Matches CrmErpDemo.AppHost.
+const string localAlertWebhookSigningKey = "nimbus-local-development-only-signing-key";
+resolver
+    .WithEnvironment("NimBus__Alerts__Webhook__SigningKey", localAlertWebhookSigningKey)
+    .WithEnvironment("NimBus__Alerts__Webhook__AllowInsecureHttp", "true")
+    .WithEnvironment("NimBus__Alerts__Webhook__AllowPrivateNetworks", "true");
+webapp
+    .WithEnvironment("NimBus__Alerts__Webhook__SigningKey", localAlertWebhookSigningKey)
+    .WithEnvironment("NimBus__Alerts__Webhook__AllowInsecureHttp", "true");
+
 // Bind the active storage provider to both runtime services. Each provider package
 // resolves its own connection string at runtime.
 if (storageProvider == "sqlserver")

@@ -21,13 +21,16 @@ public class SubscriptionAlertNotifierTests
 
     private readonly InMemoryMessageStore _store = new();
     private readonly RecordingMailSender _sender = new();
+    private readonly RecordingWebhookSender _webhooks = new();
     private readonly ManualTimeProvider _time = new(Start);
 
-    private SubscriptionAlertNotifier CreateNotifier(ISubscriptionStore? subscriptions = null) => new(
+    private SubscriptionAlertNotifier CreateNotifier(
+        ISubscriptionStore? subscriptions = null, bool mail = true, bool webhooks = false) => new(
         subscriptions ?? _store,
         _store,
-        _sender,
-        new AlertMailComposer(new AlertMailOptions { From = "nimbus@example.com" }),
+        mail ? _sender : null,
+        mail ? new AlertMailComposer(new AlertMailOptions { From = "nimbus@example.com" }) : null,
+        webhooks ? _webhooks : null,
         _time,
         NullLogger<SubscriptionAlertNotifier>.Instance);
 
@@ -37,9 +40,14 @@ public class SubscriptionAlertNotifierTests
         List<string>? eventTypes = null,
         string? payload = null,
         int frequency = 3600,
-        string endpoint = Endpoint)
+        string endpoint = Endpoint,
+        string? url = null)
         => (await _store.SubscribeToEndpointNotification(
-            endpoint, mail, type, "alice", null!, eventTypes ?? new List<string>(), payload!, frequency))!;
+            endpoint, mail, type, "alice", url!, eventTypes ?? new List<string>(), payload!, frequency))!;
+
+    private Task<EndpointSubscription> SubscribeWebhookAsync(
+        string url = "https://agent.example.com/hook", string type = "webhook", int frequency = 300, string? mail = null)
+        => SubscribeAsync(mail: mail!, type: type, frequency: frequency, url: url);
 
     private static EndpointAlertContext Failure(string eventTypeId = "OrderPlaced") => new()
     {
@@ -232,6 +240,172 @@ public class SubscriptionAlertNotifierTests
         await CreateNotifier(new ThrowingSubscriptionStore()).NotifyAsync(Failure());
 
         Assert.AreEqual(0, _sender.Sent.Count);
+    }
+
+    // ── Webhooks ───────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task A_webhook_subscription_gets_one_request()
+    {
+        var subscription = await SubscribeWebhookAsync();
+
+        await CreateNotifier(webhooks: true).NotifyAsync(Failure());
+
+        var webhook = _webhooks.Sent.Single();
+        Assert.AreEqual(subscription.Id, webhook.SubscriptionId);
+        Assert.AreEqual("https://agent.example.com/hook", webhook.Url.AbsoluteUri);
+        Assert.AreEqual("event-1", webhook.Context.EventId);
+        Assert.AreEqual(0, _sender.Sent.Count);
+        Assert.AreEqual("2026-11-05 10:00", await NotifiedAtAsync(subscription));
+    }
+
+    [TestMethod]
+    public async Task A_webhook_subscription_is_skipped_while_webhooks_are_off()
+    {
+        var subscription = await SubscribeWebhookAsync();
+
+        await CreateNotifier(webhooks: false).NotifyAsync(Failure());
+
+        Assert.AreEqual(0, _webhooks.Sent.Count);
+        Assert.IsNull(await NotifiedAtAsync(subscription), "a skipped subscription must not use its window");
+    }
+
+    [TestMethod]
+    public async Task A_mail_subscription_is_skipped_while_mail_is_off()
+    {
+        var subscription = await SubscribeAsync();
+        await SubscribeWebhookAsync();
+
+        await CreateNotifier(mail: false, webhooks: true).NotifyAsync(Failure());
+
+        Assert.AreEqual(0, _sender.Sent.Count);
+        Assert.AreEqual(1, _webhooks.Sent.Count);
+        Assert.IsNull(await NotifiedAtAsync(subscription));
+    }
+
+    [TestMethod]
+    public async Task A_url_the_sender_refuses_is_skipped()
+    {
+        var subscription = await SubscribeWebhookAsync(url: "http://agent.example.com/hook");
+        _webhooks.Refuse = url => url!.StartsWith("http://", StringComparison.Ordinal);
+
+        await CreateNotifier(webhooks: true).NotifyAsync(Failure());
+
+        Assert.AreEqual(0, _webhooks.Sent.Count);
+        Assert.IsNull(await NotifiedAtAsync(subscription));
+    }
+
+    [TestMethod]
+    public async Task A_subscription_of_both_types_is_notified_both_ways_in_one_window()
+    {
+        await SubscribeWebhookAsync(type: "mail;webhook", mail: "ops@example.com");
+        var notifier = CreateNotifier(webhooks: true);
+
+        await notifier.NotifyAsync(Failure());
+        await notifier.NotifyAsync(Failure());
+
+        Assert.AreEqual(1, _sender.Sent.Count);
+        Assert.AreEqual(1, _webhooks.Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task The_frequency_window_holds_back_a_second_request_until_it_has_passed()
+    {
+        await SubscribeWebhookAsync(frequency: 300);
+        var notifier = CreateNotifier(webhooks: true);
+
+        await notifier.NotifyAsync(Failure());
+        _time.Advance(TimeSpan.FromMinutes(4));
+        await notifier.NotifyAsync(Failure());
+        Assert.AreEqual(1, _webhooks.Sent.Count, "inside the five minutes");
+
+        _time.Advance(TimeSpan.FromMinutes(1));
+        await notifier.NotifyAsync(Failure());
+        Assert.AreEqual(2, _webhooks.Sent.Count, "the five minutes have passed");
+    }
+
+    [TestMethod]
+    public async Task Concurrent_failures_inside_one_window_send_one_request()
+    {
+        await SubscribeWebhookAsync();
+        var notifier = CreateNotifier(webhooks: true);
+
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => notifier.NotifyAsync(Failure()))));
+
+        Assert.AreEqual(1, _webhooks.Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task A_failed_request_releases_the_window_so_the_next_failure_tries_again()
+    {
+        var subscription = await SubscribeWebhookAsync();
+        _webhooks.FailNext = new TimeoutException("receiver down");
+        var notifier = CreateNotifier(webhooks: true);
+
+        await notifier.NotifyAsync(Failure());
+        Assert.IsNull(await NotifiedAtAsync(subscription));
+
+        await notifier.NotifyAsync(Failure());
+        Assert.AreEqual(1, _webhooks.Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task The_window_is_kept_when_one_of_two_deliveries_succeeded()
+    {
+        var subscription = await SubscribeWebhookAsync(type: "mail;webhook", mail: "ops@example.com");
+        _webhooks.FailNext = new TimeoutException("receiver down");
+        var notifier = CreateNotifier(webhooks: true);
+
+        await notifier.NotifyAsync(Failure());
+        await notifier.NotifyAsync(Failure());
+
+        Assert.AreEqual(1, _sender.Sent.Count, "the mail went out, so the window is used");
+        Assert.AreEqual(0, _webhooks.Sent.Count);
+        Assert.AreEqual("2026-11-05 10:00", await NotifiedAtAsync(subscription));
+    }
+
+    [TestMethod]
+    public async Task A_zero_frequency_sends_a_request_for_every_failure()
+    {
+        await SubscribeWebhookAsync(frequency: 0);
+        var notifier = CreateNotifier(webhooks: true);
+
+        await notifier.NotifyAsync(Failure());
+        await notifier.NotifyAsync(Failure());
+
+        Assert.AreEqual(2, _webhooks.Sent.Count);
+    }
+
+    [TestMethod]
+    public void A_notifier_needs_at_least_one_way_to_deliver()
+        => Assert.ThrowsExactly<ArgumentException>(() => CreateNotifier(mail: false, webhooks: false));
+
+    internal sealed class RecordingWebhookSender : IAlertWebhookSender
+    {
+        private readonly object _lock = new();
+
+        public List<AlertWebhook> Sent { get; } = new();
+
+        public Exception? FailNext { get; set; }
+
+        public Func<string?, bool>? Refuse { get; set; }
+
+        public bool CanSendTo(string? url) => !string.IsNullOrWhiteSpace(url) && Refuse?.Invoke(url) != true;
+
+        public Task SendAsync(AlertWebhook webhook, CancellationToken cancellationToken = default)
+        {
+            lock (_lock)
+            {
+                if (FailNext is { } failure)
+                {
+                    FailNext = null;
+                    return Task.FromException(failure);
+                }
+
+                Sent.Add(webhook);
+                return Task.CompletedTask;
+            }
+        }
     }
 
     internal sealed class RecordingMailSender : IAlertMailSender

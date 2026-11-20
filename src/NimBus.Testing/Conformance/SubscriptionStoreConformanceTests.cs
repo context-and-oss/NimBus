@@ -49,6 +49,32 @@ public abstract class SubscriptionStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task Subscribe_a_webhook_without_a_mail_address_round_trips()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-webhook");
+
+        var subscription = await store.SubscribeToEndpointNotification(
+            endpointId: endpointId,
+            mail: null!,
+            type: "webhook",
+            author: "alice",
+            url: "https://example.test/hook",
+            eventTypes: new List<string>(),
+            payload: null!,
+            frequency: 300);
+
+        Assert.IsFalse(string.IsNullOrWhiteSpace(subscription!.Id));
+
+        var fetched = (await store.GetSubscriptionsOnEndpoint(endpointId)).Single();
+        Assert.AreEqual(subscription.Id, fetched.Id);
+        Assert.AreEqual("webhook", fetched.Type);
+        Assert.AreEqual("https://example.test/hook", fetched.Url);
+        Assert.IsNull(fetched.Mail);
+        Assert.AreEqual(300, fetched.Frequency);
+    }
+
+    [TestMethod]
     public async Task UpdateSubscription_persists_changes()
     {
         var store = CreateStore();

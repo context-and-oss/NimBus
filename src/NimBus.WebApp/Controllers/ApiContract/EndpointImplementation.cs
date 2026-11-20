@@ -496,7 +496,7 @@ public partial class EndpointImplementation : IEndpointApiController
         return new NotFoundObjectResult($"{endpointName} couldn't be found");
     }
 
-    public async Task<IActionResult> PostEndpointSubscribeAsync(EndpointSubscription body, string endpointId)
+    public async Task<ActionResult<EndpointSubscriptionCreated>> PostEndpointSubscribeAsync(EndpointSubscription body, string endpointId)
     {
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
         if (!endpointIdValid)
@@ -507,6 +507,42 @@ public partial class EndpointImplementation : IEndpointApiController
         if (!await _authorizationService.HasRoleAsync(AccessRole.Owner, endpointId))
         {
             return new ForbidResult();
+        }
+
+        // Validated here so every storage provider answers 400 to the same input. The rules for
+        // a webhook are the ones the Resolver applies when it delivers.
+        if (body is null || !EndpointSubscriptionTypes.TryParse(body.Type, out var types))
+        {
+            return new BadRequestObjectResult("type must be mail, webhook, or both separated by a semicolon.");
+        }
+
+        var needsMail = types.Contains(EndpointSubscriptionTypes.Mail) || types.Contains(EndpointSubscriptionTypes.Teams);
+        if (needsMail && !System.Net.Mail.MailAddress.TryCreate(body.Mail, out _))
+        {
+            return new BadRequestObjectResult("mail must be a mail address.");
+        }
+
+        if (body.Frequency < 0)
+        {
+            return new BadRequestObjectResult("frequency must be zero or a number of seconds.");
+        }
+
+        var isWebhook = types.Contains(EndpointSubscriptionTypes.Webhook);
+        var signingKey = configuration["NimBus:Alerts:Webhook:SigningKey"];
+        if (isWebhook)
+        {
+            if (string.IsNullOrWhiteSpace(signingKey))
+            {
+                return new BadRequestObjectResult(
+                    "Alert webhooks are not configured on this deployment (NimBus:Alerts:Webhook:SigningKey).");
+            }
+
+            var allowHttp = configuration.GetValue<bool>("NimBus:Alerts:Webhook:AllowInsecureHttp");
+            if (!EndpointAlertWebhook.IsValidUrl(body.Url, allowHttp))
+            {
+                return new BadRequestObjectResult(
+                    $"url must be an absolute https URL without user information, at most {EndpointAlertWebhook.MaxUrlLength} characters.");
+            }
         }
 
         // Owner identity uses the SAME null-safe resolution the delete path
@@ -520,9 +556,25 @@ public partial class EndpointImplementation : IEndpointApiController
                 "The authenticated identity carries no name claim to record as the subscription owner.");
         }
 
-        var subscriptionStatus = await _subscriptionStore.SubscribeToEndpointNotification(endpointId, body.Mail,
-            body.Type, author, body.Url, body.EventTypes, body.Payload, body.Frequency);
-        return new OkObjectResult(subscriptionStatus);
+        var subscription = await _subscriptionStore.SubscribeToEndpointNotification(endpointId, body.Mail,
+            string.Join(';', types), author, body.Url, body.EventTypes, body.Payload, body.Frequency);
+        if (subscription is null)
+        {
+            return new ObjectResult("The subscription could not be stored.") { StatusCode = StatusCodes.Status500InternalServerError };
+        }
+
+        return new OkObjectResult(new EndpointSubscriptionCreated
+        {
+            Id = subscription.Id,
+            Type = subscription.Type,
+            Mail = subscription.Mail,
+            Url = subscription.Url,
+            AuthorId = subscription.AuthorId,
+            EventTypes = subscription.EventTypes,
+            Frequency = subscription.Frequency,
+            // The secret is derived, never stored: this response is the only place it is shown.
+            SigningSecret = isWebhook ? EndpointAlertWebhook.DeriveSigningSecret(signingKey!, subscription.Id) : null,
+        });
     }
 
     public async Task<IActionResult> DeleteEndpointSubscribeAsync(SubscriptionAuthor body, string endpointId)

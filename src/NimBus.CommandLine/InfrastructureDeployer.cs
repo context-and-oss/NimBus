@@ -511,6 +511,10 @@ internal sealed class InfrastructureDeployer
         }
 
         AddAlertMailParameters(arguments, options.AlertMail);
+        if (options.AlertWebhook is { BearerTokens.Count: > 0 } alertWebhookTokens)
+        {
+            arguments.Add($"alertWebhookBearerTokens={JsonSerializer.Serialize(alertWebhookTokens.BearerTokens.Select(token => new { urlPrefix = token.UrlPrefix, audience = token.Audience }))}");
+        }
         AddServiceBusParameters(arguments, serviceBus);
         AddResourceNamePostfixParameter(arguments, names);
 
@@ -575,6 +579,11 @@ internal sealed class InfrastructureDeployer
         if (options.AlertMail?.SmtpPassword is { } alertMailSmtpPassword)
         {
             command.AddSecureParameter("alertMailSmtpPassword", alertMailSmtpPassword);
+        }
+
+        if (options.AlertWebhook is { } alertWebhook)
+        {
+            command.AddSecureParameter("alertWebhookSigningKey", alertWebhook.SigningKey);
         }
 
         await _az.EnsureSuccessAsync(
@@ -686,6 +695,13 @@ internal sealed class InfrastructureDeployer
         if (!string.IsNullOrWhiteSpace(options.IdentityAdminEmail))
         {
             command.AddSecureParameter("identityAdminPassword", options.IdentityAdminPassword ?? string.Empty);
+        }
+
+        // The WebApp derives each webhook subscription's signing secret from the same key the
+        // Resolver signs with.
+        if (options.AlertWebhook is { } alertWebhook)
+        {
+            command.AddSecureParameter("alertWebhookSigningKey", alertWebhook.SigningKey);
         }
 
         await _az.EnsureSuccessAsync(

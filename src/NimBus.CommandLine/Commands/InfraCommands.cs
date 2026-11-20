@@ -41,6 +41,7 @@ internal static class InfraCommands
                 var managementPlanSku = applyCommand.Option("--management-plan-sku <SKU>", "SKU for the management App Service Plan hosting the WebApp. Defaults to the existing plan's SKU when one is deployed, otherwise 'B1' for dev/development and 'S1' for other environments.", CommandOptionType.SingleValue);
                 var networkOptions = NetworkCommandOptions.Register(applyCommand);
                 var alertMailOptions = AlertMailCommandOptions.Register(applyCommand);
+                var alertWebhookOptions = AlertWebhookCommandOptions.Register(applyCommand);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
@@ -57,6 +58,7 @@ internal static class InfraCommands
                     var serviceBusCapacity = networkOptions.ServiceBusCapacity;
                     var secrets = DeploymentSecrets.Load();
                     var alertMail = alertMailOptions.Build(secrets);
+                    var alertWebhook = alertWebhookOptions.Build(secrets);
 
                     if (providerChoice == StorageProviderChoice.SqlServer)
                     {
@@ -89,7 +91,8 @@ internal static class InfraCommands
                         ServiceBusNamespaceName: networkOptions.ServiceBusNamespaceName,
                         DnsWait: networkOptions.DnsWait,
                         AlertMail: alertMail,
-                        FuncStorageAccountName: funcStorageAccountName.Value());
+                        FuncStorageAccountName: funcStorageAccountName.Value(),
+                        AlertWebhook: alertWebhook);
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;

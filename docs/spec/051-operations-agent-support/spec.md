@@ -1,7 +1,8 @@
 # Spec 051 — Platform support for operations agents
 
-Status: proposed, revision 4 (2026-11-16). Revised three times after reviews of an agent design that
-builds on this spec; the changes are listed in §13. Not yet approved; nothing in it is built.
+Status: proposed, revision 5 (2026-11-16). Revised three times after reviews of an agent design that
+builds on this spec, and once when §2 was built; the changes are listed in §13. §2 (the wake-up
+webhook) is built. The other parts are not yet approved and not built.
 Baseline: master `7122b1bd`; the latest release is v4.17.0.
 Builds on [Spec 035](../035-mcp-operator-access/spec.md),
 [Spec 037](../037-mcp-admin-access/spec.md),
@@ -21,7 +22,7 @@ Checked against the baseline.
 
 | Need | Exists in v4.17.0 | Missing |
 |---|---|---|
-| Know that a failure happened without polling | The Resolver mails endpoint alert subscribers on a Failed or DeadLettered outcome. `webhook` subscriptions are stored but not delivered. Spec 044 §12 left waking an agent for later | Delivery to a webhook (§2) |
+| Know that a failure happened without polling | The Resolver mails endpoint alert subscribers on a Failed or DeadLettered outcome. In v4.17.0 `webhook` subscriptions were stored but not delivered; Spec 044 §12 left waking an agent for later | Delivery to a webhook (§2, built) |
 | Prepare a corrected resubmit for a person | Resubmit with changes in the Web UI and REST (`post-resubmit-with-changes-event-ids`), for a signed-in person. Spec 035 Phase 3 (#400, open) adds the same for a signed-in person's agent. An unattended workload cannot change a payload, and should not | A way for a workload to flag what is wrong and hand the decision to a person (§3), limited to fields the endpoint's Owner allows (§4) |
 | Look at the data in the source and target systems | Nothing. The endpoint records its owner, source system, repository address and ticket link | An address for the adapter's own MCP server (§6), that server (§7), and a statement from the Owner of which records a message refers to (§5) |
 | Work through every failure under a ticket | `nimbus_find_reports` returns at most 50 rows with no cursor. `nimbus_prepare_action` by `ticketId` takes the 50 newest reports and then drops those that are no longer failed, so older failed messages under the same ticket are never reached | Paging (§8) |
@@ -42,13 +43,27 @@ The Resolver already decides when an endpoint alert is due and mails it
 - The request is signed with a secret per subscription (HMAC over the body and a timestamp), so the
   receiver can reject forgeries and replays. The secret is shown once, when the subscription is
   created.
+- The secret is not stored. It is derived from a signing key of the deployment and the
+  subscription id. The Resolver and the WebApp hold that key, and webhooks are off until it is
+  set. A subscription's secret is replaced by deleting and re-creating the subscription.
+- A receiver that accepts an Entra token and not a signature, such as an Azure SRE Agent HTTP
+  trigger, is reached without a relay in between: an administrator lists the receiver's URL prefix
+  and the token audience in the Resolver's settings, and a request to a URL under that prefix also
+  carries a token of the Resolver's managed identity. A subscription cannot name an audience.
 - The existing frequency window and claim apply unchanged: a burst of failures sends one request,
   and a failure inside a window that has already been used sends none. A frequency of `0` sends
   every failure. A receiver that needs every failure quickly uses `0` and drops duplicates itself.
+  A receiver that cannot drop duplicates, because every request starts a run, picks a short
+  window: the WebApp offers 5 and 15 minutes next to hourly, daily and weekly.
 - Delivery is best-effort and happens after the message is settled, as for mail. A slow or failing
   receiver never delays or dead-letters a message. A receiver is expected to sweep on a timer as
   well, so a lost request delays its work and does not lose it.
-- The URL must be HTTPS.
+- The URL must be HTTPS. The Resolver connects directly, to public addresses only, tries once and
+  does not follow redirects. A deployment with receivers on a private network switches the address
+  rule off.
+
+The request, the settings and how a receiver checks a signature are in
+[notifications](../../notifications.md#webhook-alerts).
 
 ## 3. Approval requests
 
@@ -278,6 +293,8 @@ belongs with the adapter kit, not in the platform's core.
 | Risk | Mitigation |
 |---|---|
 | A forged or replayed wake-up starts work | The signature and the timestamp. The request carries ids only, so a receiver still reads everything through MCP under its own role |
+| An endpoint Owner points a webhook at a service inside the Resolver's network | The Resolver connects to public addresses only, checked on the resolved address, and follows no redirect. The answer is never shown to the subscriber |
+| An endpoint Owner has the Resolver's token sent to a URL of their own | A token is attached only under a URL prefix an administrator listed, for the audience listed with it, and only over HTTPS |
 | An agent's evidence value is wrong or planted | NimBus never applies it, labels it unverified, and offers no way to accept all of it at once. A person supplies every value |
 | A person copies planted evidence without looking | The source is one the Owner bound, its read time is shown, and the copy is a separate action for each field. This lowers the risk and does not remove it |
 | An approval is decided on old evidence | The read time is shown and the request expires |
@@ -336,6 +353,16 @@ belongs with the adapter kit, not in the platform's core.
 | `nimbus_get_approval` finds a request by the key its caller filed it with, and answers an unknown key as "no request under this key" (§3.2) | A caller that lost the answer to its request cannot repeat the call: it does not keep the evidence it sent, the evidence may have changed, and a key reused with other content is refused. It could then neither find its request nor file another |
 | A reason on every `[ActionNotAllowed]` refusal of a request, and the pending request's id and client on the refusal for a pending request (§3.3) | Three different refusals shared one code. A caller needs to know that a request is pending and whether it is its own: from an earlier attempt of the message, or from before it lost its own state |
 | The idempotency key is kept with the client that used it (§3.4) | A lookup by key must not find another client's request |
+
+### 13.4 Revision 5
+
+| Change | Why |
+|---|---|
+| The signing secret is derived from a deployment key and the subscription id, not stored (§2) | The Resolver signs and the WebApp shows the secret, and they share no key ring. A stored secret would be plain text in the message store and need a new store member on every provider |
+| A bearer token for administrator-listed URL prefixes (§2, §11) | The Azure SRE Agent's HTTP trigger takes an Entra token and no signature. Without this every such receiver needs a relay that swaps one for the other |
+| Windows of 5 and 15 minutes (§2) | With hourly as the shortest window, a receiver that starts a run per request had to choose between one run per failure and a wake-up up to an hour late |
+| The Resolver connects to public addresses only and follows no redirect (§2, §11) | The URL is chosen by an endpoint Owner, and the Resolver may sit inside a private network |
+| §2 is built | Status |
 
 ## 14. Out of scope
 

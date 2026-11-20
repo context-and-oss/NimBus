@@ -40,13 +40,24 @@ internal sealed partial class CosmosDbSubscriptionStore : ISubscriptionStore, IS
     public async Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail,
         string type, string author, string url, List<string> eventTypes, string payload, int frequency)
     {
-        var formattedType = string.Equals(type, "mail", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(type, "teams", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(type, "mail;teams", StringComparison.OrdinalIgnoreCase)
-            ? type.ToLowerInvariant()
-            : throw new ArgumentException($"Invalid type.{type} valid: mail or teams ", nameof(type));
+        if (!EndpointSubscriptionTypes.TryParse(type, out var types))
+        {
+            throw new ArgumentException($"Invalid type.{type} valid: mail, teams or webhook ", nameof(type));
+        }
 
-        if (!ValidateEmail(mail)) throw new ArgumentException($"Invalid email: {mail}", nameof(mail));
+        var formattedType = string.Join(';', types);
+
+        // A webhook-only subscription has no address; mail and teams subscriptions keep theirs.
+        var needsMail = types.Contains(EndpointSubscriptionTypes.Mail) || types.Contains(EndpointSubscriptionTypes.Teams);
+        if (needsMail && (mail is null || !ValidateEmail(mail)))
+        {
+            throw new ArgumentException($"Invalid email: {mail}", nameof(mail));
+        }
+
+        if (types.Contains(EndpointSubscriptionTypes.Webhook) && string.IsNullOrWhiteSpace(url))
+        {
+            throw new ArgumentException("A webhook subscription needs a URL.", nameof(url));
+        }
 
         var subscriptionContainer = await _getSubscriptionsContainer();
         var subscription = new EndpointSubscription

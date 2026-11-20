@@ -213,7 +213,8 @@ internal sealed record InfrastructureOptions(
     string? ServiceBusNamespaceName = null,
     TimeSpan? DnsWait = null,
     AlertMailDeployment? AlertMail = null,
-    string? FuncStorageAccountName = null);
+    string? FuncStorageAccountName = null,
+    AlertWebhookDeployment? AlertWebhook = null);
 
 internal enum StorageProviderChoice
 {

@@ -131,6 +131,7 @@ before they are released.
 | `--alert-mail-smtp-use-ssl` | No | `true` (default) or `false`. |
 | `--alert-mail-smtp-username` | No | SMTP user name; the password is read from `NIMBUS_ALERT_MAIL_SMTP_PASSWORD`. |
 | `--alert-mail-webapp-url` | No | Public WebApp URL for the links in each mail. Default `https://webapp-{solution-id}-{environment}-management.azurewebsites.net` (with the resource-name postfix, if any). |
+| `--alert-webhook-token` | No | `<https-url-prefix>=<audience>`. [Alert webhooks](notifications.md#webhook-alerts) to a URL under the prefix also carry a bearer token of the Resolver's identity for the audience, e.g. `https://my-agent.example.com/api/=https://azuresre.dev`. Repeatable. Needs `NIMBUS_ALERT_WEBHOOK_SIGNING_KEY`. |
 
 #### Legacy resource names
 
@@ -178,6 +179,12 @@ Elastic Premium). Existing blobs, queues and tables are left alone.
 replaced on every run, so a run without `--alert-mail-smtp-host` and `--alert-mail-from` turns
 alert mail off; pass the same options on every `nb infra apply` and `nb setup`.
 
+**Endpoint alert webhooks.** Alert webhooks are on when `NIMBUS_ALERT_WEBHOOK_SIGNING_KEY` holds
+a key of at least 32 characters. The key goes to the Resolver and to the WebApp and is not
+recorded either. Pass the same key, and the same `--alert-webhook-token` options, on every
+`nb infra apply` and `nb setup`: another key changes every webhook subscription's signing
+secret, and a run without the key turns alert webhooks off.
+
 **Private networking.** Private mode deploys Service Bus Premium and creates every data
 service and both apps with public network access disabled. `nb` checks the subnets'
 delegation and region before deploying, refuses private mode on an existing Standard
@@ -197,6 +204,7 @@ Deployment secrets are intentionally not accepted as command-line options becaus
 | `NIMBUS_SQL_ADMIN_PASSWORD` | `--storage-provider sqlserver --sql-mode provision` |
 | `NIMBUS_IDENTITY_ADMIN_PASSWORD` | `nb setup` is given `--identity-admin-email` |
 | `NIMBUS_ALERT_MAIL_SMTP_PASSWORD` | The SMTP server for `--alert-mail-smtp-host` needs a password |
+| `NIMBUS_ALERT_WEBHOOK_SIGNING_KEY` | Endpoint alert webhooks should be on |
 
 Canceling `nb` terminates its local Azure CLI process tree before removing the
 ephemeral parameter file. An ARM deployment that Azure already accepted may
@@ -352,7 +360,7 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resource-name-postfix`, `--func-storage-account-name`, `--resolver-plan`, `--resolver-max-sessions`, `--resolver-max-instances`, `--management-plan-sku`, the private networking options, the `--alert-mail-*` options, `--assembly`, and `--from-source`. On a private deployment the topology and app steps each check first that this machine resolves the private endpoints, so the check runs after the infrastructure step has created them. SQL, bootstrap-admin and SMTP secrets use the environment variables documented under `nb infra apply`.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resource-name-postfix`, `--func-storage-account-name`, `--resolver-plan`, `--resolver-max-sessions`, `--resolver-max-instances`, `--management-plan-sku`, the private networking options, the `--alert-mail-*` options, `--alert-webhook-token`, `--assembly`, and `--from-source`. On a private deployment the topology and app steps each check first that this machine resolves the private endpoints, so the check runs after the infrastructure step has created them. SQL, bootstrap-admin, SMTP and alert webhook secrets use the environment variables documented under `nb infra apply`.
 
 Like the individual commands, this needs no repository clone. Deploying your own event
 catalog means passing `--platform-package`: the topology step provisions your endpoints and

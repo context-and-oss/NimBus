@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using Azure.Core;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using NimBus.Resolver.Services;
@@ -106,10 +107,12 @@ public static partial class ServiceExtensions
 
     /// <summary>
     /// Registers the endpoint alert notifier (the WebApp's Alerts tab). It mails subscribers
-    /// when <c>NimBus:Alerts:Mail</c> has an SMTP host and a sender, and the storage provider
-    /// offers <see cref="ISubscriptionNotificationStore"/>; otherwise it registers the no-op
-    /// notifier and logs why. Invalid settings never stop the Resolver: they are logged and
-    /// alert mail stays off. A notifier the host registered first is kept.
+    /// when <c>NimBus:Alerts:Mail</c> has an SMTP host and a sender, and calls their webhooks
+    /// when <c>NimBus:Alerts:Webhook</c> has a signing key. Each is switched on by its own
+    /// settings. With neither, or when the storage provider offers no
+    /// <see cref="ISubscriptionNotificationStore"/>, it registers the no-op notifier and logs
+    /// why. Invalid settings never stop the Resolver: they are logged and that way of delivery
+    /// stays off. A notifier the host registered first is kept.
     /// </summary>
     internal static IServiceCollection AddEndpointAlertNotifier(this IServiceCollection services)
     {
@@ -118,19 +121,11 @@ public static partial class ServiceExtensions
         {
             var logger = sp.GetService<ILoggerFactory>()?.CreateLogger("NimBus.Resolver.Alerts")
                 ?? NullLogger.Instance;
-            var options = sp.GetService<IConfiguration>()?.GetSection(AlertMailOptions.SectionName).Get<AlertMailOptions>()
-                ?? new AlertMailOptions();
-
-            if (!options.IsConfigured)
+            var configuration = sp.GetService<IConfiguration>();
+            var mail = ReadAlertMailOptions(configuration, logger);
+            var webhook = ReadAlertWebhookOptions(configuration, logger);
+            if (mail is null && webhook is null)
             {
-                LogEndpointAlertMailIsOffUntilConfigured(logger, AlertMailOptions.SectionName);
-                return new NoopEndpointAlertNotifier();
-            }
-
-            var errors = options.Validate();
-            if (errors.Count > 0)
-            {
-                LogEndpointAlertMailIsOffBecause(logger, string.Join(" ", errors));
                 return new NoopEndpointAlertNotifier();
             }
 
@@ -138,21 +133,79 @@ public static partial class ServiceExtensions
             var notifications = sp.GetService<ISubscriptionNotificationStore>();
             if (subscriptions is null || notifications is null)
             {
-                LogEndpointAlertMailIsOff(logger, nameof(ISubscriptionStore), nameof(ISubscriptionNotificationStore));
+                LogEndpointAlertsAreOff(logger, nameof(ISubscriptionStore), nameof(ISubscriptionNotificationStore));
                 return new NoopEndpointAlertNotifier();
             }
 
-            LogEndpointAlertMail(logger, options.Smtp.Host, options.Smtp.Port, options.From);
+            var timeProvider = sp.GetRequiredService<TimeProvider>();
+            if (mail is not null)
+            {
+                LogEndpointAlertMail(logger, mail.Smtp.Host, mail.Smtp.Port, mail.From);
+            }
+
+            AlertWebhookSender? webhookSender = null;
+            if (webhook is not null)
+            {
+                // A token is only ever requested for a listed prefix, so the credential is only
+                // created when there is one. A host can register its own TokenCredential.
+                var credential = webhook.BearerTokens.Count == 0
+                    ? null
+                    : sp.GetService<TokenCredential>() ?? new DefaultAzureCredential();
+                webhookSender = new AlertWebhookSender(webhook, AlertWebhookSender.CreateHttpClient(webhook), credential, timeProvider);
+                LogEndpointAlertWebhooks(logger, webhook.Timeout.TotalSeconds, webhook.BearerTokens.Count, webhook.AllowPrivateNetworks);
+            }
+
             return new SubscriptionAlertNotifier(
                 subscriptions,
                 notifications,
-                new SmtpAlertMailSender(options),
-                new AlertMailComposer(options),
-                sp.GetRequiredService<TimeProvider>(),
+                mail is null ? null : new SmtpAlertMailSender(mail),
+                mail is null ? null : new AlertMailComposer(mail),
+                webhookSender,
+                timeProvider,
                 sp.GetService<ILogger<SubscriptionAlertNotifier>>() ?? NullLogger<SubscriptionAlertNotifier>.Instance);
         });
 
         return services;
+    }
+
+    /// <summary>The alert mail settings, or null (with the reason logged) while alert mail is off.</summary>
+    private static AlertMailOptions? ReadAlertMailOptions(IConfiguration? configuration, ILogger logger)
+    {
+        var options = configuration?.GetSection(AlertMailOptions.SectionName).Get<AlertMailOptions>() ?? new AlertMailOptions();
+        if (!options.IsConfigured)
+        {
+            LogEndpointAlertMailIsOffUntilConfigured(logger, AlertMailOptions.SectionName);
+            return null;
+        }
+
+        var errors = options.Validate();
+        if (errors.Count > 0)
+        {
+            LogEndpointAlertMailIsOffBecause(logger, string.Join(" ", errors));
+            return null;
+        }
+
+        return options;
+    }
+
+    /// <summary>The alert webhook settings, or null (with the reason logged) while alert webhooks are off.</summary>
+    private static AlertWebhookOptions? ReadAlertWebhookOptions(IConfiguration? configuration, ILogger logger)
+    {
+        var options = configuration?.GetSection(AlertWebhookOptions.SectionName).Get<AlertWebhookOptions>() ?? new AlertWebhookOptions();
+        if (!options.IsConfigured)
+        {
+            LogEndpointAlertWebhooksAreOffUntilConfigured(logger, AlertWebhookOptions.SectionName);
+            return null;
+        }
+
+        var errors = options.Validate();
+        if (errors.Count > 0)
+        {
+            LogEndpointAlertWebhooksAreOffBecause(logger, string.Join(" ", errors));
+            return null;
+        }
+
+        return options;
     }
 
     private static string EnsureTrailingSlash(string url) =>
@@ -164,8 +217,17 @@ public static partial class ServiceExtensions
     [LoggerMessage(Level = LogLevel.Error, Message = "Endpoint alert mail is off because its settings are invalid: {Errors}")]
     private static partial void LogEndpointAlertMailIsOffBecause(ILogger logger, string errors);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint alert mail is off: the storage provider registers no {SubscriptionStore} or {NotificationStore}.")]
-    private static partial void LogEndpointAlertMailIsOff(ILogger logger, string subscriptionStore, string notificationStore);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint alerts are off: the storage provider registers no {SubscriptionStore} or {NotificationStore}.")]
+    private static partial void LogEndpointAlertsAreOff(ILogger logger, string subscriptionStore, string notificationStore);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Endpoint alert webhooks are off: set {Section}:SigningKey to call the webhooks of Alerts-tab subscribers.")]
+    private static partial void LogEndpointAlertWebhooksAreOffUntilConfigured(ILogger logger, string section);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Endpoint alert webhooks are off because their settings are invalid: {Errors}")]
+    private static partial void LogEndpointAlertWebhooksAreOffBecause(ILogger logger, string errors);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Endpoint alert webhooks are on: timeout {TimeoutSeconds} s, {TokenPrefixes} URL prefix(es) get a bearer token, private networks allowed: {AllowPrivateNetworks}.")]
+    private static partial void LogEndpointAlertWebhooks(ILogger logger, double timeoutSeconds, int tokenPrefixes, bool allowPrivateNetworks);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Endpoint alert mail is on: SMTP {Host}:{Port}, from {From}.")]
     private static partial void LogEndpointAlertMail(ILogger logger, string? host, int port, string? from);
