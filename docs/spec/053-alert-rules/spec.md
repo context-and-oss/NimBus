@@ -1,7 +1,7 @@
 # Spec 053 — Alert rules
 
-Status: **proposed** (2026-11-20, revision 2). Nothing is implemented. Target: a 5.x minor.
-The open questions were answered on 2026-11-20 (§13); the decisions in §12 await confirmation.
+Status: **approved** (2026-11-20, revision 2) with every decision in §12 and the answers in §13.
+Nothing is implemented. Target: a 5.x minor.
 Baseline: master `108dd6c2` plus the endpoint alert webhooks delivered in the same pull request as
 this spec ([plan](../../plan/2026-11-16-alert-webhook.md)).
 Related: [Spec 051](../051-operations-agent-support/spec.md) §2 (the webhook this spec reuses),
