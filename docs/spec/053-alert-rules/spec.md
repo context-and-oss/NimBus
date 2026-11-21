@@ -1,7 +1,7 @@
 # Spec 053 — Alert rules
 
-Status: **approved** (2026-11-20, revision 2) with every decision in §12 and the answers in §13.
-Nothing is implemented. Target: a 5.x minor.
+Status: **approved** (2026-11-20) with every decision in §12 and the answers in §13. Revision 3
+(2026-11-21): Phase 0 is done (§14); Phase 1 is not started. Target: a 5.x minor.
 Baseline: master `108dd6c2` plus the endpoint alert webhooks delivered in the same pull request as
 this spec ([plan](../../plan/2026-11-16-alert-webhook.md)).
 Related: [Spec 051](../051-operations-agent-support/spec.md) §2 (the webhook this spec reuses),
@@ -91,7 +91,7 @@ Store queries a rule evaluator can reuse:
     "eventTypes": ["CustomerChanged"],          // optional; empty = all
     "statuses": ["Failed", "DeadLettered"],     // optional; empty = Failed, DeadLettered, Unsupported
     "errorTextContains": "timeout",             // optional; ≤ 200 chars, case-insensitive
-    "threshold": 5,                             // 1–10,000
+    "threshold": 5,                             // 1–1,000
     "windowMinutes": 15                         // 5–1,440
   },
   "resolveAfterMinutes": 5,      // condition false this long before Resolved; 1–60
@@ -106,7 +106,7 @@ Store queries a rule evaluator can reuse:
 ```
 
 The failure count is the number of unresolved failures on the endpoint matching the filters whose
-`UpdatedAt` is inside the window: one histogram query per rule (§5.3). It covers both use cases in
+`UpdatedAt` is inside the window, read up to the threshold (§5.3). It covers both use cases in
 the request that led to this spec: "N failures in a period" (threshold N) and "a certain type of
 error" (an error-text filter with threshold 1).
 
@@ -146,8 +146,12 @@ Each tick:
    `TryClaimEvaluationAsync(ruleId, expectedVersion, nextEvaluationAtUtc = now + 60 s)`. A claim
    that loses (another instance took it) skips the rule. This gives one evaluation per rule per
    minute however many WebApp instances run.
-3. Evaluate: `GetFailedEventHistogram(filter, [endpointId], now - window, now, window)` and sum
-   the buckets. `filter` maps `eventTypes`, `statuses` and `errorTextContains` to `EventFilter`.
+3. Evaluate: `GetFailedEventsAcrossEndpoints(filter, [endpointId], null, maxItemCount: threshold)`
+   with `filter.UpdatedAtFrom = now - window` and `UpdatedAtTo = now`, and count the rows. `filter`
+   also maps `eventTypes`, `statuses` and `errorTextContains`. The rule only needs to know whether
+   the count reaches the threshold, so it reads at most `threshold` failures: on Cosmos DB the charge
+   of a full count grows with every failure in the window (about 470 RU for 10,000, §14 fact 1),
+   while this read is bounded by the threshold. A count of `threshold` means "at least".
 4. Apply the state machine (§5.4) and save the new state with the claim's version.
 5. If the state changed, send the notices (§5.5) after the state is saved. A failed send is logged.
    The state change stands; there is no retry, as for subscriptions.
@@ -165,12 +169,12 @@ docs recommend one for the critical endpoints (§11).
 "state": {
   "status": "Ok" | "Firing",
   "since": "2026-11-20T09:14:00Z",          // when the current status began
-  "lastValue": 7,                           // last count
+  "lastValue": 5,                           // last count, capped at the threshold ("≥ 5")
   "lastEvaluatedAtUtc": "2026-11-20T09:20:00Z",
   "conditionFalseSinceUtc": null,           // while Firing: first evaluation that found it false
   "nextEvaluationAtUtc": "2026-11-20T09:21:00Z",
   "version": 412,                           // compare-and-set token for claims
-  "transitions": [ { "status": "Firing", "atUtc": "…", "value": 7 }, … ]   // last 20
+  "transitions": [ { "status": "Firing", "atUtc": "…", "value": 5 }, … ]   // last 20
 }
 ```
 
@@ -202,7 +206,7 @@ as they are for subscriptions.
   "ruleName": "ERP timeouts",
   "endpointId": "ErpEndpoint",
   "status": "Firing",
-  "value": 7,
+  "value": 5,                    // capped at the threshold: "at least 5"
   "threshold": 5,
   "windowMinutes": 15,
   "sinceUtc": "2026-11-20T09:14:00Z",
@@ -218,9 +222,9 @@ wrote, may appear in the mail body.
 The evaluator sends from the WebApp, so the senders move to a shared place:
 
 - `AlertMailComposer`, `SmtpAlertMailSender`, `AlertWebhookSender`, `AlertWebhookConnectGuard`
-  and their options move from `NimBus.Resolver` to a library both hosts reference (for example
-  `NimBus.Alerts`, or `NimBus.Core` if it has no new dependencies). The Resolver keeps using them
-  through the same interfaces.
+  and their options moved from `NimBus.Resolver` to `NimBus.Alerts` in Phase 0 (a non-packable
+  library, namespace `NimBus.Alerts`). The Resolver keeps using them through the same interfaces;
+  the WebApp references the library in Phase 1.
 - The WebApp gets the SMTP settings (`NimBus:Alerts:Mail:*`) and the bearer-token prefixes
   (`NimBus:Alerts:Webhook:BearerTokens`), which only the Resolver has today. It already has the
   signing key. Bicep, `nb setup` and `nb infra apply` pass them to both apps.
@@ -288,12 +292,20 @@ them, a mail target is refused with 400, as a webhook subscription is without a 
 
 ## 7. Evaluation cost
 
-Each enabled rule costs one histogram query a minute. With the limit of 20 rules per endpoint,
-50 endpoints at the limit means 1,000 queries a minute. That is acceptable on SQL Server; on Cosmos
-DB the RU charge of `GetFailedEventHistogram` over a 15-minute window must be measured (§14,
-fact 1) before choosing the evaluation interval. If it is too high, the interval becomes
-configurable (`NimBus:Alerts:Rules:EvaluationInterval`, minimum 60 s) and rules on the same
-endpoint with the same filters share one query.
+Each enabled rule costs one read a minute. With the limit of 20 rules per endpoint, 50 endpoints at
+the limit means 1,000 reads a minute. That is acceptable on SQL Server.
+
+On Cosmos DB, Phase 0 measured a full count (`GetFailedEventHistogram`, 15-minute window) on a live
+serverless account ([plan](../../plan/2026-11-21-spec-053-phase-0.md)): 2.8 RU when nothing matches,
+whatever the container's size, plus about 0.047 RU per matching failure, so about 470 RU for
+10,000 failures in the window. A quiet rule costs about $0.03 a month on serverless. During an
+outage, 20 full-count rules on one endpoint would need about 160 RU/s, competing with message
+processing on a provisioned account. That is why the evaluator reads at most `threshold` failures
+(§5.3), which bounds the charge by the threshold (at most 1,000) instead of the backlog. The charge
+of that read was not measured in Phase 0; Phase 1 checks it on the first live account.
+
+The evaluation interval stays fixed at 60 s. A setting (`NimBus:Alerts:Rules:EvaluationInterval`,
+minimum 60 s) is added only if a deployment needs it.
 
 ## 8. Tests
 
@@ -301,7 +313,8 @@ endpoint with the same filters share one query.
 - Evaluator (in-memory store, fake clock): fires at the threshold and not below; resolves only
   after `resolveAfterMinutes` of false; a true evaluation during that time keeps it firing; one
   evaluation per minute when two evaluator instances share a store; a lost claim skips; a failed
-  send keeps the new state; editing resets to Ok without a notice; a disabled rule is not evaluated.
+  send keeps the new state; editing resets to Ok without a notice; a disabled rule is not evaluated;
+  the read asks for at most `threshold` failures, inside the window only.
 - Filters: each of event types, statuses and error text narrows the count on all three providers
   (conformance, because `ErrorText` matching is provider code).
 - Notices: mail subject and body for both statuses; webhook v2 body, headers, signature with the
@@ -317,7 +330,7 @@ endpoint with the same filters share one query.
 
 | Phase | Content |
 |---|---|
-| 0 | Verify §14. Move the senders to the shared library with no behaviour change |
+| 0 | **Done 2026-11-21.** Verify §14. Move the senders to the shared library with no behaviour change |
 | 1 | Store, evaluator, `failure_count`, state machine, mail and webhook notices, API, the Rules section, deploy settings, docs |
 | 2 | `blocked_session`: a Failed or handoff event has held its session for more than *T* minutes, or more than *N* events wait behind it. Needs a new store query for the oldest blocking event per endpoint (all providers, conformance). `silence`: no message handled on the endpoint for *T* minutes, from `GetEndpointMetrics(from, to)` |
 | 3 | Preview over the last 24 h; a failure-classification category filter (only when Integration Intelligence is on, and only for classified failures); firing rules in the Monitor and in MCP `nimbus_get_worklist` |
@@ -369,18 +382,26 @@ Each phase is its own pull request; a phase's parts are commits in it.
    after the failure, so a rule would count a failure only once it is classified.
    **Answer: no, Phase 3** (§9).
 
-## 14. Facts to verify (Phase 0)
+## 14. Facts verified in Phase 0 (2026-11-21)
 
-1. RU charge and latency of `GetFailedEventHistogram` on Cosmos DB for one endpoint and a
-   15-minute window, with and without `ErrorText`.
-2. `ErrorText` filtering in `GetFailedEventHistogram` behaves the same on Cosmos DB, SQL Server and
-   in-memory (case-insensitivity, substring).
-3. The senders can move out of `NimBus.Resolver` without new package dependencies on the WebApp.
-4. No composite registration routes the new store through the OpenTelemetry decorator, and whether
-   it should get its own instrumentation.
-5. The SQL migration number is still free when Phase 1 starts (`0028` is the latest today).
-6. How the WebApp is scaled in the Bicep templates (App Service plan instance count), to size the
-   claim tests realistically.
+Details and the measurement: [Phase 0 plan](../../plan/2026-11-21-spec-053-phase-0.md).
+
+1. **RU charge on Cosmos DB.** Measured on a live serverless account: 2.8 RU with no match at
+   10,000 and 100,000 events, 42.6 RU for 873 failures in the window, 472.7 RU (750 ms) for 10,000.
+   The charge follows the matching failures, not the container size. Led to the capped read in
+   §5.3 and the 1–1,000 threshold in §5.1.
+2. **`ErrorText` parity.** Case-insensitive substring on all three providers (SQL Server under the
+   default CI collation, with `%`, `_` and `[` escaped). A new conformance test,
+   `GetFailedEventHistogram_matches_error_text_as_a_case_insensitive_substring`, passes on all three.
+   `GetFailedEventsAcrossEndpoints` already had one.
+3. **Senders moved** to `NimBus.Alerts` with no new dependency for the WebApp (§5.6).
+4. **OpenTelemetry.** `NimBusOpenTelemetryDecorators` wraps `IMessageTrackingStore` only;
+   `IAlertRuleStore` is not routed through it. The evaluator gets its own meters in Phase 1
+   (evaluations, transitions, failed sends).
+5. **SQL migration.** `0029` is free (`0028_EventReportsByTicket.sql` is the latest).
+6. **WebApp scale.** The App Service plan template sets only the SKU (one instance unless scaled by
+   hand); Aspire/ACA deployments set replicas. The claims stay, and the tests run two evaluators on
+   one store.
 
 ## 15. References
 
@@ -398,3 +419,7 @@ Each phase is its own pull request; a phase's parts are commits in it.
 - 2026-11-20, revision 2: the repo owner answered §13. Subscriptions become a built-in rule in v6;
   no site-wide rules in Phase 1; no reminders while firing (removed from Phase 3); the
   classification filter stays in Phase 3. The repo owner approved every decision in §12.
+- 2026-11-21, revision 3: Phase 0. §14 answered, with the Cosmos DB charge measured on a live
+  account. Because a full count's charge grows with the failures in the window, the evaluator reads
+  at most `threshold` failures (§5.3), the threshold limit is 1–1,000 (§5.1), and the evaluation
+  interval stays fixed (§7). The senders now live in `NimBus.Alerts` (§5.6).
