@@ -44,8 +44,13 @@ jobs:
       # Unlike SQL, this one is NOT optional: NIMBUS_COSMOS_TEST_REQUIRED below turns a
       # missing/unreachable emulator into a failing run instead of a silently skipped
       # suite, so a green build actually means the Cosmos provider conforms.
+      # Pinned by digest: the vnext-latest image published between 2026-11-19 and 2026-11-20
+      # (sha256:09dcd04e…) answers some requests with 500 PostgresError, failing Cosmos tests
+      # on stale-revision writes, fencing, concurrency and TTL on every branch. This digest is
+      # the last vnext-latest that passed. Move it forward deliberately, after the suite passes
+      # on the new image.
       cosmos:
-        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-latest
+        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator@sha256:db53613dae19d0a3d5ad50688d14aa6e957af082dafea56b52e1bd3a6b3f1406
         env:
           PROTOCOL: https
         ports:
