@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace NimBus.Resolver.Alerts;
+namespace NimBus.Alerts;
 
 /// <summary>One alert for one webhook subscription.</summary>
 /// <param name="SubscriptionId">The subscription's id; its signing secret is derived from it.</param>

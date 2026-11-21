@@ -1,5 +1,6 @@
 #pragma warning disable CA1707, CA1515, CA2007
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Alerts;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
 using NimBus.Resolver.Alerts;

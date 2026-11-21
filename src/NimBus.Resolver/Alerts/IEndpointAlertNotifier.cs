@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using NimBus.Alerts;
 
 namespace NimBus.Resolver.Alerts;
 

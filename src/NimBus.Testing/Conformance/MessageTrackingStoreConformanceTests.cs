@@ -2094,6 +2094,30 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(1, byType.Rows.Sum(r => r.Count), "The histogram applies the search filter.");
     }
 
+    // Spec 053 counts a rule's failures with this histogram and an error-text filter, so every
+    // provider must match the error text the same way: case-insensitive substring.
+    [TestMethod]
+    public async Task GetFailedEventHistogram_matches_error_text_as_a_case_insensitive_substring()
+    {
+        var store = CreateStore();
+        var a = Id("fe-a");
+        await store.UploadFailedMessage(Id("fe1"), "s1", a, FailureEvent(a, Id("fe1"), "s1", errorText: "SqlException: Timeout expired while connecting"));
+        await store.UploadFailedMessage(Id("fe2"), "s2", a, FailureEvent(a, Id("fe2"), "s2", errorText: "HttpRequestException: 401 Unauthorized"));
+        await store.UploadFailedMessage(Id("fe3"), "s3", a, FailureEvent(a, Id("fe3"), "s3"));
+
+        var from = DateTime.UtcNow.AddMinutes(-30);
+        var to = DateTime.UtcNow.AddMinutes(30);
+        async Task<int> Count(string errorText) =>
+            (await store.GetFailedEventHistogram(new EventFilter { ErrorText = errorText }, new[] { a }, from, to, TimeSpan.FromHours(1)))
+                .Rows.Sum(r => r.Count);
+
+        Assert.AreEqual(1, await Count("TIMEOUT EXPIRED"), "The match ignores case.");
+        Assert.AreEqual(1, await Count("expired while"), "The match is a substring, not a prefix.");
+        Assert.AreEqual(1, await Count("401"), "Each failure is matched on its own error text.");
+        Assert.AreEqual(0, await Count("deadlock"), "A text no failure carries counts nothing.");
+        Assert.AreEqual(0, await Count("50%"), "LIKE wildcards in the text are matched literally.");
+    }
+
     // ───── Date bounds within one second ─────
     // Cosmos DB stores DateTimes as ISO strings with trailing fractional zeros trimmed
     // ("…T10:00:00Z", "…T10:00:00.1Z") and compares them as strings, where '.' sorts before 'Z',

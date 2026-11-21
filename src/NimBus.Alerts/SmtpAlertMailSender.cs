@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace NimBus.Resolver.Alerts;
+namespace NimBus.Alerts;
 
 /// <summary>
 /// Sends endpoint alert mail over SMTP: Azure Communication Services, Microsoft 365, a SendGrid

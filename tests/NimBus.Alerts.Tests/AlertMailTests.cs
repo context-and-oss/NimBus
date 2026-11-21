@@ -3,9 +3,9 @@ using System.Net.Mime;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.MessageStore;
 using NimBus.MessageStore.States;
-using NimBus.Resolver.Alerts;
+using NimBus.Alerts;
 
-namespace NimBus.Resolver.Tests;
+namespace NimBus.Alerts.Tests;
 
 /// <summary>What an endpoint alert mail says, how it is built for SMTP, and which settings are valid.</summary>
 [TestClass]

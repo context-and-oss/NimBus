@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net.Mail;
 
-namespace NimBus.Resolver.Alerts;
+namespace NimBus.Alerts;
 
 /// <summary>
 /// Settings for mailing endpoint alert subscribers, bound from <see cref="SectionName"/>.

@@ -3,6 +3,7 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Alerts;
 using NimBus.Resolver.Alerts;
 using NimBus.Resolver.Services;
 using NimBus.Core.Extensions;

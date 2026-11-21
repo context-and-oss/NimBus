@@ -6,7 +6,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace NimBus.Resolver.Alerts;
+namespace NimBus.Alerts;
 
 /// <summary>
 /// Keeps alert webhooks away from addresses inside the Resolver's own network. A subscription's
