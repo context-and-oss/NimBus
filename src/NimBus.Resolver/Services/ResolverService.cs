@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
+using NimBus.Alerts;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;

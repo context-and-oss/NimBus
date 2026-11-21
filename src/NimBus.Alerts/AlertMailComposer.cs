@@ -6,7 +6,7 @@ using System.Text;
 using NimBus.MessageStore;
 using NimBus.MessageStore.States;
 
-namespace NimBus.Resolver.Alerts;
+namespace NimBus.Alerts;
 
 /// <summary>
 /// Writes the subject and bodies of an endpoint alert mail. Every value is HTML-encoded in the

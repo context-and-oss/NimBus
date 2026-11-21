@@ -30,6 +30,7 @@
     <Project Path="NimBus.WebApp/NimBus.WebApp.csproj" />
   </Folder>
   <Folder Name="/MessageStore/">
+    <Project Path="NimBus.Alerts/NimBus.Alerts.csproj" />
     <Project Path="NimBus.MessageStore.Abstractions/NimBus.MessageStore.Abstractions.csproj" />
     <Project Path="NimBus.MessageStore.CosmosDb/NimBus.MessageStore.CosmosDb.csproj" />
     <Project Path="NimBus.MessageStore.SqlServer/NimBus.MessageStore.SqlServer.csproj" />
@@ -93,6 +94,7 @@
     <Project Path="../tests/NimBus.MessageStore.SqlServer.Tests/NimBus.MessageStore.SqlServer.Tests.csproj" />
   </Folder>
   <Folder Name="/Tests/Resolver/">
+    <Project Path="../tests/NimBus.Alerts.Tests/NimBus.Alerts.Tests.csproj" />
     <Project Path="../tests/NimBus.Resolver.Tests/NimBus.Resolver.Tests.csproj" />
   </Folder>
   <Folder Name="/Tests/Transport/">

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using NimBus.Alerts;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 

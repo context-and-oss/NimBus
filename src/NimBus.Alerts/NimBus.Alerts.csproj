@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Description>Alert delivery shared by the NimBus Resolver and WebApp: SMTP mail and signed webhooks.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NimBus.Alerts.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 1.62.0 is the version the Resolver already resolves through Azure.Identity, so this
+         reference changes no resolved version. -->
+    <PackageReference Include="Azure.Core" Version="1.62.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NimBus.MessageStore.Abstractions\NimBus.MessageStore.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

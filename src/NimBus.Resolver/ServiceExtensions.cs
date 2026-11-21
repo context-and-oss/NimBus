@@ -3,6 +3,7 @@ using System.Net.Http;
 using Azure.Core;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
+using NimBus.Alerts;
 using NimBus.Resolver.Services;
 using NimBus.Core.Messages;
 using NimBus.MessageStore.Abstractions;
