@@ -53,7 +53,15 @@ public sealed class CosmosDbEndpointContainerTtlTests
         }
         finally
         {
-            await container.DeleteContainerAsync();
+            try
+            {
+                await container.DeleteContainerAsync();
+            }
+            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+            {
+                // Cleanup only: the vNext emulator in CI sometimes fails a container delete with
+                // PostgresError 58P01 after the test has passed. The container has a unique name.
+            }
         }
     }
 }

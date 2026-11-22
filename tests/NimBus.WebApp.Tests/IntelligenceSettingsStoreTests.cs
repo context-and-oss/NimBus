@@ -92,7 +92,20 @@ public sealed class IntelligenceSettingsStoreTests
         finally
         {
             secondCosmos?.Dispose();
-            if (cosmos is not null) { await cosmos.GetDatabase(databaseName).DeleteAsync(); cosmos.Dispose(); }
+            if (cosmos is not null)
+            {
+                try
+                {
+                    await cosmos.GetDatabase(databaseName).DeleteAsync();
+                }
+                catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+                {
+                    // Cleanup only: the vNext emulator in CI sometimes fails a database delete
+                    // with PostgresError 58P01 after the test has passed. The name is unique.
+                }
+
+                cosmos.Dispose();
+            }
             if (sql is not null)
             {
                 SqlConnection.ClearAllPools();

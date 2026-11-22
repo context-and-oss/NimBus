@@ -231,7 +231,16 @@ internal sealed class StoreFixture : IAsyncDisposable
     {
         if (_cosmos is not null)
         {
-            await _cosmos.GetDatabase(_database).DeleteAsync();
+            try
+            {
+                await _cosmos.GetDatabase(_database).DeleteAsync();
+            }
+            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+            {
+                // Cleanup only: the vNext emulator in CI sometimes fails a database delete with
+                // PostgresError 58P01 after the test has passed. The database has a unique name.
+            }
+
             _cosmos.Dispose();
         }
         if (_sql is not null)
