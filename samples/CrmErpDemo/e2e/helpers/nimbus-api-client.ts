@@ -63,6 +63,22 @@ export interface SearchResponse {
   continuationToken: string | null;
 }
 
+/** An endpoint alert subscription request (the Alerts tab). `type` is mail, webhook or both. */
+export interface AlertSubscription {
+  type: "mail" | "webhook" | "mail;webhook";
+  mail?: string;
+  url?: string;
+  eventTypes?: string[];
+  /** Seconds between notices; 0 notifies on every failure. */
+  frequency: number;
+}
+
+export interface AlertSubscriptionCreated {
+  id: string;
+  /** Only for a webhook subscription, and only in this response. */
+  signingSecret?: string | null;
+}
+
 export interface EventFilter {
   endPointId?: string | null;
   eventId?: string | null;
@@ -122,6 +138,22 @@ export class NimBusApiClient {
     if (!res.ok()) throw new Error(`NimBus search → ${await describeFailure(res)}`);
     const body = (await res.json()) as SearchResponse;
     return body.events ?? [];
+  }
+
+  /**
+   * Subscribe to an endpoint's alerts (its Alerts tab). Returns the subscription id and, for a
+   * webhook, the signing secret, which the API returns only here.
+   */
+  async subscribeToAlerts(endpointId: string, subscription: AlertSubscription): Promise<AlertSubscriptionCreated> {
+    const res = await this.api.post(`/api/v1/endpoint/${endpointId}/subscribe`, { data: subscription });
+    if (!res.ok()) throw new Error(`NimBus subscribe → ${await describeFailure(res)}`);
+    return (await res.json()) as AlertSubscriptionCreated;
+  }
+
+  /** Remove an alert subscription from the endpoint. */
+  async unsubscribeFromAlerts(endpointId: string, subscriptionId: string): Promise<void> {
+    const res = await this.api.delete(`/api/v1/endpoint/${endpointId}/subscribe`, { data: { id: subscriptionId } });
+    if (!res.ok()) throw new Error(`NimBus unsubscribe → ${await describeFailure(res)}`);
   }
 
   /** Resubmit a single failed event by (eventId, lastMessageId). */

@@ -37,6 +37,7 @@ builder.Services.AddSingleton<ProcessingDelayState>();
 builder.Services.AddSingleton<HandoffModeState>();
 builder.Services.AddSingleton<HandoffJobTracker>();
 builder.Services.AddSingleton<AlertsState>();
+builder.Services.AddSingleton<EndpointAlertWebhookState>();
 
 // ERP hosts the outbox dispatcher (the Functions adapter doesn't host long-running polling).
 builder.Services.AddNimBusSqlServerOutbox(erpConnectionString);

@@ -14,6 +14,8 @@ export const ServiceUrls = {
   crmApi: required("CRM_API_URL", "http://localhost:5080"),
   erpApi: required("ERP_API_URL", "http://localhost:5090"),
   nimbusOps: required("NIMBUS_OPS_URL", "http://localhost:18080"),
+  /** Mailpit's web API: the local AppHost points the Resolver's alert mail at it. */
+  mailpit: required("MAILPIT_URL", "http://localhost:8025"),
 };
 
 export const Timeouts = {
