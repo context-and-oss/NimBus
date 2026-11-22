@@ -11,10 +11,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 1.62.0 is the version the Resolver already resolves through Azure.Identity, so this
-         reference changes no resolved version. -->
+    <!-- 1.62.0 is the version the Resolver already resolves (through Azure.Messaging.ServiceBus
+         7.21.0), so this reference changes no resolved version. -->
     <PackageReference Include="Azure.Core" Version="1.62.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup>
