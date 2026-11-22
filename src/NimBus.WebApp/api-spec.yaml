@@ -1145,6 +1145,210 @@ paths:
             examples: {}
       tags:
         - Endpoint
+  '/api/v1/endpoint/{endpointId}/alert-rules':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    get:
+      summary: List the endpoint's alert rules
+      description: >-
+        Anyone who can read the endpoint (Spec 053). Each rule's condition, state and recent
+        transitions. Owners of the endpoint and Site Owners also get each target's mail address
+        or webhook URL; everyone else gets only each target's id and type. Never a secret.
+      operationId: get-endpoint-alert-rules
+      tags:
+        - AlertRules
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertRuleList'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: The storage provider cannot store alert rules
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      summary: Create an alert rule
+      description: >-
+        Owner of the endpoint or Site Owner (Spec 053). Phase 1 rules watch the failure backlog:
+        the events on the endpoint that are failed now. The response carries each webhook
+        target's signing secret, once.
+      operationId: post-endpoint-alert-rule
+      tags:
+        - AlertRules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRuleRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertRuleSaved'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: The storage provider cannot store alert rules
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/endpoint/{endpointId}/alert-rules/{ruleId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: ruleId
+        in: path
+        required: true
+    put:
+      summary: Change an alert rule
+      description: >-
+        Owner of the endpoint or Site Owner (Spec 053). Targets sent with an existing id keep
+        that id and their signing secret; new webhook targets get a secret, returned once.
+        Changing the condition of a Firing rule, or disabling it, resolves it: its targets get a
+        resolved notice with the reason rule_changed or rule_disabled.
+      operationId: put-endpoint-alert-rule
+      tags:
+        - AlertRules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRuleRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertRuleSaved'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: The rule changed while it was being saved; read it again
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: The storage provider cannot store alert rules
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    delete:
+      summary: Delete an alert rule
+      description: >-
+        Owner of the endpoint or Site Owner (Spec 053). Deleting a Firing rule sends its targets
+        a resolved notice with the reason rule_deleted, best-effort.
+      operationId: delete-endpoint-alert-rule
+      tags:
+        - AlertRules
+      responses:
+        '204':
+          description: Deleted
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: The rule changed while it was being deleted; try again
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: The storage provider cannot store alert rules
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/alert-rules/firing:
+    get:
+      summary: Endpoints with a firing alert rule
+      description: >-
+        The endpoints the caller can read that have at least one Firing alert rule (Spec 053),
+        for the endpoint list's marker. Empty when the storage provider cannot store alert rules.
+      operationId: get-alert-rules-firing
+      tags:
+        - AlertRules
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
   '/api/v1/endpoint/{endpointName}/purge':
     parameters:
       - schema:
@@ -5786,6 +5990,9 @@ components:
             - dashboardTokenRemoved
             - updateEndpointMetadata
             - reprocessDeferred
+            - alertRuleCreated
+            - alertRuleUpdated
+            - alertRuleDeleted
         comment:
           type: string
           nullable: true
@@ -5862,6 +6069,198 @@ components:
           type: integer
         id:
           type: string
+    AlertRuleCondition:
+      title: AlertRuleCondition
+      type: object
+      description: >-
+        What a rule watches. Phase 1 has one kind, failure_backlog: the events on the endpoint that
+        are failed now (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time
+        window.
+      properties:
+        kind:
+          type: string
+          description: failure_backlog.
+        eventTypes:
+          type: array
+          description: Event types to count; empty counts every type.
+          items:
+            type: string
+        statuses:
+          type: array
+          description: Statuses to count (Failed, DeadLettered, Unsupported); empty counts all three.
+          items:
+            type: string
+        errorTextContains:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: A case-insensitive substring the error text must contain.
+        threshold:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: The backlog at which the rule fires.
+    AlertRuleTargetModel:
+      title: AlertRuleTargetModel
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+          description: The target's id within the rule. Omit for a new target; send it to keep an existing one and its secret.
+        type:
+          type: string
+          description: mail or webhook.
+        address:
+          type: string
+          nullable: true
+          description: The mail address of a mail target. Shown to Owners only.
+        url:
+          type: string
+          nullable: true
+          description: The URL of a webhook target. Shown to Owners only.
+    AlertRuleRequest:
+      title: AlertRuleRequest
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        enabled:
+          type: boolean
+        condition:
+          $ref: '#/components/schemas/AlertRuleCondition'
+        resolveAfterMinutes:
+          type: integer
+          minimum: 1
+          maximum: 60
+          description: How long the condition must be false, continuously, before the rule resolves.
+        targets:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/AlertRuleTargetModel'
+    AlertRuleTransitionModel:
+      title: AlertRuleTransitionModel
+      type: object
+      properties:
+        seq:
+          type: integer
+          format: int64
+        status:
+          type: string
+          description: Ok or Firing.
+        atUtc:
+          type: string
+          format: date-time
+        value:
+          type: integer
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+          description: For a move to Ok, why (cleared, rule_changed, rule_disabled, rule_deleted).
+    AlertRuleStateModel:
+      title: AlertRuleStateModel
+      type: object
+      properties:
+        status:
+          type: string
+          description: Ok or Firing.
+        sinceUtc:
+          type: string
+          format: date-time
+          nullable: true
+        lastValue:
+          type: integer
+          nullable: true
+          description: The last backlog read, capped at the threshold; equal to the threshold means at least that many.
+        conditionFalseSinceUtc:
+          type: string
+          format: date-time
+          nullable: true
+        pendingNotices:
+          type: integer
+          description: Notices saved with a transition and not delivered yet.
+        transitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertRuleTransitionModel'
+    AlertRuleModel:
+      title: AlertRuleModel
+      type: object
+      properties:
+        id:
+          type: string
+        endpointId:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        condition:
+          $ref: '#/components/schemas/AlertRuleCondition'
+        resolveAfterMinutes:
+          type: integer
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertRuleTargetModel'
+        state:
+          $ref: '#/components/schemas/AlertRuleStateModel'
+        createdBy:
+          type: string
+        createdAtUtc:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+          nullable: true
+        updatedAtUtc:
+          type: string
+          format: date-time
+    AlertRuleList:
+      title: AlertRuleList
+      type: object
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertRuleModel'
+        evaluatorLastCompletedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the evaluator last finished a tick; rules are evaluated every minute while a WebApp instance runs.
+        mailEnabled:
+          type: boolean
+          description: Whether this deployment can mail rule targets.
+        webhookEnabled:
+          type: boolean
+          description: Whether this deployment can call rule webhook targets.
+        canManage:
+          type: boolean
+          description: Whether the caller may create, change and delete rules on this endpoint.
+    AlertRuleSecret:
+      title: AlertRuleSecret
+      type: object
+      properties:
+        targetId:
+          type: string
+        signingSecret:
+          type: string
+    AlertRuleSaved:
+      title: AlertRuleSaved
+      type: object
+      properties:
+        rule:
+          $ref: '#/components/schemas/AlertRuleModel'
+        secrets:
+          type: array
+          description: The signing secret of each new webhook target, shown only in this response.
+          items:
+            $ref: '#/components/schemas/AlertRuleSecret'
+
     EndpointSubscriptionCreated:
       title: EndpointSubscriptionCreated
       type: object
@@ -7634,6 +8033,9 @@ components:
             - dashboardTokenRemoved
             - updateEndpointMetadata
             - reprocessDeferred
+            - alertRuleCreated
+            - alertRuleUpdated
+            - alertRuleDeleted
         createdAtFrom:
           type: string
           format: date-time
@@ -9049,6 +9451,9 @@ components:
             - dashboardTokenRemoved
             - updateEndpointMetadata
             - reprocessDeferred
+            - alertRuleCreated
+            - alertRuleUpdated
+            - alertRuleDeleted
         comment:
           type: string
           nullable: true
@@ -9191,3 +9596,4 @@ tags:
   - name: Simulation
   - name: McpAccess
   - name: AgentKeys
+  - name: AlertRules

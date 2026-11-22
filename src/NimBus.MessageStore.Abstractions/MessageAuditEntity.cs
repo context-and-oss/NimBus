@@ -231,4 +231,13 @@ public enum MessageAuditType
     /// previewed and the reason. Always recorded: the reset runs only once the row exists.
     /// </summary>
     ReprocessDeferred,
+
+    /// <summary>An endpoint Owner created an alert rule (Spec 053). Data carries the rule without secrets. Always recorded.</summary>
+    AlertRuleCreated,
+
+    /// <summary>An endpoint Owner changed an alert rule (Spec 053). Data carries the rule before and after, without secrets. Always recorded.</summary>
+    AlertRuleUpdated,
+
+    /// <summary>An endpoint Owner deleted an alert rule (Spec 053). Data carries the rule as it was. Always recorded.</summary>
+    AlertRuleDeleted,
 }
