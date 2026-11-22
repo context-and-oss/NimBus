@@ -104,15 +104,35 @@ public sealed partial class AlertRuleEvaluator
         return new AlertRuleTickResult(true, evaluated, saved);
     }
 
-    private async Task<(bool Evaluated, bool Saved)> EvaluateAsync(AlertRule rule, DateTime now, bool gap, CancellationToken cancellationToken)
+    private async Task<(bool Evaluated, bool Saved)> EvaluateAsync(AlertRule listed, DateTime now, bool gap, CancellationToken cancellationToken)
     {
-        var state = rule.State.Clone();
+        // The listed rule has no transition history, so it only decides whether anything must be
+        // written; a write starts from the full rule, read again at the same version.
+        int? backlog = null;
         var changed = false;
-        if (rule.Enabled)
+        if (listed.Enabled)
         {
-            var backlog = await ReadBacklogAsync(rule).ConfigureAwait(false);
-            changed = Apply(rule, state, backlog, now, gap);
+            backlog = await ReadBacklogAsync(listed).ConfigureAwait(false);
+            changed = Apply(listed, listed.State.Clone(), backlog.Value, now, gap);
             AlertRuleTelemetry.Evaluated.Add(1);
+        }
+
+        if (!changed && listed.State.PendingNotices.Count == 0)
+        {
+            return (listed.Enabled, false);
+        }
+
+        var rule = await _rules.GetAlertRule(listed.EndpointId, listed.RuleId).ConfigureAwait(false);
+        if (rule is null || rule.Version != listed.Version)
+        {
+            LogRuleChangedDuringTick(listed.RuleId, listed.EndpointId);
+            return (listed.Enabled, false);
+        }
+
+        var state = rule.State.Clone();
+        if (backlog is { } value)
+        {
+            changed = Apply(rule, state, value, now, gap);
         }
 
         var version = rule.Version;
