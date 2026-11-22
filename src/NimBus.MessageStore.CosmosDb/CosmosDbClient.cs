@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
 
-public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore
+public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore
 {
     /// <inheritdoc />
     public bool PrunesHeartbeatHistoryAutomatically => _heartbeatHistory.PrunesHeartbeatHistoryAutomatically;
@@ -36,6 +36,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private readonly CosmosDbServiceHealthStore _serviceHealth;
     private readonly CosmosDbEndpointAcknowledgementStore _acknowledgements;
     private readonly CosmosDbOperatorOperationStore _operations;
+    private readonly CosmosDbAlertRuleStore _alertRules;
     private readonly CosmosDbEndpointMetadataStore _endpointMetadata;
     private readonly CosmosDbMessageTrackingStore _messageTracking;
 
@@ -71,6 +72,8 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private const string EndpointAcknowledgementsContainer = "endpointacknowledgements";
     // Operator operation journal (Spec 044 Phase 2). TTL on; items carry a 30-day ttl.
     private const string OperatorOperationsContainer = "operatoroperations";
+    // Alert rules and the evaluator lease (Spec 053), partitioned by endpoint. No TTL.
+    private const string AlertRulesContainer = "alertrules";
     private const int HeartbeatHistoryTtlSeconds = 90 * 24 * 60 * 60;
 
     // Seconds stamped as the document ttl on non-terminal tracking rows. -1 disables
@@ -101,6 +104,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _serviceHealth = new CosmosDbServiceHealthStore(GetServiceHealthContainer, _logger);
         _acknowledgements = new CosmosDbEndpointAcknowledgementStore(GetEndpointAcknowledgementsContainer);
         _operations = new CosmosDbOperatorOperationStore(GetOperatorOperationsContainer);
+        _alertRules = new CosmosDbAlertRuleStore(GetAlertRulesContainer);
         _endpointMetadata = new CosmosDbEndpointMetadataStore(GetMetadataContainer, GetSettingsContainer, _logger);
         _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, _logger, _unresolvedTtlSeconds);
     }
@@ -129,6 +133,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _serviceHealth = new CosmosDbServiceHealthStore(GetServiceHealthContainer, _logger);
         _acknowledgements = new CosmosDbEndpointAcknowledgementStore(GetEndpointAcknowledgementsContainer);
         _operations = new CosmosDbOperatorOperationStore(GetOperatorOperationsContainer);
+        _alertRules = new CosmosDbAlertRuleStore(GetAlertRulesContainer);
         _endpointMetadata = new CosmosDbEndpointMetadataStore(GetMetadataContainer, GetSettingsContainer, _logger);
         _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, _logger, _unresolvedTtlSeconds);
     }
@@ -261,6 +266,9 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private Task<ICosmosContainerAdapter> GetOperatorOperationsContainer() =>
         GetCachedContainerAsync(OperatorOperationsContainer, "/id", CosmosContainerDefaults.EndpointContainerDefaultTimeToLive);
 
+    private Task<ICosmosContainerAdapter> GetAlertRulesContainer() =>
+        GetCachedContainerAsync(AlertRulesContainer, "/endpointId");
+
     private Task<ICosmosContainerAdapter> GetHeartbeatUptimeDaysContainer() =>
         GetCachedContainerAsync(HeartbeatUptimeDaysContainer, "/EndpointId", CosmosContainerDefaults.EndpointContainerDefaultTimeToLive);
 
@@ -375,6 +383,31 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         => _operations.ListDueOperatorOperations(statuses, updatedBeforeUtc, limit);
     public Task<int> CountOperatorOperations(OperatorOperationQuery query) => _operations.CountOperatorOperations(query);
     public Task<int> PurgeExpiredOperatorOperations(DateTime nowUtc, int limit) => _operations.PurgeExpiredOperatorOperations(nowUtc, limit);
+
+    // ── IAlertRuleStore — implementation in CosmosDbAlertRuleStore ──
+    /// <inheritdoc />
+    public Task<IReadOnlyList<AlertRule>> ListAlertRulesByEndpoint(string endpointId) => _alertRules.ListAlertRulesByEndpoint(endpointId);
+    /// <inheritdoc />
+    public Task<IReadOnlyList<AlertRule>> ListAlertRulesToEvaluate(int limit) => _alertRules.ListAlertRulesToEvaluate(limit);
+    /// <inheritdoc />
+    public Task<IReadOnlyList<string>> ListEndpointsWithFiringAlertRules() => _alertRules.ListEndpointsWithFiringAlertRules();
+    /// <inheritdoc />
+    public Task<AlertRule?> GetAlertRule(string endpointId, string ruleId) => _alertRules.GetAlertRule(endpointId, ruleId);
+    /// <inheritdoc />
+    public Task<AlertRule?> TrySaveAlertRuleDefinition(AlertRule rule, long? expectedVersion) => _alertRules.TrySaveAlertRuleDefinition(rule, expectedVersion);
+    /// <inheritdoc />
+    public Task<long?> TrySaveAlertRuleState(string endpointId, string ruleId, long expectedVersion, AlertRuleState state)
+        => _alertRules.TrySaveAlertRuleState(endpointId, ruleId, expectedVersion, state);
+    /// <inheritdoc />
+    public Task<bool> DeleteAlertRule(string endpointId, string ruleId, long expectedVersion) => _alertRules.DeleteAlertRule(endpointId, ruleId, expectedVersion);
+    /// <inheritdoc />
+    public Task<bool> TryClaimAlertRuleEvaluatorTick(DateTime dueBefore, DateTime nowUtc, string instanceId)
+        => _alertRules.TryClaimAlertRuleEvaluatorTick(dueBefore, nowUtc, instanceId);
+    /// <inheritdoc />
+    public Task<bool> CompleteAlertRuleEvaluatorTick(DateTime claimedAtUtc, DateTime completedAtUtc)
+        => _alertRules.CompleteAlertRuleEvaluatorTick(claimedAtUtc, completedAtUtc);
+    /// <inheritdoc />
+    public Task<AlertRuleEvaluatorStatus> GetAlertRuleEvaluatorStatus() => _alertRules.GetAlertRuleEvaluatorStatus();
 
     // ── IDashboardTokenStore — implementation in CosmosDbEndpointMetadataStore ──
     public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();

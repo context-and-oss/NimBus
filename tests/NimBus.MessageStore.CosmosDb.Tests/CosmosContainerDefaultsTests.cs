@@ -88,7 +88,7 @@ public sealed class CosmosContainerDefaultsTests
             {
                 "subscriptions", "messages", "audits", "eventschemas", "eventreports",
                 "accesscontrol", "Metadata", "inbox", "settings", "servicehealth",
-                "heartbeatuptimedays", "heartbeatgaps", "endpointacknowledgements", "operatoroperations",
+                "heartbeatuptimedays", "heartbeatgaps", "endpointacknowledgements", "operatoroperations", "alertrules",
             },
             System.Linq.Enumerable.ToArray(CosmosContainerDefaults.ReservedContainerIds));
     }
