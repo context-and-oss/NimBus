@@ -1,7 +1,7 @@
 using System;
 using NimBus.MessageStore;
 
-namespace NimBus.Resolver.Alerts;
+namespace NimBus.Alerts;
 
 /// <summary>
 /// An outcome the Resolver recorded that endpoint alert subscribers may need to hear about.

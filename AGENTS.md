@@ -77,8 +77,9 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
 - Dependency versions belong in individual `.csproj` files. `Directory.Packages.props`
   provides shared analyzer references but disables central package version management.
 - XML doc comments on public types and members.
-- Never delete public API outright: mark it `[Obsolete]` with a backward-compatible bridge
-  and remove it in the next major (`docs/versioning.md`).
+- Never delete public API of a published package outright: mark it `[Obsolete]` with a
+  backward-compatible bridge and remove it in the next major (`docs/versioning.md`, which
+  defines what counts as public API).
 - Conventional Commits (`feat(webapp): …`, `fix(core): …`).
 
 ## Gotchas

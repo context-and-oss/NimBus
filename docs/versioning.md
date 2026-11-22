@@ -12,6 +12,14 @@ NimBus packages (`Akaule.NimBus.*`) follow [SemVer 2.0](https://semver.org/):
 **Obsolete lifecycle:** deprecate in a minor, delete in the *next* major. Bridge
 code (adapter constructors, forwarding overloads) lives exactly one major cycle.
 
+**What counts as public API:** the public types and members of the library packages
+published to nuget.org (`IsPackable` projects that are not tools). Assemblies that
+ship only inside an application, such as `NimBus.Resolver` and `NimBus.Alerts`
+(not packable, bundled into the Resolver and WebApp tools and images), are not a
+supported reference target: their public types may change in a minor without a
+bridge. For the tool packages and deployed apps, the contract is what operators and
+clients use: configuration keys, the HTTP API, CLI options and wire formats.
+
 **Release mechanics:** releases are tag-driven. Pushing a `v*` tag runs
 `.github/workflows/nuget-publish.yml`, which builds Release (warnings-as-errors
 for compiler warnings), runs the full test suite, packs with `/p:Version` from

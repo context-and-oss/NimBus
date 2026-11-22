@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 using Azure.Core;
 using NimBus.MessageStore.States;
 
-namespace NimBus.Resolver.Alerts;
+namespace NimBus.Alerts;
 
 /// <summary>
 /// Posts an endpoint alert to a subscription's webhook. The body carries ids only: the endpoint,

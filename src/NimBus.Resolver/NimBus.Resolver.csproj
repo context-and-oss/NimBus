@@ -26,6 +26,7 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\NimBus.Alerts\NimBus.Alerts.csproj" />
     <ProjectReference Include="..\NimBus.MessageStore.CosmosDb\NimBus.MessageStore.CosmosDb.csproj" />
     <ProjectReference Include="..\NimBus.MessageStore.SqlServer\NimBus.MessageStore.SqlServer.csproj" />
     <ProjectReference Include="..\NimBus.SDK\NimBus.SDK.csproj" />

@@ -7,9 +7,9 @@ using Azure.Core;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.MessageStore;
 using NimBus.MessageStore.States;
-using NimBus.Resolver.Alerts;
+using NimBus.Alerts;
 
-namespace NimBus.Resolver.Tests;
+namespace NimBus.Alerts.Tests;
 
 /// <summary>
 /// The request an alert webhook receives: ids only, signed with the subscription's derived
@@ -35,7 +35,7 @@ public class AlertWebhookSenderTests
             options ?? Options(),
             new HttpClient(handler),
             credential,
-            new SubscriptionAlertNotifierTests.ManualTimeProvider(Now));
+            new ManualTimeProvider(Now));
 
     private static AlertWebhook Webhook(string url = "https://agent.example.com/hooks/nimbus") => new(
         SubscriptionId,
