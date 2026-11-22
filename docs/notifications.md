@@ -392,7 +392,7 @@ burst of failures then starts one run.
 ### Mail configuration
 
 Alert mail is off until both `Smtp:Host` and `From` are set. Settings live under
-`NimBus:Alerts:Mail` on the Resolver (app settings use `__`, for example
+`NimBus:Alerts:Mail` on the Resolver, and for [alert rules](#alert-rules-alerts-tab) on the WebApp too (app settings use `__`, for example
 `NimBus__Alerts__Mail__Smtp__Host`).
 
 | Setting | Default | Notes |
@@ -413,7 +413,7 @@ outside 1–65535, a non-positive `Timeout`, a relative `WebAppUrl`) are logged 
 alert mail off; they never stop the Resolver.
 
 **Locally**, both Aspire AppHosts (`src/NimBus.AppHost` and the CRM/ERP demo) start a
-[Mailpit](https://mailpit.axllent.org/) container and point the Resolver at it. Mailpit accepts
+[Mailpit](https://mailpit.axllent.org/) container and point the Resolver and the WebApp at it. Mailpit accepts
 every message, so any address works; open the `mailpit` resource's URL in the Aspire dashboard to
 read the mail.
 
@@ -444,10 +444,10 @@ subscriptions.
 | Setting | On | Default | Notes |
 |---|---|---|---|
 | `SigningKey` | Resolver, WebApp | (unset) | At least 32 characters, from a random generator. Keep it in a secret store |
-| `Timeout` | Resolver | `00:00:10` | Per delivery |
-| `BearerTokens:<n>:UrlPrefix` | Resolver | (none) | An https URL. Requests to a URL on the same host and port, at or below its path, carry a token |
-| `BearerTokens:<n>:Audience` | Resolver | (none) | The audience the token is requested for |
-| `AllowPrivateNetworks` | Resolver | `false` | Allow loopback, private and link-local addresses, and a configured proxy |
+| `Timeout` | Resolver, WebApp | `00:00:10` | Per delivery |
+| `BearerTokens:<n>:UrlPrefix` | Resolver, WebApp | (none) | An https URL. Requests to a URL on the same host and port, at or below its path, carry a token |
+| `BearerTokens:<n>:Audience` | Resolver, WebApp | (none) | The audience the token is requested for |
+| `AllowPrivateNetworks` | Resolver, WebApp | `false` | Allow loopback, private and link-local addresses, and a configured proxy |
 | `AllowInsecureHttp` | Resolver, WebApp | `false` | Accept `http` URLs. For local runs |
 
 The Resolver logs at startup whether alert webhooks are on. Invalid settings (a short key, a
@@ -468,5 +468,102 @@ nb setup --solution-id nimbus --environment prod --resource-group rg-nimbus-prod
 
 Keep the key: a run with another key changes every subscription's secret, and a run without it
 turns alert webhooks off. Deploying the Bicep directly takes `alertWebhookSigningKey` on both
-templates and `alertWebhookBearerTokens` on `deploy.core.bicep`
+templates and `alertWebhookBearerTokens` on both (the WebApp uses them for alert rules)
 ([deployment guide](deployment.md#41-core-infrastructure)).
+
+## Alert rules (Alerts tab)
+
+A subscription tells someone about every failure. An **alert rule** tells someone when it is bad
+and again when it is over: "5 or more events on `ErpEndpoint` are failed right now, with an error
+containing `timeout`". The endpoint page's **Alerts** tab lists the rules above the subscriptions;
+an endpoint Owner (or Site Owner) creates, changes, disables and deletes them there. Everyone who
+can read the endpoint sees the rules and their state; only Owners see where notices go. The
+endpoint list marks an endpoint with a firing rule.
+
+| | Subscription | Alert rule |
+|---|---|---|
+| Fires on | every recorded Failed or DeadLettered outcome | the failure backlog reaching a threshold |
+| Tells its targets | at most once per frequency window, for as long as failures arrive | once when it starts firing, once when it resolves |
+| Runs in | the Resolver | the WebApp |
+
+### What a rule counts
+
+A rule counts the **failure backlog**: the events on the endpoint that are failed now (status
+Failed, DeadLettered or Unsupported), optionally only some statuses, some event types, or those
+whose error text contains a phrase (case-insensitive). There is no time window. The rule fires when
+the backlog reaches its threshold (1–100) and resolves when the backlog has stayed below it for
+the rule's resolve time (1–60 minutes, default 5).
+
+- **Resolved means cleared.** The backlog goes down only when failed events are resubmitted and
+  complete, skipped, or deleted. Five failures that stay failed keep the rule firing, however old
+  they are.
+- An event that fails again is still one event.
+- A resubmit turns the event Pending until it is processed. A retry that fails again within the
+  resolve time keeps the rule firing; a slower one can send a *resolved* and then a new *opened*
+  notice. Raise the resolve time if that happens.
+- "20 failures in 10 minutes", counted even if they are resolved later, is a different question;
+  it is planned as a separate condition.
+
+The rule's last value is capped at its threshold: "≥ 5" means at least five.
+
+### When rules are evaluated
+
+The WebApp evaluates every enabled rule once a minute. Scaled-out WebApp instances share one lease
+per minute, so each rule is evaluated once. A rule is saved only when its state changes. **Rules run
+only while the WebApp runs**: keep Always On on (the App Service template does by default) and at
+least one replica on Container Apps. The Rules section shows when the evaluator last ran and warns
+when that was several minutes ago. For an endpoint that must never go unwatched, add a
+subscription as well: subscriptions are delivered by the Resolver.
+
+### Notices
+
+Each target gets one notice per transition. A notice is saved before it is sent and retried every
+minute, with the same notice id, until it is delivered or 24 hours have passed. Changing a firing
+rule's condition, disabling it or deleting it sends a *resolved* notice with the reason
+`rule_changed`, `rule_disabled` or `rule_deleted` (best-effort for a deleted rule).
+
+**Mail:** the subject is `[NimBus] Firing: {Rule} on {Endpoint}` or `[NimBus] Resolved: …`. The
+mail names the rule, the endpoint, the condition in words, the backlog, since when, and for a
+resolved notice why, with a link to the endpoint's failed events. It never carries error text or a
+payload.
+
+**Webhook:** a signed `POST` like a subscription's (see [Webhook alerts](#webhook-alerts)), with
+these differences:
+
+- The header `X-NimBus-Notice` carries the notice id instead of `X-NimBus-Subscription`. The id is
+  the same on every retry; drop a request whose notice id you have already handled.
+- The signing secret belongs to the rule's target. It is
+  `nbwh_` + base64url(HMAC-SHA256(SigningKey, `"nimbus-alert-rule-webhook/v1/" + ruleId + "/" +
+  targetId`)), shown once when the target is added. Changing other targets keeps it; removing the
+  target and adding it again gives a new one.
+- The body is version 2:
+
+```json
+{
+  "version": 2,
+  "kind": "alert_rule",
+  "noticeId": "c1f0…:7:t2",
+  "ruleId": "c1f0…",
+  "ruleName": "ERP timeouts",
+  "endpointId": "ErpEndpoint",
+  "status": "Firing",
+  "reason": null,
+  "value": 5,
+  "threshold": 5,
+  "sinceUtc": "2026-11-20T09:14:00.000Z",
+  "webUiUrl": "https://nimbus.example.com/Failed?endpointId=ErpEndpoint&period=30d"
+}
+```
+
+`status` is `Firing` or `Resolved`; `reason` is set on a resolved notice. A bearer token is added
+under the same [token prefixes](#webhook-configuration) as subscriptions, for the WebApp's identity.
+
+### Settings
+
+Rules use the same settings as subscriptions, **on the WebApp**: [mail](#mail-configuration)
+(`NimBus:Alerts:Mail`, with `WebAppUrl` for the links) and [webhooks](#webhook-configuration)
+(`NimBus:Alerts:Webhook`, including `BearerTokens` and `AllowPrivateNetworks`). `nb setup` and
+`nb infra apply` pass the alert mail options and token prefixes to both the Resolver and the
+WebApp. A rule with a mail target is refused while alert mail is off on the WebApp, and a webhook
+target while alert webhooks are off. Rules need a storage provider with the alert rule store
+(Cosmos DB, SQL Server and the in-memory store all have it).

@@ -125,13 +125,13 @@ before they are released.
 | `--service-bus-capacity` | No | Premium messaging units: `1`, `2`, `4`, `8` or `16`. Defaults to the existing namespace's capacity, otherwise 1. |
 | `--service-bus-namespace-name` | No | Override the namespace name (default `sb-{solution-id}-{environment}`), e.g. a new Premium namespace next to the Standard one it replaces. Recorded, so `nb topology apply` follows it. |
 | `--dns-wait` | No | Minutes to wait for this machine to resolve the private endpoints before locking at the end of a transition (default 10; `0` checks once). |
-| `--alert-mail-smtp-host` | No | SMTP server the Resolver mails [endpoint alert](notifications.md#endpoint-alerts-alerts-tab) subscribers through, e.g. `smtp.azurecomm.net`. Alert mail is on only with both this and `--alert-mail-from`. |
+| `--alert-mail-smtp-host` | No | SMTP server the Resolver mails [endpoint alert](notifications.md#endpoint-alerts-alerts-tab) subscribers through, and the WebApp mails [alert rule](notifications.md#alert-rules-alerts-tab) targets through, e.g. `smtp.azurecomm.net`. Alert mail is on only with both this and `--alert-mail-from`. |
 | `--alert-mail-from` | With `--alert-mail-smtp-host` | Sender address of endpoint alert mail. |
 | `--alert-mail-smtp-port` | No | SMTP port (1–65535). Default 587. |
 | `--alert-mail-smtp-use-ssl` | No | `true` (default) or `false`. |
 | `--alert-mail-smtp-username` | No | SMTP user name; the password is read from `NIMBUS_ALERT_MAIL_SMTP_PASSWORD`. |
 | `--alert-mail-webapp-url` | No | Public WebApp URL for the links in each mail. Default `https://webapp-{solution-id}-{environment}-management.azurewebsites.net` (with the resource-name postfix, if any). |
-| `--alert-webhook-token` | No | `<https-url-prefix>=<audience>`. [Alert webhooks](notifications.md#webhook-alerts) to a URL under the prefix also carry a bearer token of the Resolver's identity for the audience, e.g. `https://my-agent.example.com/api/=https://azuresre.dev`. Repeatable. Needs `NIMBUS_ALERT_WEBHOOK_SIGNING_KEY`. |
+| `--alert-webhook-token` | No | `<https-url-prefix>=<audience>`. [Alert webhooks](notifications.md#webhook-alerts) to a URL under the prefix also carry a bearer token of the sending app's identity (the Resolver for subscriptions, the WebApp for alert rules) for the audience, e.g. `https://my-agent.example.com/api/=https://azuresre.dev`. Repeatable. Needs `NIMBUS_ALERT_WEBHOOK_SIGNING_KEY`. |
 
 #### Legacy resource names
 
@@ -175,8 +175,8 @@ the private endpoints are gone), and
 adds the `app-package-resolver` container (Flex Consumption) or the content share (private
 Elastic Premium). Existing blobs, queues and tables are left alone.
 
-**Endpoint alert mail.** The alert mail options are not recorded. The Resolver's app settings are
-replaced on every run, so a run without `--alert-mail-smtp-host` and `--alert-mail-from` turns
+**Endpoint alert mail.** The alert mail options are not recorded. They go to the Resolver and, for
+alert rules, to the WebApp. Both apps' settings are replaced on every run, so a run without `--alert-mail-smtp-host` and `--alert-mail-from` turns
 alert mail off; pass the same options on every `nb infra apply` and `nb setup`.
 
 **Endpoint alert webhooks.** Alert webhooks are on when `NIMBUS_ALERT_WEBHOOK_SIGNING_KEY` holds
