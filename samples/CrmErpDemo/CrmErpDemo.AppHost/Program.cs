@@ -297,6 +297,13 @@ else
         .WithEnvironment("NimBus__Alerts__Mail__Smtp__UseSsl", "false")
         .WithEnvironment("NimBus__Alerts__Mail__From", "nimbus-alerts@crmerp-demo.example")
         .WithEnvironment("NimBus__Alerts__Mail__WebAppUrl", nimbusOps.GetEndpoint("https"));
+    // Alert rules (Spec 053) mail their targets from the WebApp, through the same Mailpit.
+    nimbusOps
+        .WithEnvironment("NimBus__Alerts__Mail__Smtp__Host", smtp.Property(EndpointProperty.Host))
+        .WithEnvironment("NimBus__Alerts__Mail__Smtp__Port", smtp.Property(EndpointProperty.Port))
+        .WithEnvironment("NimBus__Alerts__Mail__Smtp__UseSsl", "false")
+        .WithEnvironment("NimBus__Alerts__Mail__From", "nimbus-alerts@crmerp-demo.example")
+        .WithEnvironment("NimBus__Alerts__Mail__WebAppUrl", nimbusOps.GetEndpoint("https"));
 
     // Endpoint alert webhooks (a webhook subscription on the same Alerts tab). A local run
     // switches them on with a key that is only good for development, and lets the Resolver
@@ -308,7 +315,8 @@ else
         .WithEnvironment("NimBus__Alerts__Webhook__AllowPrivateNetworks", "true");
     nimbusOps
         .WithEnvironment("NimBus__Alerts__Webhook__SigningKey", localAlertWebhookSigningKey)
-        .WithEnvironment("NimBus__Alerts__Webhook__AllowInsecureHttp", "true");
+        .WithEnvironment("NimBus__Alerts__Webhook__AllowInsecureHttp", "true")
+        .WithEnvironment("NimBus__Alerts__Webhook__AllowPrivateNetworks", "true");
 }
 
 // Provider-specific wiring. The WebApp/Resolver pick their backend off NimBus__StorageProvider;

@@ -13,7 +13,7 @@ internal sealed class AlertWebhookCommandOptions
     private AlertWebhookCommandOptions(CommandLineApplication command)
     {
         _tokens = command.Option($"{AlertWebhookSelection.TokenOption} <URL_PREFIX>=<AUDIENCE>",
-            "Alert webhooks to a URL under this https prefix also carry a bearer token of the Resolver's identity for this audience, " +
+            "Alert webhooks to a URL under this https prefix also carry a bearer token of the sending app's identity (the Resolver for subscriptions, the WebApp for alert rules) for this audience, " +
             "e.g. https://my-agent.example.com/api/=https://azuresre.dev. Repeat for several prefixes. " +
             $"Alert webhooks are on only when {DeploymentSecrets.AlertWebhookSigningKeyEnvironmentVariable} holds a signing key (at least {AlertWebhookSelection.MinSigningKeyLength} characters), " +
             "and only for this deployment: pass the key and these options on every run.",

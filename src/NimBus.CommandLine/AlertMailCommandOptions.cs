@@ -18,8 +18,8 @@ internal sealed class AlertMailCommandOptions
     private AlertMailCommandOptions(CommandLineApplication command)
     {
         _smtpHost = command.Option($"{AlertMailSelection.SmtpHostOption} <HOST>",
-            "SMTP server the Resolver mails endpoint alert subscribers (the WebApp's Alerts tab) through, e.g. smtp.azurecomm.net. " +
-            $"Alert mail is on only with this and {AlertMailSelection.FromOption}, and only for this deployment: the Resolver's settings are replaced on every run, so pass the alert mail options every time.",
+            "SMTP server the Resolver mails endpoint alert subscribers (the WebApp's Alerts tab), and the WebApp mails alert rule targets, through, e.g. smtp.azurecomm.net. " +
+            $"Alert mail is on only with this and {AlertMailSelection.FromOption}, and only for this deployment: the Resolver's and the WebApp's settings are replaced on every run, so pass the alert mail options every time.",
             CommandOptionType.SingleValue);
         _from = command.Option($"{AlertMailSelection.FromOption} <ADDRESS>",
             "Sender address of endpoint alert mail.",

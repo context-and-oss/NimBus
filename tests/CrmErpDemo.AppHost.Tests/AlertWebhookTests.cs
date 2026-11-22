@@ -42,6 +42,7 @@ public sealed class AlertWebhookTests
         Assert.AreEqual("true", resolver["NimBus__Alerts__Webhook__AllowInsecureHttp"]);
         Assert.AreEqual("true", resolver["NimBus__Alerts__Webhook__AllowPrivateNetworks"]);
         Assert.AreEqual("true", webApp["NimBus__Alerts__Webhook__AllowInsecureHttp"]);
+        Assert.AreEqual("true", webApp["NimBus__Alerts__Webhook__AllowPrivateNetworks"], "Alert rules (Spec 053) call webhooks from the WebApp.");
     }
 
     [TestMethod]
