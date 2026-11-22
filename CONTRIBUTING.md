@@ -75,7 +75,7 @@ The analyzer packages (AsyncFixer, Meziantou, SecurityCodeScan, SonarAnalyzer, S
 - **Logging**: `Microsoft.Extensions.Logging` — no custom logging abstraction (see ADR-006).
 - **DI**: register features via `services.AddNimBus*()` extension methods.
 - **Public API**: XML doc comments on public types and members.
-- **Backward compatibility**: don't delete public API. Mark it `[Obsolete]` and keep a working bridge.
+- **Backward compatibility**: don't delete public API of a published package. Mark it `[Obsolete]` and keep a working bridge. See [what counts as public API](docs/versioning.md).
 
 Every contribution should come with tests. New behaviors, storage providers, and transport changes should extend the relevant conformance suite in `NimBus.Testing` where one exists.
 
