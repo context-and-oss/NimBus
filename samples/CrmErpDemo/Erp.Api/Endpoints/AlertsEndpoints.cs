@@ -23,7 +23,27 @@ public static class AlertsEndpoints
             return Results.Accepted();
         });
 
+        // Receiver for NimBus endpoint-alert webhooks (an Alerts-tab subscription on an endpoint,
+        // delivered by the Resolver). It records the raw body and the X-NimBus-* headers without
+        // checking the signature, so the end-to-end test can check it with the secret it got when
+        // it subscribed. A local demo sink only.
+        app.MapPost("/api/webhooks/endpoint-alerts", async (HttpRequest request, EndpointAlertWebhookState state) =>
+        {
+            using var reader = new StreamReader(request.Body);
+            var body = await reader.ReadToEndAsync(request.HttpContext.RequestAborted);
+            state.Add(new ReceivedEndpointAlert(
+                Body: body,
+                Subscription: request.Headers["X-NimBus-Subscription"].ToString(),
+                Delivery: request.Headers["X-NimBus-Delivery"].ToString(),
+                Timestamp: request.Headers["X-NimBus-Timestamp"].ToString(),
+                Signature: request.Headers["X-NimBus-Signature"].ToString(),
+                ReceivedAt: DateTimeOffset.UtcNow));
+            return Results.Accepted();
+        });
+
         var admin = app.MapGroup("/api/admin");
+
+        admin.MapGet("/endpoint-alerts", (EndpointAlertWebhookState state) => Results.Ok(state.Snapshot()));
 
         admin.MapGet("/alerts", (AlertsState state) => Results.Ok(state.Snapshot()));
 
