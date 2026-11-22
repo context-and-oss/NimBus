@@ -66,6 +66,105 @@ public sealed class AlertMailComposer
             TextBody(context.EndpointId, eventType, outcome, facts, errorText, eventUrl, endpointUrl, footer));
     }
 
+    /// <summary>
+    /// Composes the mail an alert rule's mail target gets when the rule opens or resolves
+    /// (Spec 053). It names the rule, the endpoint and the condition in words; it never carries
+    /// error text or a payload.
+    /// </summary>
+    /// <param name="notice">The notice.</param>
+    /// <param name="to">The target's mail address.</param>
+    public AlertMail ComposeRuleNotice(AlertRuleNotice notice, string to)
+    {
+        ArgumentNullException.ThrowIfNull(notice);
+        ArgumentException.ThrowIfNullOrEmpty(to);
+
+        var firing = notice.Status == AlertRuleStatus.Firing;
+        var since = DateTime.SpecifyKind(notice.SinceUtc, DateTimeKind.Utc)
+            .ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + " UTC";
+        var condition = AlertRuleText.DescribeCondition(notice.Condition);
+        var headline = firing
+            ? $"{notice.RuleName} is firing on {notice.EndpointId}"
+            : $"{notice.RuleName} resolved on {notice.EndpointId}";
+        var value = notice.Value is { } v
+            ? (v >= notice.Condition.Threshold
+                ? string.Create(CultureInfo.InvariantCulture, $"at least {v}")
+                : v.ToString(CultureInfo.InvariantCulture))
+            : null;
+
+        var facts = new (string Label, string? Value)[]
+        {
+            ("Rule", notice.RuleName),
+            ("Endpoint", notice.EndpointId),
+            ("Condition", condition),
+            ("Failed events", value),
+            (firing ? "Firing since" : "Resolved at", since),
+            ("Reason", firing ? null : DescribeReason(notice.Reason)),
+        };
+        var footer = $"You get this mail because {to} is a target of the alert rule \"{notice.RuleName}\" on "
+            + $"{notice.EndpointId}. You get one mail when the rule starts firing and one when it resolves. "
+            + "Manage the rule on the endpoint's Alerts tab in NimBus.";
+
+        var subject = SingleLine($"[NimBus] {notice.StatusName}: {notice.RuleName} on {notice.EndpointId}");
+        return new AlertMail(
+            to,
+            subject,
+            RuleHtmlBody(headline, facts, notice.WebUiUrl, footer),
+            RuleTextBody(headline, facts, notice.WebUiUrl, footer));
+    }
+
+    private static string? DescribeReason(string? reason) => reason switch
+    {
+        AlertRuleResolveReasons.Cleared => "The failed events were cleared.",
+        AlertRuleResolveReasons.RuleChanged => "The rule was changed.",
+        AlertRuleResolveReasons.RuleDisabled => "The rule was disabled.",
+        AlertRuleResolveReasons.RuleDeleted => "The rule was deleted.",
+        _ => reason,
+    };
+
+    private static string RuleHtmlBody(string headline, (string Label, string? Value)[] facts, string? url, string footer)
+    {
+        var html = new StringBuilder();
+        html.Append("<html><body style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1f2328\">");
+        html.Append(CultureInfo.InvariantCulture, $"<h2 style=\"font-size:18px\">{E(headline)}</h2>");
+        html.Append("<table style=\"border-collapse:collapse\">");
+        foreach (var (label, value) in facts.Where(f => !string.IsNullOrEmpty(f.Value)))
+        {
+            html.Append(CultureInfo.InvariantCulture,
+                $"<tr><td style=\"padding:2px 16px 2px 0;color:#59636e\">{E(label)}</td><td style=\"padding:2px 0\">{E(value)}</td></tr>");
+        }
+
+        html.Append("</table>");
+        if (url is not null)
+        {
+            html.Append(CultureInfo.InvariantCulture, $"<p><a href=\"{E(url)}\">Open the failed events</a></p>");
+        }
+
+        html.Append(CultureInfo.InvariantCulture, $"<p style=\"color:#59636e;font-size:12px\">{E(footer)}</p>");
+        html.Append("</body></html>");
+        return html.ToString();
+    }
+
+    private static string RuleTextBody(string headline, (string Label, string? Value)[] facts, string? url, string footer)
+    {
+        var text = new StringBuilder();
+        text.AppendLine(CultureInfo.InvariantCulture, $"{headline}.");
+        text.AppendLine();
+        foreach (var (label, value) in facts.Where(f => !string.IsNullOrEmpty(f.Value)))
+        {
+            text.AppendLine(CultureInfo.InvariantCulture, $"{label + ":",-15}{value}");
+        }
+
+        if (url is not null)
+        {
+            text.AppendLine();
+            text.AppendLine(CultureInfo.InvariantCulture, $"Open the failed events: {url}");
+        }
+
+        text.AppendLine();
+        text.AppendLine(footer);
+        return text.ToString();
+    }
+
     private static string HtmlBody(
         string endpointId,
         string eventType,

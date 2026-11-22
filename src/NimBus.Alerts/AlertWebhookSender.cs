@@ -25,7 +25,7 @@ namespace NimBus.Alerts;
 /// token for the Resolver's identity. Delivery is one attempt: no retry, and a redirect is a
 /// failure. The receiver is expected to sweep on a timer as well.
 /// </remarks>
-public sealed class AlertWebhookSender : IAlertWebhookSender, IDisposable
+public sealed class AlertWebhookSender : IAlertWebhookSender, IAlertRuleWebhookSender, IDisposable
 {
     private static readonly TimeSpan TokenRefreshMargin = TimeSpan.FromMinutes(5);
 
@@ -84,18 +84,51 @@ public sealed class AlertWebhookSender : IAlertWebhookSender, IDisposable
     public bool CanSendTo(string? url) => EndpointAlertWebhook.IsValidUrl(url, _options.AllowInsecureHttp);
 
     /// <inheritdoc />
-    public async Task SendAsync(AlertWebhook webhook, CancellationToken cancellationToken = default)
+    public Task SendAsync(AlertWebhook webhook, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(webhook);
 
-        var body = BuildBody(webhook.Context);
-        var timestamp = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
         var secret = EndpointAlertWebhook.DeriveSigningSecret(_options.SigningKey!, webhook.SubscriptionId);
+        return PostSignedAsync(
+            webhook.Url,
+            BuildBody(webhook.Context),
+            secret,
+            (EndpointAlertWebhook.SubscriptionHeader, webhook.SubscriptionId),
+            cancellationToken);
+    }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, webhook.Url);
+    /// <inheritdoc />
+    public Task SendRuleNoticeAsync(AlertRuleNotice notice, AlertRuleTarget target, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(notice);
+        ArgumentNullException.ThrowIfNull(target);
+        if (target.Type != AlertRuleTargetType.Webhook || !Uri.TryCreate(target.Url, UriKind.Absolute, out var url))
+        {
+            throw new ArgumentException("The target is not a webhook with an absolute URL.", nameof(target));
+        }
+
+        var secret = EndpointAlertWebhook.DeriveRuleTargetSigningSecret(_options.SigningKey!, notice.RuleId, target.TargetId);
+        return PostSignedAsync(
+            url,
+            BuildRuleNoticeBody(notice),
+            secret,
+            (EndpointAlertWebhook.NoticeHeader, notice.NoticeId),
+            cancellationToken);
+    }
+
+    private async Task PostSignedAsync(
+        Uri url,
+        string body,
+        string secret,
+        (string Name, string Value) idHeader,
+        CancellationToken cancellationToken)
+    {
+        var timestamp = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Content = new StringContent(body, Encoding.UTF8, "application/json");
         request.Headers.UserAgent.ParseAdd("NimBus-Alerts");
-        request.Headers.Add(EndpointAlertWebhook.SubscriptionHeader, webhook.SubscriptionId);
+        request.Headers.Add(idHeader.Name, idHeader.Value);
         request.Headers.Add(EndpointAlertWebhook.DeliveryHeader, Guid.NewGuid().ToString());
         request.Headers.Add(EndpointAlertWebhook.TimestampHeader, timestamp.ToString(CultureInfo.InvariantCulture));
         request.Headers.Add(EndpointAlertWebhook.SignatureHeader, EndpointAlertWebhook.Sign(secret, timestamp, body));
@@ -104,7 +137,7 @@ public sealed class AlertWebhookSender : IAlertWebhookSender, IDisposable
         timeout.CancelAfter(_options.Timeout);
         try
         {
-            if (_options.BearerTokens.FirstOrDefault(entry => entry.Covers(webhook.Url)) is { } entry)
+            if (_options.BearerTokens.FirstOrDefault(entry => entry.Covers(url)) is { } entry)
             {
                 request.Headers.Authorization = new AuthenticationHeaderValue(
                     "Bearer", await GetTokenAsync(entry.Audience!, timeout.Token).ConfigureAwait(false));
@@ -116,14 +149,64 @@ public sealed class AlertWebhookSender : IAlertWebhookSender, IDisposable
             if (!response.IsSuccessStatusCode)
             {
                 throw new AlertWebhookDeliveryException(
-                    $"The webhook at {webhook.Url.Host} answered {(int)response.StatusCode}.");
+                    $"The webhook at {url.Host} answered {(int)response.StatusCode}.");
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             throw new TimeoutException(
-                $"The webhook at {webhook.Url.Host} did not answer within {_options.Timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture)} s.");
+                $"The webhook at {url.Host} did not answer within {_options.Timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture)} s.");
         }
+    }
+
+    private static string BuildRuleNoticeBody(AlertRuleNotice notice)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("version", 2);
+            writer.WriteString("kind", "alert_rule");
+            writer.WriteString("noticeId", notice.NoticeId);
+            writer.WriteString("ruleId", notice.RuleId);
+            writer.WriteString("ruleName", notice.RuleName);
+            writer.WriteString("endpointId", notice.EndpointId);
+            writer.WriteString("status", notice.StatusName);
+            if (notice.Reason is null)
+            {
+                writer.WriteNull("reason");
+            }
+            else
+            {
+                writer.WriteString("reason", notice.Reason);
+            }
+
+            if (notice.Value is { } value)
+            {
+                writer.WriteNumber("value", value);
+            }
+            else
+            {
+                writer.WriteNull("value");
+            }
+
+            writer.WriteNumber("threshold", notice.Condition.Threshold);
+            writer.WriteString(
+                "sinceUtc",
+                DateTime.SpecifyKind(notice.SinceUtc, DateTimeKind.Utc).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture));
+            if (notice.WebUiUrl is null)
+            {
+                writer.WriteNull("webUiUrl");
+            }
+            else
+            {
+                writer.WriteString("webUiUrl", notice.WebUiUrl);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length);
     }
 
     /// <inheritdoc />
@@ -161,7 +244,7 @@ public sealed class AlertWebhookSender : IAlertWebhookSender, IDisposable
         if (_credential is null)
         {
             throw new InvalidOperationException(
-                $"{AlertWebhookOptions.SectionName}:BearerTokens lists an audience, but the Resolver has no credential to get a token with.");
+                $"{AlertWebhookOptions.SectionName}:BearerTokens lists an audience, but this host has no credential to get a token with.");
         }
 
         var token = await _credential
