@@ -20,7 +20,7 @@ jobs:
     # The context-and-oss org ruleset requires a status check named exactly "ci".
     name: ci
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       # SQL Server service container for the SQL Server message store conformance suite.
