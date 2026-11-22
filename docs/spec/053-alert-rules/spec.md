@@ -60,7 +60,9 @@ Store queries a rule evaluator can reuse:
    failure.
 3. Rules reuse the existing mail and webhook channels, the webhook signature and the bearer-token
    mode. No new transport.
-4. Evaluation is exact once across scaled-out WebApp instances.
+4. Scaled-out WebApp instances never evaluate a rule twice for one interval, and only the current
+   claimant may commit a state change. A claimant that stops after claiming loses that interval;
+   the next one evaluates the rule again.
 5. Rules are visible to everyone who can read the endpoint: what the rule is, whether it is firing,
    and since when.
 6. The existing per-failure subscriptions keep working unchanged.
@@ -149,9 +151,12 @@ Each tick:
 3. Evaluate: `GetFailedEventsAcrossEndpoints(filter, [endpointId], null, maxItemCount: threshold)`
    with `filter.UpdatedAtFrom = now - window` and `UpdatedAtTo = now`, and count the rows. `filter`
    also maps `eventTypes`, `statuses` and `errorTextContains`. The rule only needs to know whether
-   the count reaches the threshold, so it reads at most `threshold` failures: on Cosmos DB the charge
-   of a full count grows with every failure in the window (about 470 RU for 10,000, §14 fact 1),
-   while this read is bounded by the threshold. A count of `threshold` means "at least".
+   the count reaches the threshold, so it asks for at most `threshold` failures and never follows
+   the continuation token; a count of `threshold` means "at least". This bounds the rows
+   returned, not the work done: on Cosmos DB the store reads whole service pages, widens the date
+   bounds to the second and discards candidates outside them, and projects the error content, so
+   its charge is still to be measured against the histogram's (§7). The upper edge is inclusive
+   here (`UpdatedAtTo`) and exclusive in the histogram; Phase 1 fixes one and tests it.
 4. Apply the state machine (§5.4) and save the new state with the claim's version.
 5. If the state changed, send the notices (§5.5) after the state is saved. A failed send is logged.
    The state change stands; there is no retry, as for subscriptions.
@@ -300,12 +305,17 @@ serverless account ([plan](../../plan/2026-11-21-spec-053-phase-0.md)): 2.8 RU w
 whatever the container's size, plus about 0.047 RU per matching failure, so about 470 RU for
 10,000 failures in the window. A quiet rule costs about $0.03 a month on serverless. During an
 outage, 20 full-count rules on one endpoint would need about 160 RU/s, competing with message
-processing on a provisioned account. That is why the evaluator reads at most `threshold` failures
-(§5.3), which bounds the charge by the threshold (at most 1,000) instead of the backlog. The charge
-of that read was not measured in Phase 0; Phase 1 checks it on the first live account.
+processing on a provisioned account. That is why the evaluator asks for at most `threshold`
+failures (§5.3). Capping the rows returned is expected to cut the charge during an outage, but it
+is not a proven bound: the Cosmos read loop can read and discard candidates, and its projection is
+larger than the histogram's.
 
-The evaluation interval stays fixed at 60 s. A setting (`NimBus:Alerts:Rules:EvaluationInterval`,
-minimum 60 s) is added only if a deployment needs it.
+**Open until measured (Phase 1, before the evaluator ships):** both queries on a live account at
+thresholds 1 and 1,000, on sparse, outage and boundary-heavy data, with long error texts and a
+selective text filter, counting the RU of every service page; plus the per-minute cost of listing
+rules, claiming and saving state. The evaluation interval (60 s) and the threshold limit (1–1,000,
+one page of `PaginationLimits.MaxPageSize`) are provisional until then. A setting
+(`NimBus:Alerts:Rules:EvaluationInterval`, minimum 60 s) is added if the numbers call for it.
 
 ## 8. Tests
 
@@ -314,7 +324,9 @@ minimum 60 s) is added only if a deployment needs it.
   after `resolveAfterMinutes` of false; a true evaluation during that time keeps it firing; one
   evaluation per minute when two evaluator instances share a store; a lost claim skips; a failed
   send keeps the new state; editing resets to Ok without a notice; a disabled rule is not evaluated;
-  the read asks for at most `threshold` failures, inside the window only.
+  the read asks for at most `threshold` failures, inside the window only; a claimant that stops
+  after claiming commits nothing and the next interval evaluates again; a claimant paused past its
+  interval cannot commit over the next claimant's state.
 - Filters: each of event types, statuses and error text narrows the count on all three providers
   (conformance, because `ErrorText` matching is provider code).
 - Notices: mail subject and body for both statuses; webhook v2 body, headers, signature with the
@@ -389,7 +401,7 @@ Details and the measurement: [Phase 0 plan](../../plan/2026-11-21-spec-053-phase
 1. **RU charge on Cosmos DB.** Measured on a live serverless account: 2.8 RU with no match at
    10,000 and 100,000 events, 42.6 RU for 873 failures in the window, 472.7 RU (750 ms) for 10,000.
    The charge follows the matching failures, not the container size. Led to the capped read in
-   §5.3 and the 1–1,000 threshold in §5.1.
+   §5.3 and the 1–1,000 threshold in §5.1, both provisional until the capped read is measured (§7).
 2. **`ErrorText` parity.** Case-insensitive substring on all three providers (SQL Server under the
    default CI collation, with `%`, `_` and `[` escaped). A new conformance test,
    `GetFailedEventHistogram_matches_error_text_as_a_case_insensitive_substring`, passes on all three.
@@ -420,6 +432,8 @@ Details and the measurement: [Phase 0 plan](../../plan/2026-11-21-spec-053-phase
   no site-wide rules in Phase 1; no reminders while firing (removed from Phase 3); the
   classification filter stays in Phase 3. The repo owner approved every decision in §12.
 - 2026-11-21, revision 3: Phase 0. §14 answered, with the Cosmos DB charge measured on a live
-  account. Because a full count's charge grows with the failures in the window, the evaluator reads
-  at most `threshold` failures (§5.3), the threshold limit is 1–1,000 (§5.1), and the evaluation
-  interval stays fixed (§7). The senders now live in `NimBus.Alerts` (§5.6).
+  account. Because a full count's charge grows with the failures in the window, the evaluator asks
+  for at most `threshold` failures (§5.3) and the threshold limit is 1–1,000 (§5.1). The senders
+  now live in `NimBus.Alerts` (§5.6). After a Codex review (2026-11-22): the capped read bounds
+  rows, not RU, so its cost, the threshold limit and the interval are provisional until Phase 1
+  measures them (§7); goal 4 says only the current claimant may commit a transition.
