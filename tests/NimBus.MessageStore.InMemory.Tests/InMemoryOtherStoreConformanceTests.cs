@@ -79,3 +79,9 @@ public sealed class InMemoryOperatorOperationStoreTests : OperatorOperationStore
 {
     protected override IOperatorOperationStore CreateStore() => new InMemoryMessageStore();
 }
+
+[TestClass]
+public sealed class InMemoryAlertRuleStoreTests : AlertRuleStoreConformanceTests
+{
+    protected override IAlertRuleStore CreateStore() => new InMemoryMessageStore();
+}

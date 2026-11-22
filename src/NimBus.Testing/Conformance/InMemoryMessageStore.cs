@@ -22,10 +22,13 @@ namespace NimBus.Testing.Conformance;
 /// transitions, message persistence, and basic queries the conformance suite cares
 /// about. Search/pagination methods return empty results.
 /// </summary>
-public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore
+public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore
 {
     // The operator operation journal (Spec 044 Phase 2), kept in its own class.
     private readonly InMemoryOperatorOperationStore _operations = new();
+
+    // Alert rules and the evaluator lease (Spec 053), kept in their own class.
+    private readonly InMemoryAlertRuleStore _alertRules = new();
 
     private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _events = new();
     // Rows archived by TryArchiveUnresolvedEvent, kept so TryRestoreArchivedEvent can put them back.
@@ -1583,4 +1586,29 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
         => _operations.ListDueOperatorOperations(statuses, updatedBeforeUtc, limit);
     public virtual Task<int> CountOperatorOperations(OperatorOperationQuery query) => _operations.CountOperatorOperations(query);
     public virtual Task<int> PurgeExpiredOperatorOperations(DateTime nowUtc, int limit) => _operations.PurgeExpiredOperatorOperations(nowUtc, limit);
+
+    // ───────── Alert rules (IAlertRuleStore) — implementation in InMemoryAlertRuleStore ─────────
+    /// <inheritdoc />
+    public virtual Task<IReadOnlyList<AlertRule>> ListAlertRulesByEndpoint(string endpointId) => _alertRules.ListAlertRulesByEndpoint(endpointId);
+    /// <inheritdoc />
+    public virtual Task<IReadOnlyList<AlertRule>> ListAlertRulesToEvaluate(int limit) => _alertRules.ListAlertRulesToEvaluate(limit);
+    /// <inheritdoc />
+    public virtual Task<IReadOnlyList<string>> ListEndpointsWithFiringAlertRules() => _alertRules.ListEndpointsWithFiringAlertRules();
+    /// <inheritdoc />
+    public virtual Task<AlertRule?> GetAlertRule(string endpointId, string ruleId) => _alertRules.GetAlertRule(endpointId, ruleId);
+    /// <inheritdoc />
+    public virtual Task<AlertRule?> TrySaveAlertRuleDefinition(AlertRule rule, long? expectedVersion) => _alertRules.TrySaveAlertRuleDefinition(rule, expectedVersion);
+    /// <inheritdoc />
+    public virtual Task<long?> TrySaveAlertRuleState(string endpointId, string ruleId, long expectedVersion, AlertRuleState state)
+        => _alertRules.TrySaveAlertRuleState(endpointId, ruleId, expectedVersion, state);
+    /// <inheritdoc />
+    public virtual Task<bool> DeleteAlertRule(string endpointId, string ruleId, long expectedVersion) => _alertRules.DeleteAlertRule(endpointId, ruleId, expectedVersion);
+    /// <inheritdoc />
+    public virtual Task<bool> TryClaimAlertRuleEvaluatorTick(DateTime dueBefore, DateTime nowUtc, string instanceId)
+        => _alertRules.TryClaimAlertRuleEvaluatorTick(dueBefore, nowUtc, instanceId);
+    /// <inheritdoc />
+    public virtual Task<bool> CompleteAlertRuleEvaluatorTick(DateTime claimedAtUtc, DateTime completedAtUtc)
+        => _alertRules.CompleteAlertRuleEvaluatorTick(claimedAtUtc, completedAtUtc);
+    /// <inheritdoc />
+    public virtual Task<AlertRuleEvaluatorStatus> GetAlertRuleEvaluatorStatus() => _alertRules.GetAlertRuleEvaluatorStatus();
 }
