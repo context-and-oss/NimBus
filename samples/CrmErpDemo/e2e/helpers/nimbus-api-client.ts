@@ -79,6 +79,21 @@ export interface AlertSubscriptionCreated {
   signingSecret?: string | null;
 }
 
+/** An alert rule request (Spec 053): the failure backlog on the endpoint reaching a threshold. */
+export interface AlertRuleRequest {
+  name: string;
+  enabled: boolean;
+  condition: { threshold: number; eventTypes?: string[]; statuses?: string[]; errorTextContains?: string | null };
+  resolveAfterMinutes: number;
+  targets: Array<{ id?: string; type: "mail" | "webhook"; address?: string; url?: string }>;
+}
+
+export interface AlertRuleSaved {
+  rule: { id: string; targets: Array<{ id: string; type: string }> };
+  /** The signing secret of each new webhook target, only in this response. */
+  secrets: Array<{ targetId: string; signingSecret: string }>;
+}
+
 export interface EventFilter {
   endPointId?: string | null;
   eventId?: string | null;
@@ -148,6 +163,19 @@ export class NimBusApiClient {
     const res = await this.api.post(`/api/v1/endpoint/${endpointId}/subscribe`, { data: subscription });
     if (!res.ok()) throw new Error(`NimBus subscribe → ${await describeFailure(res)}`);
     return (await res.json()) as AlertSubscriptionCreated;
+  }
+
+  /** Create an alert rule on the endpoint (Spec 053). Returns the rule and each new webhook target's secret. */
+  async createAlertRule(endpointId: string, rule: AlertRuleRequest): Promise<AlertRuleSaved> {
+    const res = await this.api.post(`/api/v1/endpoint/${endpointId}/alert-rules`, { data: rule });
+    if (!res.ok()) throw new Error(`NimBus create alert rule → ${await describeFailure(res)}`);
+    return (await res.json()) as AlertRuleSaved;
+  }
+
+  /** Delete an alert rule. */
+  async deleteAlertRule(endpointId: string, ruleId: string): Promise<void> {
+    const res = await this.api.delete(`/api/v1/endpoint/${endpointId}/alert-rules/${ruleId}`);
+    if (!res.ok()) throw new Error(`NimBus delete alert rule → ${await describeFailure(res)}`);
   }
 
   /** Remove an alert subscription from the endpoint. */

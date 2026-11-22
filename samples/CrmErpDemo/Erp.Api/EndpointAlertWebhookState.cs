@@ -1,12 +1,13 @@
 namespace Erp.Api;
 
 /// <summary>
-/// One request received from a NimBus endpoint-alert webhook (an Alerts-tab subscription), kept
+/// One request received from a NimBus endpoint-alert webhook (an Alerts-tab subscription or alert rule), kept
 /// as it arrived so a test can check the signature: the raw body and the <c>X-NimBus-*</c> headers.
 /// </summary>
 public sealed record ReceivedEndpointAlert(
     string Body,
     string? Subscription,
+    string? Notice,
     string? Delivery,
     string? Timestamp,
     string? Signature,

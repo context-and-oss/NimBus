@@ -114,7 +114,7 @@ aspire stop --apphost ../CrmErpDemo.AppHost --non-interactive
 | Circuit breaker | 11 | Observed Open and Closed transitions with real downstream failures and successful recovery traffic |
 | Request/reply and commands | 09, 10, 18 | Approved, not found, timeout, credit hold, concurrent reply correlation |
 | Fan-out and notifications | 07, 18 | Enrichment reaches DataPlatform; webhook and Resolver history carry the failed event identity |
-| Endpoint alerts (Alerts tab) | 20 | A subscription made through the WebApp API delivers the failed event to Mailpit and as a webhook whose signature verifies with the secret returned once |
+| Endpoint alerts (Alerts tab) | 20 | A subscription made through the WebApp API delivers the failed event to Mailpit and as a webhook whose signature verifies with the secret returned once; an alert rule opens on the failed event and resolves once it is skipped, with one signed version-2 notice and one mail each time |
 
 ## Deterministic controls and evidence
 

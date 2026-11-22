@@ -34,6 +34,7 @@ public static class AlertsEndpoints
             state.Add(new ReceivedEndpointAlert(
                 Body: body,
                 Subscription: request.Headers["X-NimBus-Subscription"].ToString(),
+                Notice: request.Headers["X-NimBus-Notice"].ToString(),
                 Delivery: request.Headers["X-NimBus-Delivery"].ToString(),
                 Timestamp: request.Headers["X-NimBus-Timestamp"].ToString(),
                 Signature: request.Headers["X-NimBus-Signature"].ToString(),
