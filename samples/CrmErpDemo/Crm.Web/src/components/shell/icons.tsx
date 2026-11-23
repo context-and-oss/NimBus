@@ -31,6 +31,9 @@ export const TrashIcon = (p: IconProps) => (
 export const SaveIcon = (p: IconProps) => (
   <Svg {...p}><path d="M3 3h8l2 2v8H3zM5.5 3v3h5V3M5.5 13V9.5h5V13" /></Svg>
 );
+export const SaveCloseIcon = (p: IconProps) => (
+  <Svg {...p}><path d="M3 3h8l2 2v3M3 3v10h4.5M5.5 3v3h5V3M9.5 12.2l1.7 1.7L14.8 10.4" /></Svg>
+);
 export const BackIcon = (p: IconProps) => <Svg {...p}><path d="M13 8H3M7 4 3 8l4 4" /></Svg>;
 export const GearIcon = (p: IconProps) => (
   <Svg {...p}>

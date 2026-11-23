@@ -68,7 +68,7 @@ test("Act 1 — an account created in CRM becomes a customer in ERP", async ({ p
     "The CRM API writes its row and publishes the event — that is the whole integration contract.",
   );
   await page.waitForTimeout(Pace.read);
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save & Close" }).click();
 
   // ── Watch the ERP sync column flip ─────────────────────────────
   const row = page.locator("tr").filter({ hasText: LEGAL_NAME });

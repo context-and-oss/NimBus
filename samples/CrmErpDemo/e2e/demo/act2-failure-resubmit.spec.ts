@@ -70,7 +70,7 @@ test("Act 2 — a failed message blocks its session, and one click drains it", a
   const unawareCrm = startNarration(page, "2.2");
   await typeInto(page.locator('label:has-text("Legal name") input'), BASE_NAME);
   await typeInto(page.locator('label:has-text("Country code") input'), "SE");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save & Close" }).click();
   await unawareCrm;
   await expect(page.locator("tr").filter({ hasText: BASE_NAME })).toBeVisible();
 
@@ -91,7 +91,7 @@ test("Act 2 — a failed message blocks its session, and one click drains it", a
     await visit(page, `${webs.crmWeb}/accounts/${account.id}`, CHIP);
     await caption(page, `Edit ${i + 1} of 2`, `Renaming to "${name}".`);
     await typeInto(page.locator('label:has-text("Legal name") input'), name);
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save & Close" }).click();
     await page.waitForTimeout(Pace.beat);
   }
   await twoMoreEdits;
