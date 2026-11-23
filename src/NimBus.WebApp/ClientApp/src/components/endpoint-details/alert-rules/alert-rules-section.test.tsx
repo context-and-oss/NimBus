@@ -11,6 +11,7 @@ const apiMocks = vi.hoisted(() => ({
   postEndpointAlertRule: vi.fn(),
   putEndpointAlertRule: vi.fn(),
   deleteEndpointAlertRule: vi.fn(),
+  postEndpointAlertRulePreview: vi.fn(),
 }));
 
 vi.mock("api-client", async (importOriginal) => {
@@ -323,6 +324,7 @@ describe("AlertRulesSection form", () => {
         eventTypes: [],
         statuses: ["Failed", "Unsupported"],
         errorTextContains: "timeout",
+        categories: [],
         threshold: 10,
       },
       resolveAfterMinutes: 15,
@@ -437,6 +439,7 @@ describe("AlertRulesSection form", () => {
     expect(JSON.parse(JSON.stringify(body)).condition).toEqual({
       kind: "failure_occurrences",
       eventTypes: [],
+      categories: [],
       threshold: 2,
       windowMinutes: 30,
     });
@@ -470,6 +473,7 @@ describe("AlertRulesSection form", () => {
     expect(JSON.parse(JSON.stringify(apiMocks.postEndpointAlertRule.mock.calls[0][1])).condition).toEqual({
       kind: "blocked_session",
       deferredThreshold: 50,
+      categories: [],
     });
   });
 
@@ -492,6 +496,7 @@ describe("AlertRulesSection form", () => {
     expect(JSON.parse(JSON.stringify(apiMocks.postEndpointAlertRule.mock.calls[0][1])).condition).toEqual({
       kind: "silence",
       minutes: 60,
+      categories: [],
     });
   });
 
@@ -572,18 +577,24 @@ describe("AlertRulesSection row actions", () => {
     await waitFor(() => expect(apiMocks.putEndpointAlertRule).toHaveBeenCalledTimes(1));
     let body = JSON.parse(JSON.stringify(apiMocks.putEndpointAlertRule.mock.calls[0][2]));
     expect(body.enabled).toBe(false);
-    expect(body.condition).toEqual({ kind: "blocked_session", minutes: 30, deferredThreshold: 50 });
+    expect(body.condition).toEqual({ kind: "blocked_session", minutes: 30, deferredThreshold: 50, categories: [] });
 
     await openMenu(user, "Failure burst", "Disable");
     await waitFor(() => expect(apiMocks.putEndpointAlertRule).toHaveBeenCalledTimes(2));
     body = JSON.parse(JSON.stringify(apiMocks.putEndpointAlertRule.mock.calls[1][2]));
-    expect(body.condition).toEqual({ kind: "failure_occurrences", eventTypes: [], threshold: 2, windowMinutes: 15 });
+    expect(body.condition).toEqual({
+      kind: "failure_occurrences",
+      eventTypes: [],
+      categories: [],
+      threshold: 2,
+      windowMinutes: 15,
+    });
 
     await openMenu(user, "Quiet endpoint", "Enable");
     await waitFor(() => expect(apiMocks.putEndpointAlertRule).toHaveBeenCalledTimes(3));
     body = JSON.parse(JSON.stringify(apiMocks.putEndpointAlertRule.mock.calls[2][2]));
     expect(body.enabled).toBe(true);
-    expect(body.condition).toEqual({ kind: "silence", minutes: 60 });
+    expect(body.condition).toEqual({ kind: "silence", minutes: 60, categories: [] });
   });
 
   it("deletes a rule only after confirming, then refreshes", async () => {
@@ -618,5 +629,335 @@ describe("AlertRulesSection row actions", () => {
     await openMenu(user, "ERP timeouts", "Disable");
     expect(await screen.findByText('Could not disable "ERP timeouts".')).toBeTruthy();
     expect(screen.getByText("The rule kept changing.")).toBeTruthy();
+  });
+});
+
+const CATEGORIES = [
+  "transient_dependency",
+  "authentication_configuration",
+  "contract_schema",
+  "business_rule",
+  "missing_reference_data",
+  "application_defect",
+  "messaging_platform",
+];
+
+const classified = (overrides: Record<string, unknown> = {}) =>
+  list({ classificationAvailable: true, categories: CATEGORIES, availableKinds: ALL_KINDS, ...overrides });
+
+const openNewRule = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByRole("button", { name: "New rule" }));
+  return screen.getByRole("dialog", { name: "New rule" });
+};
+
+const HELP = "Counts only failures an agent has classified into one of these. A retry is a new, unclassified attempt.";
+
+describe("AlertRulesSection categories", () => {
+  it("describes a rule's categories in its condition", async () => {
+    apiMocks.getEndpointAlertRules.mockResolvedValue(
+      classified({
+        rules: [
+          ruleJson({
+            condition: {
+              kind: "failure_occurrences",
+              threshold: 3,
+              windowMinutes: 15,
+              eventTypes: [],
+              statuses: [],
+              categories: ["transient_dependency", "contract_schema"],
+            },
+          }),
+        ],
+      }),
+    );
+    renderSection();
+    const row = await rowOf("ERP timeouts");
+    expect(
+      within(row).getByText("3 or more failures in 15 min classified as transient dependency or contract schema"),
+    ).toBeTruthy();
+  });
+
+  it("offers the categories for backlog and occurrences rules and sends the picked ones", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(classified());
+    apiMocks.postEndpointAlertRule.mockResolvedValue(api.AlertRuleSaved.fromJS({ rule: ruleJson(), secrets: [] }));
+    renderSection();
+    const dialog = await openNewRule(user);
+
+    const group = within(dialog).getByRole("group", { name: "Categories" });
+    expect(within(group).getByText(HELP)).toBeTruthy();
+    expect(within(group).getAllByRole("checkbox")).toHaveLength(7);
+    await user.click(within(group).getByLabelText("Contract schema"));
+    await user.click(within(group).getByLabelText("Transient dependency"));
+
+    await user.selectOptions(within(dialog).getByLabelText("Condition"), "silence");
+    expect(within(dialog).queryByRole("group", { name: "Categories" })).toBeNull();
+    await user.selectOptions(within(dialog).getByLabelText("Condition"), "failure_occurrences");
+    expect(within(dialog).getByRole("group", { name: "Categories" })).toBeTruthy();
+
+    await user.type(within(dialog).getByLabelText("Name"), "Transient bursts");
+    await user.click(within(dialog).getByRole("button", { name: "Add mail" }));
+    await user.type(within(dialog).getByLabelText("Mail address 1"), "erp@example.com");
+    await user.click(within(dialog).getByRole("button", { name: "Create rule" }));
+
+    await waitFor(() => expect(apiMocks.postEndpointAlertRule).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(JSON.stringify(apiMocks.postEndpointAlertRule.mock.calls[0][1]));
+    // In the order the server lists them, not the order they were ticked.
+    expect(body.condition.categories).toEqual(["transient_dependency", "contract_schema"]);
+  });
+
+  it("sends no categories for a silence rule even when some were ticked", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(classified());
+    apiMocks.postEndpointAlertRule.mockResolvedValue(api.AlertRuleSaved.fromJS({ rule: ruleJson(), secrets: [] }));
+    renderSection();
+    const dialog = await openNewRule(user);
+    await user.click(within(dialog).getByLabelText("Business rule"));
+    await user.selectOptions(within(dialog).getByLabelText("Condition"), "silence");
+    await user.type(within(dialog).getByLabelText("Name"), "Quiet");
+    await user.click(within(dialog).getByRole("button", { name: "Add mail" }));
+    await user.type(within(dialog).getByLabelText("Mail address 1"), "erp@example.com");
+    await user.click(within(dialog).getByRole("button", { name: "Create rule" }));
+
+    await waitFor(() => expect(apiMocks.postEndpointAlertRule).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(JSON.stringify(apiMocks.postEndpointAlertRule.mock.calls[0][1])).condition.categories).toEqual([]);
+  });
+
+  it("hides the categories when classifications can't be read", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(classified({ classificationAvailable: false, categories: [] }));
+    renderSection();
+    const dialog = await openNewRule(user);
+    expect(within(dialog).queryByRole("group", { name: "Categories" })).toBeNull();
+    expect(within(dialog).queryByText(HELP)).toBeNull();
+  });
+
+  it("opens a rule with its categories ticked", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(
+      classified({ rules: [ruleJson({ condition: { kind: "failure_backlog", threshold: 5, categories: ["business_rule"] } })] }),
+    );
+    renderSection();
+    await openMenu(user, "ERP timeouts", "Edit…");
+    const dialog = screen.getByRole("dialog", { name: "Edit rule ERP timeouts" });
+    expect((within(dialog).getByLabelText("Business rule") as HTMLInputElement).checked).toBe(true);
+    expect((within(dialog).getByLabelText("Contract schema") as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("keeps a rule's categories when disabling it", async () => {
+    const user = userEvent.setup();
+    const categories = ["transient_dependency", "contract_schema"];
+    apiMocks.getEndpointAlertRules.mockResolvedValue(
+      classified({ rules: [ruleJson({ condition: { kind: "failure_backlog", threshold: 5, categories } })] }),
+    );
+    apiMocks.putEndpointAlertRule.mockResolvedValue(api.AlertRuleSaved.fromJS({ rule: ruleJson(), secrets: [] }));
+    renderSection();
+    await openMenu(user, "ERP timeouts", "Disable");
+    await waitFor(() => expect(apiMocks.putEndpointAlertRule).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(JSON.stringify(apiMocks.putEndpointAlertRule.mock.calls[0][2]));
+    expect(body.enabled).toBe(false);
+    expect(body.condition.categories).toEqual(categories);
+  });
+});
+
+const at = (hours: number, minutes: number) =>
+  moment().startOf("day").add(hours, "hours").add(minutes, "minutes").toISOString();
+
+const previewJson = (overrides: Record<string, unknown> = {}) =>
+  api.AlertRulePreview.fromJS({
+    valueNow: 3,
+    holdsNow: true,
+    replay: {
+      fromUtc: at(-12, 0),
+      toUtc: at(12, 0),
+      series: [
+        { atUtc: at(9, 0), value: 1 },
+        { atUtc: at(9, 15), value: 4 },
+        { atUtc: at(9, 30), value: 0 },
+      ],
+      periods: [{ fromUtc: at(9, 14), toUtc: at(9, 31) }, { fromUtc: at(11, 2) }],
+    },
+    ...overrides,
+  });
+
+const preview = (dialog: HTMLElement) => within(dialog).getByRole("region", { name: "Preview" });
+
+describe("AlertRulesSection preview", () => {
+  it("previews only when asked, with the draft's condition and resolve time", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(classified());
+    apiMocks.postEndpointAlertRulePreview.mockResolvedValue(previewJson());
+    renderSection();
+    const dialog = await openNewRule(user);
+    await user.selectOptions(within(dialog).getByLabelText("Condition"), "failure_occurrences");
+    await user.clear(within(dialog).getByLabelText("Threshold"));
+    await user.type(within(dialog).getByLabelText("Threshold"), "3");
+    await user.clear(within(dialog).getByLabelText("Resolve after (minutes)"));
+    await user.type(within(dialog).getByLabelText("Resolve after (minutes)"), "10");
+    expect(apiMocks.postEndpointAlertRulePreview).not.toHaveBeenCalled();
+
+    // No name and no targets: neither blocks a preview.
+    await user.click(within(preview(dialog)).getByRole("button", { name: "Preview" }));
+
+    await waitFor(() => expect(apiMocks.postEndpointAlertRulePreview).toHaveBeenCalledTimes(1));
+    const [endpointId, body] = apiMocks.postEndpointAlertRulePreview.mock.calls[0];
+    expect(endpointId).toBe("ErpEndpoint");
+    expect(JSON.parse(JSON.stringify(body))).toEqual({
+      condition: { kind: "failure_occurrences", eventTypes: [], categories: [], threshold: 3, windowMinutes: 15 },
+      resolveAfterMinutes: 10,
+    });
+    expect(within(dialog).queryByText(/Enter a name/)).toBeNull();
+    expect(apiMocks.postEndpointAlertRule).not.toHaveBeenCalled();
+  });
+
+  it("doesn't preview a condition that isn't valid", async () => {
+    const user = userEvent.setup();
+    renderSection();
+    const dialog = await openNewRule(user);
+    await user.clear(within(dialog).getByLabelText("Threshold"));
+    await user.type(within(dialog).getByLabelText("Threshold"), "0");
+    await user.click(within(preview(dialog)).getByRole("button", { name: "Preview" }));
+    expect(within(preview(dialog)).getByText("Correct the condition to preview it.")).toBeTruthy();
+    expect(apiMocks.postEndpointAlertRulePreview).not.toHaveBeenCalled();
+  });
+
+  it("says whether the rule would fire now and when it would have fired", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(classified());
+    apiMocks.postEndpointAlertRulePreview.mockResolvedValue(previewJson());
+    renderSection();
+    const dialog = await openNewRule(user);
+    await user.selectOptions(within(dialog).getByLabelText("Condition"), "failure_occurrences");
+    await user.clear(within(dialog).getByLabelText("Threshold"));
+    await user.type(within(dialog).getByLabelText("Threshold"), "3");
+    await user.click(within(preview(dialog)).getByRole("button", { name: "Preview" }));
+
+    const panel = preview(dialog);
+    const now = await within(panel).findByText("Would fire now");
+    expect(now.closest("p")?.textContent).toBe("Would fire nowFailures in the window: ≥ 3");
+    expect(within(panel).getByRole("img", { name: /over the last 24 hours/ })).toBeTruthy();
+    expect(panel.querySelector("[data-reference]")).not.toBeNull();
+    const periods = within(panel).getByRole("list", { name: "Would have fired" });
+    expect(within(periods).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "09:14–09:31",
+      "since 11:02",
+    ]);
+    expect(within(panel).getByRole("button", { name: "Refresh" })).toBeTruthy();
+  });
+
+  it("says when the rule would not have fired", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(classified());
+    apiMocks.postEndpointAlertRulePreview.mockResolvedValue(
+      previewJson({
+        valueNow: 0,
+        holdsNow: false,
+        replay: { fromUtc: at(-12, 0), toUtc: at(12, 0), series: [{ atUtc: at(9, 0), value: 0 }], periods: [] },
+      }),
+    );
+    renderSection();
+    const dialog = await openNewRule(user);
+    await user.selectOptions(within(dialog).getByLabelText("Condition"), "silence");
+    await user.click(within(preview(dialog)).getByRole("button", { name: "Preview" }));
+
+    const panel = preview(dialog);
+    const now = await within(panel).findByText("Would not fire now");
+    expect(now.closest("p")?.textContent).toBe("Would not fire nowSilent for: 0 min");
+    expect(within(panel).getByText("Would not have fired in the last 24 hours.")).toBeTruthy();
+  });
+
+  it("explains why there is no replay or no value now", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(classified());
+    apiMocks.postEndpointAlertRulePreview.mockResolvedValueOnce(
+      previewJson({ replay: undefined, replayUnsupportedReason: "no_history" }),
+    );
+    renderSection();
+    const dialog = await openNewRule(user);
+    await user.click(within(preview(dialog)).getByRole("button", { name: "Preview" }));
+    expect(
+      await within(preview(dialog)).findByText(
+        "Backlog and blocked-session rules can't be replayed: deleted events leave no history.",
+      ),
+    ).toBeTruthy();
+    expect(within(preview(dialog)).queryByRole("img")).toBeNull();
+
+    apiMocks.postEndpointAlertRulePreview.mockResolvedValueOnce(
+      previewJson({
+        valueNow: null,
+        holdsNow: null,
+        nowUnavailableReason: "classification_unavailable",
+        replay: undefined,
+        replayUnsupportedReason: "categories",
+      }),
+    );
+    await user.click(within(dialog).getByLabelText("Business rule"));
+    await user.click(within(preview(dialog)).getByRole("button", { name: "Refresh" }));
+    expect(
+      await within(preview(dialog)).findByText(
+        "Rules with categories can't be replayed: classifications arrive after the failure.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(preview(dialog)).getByText("The failure classifications can't be read, so there is no value now."),
+    ).toBeTruthy();
+    expect(within(preview(dialog)).queryByText(/Would (not )?fire now/)).toBeNull();
+  });
+
+  it("asks to wait when previews are rate limited", async () => {
+    const user = userEvent.setup();
+    apiMocks.postEndpointAlertRulePreview.mockRejectedValue(
+      new api.SwaggerException("An unexpected server error occurred.", 429, "", {}, null),
+    );
+    renderSection();
+    const dialog = await openNewRule(user);
+    await user.click(within(preview(dialog)).getByRole("button", { name: "Preview" }));
+    expect(await within(preview(dialog)).findByText("Too many previews; try again in a minute.")).toBeTruthy();
+  });
+
+  it("shows the server's problem when a preview fails", async () => {
+    const user = userEvent.setup();
+    apiMocks.postEndpointAlertRulePreview.mockRejectedValue(
+      new api.SwaggerException(
+        "Bad Request",
+        400,
+        JSON.stringify({ errors: ["condition.threshold must be 1 to 100."] }),
+        {},
+        null,
+      ),
+    );
+    renderSection();
+    const dialog = await openNewRule(user);
+    await user.click(within(preview(dialog)).getByRole("button", { name: "Preview" }));
+    expect(await within(preview(dialog)).findByText("condition.threshold must be 1 to 100.")).toBeTruthy();
+  });
+
+  it("marks a preview stale once the condition changes, and refreshes it on request", async () => {
+    const user = userEvent.setup();
+    apiMocks.postEndpointAlertRulePreview.mockResolvedValue(
+      previewJson({ replay: undefined, replayUnsupportedReason: "no_history" }),
+    );
+    renderSection();
+    const dialog = await openNewRule(user);
+    await user.click(within(preview(dialog)).getByRole("button", { name: "Preview" }));
+    await within(preview(dialog)).findByText("Would fire now");
+    const stale = "The condition changed since this preview. Refresh to see the new one.";
+    expect(within(preview(dialog)).queryByText(stale)).toBeNull();
+
+    // A name or a target is not part of the preview.
+    await user.type(within(dialog).getByLabelText("Name"), "Renamed");
+    expect(within(preview(dialog)).queryByText(stale)).toBeNull();
+
+    await user.clear(within(dialog).getByLabelText("Threshold"));
+    await user.type(within(dialog).getByLabelText("Threshold"), "8");
+    expect(within(preview(dialog)).getByText(stale)).toBeTruthy();
+    expect(apiMocks.postEndpointAlertRulePreview).toHaveBeenCalledTimes(1);
+
+    await user.click(within(preview(dialog)).getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(apiMocks.postEndpointAlertRulePreview).toHaveBeenCalledTimes(2));
+    expect(
+      JSON.parse(JSON.stringify(apiMocks.postEndpointAlertRulePreview.mock.calls[1][1])).condition.threshold,
+    ).toBe(8);
+    await waitFor(() => expect(within(preview(dialog)).queryByText(stale)).toBeNull());
   });
 });

@@ -29,6 +29,8 @@ interface SeriesChartProps {
   heightEm?: number;
   /** How many x labels to show. */
   xTicks?: number;
+  /** A dashed horizontal line, such as an alert rule's threshold. The axis always reaches it. */
+  reference?: { value: number; stroke: string };
 }
 
 const W = 600;
@@ -48,12 +50,13 @@ export function SeriesChart({
   partialLast = false,
   heightEm = 11,
   xTicks = 6,
+  reference,
 }: SeriesChartProps) {
   const n = buckets.length;
   const all = buckets.flatMap((b) =>
     [...lines, ...(bar ? [bar] : [])].map((s) => b.values[s.key] ?? 0),
   );
-  const max = niceMax(Math.max(0, ...all));
+  const max = niceMax(Math.max(0, ...all, reference?.value ?? 0));
   const x = (i: number) => ((i + 0.5) / Math.max(n, 1)) * W;
   const y = (v: number) => H - (Math.min(v, max) / max) * H;
   const step = W / Math.max(n, 1);
@@ -91,6 +94,19 @@ export function SeriesChart({
               vectorEffect="non-scaling-stroke"
             />
           ))}
+          {reference && (
+            <line
+              data-reference=""
+              x1={0}
+              x2={W}
+              y1={y(reference.value)}
+              y2={y(reference.value)}
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
+              className={reference.stroke}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
           {bar &&
             buckets.map((b, i) => {
               const v = b.values[bar.key] ?? 0;

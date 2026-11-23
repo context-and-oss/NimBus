@@ -29,6 +29,7 @@ export const DEFERRED_MAX = 1000;
 export const SILENCE_MIN = 5;
 export const SILENCE_MAX = 1440;
 export const SILENCE_DEFAULT = 60;
+export const CATEGORIES_MAX = 8;
 
 /** The condition kinds a rule can watch, in the order the form offers them. */
 export const CONDITION_KINDS = ["failure_backlog", "failure_occurrences", "blocked_session", "silence"] as const;
@@ -44,6 +45,16 @@ export const KIND_LABELS: Record<ConditionKind, string> = {
 
 const isKind = (value: string | undefined): value is ConditionKind =>
   (CONDITION_KINDS as readonly string[]).includes(value ?? "");
+
+/** Whether a kind counts failures, so takes a threshold, filters and categories. */
+export const isCountedKind = (kind: ConditionKind): boolean =>
+  kind === "failure_backlog" || kind === "failure_occurrences";
+
+/** A classification category in words: `transient_dependency` reads "Transient dependency". */
+export function categoryLabel(category: string): string {
+  const words = category.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 /** A condition's kind; a missing kind is a failure backlog, as on the server. */
 export function kindOf(condition: api.AlertRuleCondition | undefined): ConditionKind {
@@ -80,6 +91,8 @@ export interface RuleDraft {
   statuses: string[];
   eventTypes: string[];
   errorTextContains: string;
+  /** Backlog and occurrences: the classification categories counted. None counts every failure. */
+  categories: string[];
   /** Occurrences: the window failed attempts are counted in. */
   windowMinutes: string;
   /** Blocked session: how long the oldest blocking event has not changed. Blank means not checked. */
@@ -125,6 +138,8 @@ const filtersText = (condition: api.AlertRuleCondition, statuses: boolean) => {
   const eventTypes = condition.eventTypes ?? [];
   if (eventTypes.length > 0) text += ` of type ${eventTypes.join(" or ")}`;
   if (condition.errorTextContains?.trim()) text += ` with an error containing "${condition.errorTextContains}"`;
+  const categories = condition.categories ?? [];
+  if (categories.length > 0) text += ` classified as ${categories.map((c) => c.replace(/_/g, " ")).join(" or ")}`;
   return text;
 };
 
@@ -183,9 +198,15 @@ export function resolveText(rule: api.AlertRuleModel): string {
  * the oldest blocking event has waited, which a rule that watches only deferred events doesn't read.
  */
 export function lastValueText(rule: api.AlertRuleModel): string {
-  const value = rule.state?.lastValue;
+  return conditionValueText(rule.condition, rule.state?.lastValue);
+}
+
+/** A value of the condition, read as the evaluator reads it; see {@link lastValueText}. */
+export function conditionValueText(
+  condition: api.AlertRuleCondition | undefined,
+  value: number | undefined | null,
+): string {
   if (value === undefined || value === null) return "–";
-  const condition = rule.condition;
   switch (kindOf(condition)) {
     case "blocked_session":
       return isSet(condition?.minutes) ? duration(value) : "–";
@@ -279,6 +300,7 @@ export function emptyDraft(): RuleDraft {
     statuses: [],
     eventTypes: [],
     errorTextContains: "",
+    categories: [],
     windowMinutes: String(WINDOW_DEFAULT),
     blockedMinutes: String(BLOCKED_DEFAULT),
     deferredThreshold: "",
@@ -297,7 +319,7 @@ export function draftFromRule(rule: api.AlertRuleModel): RuleDraft {
   const kind = kindOf(condition);
   const text = (n: number | undefined | null) => (isSet(n) ? String(n) : "");
   const defaults = emptyDraft();
-  const counted = kind === "failure_backlog" || kind === "failure_occurrences";
+  const counted = isCountedKind(kind);
   return {
     name: rule.name ?? "",
     enabled: rule.enabled ?? true,
@@ -306,6 +328,7 @@ export function draftFromRule(rule: api.AlertRuleModel): RuleDraft {
     statuses: [...(condition?.statuses ?? [])],
     eventTypes: [...(condition?.eventTypes ?? [])],
     errorTextContains: condition?.errorTextContains ?? "",
+    categories: counted ? [...(condition?.categories ?? [])] : [],
     windowMinutes: kind === "failure_occurrences" ? text(condition?.windowMinutes) : defaults.windowMinutes,
     // A blocked-session rule may watch only deferred events; its minutes then stay blank.
     blockedMinutes: kind === "blocked_session" ? text(condition?.minutes) : defaults.blockedMinutes,
@@ -336,8 +359,28 @@ export function validateDraft(
   const errors: DraftErrors = {};
   const name = draft.name.trim();
   if (name.length < 1 || name.length > NAME_MAX) errors.name = `Enter a name of 1 to ${NAME_MAX} characters.`;
+  Object.assign(errors, validateCondition(draft));
+  if (draft.targets.length < 1) errors.targets = "Add at least one target.";
+  else if (draft.targets.length > TARGETS_MAX) errors.targets = `A rule has at most ${TARGETS_MAX} targets.`;
+  for (const target of draft.targets) {
+    const value = target.value.trim();
+    const key = `target:${target.key}`;
+    if (target.type === "mail") {
+      if (!delivery.mailEnabled) errors[key] = "Alert mail is not configured on this WebApp. Remove this target.";
+      else if (!EMAIL_PATTERN.test(value)) errors[key] = "Enter a mail address.";
+    } else {
+      if (!delivery.webhookEnabled) errors[key] = "Alert webhooks are not configured on this WebApp. Remove this target.";
+      else if (!isHttpsUrl(value)) errors[key] = "Enter an https URL.";
+    }
+  }
+  return errors;
+}
+
+/** The checks of the condition and its resolve time alone: what a preview needs. */
+export function validateCondition(draft: RuleDraft): DraftErrors {
+  const errors: DraftErrors = {};
   const minutesIn = (min: number, max: number) => `Enter a whole number of minutes from ${min} to ${max}.`;
-  const counted = draft.kind === "failure_backlog" || draft.kind === "failure_occurrences";
+  const counted = isCountedKind(draft.kind);
   if (counted && !wholeNumberIn(draft.threshold, THRESHOLD_MIN, THRESHOLD_MAX))
     errors.threshold = `Enter a whole number from ${THRESHOLD_MIN} to ${THRESHOLD_MAX}.`;
   if (draft.kind === "failure_occurrences" && !wholeNumberIn(draft.windowMinutes, WINDOW_MIN, WINDOW_MAX))
@@ -359,25 +402,14 @@ export function validateDraft(
     errors.errorTextContains = `At most ${ERROR_TEXT_MAX} characters.`;
   if (counted && draft.eventTypes.length > EVENT_TYPES_MAX)
     errors.eventTypes = `Pick at most ${EVENT_TYPES_MAX} event types.`;
-  if (draft.targets.length < 1) errors.targets = "Add at least one target.";
-  else if (draft.targets.length > TARGETS_MAX) errors.targets = `A rule has at most ${TARGETS_MAX} targets.`;
-  for (const target of draft.targets) {
-    const value = target.value.trim();
-    const key = `target:${target.key}`;
-    if (target.type === "mail") {
-      if (!delivery.mailEnabled) errors[key] = "Alert mail is not configured on this WebApp. Remove this target.";
-      else if (!EMAIL_PATTERN.test(value)) errors[key] = "Enter a mail address.";
-    } else {
-      if (!delivery.webhookEnabled) errors[key] = "Alert webhooks are not configured on this WebApp. Remove this target.";
-      else if (!isHttpsUrl(value)) errors[key] = "Enter an https URL.";
-    }
-  }
+  if (counted && draft.categories.length > CATEGORIES_MAX)
+    errors.categories = `Pick at most ${CATEGORIES_MAX} categories.`;
   return errors;
 }
 
 const optionalNumber = (text: string) => (text.trim() === "" ? undefined : Number(text.trim()));
 
-/** The condition of a valid draft, with only the fields its kind uses. */
+/** The condition of a valid draft, with only the fields its kind uses. Other kinds send no categories. */
 function conditionFromDraft(draft: RuleDraft): api.AlertRuleCondition {
   switch (draft.kind) {
     case "blocked_session":
@@ -385,9 +417,14 @@ function conditionFromDraft(draft: RuleDraft): api.AlertRuleCondition {
         kind: draft.kind,
         minutes: optionalNumber(draft.blockedMinutes),
         deferredThreshold: optionalNumber(draft.deferredThreshold),
+        categories: [],
       });
     case "silence":
-      return new api.AlertRuleCondition({ kind: draft.kind, minutes: Number(draft.silenceMinutes.trim()) });
+      return new api.AlertRuleCondition({
+        kind: draft.kind,
+        minutes: Number(draft.silenceMinutes.trim()),
+        categories: [],
+      });
     default: {
       // Not trimmed: spaces may be part of the text to match. Blank means no filter.
       const errorText = draft.errorTextContains;
@@ -397,6 +434,7 @@ function conditionFromDraft(draft: RuleDraft): api.AlertRuleCondition {
         eventTypes: [...draft.eventTypes],
         statuses: occurrences ? undefined : [...draft.statuses],
         errorTextContains: errorText.trim() === "" ? undefined : errorText,
+        categories: [...draft.categories],
         threshold: Number(draft.threshold.trim()),
         windowMinutes: occurrences ? Number(draft.windowMinutes.trim()) : undefined,
       });
@@ -426,4 +464,49 @@ export function requestFromDraft(draft: RuleDraft): api.AlertRuleRequest {
 /** The request that saves a rule unchanged except for the given fields (Disable/Enable). */
 export function requestFromRule(rule: api.AlertRuleModel, changes: { enabled: boolean }): api.AlertRuleRequest {
   return requestFromDraft({ ...draftFromRule(rule), enabled: changes.enabled });
+}
+
+/** The preview request for a draft whose condition is valid: its condition and resolve time, nothing else. */
+export function previewRequestFromDraft(draft: RuleDraft): api.AlertRulePreviewRequest {
+  return new api.AlertRulePreviewRequest({
+    condition: conditionFromDraft(draft),
+    resolveAfterMinutes: Number(draft.resolveAfterMinutes.trim()),
+  });
+}
+
+/** Why a preview has no value now, in a sentence. */
+export function nowUnavailableText(reason: string): string {
+  switch (reason) {
+    case "kind_unavailable":
+      return "This WebApp's storage can't read this condition, so there is no value now.";
+    case "classification_unavailable":
+      return "The failure classifications can't be read, so there is no value now.";
+    case "classification_scan_limit":
+      return "There are too many failures to check their classifications, so there is no value now.";
+    default:
+      return "The value now can't be read.";
+  }
+}
+
+/** Why a preview has no replay of the last 24 hours, in a sentence. */
+export function replayUnsupportedText(reason: string): string {
+  switch (reason) {
+    case "no_history":
+      return "Backlog and blocked-session rules can't be replayed: deleted events leave no history.";
+    case "categories":
+      return "Rules with categories can't be replayed: classifications arrive after the failure.";
+    case "kind_unavailable":
+      return "This WebApp's storage can't replay this condition.";
+    default:
+      return "This rule can't be replayed.";
+  }
+}
+
+/** A would-have-fired period in local time: "09:14–09:31", or "since 09:14" while still open. */
+export function periodText(period: api.AlertRulePreviewPeriod, now: moment.Moment = moment()): string {
+  if (!period.fromUtc) return "";
+  const from = formatSince(period.fromUtc, now);
+  if (!period.toUtc) return `since ${from}`;
+  const sameDay = period.toUtc.clone().local().isSame(period.fromUtc.clone().local(), "day");
+  return `${from}–${sameDay ? period.toUtc.clone().local().format("HH:mm") : formatSince(period.toUtc, now)}`;
 }
