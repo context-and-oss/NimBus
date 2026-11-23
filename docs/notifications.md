@@ -482,17 +482,25 @@ endpoint list marks an endpoint with a firing rule.
 
 | | Subscription | Alert rule |
 |---|---|---|
-| Fires on | every recorded Failed or DeadLettered outcome | the failure backlog reaching a threshold |
+| Fires on | every recorded Failed or DeadLettered outcome | its condition: a failure backlog, a burst of failures, a blocked session or silence |
 | Tells its targets | at most once per frequency window, for as long as failures arrive | once when it starts firing, once when it resolves |
 | Runs in | the Resolver | the WebApp |
 
-### What a rule counts
+### What a rule watches
 
-A rule counts the **failure backlog**: the events on the endpoint that are failed now (status
-Failed, DeadLettered or Unsupported), optionally only some statuses, some event types, or those
-whose error text contains a phrase (case-insensitive). There is no time window. The rule fires when
-the backlog reaches its threshold (1–100) and resolves when the backlog has stayed below it for
-the rule's resolve time (1–60 minutes, default 5).
+Each rule has one condition. Every condition resolves when it has stayed false for the rule's
+resolve time (1–60 minutes, default 5).
+
+| Condition | Fires when | Fields |
+|---|---|---|
+| Failure backlog | N or more events on the endpoint are failed **now** | threshold 1–100; statuses, event types, error text |
+| Failure occurrences | N or more attempts failed in the **last W minutes**, even if resolved since | threshold 1–100, window 5–1440 min; event types, error text |
+| Blocked session | the oldest event holding a session has not changed for T minutes, **or** N or more events are deferred | minutes 1–1440, deferred events 1–1000 (either or both) |
+| Silence | no message on the endpoint **completed** for T minutes | minutes 5–1440 |
+
+**Failure backlog** counts the events that are failed now (status Failed, DeadLettered or
+Unsupported), optionally only some statuses, some event types, or those whose error text contains
+a phrase (case-insensitive). There is no time window.
 
 - **Resolved means cleared.** The backlog goes down only when failed events are resubmitted and
   complete, skipped, or deleted. Five failures that stay failed keep the rule firing, however old
@@ -501,10 +509,27 @@ the rule's resolve time (1–60 minutes, default 5).
 - A resubmit turns the event Pending until it is processed. A retry that fails again within the
   resolve time keeps the rule firing; a slower one can send a *resolved* and then a new *opened*
   notice. Raise the resolve time if that happens.
-- "20 failures in 10 minutes", counted even if they are resolved later, is a different question;
-  it is planned as a separate condition.
 
-The rule's last value is capped at its threshold: "≥ 5" means at least five.
+**Failure occurrences** counts failed attempts in message history: every failed or dead-lettered
+attempt in the window counts, so an event that fails three times counts three times, and a
+resubmit that succeeds doesn't take the failures back. The rule resolves once the failures have
+aged out of the window. Use it for spikes ("20 failures in 10 minutes"); use the backlog for "work
+is stuck". An error-text filter on a long window is the costly case on Cosmos DB: when
+nothing matches, every failed attempt in the window is read (about 0.03 RU each), so prefer a
+short window or no error text on a busy endpoint.
+
+**Blocked session** watches ordered processing. A Failed event, or a Pending event waiting on an
+external system (a handoff), holds its session: the events behind it wait as Deferred. The rule
+fires when the oldest such event has not changed for the minutes you set, or when the endpoint has
+at least the number of deferred events you set. Dead-lettered events don't block their session and
+don't count.
+
+**Silence** fires when nothing on the endpoint completed successfully for the minutes you set.
+Failures are not activity: an endpoint whose every message fails is silent. Silence also fires on
+an endpoint that receives no messages, so set it on endpoints that are expected to be busy.
+
+A count (backlog, occurrences) is capped at the threshold: "≥ 5" means at least five. A blocked or
+silent rule reports minutes.
 
 ### When rules are evaluated
 
@@ -523,9 +548,10 @@ rule's condition, disabling it or deleting it sends a *resolved* notice with the
 `rule_changed`, `rule_disabled` or `rule_deleted` (best-effort for a deleted rule).
 
 **Mail:** the subject is `[NimBus] Firing: {Rule} on {Endpoint}` or `[NimBus] Resolved: …`. The
-mail names the rule, the endpoint, the condition in words, the backlog, since when, and for a
-resolved notice why, with a link to the endpoint's failed events. It never carries error text or a
-payload.
+mail names the rule, the endpoint, the condition in words, the value (the count, or the minutes
+blocked or silent), since when, and for a resolved notice why, with a link to the endpoint's failed
+events (failure conditions) or the endpoint itself (blocked session, silence). It never carries
+error text or a payload.
 
 **Webhook:** a signed `POST` like a subscription's (see [Webhook alerts](#webhook-alerts)), with
 these differences:
@@ -546,6 +572,7 @@ these differences:
   "ruleId": "c1f0…",
   "ruleName": "ERP timeouts",
   "endpointId": "ErpEndpoint",
+  "conditionKind": "failure_backlog",
   "status": "Firing",
   "reason": null,
   "value": 5,
@@ -555,7 +582,10 @@ these differences:
 }
 ```
 
-`status` is `Firing` or `Resolved`; `reason` is set on a resolved notice. A bearer token is added
+`conditionKind` is `failure_backlog`, `failure_occurrences`, `blocked_session` or `silence`.
+`value` is a count capped at `threshold` for the failure conditions and minutes for the others
+(`threshold` is then 1 and has no meaning). `status` is `Firing` or `Resolved`; `reason` is set on
+a resolved notice. A bearer token is added
 under the same [token prefixes](#webhook-configuration) as subscriptions, for the WebApp's identity.
 
 ### Settings
@@ -565,5 +595,7 @@ Rules use the same settings as subscriptions, **on the WebApp**: [mail](#mail-co
 (`NimBus:Alerts:Webhook`, including `BearerTokens` and `AllowPrivateNetworks`). `nb setup` and
 `nb infra apply` pass the alert mail options and token prefixes to both the Resolver and the
 WebApp. A rule with a mail target is refused while alert mail is off on the WebApp, and a webhook
-target while alert webhooks are off. Rules need a storage provider with the alert rule store
-(Cosmos DB, SQL Server and the in-memory store all have it).
+target while alert webhooks are off. Rules need a storage provider with the alert rule store, and
+the occurrence, blocked-session and silence conditions also need its alert signal reads; Cosmos DB,
+SQL Server and the in-memory store have both. On a provider without the signal reads the form
+offers only the failure backlog.
