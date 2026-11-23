@@ -238,6 +238,12 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<BlockingEvent?> GetOldestBlockingEvent(string endpointId) => _alertSignals.GetOldestBlockingEvent(endpointId);
     /// <inheritdoc />
     public Task<bool> HasCompletedMessageSince(string endpointId, DateTime sinceUtc) => _alertSignals.HasCompletedMessageSince(endpointId, sinceUtc);
+    /// <inheritdoc />
+    public Task<IReadOnlyList<MinuteCount>> CountMessagesPerMinute(string endpointId, MessageType type, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains)
+        => _alertSignals.CountMessagesPerMinute(endpointId, type, fromUtc, toUtc, eventTypes, errorTextContains);
+    /// <inheritdoc />
+    public Task<FailedAttemptPage> ListFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int limit)
+        => _alertSignals.ListFailedAttempts(endpointId, fromUtc, toUtc, eventTypes, errorTextContains, limit);
 
     // ───────── Dashboard tokens (IDashboardTokenStore) — implementation in SqlServerEndpointMetadataStore ─────────
     public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();

@@ -1,5 +1,6 @@
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
+using NimBus.Core.Messages;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using System;
@@ -12,7 +13,7 @@ using System.Threading.Tasks;
 namespace NimBus.MessageStore;
 
 /// <summary>
-/// Cosmos DB implementation of <see cref="IAlertSignalStore"/> (Spec 053 Phase 2). Failed attempts
+/// Cosmos DB implementation of <see cref="IAlertSignalStore"/> (Spec 053 Phases 2 and 3). Failed attempts
 /// and completions are read from the shared <c>messages</c> container, blocking events from the
 /// endpoint's own container.
 /// </summary>
@@ -32,6 +33,9 @@ internal sealed class CosmosDbAlertSignalStore : IAlertSignalStore
 
     private const string EnqueuedTime = "c.message.EnqueuedTimeUtc";
     private const string ErrorText = "c.message.MessageContent.ErrorContent.ErrorText";
+
+    // The minute prefix of a stored value, as SUBSTRING(…, 0, 16) returns it.
+    private const string MinuteFormat = "yyyy-MM-dd'T'HH:mm";
 
     // ErrorContent.ErrorText when it is a non-empty string, else the dead-letter description.
     private const string ErrorTextCondition =
@@ -60,20 +64,7 @@ internal sealed class CosmosDbAlertSignalStore : IAlertSignalStore
         if (toUtc <= fromUtc)
             return 0;
 
-        var filter = "c.endpointId = @endpointId AND c.message.MessageType = 'ErrorResponse'";
-        var parameters = new List<(string Name, object Value)> { ("@endpointId", endpointId) };
-        if (eventTypes is { Count: > 0 })
-        {
-            filter += " AND ARRAY_CONTAINS(@eventTypes, c.message.EventTypeId)";
-            parameters.Add(("@eventTypes", eventTypes.Distinct(StringComparer.Ordinal).ToList()));
-        }
-
-        if (!string.IsNullOrEmpty(errorTextContains))
-        {
-            filter += ErrorTextCondition;
-            parameters.Add(("@errorText", errorTextContains));
-        }
-
+        var (filter, parameters) = MessageFilter(endpointId, MessageType.ErrorResponse, eventTypes, errorTextContains);
         var container = await _getMessagesContainer();
         var firstSecond = WholeSecond(fromUtc);
         // The second holding the last instant in the window; toUtc itself is excluded.
@@ -231,6 +222,163 @@ internal sealed class CosmosDbAlertSignalStore : IAlertSignalStore
         return false;
     }
 
+    public async Task<IReadOnlyList<MinuteCount>> CountMessagesPerMinute(string endpointId, MessageType type, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(endpointId);
+        ValidateMinuteBounds(fromUtc, toUtc);
+
+        // Whole-minute bounds are whole seconds, which select exactly (see the remarks above), and the
+        // first 16 characters of every stored value ("yyyy-MM-ddTHH:mm") name its minute.
+        var (filter, parameters) = MessageFilter(endpointId, type, eventTypes, errorTextContains);
+        var query = WithParameters(
+                new QueryDefinition(
+                    $"SELECT SUBSTRING({EnqueuedTime}, 0, 16) AS bucket, COUNT(1) AS count FROM c " +
+                    $"WHERE {filter} AND {EnqueuedTime} >= @from AND {EnqueuedTime} < @to " +
+                    $"GROUP BY SUBSTRING({EnqueuedTime}, 0, 16)"),
+                parameters)
+            .WithParameter("@from", SecondBound(fromUtc))
+            .WithParameter("@to", SecondBound(toUtc));
+
+        var container = await _getMessagesContainer();
+        // A cross-partition GROUP BY can return a minute more than once, with partial counts.
+        var counts = new SortedDictionary<DateTime, int>();
+        using var iterator = container.GetItemQueryIterator<MinuteRow>(query);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var row in await iterator.ReadNextAsync())
+            {
+                if (row.Bucket is null)
+                    continue;
+                var minute = DateTime.ParseExact(row.Bucket, MinuteFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+                counts[minute] = (counts.TryGetValue(minute, out var partial) ? partial : 0) + row.Count;
+            }
+        }
+
+        return counts.Select(kv => new MinuteCount(kv.Key, kv.Value)).ToList();
+    }
+
+    public async Task<FailedAttemptPage> ListFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int limit)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(endpointId);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        if (toUtc <= fromUtc)
+            return new FailedAttemptPage([], false);
+
+        var (filter, parameters) = MessageFilter(endpointId, MessageType.ErrorResponse, eventTypes, errorTextContains);
+        var container = await _getMessagesContainer();
+        var firstSecond = WholeSecond(fromUtc);
+        // The second holding the last instant in the window; toUtc itself is excluded.
+        var lastSecond = WholeSecond(toUtc.AddTicks(-1));
+        // One more than the limit tells whether more matched.
+        var take = limit == int.MaxValue ? limit : limit + 1;
+        const string Projection = $"SELECT c.id, c.eventId, {EnqueuedTime} AS enqueuedTimeUtc FROM c";
+
+        // The seconds that hold a bound: every row is read and compared as an instant.
+        var borderSql = lastSecond == firstSecond
+            ? $"{Projection} WHERE {filter} AND {EnqueuedTime} >= @firstFrom AND {EnqueuedTime} < @firstTo"
+            : $"{Projection} WHERE {filter} AND (({EnqueuedTime} >= @firstFrom AND {EnqueuedTime} < @firstTo) " +
+              $"OR ({EnqueuedTime} >= @lastFrom AND {EnqueuedTime} < @lastTo))";
+        var border = WithParameters(new QueryDefinition(borderSql), parameters)
+            .WithParameter("@firstFrom", SecondBound(firstSecond))
+            .WithParameter("@firstTo", SecondBound(firstSecond.AddSeconds(1)));
+        if (lastSecond != firstSecond)
+        {
+            border = border
+                .WithParameter("@lastFrom", SecondBound(lastSecond))
+                .WithParameter("@lastTo", SecondBound(lastSecond.AddSeconds(1)));
+        }
+
+        var rows = (await ReadAttempts(container, border)).Where(r => r.EnqueuedTimeUtc >= fromUtc && r.EnqueuedTimeUtc < toUtc).ToList();
+
+        // The whole seconds strictly between the two bound seconds are inside the window. Their
+        // newest rows by the stored string: that order is chronological between seconds but not
+        // within one, so the oldest second reached may be cut short, or be missing its newest rows.
+        var innerFrom = firstSecond.AddSeconds(1);
+        if (innerFrom < lastSecond)
+        {
+            var newest = WithParameters(
+                    new QueryDefinition($"SELECT TOP @take c.id, c.eventId, {EnqueuedTime} AS enqueuedTimeUtc FROM c " +
+                        $"WHERE {filter} AND {EnqueuedTime} >= @innerFrom AND {EnqueuedTime} < @innerTo ORDER BY {EnqueuedTime} DESC"),
+                    parameters)
+                .WithParameter("@take", take)
+                .WithParameter("@innerFrom", SecondBound(innerFrom))
+                .WithParameter("@innerTo", SecondBound(lastSecond));
+            var inner = await ReadAttempts(container, newest, take);
+            if (inner.Count >= take)
+            {
+                // Every second after the oldest one reached is complete; read that one whole.
+                var cut = WholeSecond(inner.Min(r => r.EnqueuedTimeUtc));
+                inner.RemoveAll(r => WholeSecond(r.EnqueuedTimeUtc) == cut);
+                var cutSecond = WithParameters(
+                        new QueryDefinition($"{Projection} WHERE {filter} AND {EnqueuedTime} >= @cutFrom AND {EnqueuedTime} < @cutTo"),
+                        parameters)
+                    .WithParameter("@cutFrom", SecondBound(cut))
+                    .WithParameter("@cutTo", SecondBound(cut.AddSeconds(1)));
+                inner.AddRange(await ReadAttempts(container, cutSecond));
+            }
+
+            rows.AddRange(inner);
+        }
+
+        var ordered = rows
+            .OrderByDescending(r => r.EnqueuedTimeUtc)
+            .ThenBy(r => r.Id, StringComparer.Ordinal)
+            .ThenBy(r => r.EventId, StringComparer.Ordinal)
+            .ToList();
+        var items = ordered
+            .Take(limit)
+            .Select(r => new FailedAttempt(r.Id, r.EventId ?? string.Empty, r.EnqueuedTimeUtc))
+            .ToList();
+        return new FailedAttemptPage(items, ordered.Count > limit);
+    }
+
+    // The endpoint's messages of one type that pass the event-type and error-text filters.
+    private static (string Filter, List<(string Name, object Value)> Parameters) MessageFilter(
+        string endpointId, MessageType type, IReadOnlyCollection<string>? eventTypes, string? errorTextContains)
+    {
+        var filter = "c.endpointId = @endpointId AND c.message.MessageType = @messageType";
+        var parameters = new List<(string Name, object Value)> { ("@endpointId", endpointId), ("@messageType", type.ToString()) };
+        if (eventTypes is { Count: > 0 })
+        {
+            filter += " AND ARRAY_CONTAINS(@eventTypes, c.message.EventTypeId)";
+            parameters.Add(("@eventTypes", eventTypes.Distinct(StringComparer.Ordinal).ToList()));
+        }
+
+        if (!string.IsNullOrEmpty(errorTextContains))
+        {
+            filter += ErrorTextCondition;
+            parameters.Add(("@errorText", errorTextContains));
+        }
+
+        return (filter, parameters);
+    }
+
+    private static void ValidateMinuteBounds(DateTime fromUtc, DateTime toUtc)
+    {
+        if (fromUtc.Ticks % TimeSpan.TicksPerMinute != 0)
+            throw new ArgumentException("The start must be a whole minute.", nameof(fromUtc));
+        if (toUtc.Ticks % TimeSpan.TicksPerMinute != 0)
+            throw new ArgumentException("The end must be a whole minute.", nameof(toUtc));
+        if (toUtc <= fromUtc)
+            throw new ArgumentException("The end must be after the start.", nameof(toUtc));
+    }
+
+    private static async Task<List<AttemptRow>> ReadAttempts(ICosmosContainerAdapter container, QueryDefinition query, int max = int.MaxValue)
+    {
+        var rows = new List<AttemptRow>();
+        using var iterator = container.GetItemQueryIterator<AttemptRow>(query);
+        while (iterator.HasMoreResults && rows.Count < max)
+        {
+            foreach (var row in await iterator.ReadNextAsync())
+            {
+                row.EnqueuedTimeUtc = AsUtc(row.EnqueuedTimeUtc);
+                rows.Add(row);
+            }
+        }
+
+        return rows;
+    }
+
     private static QueryDefinition WithParameters(QueryDefinition query, IEnumerable<(string Name, object Value)> parameters)
     {
         foreach (var (name, value) in parameters)
@@ -270,5 +418,18 @@ internal sealed class CosmosDbAlertSignalStore : IAlertSignalStore
         [JsonProperty("status")] public string Status { get; set; } = null!;
         [JsonProperty("eventId")] public string? EventId { get; set; }
         [JsonProperty("updatedAt")] public DateTime UpdatedAt { get; set; }
+    }
+
+    private sealed class MinuteRow
+    {
+        [JsonProperty("bucket")] public string? Bucket { get; set; }
+        [JsonProperty("count")] public int Count { get; set; }
+    }
+
+    private sealed class AttemptRow
+    {
+        [JsonProperty("id")] public string Id { get; set; } = null!;
+        [JsonProperty("eventId")] public string? EventId { get; set; }
+        [JsonProperty("enqueuedTimeUtc")] public DateTime EnqueuedTimeUtc { get; set; }
     }
 }

@@ -1628,4 +1628,10 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
     public virtual Task<BlockingEvent?> GetOldestBlockingEvent(string endpointId) => _alertSignals.GetOldestBlockingEvent(endpointId);
     /// <inheritdoc />
     public virtual Task<bool> HasCompletedMessageSince(string endpointId, DateTime sinceUtc) => _alertSignals.HasCompletedMessageSince(endpointId, sinceUtc);
+    /// <inheritdoc />
+    public virtual Task<IReadOnlyList<MinuteCount>> CountMessagesPerMinute(string endpointId, MessageType type, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains)
+        => _alertSignals.CountMessagesPerMinute(endpointId, type, fromUtc, toUtc, eventTypes, errorTextContains);
+    /// <inheritdoc />
+    public virtual Task<FailedAttemptPage> ListFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int limit)
+        => _alertSignals.ListFailedAttempts(endpointId, fromUtc, toUtc, eventTypes, errorTextContains, limit);
 }
