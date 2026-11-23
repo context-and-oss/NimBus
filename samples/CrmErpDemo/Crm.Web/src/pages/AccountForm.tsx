@@ -4,12 +4,13 @@ import { Account, Contact, CreditCheckResult, api } from '../api';
 import { randomCompany } from '../fakeData';
 import AuditLog from '../components/AuditLog';
 import RegionalHubHint from '../components/RegionalHubHint';
-import { BackIcon, PlusIcon, SaveIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
+import { BackIcon, PlusIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
 import {
   Chip, CommandBar, CommandButton, CommandLink, CommandSeparator, ErrorBar, FieldRow, OriginChip, Panel,
   Pager, RecordHeader, RecordTabs, formatDate, grid, inputClass,
 } from '../components/shell/ui';
 import { PAGE_SIZE, usePagedList } from '../usePagedList';
+import { SaveCommands, SavedBar, useSavedNotice, wantsClose } from '../components/shell/save';
 
 type Tab = 'summary' | 'contacts';
 
@@ -18,6 +19,7 @@ export default function AccountForm() {
   const nav = useNavigate();
   const [form, setForm] = useState<Partial<Account>>({ legalName: '', countryCode: 'DE' });
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useSavedNotice();
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('summary');
   const [checking, setChecking] = useState(false);
@@ -56,14 +58,17 @@ export default function AccountForm() {
     if (id) api.getAccount(id).then(setForm);
   }, [id]);
 
-  async function submit(e: FormEvent) {
+  async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const close = wantsClose(e);
     setSaving(true);
     setError(null);
+    setSaved(false);
     try {
-      if (id) await api.updateAccount(id, form);
-      else await api.createAccount(form);
-      nav('/accounts');
+      const result = id ? await api.updateAccount(id, form) : await api.createAccount(form);
+      if (close) nav('/accounts');
+      else if (id) { setForm(result); setSaved(true); }
+      else { setSaved(true); nav(`/accounts/${result.id}`, { replace: true }); }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally { setSaving(false); }
@@ -88,9 +93,7 @@ export default function AccountForm() {
     <>
       <CommandBar>
         <CommandButton icon={<BackIcon />} onClick={() => nav('/accounts')} aria-label="Back to accounts" />
-        <CommandButton type="submit" form="account-form" icon={<SaveIcon />} primary disabled={saving || deleted}>
-          {saving ? 'Saving…' : 'Save'}
-        </CommandButton>
+        <SaveCommands formId="account-form" saving={saving} disabled={deleted} />
         {id && <CommandLink to="/accounts/new" icon={<PlusIcon />}>New</CommandLink>}
         {id && !deleted && <CommandButton icon={<TrashIcon />} danger onClick={() => void remove()} disabled={saving}>Delete</CommandButton>}
         {!id && (
@@ -103,6 +106,7 @@ export default function AccountForm() {
         )}
       </CommandBar>
       {error && <ErrorBar>Save failed: {error}</ErrorBar>}
+      {saved && <SavedBar />}
       <RecordHeader
         title={form.legalName || (id ? '…' : 'New account')}
         entity="Account"

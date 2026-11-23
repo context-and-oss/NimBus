@@ -101,7 +101,7 @@ test("Act 3 — an in-flight external job holds the session without failing it",
   void startNarration(page, "3.2");
   await typeInto(page.locator('label:has-text("Legal name") input'), BASE_NAME);
   await typeInto(page.locator('label:has-text("Country code") input'), "NO");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save & Close" }).click();
   await expect(page.locator("tr").filter({ hasText: BASE_NAME })).toBeVisible();
 
   const account = await waitFor(
@@ -120,7 +120,7 @@ test("Act 3 — an in-flight external job holds the session without failing it",
   for (const name of [`${BASE_NAME} rev1`, finalName]) {
     await visit(page, `${webs.crmWeb}/accounts/${account.id}`, CHIP);
     await typeInto(page.locator('label:has-text("Legal name") input'), name);
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save & Close" }).click();
   }
 
   // ── Pending, not failed, not complete ──────────────────────────

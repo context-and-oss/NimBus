@@ -4,9 +4,10 @@ import { Contact, Customer, api } from '../api';
 import { randomCompany } from '../fakeData';
 import AuditLog from '../components/AuditLog';
 import { FastTab } from '../components/shell/fasttab';
-import { BackIcon, PlusIcon, SaveIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
+import { BackIcon, PlusIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
 import { CommandBar, CommandButton, CommandLink, CommandSeparator, ErrorBar, FieldRow, OriginChip, formatDate, inputClass } from '../components/shell/ui';
 import { CustomerStatus } from './CustomersList';
+import { SaveCommands, SavedBar, useSavedNotice, wantsClose } from '../components/shell/save';
 
 // Customer card: General, CRM link, Credit, Contacts and Audit FastTabs.
 
@@ -17,6 +18,7 @@ export default function CustomerForm() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactTotal, setContactTotal] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useSavedNotice();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,14 +30,17 @@ export default function CustomerForm() {
       .catch(() => { /* tab shows none */ });
   }, [id]);
 
-  async function submit(e: FormEvent) {
+  async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const close = wantsClose(e);
     setSaving(true);
     setError(null);
+    setSaved(false);
     try {
-      if (id) await api.updateCustomer(id, form);
-      else await api.createCustomer(form);
-      nav('/customers');
+      const result = id ? await api.updateCustomer(id, form) : await api.createCustomer(form);
+      if (close) nav('/customers');
+      else if (id) { setForm(result); setSaved(true); }
+      else { setSaved(true); nav(`/customers/${result.id}`, { replace: true }); }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally { setSaving(false); }
@@ -60,9 +65,7 @@ export default function CustomerForm() {
     <>
       <CommandBar>
         <CommandButton icon={<BackIcon />} onClick={() => nav('/customers')} aria-label="Back to customers" />
-        <CommandButton type="submit" form="customer-form" icon={<SaveIcon />} primary disabled={saving || deleted}>
-          {saving ? 'Saving…' : 'Save'}
-        </CommandButton>
+        <SaveCommands formId="customer-form" saving={saving} disabled={deleted} />
         {id && <CommandLink to="/customers/new" icon={<PlusIcon />}>New</CommandLink>}
         {id && !deleted && <CommandButton icon={<TrashIcon />} danger onClick={() => void remove()} disabled={saving}>Delete</CommandButton>}
         {!id && (
@@ -73,6 +76,7 @@ export default function CustomerForm() {
         )}
       </CommandBar>
       {error && <ErrorBar>Save failed: {error}</ErrorBar>}
+      {saved && <SavedBar />}
       <div className="border-b border-line bg-white px-5 pb-3 pt-4">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Customer card</div>
         <h1 className="text-xl font-semibold">

@@ -4,8 +4,9 @@ import { Contact, Customer, api } from '../api';
 import { randomPerson, randomPick } from '../fakeData';
 import AuditLog from '../components/AuditLog';
 import { FastTab } from '../components/shell/fasttab';
-import { BackIcon, PlusIcon, SaveIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
+import { BackIcon, PlusIcon, SparkleIcon, TrashIcon } from '../components/shell/icons';
 import { CommandBar, CommandButton, CommandLink, CommandSeparator, ErrorBar, FieldRow, inputClass } from '../components/shell/ui';
+import { SaveCommands, SavedBar, useSavedNotice, wantsClose } from '../components/shell/save';
 
 export default function ContactForm() {
   const { id } = useParams();
@@ -13,6 +14,7 @@ export default function ContactForm() {
   const [form, setForm] = useState<Partial<Contact>>({ firstName: '', lastName: '' });
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useSavedNotice();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -42,14 +44,17 @@ export default function ContactForm() {
     };
   }, [id]);
 
-  async function submit(e: FormEvent) {
+  async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const close = wantsClose(e);
     setSaving(true);
     setError(null);
+    setSaved(false);
     try {
-      if (id) await api.updateContact(id, form);
-      else await api.createContact(form);
-      nav('/contacts');
+      const result = id ? await api.updateContact(id, form) : await api.createContact(form);
+      if (close) nav('/contacts');
+      else if (id) { setForm(result); setSaved(true); }
+      else { setSaved(true); nav(`/contacts/${result.id}`, { replace: true }); }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally { setSaving(false); }
@@ -80,9 +85,7 @@ export default function ContactForm() {
     <>
       <CommandBar>
         <CommandButton icon={<BackIcon />} onClick={() => nav('/contacts')} aria-label="Back to contacts" />
-        <CommandButton type="submit" form="contact-form" icon={<SaveIcon />} primary disabled={saving || lock}>
-          {saving ? 'Saving…' : 'Save'}
-        </CommandButton>
+        <SaveCommands formId="contact-form" saving={saving} disabled={lock} />
         {id && <CommandLink to="/contacts/new" icon={<PlusIcon />}>New</CommandLink>}
         {id && !lock && <CommandButton icon={<TrashIcon />} danger onClick={() => void remove()} disabled={saving}>Delete</CommandButton>}
         {!id && (
@@ -93,6 +96,7 @@ export default function ContactForm() {
         )}
       </CommandBar>
       {error && <ErrorBar>Save failed: {error}</ErrorBar>}
+      {saved && <SavedBar />}
       <div className="border-b border-line bg-white px-5 pb-3 pt-4">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Contact card</div>
         <h1 className="text-xl font-semibold">{fullName || (id ? '…' : 'New contact')}{lock && <span className="ml-2 text-[13px] font-normal text-[#a4262c]">Deleted</span>}</h1>
