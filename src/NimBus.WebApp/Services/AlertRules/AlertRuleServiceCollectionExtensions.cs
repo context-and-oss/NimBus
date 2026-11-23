@@ -29,7 +29,8 @@ public static partial class AlertRuleServiceCollectionExtensions
             sp.GetRequiredService<AlertRuleDelivery>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetService<ILogger<AlertRuleEvaluator>>() ?? NullLogger<AlertRuleEvaluator>.Instance,
-            $"{Environment.MachineName}/{Environment.ProcessId}"));
+            $"{Environment.MachineName}/{Environment.ProcessId}",
+            sp.GetService<IAlertSignalStore>()));
 
         // AddSingleton<IHostedService>(factory), not AddHostedService: the latter drops a second
         // registration of the same type. Without a rule store there is nothing to evaluate.

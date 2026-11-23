@@ -12299,18 +12299,24 @@ export interface IEndpointSubscription {
     [key: string]: any;
 }
 
-/** What a rule watches. Phase 1 has one kind, failure_backlog: the events on the endpoint that are failed now (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time window. */
+/** What a rule watches. failure_backlog: the events on the endpoint that are failed now (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time window. failure_occurrences: failed attempts on the endpoint in the last windowMinutes, counted from message history even if the events were resolved later. blocked_session: the oldest Failed or handed-off event has not changed for minutes, or at least deferredThreshold events are deferred on the endpoint. silence: no message on the endpoint completed for minutes. Fields that don't apply to the kind are ignored. */
 export class AlertRuleCondition implements IAlertRuleCondition {
-    /** failure_backlog. */
+    /** failure_backlog, failure_occurrences, blocked_session or silence. Omitted means failure_backlog. */
     kind?: string;
-    /** Event types to count; empty counts every type. */
+    /** Event types to count (backlog and occurrences); empty counts every type. */
     eventTypes?: string[];
-    /** Statuses to count (Failed, DeadLettered, Unsupported); empty counts all three. */
+    /** Statuses to count (backlog only; Failed, DeadLettered, Unsupported); empty counts all three. */
     statuses?: string[];
-    /** A case-insensitive substring the error text must contain. */
+    /** A case-insensitive substring the error text must contain (backlog and occurrences). */
     errorTextContains?: string | undefined;
-    /** The backlog at which the rule fires. */
+    /** The count at which the rule fires (backlog and occurrences). */
     threshold?: number;
+    /** The window failed attempts are counted in (occurrences; required there). */
+    windowMinutes?: number | undefined;
+    /** Blocked session: how long the oldest blocking event has not changed (1–1440). Silence: how long nothing completed (5–1440; required there). */
+    minutes?: number | undefined;
+    /** The number of deferred events at which a blocked-session rule fires. A blocked-session rule needs minutes, deferredThreshold or both. */
+    deferredThreshold?: number | undefined;
 
     [key: string]: any;
 
@@ -12342,6 +12348,9 @@ export class AlertRuleCondition implements IAlertRuleCondition {
             }
             this.errorTextContains = _data["errorTextContains"];
             this.threshold = _data["threshold"];
+            this.windowMinutes = _data["windowMinutes"];
+            this.minutes = _data["minutes"];
+            this.deferredThreshold = _data["deferredThreshold"];
         }
     }
 
@@ -12371,6 +12380,9 @@ export class AlertRuleCondition implements IAlertRuleCondition {
         }
         data["errorTextContains"] = this.errorTextContains;
         data["threshold"] = this.threshold;
+        data["windowMinutes"] = this.windowMinutes;
+        data["minutes"] = this.minutes;
+        data["deferredThreshold"] = this.deferredThreshold;
         return data;
     }
 
@@ -12382,18 +12394,24 @@ export class AlertRuleCondition implements IAlertRuleCondition {
     }
 }
 
-/** What a rule watches. Phase 1 has one kind, failure_backlog: the events on the endpoint that are failed now (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time window. */
+/** What a rule watches. failure_backlog: the events on the endpoint that are failed now (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time window. failure_occurrences: failed attempts on the endpoint in the last windowMinutes, counted from message history even if the events were resolved later. blocked_session: the oldest Failed or handed-off event has not changed for minutes, or at least deferredThreshold events are deferred on the endpoint. silence: no message on the endpoint completed for minutes. Fields that don't apply to the kind are ignored. */
 export interface IAlertRuleCondition {
-    /** failure_backlog. */
+    /** failure_backlog, failure_occurrences, blocked_session or silence. Omitted means failure_backlog. */
     kind?: string;
-    /** Event types to count; empty counts every type. */
+    /** Event types to count (backlog and occurrences); empty counts every type. */
     eventTypes?: string[];
-    /** Statuses to count (Failed, DeadLettered, Unsupported); empty counts all three. */
+    /** Statuses to count (backlog only; Failed, DeadLettered, Unsupported); empty counts all three. */
     statuses?: string[];
-    /** A case-insensitive substring the error text must contain. */
+    /** A case-insensitive substring the error text must contain (backlog and occurrences). */
     errorTextContains?: string | undefined;
-    /** The backlog at which the rule fires. */
+    /** The count at which the rule fires (backlog and occurrences). */
     threshold?: number;
+    /** The window failed attempts are counted in (occurrences; required there). */
+    windowMinutes?: number | undefined;
+    /** Blocked session: how long the oldest blocking event has not changed (1–1440). Silence: how long nothing completed (5–1440; required there). */
+    minutes?: number | undefined;
+    /** The number of deferred events at which a blocked-session rule fires. A blocked-session rule needs minutes, deferredThreshold or both. */
+    deferredThreshold?: number | undefined;
 
     [key: string]: any;
 }
@@ -12835,6 +12853,8 @@ export class AlertRuleList implements IAlertRuleList {
     webhookEnabled?: boolean;
     /** Whether the caller may create, change and delete rules on this endpoint. */
     canManage?: boolean;
+    /** The condition kinds this deployment's storage provider can evaluate. */
+    availableKinds?: string[];
 
     [key: string]: any;
 
@@ -12862,6 +12882,11 @@ export class AlertRuleList implements IAlertRuleList {
             this.mailEnabled = _data["mailEnabled"];
             this.webhookEnabled = _data["webhookEnabled"];
             this.canManage = _data["canManage"];
+            if (Array.isArray(_data["availableKinds"])) {
+                this.availableKinds = [] as any;
+                for (let item of _data["availableKinds"])
+                    this.availableKinds!.push(item);
+            }
         }
     }
 
@@ -12887,6 +12912,11 @@ export class AlertRuleList implements IAlertRuleList {
         data["mailEnabled"] = this.mailEnabled;
         data["webhookEnabled"] = this.webhookEnabled;
         data["canManage"] = this.canManage;
+        if (Array.isArray(this.availableKinds)) {
+            data["availableKinds"] = [];
+            for (let item of this.availableKinds)
+                data["availableKinds"].push(item);
+        }
         return data;
     }
 
@@ -12908,6 +12938,8 @@ export interface IAlertRuleList {
     webhookEnabled?: boolean;
     /** Whether the caller may create, change and delete rules on this endpoint. */
     canManage?: boolean;
+    /** The condition kinds this deployment's storage provider can evaluate. */
+    availableKinds?: string[];
 
     [key: string]: any;
 }

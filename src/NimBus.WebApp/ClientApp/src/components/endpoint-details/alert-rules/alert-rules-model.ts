@@ -18,6 +18,44 @@ export const RESOLVE_DEFAULT = 5;
 export const ERROR_TEXT_MAX = 200;
 export const EVENT_TYPES_MAX = 20;
 export const TARGETS_MAX = 10;
+export const WINDOW_MIN = 5;
+export const WINDOW_MAX = 1440;
+export const WINDOW_DEFAULT = 15;
+export const BLOCKED_MIN = 1;
+export const BLOCKED_MAX = 1440;
+export const BLOCKED_DEFAULT = 30;
+export const DEFERRED_MIN = 1;
+export const DEFERRED_MAX = 1000;
+export const SILENCE_MIN = 5;
+export const SILENCE_MAX = 1440;
+export const SILENCE_DEFAULT = 60;
+
+/** The condition kinds a rule can watch, in the order the form offers them. */
+export const CONDITION_KINDS = ["failure_backlog", "failure_occurrences", "blocked_session", "silence"] as const;
+export type ConditionKind = (typeof CONDITION_KINDS)[number];
+
+/** Each kind's name in the form. */
+export const KIND_LABELS: Record<ConditionKind, string> = {
+  failure_backlog: "Failure backlog",
+  failure_occurrences: "Failures in a time window",
+  blocked_session: "Blocked session",
+  silence: "Silence",
+};
+
+const isKind = (value: string | undefined): value is ConditionKind =>
+  (CONDITION_KINDS as readonly string[]).includes(value ?? "");
+
+/** A condition's kind; a missing kind is a failure backlog, as on the server. */
+export function kindOf(condition: api.AlertRuleCondition | undefined): ConditionKind {
+  const kind = condition?.kind?.trim().toLowerCase();
+  return isKind(kind) ? kind : "failure_backlog";
+}
+
+/** The kinds this deployment can evaluate. A WebApp that names none evaluates only the backlog. */
+export function availableKindsOf(kinds: string[] | undefined): ConditionKind[] {
+  const known = CONDITION_KINDS.filter((k) => (kinds ?? []).includes(k));
+  return known.length > 0 ? known : ["failure_backlog"];
+}
 
 /** The evaluator runs every minute; older than this, the page warns that rules are not evaluated. */
 export const STALE_AFTER_MINUTES = 5;
@@ -36,10 +74,20 @@ export interface TargetDraft {
 export interface RuleDraft {
   name: string;
   enabled: boolean;
+  kind: ConditionKind;
+  /** Backlog and occurrences. */
   threshold: string;
   statuses: string[];
   eventTypes: string[];
   errorTextContains: string;
+  /** Occurrences: the window failed attempts are counted in. */
+  windowMinutes: string;
+  /** Blocked session: how long the oldest blocking event has not changed. Blank means not checked. */
+  blockedMinutes: string;
+  /** Blocked session: the deferred events at which the rule fires. Blank means not checked. */
+  deferredThreshold: string;
+  /** Silence: how long nothing completed. */
+  silenceMinutes: string;
   resolveAfterMinutes: string;
   targets: TargetDraft[];
 }
@@ -63,24 +111,93 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 const quoteList = (items: string[]) => items.join(", ");
 
-/** The condition in words, e.g. `≥ 5 failed events (Failed, DeadLettered) of type OrderPlaced, error contains "timeout"`. */
-export function describeCondition(condition: api.AlertRuleCondition | undefined): string {
-  const threshold = condition?.threshold ?? 0;
-  let text = `≥ ${threshold} failed ${plural(threshold, "event", "events")}`;
-  const statuses = condition?.statuses ?? [];
-  if (statuses.length > 0) text += ` (${quoteList(statuses)})`;
-  const eventTypes = condition?.eventTypes ?? [];
-  if (eventTypes.length > 0) text += ` of ${plural(eventTypes.length, "type", "types")} ${quoteList(eventTypes)}`;
-  if (condition?.errorTextContains) text += `, error contains "${condition.errorTextContains}"`;
-  return text;
+/** Minutes as the notices write them: "45 min", "1 h", "1 h 30 min". */
+export function duration(minutes: number | undefined): string {
+  const value = minutes ?? 0;
+  if (value < 60) return `${value} min`;
+  return value % 60 === 0 ? `${value / 60} h` : `${Math.floor(value / 60)} h ${value % 60} min`;
 }
 
-/** The last backlog read: "–" before the first evaluation, "≥ N" when it reached the threshold (reads stop there). */
-export function failedEventsText(rule: api.AlertRuleModel): string {
+const filtersText = (condition: api.AlertRuleCondition, statuses: boolean) => {
+  let text = "";
+  const statusList = statuses ? (condition.statuses ?? []) : [];
+  if (statusList.length > 0) text += ` (${statusList.join(", ")})`;
+  const eventTypes = condition.eventTypes ?? [];
+  if (eventTypes.length > 0) text += ` of type ${eventTypes.join(" or ")}`;
+  if (condition.errorTextContains?.trim()) text += ` with an error containing "${condition.errorTextContains}"`;
+  return text;
+};
+
+const isSet = (n: number | undefined | null): n is number => n !== undefined && n !== null;
+
+/**
+ * The condition in words, as the notices write them (AlertRuleText.DescribeCondition), e.g.
+ * `5 or more failed events (Failed) of type OrderPlaced`, `3 or more failures in 15 min`,
+ * `a session blocked for 30 min, or 50 or more deferred events` or `no completed message for 1 h`.
+ */
+export function describeCondition(condition: api.AlertRuleCondition | undefined): string {
+  const c = condition ?? new api.AlertRuleCondition();
+  const threshold = c.threshold ?? 0;
+  switch (kindOf(c)) {
+    case "failure_occurrences":
+      return `${threshold} or more ${plural(threshold, "failure", "failures")} in ${duration(c.windowMinutes)}${filtersText(c, false)}`;
+    case "blocked_session": {
+      const parts: string[] = [];
+      if (isSet(c.minutes)) parts.push(`a session blocked for ${duration(c.minutes)}`);
+      if (isSet(c.deferredThreshold))
+        parts.push(`${c.deferredThreshold} or more deferred ${plural(c.deferredThreshold, "event", "events")}`);
+      return parts.join(", or ");
+    }
+    case "silence":
+      return `no completed message for ${duration(c.minutes)}`;
+    default:
+      return `${threshold} or more failed ${plural(threshold, "event", "events")}${filtersText(c, true)}`;
+  }
+}
+
+/** What a rule's last value is, as the notices name it (AlertRuleText.ValueLabel). */
+export function valueLabel(condition: api.AlertRuleCondition | undefined): string {
+  switch (kindOf(condition)) {
+    case "failure_occurrences":
+      return "Failures in the window";
+    case "blocked_session":
+      return "Blocked for (minutes)";
+    case "silence":
+      return "Silent for (minutes)";
+    default:
+      return "Failed events";
+  }
+}
+
+/** How long the condition must stay clear before the rule resolves, in words. */
+export function resolveText(rule: api.AlertRuleModel): string {
+  const kind = kindOf(rule.condition);
+  return kind === "failure_backlog" || kind === "failure_occurrences"
+    ? `Resolves after ${rule.resolveAfterMinutes} min below the threshold`
+    : `Resolves after ${rule.resolveAfterMinutes} min without the condition`;
+}
+
+/**
+ * The last read: "–" before the first evaluation. A count is read up to the threshold, so reaching
+ * it shows "≥ N"; silence is read up to its minutes the same way. A blocked session shows how long
+ * the oldest blocking event has waited, which a rule that watches only deferred events doesn't read.
+ */
+export function lastValueText(rule: api.AlertRuleModel): string {
   const value = rule.state?.lastValue;
   if (value === undefined || value === null) return "–";
-  const threshold = rule.condition?.threshold;
-  return threshold !== undefined && value >= threshold ? `≥ ${threshold}` : String(value);
+  const condition = rule.condition;
+  switch (kindOf(condition)) {
+    case "blocked_session":
+      return isSet(condition?.minutes) ? duration(value) : "–";
+    case "silence": {
+      const minutes = condition?.minutes;
+      return isSet(minutes) && value >= minutes ? `≥ ${duration(minutes)}` : duration(value);
+    }
+    default: {
+      const threshold = condition?.threshold;
+      return threshold !== undefined && value >= threshold ? `≥ ${threshold}` : String(value);
+    }
+  }
 }
 
 /** A time of day today, or a date and time on another day. */
@@ -157,24 +274,43 @@ export function emptyDraft(): RuleDraft {
   return {
     name: "",
     enabled: true,
+    kind: "failure_backlog",
     threshold: "5",
     statuses: [],
     eventTypes: [],
     errorTextContains: "",
+    windowMinutes: String(WINDOW_DEFAULT),
+    blockedMinutes: String(BLOCKED_DEFAULT),
+    deferredThreshold: "",
+    silenceMinutes: String(SILENCE_DEFAULT),
     resolveAfterMinutes: String(RESOLVE_DEFAULT),
     targets: [],
   };
 }
 
-/** The draft of an existing rule. Targets keep their ids, so the server keeps them and their secrets. */
+/**
+ * The draft of an existing rule. Targets keep their ids, so the server keeps them and their secrets.
+ * The other kinds' fields keep their defaults, so switching the kind while editing starts from them.
+ */
 export function draftFromRule(rule: api.AlertRuleModel): RuleDraft {
+  const condition = rule.condition;
+  const kind = kindOf(condition);
+  const text = (n: number | undefined | null) => (isSet(n) ? String(n) : "");
+  const defaults = emptyDraft();
+  const counted = kind === "failure_backlog" || kind === "failure_occurrences";
   return {
     name: rule.name ?? "",
     enabled: rule.enabled ?? true,
-    threshold: String(rule.condition?.threshold ?? ""),
-    statuses: [...(rule.condition?.statuses ?? [])],
-    eventTypes: [...(rule.condition?.eventTypes ?? [])],
-    errorTextContains: rule.condition?.errorTextContains ?? "",
+    kind,
+    threshold: counted ? text(condition?.threshold) : defaults.threshold,
+    statuses: [...(condition?.statuses ?? [])],
+    eventTypes: [...(condition?.eventTypes ?? [])],
+    errorTextContains: condition?.errorTextContains ?? "",
+    windowMinutes: kind === "failure_occurrences" ? text(condition?.windowMinutes) : defaults.windowMinutes,
+    // A blocked-session rule may watch only deferred events; its minutes then stay blank.
+    blockedMinutes: kind === "blocked_session" ? text(condition?.minutes) : defaults.blockedMinutes,
+    deferredThreshold: kind === "blocked_session" ? text(condition?.deferredThreshold) : defaults.deferredThreshold,
+    silenceMinutes: kind === "silence" ? text(condition?.minutes) : defaults.silenceMinutes,
     resolveAfterMinutes: String(rule.resolveAfterMinutes ?? RESOLVE_DEFAULT),
     targets: (rule.targets ?? []).map((t) => ({
       key: t.id ?? newTargetKey(),
@@ -200,13 +336,29 @@ export function validateDraft(
   const errors: DraftErrors = {};
   const name = draft.name.trim();
   if (name.length < 1 || name.length > NAME_MAX) errors.name = `Enter a name of 1 to ${NAME_MAX} characters.`;
-  if (!wholeNumberIn(draft.threshold, THRESHOLD_MIN, THRESHOLD_MAX))
+  const minutesIn = (min: number, max: number) => `Enter a whole number of minutes from ${min} to ${max}.`;
+  const counted = draft.kind === "failure_backlog" || draft.kind === "failure_occurrences";
+  if (counted && !wholeNumberIn(draft.threshold, THRESHOLD_MIN, THRESHOLD_MAX))
     errors.threshold = `Enter a whole number from ${THRESHOLD_MIN} to ${THRESHOLD_MAX}.`;
+  if (draft.kind === "failure_occurrences" && !wholeNumberIn(draft.windowMinutes, WINDOW_MIN, WINDOW_MAX))
+    errors.windowMinutes = minutesIn(WINDOW_MIN, WINDOW_MAX);
+  if (draft.kind === "blocked_session") {
+    const minutes = draft.blockedMinutes.trim();
+    const deferred = draft.deferredThreshold.trim();
+    if (minutes === "" && deferred === "") errors.blocked = "Enter the blocked minutes, the deferred events or both.";
+    if (minutes !== "" && !wholeNumberIn(minutes, BLOCKED_MIN, BLOCKED_MAX))
+      errors.blockedMinutes = minutesIn(BLOCKED_MIN, BLOCKED_MAX);
+    if (deferred !== "" && !wholeNumberIn(deferred, DEFERRED_MIN, DEFERRED_MAX))
+      errors.deferredThreshold = `Enter a whole number from ${DEFERRED_MIN} to ${DEFERRED_MAX}.`;
+  }
+  if (draft.kind === "silence" && !wholeNumberIn(draft.silenceMinutes, SILENCE_MIN, SILENCE_MAX))
+    errors.silenceMinutes = minutesIn(SILENCE_MIN, SILENCE_MAX);
   if (!wholeNumberIn(draft.resolveAfterMinutes, RESOLVE_MIN, RESOLVE_MAX))
-    errors.resolveAfterMinutes = `Enter a whole number of minutes from ${RESOLVE_MIN} to ${RESOLVE_MAX}.`;
-  if (draft.errorTextContains.length > ERROR_TEXT_MAX)
+    errors.resolveAfterMinutes = minutesIn(RESOLVE_MIN, RESOLVE_MAX);
+  if (counted && draft.errorTextContains.length > ERROR_TEXT_MAX)
     errors.errorTextContains = `At most ${ERROR_TEXT_MAX} characters.`;
-  if (draft.eventTypes.length > EVENT_TYPES_MAX) errors.eventTypes = `Pick at most ${EVENT_TYPES_MAX} event types.`;
+  if (counted && draft.eventTypes.length > EVENT_TYPES_MAX)
+    errors.eventTypes = `Pick at most ${EVENT_TYPES_MAX} event types.`;
   if (draft.targets.length < 1) errors.targets = "Add at least one target.";
   else if (draft.targets.length > TARGETS_MAX) errors.targets = `A rule has at most ${TARGETS_MAX} targets.`;
   for (const target of draft.targets) {
@@ -223,20 +375,41 @@ export function validateDraft(
   return errors;
 }
 
+const optionalNumber = (text: string) => (text.trim() === "" ? undefined : Number(text.trim()));
+
+/** The condition of a valid draft, with only the fields its kind uses. */
+function conditionFromDraft(draft: RuleDraft): api.AlertRuleCondition {
+  switch (draft.kind) {
+    case "blocked_session":
+      return new api.AlertRuleCondition({
+        kind: draft.kind,
+        minutes: optionalNumber(draft.blockedMinutes),
+        deferredThreshold: optionalNumber(draft.deferredThreshold),
+      });
+    case "silence":
+      return new api.AlertRuleCondition({ kind: draft.kind, minutes: Number(draft.silenceMinutes.trim()) });
+    default: {
+      // Not trimmed: spaces may be part of the text to match. Blank means no filter.
+      const errorText = draft.errorTextContains;
+      const occurrences = draft.kind === "failure_occurrences";
+      return new api.AlertRuleCondition({
+        kind: draft.kind,
+        eventTypes: [...draft.eventTypes],
+        statuses: occurrences ? undefined : [...draft.statuses],
+        errorTextContains: errorText.trim() === "" ? undefined : errorText,
+        threshold: Number(draft.threshold.trim()),
+        windowMinutes: occurrences ? Number(draft.windowMinutes.trim()) : undefined,
+      });
+    }
+  }
+}
+
 /** The request for a valid draft. A kept target sends its id; a new one omits it. */
 export function requestFromDraft(draft: RuleDraft): api.AlertRuleRequest {
-  // Not trimmed: spaces may be part of the text to match. Blank means no filter.
-  const errorText = draft.errorTextContains;
   return new api.AlertRuleRequest({
     name: draft.name.trim(),
     enabled: draft.enabled,
-    condition: new api.AlertRuleCondition({
-      kind: "failure_backlog",
-      eventTypes: [...draft.eventTypes],
-      statuses: [...draft.statuses],
-      errorTextContains: errorText.trim() === "" ? undefined : errorText,
-      threshold: Number(draft.threshold.trim()),
-    }),
+    condition: conditionFromDraft(draft),
     resolveAfterMinutes: Number(draft.resolveAfterMinutes.trim()),
     targets: draft.targets.map(
       (t) =>

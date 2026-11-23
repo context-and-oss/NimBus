@@ -37,7 +37,7 @@ public sealed class AlertRulesApiTests
     private readonly RecordingWebhooks _webhooks = new();
     private readonly RecordingAudit _audit = new();
 
-    private AlertRulesImplementation Sut(bool owner = true, bool reader = true, bool mail = false, IAlertRuleStore? store = null, Func<string, bool>? canRead = null)
+    private AlertRulesImplementation Sut(bool owner = true, bool reader = true, bool mail = false, IAlertRuleStore? store = null, Func<string, bool>? canRead = null, bool signals = true)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { [AlertWebhookOptions.SectionName + ":SigningKey"] = SigningKey })
@@ -55,7 +55,8 @@ public sealed class AlertRulesApiTests
             delivery,
             configuration,
             _time,
-            store ?? _store);
+            store ?? _store,
+            signals ? new NoSignals() : null);
     }
 
     private static Api.AlertRuleRequest Request(int threshold = 3, bool enabled = true, string? errorText = null, params Api.AlertRuleTargetModel[] targets) => new()
@@ -282,6 +283,94 @@ public sealed class AlertRulesApiTests
 
         Assert.AreEqual(501, ((ObjectResult)(await sut.GetEndpointAlertRulesAsync(Endpoint)).Result!).StatusCode);
         Assert.AreEqual(0, Ok(await sut.GetAlertRulesFiringAsync()).Count());
+    }
+
+    private static Api.AlertRuleRequest KindRequest(Api.AlertRuleCondition condition) => new()
+    {
+        Name = "ERP " + condition.Kind,
+        Enabled = true,
+        Condition = condition,
+        ResolveAfterMinutes = 5,
+        Targets = [Webhook("https://hooks.example.com/a")],
+    };
+
+    [TestMethod]
+    public async Task A_failure_occurrences_rule_keeps_only_the_fields_it_uses()
+    {
+        var saved = Ok(await Sut().PostEndpointAlertRuleAsync(KindRequest(new Api.AlertRuleCondition
+        {
+            Kind = "failure_occurrences", Threshold = 2, WindowMinutes = 15, EventTypes = ["OrderPlaced"], Statuses = ["Failed"], Minutes = 30,
+        }), Endpoint));
+
+        var stored = (await _store.GetAlertRule(Endpoint, saved.Rule.Id))!.Condition;
+        Assert.AreEqual(AlertRuleConditionKinds.FailureOccurrences, stored.Kind);
+        Assert.AreEqual(15, stored.WindowMinutes);
+        Assert.AreEqual(2, stored.Threshold);
+        CollectionAssert.AreEqual(new[] { "OrderPlaced" }, stored.EventTypes);
+        Assert.AreEqual(0, stored.Statuses.Count, "Statuses apply to the backlog only.");
+        Assert.IsNull(stored.Minutes);
+        Assert.AreEqual(15, saved.Rule.Condition.WindowMinutes, "The API returns the window.");
+    }
+
+    [TestMethod]
+    [DataRow(null, DisplayName = "no window")]
+    [DataRow(4, DisplayName = "window under 5")]
+    [DataRow(1441, DisplayName = "window over a day")]
+    public async Task A_failure_occurrences_window_must_be_5_to_1440(int? window)
+        => CollectionAssert.Contains(
+            Errors(await Sut().PostEndpointAlertRuleAsync(KindRequest(new Api.AlertRuleCondition { Kind = "failure_occurrences", Threshold = 2, WindowMinutes = window }), Endpoint)),
+            "condition.windowMinutes must be 5 to 1440.");
+
+    [TestMethod]
+    public async Task A_blocked_session_rule_needs_minutes_or_a_deferred_threshold()
+    {
+        CollectionAssert.Contains(
+            Errors(await Sut().PostEndpointAlertRuleAsync(KindRequest(new Api.AlertRuleCondition { Kind = "blocked_session" }), Endpoint)),
+            "A blocked-session condition needs minutes, deferredThreshold or both.");
+        CollectionAssert.Contains(
+            Errors(await Sut().PostEndpointAlertRuleAsync(KindRequest(new Api.AlertRuleCondition { Kind = "blocked_session", DeferredThreshold = 1001 }), Endpoint)),
+            "condition.deferredThreshold must be 1 to 1000.");
+
+        var saved = Ok(await Sut().PostEndpointAlertRuleAsync(KindRequest(new Api.AlertRuleCondition { Kind = "blocked_session", Minutes = 30, DeferredThreshold = 50, Threshold = 7 }), Endpoint));
+        var stored = (await _store.GetAlertRule(Endpoint, saved.Rule.Id))!.Condition;
+        Assert.AreEqual(30, stored.Minutes);
+        Assert.AreEqual(50, stored.DeferredThreshold);
+        Assert.AreEqual(1, stored.Threshold, "The count threshold does not apply.");
+    }
+
+    [TestMethod]
+    [DataRow(null, DisplayName = "no minutes")]
+    [DataRow(4, DisplayName = "under 5 minutes")]
+    [DataRow(1441, DisplayName = "over a day")]
+    public async Task A_silence_rule_needs_5_to_1440_minutes(int? minutes)
+        => CollectionAssert.Contains(
+            Errors(await Sut().PostEndpointAlertRuleAsync(KindRequest(new Api.AlertRuleCondition { Kind = "silence", Minutes = minutes }), Endpoint)),
+            "condition.minutes must be 5 to 1440.");
+
+    [TestMethod]
+    public async Task An_unknown_kind_is_refused()
+        => CollectionAssert.Contains(
+            Errors(await Sut().PostEndpointAlertRuleAsync(KindRequest(new Api.AlertRuleCondition { Kind = "latency", Threshold = 1 }), Endpoint)),
+            "condition.kind must be failure_backlog, failure_occurrences, blocked_session, silence.");
+
+    [TestMethod]
+    public async Task Without_alert_signals_only_backlog_rules_can_be_created()
+    {
+        var errors = Errors(await Sut(signals: false).PostEndpointAlertRuleAsync(KindRequest(new Api.AlertRuleCondition { Kind = "silence", Minutes = 60 }), Endpoint));
+        StringAssert.Contains(errors.Single(), "needs a storage provider that can read alert signals");
+
+        var listed = Ok(await Sut(signals: false).GetEndpointAlertRulesAsync(Endpoint));
+        CollectionAssert.AreEqual(new[] { "failure_backlog" }, listed.AvailableKinds.ToArray());
+        CollectionAssert.AreEqual(AlertRuleConditionKinds.All.ToArray(), Ok(await Sut().GetEndpointAlertRulesAsync(Endpoint)).AvailableKinds.ToArray());
+    }
+
+    private sealed class NoSignals : IAlertSignalStore
+    {
+        public Task<int> CountFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int cap) => Task.FromResult(0);
+
+        public Task<BlockingEvent?> GetOldestBlockingEvent(string endpointId) => Task.FromResult<BlockingEvent?>(null);
+
+        public Task<bool> HasCompletedMessageSince(string endpointId, DateTime sinceUtc) => Task.FromResult(true);
     }
 
     private sealed class FixedAuthorization(bool owner, bool reader, Func<string, bool>? canRead) : IEndpointAuthorizationService

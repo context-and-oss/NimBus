@@ -29,7 +29,7 @@ namespace NimBus.MessageStore.SqlServer;
 /// Concurrency: ROWVERSION on UnresolvedEvents enables optimistic conflict
 /// detection if needed by future writers.
 /// </summary>
-public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore
+public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore, IAlertSignalStore
 {
     private readonly SqlServerMessageStoreOptions _options;
     private readonly string _schema;
@@ -45,6 +45,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     private readonly SqlServerMessageTrackingStore _messageTracking;
     private readonly SqlServerOperatorOperationStore _operations;
     private readonly SqlServerAlertRuleStore _alertRules;
+    private readonly SqlServerAlertSignalStore _alertSignals;
 
     public SqlServerMessageStore(IOptions<SqlServerMessageStoreOptions> options)
     {
@@ -69,6 +70,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
         _messageTracking = new SqlServerMessageTrackingStore(context);
         _operations = new SqlServerOperatorOperationStore(context);
         _alertRules = new SqlServerAlertRuleStore(context);
+        _alertSignals = new SqlServerAlertSignalStore(context);
     }
 
     private async Task<SqlConnection> OpenAsync()
@@ -227,6 +229,15 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
         => _alertRules.CompleteAlertRuleEvaluatorTick(claimedAtUtc, completedAtUtc);
     /// <inheritdoc />
     public Task<AlertRuleEvaluatorStatus> GetAlertRuleEvaluatorStatus() => _alertRules.GetAlertRuleEvaluatorStatus();
+
+    // ───────── Alert rule signals (IAlertSignalStore) — implementation in SqlServerAlertSignalStore ─────────
+    /// <inheritdoc />
+    public Task<int> CountFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int cap)
+        => _alertSignals.CountFailedAttempts(endpointId, fromUtc, toUtc, eventTypes, errorTextContains, cap);
+    /// <inheritdoc />
+    public Task<BlockingEvent?> GetOldestBlockingEvent(string endpointId) => _alertSignals.GetOldestBlockingEvent(endpointId);
+    /// <inheritdoc />
+    public Task<bool> HasCompletedMessageSince(string endpointId, DateTime sinceUtc) => _alertSignals.HasCompletedMessageSince(endpointId, sinceUtc);
 
     // ───────── Dashboard tokens (IDashboardTokenStore) — implementation in SqlServerEndpointMetadataStore ─────────
     public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();

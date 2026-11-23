@@ -200,4 +200,72 @@ public class AlertRuleNoticeTests
     [TestMethod]
     public void A_notice_id_joins_the_rule_the_transition_and_the_target()
         => Assert.AreEqual("rule1:7:t2", AlertRuleText.NoticeId("rule1", 7, "t2"));
+
+    [TestMethod]
+    public void Each_condition_kind_reads_as_a_sentence()
+    {
+        Assert.AreEqual(
+            "3 or more failures in 15 min of type OrderPlaced",
+            AlertRuleText.DescribeCondition(new AlertRuleCondition
+            {
+                Kind = AlertRuleConditionKinds.FailureOccurrences, Threshold = 3, WindowMinutes = 15, EventTypes = ["OrderPlaced"],
+                Statuses = ["Failed"],
+            }));
+        Assert.AreEqual(
+            "a session blocked for 1 h 30 min, or 50 or more deferred events",
+            AlertRuleText.DescribeCondition(new AlertRuleCondition { Kind = AlertRuleConditionKinds.BlockedSession, Minutes = 90, DeferredThreshold = 50 }));
+        Assert.AreEqual(
+            "1 or more deferred event",
+            AlertRuleText.DescribeCondition(new AlertRuleCondition { Kind = AlertRuleConditionKinds.BlockedSession, DeferredThreshold = 1 }));
+        Assert.AreEqual(
+            "no completed message for 2 h",
+            AlertRuleText.DescribeCondition(new AlertRuleCondition { Kind = AlertRuleConditionKinds.Silence, Minutes = 120 }));
+    }
+
+    [TestMethod]
+    public void Each_condition_kind_links_to_the_page_that_shows_it()
+    {
+        const string root = "https://nimbus.example.com";
+        StringAssert.StartsWith(
+            AlertRuleText.LinkFor(root, "ErpEndpoint", new AlertRuleCondition { Kind = AlertRuleConditionKinds.FailureOccurrences, WindowMinutes = 15 }),
+            "https://nimbus.example.com/Failed?endpointId=ErpEndpoint&period=1h");
+        Assert.AreEqual(
+            "https://nimbus.example.com/Endpoints/Details/ErpEndpoint?status=Failed&status=Pending&status=Deferred",
+            AlertRuleText.LinkFor(root, "ErpEndpoint", new AlertRuleCondition { Kind = AlertRuleConditionKinds.BlockedSession, Minutes = 30 }));
+        Assert.AreEqual(
+            "https://nimbus.example.com/Endpoints/Details/ErpEndpoint",
+            AlertRuleText.LinkFor(root, "ErpEndpoint", new AlertRuleCondition { Kind = AlertRuleConditionKinds.Silence, Minutes = 60 }));
+        Assert.IsNull(AlertRuleText.LinkFor(null, "ErpEndpoint", Condition()));
+    }
+
+    [TestMethod]
+    public async Task The_webhook_body_names_the_condition_kind()
+    {
+        var handler = new AlertWebhookSenderTests.CapturingHandler();
+        using var sender = Sender(handler);
+        var notice = Notice() with { Condition = new AlertRuleCondition { Kind = AlertRuleConditionKinds.Silence, Minutes = 60 }, Value = 60 };
+
+        await sender.SendRuleNoticeAsync(notice, WebhookTarget());
+
+        using var json = JsonDocument.Parse(handler.Body!);
+        Assert.AreEqual("silence", json.RootElement.GetProperty("conditionKind").GetString());
+        Assert.AreEqual(60, json.RootElement.GetProperty("value").GetInt32());
+    }
+
+    [TestMethod]
+    public void A_silence_mail_reports_minutes_and_says_why_it_resolved()
+    {
+        var notice = Notice(AlertRuleStatus.Ok, AlertRuleResolveReasons.Cleared) with
+        {
+            Condition = new AlertRuleCondition { Kind = AlertRuleConditionKinds.Silence, Minutes = 60 },
+            Value = 60,
+        };
+
+        var mail = new AlertMailComposer(new AlertMailOptions()).ComposeRuleNotice(notice, "team@example.com");
+
+        StringAssert.Contains(mail.TextBody, "no completed message for 1 h");
+        StringAssert.Contains(mail.TextBody, "Silent for (minutes):60");
+        Assert.IsFalse(mail.TextBody.Contains("at least", StringComparison.Ordinal), "Minutes are not capped counts.");
+        StringAssert.Contains(mail.TextBody, "Messages completed again.");
+    }
 }

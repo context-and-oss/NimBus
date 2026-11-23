@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
 
-public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore
+public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore, IAlertSignalStore
 {
     /// <inheritdoc />
     public bool PrunesHeartbeatHistoryAutomatically => _heartbeatHistory.PrunesHeartbeatHistoryAutomatically;
@@ -37,6 +37,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private readonly CosmosDbEndpointAcknowledgementStore _acknowledgements;
     private readonly CosmosDbOperatorOperationStore _operations;
     private readonly CosmosDbAlertRuleStore _alertRules;
+    private readonly CosmosDbAlertSignalStore _alertSignals;
     private readonly CosmosDbEndpointMetadataStore _endpointMetadata;
     private readonly CosmosDbMessageTrackingStore _messageTracking;
 
@@ -105,6 +106,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _acknowledgements = new CosmosDbEndpointAcknowledgementStore(GetEndpointAcknowledgementsContainer);
         _operations = new CosmosDbOperatorOperationStore(GetOperatorOperationsContainer);
         _alertRules = new CosmosDbAlertRuleStore(GetAlertRulesContainer);
+        _alertSignals = new CosmosDbAlertSignalStore(GetMessagesContainer, GetEndpointContainer);
         _endpointMetadata = new CosmosDbEndpointMetadataStore(GetMetadataContainer, GetSettingsContainer, _logger);
         _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, _logger, _unresolvedTtlSeconds);
     }
@@ -134,6 +136,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _acknowledgements = new CosmosDbEndpointAcknowledgementStore(GetEndpointAcknowledgementsContainer);
         _operations = new CosmosDbOperatorOperationStore(GetOperatorOperationsContainer);
         _alertRules = new CosmosDbAlertRuleStore(GetAlertRulesContainer);
+        _alertSignals = new CosmosDbAlertSignalStore(GetMessagesContainer, GetEndpointContainer);
         _endpointMetadata = new CosmosDbEndpointMetadataStore(GetMetadataContainer, GetSettingsContainer, _logger);
         _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, _logger, _unresolvedTtlSeconds);
     }
@@ -408,6 +411,15 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         => _alertRules.CompleteAlertRuleEvaluatorTick(claimedAtUtc, completedAtUtc);
     /// <inheritdoc />
     public Task<AlertRuleEvaluatorStatus> GetAlertRuleEvaluatorStatus() => _alertRules.GetAlertRuleEvaluatorStatus();
+
+    // ── IAlertSignalStore — implementation in CosmosDbAlertSignalStore ──
+    /// <inheritdoc />
+    public Task<int> CountFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int cap)
+        => _alertSignals.CountFailedAttempts(endpointId, fromUtc, toUtc, eventTypes, errorTextContains, cap);
+    /// <inheritdoc />
+    public Task<BlockingEvent?> GetOldestBlockingEvent(string endpointId) => _alertSignals.GetOldestBlockingEvent(endpointId);
+    /// <inheritdoc />
+    public Task<bool> HasCompletedMessageSince(string endpointId, DateTime sinceUtc) => _alertSignals.HasCompletedMessageSince(endpointId, sinceUtc);
 
     // ── IDashboardTokenStore — implementation in CosmosDbEndpointMetadataStore ──
     public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();

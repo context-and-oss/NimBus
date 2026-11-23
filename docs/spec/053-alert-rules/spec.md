@@ -3,7 +3,9 @@
 Status: **approved** (2026-11-20) with every decision in §12 and the answers in §13. Revision 3
 (2026-11-21): Phase 0 is done (§14). Revision 4 (2026-11-22, approved by the repo owner): the
 changes from a Codex review (§16). Revision 5 (2026-11-23): Phase 1, built with one evaluator lease
-per tick and a threshold of 1–100 after a live measurement (§7). Target: a 5.x minor.
+per tick and a threshold of 1–100 after a live measurement (§7). Revision 6 (2026-11-23): Phase 2,
+the conditions `failure_occurrences`, `blocked_session` and `silence` (§5.1), measured on a live
+account (§7). Target: a 5.x minor.
 Baseline: master `108dd6c2` plus the endpoint alert webhooks delivered in the same pull request as
 this spec ([plan](../../plan/2026-11-16-alert-webhook.md)).
 Related: [Spec 051](../051-operations-agent-support/spec.md) §2 (the webhook this spec reuses),
@@ -130,6 +132,25 @@ resolved the rule, and the docs could not promise that *resolved* meant *recover
 - "N failures in a period", counted even if they are resolved later, is a different question. It is
   the Phase 2 condition `failure_occurrences`, read from the message history (§9).
 
+**The Phase 2 conditions** (revision 6). Every kind resolves after `resolveAfterMinutes` of its
+condition being false; the API keeps only the fields the kind uses.
+
+| `kind` | Fields | Holds when | `value` in notices |
+|---|---|---|---|
+| `failure_backlog` | `threshold` 1–100, `statuses`, `eventTypes`, `errorTextContains` | the backlog above reaches `threshold` | the backlog, capped |
+| `failure_occurrences` | `threshold` 1–100, `windowMinutes` 5–1440, `eventTypes`, `errorTextContains` | at least `threshold` stored `ErrorResponse` messages (dead-letters included) in `[now − window, now)` | the count, capped |
+| `blocked_session` | `minutes` 1–1440 and/or `deferredThreshold` 1–1000 | the oldest Failed or handed-off event has not changed for `minutes`, or the endpoint has at least `deferredThreshold` deferred events | minutes blocked |
+| `silence` | `minutes` 5–1440 | no `ResolutionResponse` on the endpoint since `now − minutes` | `minutes` |
+
+- Occurrences count attempts: an event that fails three times counts three times, and a resubmit
+  that succeeds doesn't take them back. The rule resolves when the failures age out of the window.
+- DeadLettered events don't block their session, so `blocked_session` ignores them.
+- Silence treats failures as no activity, and fires on an endpoint that receives nothing.
+- A duration changes every minute, so the evaluator records it only with a transition (§5.4: a
+  quiet rule is not written).
+- The reads are an optional store capability, `IAlertSignalStore` (§5.7). Without it a deployment
+  offers only `failure_backlog`; the rule list's `availableKinds` says which kinds it can evaluate.
+
 Limits: 20 rules per endpoint, 10 targets per rule. Mail targets reuse the subscription's address
 validation; webhook targets reuse `EndpointAlertWebhook.IsValidUrl` and the Resolver's connect
 rules (§5.6).
@@ -245,12 +266,13 @@ as they are for subscriptions.
   "ruleId": "c1f0…",
   "ruleName": "ERP timeouts",
   "endpointId": "ErpEndpoint",
+  "conditionKind": "failure_backlog", // revision 6; or failure_occurrences, blocked_session, silence
   "status": "Firing",            // or "Resolved"
   "reason": null,                // on Resolved: "cleared", "rule_changed", "rule_disabled", "rule_deleted"
-  "value": 5,                    // capped at the threshold: "at least 5"
+  "value": 5,                    // a count capped at the threshold ("at least 5"), or minutes (blocked, silence)
   "threshold": 5,
   "sinceUtc": "2026-11-20T09:14:00Z",
-  "webUiUrl": "https://nimbus.example.com/…"   // the endpoint's failed messages, filtered like the rule
+  "webUiUrl": "https://nimbus.example.com/…"   // failed messages filtered like the rule, or the endpoint
 }
 ```
 
@@ -310,6 +332,15 @@ Task<AlertRuleEvaluatorStatus> GetAlertRuleEvaluatorStatus();
 - `InstrumentingMessageTrackingStoreDecorator` decorates `IMessageTrackingStore` only. The new store
   is a separate interface and needs no forwarding there (§14, fact 4); the evaluator has its own
   meters (`NimBus.AlertRules`).
+
+**Alert signals** (revision 6, Phase 2): an optional `IAlertSignalStore` with three narrow reads
+for one endpoint, matched exactly: `CountFailedAttempts(endpointId, from, to, eventTypes,
+errorTextContains, cap)` over the stored `ErrorResponse` messages, `GetOldestBlockingEvent(endpointId)`
+(non-deleted Failed, or Pending with sub-status Handoff, oldest by `UpdatedAt`), and
+`HasCompletedMessageSince(endpointId, since)` over `ResolutionResponse` messages. Cosmos DB reads the
+shared `messages` container by endpoint, type and widened date bounds, refined in code; SQL Server
+seeks `IX_Messages_EndpointId_EnqueuedTimeUtc`. All three providers implement it, with a conformance
+suite.
 
 ### 5.8 API and permissions
 
@@ -381,6 +412,15 @@ Two decisions follow (repo owner, 2026-11-22):
   no write.
 - **Threshold 1–100** (§5.1), so every read stays at about 30 RU or less.
 
+**Measured in Phase 2** on a live serverless account
+([plan](../../plan/2026-11-23-spec-053-phase-2.md)): 200,000 messages over 24 hours on ten
+endpoints. The failed-attempt count, the completed-since check and the oldest blocking event each
+cost 3.3–5.6 RU in the common case, and the count 8–10 RU at cap 100 over 24 hours. An error-text
+filter that matches nothing scans the window's error texts: 59 RU for 2,000 failures in 24 hours,
+about 0.03 RU each, so a 24-hour error-text rule on an endpoint with 20,000 failures a day costs
+about 600 RU a minute; the docs name it. The deferred count reuses the endpoint state count, about
+0.01 RU per event on the endpoint (49.5 RU at 5,000), read once per endpoint per tick.
+
 The evaluation interval stays fixed at 60 s. A setting (`NimBus:Alerts:Rules:EvaluationInterval`,
 minimum 60 s) is added only if a deployment needs it.
 
@@ -419,7 +459,7 @@ minimum 60 s) is added only if a deployment needs it.
 |---|---|
 | 0 | **Done 2026-11-21.** Verify §14. Move the senders to the shared library with no behaviour change |
 | 1 | **Built 2026-11-23.** Measure the backlog read (§7). Store, evaluator, `failure_backlog`, state machine, pending notices, mail and webhook notices, API, the Rules section, deploy settings, docs |
-| 2 | `failure_occurrences`: *N* or more failed attempts in a window, counted from the message history even if resolved later; the source (`IMetricsStore.GetEndpointMetrics` failed counts, or `GetFailedMessageInsights` when an error-text filter applies) and its cost are settled first. `blocked_session`: a Failed or handoff event has held its session for more than *T* minutes, or more than *N* events wait behind it; needs a new store query for the oldest blocking event per endpoint (all providers, conformance). `silence`: no message handled on the endpoint for *T* minutes, from `GetEndpointMetrics(from, to)` |
+| 2 | **Built 2026-11-23.** `failure_occurrences`, `blocked_session` (age of the oldest blocking event, or the deferred count) and `silence` (no completed message), §5.1; read through the new `IAlertSignalStore` on all three providers instead of `GetEndpointMetrics`, which reads every endpoint's messages; measured (§7) |
 | 3 | Preview over the last 24 h; a failure-classification category filter (only when Integration Intelligence is on, and only for classified failures); firing rules in the Monitor and in MCP `nimbus_get_worklist` |
 | v6 | Subscriptions become a built-in rule (§13, answer 1): deprecated with `[Obsolete]` and a bridge in a 5.x minor once rules ship, migrated and removed in v6 (`docs/versioning.md`). How a subscription's per-window notice maps onto a rule needs its own spec before v6. Its acceptance criterion: a migrated subscriber keeps today's behaviour, including a new notice after each window while failures keep arriving, which a Firing rule does not send |
 
@@ -535,3 +575,7 @@ Details and the measurement: [Phase 0 plan](../../plan/2026-11-21-spec-053-phase
   Cosmos DB account (§7). Per-rule claims became one evaluator lease per tick with writes only on a
   change (§5.3, §5.4, §5.7), the threshold limit became 1–100 (§5.1), and the API, container and
   store names follow what was built (§5.7, §5.8).
+- 2026-11-23, revision 6: Phase 2. The repo owner chose `blocked_session` = the oldest blocking
+  event's age **or** the deferred count, and `silence` = no completed message. The three conditions
+  read a new optional `IAlertSignalStore` (§5.1, §5.7), measured on a live account (§7); the webhook
+  body gains `conditionKind` (§5.5).

@@ -75,6 +75,7 @@ public sealed class CosmosDbMessageStoreRegistrationTests
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IHeartbeatHistoryStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IMonitorMetricsStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IDashboardTokenStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IAlertSignalStore>());
         Assert.IsNotNull(provider.GetRequiredService<ICosmosContainerAdmin>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<INimBusMessageStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<INimBusMessageStore>());

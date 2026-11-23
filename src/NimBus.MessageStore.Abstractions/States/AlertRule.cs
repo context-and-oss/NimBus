@@ -8,8 +8,8 @@ namespace NimBus.MessageStore.States;
 
 /// <summary>
 /// An alert rule on one endpoint (Spec 053): a condition the WebApp evaluates every minute, its
-/// recipients, and the state the evaluator keeps. Phase 1 has one condition kind,
-/// <see cref="AlertRuleConditionKinds.FailureBacklog"/>.
+/// recipients, and the state the evaluator keeps. The condition kinds are in
+/// <see cref="AlertRuleConditionKinds"/>.
 /// </summary>
 public sealed class AlertRule
 {
@@ -83,25 +83,56 @@ public static class AlertRuleConditionKinds
 {
     /// <summary>The events on the endpoint that are failed now (Failed, DeadLettered, Unsupported), with no window.</summary>
     public const string FailureBacklog = "failure_backlog";
+
+    /// <summary>
+    /// Failed attempts on the endpoint in the last <see cref="AlertRuleCondition.WindowMinutes"/>,
+    /// counted from message history even if the events were resolved later (Phase 2).
+    /// </summary>
+    public const string FailureOccurrences = "failure_occurrences";
+
+    /// <summary>
+    /// A session held blocked: the oldest Failed or handed-off event has not changed for
+    /// <see cref="AlertRuleCondition.Minutes"/>, or at least <see cref="AlertRuleCondition.DeferredThreshold"/>
+    /// events are deferred on the endpoint (Phase 2).
+    /// </summary>
+    public const string BlockedSession = "blocked_session";
+
+    /// <summary>No message on the endpoint completed successfully for <see cref="AlertRuleCondition.Minutes"/> (Phase 2).</summary>
+    public const string Silence = "silence";
+
+    /// <summary>Every kind, in the order the UI offers them.</summary>
+    public static readonly IReadOnlyList<string> All = [FailureBacklog, FailureOccurrences, BlockedSession, Silence];
 }
 
-/// <summary>What a rule watches.</summary>
+/// <summary>What a rule watches. Which fields apply depends on <see cref="Kind"/>.</summary>
 public sealed class AlertRuleCondition
 {
-    /// <summary>The condition kind; Phase 1 has <see cref="AlertRuleConditionKinds.FailureBacklog"/> only.</summary>
+    /// <summary>The condition kind, one of <see cref="AlertRuleConditionKinds"/>.</summary>
     public string Kind { get; set; } = AlertRuleConditionKinds.FailureBacklog;
 
-    /// <summary>Event types to count; empty counts every type.</summary>
+    /// <summary>Event types to count (backlog and occurrences); empty counts every type.</summary>
     public List<string> EventTypes { get; set; } = new();
 
-    /// <summary>Statuses to count (Failed, DeadLettered, Unsupported); empty counts all three.</summary>
+    /// <summary>Statuses to count (backlog only: Failed, DeadLettered, Unsupported); empty counts all three.</summary>
     public List<string> Statuses { get; set; } = new();
 
-    /// <summary>A case-insensitive substring the error text must contain, up to 200 characters.</summary>
+    /// <summary>A case-insensitive substring the error text must contain (backlog and occurrences), up to 200 characters.</summary>
     public string? ErrorTextContains { get; set; }
 
-    /// <summary>The backlog at which the rule fires (1–100).</summary>
+    /// <summary>The count at which the rule fires (backlog and occurrences, 1–100).</summary>
     public int Threshold { get; set; } = 1;
+
+    /// <summary>The window failed attempts are counted in (occurrences).</summary>
+    public int? WindowMinutes { get; set; }
+
+    /// <summary>
+    /// Minutes: how long the oldest blocking event has not changed (blocked session), or how long
+    /// nothing completed (silence).
+    /// </summary>
+    public int? Minutes { get; set; }
+
+    /// <summary>The number of deferred events on the endpoint at which a blocked-session rule fires.</summary>
+    public int? DeferredThreshold { get; set; }
 
     /// <summary>A copy.</summary>
     public AlertRuleCondition Clone()

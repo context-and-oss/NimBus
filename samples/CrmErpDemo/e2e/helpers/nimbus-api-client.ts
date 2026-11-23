@@ -83,7 +83,11 @@ export interface AlertSubscriptionCreated {
 export interface AlertRuleRequest {
   name: string;
   enabled: boolean;
-  condition: { threshold: number; eventTypes?: string[]; statuses?: string[]; errorTextContains?: string | null };
+  condition: {
+    kind?: "failure_backlog" | "failure_occurrences" | "blocked_session" | "silence";
+    threshold?: number; eventTypes?: string[]; statuses?: string[]; errorTextContains?: string | null;
+    windowMinutes?: number; minutes?: number; deferredThreshold?: number;
+  };
   resolveAfterMinutes: number;
   targets: Array<{ id?: string; type: "mail" | "webhook"; address?: string; url?: string }>;
 }

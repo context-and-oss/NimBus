@@ -79,6 +79,8 @@ public static class SqlServerMessageStoreBuilderExtensions
             (IOperatorOperationStore)sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IAlertRuleStore>(sp =>
             (IAlertRuleStore)sp.GetRequiredService<INimBusMessageStore>());
+        services.AddSingleton<IAlertSignalStore>(sp =>
+            (IAlertSignalStore)sp.GetRequiredService<INimBusMessageStore>());
 
         services.AddSingleton<IStorageProviderRegistration>(_ => new SqlServerStorageProviderRegistration());
         services.AddSingleton<IStorageProviderCapabilities>(_ => new SqlServerStorageProviderCapabilities());

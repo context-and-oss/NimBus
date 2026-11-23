@@ -8524,7 +8524,7 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     /// <summary>
-    /// What a rule watches. Phase 1 has one kind, failure_backlog: the events on the endpoint that are failed now (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time window.
+    /// What a rule watches. failure_backlog: the events on the endpoint that are failed now (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time window. failure_occurrences: failed attempts on the endpoint in the last windowMinutes, counted from message history even if the events were resolved later. blocked_session: the oldest Failed or handed-off event has not changed for minutes, or at least deferredThreshold events are deferred on the endpoint. silence: no message on the endpoint completed for minutes. Fields that don't apply to the kind are ignored.
     /// </summary>
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class AlertRuleCondition : System.ComponentModel.INotifyPropertyChanged
@@ -8534,9 +8534,12 @@ namespace NimBus.WebApp.ManagementApi
         private System.Collections.Generic.List<string> _statuses;
         private string _errorTextContains;
         private int _threshold;
+        private int? _windowMinutes;
+        private int? _minutes;
+        private int? _deferredThreshold;
 
         /// <summary>
-        /// failure_backlog.
+        /// failure_backlog, failure_occurrences, blocked_session or silence. Omitted means failure_backlog.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("kind", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string Kind    {
@@ -8552,7 +8555,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Event types to count; empty counts every type.
+        /// Event types to count (backlog and occurrences); empty counts every type.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("eventTypes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<string> EventTypes    {
@@ -8568,7 +8571,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Statuses to count (Failed, DeadLettered, Unsupported); empty counts all three.
+        /// Statuses to count (backlog only; Failed, DeadLettered, Unsupported); empty counts all three.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<string> Statuses    {
@@ -8584,7 +8587,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// A case-insensitive substring the error text must contain.
+        /// A case-insensitive substring the error text must contain (backlog and occurrences).
         /// </summary>
         [Newtonsoft.Json.JsonProperty("errorTextContains", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         [System.ComponentModel.DataAnnotations.StringLength(200)]
@@ -8601,7 +8604,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// The backlog at which the rule fires.
+        /// The count at which the rule fires (backlog and occurrences).
         /// </summary>
         [Newtonsoft.Json.JsonProperty("threshold", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         [System.ComponentModel.DataAnnotations.Range(1, 100)]
@@ -8612,6 +8615,57 @@ namespace NimBus.WebApp.ManagementApi
                 if (_threshold != value)
                 {
                     _threshold = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The window failed attempts are counted in (occurrences; required there).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("windowMinutes", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.Range(5, 1440)]
+        public int? WindowMinutes    {
+            get { return _windowMinutes; }
+            set
+            {
+                if (_windowMinutes != value)
+                {
+                    _windowMinutes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Blocked session: how long the oldest blocking event has not changed (1–1440). Silence: how long nothing completed (5–1440; required there).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("minutes", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.Range(1, 1440)]
+        public int? Minutes    {
+            get { return _minutes; }
+            set
+            {
+                if (_minutes != value)
+                {
+                    _minutes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The number of deferred events at which a blocked-session rule fires. A blocked-session rule needs minutes, deferredThreshold or both.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("deferredThreshold", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.Range(1, 1000)]
+        public int? DeferredThreshold    {
+            get { return _deferredThreshold; }
+            set
+            {
+                if (_deferredThreshold != value)
+                {
+                    _deferredThreshold = value;
                     RaisePropertyChanged();
                 }
             }
@@ -9312,6 +9366,7 @@ namespace NimBus.WebApp.ManagementApi
         private bool _mailEnabled;
         private bool _webhookEnabled;
         private bool _canManage;
+        private System.Collections.Generic.List<string> _availableKinds;
 
         [Newtonsoft.Json.JsonProperty("rules", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<AlertRuleModel> Rules    {
@@ -9385,6 +9440,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_canManage != value)
                 {
                     _canManage = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The condition kinds this deployment's storage provider can evaluate.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("availableKinds", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> AvailableKinds    {
+            get { return _availableKinds; }
+            set
+            {
+                if (_availableKinds != value)
+                {
+                    _availableKinds = value;
                     RaisePropertyChanged();
                 }
             }
