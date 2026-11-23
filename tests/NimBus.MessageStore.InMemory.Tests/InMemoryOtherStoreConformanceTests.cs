@@ -85,3 +85,9 @@ public sealed class InMemoryAlertRuleStoreTests : AlertRuleStoreConformanceTests
 {
     protected override IAlertRuleStore CreateStore() => new InMemoryMessageStore();
 }
+
+[TestClass]
+public sealed class InMemoryAlertSignalStoreTests : AlertSignalStoreConformanceTests
+{
+    protected override IAlertSignalStore CreateStore() => new InMemoryMessageStore();
+}

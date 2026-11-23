@@ -22,7 +22,7 @@ namespace NimBus.Testing.Conformance;
 /// transitions, message persistence, and basic queries the conformance suite cares
 /// about. Search/pagination methods return empty results.
 /// </summary>
-public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore
+public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore, IAlertSignalStore
 {
     // The operator operation journal (Spec 044 Phase 2), kept in its own class.
     private readonly InMemoryOperatorOperationStore _operations = new();
@@ -34,6 +34,8 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
     // Rows archived by TryArchiveUnresolvedEvent, kept so TryRestoreArchivedEvent can put them back.
     private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _archived = new();
     private readonly ConcurrentDictionary<(string EventId, string MessageId), MessageEntity> _messages = new();
+    // The alert rule signals (Spec 053 Phase 2), read over the messages and live events above.
+    private readonly InMemoryAlertSignalStore _alertSignals;
     private readonly ConcurrentDictionary<string, List<MessageAuditEntity>> _audits = new();
     private readonly ConcurrentDictionary<string, EndpointSubscription> _subscriptions = new();
     // Tuple key, not string concatenation — ("a_b","c") and ("a","b_c") must
@@ -62,6 +64,12 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
     private readonly object _dashboardTokensLock = new();
     private DashboardTokenSettings? _dashboardTokenSettings;
     private readonly ConcurrentDictionary<string, DateTime> _dashboardTokenUsage = new(StringComparer.Ordinal);
+
+    /// <summary>Creates an empty store.</summary>
+    public InMemoryMessageStore()
+    {
+        _alertSignals = new InMemoryAlertSignalStore(() => _messages.Values, () => _events.Values);
+    }
 
     private static (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -1611,4 +1619,13 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
         => _alertRules.CompleteAlertRuleEvaluatorTick(claimedAtUtc, completedAtUtc);
     /// <inheritdoc />
     public virtual Task<AlertRuleEvaluatorStatus> GetAlertRuleEvaluatorStatus() => _alertRules.GetAlertRuleEvaluatorStatus();
+
+    // ───────── Alert rule signals (IAlertSignalStore) — implementation in InMemoryAlertSignalStore ─────────
+    /// <inheritdoc />
+    public virtual Task<int> CountFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int cap)
+        => _alertSignals.CountFailedAttempts(endpointId, fromUtc, toUtc, eventTypes, errorTextContains, cap);
+    /// <inheritdoc />
+    public virtual Task<BlockingEvent?> GetOldestBlockingEvent(string endpointId) => _alertSignals.GetOldestBlockingEvent(endpointId);
+    /// <inheritdoc />
+    public virtual Task<bool> HasCompletedMessageSince(string endpointId, DateTime sinceUtc) => _alertSignals.HasCompletedMessageSince(endpointId, sinceUtc);
 }
