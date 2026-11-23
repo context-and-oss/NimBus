@@ -91,6 +91,7 @@ internal static class InboxRegistration
         var registration = provider switch
         {
             InboxStore.Cosmos => "services.AddNimBusCosmosInbox(...) from NimBus.MessageStore.CosmosDb",
+            InboxStore.AzureTable => "services.AddNimBusAzureTableInbox(...) from NimBus.Inbox.AzureTables",
             InboxStore.SqlServer => "services.AddNimBusSqlServerInbox(...) from NimBus.Inbox.SqlServer",
             InboxStore.InMemory => "services.AddNimBusInMemoryInbox() from NimBus.Testing",
             _ => "the matching inbox provider extension",

@@ -59,20 +59,22 @@ public sealed class InboxRegistrationTests
     }
 
     [TestMethod]
-    public void Missing_selected_provider_fails_when_subscriber_is_started_with_guidance()
+    [DataRow(InboxStore.SqlServer, "AddNimBusSqlServerInbox")]
+    [DataRow(InboxStore.AzureTable, "AddNimBusAzureTableInbox")]
+    public void Missing_selected_provider_fails_when_subscriber_is_started_with_guidance(InboxStore selected, string registration)
     {
         var services = CreateServices();
         services.AddNimBusSubscriber(
             "Billing",
             builder => builder.UseInbox(options =>
-                options.DeduplicationStore = InboxStore.SqlServer));
+                options.DeduplicationStore = selected));
 
         using var provider = services.BuildServiceProvider();
         var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
             provider.GetRequiredService<ISubscriberClient>());
 
-        StringAssert.Contains(exception.Message, "SqlServer", StringComparison.Ordinal);
-        StringAssert.Contains(exception.Message, "AddNimBusSqlServerInbox", StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, selected.ToString(), StringComparison.Ordinal);
+        StringAssert.Contains(exception.Message, registration, StringComparison.Ordinal);
         StringAssert.Contains(exception.Message, "keyed", StringComparison.Ordinal);
     }
 

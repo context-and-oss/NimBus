@@ -697,8 +697,11 @@ The inbox key is `(endpoint, MessageId)`, so it only works when publishers send
 deterministic message IDs: the same change must always get the same
 `MessageId`. See [Publisher setup](#publisher-setup).
 
-Keep the inbox table in a database the integration platform owns, not in the
-external system. A SaaS system such as Dataverse or Business Central gives you
+An adapter that already has an Azure Storage account can keep its inbox there.
+Provision one table, register its `TableClient` with `AddNimBusAzureTableInbox`,
+and select `InboxStore.AzureTable`. See [Azure Table Storage setup](inbox-pattern.md#azure-table-storage-for-lightweight-adapters).
+
+Keep the inbox in storage owned by the integration platform. A SaaS system such as Dataverse or Business Central gives you
 no tables of your own, and its writes could not share a transaction with the
 inbox record anyway. The inbox narrows the duplicate window; it does not close
 it, so handlers still need idempotent writes (see below).
@@ -853,7 +856,7 @@ host.Run();
 template's
 [`ExternalSystemResilience.cs`](https://github.com/akakaule/nimbus-adapter-kit/blob/main/skills/nimbus-adapter/template/src/TemplateAdapter.Adapter/Resilience/ExternalSystemResilience.cs).
 Add the outbox when publishing is coupled to a local database transaction, and
-the inbox when the adapter has a database for it.
+the inbox when the adapter has durable storage for its receipts.
 
 ## Adapter testing
 

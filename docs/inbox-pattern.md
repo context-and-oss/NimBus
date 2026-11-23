@@ -33,11 +33,39 @@ The supported providers are:
 
 - `AddNimBusSqlServerInbox(...)` from `NimBus.Inbox.SqlServer`;
 - `AddNimBusCosmosInbox(...)` from `NimBus.MessageStore.CosmosDb`;
+- `AddNimBusAzureTableInbox(TableClient)` from `NimBus.Inbox.AzureTables`;
 - `AddNimBusInMemoryInbox()` from `NimBus.Testing`, intended for tests and local harnesses.
 
 Selecting a provider without registering its package fails during host startup with a configuration error. The in-memory provider is not a durable production store and should not be used where deduplication must survive a restart.
 
 Enabling the inbox does not backfill IDs for messages that succeeded before deployment. A redelivery of one of those older messages can therefore run once and create its first inbox record. Plan the rollout and retention window with that compatibility boundary in mind.
+
+### Azure Table Storage for lightweight adapters
+
+Install `Akaule.NimBus.Inbox.AzureTables` in the subscriber. Provision a dedicated table such as `NimBusInbox` in an Azure Storage account. Give the adapter identity the **Storage Table Data Contributor** role scoped to that table. Build the client with the account's primary Table service URI so every adapter instance reads committed receipts.
+
+```csharp
+using Azure.Data.Tables;
+using Azure.Identity;
+using NimBus.Core.Inbox;
+using NimBus.Inbox.AzureTables;
+
+var table = new TableClient(
+    new Uri("https://<account>.table.core.windows.net"),
+    "NimBusInbox",
+    new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned));
+
+builder.Services.AddNimBusAzureTableInbox(table);
+builder.Services.AddNimBusSubscriber("BillingEndpoint", subscriber =>
+{
+    subscriber.AddHandler<OrderPlaced, OrderPlacedHandler>();
+    subscriber.UseInbox(options => options.DeduplicationStore = InboxStore.AzureTable);
+});
+```
+
+The managed identity example uses the adapter's `Azure.Identity` package. For local development, pass `new TableClient("UseDevelopmentStorage=true", "NimBusInbox")` and create the table in Azurite first. To run the provider tests, set `NIMBUS_TABLE_TEST_CONNECTION` to the emulator connection string. The suite creates and removes its own isolated tables.
+
+Each endpoint uses one partition. A duplicate check is one point read. A successful handler writes the receipt and a time-ordered index entry in one transaction. Cleanup queries the expired range in that partition and deletes each pair atomically. Only hashes and creation-time information are stored. Each pass examines up to 1,000 expired receipts per subscriber instance. For example, with hourly cleanup on one instance, sustained traffic above 1,000 new receipts per hour can build a cleanup backlog. Shorten `CleanupInterval` to keep pace. A busy endpoint is subject to the throughput limits of one Table Storage partition.
 
 ## Processing order
 

@@ -46,7 +46,7 @@ services.AddNimBusSubscriber("BillingEndpoint", sub =>
 });
 ```
 
-The selectable providers are `InboxStore.SqlServer`, `InboxStore.Cosmos`, and
+The selectable providers are `InboxStore.SqlServer`, `InboxStore.Cosmos`, `InboxStore.AzureTable`, and
 `InboxStore.InMemory`. The matching keyed provider registration is mandatory;
 subscriber startup fails if it is missing. Records are keyed by the
 `(endpoint, MessageId)` pair — byte-exact on every provider via a shared

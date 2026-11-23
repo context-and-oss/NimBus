@@ -115,6 +115,7 @@
   <Project Path="../tests/NimBus.Extensions.Identity.Tests/NimBus.Extensions.Identity.Tests.csproj" />
   <Project Path="../tests/NimBus.Extensions.IntegrationIntelligence.Tests/NimBus.Extensions.IntegrationIntelligence.Tests.csproj" />
   <Project Path="../tests/NimBus.Extensions.Notifications.Tests/NimBus.Extensions.Notifications.Tests.csproj" />
+  <Project Path="../tests/NimBus.Inbox.AzureTables.Tests/NimBus.Inbox.AzureTables.Tests.csproj" />
   <Project Path="../tests/NimBus.Inbox.SqlServer.Tests/NimBus.Inbox.SqlServer.Tests.csproj" />
   <Project Path="../tests/NimBus.Outbox.SqlServer.Tests/NimBus.Outbox.SqlServer.Tests.csproj" />
   <Project Path="../tests/NimBus.ServiceBusEmulator.Tests/NimBus.ServiceBusEmulator.Tests.csproj" />
@@ -123,6 +124,7 @@
   <Project Path="NimBus.AspireHosting/NimBus.AspireHosting.csproj" />
   <Project Path="NimBus.Extensions.Http/NimBus.Extensions.Http.csproj" />
   <Project Path="NimBus.Extensions.IntegrationIntelligence/NimBus.Extensions.IntegrationIntelligence.csproj" />
+  <Project Path="NimBus.Inbox.AzureTables/NimBus.Inbox.AzureTables.csproj" />
   <Project Path="NimBus.Inbox.SqlServer/NimBus.Inbox.SqlServer.csproj" />
   <Project Path="NimBus.Manager/NimBus.Manager.csproj" />
   <Project Path="NimBus.Resolver.Host/NimBus.Resolver.Host.csproj" />

@@ -22,7 +22,7 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 | Messaging patterns | CloudEvents interop | Per-endpoint `UseCloudEvents` publishing and consuming in binary or structured JSON mode, with format detection on the subscriber. | `NimBus.SDK`, `NimBus.Core` |
 | Messaging patterns | Commands | `Command` messages must have exactly one consumer; topology provisioning fails otherwise (ADR-014). | `NimBus.Abstractions`, `NimBus.ServiceBus` |
 | Delivery guarantees | Transactional outbox | Persist outgoing messages in SQL Server outbox and dispatch asynchronously. | `NimBus.Outbox.SqlServer` |
-| Delivery guarantees | Consumer inbox | Opt-in per-endpoint `MessageId` deduplication, recorded after a successful handler; a redelivered duplicate is skipped. SQL Server, Cosmos DB, or in-memory for tests. | `NimBus.Inbox.SqlServer`, `NimBus.MessageStore.CosmosDb`, `NimBus.SDK` |
+| Delivery guarantees | Consumer inbox | Opt-in per-endpoint `MessageId` deduplication, recorded after a successful handler; a redelivered duplicate is skipped. SQL Server, Cosmos DB, Azure Table Storage, or in-memory for tests. | `NimBus.Inbox.AzureTables`, `NimBus.Inbox.SqlServer`, `NimBus.MessageStore.CosmosDb`, `NimBus.SDK` |
 | Extensibility hooks | Pipeline middleware | Middleware behaviors wrap handling for cross-cutting concerns. | `NimBus.Core` |
 | Extensibility hooks | Lifecycle observers | Passive hooks for received/completed/failed/dead-lettered message events. | `NimBus.Core` |
 | Built-in middleware | Logging/Metrics/Validation middleware | Built-in behaviors for processing logs, OpenTelemetry metrics, and basic message validation. | `NimBus.Core` |

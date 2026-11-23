@@ -13,4 +13,7 @@ public enum InboxStore
 
     /// <summary>An in-memory inbox provider intended for tests and local development.</summary>
     InMemory = 2,
+
+    /// <summary>An Azure Table Storage inbox provider.</summary>
+    AzureTable = 3,
 }
