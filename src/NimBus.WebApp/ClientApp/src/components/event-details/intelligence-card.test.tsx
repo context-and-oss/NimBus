@@ -27,7 +27,7 @@ describe("IntelligenceCard", () => {
 
     render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
 
-    expect(await screen.findByText("business_rule (90%)")).toBeTruthy();
+    expect(await screen.findByText("Business rule")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /analyze/i })).toBeNull();
     expect(fetchMock.mock.calls.some(call => (call[1] as RequestInit | undefined)?.method === "POST")).toBe(false);
   });
@@ -60,7 +60,7 @@ describe("IntelligenceCard", () => {
 
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
 
-    expect(screen.getByText("business_rule (90%)")).toBeTruthy();
+    expect(screen.getByText("Business rule")).toBeTruthy();
     expect(screen.queryByText("A classification is being stored.")).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(fetchMock).toHaveBeenCalledTimes(4);
@@ -91,10 +91,10 @@ describe("IntelligenceCard", () => {
       .mockResolvedValueOnce(new Response(null, { status: 404 }));
     globalThis.fetch = fetchMock as typeof fetch;
     const view = render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
-    await screen.findByText("old_failure (100%)");
+    await screen.findByText("old_failure", { selector: "strong" });
     view.rerender(<IntelligenceCard endpointId="orders" eventId="event-2" messageId="message-2" resolutionStatus="Failed" />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-    expect(screen.queryByText("old_failure (100%)")).toBeNull();
+    expect(screen.queryByText("old_failure")).toBeNull();
   });
 
   it("shows a saved result in read-only mode and says agents can't record", async () => {
@@ -103,7 +103,7 @@ describe("IntelligenceCard", () => {
       .mockResolvedValueOnce(readOnly())
       .mockResolvedValueOnce(new Response(JSON.stringify({ category: "business_rule", categoryConfidence: 0.9, retryLikelihood: 0, changeRequiredLikelihood: 1, externalDependencyLikelihood: 0, guidance: "ChangeLikelyRequired", revision: 2, model: "test", createdAtUtc: "2026-09-20T00:00:00Z" }))) as typeof fetch;
     render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
-    await screen.findByText("business_rule (90%)");
+    await screen.findByText("Business rule");
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getByText(/Agents can't record new classifications in this deployment/)).toBeTruthy();
   });
@@ -122,11 +122,11 @@ describe("IntelligenceCard", () => {
 
     render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
 
-    await screen.findByText("missing_reference_data (85%)");
+    await screen.findByText("Missing reference data");
     expect(screen.getByText(/Recorded by an agent/)).toBeTruthy();
     expect(screen.getByText(/Model claude-opus-5-5 \(as declared\)/)).toBeTruthy();
     expect(screen.getByText(/Client 44444444-4444-4444-4444-444444444444/)).toBeTruthy();
-    expect(screen.getByText("Source data (80%)")).toBeTruthy();
+    expect(screen.getByText("Source data")).toBeTruthy();
     expect(screen.getByText("Field customerId is empty. <script>alert(1)</script>")).toBeTruthy();
     expect(document.querySelector("script")).toBeNull();
     expect(screen.getByText("Agents record classifications over MCP.")).toBeTruthy();
@@ -153,7 +153,7 @@ describe("IntelligenceCard", () => {
 
     render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
 
-    await screen.findByText("business_rule (90%)");
+    await screen.findByText("Business rule");
     expect(screen.getByText("Not assessed")).toBeTruthy();
     expect(screen.queryByText(/Recorded by an agent/)).toBeNull();
   });
@@ -187,10 +187,10 @@ describe("IntelligenceCard", () => {
         createdAtUtc: "2026-09-20T00:00:00Z", categoryProbabilities: { business_rule: 0.7, unknown: 0.2, transient_dependency: 0.1 }, questionSetVersion: 1,
       }))) as typeof fetch;
     render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
-    await screen.findByText("business_rule (90%)");
-    await userEvent.click(screen.getByText("Classification details"));
-    expect(screen.getByText("unknown: 20%")).toBeTruthy();
-    expect(screen.getByText("transient_dependency: 10%")).toBeTruthy();
+    await screen.findByText("Business rule");
+    await userEvent.click(screen.getByText("Details"));
+    expect(screen.getByText("Unknown: 20%")).toBeTruthy();
+    expect(screen.getByText("Transient dependency: 10%")).toBeTruthy();
     expect(screen.getByText("Question set v1")).toBeTruthy();
   });
 
@@ -208,10 +208,10 @@ describe("IntelligenceCard", () => {
         }))) as typeof fetch;
       const view = render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" highlighted />);
 
-      await screen.findByText("business_rule (90%)");
+      await screen.findByText("Business rule");
       expect(screen.getByText(/Revision 2 · TypeSafe · test/)).toBeTruthy();
       expect(screen.getByText(/built-in provider \(before NimBus 5\.0\)/)).toBeTruthy();
-      await userEvent.click(screen.getByText("Classification details"));
+      await userEvent.click(screen.getByText("Details"));
       expect(screen.getByText("Threshold settings not recorded")).toBeTruthy();
       expect(view.container.querySelector('[aria-current="true"]')).toBeTruthy();
       expect(scrollIntoView).toHaveBeenCalledTimes(1);
@@ -240,7 +240,7 @@ describe("IntelligenceCard", () => {
 
     render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="failure-message-7" resolutionStatus="DeadLettered" />);
 
-    await screen.findByText("transient_dependency (91%)");
+    await screen.findByText("Transient dependency");
     expect(screen.getByText(/A manual resubmit is reasonable once the dependency is healthy/)).toBeTruthy();
     expect(screen.getByText(/A temporary downstream or infrastructure condition/)).toBeTruthy();
     expect(fetchMock.mock.calls[1][0]).toContain("/failures/event-1/failure-message-7/classification");
