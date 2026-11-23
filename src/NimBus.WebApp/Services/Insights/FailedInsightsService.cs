@@ -657,8 +657,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
                 continue;
             }
 
-            if (!string.Equals(latest.EndpointId, row.Info.EndpointId, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(latest.EventId, row.Info.EventId, StringComparison.Ordinal))
+            if (!ClassificationMatch.IsSameSource(latest, row.Info.EndpointId, row.Info.EventId))
             {
                 // A result that names another source is never shown, only counted as uncertain.
                 mismatches++;
@@ -667,11 +666,8 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             }
 
             // Stored guidance is a Newtonsoft integer: an out-of-range value deserializes without error.
-            var guidanceKnown = Enum.IsDefined(latest.Guidance);
-            var categoryKnown = FailureClassificationQuestionSet.Categories.Contains(latest.Category);
-            var guidanceKey = guidanceKnown ? latest.Guidance.ToString() : nameof(FailureGuidance.Uncertain);
-            var classified = guidanceKnown && categoryKnown
-                && latest.Category != "unknown" && latest.Guidance != FailureGuidance.Uncertain;
+            var guidanceKey = Enum.IsDefined(latest.Guidance) ? latest.Guidance.ToString() : nameof(FailureGuidance.Uncertain);
+            var classified = ClassificationMatch.IsClassified(latest);
             // Version 1 records have no origin (Spec 044 §6.2); an origin outside the set is unknown.
             var originKey = string.IsNullOrEmpty(latest.FaultOrigin)
                 ? NotAssessed
