@@ -1,3 +1,4 @@
+using Azure.Data.Tables;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using CrmErpDemo.Contracts.Events;
@@ -8,6 +9,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NimBus.Core.CloudEvents;
+using NimBus.Core.Inbox;
+using NimBus.Inbox.AzureTables;
 using NimBus.SDK.Extensions;
 
 var builder = FunctionsApplication.CreateBuilder(args);
@@ -31,6 +34,16 @@ builder.Services.AddSingleton<ServiceBusClient>(sp =>
     return new ServiceBusClient(connection);
 });
 
+// Reuse the Functions host account. Aspire supplies a local Azurite connection
+// string or a primary Table service URI and the adapter's identity in Azure.
+const string inboxTableName = "DataPlatformInbox";
+var inboxTable = builder.Configuration["AzureWebJobsStorage:tableServiceUri"] is { Length: > 0 } tableUri
+    ? new TableClient(new Uri(tableUri), inboxTableName, new DefaultAzureCredential())
+    : new TableClient(builder.Configuration["AzureWebJobsStorage"]
+        ?? throw new InvalidOperationException("AzureWebJobsStorage is required for the DataPlatform inbox."), inboxTableName);
+await inboxTable.CreateIfNotExistsAsync();
+builder.Services.AddNimBusAzureTableInbox(inboxTable);
+
 // Register EnrichedContactHandler for DI resolution. The SP-factory below resolves it
 // ONCE at ISubscriberClient construction and captures it for the lifetime of the host, so
 // Singleton is the honest lifetime (its only dependency, ILogger<T>, is itself a singleton).
@@ -47,6 +60,7 @@ builder.Services.AddNimBusSubscriber(
     },
     configureBuilder: sub =>
     {
+        sub.UseInbox(options => options.DeduplicationStore = InboxStore.AzureTable);
         sub.AddHandler<ErpCustomerCreated, ErpCustomerCreatedHandler>();
 
         // Spec 022 Phase 3 Task D — consume the AI-agent enriched-contact event on this endpoint.

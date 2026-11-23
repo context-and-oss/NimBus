@@ -62,6 +62,11 @@ export class E2eControl {
     return await res.json();
   }
 
+  async sendDataPlatformCustomer(session: string): Promise<void> {
+    const res = await this.api.post(`/api/e2e/dataplatform-inbox/${session}`);
+    if (!res.ok()) throw new Error(`Send DataPlatform inbox delivery: ${res.status()}`);
+  }
+
   async replay(session: string, attempt: Attempt, payload: unknown): Promise<void> {
     const res = await this.api.post(`/api/e2e/replay/${session}`, { data: {
       eventId: attempt.eventId, messageId: attempt.messageId, eventJson: JSON.stringify(payload),

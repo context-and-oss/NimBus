@@ -28,6 +28,7 @@
     "demo:film": "node scripts/join-film.ts"
   },
   "devDependencies": {
+    "@azure/data-tables": "^13.3.2",
     "@playwright/test": "^1.48.0",
     "@types/node": "^22.0.0",
     "dotenv": "^16.4.5",
