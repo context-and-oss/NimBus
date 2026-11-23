@@ -283,6 +283,12 @@ public sealed class AlertRuleSignalConditionTests
             CompletedSinceCalls.Add(sinceUtc);
             return Task.FromResult(CompletedSince(sinceUtc));
         }
+
+        public Task<IReadOnlyList<MinuteCount>> CountMessagesPerMinute(string endpointId, MessageType type, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains)
+            => Task.FromResult<IReadOnlyList<MinuteCount>>([]);
+
+        public Task<FailedAttemptPage> ListFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int limit)
+            => Task.FromResult(new FailedAttemptPage([], false));
     }
 
     private sealed class RecordingWebhooks(List<AlertRuleNotice> sent) : IAlertRuleWebhookSender

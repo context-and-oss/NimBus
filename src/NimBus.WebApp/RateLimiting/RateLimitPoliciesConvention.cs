@@ -96,6 +96,13 @@ internal sealed class RateLimitPoliciesConvention : IApplicationModelConvention
             return RateLimitPolicyNames.Search;
         }
 
+        // A rule preview replays a day of the endpoint's message history (Spec 053 Phase 3).
+        if (type == typeof(AlertRulesApiController)
+            && action.ActionMethod.Name == nameof(AlertRulesApiController.PostEndpointAlertRulePreview))
+        {
+            return RateLimitPolicyNames.Search;
+        }
+
         if (type == typeof(AccountController)
             && action.ActionMethod.Name == nameof(AccountController.Login))
         {

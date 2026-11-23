@@ -17,6 +17,9 @@ public static class AlertRuleTelemetry
     /// <summary>Transitions, tagged with the status the rule moved to.</summary>
     public static readonly Counter<long> Transitions = Meter.CreateCounter<long>("nimbus.alert_rules.transitions");
 
+    /// <summary>Rules not evaluated in a tick, by reason (kind_unavailable, classification_unavailable, classification_scan_limit).</summary>
+    public static readonly Counter<long> Skipped = Meter.CreateCounter<long>("nimbus.alert_rules.skipped");
+
     /// <summary>Notice deliveries that failed, tagged with the channel.</summary>
     public static readonly Counter<long> NoticeFailures = Meter.CreateCounter<long>("nimbus.alert_rules.notice_failures");
 
