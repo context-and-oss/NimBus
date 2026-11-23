@@ -23924,6 +23924,8 @@ export class MonitorFeedEndpoint implements IMonitorFeedEndpoint {
     blockedSessionCount?: number | undefined;
     heartbeat?: MonitorFeedHeartbeat;
     acknowledgement?: MonitorAcknowledgement;
+    /** Whether an alert rule on the endpoint is firing (Spec 053 Phase 3). Never which rule. Null when the store has no alert rules or they couldn't be read. */
+    alertRuleFiring?: boolean | undefined;
 
     [key: string]: any;
 
@@ -23946,6 +23948,7 @@ export class MonitorFeedEndpoint implements IMonitorFeedEndpoint {
             this.blockedSessionCount = _data["blockedSessionCount"];
             this.heartbeat = _data["heartbeat"] ? MonitorFeedHeartbeat.fromJS(_data["heartbeat"]) : undefined as any;
             this.acknowledgement = _data["acknowledgement"] ? MonitorAcknowledgement.fromJS(_data["acknowledgement"]) : undefined as any;
+            this.alertRuleFiring = _data["alertRuleFiring"];
         }
     }
 
@@ -23966,6 +23969,7 @@ export class MonitorFeedEndpoint implements IMonitorFeedEndpoint {
         data["blockedSessionCount"] = this.blockedSessionCount;
         data["heartbeat"] = this.heartbeat ? this.heartbeat.toJSON() : undefined as any;
         data["acknowledgement"] = this.acknowledgement ? this.acknowledgement.toJSON() : undefined as any;
+        data["alertRuleFiring"] = this.alertRuleFiring;
         return data;
     }
 
@@ -23983,6 +23987,8 @@ export interface IMonitorFeedEndpoint {
     blockedSessionCount?: number | undefined;
     heartbeat?: MonitorFeedHeartbeat;
     acknowledgement?: MonitorAcknowledgement;
+    /** Whether an alert rule on the endpoint is firing (Spec 053 Phase 3). Never which rule. Null when the store has no alert rules or they couldn't be read. */
+    alertRuleFiring?: boolean | undefined;
 
     [key: string]: any;
 }

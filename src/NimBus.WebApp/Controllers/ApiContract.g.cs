@@ -24396,6 +24396,7 @@ namespace NimBus.WebApp.ManagementApi
         private int? _blockedSessionCount;
         private MonitorFeedHeartbeat _heartbeat;
         private MonitorAcknowledgement _acknowledgement;
+        private bool? _alertRuleFiring;
 
         [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public EndpointStatusCount Status    {
@@ -24447,6 +24448,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_acknowledgement != value)
                 {
                     _acknowledgement = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether an alert rule on the endpoint is firing (Spec 053 Phase 3). Never which rule. Null when the store has no alert rules or they couldn't be read.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("alertRuleFiring", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool? AlertRuleFiring    {
+            get { return _alertRuleFiring; }
+            set
+            {
+                if (_alertRuleFiring != value)
+                {
+                    _alertRuleFiring = value;
                     RaisePropertyChanged();
                 }
             }

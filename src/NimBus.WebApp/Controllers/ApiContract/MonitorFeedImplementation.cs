@@ -46,6 +46,7 @@ public sealed partial class MonitorFeedImplementation : IMonitorFeedApiControlle
     private readonly IEndpointMetadataStore _metadataStore;
     private readonly IMetricsStore _metricsStore;
     private readonly IMonitorMetricsStore? _monitorStore;
+    private readonly IAlertRuleStore? _alertRules;
     private readonly IStoreResultCache _storeResultCache;
     private readonly IMonitorFeedCache _feedCache;
     private readonly IMonitorAcknowledgementService _acknowledgements;
@@ -68,8 +69,10 @@ public sealed partial class MonitorFeedImplementation : IMonitorFeedApiControlle
         IHeartbeatService heartbeats,
         TimeProvider time,
         ILogger<MonitorFeedImplementation> logger,
-        IMonitorMetricsStore? monitorStore = null)
+        IMonitorMetricsStore? monitorStore = null,
+        IAlertRuleStore? alertRules = null)
     {
+        _alertRules = alertRules;
         ArgumentNullException.ThrowIfNull(contextAccessor);
         _context = contextAccessor.HttpContext!;
         _platform = platform;
@@ -219,9 +222,11 @@ public sealed partial class MonitorFeedImplementation : IMonitorFeedApiControlle
         var acknowledgements = await _storeResultCache.GetOrCreateAsync(
             MonitorAcknowledgementService.ActiveSnapshotCacheKey, AcknowledgementsTtl, _acknowledgements.GetActiveAsync);
 
+        var firing = await FiringEndpointsAsync();
         foreach (var endpoint in statuses)
         {
             var id = endpoint.Status.EndpointId;
+            endpoint.AlertRuleFiring = firing?.Contains(id);
             if (heartbeats.TryGetValue(id, out var heartbeat))
                 endpoint.Heartbeat = heartbeat;
             var acknowledgement = acknowledgements.FirstOrDefault(a => string.Equals(a.EndpointId, id, StringComparison.OrdinalIgnoreCase));
@@ -248,6 +253,30 @@ public sealed partial class MonitorFeedImplementation : IMonitorFeedApiControlle
 #pragma warning restore CA1031
         {
             LogBlockedSessionsUnavailable(_logger, ex, endpointId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The endpoints with a firing alert rule (Spec 053 Phase 3), or null when the store has no
+    /// alert rules or can't be read. Only the fact that a rule fires reaches the wall, never the
+    /// rule: a token holder sees every endpoint.
+    /// </summary>
+    private async Task<HashSet<string>?> FiringEndpointsAsync()
+    {
+        if (_alertRules is null)
+            return null;
+
+        try
+        {
+            var ids = await _alertRules.ListEndpointsWithFiringAlertRules();
+            return new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+        }
+#pragma warning disable CA1031 // Firing rules are a side signal; the wall shows the rest without them.
+        catch (Exception ex) when (ex is not OperationCanceledException)
+#pragma warning restore CA1031
+        {
+            LogFiringRulesUnavailable(_logger, ex);
             return null;
         }
     }
@@ -406,6 +435,9 @@ public sealed partial class MonitorFeedImplementation : IMonitorFeedApiControlle
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Blocked-session count unavailable for endpoint {EndpointId}")]
     private static partial void LogBlockedSessionsUnavailable(ILogger logger, Exception exception, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Firing alert rules unavailable for the Monitor feed")]
+    private static partial void LogFiringRulesUnavailable(ILogger logger, Exception exception);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Heartbeat overview unavailable for the Monitor feed")]
     private static partial void LogHeartbeatUnavailable(ILogger logger, Exception exception);
