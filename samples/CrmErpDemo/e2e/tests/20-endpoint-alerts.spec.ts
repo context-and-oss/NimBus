@@ -225,6 +225,19 @@ test("a failure-occurrences rule opens when attempts fail in its window", async 
       { timeoutMs: 180_000, description: "Opened failure-occurrences notice" });
     expect(opened.body).toMatchObject({ version: 2, conditionKind: "failure_occurrences", endpointId: flow.endpoint, value: 2, threshold: 2 });
     expect(signatureMatches(secret!, opened.received)).toBe(true);
+
+    // Spec 053 Phase 3: the Monitor feed marks the endpoint, and a preview replays the failures from
+    // history into a firing period that is still open. Its window is wider than the rule's, so the
+    // first failure can't age out between the notice and the preview.
+    const feed = await harness.nimbus.monitorFeedStatus();
+    expect(feed.endpoints.find(e => e.status.endpointId === flow.endpoint)?.alertRuleFiring).toBe(true);
+    const preview = await harness.nimbus.previewAlertRule(flow.endpoint, {
+      condition: { kind: "failure_occurrences", threshold: 2, windowMinutes: 15, eventTypes: [flow.eventType] },
+      resolveAfterMinutes: 1,
+    });
+    expect(preview.holdsNow).toBe(true);
+    expect(preview.replay?.periods.length, "The replay finds the failures it just alerted on").toBeGreaterThan(0);
+    expect(preview.replay?.periods.at(-1)?.toUtc ?? null, "Still firing at the end of the replay").toBeNull();
   } finally {
     await harness.nimbus.deleteAlertRule(flow.endpoint, ruleId);
     // Skip the event as it is now: a resubmit changes its last message id.

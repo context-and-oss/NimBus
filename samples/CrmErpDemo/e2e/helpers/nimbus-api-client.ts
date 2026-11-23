@@ -92,6 +92,13 @@ export interface AlertRuleRequest {
   targets: Array<{ id?: string; type: "mail" | "webhook"; address?: string; url?: string }>;
 }
 
+export interface AlertRulePreview {
+  valueNow?: number | null;
+  holdsNow?: boolean | null;
+  replay?: { fromUtc: string; toUtc: string; series: Array<{ atUtc: string; value: number }>; periods: Array<{ fromUtc: string; toUtc?: string | null }> } | null;
+  replayUnsupportedReason?: string | null;
+}
+
 export interface AlertRuleSaved {
   rule: { id: string; targets: Array<{ id: string; type: string }> };
   /** The signing secret of each new webhook target, only in this response. */
@@ -174,6 +181,20 @@ export class NimBusApiClient {
     const res = await this.api.post(`/api/v1/endpoint/${endpointId}/alert-rules`, { data: rule });
     if (!res.ok()) throw new Error(`NimBus create alert rule → ${await describeFailure(res)}`);
     return (await res.json()) as AlertRuleSaved;
+  }
+
+  /** Preview a draft alert rule: its value now and, for occurrences and silence, a 24 h replay. */
+  async previewAlertRule(endpointId: string, draft: { condition: AlertRuleRequest["condition"]; resolveAfterMinutes: number }): Promise<AlertRulePreview> {
+    const res = await this.api.post(`/api/v1/endpoint/${endpointId}/alert-rules/preview`, { data: draft });
+    if (!res.ok()) throw new Error(`NimBus preview alert rule → ${await describeFailure(res)}`);
+    return (await res.json()) as AlertRulePreview;
+  }
+
+  /** The Monitor wall's status feed, as a signed-in site Reader sees it. */
+  async monitorFeedStatus(): Promise<{ endpoints: Array<{ status: { endpointId: string }; alertRuleFiring?: boolean | null }> }> {
+    const res = await this.api.get("/api/v1/monitor/feed/status");
+    if (!res.ok()) throw new Error(`NimBus monitor feed → ${await describeFailure(res)}`);
+    return await res.json();
   }
 
   /** Delete an alert rule. */
