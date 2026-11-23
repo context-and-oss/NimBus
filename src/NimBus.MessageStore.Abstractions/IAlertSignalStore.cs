@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using NimBus.Core.Messages;
 using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore.Abstractions;
@@ -50,6 +51,36 @@ public interface IAlertSignalStore
     /// <param name="endpointId">The endpoint (exact match).</param>
     /// <param name="sinceUtc">The earliest time that counts.</param>
     Task<bool> HasCompletedMessageSince(string endpointId, DateTime sinceUtc);
+
+    /// <summary>
+    /// Per-minute counts of the endpoint's stored messages of one type with <c>EnqueuedTimeUtc</c> in
+    /// [<paramref name="fromUtc"/>, <paramref name="toUtc"/>), for a rule preview's replay (Spec 053
+    /// Phase 3). Minutes with no message are left out; the result is ordered by minute.
+    /// </summary>
+    /// <param name="endpointId">The endpoint (exact match).</param>
+    /// <param name="type">The message type to count, for example <see cref="MessageType.ErrorResponse"/>.</param>
+    /// <param name="fromUtc">The start, inclusive; must be a whole minute.</param>
+    /// <param name="toUtc">The end, exclusive; must be a whole minute after <paramref name="fromUtc"/>.</param>
+    /// <param name="eventTypes">Event types to count; null or empty counts every type.</param>
+    /// <param name="errorTextContains">
+    /// A case-insensitive substring of the error text, with the same meaning as in
+    /// <see cref="CountFailedAttempts"/>, or null.
+    /// </param>
+    Task<IReadOnlyList<MinuteCount>> CountMessagesPerMinute(string endpointId, MessageType type, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains);
+
+    /// <summary>
+    /// The endpoint's failed attempts — the same messages <see cref="CountFailedAttempts"/> counts — in
+    /// [<paramref name="fromUtc"/>, <paramref name="toUtc"/>), newest first, at most
+    /// <paramref name="limit"/>: their message and event ids, to look up their classifications.
+    /// </summary>
+    /// <param name="endpointId">The endpoint (exact match).</param>
+    /// <param name="fromUtc">The window's start, inclusive.</param>
+    /// <param name="toUtc">The window's end, exclusive.</param>
+    /// <param name="eventTypes">Event types to list; null or empty lists every type.</param>
+    /// <param name="errorTextContains">A case-insensitive substring of the error text, or null.</param>
+    /// <param name="limit">The most attempts to return (at least 1).</param>
+    /// <returns>The attempts, and whether more matched than <paramref name="limit"/>.</returns>
+    Task<FailedAttemptPage> ListFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int limit);
 }
 
 /// <summary>An event that holds its session blocked, as <see cref="IAlertSignalStore.GetOldestBlockingEvent"/> returns it.</summary>
@@ -58,3 +89,19 @@ public interface IAlertSignalStore
 /// <param name="Status">Failed, or Pending (with the Handoff sub-status).</param>
 /// <param name="UpdatedAtUtc">When the event last changed.</param>
 public sealed record BlockingEvent(string EventId, string SessionId, ResolutionStatus Status, DateTime UpdatedAtUtc);
+
+/// <summary>The number of messages in one minute, as <see cref="IAlertSignalStore.CountMessagesPerMinute"/> returns it.</summary>
+/// <param name="MinuteUtc">The minute's start (UTC, seconds zero).</param>
+/// <param name="Count">The messages enqueued in that minute.</param>
+public sealed record MinuteCount(DateTime MinuteUtc, int Count);
+
+/// <summary>One failed attempt, as <see cref="IAlertSignalStore.ListFailedAttempts"/> returns it.</summary>
+/// <param name="MessageId">The failed attempt's message id: the key its classification is stored under.</param>
+/// <param name="EventId">The event the attempt belongs to.</param>
+/// <param name="EnqueuedTimeUtc">When the attempt's message was enqueued.</param>
+public sealed record FailedAttempt(string MessageId, string EventId, DateTime EnqueuedTimeUtc);
+
+/// <summary>A page of <see cref="FailedAttempt"/>s, newest first.</summary>
+/// <param name="Items">The attempts, at most the requested limit.</param>
+/// <param name="Truncated">Whether more attempts matched than the limit.</param>
+public sealed record FailedAttemptPage(IReadOnlyList<FailedAttempt> Items, bool Truncated);
