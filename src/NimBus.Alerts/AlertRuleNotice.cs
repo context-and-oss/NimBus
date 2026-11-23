@@ -230,5 +230,10 @@ public static class AlertRuleText
         {
             text.Append(CultureInfo.InvariantCulture, $" with an error containing \"{condition.ErrorTextContains}\"");
         }
+
+        if (condition.Categories is { Count: > 0 } categories)
+        {
+            text.Append(CultureInfo.InvariantCulture, $" classified as {string.Join(" or ", categories.Select(c => c.Replace('_', ' ')))}");
+        }
     }
 }
