@@ -106,8 +106,8 @@ public static class OperatorPrompts
     private static string TriageText(string? endpointId, string period)
     {
         var scope = endpointId is null
-            ? "2. Call nimbus_get_worklist with the period in Inputs. It groups the open failed and dead-lettered messages on every endpoint you can read by endpoint, event type and error pattern, most first, each with an example, its saved classification and any Monitor acknowledgement (someone is already looking)."
-            : "2. Call nimbus_get_worklist with the endpointId and period in Inputs. It groups the endpoint's open failed and dead-lettered messages by event type and error pattern, most first, each with an example, its saved classification and any Monitor acknowledgement (someone is already looking).";
+            ? "2. Call nimbus_get_worklist with the period in Inputs. It groups the open failed and dead-lettered messages on every endpoint you can read by endpoint, event type and error pattern, most first, each with an example, its saved classification and any Monitor acknowledgement (someone is already looking). Its firingRules lists the alert rules firing on those endpoints."
+            : "2. Call nimbus_get_worklist with the endpointId and period in Inputs. It groups the endpoint's open failed and dead-lettered messages by event type and error pattern, most first, each with an example, its saved classification and any Monitor acknowledgement (someone is already looking). Its firingRules lists the alert rules firing on the endpoint.";
 
         return Compose(
             "Triage failed messages in NimBus.",

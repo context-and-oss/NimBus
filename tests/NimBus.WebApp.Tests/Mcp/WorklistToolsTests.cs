@@ -209,7 +209,7 @@ public class WorklistToolsTests
     }
 
     private static async Task<McpTestHost> StartAsync(bool contributor, Action<McpAccessSettings>? policy = null,
-        Dictionary<string, int>? failedCounts = null)
+        Dictionary<string, int>? failedCounts = null, IAlertRuleStore? alertRules = null)
     {
         var store = new InMemoryMessageStore();
         if (policy is not null)
@@ -246,7 +246,87 @@ public class WorklistToolsTests
             services.AddSingleton(endpoints.Instance);
             services.AddSingleton(monitor.Instance);
             services.AddSingleton<IFailedInsightsQuery>(insights);
+            services.AddSingleton<IAlertRuleStore>(alertRules ?? store);
         });
+    }
+
+    private static async Task FireRuleAsync(InMemoryMessageStore store, string endpointId, string ruleId, string name, int minutesAgo)
+    {
+        var at = DateTime.UtcNow.AddMinutes(-minutesAgo);
+        var rule = (await store.TrySaveAlertRuleDefinition(new AlertRule
+        {
+            RuleId = ruleId,
+            EndpointId = endpointId,
+            Name = name,
+            Enabled = true,
+            Condition = new AlertRuleCondition { Kind = AlertRuleConditionKinds.FailureOccurrences, Threshold = 5, WindowMinutes = 15 },
+            ResolveAfterMinutes = 5,
+            Targets = [new AlertRuleTarget { TargetId = "t1", Type = AlertRuleTargetType.Mail, Address = "team@example.com" }],
+            CreatedBy = "owner",
+            CreatedAtUtc = at,
+            UpdatedAtUtc = at,
+        }, expectedVersion: null))!;
+        await store.TrySaveAlertRuleState(endpointId, ruleId, rule.Version,
+            new AlertRuleState { Status = AlertRuleStatus.Firing, SinceUtc = at, LastValue = 5 });
+    }
+
+    [TestMethod]
+    public async Task Firing_alert_rules_on_readable_endpoints_are_listed_longest_firing_first()
+    {
+        await using var host = await StartAsync(contributor: false, policy: p =>
+        {
+            p.Endpoints.Visibility = McpEndpointVisibility.AllExcept;
+            p.Endpoints.Hidden = [Erp];
+        });
+        var store = host.Get<InMemoryMessageStore>();
+        await FireRuleAsync(store, Crm, "r-new", "CRM spike", minutesAgo: 5);
+        await FireRuleAsync(store, Crm, "r-old", "CRM backlog", minutesAgo: 40);
+        await FireRuleAsync(store, Erp, "r-hidden", "ERP hidden rule", minutesAgo: 10);
+        await FireRuleAsync(store, Billing, "r-secret", "Billing secret rule", minutesAgo: 10);
+        await using var client = await host.CreateClientAsync();
+
+        var json = await CallAsync(client, new());
+
+        var rules = json.GetProperty("firingRules").EnumerateArray().ToArray();
+        CollectionAssert.AreEqual(new[] { "r-old", "r-new" }, rules.Select(r => r.GetProperty("ruleId").GetString()).ToArray());
+        Assert.AreEqual("5 or more failures in 15 min", rules[0].GetProperty("condition").GetString());
+        Assert.AreEqual("failure_occurrences", rules[0].GetProperty("kind").GetString());
+        Assert.AreEqual(5, rules[0].GetProperty("value").GetInt32());
+        var action = rules[0].GetProperty("nextActions").EnumerateArray().Single();
+        Assert.AreEqual("open_web_ui", action.GetProperty("id").GetString());
+        StringAssert.EndsWith(action.GetProperty("url").GetString(), "/Endpoints/Details/CrmEndpoint?tab=alerts");
+        Assert.IsFalse(json.GetRawText().Contains("secret", StringComparison.OrdinalIgnoreCase), "Unreadable endpoints' rules never appear.");
+        Assert.IsFalse(json.GetRawText().Contains("ERP hidden rule", StringComparison.Ordinal), "Hidden endpoints' rules never appear.");
+        Assert.IsFalse(json.GetRawText().Contains("team@example.com", StringComparison.Ordinal), "Targets never appear.");
+    }
+
+    [TestMethod]
+    public async Task Firing_rules_are_always_emitted_and_empty_when_the_store_fails()
+    {
+        await using var host = await StartAsync(contributor: false, alertRules: new FailingAlertRules());
+        await FailAsync(host.Get<InMemoryMessageStore>(), Crm, "evt-crm", "s1", "Timeout", minutesAgo: 10);
+        await using var client = await host.CreateClientAsync();
+
+        var json = await CallAsync(client, new());
+
+        Assert.AreEqual(0, json.GetProperty("firingRules").GetArrayLength());
+        Assert.HasCount(1, Groups(json), "The groups stand without the rules.");
+    }
+
+    private sealed class FailingAlertRules : IAlertRuleStore
+    {
+        private static Exception Down() => new InvalidOperationException("store down");
+
+        public Task<IReadOnlyList<AlertRule>> ListAlertRulesByEndpoint(string endpointId) => throw Down();
+        public Task<IReadOnlyList<AlertRule>> ListAlertRulesToEvaluate(int limit) => throw Down();
+        public Task<IReadOnlyList<string>> ListEndpointsWithFiringAlertRules() => throw Down();
+        public Task<AlertRule?> GetAlertRule(string endpointId, string ruleId) => throw Down();
+        public Task<AlertRule?> TrySaveAlertRuleDefinition(AlertRule rule, long? expectedVersion) => throw Down();
+        public Task<long?> TrySaveAlertRuleState(string endpointId, string ruleId, long expectedVersion, AlertRuleState state) => throw Down();
+        public Task<bool> DeleteAlertRule(string endpointId, string ruleId, long expectedVersion) => throw Down();
+        public Task<bool> TryClaimAlertRuleEvaluatorTick(DateTime dueBefore, DateTime nowUtc, string instanceId) => throw Down();
+        public Task<bool> CompleteAlertRuleEvaluatorTick(DateTime claimedAtUtc, DateTime completedAtUtc) => throw Down();
+        public Task<AlertRuleEvaluatorStatus> GetAlertRuleEvaluatorStatus() => throw Down();
     }
 
     private static async Task<JsonElement> CallAsync(McpClient client, Dictionary<string, object?> arguments)

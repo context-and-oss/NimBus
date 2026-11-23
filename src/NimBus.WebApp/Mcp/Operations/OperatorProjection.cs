@@ -30,6 +30,12 @@ public static class OperatorProjection
             ? null
             : $"{request.Scheme}://{request.Host}{request.PathBase}/Message/Index/{Uri.EscapeDataString(endpointId)}/{Uri.EscapeDataString(eventId)}";
 
+    /// <summary>The endpoint's Alerts tab in the NimBus Web UI, on the host the caller used; null outside a request.</summary>
+    public static string? EndpointAlertsUrl(HttpRequest? request, string endpointId)
+        => request is null
+            ? null
+            : $"{request.Scheme}://{request.Host}{request.PathBase}/Endpoints/Details/{Uri.EscapeDataString(endpointId)}?tab=alerts";
+
     /// <summary>A message's error as type and truncated text, never a stack trace; null when it has none.</summary>
     public static MessageError? Error(Message? message)
     {
