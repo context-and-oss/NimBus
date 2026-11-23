@@ -251,6 +251,8 @@ export default function AlertRulesSection({ endpointId }: { endpointId: string }
           mailEnabled={!!list.mailEnabled}
           webhookEnabled={!!list.webhookEnabled}
           availableKinds={availableKindsOf(list.availableKinds)}
+          classificationAvailable={!!list.classificationAvailable}
+          categories={list.categories ?? []}
           onClose={() => setForm(undefined)}
           onSaved={() => void load()}
         />

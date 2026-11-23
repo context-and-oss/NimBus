@@ -73,6 +73,62 @@ public class MonitorFeedImplementationTests
     }
 
     [TestMethod]
+    public async Task A_token_holder_sees_which_endpoints_have_a_firing_rule_and_nothing_about_the_rule()
+    {
+        var harness = new Harness();
+        var rule = (await harness.Store.TrySaveAlertRuleDefinition(new AlertRule
+        {
+            RuleId = "r1",
+            EndpointId = "Billing",
+            Name = "Billing timeouts",
+            Enabled = true,
+            Condition = new NimBus.MessageStore.States.AlertRuleCondition { Threshold = 1 },
+            ResolveAfterMinutes = 5,
+            Targets = [new AlertRuleTarget { TargetId = "t1", Type = AlertRuleTargetType.Mail, Address = "billing-team@example.com" }],
+            CreatedBy = "owner",
+            CreatedAtUtc = Now.UtcDateTime,
+            UpdatedAtUtc = Now.UtcDateTime,
+        }, expectedVersion: null))!;
+        await harness.Store.TrySaveAlertRuleState("Billing", "r1", rule.Version, new AlertRuleState { Status = AlertRuleStatus.Firing, SinceUtc = Now.UtcDateTime });
+
+        var result = await harness.Feed(reader: false, token: true).GetMonitorFeedStatusAsync();
+        var status = result.Value!;
+
+        Assert.IsTrue(status.Endpoints.Single(e => e.Status.EndpointId == "Billing").AlertRuleFiring);
+        Assert.IsFalse(status.Endpoints.Single(e => e.Status.EndpointId == "Crm").AlertRuleFiring);
+        var json = Newtonsoft.Json.JsonConvert.SerializeObject(status);
+        Assert.IsFalse(json.Contains("Billing timeouts", StringComparison.Ordinal), "The rule's name never reaches the wall.");
+        Assert.IsFalse(json.Contains("billing-team@example.com", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task The_wall_shows_the_rest_when_firing_rules_cannot_be_read()
+    {
+        var harness = new Harness { AlertRules = new FailingAlertRules() };
+
+        var status = (await harness.Feed().GetMonitorFeedStatusAsync()).Value!;
+
+        Assert.AreEqual(2, status.Endpoints.Count);
+        Assert.IsTrue(status.Endpoints.All(e => e.AlertRuleFiring is null));
+    }
+
+    private sealed class FailingAlertRules : IAlertRuleStore
+    {
+        private static Exception Down() => new InvalidOperationException("store down");
+
+        public Task<IReadOnlyList<AlertRule>> ListAlertRulesByEndpoint(string endpointId) => throw Down();
+        public Task<IReadOnlyList<AlertRule>> ListAlertRulesToEvaluate(int limit) => throw Down();
+        public Task<IReadOnlyList<string>> ListEndpointsWithFiringAlertRules() => throw Down();
+        public Task<AlertRule?> GetAlertRule(string endpointId, string ruleId) => throw Down();
+        public Task<AlertRule?> TrySaveAlertRuleDefinition(AlertRule rule, long? expectedVersion) => throw Down();
+        public Task<long?> TrySaveAlertRuleState(string endpointId, string ruleId, long expectedVersion, AlertRuleState state) => throw Down();
+        public Task<bool> DeleteAlertRule(string endpointId, string ruleId, long expectedVersion) => throw Down();
+        public Task<bool> TryClaimAlertRuleEvaluatorTick(DateTime dueBefore, DateTime nowUtc, string instanceId) => throw Down();
+        public Task<bool> CompleteAlertRuleEvaluatorTick(DateTime claimedAtUtc, DateTime completedAtUtc) => throw Down();
+        public Task<AlertRuleEvaluatorStatus> GetAlertRuleEvaluatorStatus() => throw Down();
+    }
+
+    [TestMethod]
     public async Task The_status_carries_counts_blocked_sessions_heartbeat_and_acknowledgement()
     {
         var harness = new Harness();
@@ -338,8 +394,11 @@ public class MonitorFeedImplementationTests
                 Heartbeats,
                 Clock,
                 NullLogger<MonitorFeedImplementation>.Instance,
-                _withMonitorStore ? Store : null);
+                _withMonitorStore ? Store : null,
+                AlertRules ?? Store);
         }
+
+        public IAlertRuleStore? AlertRules { get; set; }
     }
 
     private sealed class CountingStore : InMemoryMessageStore

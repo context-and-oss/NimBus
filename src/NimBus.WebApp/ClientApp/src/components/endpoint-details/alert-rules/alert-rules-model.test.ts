@@ -3,15 +3,22 @@ import moment from "moment";
 import * as api from "api-client";
 import {
   availableKindsOf,
+  categoryLabel,
+  conditionValueText,
   describeCondition,
   draftFromRule,
   emptyDraft,
   evaluatorFreshness,
   lastValueText,
+  nowUnavailableText,
+  periodText,
+  previewRequestFromDraft,
+  replayUnsupportedText,
   requestFromDraft,
   requestFromRule,
   ruleStatus,
   targetsSummary,
+  validateCondition,
   validateDraft,
   type RuleDraft,
 } from "./alert-rules-model";
@@ -230,20 +237,24 @@ describe("alert rule condition kinds", () => {
       kind: "failure_occurrences",
       eventTypes: ["OrderPlaced"],
       errorTextContains: "timeout",
+      categories: [],
       threshold: 3,
       windowMinutes: 20,
     });
     expect(conditionOf(valid({ ...filters, kind: "blocked_session", blockedMinutes: "45", deferredThreshold: "" }))).toEqual({
       kind: "blocked_session",
       minutes: 45,
+      categories: [],
     });
     expect(conditionOf(valid({ kind: "blocked_session", blockedMinutes: " ", deferredThreshold: "50" }))).toEqual({
       kind: "blocked_session",
       deferredThreshold: 50,
+      categories: [],
     });
     expect(conditionOf(valid({ ...filters, kind: "silence", silenceMinutes: "90" }))).toEqual({
       kind: "silence",
       minutes: 90,
+      categories: [],
     });
   });
 
@@ -297,6 +308,7 @@ describe("alert rule condition kinds", () => {
       kind: "failure_occurrences",
       eventTypes: ["A"],
       errorTextContains: "x",
+      categories: [],
       threshold: 2,
       windowMinutes: 30,
     });
@@ -304,11 +316,122 @@ describe("alert rule condition kinds", () => {
       kind: "blocked_session",
       minutes: 30,
       deferredThreshold: 50,
+      categories: [],
     });
     expect(roundTrip({ kind: "blocked_session", deferredThreshold: 50 }, true).condition).toEqual({
       kind: "blocked_session",
       deferredThreshold: 50,
+      categories: [],
     });
-    expect(roundTrip({ kind: "silence", minutes: 120 }, true).condition).toEqual({ kind: "silence", minutes: 120 });
+    expect(roundTrip({ kind: "silence", minutes: 120 }, true).condition).toEqual({ kind: "silence", minutes: 120, categories: [] });
+  });
+});
+
+describe("alert rule categories", () => {
+  const categories = ["transient_dependency", "contract_schema"];
+  const conditionOf = (draft: RuleDraft) => JSON.parse(JSON.stringify(requestFromDraft(draft))).condition;
+
+  it("names each category in words", () => {
+    expect(categoryLabel("transient_dependency")).toBe("Transient dependency");
+    expect(categoryLabel("authentication_configuration")).toBe("Authentication configuration");
+    expect(categoryLabel("business_rule")).toBe("Business rule");
+  });
+
+  it("describes categories after the filters, like the notices", () => {
+    expect(
+      describeCondition(
+        new api.AlertRuleCondition({
+          kind: "failure_occurrences",
+          threshold: 3,
+          windowMinutes: 15,
+          eventTypes: ["OrderPlaced"],
+          categories,
+        }),
+      ),
+    ).toBe("3 or more failures in 15 min of type OrderPlaced classified as transient dependency or contract schema");
+    expect(
+      describeCondition(
+        new api.AlertRuleCondition({ threshold: 5, errorTextContains: "timeout", categories: ["business_rule"] }),
+      ),
+    ).toBe('5 or more failed events with an error containing "timeout" classified as business rule');
+  });
+
+  it("opens a rule with its categories and sends them for backlog and occurrences only", () => {
+    const draft = draftFromRule(rule({ condition: { kind: "failure_backlog", threshold: 5, categories } }));
+    expect(draft.categories).toEqual(categories);
+    expect(conditionOf(valid({ categories })).categories).toEqual(categories);
+    expect(conditionOf(valid({ kind: "failure_occurrences", categories })).categories).toEqual(categories);
+    expect(conditionOf(valid({ kind: "silence", categories })).categories).toEqual([]);
+    expect(conditionOf(valid({ kind: "blocked_session", categories })).categories).toEqual([]);
+    expect(emptyDraft().categories).toEqual([]);
+  });
+
+  it("keeps a rule's categories when it is disabled or enabled", () => {
+    const roundTrip = (condition: Record<string, unknown>, enabled: boolean) =>
+      JSON.parse(JSON.stringify(requestFromRule(rule({ condition }), { enabled }))).condition;
+    expect(roundTrip({ kind: "failure_backlog", threshold: 5, categories }, false).categories).toEqual(categories);
+    expect(
+      roundTrip({ kind: "failure_occurrences", threshold: 2, windowMinutes: 30, categories }, true).categories,
+    ).toEqual(categories);
+  });
+
+  it("allows at most eight categories", () => {
+    const nine = Array.from({ length: 9 }, (_, i) => `c${i}`);
+    expect(validateDraft(valid({ categories: nine }), delivery).categories).toBe("Pick at most 8 categories.");
+    expect(validateDraft(valid({ categories: nine.slice(0, 8) }), delivery)).toEqual({});
+    // Another kind sends no categories, so its leftover picks don't count.
+    expect(validateDraft(valid({ kind: "silence", categories: nine }), delivery)).toEqual({});
+  });
+});
+
+describe("alert rule preview", () => {
+  it("checks only the condition, not the name or the targets", () => {
+    expect(validateCondition({ ...emptyDraft(), name: "", targets: [] })).toEqual({});
+    expect(validateCondition({ ...emptyDraft(), threshold: "0" })).toEqual({
+      threshold: "Enter a whole number from 1 to 100.",
+    });
+    expect(validateCondition({ ...emptyDraft(), resolveAfterMinutes: "61" }).resolveAfterMinutes).toBeDefined();
+  });
+
+  it("sends the draft's condition and resolve time", () => {
+    const body = JSON.parse(
+      JSON.stringify(previewRequestFromDraft(valid({ kind: "silence", silenceMinutes: "90", resolveAfterMinutes: "7" }))),
+    );
+    expect(body).toEqual({ condition: { kind: "silence", minutes: 90, categories: [] }, resolveAfterMinutes: 7 });
+  });
+
+  it("writes each period in local time, open or closed", () => {
+    const now = moment().startOf("day").add(12, "hours");
+    const at = (h: number, m: number) => moment().startOf("day").add(h, "hours").add(m, "minutes");
+    expect(
+      periodText(new api.AlertRulePreviewPeriod({ fromUtc: at(9, 14).utc(), toUtc: at(9, 31).utc() }), now),
+    ).toBe("09:14–09:31");
+    expect(periodText(new api.AlertRulePreviewPeriod({ fromUtc: at(9, 14).utc() }), now)).toBe("since 09:14");
+    const yesterday = at(-2, 0);
+    expect(periodText(new api.AlertRulePreviewPeriod({ fromUtc: yesterday.utc(), toUtc: at(0, 30).utc() }), now)).toBe(
+      `${yesterday.clone().local().format("D MMM HH:mm")}–00:30`,
+    );
+  });
+
+  it("explains why a value or a replay is missing", () => {
+    expect(replayUnsupportedText("no_history")).toBe(
+      "Backlog and blocked-session rules can't be replayed: deleted events leave no history.",
+    );
+    expect(replayUnsupportedText("categories")).toBe(
+      "Rules with categories can't be replayed: classifications arrive after the failure.",
+    );
+    expect(replayUnsupportedText("kind_unavailable")).toMatch(/storage/);
+    expect(nowUnavailableText("kind_unavailable")).toMatch(/storage/);
+    expect(nowUnavailableText("classification_unavailable")).toMatch(/classifications can't be read/);
+    expect(nowUnavailableText("classification_scan_limit")).toMatch(/too many failures/);
+    expect(nowUnavailableText("something_new")).toBe("The value now can't be read.");
+  });
+
+  it("formats the value now as the table does", () => {
+    const occurrences = new api.AlertRuleCondition({ kind: "failure_occurrences", threshold: 3, windowMinutes: 15 });
+    expect(conditionValueText(occurrences, 3)).toBe("≥ 3");
+    expect(conditionValueText(occurrences, 1)).toBe("1");
+    expect(conditionValueText(new api.AlertRuleCondition({ kind: "silence", minutes: 60 }), 60)).toBe("≥ 1 h");
+    expect(conditionValueText(occurrences, undefined)).toBe("–");
   });
 });

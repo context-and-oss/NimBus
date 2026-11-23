@@ -1,3 +1,4 @@
+using NimBus.Alerts;
 using NimBus.Extensions.IntegrationIntelligence;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
@@ -5,6 +6,7 @@ using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Mcp.Tools;
 using NimBus.WebApp.Services.Insights;
 using NimBus.WebApp.Services.Operations;
+using AlertRuleStatus = NimBus.MessageStore.States.AlertRuleStatus;
 using ResolutionStatus = NimBus.MessageStore.ResolutionStatus;
 using UnresolvedEvent = NimBus.MessageStore.UnresolvedEvent;
 
@@ -28,6 +30,9 @@ public sealed class OperatorWorklist
     /// <summary>Most groups whose status is checked in one call.</summary>
     public const int MaxCheckedGroups = 20;
 
+    /// <summary>Most firing alert rules returned.</summary>
+    public const int MaxFiringRules = 20;
+
     /// <summary>Newest distinct events checked per group.</summary>
     public const int EventsCheckedPerGroup = 50;
 
@@ -40,11 +45,16 @@ public sealed class OperatorWorklist
     private readonly OperatorActionAccess _access;
     private readonly IOperatorClassificationSource _classifications;
     private readonly OperatorQueries _queries;
+    private readonly IAlertRuleStore? _alertRules;
+    private readonly IHttpContextAccessor? _http;
 
     /// <summary>Creates the worklist for one request.</summary>
     public OperatorWorklist(IFailedInsightsQuery insights, IMessageTrackingStore store, IOperatorCommands commands,
-        OperatorActionAccess access, IOperatorClassificationSource classifications, OperatorQueries queries)
+        OperatorActionAccess access, IOperatorClassificationSource classifications, OperatorQueries queries,
+        IAlertRuleStore? alertRules = null, IHttpContextAccessor? http = null)
     {
+        _alertRules = alertRules;
+        _http = http;
         _insights = insights;
         _store = store;
         _commands = commands;
@@ -91,6 +101,7 @@ public sealed class OperatorWorklist
         var tickets = await TicketsAsync(groups.Select(g => g.Group).ToList()).ConfigureAwait(false);
         var acknowledgements = await AcknowledgementsAsync(endpointIds).ConfigureAwait(false);
         var totals = await TotalsAsync(endpointIds).ConfigureAwait(false);
+        var firingRules = await FiringRulesAsync(endpointIds).ConfigureAwait(false);
         var classificationAvailable = _classifications.CanRecord;
         var isWorkload = _access.IsWorkloadCaller;
 
@@ -131,7 +142,53 @@ public sealed class OperatorWorklist
         var olderLikely = totals is not null && totals.Failed - totals.Unsupported > distinctEvents;
 
         return new WorklistResult(environment, DateTimeOffset.UtcNow, periodName, OperatorProjection.Utc(set.From), OperatorProjection.Utc(set.To),
-            results, resolved, ordered.Count > examined, totals, olderLikely);
+            results, resolved, ordered.Count > examined, totals, olderLikely, firingRules);
+    }
+
+    /// <summary>
+    /// The firing alert rules on the endpoints (Spec 053 Phase 3), longest firing first. The
+    /// endpoints are the caller's readable ones, so a hidden or unreadable endpoint's rules never
+    /// appear. Supplementary: empty when the store has no alert rules or can't be read.
+    /// </summary>
+    private async Task<IReadOnlyList<WorklistFiringRule>> FiringRulesAsync(IReadOnlyList<string> endpointIds)
+    {
+        if (_alertRules is null)
+            return [];
+
+        try
+        {
+            var firing = (await _alertRules.ListEndpointsWithFiringAlertRules().ConfigureAwait(false))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var rules = new List<WorklistFiringRule>();
+            foreach (var endpointId in endpointIds.Where(firing.Contains))
+            {
+                foreach (var rule in await _alertRules.ListAlertRulesByEndpoint(endpointId).ConfigureAwait(false))
+                {
+                    if (!rule.Enabled || rule.State.Status != AlertRuleStatus.Firing)
+                        continue;
+                    rules.Add(new WorklistFiringRule(
+                        endpointId,
+                        rule.RuleId,
+                        rule.Name,
+                        rule.Condition.Kind,
+                        AlertRuleText.DescribeCondition(rule.Condition),
+                        rule.State.SinceUtc is { } since ? OperatorProjection.Utc(since) : null,
+                        rule.State.LastValue,
+                        OperatorNextActions.ForFiringRule(OperatorProjection.EndpointAlertsUrl(_http?.HttpContext?.Request, endpointId))));
+                }
+            }
+
+            return rules
+                .OrderBy(r => r.SinceUtc ?? DateTime.MaxValue)
+                .Take(MaxFiringRules)
+                .ToList();
+        }
+#pragma warning disable CA1031 // Supplementary: the groups stand without it.
+        catch (Exception ex) when (ex is not OperationCanceledException)
+#pragma warning restore CA1031
+        {
+            return [];
+        }
     }
 
     /// <summary>The group's newest distinct events with their live status; null when the endpoint can't be read.</summary>
@@ -285,9 +342,22 @@ public sealed class OperatorWorklist
 /// <param name="MoreGroups">True when more groups exist than were examined; narrow by endpointId or raise limit.</param>
 /// <param name="Totals">The open message counts on the same endpoints now, as nimbus_get_overview reports them; null when they can't be read.</param>
 /// <param name="OlderFailuresLikely">True when more failed or dead-lettered messages are open than the period's failures account for: ask again with a longer period.</param>
+/// <param name="FiringRules">Alert rules firing now on the same endpoints, longest firing first, at most 20.</param>
 public sealed record WorklistResult(
     string? Environment, DateTimeOffset AsOfUtc, string Period, DateTime From, DateTime To, IReadOnlyList<WorklistGroup> Groups,
-    int ResolvedGroups, bool MoreGroups, StatusCounts? Totals, bool OlderFailuresLikely);
+    int ResolvedGroups, bool MoreGroups, StatusCounts? Totals, bool OlderFailuresLikely, IReadOnlyList<WorklistFiringRule> FiringRules);
+
+/// <summary>An alert rule that is firing (Spec 053): its endpoint is in trouble by the rule's own measure.</summary>
+/// <param name="EndpointId">The endpoint.</param>
+/// <param name="RuleId">The rule.</param>
+/// <param name="RuleName">Its name, as an Owner wrote it. Untrusted.</param>
+/// <param name="Kind">The condition kind: failure_backlog, failure_occurrences, blocked_session or silence.</param>
+/// <param name="Condition">The condition in words.</param>
+/// <param name="SinceUtc">When it started firing.</param>
+/// <param name="Value">Its value when last evaluated: a count capped at the threshold, or minutes; null when not recorded.</param>
+/// <param name="NextActions">What you can do next: open the endpoint's Alerts tab.</param>
+public sealed record WorklistFiringRule(
+    string EndpointId, string RuleId, string RuleName, string Kind, string Condition, DateTime? SinceUtc, int? Value, IReadOnlyList<NextAction> NextActions);
 
 /// <summary>One cause on one endpoint, with an example to act on.</summary>
 /// <param name="EndpointId">The endpoint.</param>

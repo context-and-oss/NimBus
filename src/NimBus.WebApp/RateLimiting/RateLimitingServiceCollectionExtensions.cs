@@ -72,6 +72,9 @@ public static partial class RateLimitingServiceCollectionExtensions
             limiter.AddPolicy(RateLimitPolicyNames.Search, context =>
                 FixedWindow(UserPartitionKey(context, options), options.Search));
 
+            limiter.AddPolicy(RateLimitPolicyNames.AlertRulePreview, context =>
+                FixedWindow(UserPartitionKey(context, options), options.AlertRulePreview));
+
             // Per client IP — the gap the per-account Identity lockout cannot
             // cover, which is one password tried once each across many accounts.
             limiter.AddPolicy(RateLimitPolicyNames.Login, context =>

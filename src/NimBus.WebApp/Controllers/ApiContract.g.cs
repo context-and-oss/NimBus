@@ -1291,6 +1291,20 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AlertRuleSaved>> PostEndpointAlertRuleAsync(AlertRuleRequest body, string endpointId);
 
         /// <summary>
+        /// Preview an alert rule
+        /// </summary>
+
+        /// <remarks>
+        /// Anyone who can read the endpoint (Spec 053 Phase 3). Evaluates a draft condition without saving it: its value now and, for failure_occurrences and silence, when it would have fired in the last 24 hours, replayed from message history with the draft's resolve time. Backlog and blocked-session rules, and rules with categories, get no replay.
+        /// </remarks>
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AlertRulePreview>> PostEndpointAlertRulePreviewAsync(AlertRulePreviewRequest body, string endpointId);
+
+        /// <summary>
         /// Change an alert rule
         /// </summary>
 
@@ -1368,6 +1382,20 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.PostEndpointAlertRuleAsync(body, endpointId);
+        }
+
+        /// <summary>
+        /// Preview an alert rule
+        /// </summary>
+        /// <remarks>
+        /// Anyone who can read the endpoint (Spec 053 Phase 3). Evaluates a draft condition without saving it: its value now and, for failure_occurrences and silence, when it would have fired in the last 24 hours, replayed from message history with the draft's resolve time. Backlog and blocked-session rules, and rules with categories, get no replay.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/v1/endpoint/{endpointId}/alert-rules/preview")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AlertRulePreview>> PostEndpointAlertRulePreview([Microsoft.AspNetCore.Mvc.FromBody] AlertRulePreviewRequest body, string endpointId)
+        {
+
+            return _implementation.PostEndpointAlertRulePreviewAsync(body, endpointId);
         }
 
         /// <summary>
@@ -8537,6 +8565,7 @@ namespace NimBus.WebApp.ManagementApi
         private int? _windowMinutes;
         private int? _minutes;
         private int? _deferredThreshold;
+        private System.Collections.Generic.List<string> _categories;
 
         /// <summary>
         /// failure_backlog, failure_occurrences, blocked_session or silence. Omitted means failure_backlog.
@@ -8666,6 +8695,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_deferredThreshold != value)
                 {
                     _deferredThreshold = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Failure-classification categories to count (backlog and occurrences; Phase 3). Only failures an agent classified into one of them count. Needs Integration Intelligence; see AlertRuleList.classificationAvailable.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("categories", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Categories    {
+            get { return _categories; }
+            set
+            {
+                if (_categories != value)
+                {
+                    _categories = value;
                     RaisePropertyChanged();
                 }
             }
@@ -9367,6 +9412,8 @@ namespace NimBus.WebApp.ManagementApi
         private bool _webhookEnabled;
         private bool _canManage;
         private System.Collections.Generic.List<string> _availableKinds;
+        private bool _classificationAvailable;
+        private System.Collections.Generic.List<string> _categories;
 
         [Newtonsoft.Json.JsonProperty("rules", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<AlertRuleModel> Rules    {
@@ -9461,6 +9508,38 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// Whether rules can filter by failure-classification category (Integration Intelligence can be read).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("classificationAvailable", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool ClassificationAvailable    {
+            get { return _classificationAvailable; }
+            set
+            {
+                if (_classificationAvailable != value)
+                {
+                    _classificationAvailable = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The categories a rule can filter by, when classificationAvailable.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("categories", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Categories    {
+            get { return _categories; }
+            set
+            {
+                if (_categories != value)
+                {
+                    _categories = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -9480,6 +9559,410 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<AlertRuleList>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AlertRulePreviewRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private AlertRuleCondition _condition;
+        private int _resolveAfterMinutes;
+
+        [Newtonsoft.Json.JsonProperty("condition", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public AlertRuleCondition Condition    {
+            get { return _condition; }
+            set
+            {
+                if (_condition != value)
+                {
+                    _condition = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("resolveAfterMinutes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.Range(1, 60)]
+        public int ResolveAfterMinutes    {
+            get { return _resolveAfterMinutes; }
+            set
+            {
+                if (_resolveAfterMinutes != value)
+                {
+                    _resolveAfterMinutes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AlertRulePreviewRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AlertRulePreviewRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AlertRulePreview : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int? _valueNow;
+        private bool? _holdsNow;
+        private string _nowUnavailableReason;
+        private AlertRuleReplay _replay;
+        private string _replayUnsupportedReason;
+
+        /// <summary>
+        /// The condition's value now (a count capped at the threshold, or minutes); null when it can't be read.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("valueNow", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? ValueNow    {
+            get { return _valueNow; }
+            set
+            {
+                if (_valueNow != value)
+                {
+                    _valueNow = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether the rule would fire now; null when it can't be read.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("holdsNow", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool? HoldsNow    {
+            get { return _holdsNow; }
+            set
+            {
+                if (_holdsNow != value)
+                {
+                    _holdsNow = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Why the value now can't be read (kind_unavailable, classification_unavailable, classification_scan_limit).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("nowUnavailableReason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string NowUnavailableReason    {
+            get { return _nowUnavailableReason; }
+            set
+            {
+                if (_nowUnavailableReason != value)
+                {
+                    _nowUnavailableReason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("replay", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public AlertRuleReplay Replay    {
+            get { return _replay; }
+            set
+            {
+                if (_replay != value)
+                {
+                    _replay = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Why there is no replay (no_history, categories, kind_unavailable).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("replayUnsupportedReason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ReplayUnsupportedReason    {
+            get { return _replayUnsupportedReason; }
+            set
+            {
+                if (_replayUnsupportedReason != value)
+                {
+                    _replayUnsupportedReason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AlertRulePreview FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AlertRulePreview>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AlertRuleReplay : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.DateTime _fromUtc;
+        private System.DateTime _toUtc;
+        private System.Collections.Generic.List<AlertRulePreviewPoint> _series;
+        private System.Collections.Generic.List<AlertRulePreviewPeriod> _periods;
+
+        [Newtonsoft.Json.JsonProperty("fromUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime FromUtc    {
+            get { return _fromUtc; }
+            set
+            {
+                if (_fromUtc != value)
+                {
+                    _fromUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("toUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime ToUtc    {
+            get { return _toUtc; }
+            set
+            {
+                if (_toUtc != value)
+                {
+                    _toUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The condition's value over the replay (failures in the window, or minutes since the last completed message), at most 288 points.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("series", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<AlertRulePreviewPoint> Series    {
+            get { return _series; }
+            set
+            {
+                if (_series != value)
+                {
+                    _series = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When the rule would have been firing. An open period has no toUtc.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("periods", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<AlertRulePreviewPeriod> Periods    {
+            get { return _periods; }
+            set
+            {
+                if (_periods != value)
+                {
+                    _periods = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AlertRuleReplay FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AlertRuleReplay>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AlertRulePreviewPoint : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.DateTime _atUtc;
+        private int _value;
+
+        [Newtonsoft.Json.JsonProperty("atUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime AtUtc    {
+            get { return _atUtc; }
+            set
+            {
+                if (_atUtc != value)
+                {
+                    _atUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("value", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Value    {
+            get { return _value; }
+            set
+            {
+                if (_value != value)
+                {
+                    _value = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AlertRulePreviewPoint FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AlertRulePreviewPoint>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AlertRulePreviewPeriod : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.DateTime _fromUtc;
+        private System.DateTime? _toUtc;
+
+        [Newtonsoft.Json.JsonProperty("fromUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime FromUtc    {
+            get { return _fromUtc; }
+            set
+            {
+                if (_fromUtc != value)
+                {
+                    _fromUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("toUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ToUtc    {
+            get { return _toUtc; }
+            set
+            {
+                if (_toUtc != value)
+                {
+                    _toUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AlertRulePreviewPeriod FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AlertRulePreviewPeriod>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
@@ -23913,6 +24396,7 @@ namespace NimBus.WebApp.ManagementApi
         private int? _blockedSessionCount;
         private MonitorFeedHeartbeat _heartbeat;
         private MonitorAcknowledgement _acknowledgement;
+        private bool? _alertRuleFiring;
 
         [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public EndpointStatusCount Status    {
@@ -23964,6 +24448,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_acknowledgement != value)
                 {
                     _acknowledgement = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether an alert rule on the endpoint is firing (Spec 053 Phase 3). Never which rule. Null when the store has no alert rules or they couldn't be read.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("alertRuleFiring", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool? AlertRuleFiring    {
+            get { return _alertRuleFiring; }
+            set
+            {
+                if (_alertRuleFiring != value)
+                {
+                    _alertRuleFiring = value;
                     RaisePropertyChanged();
                 }
             }

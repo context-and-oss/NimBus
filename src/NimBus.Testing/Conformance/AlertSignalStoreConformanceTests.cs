@@ -1,5 +1,7 @@
 #pragma warning disable CA1707, CA2007
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Messages;
@@ -25,6 +27,9 @@ public abstract class AlertSignalStoreConformanceTests
     // A fraction of a second with a different number of significant digits from the times below,
     // so a provider that compares stored time strings instead of instants gets the order wrong.
     private static readonly DateTime T0 = new DateTime(2026, 11, 23, 9, 0, 0, DateTimeKind.Utc).AddTicks(1234567);
+
+    // A whole minute, for the per-minute counts.
+    private static readonly DateTime M0 = new(2026, 11, 23, 10, 0, 0, DateTimeKind.Utc);
 
     private readonly string _scope = Guid.NewGuid().ToString("N")[..12];
     private int _sequence;
@@ -307,7 +312,332 @@ public abstract class AlertSignalStoreConformanceTests
         Assert.IsFalse(await store.HasCompletedMessageSince(Endpoint("unknown"), T0.AddHours(-1)));
     }
 
+    // ───────── CountMessagesPerMinute ─────────
+
+    [TestMethod]
+    public async Task CountMessagesPerMinute_buckets_by_minute_from_inclusive_to_exclusive()
+    {
+        var store = CreateStore();
+        var endpoint = Endpoint();
+        // Written out of order, so the result's order is the store's. The edge times are ones SQL
+        // Server's message write keeps exactly: it rounds to 1/300 s, so 59.999 s or a tick before
+        // the minute would land in the next minute there.
+        var third = await Store(store, endpoint, MessageType.ErrorResponse, M0.AddMinutes(3).AddTicks(123456789));
+        var atEnd = await Store(store, endpoint, MessageType.ErrorResponse, M0.AddMinutes(4));
+        var minuteStart = await Store(store, endpoint, MessageType.ErrorResponse, M0);
+        var minuteEnd = await Store(store, endpoint, MessageType.ErrorResponse, M0.AddMilliseconds(59_990));
+        var second = await Store(store, endpoint, MessageType.ErrorResponse, M0.AddMinutes(1).AddTicks(5000000));
+        var beforeStart = await Store(store, endpoint, MessageType.ErrorResponse, M0.AddMilliseconds(-10));
+
+        Assert.AreEqual(M0.Ticks, minuteStart.Ticks, "hh:mm:00.0000000 is stored exactly.");
+        Assert.AreEqual(M0.AddMilliseconds(59_990).Ticks, minuteEnd.Ticks, "hh:mm:59.990 is stored exactly.");
+        Assert.AreEqual(M0.AddMilliseconds(-10).Ticks, beforeStart.Ticks);
+        Assert.AreEqual(M0.AddMinutes(4).Ticks, atEnd.Ticks);
+        Assert.IsTrue(second < third);
+
+        AssertMinutes(
+            [(M0, 2), (M0.AddMinutes(1), 1), (M0.AddMinutes(3), 1)],
+            await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, M0, M0.AddMinutes(4), null, null),
+            "The minute without a message is left out; toUtc is exclusive.");
+        AssertMinutes(
+            [(M0.AddMinutes(-1), 1)],
+            await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, M0.AddMinutes(-1), M0, null, null),
+            "A message just before the minute is in the minute before.");
+        AssertMinutes(
+            [(M0.AddMinutes(1), 1), (M0.AddMinutes(3), 1), (M0.AddMinutes(4), 1)],
+            await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, M0.AddMinutes(1), M0.AddMinutes(5), null, null));
+        AssertMinutes(
+            [(M0.AddMinutes(-1), 1), (M0, 2), (M0.AddMinutes(1), 1), (M0.AddMinutes(3), 1), (M0.AddMinutes(4), 1)],
+            await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, M0.AddHours(-1), M0.AddHours(1), null, null));
+        AssertMinutes(
+            [],
+            await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, M0.AddMinutes(2), M0.AddMinutes(3), null, null),
+            "An empty window returns no minutes.");
+    }
+
+    [TestMethod]
+    public async Task CountMessagesPerMinute_counts_only_the_given_type()
+    {
+        var store = CreateStore();
+        var endpoint = Endpoint();
+        await Store(store, endpoint, MessageType.EventRequest, M0.AddSeconds(1));
+        await Store(store, endpoint, MessageType.EventRequest, M0.AddMinutes(1).AddSeconds(2));
+        await Store(store, endpoint, MessageType.ResolutionResponse, M0.AddSeconds(3));
+        await Store(store, endpoint, MessageType.ErrorResponse, M0.AddSeconds(4));
+        await Store(store, endpoint, MessageType.ErrorResponse, M0.AddSeconds(5), deadLetterDescription: "Max delivery count exceeded");
+        var from = M0.AddHours(-1);
+        var to = M0.AddHours(1);
+
+        AssertMinutes([(M0, 1), (M0.AddMinutes(1), 1)], await store.CountMessagesPerMinute(endpoint, MessageType.EventRequest, from, to, null, null));
+        AssertMinutes([(M0, 1)], await store.CountMessagesPerMinute(endpoint, MessageType.ResolutionResponse, from, to, null, null));
+        AssertMinutes([(M0, 2)], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, null, null), "Dead-letters are error responses.");
+        AssertMinutes([], await store.CountMessagesPerMinute(endpoint, MessageType.SkipResponse, from, to, null, null));
+    }
+
+    [TestMethod]
+    public async Task CountMessagesPerMinute_matches_the_endpoint_exactly()
+    {
+        var store = CreateStore();
+        var endpoint = Endpoint();
+        await Store(store, endpoint, MessageType.ErrorResponse, M0);
+        await Store(store, endpoint + "-b", MessageType.ErrorResponse, M0.AddSeconds(1));
+        await Store(store, endpoint + "-b", MessageType.ErrorResponse, M0.AddMinutes(1));
+        var from = M0.AddHours(-1);
+        var to = M0.AddHours(1);
+
+        AssertMinutes([(M0, 1)], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, null, null));
+        AssertMinutes([(M0, 1), (M0.AddMinutes(1), 1)], await store.CountMessagesPerMinute(endpoint + "-b", MessageType.ErrorResponse, from, to, null, null));
+        AssertMinutes([], await store.CountMessagesPerMinute(Endpoint("unknown"), MessageType.ErrorResponse, from, to, null, null));
+    }
+
+    [TestMethod]
+    public async Task CountMessagesPerMinute_filters_by_event_type_and_error_text()
+    {
+        var store = CreateStore();
+        var endpoint = Endpoint();
+        await Store(store, endpoint, MessageType.ErrorResponse, M0, eventTypeId: "OrderPlaced", errorText: "Downstream TIMEOUT");
+        await Store(store, endpoint, MessageType.ErrorResponse, M0.AddSeconds(1), eventTypeId: "OrderCancelled", errorText: "Validation failed");
+        // The dead-letter description is the error text when there is none.
+        await Store(store, endpoint, MessageType.ErrorResponse, M0.AddMinutes(1), eventTypeId: "OrderPlaced", deadLetterDescription: "Lock lost: timeout");
+        await Store(store, endpoint, MessageType.ErrorResponse, M0.AddMinutes(1).AddSeconds(1), eventTypeId: "OrderPlaced", errorText: "", deadLetterDescription: "timeout while settling");
+        // A non-matching error text hides a matching dead-letter description.
+        await Store(store, endpoint, MessageType.ErrorResponse, M0.AddMinutes(2), eventTypeId: "CustomerChanged", errorText: "Validation failed", deadLetterDescription: "timeout");
+        await Store(store, endpoint, MessageType.ErrorResponse, M0.AddMinutes(2).AddSeconds(1), eventTypeId: "CustomerChanged", errorText: "Disk 50% full");
+        await Store(store, endpoint, MessageType.ErrorResponse, M0.AddMinutes(2).AddSeconds(2), eventTypeId: "CustomerChanged", errorText: "Disk 500 full");
+        var from = M0.AddHours(-1);
+        var to = M0.AddHours(1);
+
+        AssertMinutes([(M0, 1), (M0.AddMinutes(1), 2)], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, ["OrderPlaced"], null));
+        AssertMinutes([(M0, 2), (M0.AddMinutes(1), 2)], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, ["OrderPlaced", "OrderCancelled"], null));
+        AssertMinutes([(M0, 2), (M0.AddMinutes(1), 2), (M0.AddMinutes(2), 3)], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, [], null), "An empty list counts every type.");
+        AssertMinutes([(M0, 1), (M0.AddMinutes(1), 2)], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, null, "TimeOut"));
+        AssertMinutes([(M0, 1), (M0.AddMinutes(2), 1)], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, null, "VALIDATION"));
+        AssertMinutes([(M0.AddMinutes(2), 1)], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, null, "50%"), "LIKE wildcards are literal.");
+        AssertMinutes([(M0.AddMinutes(2), 1)], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, ["CustomerChanged"], "validation"), "Both filters apply.");
+        AssertMinutes([], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, ["OrderCancelled"], "timeout"), "Both filters apply.");
+        AssertMinutes([(M0, 2), (M0.AddMinutes(1), 2), (M0.AddMinutes(2), 3)], await store.CountMessagesPerMinute(endpoint, MessageType.ErrorResponse, from, to, null, ""), "An empty filter matches everything.");
+    }
+
+    [TestMethod]
+    [DataRow(0L, 0L, DisplayName = "from equals to")]
+    [DataRow(TimeSpan.TicksPerMinute, 0L, DisplayName = "from after to")]
+    [DataRow(TimeSpan.TicksPerSecond, 2 * TimeSpan.TicksPerMinute, DisplayName = "from has seconds")]
+    [DataRow(1L, 2 * TimeSpan.TicksPerMinute, DisplayName = "from has sub-seconds")]
+    [DataRow(0L, 2 * TimeSpan.TicksPerMinute + TimeSpan.TicksPerSecond, DisplayName = "to has seconds")]
+    [DataRow(0L, 2 * TimeSpan.TicksPerMinute + 1, DisplayName = "to has sub-seconds")]
+    public async Task CountMessagesPerMinute_rejects_bounds_that_are_not_increasing_whole_minutes(long fromOffsetTicks, long toOffsetTicks)
+    {
+        var store = CreateStore();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.CountMessagesPerMinute(
+            Endpoint(), MessageType.ErrorResponse, M0.AddTicks(fromOffsetTicks), M0.AddTicks(toOffsetTicks), null, null));
+    }
+
+    [TestMethod]
+    public async Task CountMessagesPerMinute_rejects_an_empty_endpoint()
+    {
+        var store = CreateStore();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.CountMessagesPerMinute(
+            "", MessageType.ErrorResponse, M0, M0.AddMinutes(1), null, null));
+    }
+
+    // ───────── ListFailedAttempts ─────────
+
+    [TestMethod]
+    public async Task ListFailedAttempts_lists_the_attempts_CountFailedAttempts_counts()
+    {
+        var store = CreateStore();
+        var endpoint = Endpoint();
+        await Store(store, endpoint, MessageType.EventRequest, T0);
+        await Store(store, endpoint, MessageType.ResolutionResponse, T0.AddSeconds(1));
+        await Store(store, endpoint, MessageType.ErrorResponse, T0.AddSeconds(2), eventTypeId: "OrderPlaced", errorText: "Downstream TIMEOUT");
+        await Store(store, endpoint, MessageType.ErrorResponse, T0.AddSeconds(3), eventTypeId: "OrderCancelled", errorText: "Validation failed");
+        await Store(store, endpoint, MessageType.ErrorResponse, T0.AddSeconds(4), eventTypeId: "OrderPlaced", deadLetterDescription: "Lock lost: timeout");
+        await Store(store, endpoint, MessageType.ErrorResponse, T0.AddSeconds(5), eventTypeId: "CustomerChanged", errorText: "Validation failed", deadLetterDescription: "timeout");
+        await Store(store, endpoint, MessageType.ErrorResponse, T0.AddMinutes(1).AddTicks(4321), eventTypeId: "CustomerChanged", errorText: "Disk 50% full");
+        await Store(store, endpoint, MessageType.ErrorResponse, T0.AddHours(-2));
+        await Store(store, endpoint + "-b", MessageType.ErrorResponse, T0.AddSeconds(2));
+        var from = T0.AddHours(-1);
+        var to = T0.AddHours(1);
+
+        (IReadOnlyCollection<string>? EventTypes, string? ErrorText)[] filters =
+        [
+            (null, null),
+            ([], ""),
+            (["OrderPlaced"], null),
+            (["OrderPlaced", "CustomerChanged"], null),
+            (null, "TIMEOUT"),
+            (null, "validation"),
+            (null, "50%"),
+            (["OrderPlaced"], "timeout"),
+            (["Unknown"], null),
+        ];
+        foreach (var (eventTypes, errorText) in filters)
+        {
+            var count = await store.CountFailedAttempts(endpoint, from, to, eventTypes, errorText, 1000);
+            var page = await store.ListFailedAttempts(endpoint, from, to, eventTypes, errorText, 1000);
+            var label = $"eventTypes [{string.Join(", ", eventTypes ?? Array.Empty<string>())}], errorText '{errorText}'";
+            Assert.AreEqual(count, page.Items.Count, label);
+            Assert.IsFalse(page.Truncated, label);
+        }
+
+        Assert.AreEqual(5, (await store.ListFailedAttempts(endpoint, from, to, null, null, 1000)).Items.Count);
+        Assert.AreEqual(2, (await store.ListFailedAttempts(endpoint, from, to, null, "timeout", 1000)).Items.Count);
+    }
+
+    [TestMethod]
+    public async Task ListFailedAttempts_returns_the_newest_first_with_their_ids()
+    {
+        var store = CreateStore();
+        var endpoint = Endpoint();
+        // Within one second, fractions with different numbers of digits, and the whole second:
+        // compared as strings their order is not chronological.
+        var second = T0.AddSeconds(2);
+        second = second.AddTicks(-(second.Ticks % TimeSpan.TicksPerSecond));
+        var stored = new List<StoredMessage>();
+        foreach (var offset in new[] { 1000000L, 0L, 9000000L, 1500000L, 500000L, 2000000L })
+            stored.Add(await StoreAttempt(store, endpoint, second.AddTicks(offset)));
+        stored.Add(await StoreAttempt(store, endpoint, second.AddSeconds(-1).AddTicks(1234567)));
+        stored.Add(await StoreAttempt(store, endpoint, second.AddSeconds(30)));
+        // Two attempts at the same instant: ordered by message id.
+        stored.Add(await StoreAttempt(store, endpoint, second.AddSeconds(5).AddTicks(42)));
+        stored.Add(await StoreAttempt(store, endpoint, second.AddSeconds(5).AddTicks(42)));
+        var expected = stored
+            .OrderByDescending(s => s.EnqueuedTimeUtc)
+            .ThenBy(s => s.MessageId, StringComparer.Ordinal)
+            .ToList();
+
+        var page = await store.ListFailedAttempts(endpoint, T0.AddHours(-1), T0.AddHours(1), null, null, 100);
+
+        Assert.IsFalse(page.Truncated);
+        AssertAttempts(expected, page.Items);
+
+        // A limit that cuts inside the second must still take that second's newest.
+        for (var limit = 1; limit <= stored.Count; limit++)
+        {
+            var limited = await store.ListFailedAttempts(endpoint, T0.AddHours(-1), T0.AddHours(1), null, null, limit);
+            AssertAttempts(expected.Take(limit).ToList(), limited.Items, $"limit {limit}");
+            Assert.AreEqual(limit < stored.Count, limited.Truncated, $"limit {limit}");
+        }
+    }
+
+    [TestMethod]
+    public async Task ListFailedAttempts_returns_at_most_the_limit_and_says_when_more_matched()
+    {
+        var store = CreateStore();
+        var endpoint = Endpoint();
+        var stored = new List<StoredMessage>();
+        for (var i = 0; i < 5; i++)
+            stored.Add(await StoreAttempt(store, endpoint, T0.AddMilliseconds(150 * i)));
+        // Not failed attempts: never listed, and never make the page truncated.
+        await Store(store, endpoint, MessageType.EventRequest, T0.AddSeconds(1));
+        await Store(store, endpoint, MessageType.ResolutionResponse, T0.AddSeconds(2));
+        var newestFirst = stored.OrderByDescending(s => s.EnqueuedTimeUtc).ToList();
+        var from = T0.AddHours(-1);
+        var to = T0.AddHours(1);
+
+        var page = await store.ListFailedAttempts(endpoint, from, to, null, null, 5);
+        Assert.IsFalse(page.Truncated, "Exactly the limit matched.");
+        AssertAttempts(newestFirst, page.Items);
+
+        page = await store.ListFailedAttempts(endpoint, from, to, null, null, 6);
+        Assert.IsFalse(page.Truncated);
+        AssertAttempts(newestFirst, page.Items);
+
+        page = await store.ListFailedAttempts(endpoint, from, to, null, null, 4);
+        Assert.IsTrue(page.Truncated);
+        AssertAttempts(newestFirst.Take(4).ToList(), page.Items);
+
+        page = await store.ListFailedAttempts(endpoint, from, to, null, null, 1);
+        Assert.IsTrue(page.Truncated);
+        AssertAttempts(newestFirst.Take(1).ToList(), page.Items);
+
+        page = await store.ListFailedAttempts(Endpoint("unknown"), from, to, null, null, 1);
+        Assert.IsFalse(page.Truncated);
+        Assert.IsEmpty(page.Items);
+    }
+
+    [TestMethod]
+    public async Task ListFailedAttempts_lists_the_window_from_inclusive_to_exclusive()
+    {
+        var store = CreateStore();
+        var endpoint = Endpoint();
+        var before = await StoreAttempt(store, endpoint, T0.AddMinutes(-5));
+        // Earlier in the same second as the window's start: outside the window.
+        var sameSecondBefore = await StoreAttempt(store, endpoint, T0.AddTicks(-734567));
+        var start = await StoreAttempt(store, endpoint, T0);
+        var inside = await StoreAttempt(store, endpoint, T0.AddMinutes(1).AddTicks(4000000));
+        var end = await StoreAttempt(store, endpoint, T0.AddMinutes(2));
+        // Later in the same second as the window's end: outside the window.
+        var after = await StoreAttempt(store, endpoint, T0.AddMinutes(2).AddTicks(5000000));
+        var s = start.EnqueuedTimeUtc;
+        var e = end.EnqueuedTimeUtc;
+
+        AssertAttempts([inside, start], (await store.ListFailedAttempts(endpoint, s, e, null, null, 100)).Items, "[start, end)");
+        AssertAttempts([end, inside], (await store.ListFailedAttempts(endpoint, s.AddTicks(1), e.AddTicks(1), null, null, 100)).Items, "(start, end]");
+        AssertAttempts([after, end, inside, start, sameSecondBefore, before],
+            (await store.ListFailedAttempts(endpoint, before.EnqueuedTimeUtc, after.EnqueuedTimeUtc.AddTicks(1), null, null, 100)).Items);
+        AssertAttempts([sameSecondBefore], (await store.ListFailedAttempts(endpoint, sameSecondBefore.EnqueuedTimeUtc, s, null, null, 100)).Items);
+
+        // The rows just outside the window, in the seconds holding its bounds, don't use up the limit.
+        var limited = await store.ListFailedAttempts(endpoint, s, e, null, null, 2);
+        AssertAttempts([inside, start], limited.Items);
+        Assert.IsFalse(limited.Truncated);
+        limited = await store.ListFailedAttempts(endpoint, s, e, null, null, 1);
+        AssertAttempts([inside], limited.Items);
+        Assert.IsTrue(limited.Truncated);
+
+        var empty = await store.ListFailedAttempts(endpoint, s, s, null, null, 100);
+        Assert.IsEmpty(empty.Items, "An empty window lists nothing.");
+        Assert.IsFalse(empty.Truncated);
+        Assert.IsEmpty((await store.ListFailedAttempts(endpoint, e, s, null, null, 100)).Items, "A reversed window lists nothing.");
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(-1)]
+    public async Task ListFailedAttempts_rejects_a_limit_below_one(int limit)
+    {
+        var store = CreateStore();
+
+        await Assert.ThrowsExactlyAsync<ArgumentOutOfRangeException>(
+            () => store.ListFailedAttempts(Endpoint(), T0, T0.AddHours(1), null, null, limit));
+    }
+
     // ───────── Helpers ─────────
+
+    private sealed record StoredMessage(string MessageId, string EventId, DateTime EnqueuedTimeUtc);
+
+    private static void AssertMinutes(IReadOnlyList<(DateTime Minute, int Count)> expected, IReadOnlyList<MinuteCount> actual, string? message = null)
+    {
+        var describe = $"{message} Expected [{string.Join(", ", expected.Select(x => $"{x.Minute:HH:mm}={x.Count}"))}], " +
+            $"got [{string.Join(", ", actual.Select(x => $"{x.MinuteUtc:HH:mm}={x.Count}"))}].";
+        Assert.HasCount(expected.Count, actual, describe);
+        for (var i = 0; i < expected.Count; i++)
+        {
+            Assert.AreEqual(expected[i].Minute.Ticks, actual[i].MinuteUtc.Ticks, describe);
+            Assert.AreEqual(DateTimeKind.Utc, actual[i].MinuteUtc.Kind, describe);
+            Assert.AreEqual(expected[i].Count, actual[i].Count, describe);
+        }
+    }
+
+    private static void AssertAttempts(IReadOnlyList<StoredMessage> expected, IReadOnlyList<FailedAttempt> actual, string? message = null)
+    {
+        var describe = $"{message} Expected [{string.Join(", ", expected.Select(x => x.MessageId))}], got [{string.Join(", ", actual.Select(x => x.MessageId))}].";
+        Assert.HasCount(expected.Count, actual, describe);
+        for (var i = 0; i < expected.Count; i++)
+        {
+            Assert.AreEqual(expected[i].MessageId, actual[i].MessageId, describe);
+            Assert.AreEqual(expected[i].EventId, actual[i].EventId, describe);
+            Assert.AreEqual(expected[i].EnqueuedTimeUtc.Ticks, actual[i].EnqueuedTimeUtc.Ticks, describe);
+            Assert.AreEqual(DateTimeKind.Utc, actual[i].EnqueuedTimeUtc.Kind, describe);
+        }
+    }
+
+    // Stores a failed attempt and returns its ids and EnqueuedTimeUtc as the store holds them.
+    private Task<StoredMessage> StoreAttempt(IAlertSignalStore store, string endpointId, DateTime enqueuedTimeUtc)
+        => StoreCore(store, endpointId, MessageType.ErrorResponse, enqueuedTimeUtc, "OrderPlaced", null, null);
 
     // Stores a message and returns its EnqueuedTimeUtc as the store holds it.
     private async Task<DateTime> Store(
@@ -318,6 +648,16 @@ public abstract class AlertSignalStoreConformanceTests
         string eventTypeId = "OrderPlaced",
         string? errorText = null,
         string? deadLetterDescription = null)
+        => (await StoreCore(store, endpointId, messageType, enqueuedTimeUtc, eventTypeId, errorText, deadLetterDescription)).EnqueuedTimeUtc;
+
+    private async Task<StoredMessage> StoreCore(
+        IAlertSignalStore store,
+        string endpointId,
+        MessageType messageType,
+        DateTime enqueuedTimeUtc,
+        string eventTypeId,
+        string? errorText,
+        string? deadLetterDescription)
     {
         var eventId = NextId("evt");
         var messageId = NextId("msg");
@@ -343,7 +683,7 @@ public abstract class AlertSignalStoreConformanceTests
 
         var stored = await Tracking(store).GetMessage(eventId, messageId);
         Assert.IsNotNull(stored, "The message was not stored.");
-        return Utc(stored.EnqueuedTimeUtc);
+        return new StoredMessage(messageId, eventId, Utc(stored.EnqueuedTimeUtc));
     }
 
     private static async Task Upload(IAlertSignalStore store, string endpointId, string eventId, string sessionId, ResolutionStatus status, bool handoff = false)

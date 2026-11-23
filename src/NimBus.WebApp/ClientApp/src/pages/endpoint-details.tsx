@@ -2,7 +2,7 @@ import * as React from "react";
 const { useEffect, useMemo, useState } = React;
 
 import * as api from "api-client";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import Page from "components/page";
 import EventsPanel from "components/endpoint-details/events-panel";
 import EventTypesPanel from "components/endpoint-details/event-types-panel";
@@ -23,7 +23,12 @@ type EndpointDetailsProps = {
   endpointState?: api.EndpointStatus;
 };
 
-type DetailTab = "messages" | "event-types" | "alerts" | "ownership" | "audit";
+const DETAIL_TABS = ["messages", "event-types", "alerts", "ownership", "audit"] as const;
+type DetailTab = (typeof DETAIL_TABS)[number];
+
+/** The tab a `?tab=` value names; Messages for none or one the page doesn't have. */
+const tabFromParam = (value: string | null): DetailTab =>
+  (DETAIL_TABS as readonly string[]).includes(value ?? "") ? (value as DetailTab) : "messages";
 
 const EndpointDetails = (props: EndpointDetailsProps) => {
   const { id } = useParams();
@@ -38,10 +43,16 @@ const EndpointDetailsContent = (
   const [client] = useState(() => new api.Client(api.CookieAuth()));
 
   const [endpointIsInvalid, setEndpointIsInvalid] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<DetailTab>("messages");
+  // The open tab lives in the URL (`?tab=alerts`), so notices and links can open a tab directly.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = tabFromParam(searchParams.get("tab"));
   const [visitedTabs, setVisitedTabs] = useState<Set<DetailTab>>(
-    () => new Set(["messages"]),
+    () => new Set(["messages", activeTab]),
   );
+  // A tab opened from the URL counts as visited, so it stays mounted after the user moves on.
+  if (!visitedTabs.has(activeTab)) {
+    setVisitedTabs(new Set([...visitedTabs, activeTab]));
+  }
   const [alertSubscriptions, setAlertSubscriptions] = useState<
     api.EndpointSubscription[]
   >([]);
@@ -70,11 +81,20 @@ const EndpointDetailsContent = (
     };
   }, [client, endpointId]);
 
+  // Replace, not push: switching tabs shouldn't fill the Back button's history.
   const selectTab = (tab: DetailTab) => {
     setVisitedTabs((visited) =>
       visited.has(tab) ? visited : new Set([...visited, tab]),
     );
-    setActiveTab(tab);
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params);
+        if (tab === "messages") next.delete("tab");
+        else next.set("tab", tab);
+        return next;
+      },
+      { replace: true },
+    );
   };
 
   // Validate endpoint exists

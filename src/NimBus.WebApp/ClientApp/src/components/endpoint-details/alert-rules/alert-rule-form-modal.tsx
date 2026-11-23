@@ -17,9 +17,11 @@ import {
 import { Combobox, type ComboboxOption } from "components/ui/combobox";
 import { getEventTypesByEndpoint } from "hooks/event-types";
 import { copyToClipboard } from "lib/clipboard";
+import AlertRulePreviewPanel from "./alert-rule-preview";
 import {
   BLOCKED_MAX,
   BLOCKED_MIN,
+  CATEGORIES_MAX,
   CONDITION_KINDS,
   DEFERRED_MAX,
   DEFERRED_MIN,
@@ -36,6 +38,7 @@ import {
   THRESHOLD_MIN,
   WINDOW_MAX,
   WINDOW_MIN,
+  categoryLabel,
   draftFromRule,
   emptyDraft,
   kindOf,
@@ -55,6 +58,10 @@ export interface AlertRuleFormModalProps {
   webhookEnabled: boolean;
   /** The condition kinds the deployment can evaluate; an edited rule's own kind is offered too. */
   availableKinds: ConditionKind[];
+  /** Whether rules can filter by classification category on this deployment. */
+  classificationAvailable: boolean;
+  /** The categories a rule can filter by, in the server's order. */
+  categories: string[];
   onClose: () => void;
   /** Called after a successful save, before any secret is shown. */
   onSaved: (saved: api.AlertRuleSaved) => void;
@@ -128,7 +135,17 @@ const NumberField = ({ id, label, value, min, max, error, sharedErrorId, hint, o
 // in a modal instead of the Manage pages' inspector drawer. A new webhook target's signing secret
 // comes back only in the save response, so the modal then stays open on the secrets until Done.
 export default function AlertRuleFormModal(props: AlertRuleFormModalProps) {
-  const { endpointId, rule, mailEnabled, webhookEnabled, availableKinds, onClose, onSaved } = props;
+  const {
+    endpointId,
+    rule,
+    mailEnabled,
+    webhookEnabled,
+    availableKinds,
+    classificationAvailable,
+    categories,
+    onClose,
+    onSaved,
+  } = props;
   const editing = !!rule;
   const { addToast } = useToast();
   const [client] = useState(() => new api.Client(api.CookieAuth()));
@@ -181,6 +198,18 @@ export default function AlertRuleFormModal(props: AlertRuleFormModalProps) {
       statuses: on
         ? FAILURE_STATUSES.filter((s) => s === status || draft.statuses.includes(s))
         : draft.statuses.filter((s) => s !== status),
+    });
+
+  // A rule saved with categories keeps them on show when classifications can't be read now, so they
+  // can be removed; otherwise the server refuses the save with nothing in the form to fix.
+  const categoryOptions = classificationAvailable
+    ? [...new Set([...categories, ...draft.categories])]
+    : draft.categories;
+  const toggleCategory = (category: string, on: boolean) =>
+    update({
+      categories: on
+        ? categoryOptions.filter((c) => c === category || draft.categories.includes(c))
+        : draft.categories.filter((c) => c !== category),
     });
 
   async function save(event: FormEvent) {
@@ -475,8 +504,43 @@ export default function AlertRuleFormModal(props: AlertRuleFormModalProps) {
                 <FieldError id="alert-rule-error-text-error" text={errors.errorTextContains} />
                 <Hint>Optional. Counts only failures whose error text contains this, ignoring case.</Hint>
               </div>
+
+              {categoryOptions.length > 0 && (
+                <fieldset className="m-0 border-0 p-0" aria-describedby="alert-rule-categories-help">
+                  <legend className="mb-2 text-sm font-medium text-foreground">Categories</legend>
+                  <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+                    {categoryOptions.map((category) => {
+                      const checked = draft.categories.includes(category);
+                      return (
+                        <Checkbox
+                          key={category}
+                          id={`alert-rule-category-${category}`}
+                          label={categoryLabel(category)}
+                          checked={checked}
+                          disabled={!checked && draft.categories.length >= CATEGORIES_MAX}
+                          onChange={(e) => toggleCategory(category, e.currentTarget.checked)}
+                        />
+                      );
+                    })}
+                  </div>
+                  <FieldError id="alert-rule-categories-error" text={errors.categories} />
+                  <p id="alert-rule-categories-help" className="m-0 mt-1 text-xs text-muted-foreground">
+                    Counts only failures an agent has classified into one of these. A retry is a new, unclassified
+                    attempt.
+                  </p>
+                  <Hint>None picked counts every failure. Up to {CATEGORIES_MAX}.</Hint>
+                  {!classificationAvailable && (
+                    <p className="m-0 mt-1 text-xs text-status-warning-ink">
+                      This WebApp can't read failure classifications now, so a rule with categories can't be saved.
+                      Untick them to save the rule.
+                    </p>
+                  )}
+                </fieldset>
+              )}
             </>
           )}
+
+          <AlertRulePreviewPanel endpointId={endpointId} draft={draft} />
 
           <div className="flex items-center gap-3">
             <Toggle aria-label="Enabled" checked={draft.enabled} onChange={(enabled) => update({ enabled })} />

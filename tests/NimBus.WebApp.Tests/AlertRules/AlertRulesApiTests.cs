@@ -37,7 +37,7 @@ public sealed class AlertRulesApiTests
     private readonly RecordingWebhooks _webhooks = new();
     private readonly RecordingAudit _audit = new();
 
-    private AlertRulesImplementation Sut(bool owner = true, bool reader = true, bool mail = false, IAlertRuleStore? store = null, Func<string, bool>? canRead = null, bool signals = true)
+    private AlertRulesImplementation Sut(bool owner = true, bool reader = true, bool mail = false, IAlertRuleStore? store = null, Func<string, bool>? canRead = null, bool signals = true, bool classifications = false)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { [AlertWebhookOptions.SectionName + ":SigningKey"] = SigningKey })
@@ -56,7 +56,9 @@ public sealed class AlertRulesApiTests
             configuration,
             _time,
             store ?? _store,
-            signals ? new NoSignals() : null);
+            signals ? new NoSignals() : null,
+            _store,
+            classifications ? new NoClassifications() : null);
     }
 
     private static Api.AlertRuleRequest Request(int threshold = 3, bool enabled = true, string? errorText = null, params Api.AlertRuleTargetModel[] targets) => new()
@@ -285,6 +287,84 @@ public sealed class AlertRulesApiTests
         Assert.AreEqual(0, Ok(await sut.GetAlertRulesFiringAsync()).Count());
     }
 
+    [TestMethod]
+    public async Task Categories_need_Integration_Intelligence()
+    {
+        var condition = new Api.AlertRuleCondition { Threshold = 1, Categories = ["transient_dependency"] };
+
+        StringAssert.Contains(
+            Errors(await Sut().PostEndpointAlertRuleAsync(KindRequest(condition), Endpoint)).Single(),
+            "condition.categories needs Integration Intelligence");
+        var listed = Ok(await Sut().GetEndpointAlertRulesAsync(Endpoint));
+        Assert.IsFalse(listed.ClassificationAvailable);
+        Assert.AreEqual(0, listed.Categories.Count);
+    }
+
+    [TestMethod]
+    public async Task Categories_are_stored_for_counting_kinds_and_must_be_known()
+    {
+        var saved = Ok(await Sut(classifications: true).PostEndpointAlertRuleAsync(
+            KindRequest(new Api.AlertRuleCondition { Threshold = 1, Categories = ["transient_dependency", "transient_dependency", "contract_schema"] }), Endpoint));
+        CollectionAssert.AreEqual(new[] { "transient_dependency", "contract_schema" }, (await _store.GetAlertRule(Endpoint, saved.Rule.Id))!.Condition.Categories);
+        CollectionAssert.AreEqual(new[] { "transient_dependency", "contract_schema" }, saved.Rule.Condition.Categories.ToArray());
+
+        StringAssert.StartsWith(
+            Errors(await Sut(classifications: true).PostEndpointAlertRuleAsync(
+                KindRequest(new Api.AlertRuleCondition { Threshold = 1, Categories = ["unknown"] }), Endpoint)).Single(),
+            "condition.categories must be at most 8 of ");
+
+        var silence = Ok(await Sut(classifications: true).PostEndpointAlertRuleAsync(
+            KindRequest(new Api.AlertRuleCondition { Kind = "silence", Minutes = 60, Categories = ["business_rule"] }), Endpoint));
+        Assert.AreEqual(0, (await _store.GetAlertRule(Endpoint, silence.Rule.Id))!.Condition.Categories.Count, "Categories apply to counting kinds only.");
+
+        var listed = Ok(await Sut(classifications: true).GetEndpointAlertRulesAsync(Endpoint));
+        Assert.IsTrue(listed.ClassificationAvailable);
+        CollectionAssert.DoesNotContain(listed.Categories.ToList(), "unknown");
+        CollectionAssert.Contains(listed.Categories.ToList(), "messaging_platform");
+    }
+
+    [TestMethod]
+    public async Task A_reader_can_preview_a_draft_and_backlog_drafts_have_no_replay()
+    {
+        var occurrences = Ok(await Sut(owner: false).PostEndpointAlertRulePreviewAsync(
+            new Api.AlertRulePreviewRequest { Condition = new Api.AlertRuleCondition { Kind = "failure_occurrences", Threshold = 2, WindowMinutes = 15 }, ResolveAfterMinutes = 5 },
+            Endpoint));
+        Assert.IsNotNull(occurrences.Replay);
+        Assert.AreEqual(0, occurrences.Replay.Periods.Count);
+        Assert.AreEqual(_time.GetUtcNow().UtcDateTime.AddDays(-1), occurrences.Replay.FromUtc);
+        Assert.IsFalse(occurrences.HoldsNow);
+
+        var backlog = Ok(await Sut(owner: false).PostEndpointAlertRulePreviewAsync(
+            new Api.AlertRulePreviewRequest { Condition = new Api.AlertRuleCondition { Threshold = 1 }, ResolveAfterMinutes = 5 }, Endpoint));
+        Assert.IsNull(backlog.Replay);
+        Assert.AreEqual("no_history", backlog.ReplayUnsupportedReason);
+        Assert.AreEqual(0, backlog.ValueNow);
+        Assert.AreEqual(0, _store.ListAlertRulesByEndpoint(Endpoint).Result.Count, "A preview saves nothing.");
+    }
+
+    [TestMethod]
+    public async Task A_preview_validates_the_draft_and_needs_read_access()
+    {
+        CollectionAssert.Contains(
+            Errors(await Sut().PostEndpointAlertRulePreviewAsync(
+                new Api.AlertRulePreviewRequest { Condition = new Api.AlertRuleCondition { Kind = "silence", Minutes = 2 }, ResolveAfterMinutes = 5 }, Endpoint)),
+            "condition.minutes must be 5 to 1440.");
+        CollectionAssert.Contains(
+            Errors(await Sut().PostEndpointAlertRulePreviewAsync(
+                new Api.AlertRulePreviewRequest { Condition = new Api.AlertRuleCondition { Threshold = 1 }, ResolveAfterMinutes = 0 }, Endpoint)),
+            "resolveAfterMinutes must be 1 to 60.");
+        Assert.IsInstanceOfType<ForbidResult>((await Sut(owner: false, reader: false).PostEndpointAlertRulePreviewAsync(
+            new Api.AlertRulePreviewRequest { Condition = new Api.AlertRuleCondition { Threshold = 1 }, ResolveAfterMinutes = 5 }, Endpoint)).Result);
+    }
+
+    private sealed class NoClassifications : IAlertRuleClassifications
+    {
+        public Task<NimBus.Extensions.IntegrationIntelligence.ClassificationBulkReadResult> ReadLatestInBulkAsync(IReadOnlyCollection<string> failureMessageIds, CancellationToken cancellationToken)
+            => Task.FromResult(new NimBus.Extensions.IntegrationIntelligence.ClassificationBulkReadResult(
+                NimBus.Extensions.IntegrationIntelligence.ClassificationBulkReadStatus.Available,
+                new Dictionary<string, NimBus.Extensions.IntegrationIntelligence.ClassificationSnapshot>()));
+    }
+
     private static Api.AlertRuleRequest KindRequest(Api.AlertRuleCondition condition) => new()
     {
         Name = "ERP " + condition.Kind,
@@ -371,6 +451,12 @@ public sealed class AlertRulesApiTests
         public Task<BlockingEvent?> GetOldestBlockingEvent(string endpointId) => Task.FromResult<BlockingEvent?>(null);
 
         public Task<bool> HasCompletedMessageSince(string endpointId, DateTime sinceUtc) => Task.FromResult(true);
+
+        public Task<IReadOnlyList<MinuteCount>> CountMessagesPerMinute(string endpointId, NimBus.Core.Messages.MessageType type, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains)
+            => Task.FromResult<IReadOnlyList<MinuteCount>>([]);
+
+        public Task<FailedAttemptPage> ListFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int limit)
+            => Task.FromResult(new FailedAttemptPage([], false));
     }
 
     private sealed class FixedAuthorization(bool owner, bool reader, Func<string, bool>? canRead) : IEndpointAuthorizationService

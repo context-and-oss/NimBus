@@ -10,8 +10,8 @@ using NimBus.MessageStore.States;
 namespace NimBus.Testing.Conformance;
 
 /// <summary>
-/// In-memory implementation of <see cref="IAlertSignalStore"/> (Spec 053 Phase 2): LINQ over the
-/// stored messages and live events of <see cref="InMemoryMessageStore"/>, which hands in its
+/// In-memory implementation of <see cref="IAlertSignalStore"/> (Spec 053 Phases 2 and 3): LINQ over
+/// the stored messages and live events of <see cref="InMemoryMessageStore"/>, which hands in its
 /// collections. Archived and removed events are not in the live collection.
 /// </summary>
 internal sealed class InMemoryAlertSignalStore : IAlertSignalStore
@@ -34,14 +34,7 @@ internal sealed class InMemoryAlertSignalStore : IAlertSignalStore
         if (toUtc <= fromUtc)
             return Task.FromResult(0);
 
-        var types = eventTypes is { Count: > 0 } ? new HashSet<string>(eventTypes, StringComparer.Ordinal) : null;
-        var count = _messages()
-            .Where(m => string.Equals(m.EndpointId, endpointId, StringComparison.Ordinal)
-                && m.MessageType == MessageType.ErrorResponse
-                && m.EnqueuedTimeUtc >= fromUtc
-                && m.EnqueuedTimeUtc < toUtc
-                && (types is null || (m.EventTypeId is not null && types.Contains(m.EventTypeId)))
-                && MatchesErrorText(m, errorTextContains))
+        var count = Matching(endpointId, MessageType.ErrorResponse, fromUtc, toUtc, eventTypes, errorTextContains)
             .Take(cap)
             .Count();
         return Task.FromResult(count);
@@ -74,6 +67,64 @@ internal sealed class InMemoryAlertSignalStore : IAlertSignalStore
             string.Equals(m.EndpointId, endpointId, StringComparison.Ordinal)
             && m.MessageType == MessageType.ResolutionResponse
             && m.EnqueuedTimeUtc >= sinceUtc));
+    }
+
+    public Task<IReadOnlyList<MinuteCount>> CountMessagesPerMinute(string endpointId, MessageType type, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(endpointId);
+        ValidateMinuteBounds(fromUtc, toUtc);
+
+        IReadOnlyList<MinuteCount> counts = Matching(endpointId, type, fromUtc, toUtc, eventTypes, errorTextContains)
+            .GroupBy(m => m.EnqueuedTimeUtc.Ticks - m.EnqueuedTimeUtc.Ticks % TimeSpan.TicksPerMinute)
+            .OrderBy(g => g.Key)
+            .Select(g => new MinuteCount(new DateTime(g.Key, DateTimeKind.Utc), g.Count()))
+            .ToList();
+        return Task.FromResult(counts);
+    }
+
+    public Task<FailedAttemptPage> ListFailedAttempts(string endpointId, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains, int limit)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(endpointId);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        if (toUtc <= fromUtc)
+            return Task.FromResult(new FailedAttemptPage([], false));
+
+        // One more than the limit tells whether more matched.
+        var take = limit == int.MaxValue ? limit : limit + 1;
+        var items = Matching(endpointId, MessageType.ErrorResponse, fromUtc, toUtc, eventTypes, errorTextContains)
+            .OrderByDescending(m => m.EnqueuedTimeUtc)
+            .ThenBy(m => m.MessageId, StringComparer.Ordinal)
+            .ThenBy(m => m.EventId, StringComparer.Ordinal)
+            .Take(take)
+            .Select(m => new FailedAttempt(m.MessageId, m.EventId, DateTime.SpecifyKind(m.EnqueuedTimeUtc, DateTimeKind.Utc)))
+            .ToList();
+        var truncated = items.Count > limit;
+        if (truncated)
+            items.RemoveAt(items.Count - 1);
+        return Task.FromResult(new FailedAttemptPage(items, truncated));
+    }
+
+    // The endpoint's messages of one type in [fromUtc, toUtc) that pass the filters.
+    private IEnumerable<MessageEntity> Matching(string endpointId, MessageType type, DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string>? eventTypes, string? errorTextContains)
+    {
+        var types = eventTypes is { Count: > 0 } ? new HashSet<string>(eventTypes, StringComparer.Ordinal) : null;
+        return _messages()
+            .Where(m => string.Equals(m.EndpointId, endpointId, StringComparison.Ordinal)
+                && m.MessageType == type
+                && m.EnqueuedTimeUtc >= fromUtc
+                && m.EnqueuedTimeUtc < toUtc
+                && (types is null || (m.EventTypeId is not null && types.Contains(m.EventTypeId)))
+                && MatchesErrorText(m, errorTextContains));
+    }
+
+    private static void ValidateMinuteBounds(DateTime fromUtc, DateTime toUtc)
+    {
+        if (fromUtc.Ticks % TimeSpan.TicksPerMinute != 0)
+            throw new ArgumentException("The start must be a whole minute.", nameof(fromUtc));
+        if (toUtc.Ticks % TimeSpan.TicksPerMinute != 0)
+            throw new ArgumentException("The end must be a whole minute.", nameof(toUtc));
+        if (toUtc <= fromUtc)
+            throw new ArgumentException("The end must be after the start.", nameof(toUtc));
     }
 
     // The error text is ErrorContent.ErrorText, else (when that is null or empty) the

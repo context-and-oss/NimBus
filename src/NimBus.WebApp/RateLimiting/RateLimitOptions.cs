@@ -39,6 +39,9 @@ public sealed class RateLimitOptions
     /// <summary>Fixed-window limits for the message and audit search endpoints.</summary>
     public WindowLimits Search { get; set; } = new() { PermitLimit = 120, WindowSeconds = 60 };
 
+    /// <summary>Fixed-window limits for the alert rule preview, per user. Default 10 per 60 seconds.</summary>
+    public WindowLimits AlertRulePreview { get; set; } = new() { PermitLimit = 10, WindowSeconds = 60 };
+
     /// <summary>Fixed-window limits for <c>POST /account/login</c>.</summary>
     public LoginLimits Login { get; set; } = new();
 

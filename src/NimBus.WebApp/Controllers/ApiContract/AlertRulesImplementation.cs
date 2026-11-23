@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using NimBus.Alerts;
 using NimBus.Core;
+using NimBus.Extensions.IntegrationIntelligence;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
@@ -45,7 +46,16 @@ public class AlertRulesImplementation : Api.IAlertRulesApiController
     /// <summary>The highest deferred-event threshold of a blocked-session rule.</summary>
     public const int MaxDeferredThreshold = 1000;
 
+    /// <summary>The most classification categories one rule can filter by.</summary>
+    public const int MaxCategories = 8;
+
     private static readonly string[] KnownStatuses = ["Failed", "DeadLettered", "Unsupported"];
+
+    /// <summary>The categories a rule can filter by: every classification category but unknown, in a fixed order.</summary>
+    private static readonly string[] SelectableCategories = FailureClassificationQuestionSet.Categories
+        .Where(c => c != ClassificationMatch.UnknownCategory)
+        .Order(StringComparer.Ordinal)
+        .ToArray();
 
     private readonly HttpContext _context;
     private readonly IEndpointAuthorizationService _authorization;
@@ -56,6 +66,8 @@ public class AlertRulesImplementation : Api.IAlertRulesApiController
     private readonly TimeProvider _time;
     private readonly IAlertRuleStore? _store;
     private readonly IAlertSignalStore? _signals;
+    private readonly IMessageTrackingStore? _events;
+    private readonly IAlertRuleClassifications? _classifications;
 
     /// <summary>Creates the controller implementation.</summary>
     public AlertRulesImplementation(
@@ -67,9 +79,31 @@ public class AlertRulesImplementation : Api.IAlertRulesApiController
         IConfiguration configuration,
         TimeProvider time,
         IAlertRuleStore? store = null,
-        IAlertSignalStore? signals = null)
+        IAlertSignalStore? signals = null,
+        IMessageTrackingStore? events = null,
+        FailureClassificationReader? classificationReader = null)
+        : this(contextAccessor, authorization, audit, platform, delivery, configuration, time, store, signals, events,
+            classificationReader is null ? null : new ReaderAlertRuleClassifications(classificationReader))
+    {
+    }
+
+    /// <summary>Creates the implementation over any classification source (tests).</summary>
+    internal AlertRulesImplementation(
+        IHttpContextAccessor contextAccessor,
+        IEndpointAuthorizationService authorization,
+        IAuditLogService audit,
+        IPlatform platform,
+        AlertRuleDelivery delivery,
+        IConfiguration configuration,
+        TimeProvider time,
+        IAlertRuleStore? store,
+        IAlertSignalStore? signals,
+        IMessageTrackingStore? events,
+        IAlertRuleClassifications? classifications)
     {
         _signals = signals;
+        _events = events;
+        _classifications = classifications;
         ArgumentNullException.ThrowIfNull(contextAccessor);
         _context = contextAccessor.HttpContext!;
         _authorization = authorization;
@@ -102,6 +136,47 @@ public class AlertRulesImplementation : Api.IAlertRulesApiController
             WebhookEnabled = _delivery.WebhookEnabled,
             CanManage = canManage,
             AvailableKinds = AvailableKinds().ToList(),
+            ClassificationAvailable = _classifications is not null,
+            Categories = _classifications is null ? [] : SelectableCategories.ToList(),
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task<ActionResult<Api.AlertRulePreview>> PostEndpointAlertRulePreviewAsync(Api.AlertRulePreviewRequest body, string endpointId)
+    {
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
+            return new NotFoundObjectResult("Endpoint not found");
+        if (!await _authorization.HasRoleAsync(AccessRole.Reader, endpointId))
+            return new ForbidResult();
+        if (_store is null || _events is null)
+            return NotImplemented();
+
+        var errors = new List<string>();
+        if (body?.Condition is null)
+            errors.Add("condition is required.");
+        else
+            ValidateCondition(body.Condition, errors);
+        if (body?.ResolveAfterMinutes is < 1 or > 60)
+            errors.Add("resolveAfterMinutes must be 1 to 60.");
+        if (errors.Count > 0)
+            return BadRequest(errors.Distinct());
+
+        var previewer = new AlertRulePreviewer(new AlertRuleConditionReader(_events, _signals, _classifications));
+        var result = await previewer.PreviewAsync(
+            endpointId, ToCondition(body!.Condition!), body.ResolveAfterMinutes, _time.GetUtcNow().UtcDateTime, _context.RequestAborted);
+        return new OkObjectResult(new Api.AlertRulePreview
+        {
+            ValueNow = result.ValueNow,
+            HoldsNow = result.HoldsNow,
+            NowUnavailableReason = result.NowUnavailableReason,
+            ReplayUnsupportedReason = result.ReplayUnsupportedReason,
+            Replay = result.Replay is not { } replay ? null : new Api.AlertRuleReplay
+            {
+                FromUtc = replay.FromUtc,
+                ToUtc = replay.ToUtc,
+                Series = replay.Series.Select(p => new Api.AlertRulePreviewPoint { AtUtc = p.AtUtc, Value = p.Value }).ToList(),
+                Periods = replay.Periods.Select(p => new Api.AlertRulePreviewPeriod { FromUtc = p.FromUtc, ToUtc = p.ToUtc }).ToList(),
+            },
         });
     }
 
@@ -313,59 +388,10 @@ public class AlertRulesImplementation : Api.IAlertRulesApiController
         if (string.IsNullOrWhiteSpace(body.Name) || body.Name.Trim().Length > 100)
             errors.Add("name must be 1 to 100 characters.");
 
-        var condition = body.Condition;
-        if (condition is null)
-        {
+        if (body.Condition is null)
             errors.Add("condition is required.");
-        }
         else
-        {
-            var kind = KindOf(condition);
-            if (!AlertRuleConditionKinds.All.Contains(kind))
-            {
-                errors.Add($"condition.kind must be {string.Join(", ", AlertRuleConditionKinds.All)}.");
-            }
-            else if (!AvailableKinds().Contains(kind))
-            {
-                errors.Add($"condition.kind {kind} needs a storage provider that can read alert signals, and this deployment has none.");
-            }
-
-            switch (kind)
-            {
-                case AlertRuleConditionKinds.FailureBacklog:
-                case AlertRuleConditionKinds.FailureOccurrences:
-                    if (condition.Threshold is < 1 or > MaxThreshold)
-                        errors.Add($"condition.threshold must be 1 to {MaxThreshold}.");
-                    if (condition.ErrorTextContains is { Length: > 200 })
-                        errors.Add("condition.errorTextContains must be at most 200 characters.");
-                    var eventTypes = condition.EventTypes ?? [];
-                    if (eventTypes.Count > 20 || eventTypes.Any(t => string.IsNullOrWhiteSpace(t) || t.Length > 200))
-                        errors.Add("condition.eventTypes must be at most 20 names of 1 to 200 characters.");
-                    if (kind == AlertRuleConditionKinds.FailureBacklog)
-                    {
-                        if ((condition.Statuses ?? []).Any(s => !KnownStatuses.Contains(s, StringComparer.OrdinalIgnoreCase)))
-                            errors.Add("condition.statuses must be Failed, DeadLettered or Unsupported.");
-                    }
-                    else if (condition.WindowMinutes is not (>= MinWindowMinutes and <= MaxWindowMinutes))
-                    {
-                        errors.Add($"condition.windowMinutes must be {MinWindowMinutes} to {MaxWindowMinutes}.");
-                    }
-
-                    break;
-                case AlertRuleConditionKinds.BlockedSession:
-                    if (condition.Minutes is null && condition.DeferredThreshold is null)
-                        errors.Add("A blocked-session condition needs minutes, deferredThreshold or both.");
-                    if (condition.Minutes is < 1 or > MaxMinutes)
-                        errors.Add($"condition.minutes must be 1 to {MaxMinutes}.");
-                    if (condition.DeferredThreshold is < 1 or > MaxDeferredThreshold)
-                        errors.Add($"condition.deferredThreshold must be 1 to {MaxDeferredThreshold}.");
-                    break;
-                case AlertRuleConditionKinds.Silence:
-                    if (condition.Minutes is not (>= MinSilenceMinutes and <= MaxMinutes))
-                        errors.Add($"condition.minutes must be {MinSilenceMinutes} to {MaxMinutes}.");
-                    break;
-            }
-        }
+            ValidateCondition(body.Condition, errors);
 
         if (body.ResolveAfterMinutes is < 1 or > 60)
             errors.Add("resolveAfterMinutes must be 1 to 60.");
@@ -398,6 +424,61 @@ public class AlertRulesImplementation : Api.IAlertRulesApiController
         return errors.Distinct().ToList();
     }
 
+    private void ValidateCondition(Api.AlertRuleCondition condition, List<string> errors)
+    {
+        var kind = KindOf(condition);
+        if (!AlertRuleConditionKinds.All.Contains(kind))
+        {
+            errors.Add($"condition.kind must be {string.Join(", ", AlertRuleConditionKinds.All)}.");
+        }
+        else if (!AvailableKinds().Contains(kind))
+        {
+            errors.Add($"condition.kind {kind} needs a storage provider that can read alert signals, and this deployment has none.");
+        }
+
+        switch (kind)
+        {
+            case AlertRuleConditionKinds.FailureBacklog:
+            case AlertRuleConditionKinds.FailureOccurrences:
+                if (condition.Threshold is < 1 or > MaxThreshold)
+                    errors.Add($"condition.threshold must be 1 to {MaxThreshold}.");
+                if (condition.ErrorTextContains is { Length: > 200 })
+                    errors.Add("condition.errorTextContains must be at most 200 characters.");
+                var eventTypes = condition.EventTypes ?? [];
+                if (eventTypes.Count > 20 || eventTypes.Any(t => string.IsNullOrWhiteSpace(t) || t.Length > 200))
+                    errors.Add("condition.eventTypes must be at most 20 names of 1 to 200 characters.");
+                if (kind == AlertRuleConditionKinds.FailureBacklog)
+                {
+                    if ((condition.Statuses ?? []).Any(s => !KnownStatuses.Contains(s, StringComparer.OrdinalIgnoreCase)))
+                        errors.Add("condition.statuses must be Failed, DeadLettered or Unsupported.");
+                }
+                else if (condition.WindowMinutes is not (>= MinWindowMinutes and <= MaxWindowMinutes))
+                {
+                    errors.Add($"condition.windowMinutes must be {MinWindowMinutes} to {MaxWindowMinutes}.");
+                }
+
+                var categories = condition.Categories ?? [];
+                if (categories.Count > 0 && _classifications is null)
+                    errors.Add("condition.categories needs Integration Intelligence, and this deployment can't read classifications.");
+                else if (categories.Count > MaxCategories || categories.Any(c => !SelectableCategories.Contains(c)))
+                    errors.Add($"condition.categories must be at most {MaxCategories} of {string.Join(", ", SelectableCategories)}.");
+
+                break;
+            case AlertRuleConditionKinds.BlockedSession:
+                if (condition.Minutes is null && condition.DeferredThreshold is null)
+                    errors.Add("A blocked-session condition needs minutes, deferredThreshold or both.");
+                if (condition.Minutes is < 1 or > MaxMinutes)
+                    errors.Add($"condition.minutes must be 1 to {MaxMinutes}.");
+                if (condition.DeferredThreshold is < 1 or > MaxDeferredThreshold)
+                    errors.Add($"condition.deferredThreshold must be 1 to {MaxDeferredThreshold}.");
+                break;
+            case AlertRuleConditionKinds.Silence:
+                if (condition.Minutes is not (>= MinSilenceMinutes and <= MaxMinutes))
+                    errors.Add($"condition.minutes must be {MinSilenceMinutes} to {MaxMinutes}.");
+                break;
+        }
+    }
+
     /// <summary>The kinds this deployment can evaluate: the backlog always, the rest with an alert signal store.</summary>
     private IEnumerable<string> AvailableKinds()
         => _signals is null ? [AlertRuleConditionKinds.FailureBacklog] : AlertRuleConditionKinds.All;
@@ -425,6 +506,7 @@ public class AlertRulesImplementation : Api.IAlertRulesApiController
             WindowMinutes = kind == AlertRuleConditionKinds.FailureOccurrences ? condition.WindowMinutes : null,
             Minutes = kind is AlertRuleConditionKinds.BlockedSession or AlertRuleConditionKinds.Silence ? condition.Minutes : null,
             DeferredThreshold = kind == AlertRuleConditionKinds.BlockedSession ? condition.DeferredThreshold : null,
+            Categories = counted ? (condition.Categories ?? []).Distinct(StringComparer.Ordinal).ToList() : [],
         };
     }
 
@@ -485,6 +567,7 @@ public class AlertRulesImplementation : Api.IAlertRulesApiController
             EventTypes = rule.Condition.EventTypes.ToList(),
             Statuses = rule.Condition.Statuses.ToList(),
             ErrorTextContains = rule.Condition.ErrorTextContains,
+            Categories = rule.Condition.Categories.ToList(),
             Threshold = rule.Condition.Threshold,
             WindowMinutes = rule.Condition.WindowMinutes,
             Minutes = rule.Condition.Minutes,

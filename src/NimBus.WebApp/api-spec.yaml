@@ -1231,6 +1231,59 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  '/api/v1/endpoint/{endpointId}/alert-rules/preview':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Preview an alert rule
+      description: >-
+        Anyone who can read the endpoint (Spec 053 Phase 3). Evaluates a draft condition without
+        saving it: its value now and, for failure_occurrences and silence, when it would have
+        fired in the last 24 hours, replayed from message history with the draft's resolve time.
+        Backlog and blocked-session rules, and rules with categories, get no replay.
+      operationId: post-endpoint-alert-rule-preview
+      tags:
+        - AlertRules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRulePreviewRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertRulePreview'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '501':
+          description: The storage provider cannot store alert rules
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   '/api/v1/endpoint/{endpointId}/alert-rules/{ruleId}':
     parameters:
       - schema:
@@ -6124,6 +6177,14 @@ components:
           minimum: 1
           maximum: 1000
           description: The number of deferred events at which a blocked-session rule fires. A blocked-session rule needs minutes, deferredThreshold or both.
+        categories:
+          type: array
+          description: >-
+            Failure-classification categories to count (backlog and occurrences; Phase 3). Only
+            failures an agent classified into one of them count. Needs Integration Intelligence;
+            see AlertRuleList.classificationAvailable.
+          items:
+            type: string
     AlertRuleTargetModel:
       title: AlertRuleTargetModel
       type: object
@@ -6270,6 +6331,87 @@ components:
           description: The condition kinds this deployment's storage provider can evaluate.
           items:
             type: string
+        classificationAvailable:
+          type: boolean
+          description: Whether rules can filter by failure-classification category (Integration Intelligence can be read).
+        categories:
+          type: array
+          description: The categories a rule can filter by, when classificationAvailable.
+          items:
+            type: string
+    AlertRulePreviewRequest:
+      title: AlertRulePreviewRequest
+      type: object
+      properties:
+        condition:
+          $ref: '#/components/schemas/AlertRuleCondition'
+        resolveAfterMinutes:
+          type: integer
+          minimum: 1
+          maximum: 60
+    AlertRulePreview:
+      title: AlertRulePreview
+      type: object
+      properties:
+        valueNow:
+          type: integer
+          nullable: true
+          description: The condition's value now (a count capped at the threshold, or minutes); null when it can't be read.
+        holdsNow:
+          type: boolean
+          nullable: true
+          description: Whether the rule would fire now; null when it can't be read.
+        nowUnavailableReason:
+          type: string
+          nullable: true
+          description: Why the value now can't be read (kind_unavailable, classification_unavailable, classification_scan_limit).
+        replay:
+          $ref: '#/components/schemas/AlertRuleReplay'
+        replayUnsupportedReason:
+          type: string
+          nullable: true
+          description: Why there is no replay (no_history, categories, kind_unavailable).
+    AlertRuleReplay:
+      title: AlertRuleReplay
+      type: object
+      nullable: true
+      properties:
+        fromUtc:
+          type: string
+          format: date-time
+        toUtc:
+          type: string
+          format: date-time
+        series:
+          type: array
+          description: The condition's value over the replay (failures in the window, or minutes since the last completed message), at most 288 points.
+          items:
+            $ref: '#/components/schemas/AlertRulePreviewPoint'
+        periods:
+          type: array
+          description: When the rule would have been firing. An open period has no toUtc.
+          items:
+            $ref: '#/components/schemas/AlertRulePreviewPeriod'
+    AlertRulePreviewPoint:
+      title: AlertRulePreviewPoint
+      type: object
+      properties:
+        atUtc:
+          type: string
+          format: date-time
+        value:
+          type: integer
+    AlertRulePreviewPeriod:
+      title: AlertRulePreviewPeriod
+      type: object
+      properties:
+        fromUtc:
+          type: string
+          format: date-time
+        toUtc:
+          type: string
+          format: date-time
+          nullable: true
     AlertRuleSecret:
       title: AlertRuleSecret
       type: object
@@ -9055,6 +9197,12 @@ components:
           $ref: '#/components/schemas/MonitorFeedHeartbeat'
         acknowledgement:
           $ref: '#/components/schemas/MonitorAcknowledgement'
+        alertRuleFiring:
+          type: boolean
+          nullable: true
+          description: >-
+            Whether an alert rule on the endpoint is firing (Spec 053 Phase 3). Never which rule.
+            Null when the store has no alert rules or they couldn't be read.
     MonitorFeedHeartbeat:
       title: MonitorFeedHeartbeat
       type: object

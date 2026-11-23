@@ -17,6 +17,7 @@ let failStatusCode: number | undefined;
 let failAckWrites = false;
 let failedCount = 0;
 let oldestFailureAt: moment.Moment | undefined;
+let alertRuleFiring: boolean | null | undefined;
 type ServerAck = {
   endpointId: string;
   acknowledgementId: string;
@@ -78,6 +79,7 @@ vi.mock("api-client", () => {
             acknowledgement: serverAcks.find((a) => a.endpointId === "ep-1"),
             blockedSessionCount: 2,
             heartbeat: { liveness: "alive" },
+            alertRuleFiring,
           },
         ],
       });
@@ -119,6 +121,7 @@ function resetMockState() {
   failAckWrites = false;
   failedCount = 0;
   oldestFailureAt = undefined;
+  alertRuleFiring = undefined;
   serverAcks = [];
 }
 
@@ -378,6 +381,28 @@ describe("useMonitorData status feed", () => {
       platformName: "Test.Platform",
       tokenAccess: false,
     });
+    unmount();
+  });
+
+  it("reads whether an alert rule is firing, and leaves it unknown when the feed doesn't say", async () => {
+    alertRuleFiring = true;
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+    expect(result.current.endpoints[0].alertRuleFiring).toBe(true);
+
+    alertRuleFiring = false;
+    await act(async () => {
+      vi.advanceTimersByTime(REFRESH_MS);
+    });
+    await flushAsync();
+    expect(result.current.endpoints[0].alertRuleFiring).toBe(false);
+
+    alertRuleFiring = null;
+    await act(async () => {
+      vi.advanceTimersByTime(REFRESH_MS);
+    });
+    await flushAsync();
+    expect(result.current.endpoints[0].alertRuleFiring).toBeUndefined();
     unmount();
   });
 

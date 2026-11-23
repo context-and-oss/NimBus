@@ -202,6 +202,16 @@ public class AlertRuleNoticeTests
         => Assert.AreEqual("rule1:7:t2", AlertRuleText.NoticeId("rule1", 7, "t2"));
 
     [TestMethod]
+    public void Categories_read_as_words_after_the_filters()
+        => Assert.AreEqual(
+            "3 or more failures in 15 min of type OrderPlaced classified as transient dependency or contract schema",
+            AlertRuleText.DescribeCondition(new AlertRuleCondition
+            {
+                Kind = AlertRuleConditionKinds.FailureOccurrences, Threshold = 3, WindowMinutes = 15, EventTypes = ["OrderPlaced"],
+                Categories = ["transient_dependency", "contract_schema"],
+            }));
+
+    [TestMethod]
     public void Each_condition_kind_reads_as_a_sentence()
     {
         Assert.AreEqual(

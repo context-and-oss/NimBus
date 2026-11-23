@@ -88,6 +88,15 @@ public class RateLimitEndpointMetadataTests
     }
 
     [TestMethod]
+    public void The_alert_rule_preview_has_its_own_tighter_policy()
+    {
+        CollectionAssert.AreEquivalent(
+            new[] { "POST api/v1/endpoint/{endpointId}/alert-rules/preview", "POST api/endpoint/{endpointId}/alert-rules/preview" },
+            Routes(RateLimitPolicyNames.AlertRulePreview));
+        Assert.AreEqual(10, new RateLimitOptions().AlertRulePreview.PermitLimit);
+    }
+
+    [TestMethod]
     public void Admin_policy_covers_every_api_admin_route_and_nothing_else()
     {
         var onPolicy = Routes(RateLimitPolicyNames.Admin);
@@ -115,9 +124,10 @@ public class RateLimitEndpointMetadataTests
         var expected = Routes(RateLimitPolicyNames.AgentReceive).Length
                        + Routes(RateLimitPolicyNames.Admin).Length
                        + Routes(RateLimitPolicyNames.Search).Length
+                       + Routes(RateLimitPolicyNames.AlertRulePreview).Length
                        + Routes(RateLimitPolicyNames.Login).Length;
 
-        Assert.AreEqual(expected, total, "Some endpoint carries a rate-limiting policy that is not one of the four sets.");
+        Assert.AreEqual(expected, total, "Some endpoint carries a rate-limiting policy that is not one of the five sets.");
     }
 
     [TestMethod]

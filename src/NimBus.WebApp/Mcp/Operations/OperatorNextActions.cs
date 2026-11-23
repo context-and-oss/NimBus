@@ -218,6 +218,11 @@ public static class OperatorNextActions
         return Collect(first, investigate, resubmit, byTicket, classify, report);
     }
 
+    /// <summary>A firing alert rule: open its endpoint's Alerts tab, when the Web UI's address is known.</summary>
+    /// <param name="webUiUrl">The endpoint's Alerts tab.</param>
+    public static IReadOnlyList<NextAction> ForFiringRule(string? webUiUrl)
+        => webUiUrl is null ? [] : [WebUi(webUiUrl)];
+
     /// <summary>The option after <c>nimbus_prepare_action</c>: run it.</summary>
     /// <param name="action">The prepared action, as <see cref="OperatorActionAccess.NameOf(OperatorAction)"/> names it.</param>
     /// <param name="actionToken">The token it returned.</param>

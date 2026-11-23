@@ -16,6 +16,7 @@ Exceeding a limit returns **HTTP 429**.
 | `nimbus-agent-receive` | `GET /api/v1/agent/receive` | Concurrency | 20 permits + 5 queued | nothing (global) |
 | `nimbus-admin` | every `/api/v1/admin/*` route | Fixed window | 60 per 60 s | user id |
 | `nimbus-search` | `POST /api/v1/messages/search`, `POST /api/v1/audits/search` | Fixed window | 120 per 60 s | user id |
+| `nimbus-alert-rule-preview` | `POST /api/v1/endpoint/{endpointId}/alert-rules/preview` | Fixed window | 10 per 60 s | user id |
 | `nimbus-login` | `POST /account/login` | Fixed window | 50 per 300 s | client IP |
 | `nimbus-intelligence` | `POST /api/v1/integration-intelligence/failures/{eventId}/{messageId}/classification` | Fixed window | 10 per 60 s | user id |
 | `nimbus-mcp` | `/mcp` (operator MCP endpoint, when enabled) | Fixed window | 60 per 60 s | tenant + client application + user |
@@ -55,6 +56,7 @@ quote:
 | `nimbus-global` | ≤ 600 per caller | ≤ 1,200 | 36,000/hour per caller |
 | `nimbus-admin` | ≤ 60 per user | ≤ 120 | 3,600/hour per user |
 | `nimbus-search` | ≤ 120 per user | ≤ 240 | 7,200/hour per user |
+| `nimbus-alert-rule-preview` | ≤ 10 per user | ≤ 20 | 600/hour per user |
 | `nimbus-login` | ≤ 50 per address | ≤ 100 | 600/hour per address |
 | `nimbus-intelligence` | ≤ 10 per user | ≤ 20 | 600/hour per user |
 | `nimbus-mcp` | ≤ 60 per caller and client | ≤ 120 | 3,600/hour per caller and client |
@@ -185,6 +187,8 @@ a restart, which an App Service application-setting change triggers anyway.
 | `RateLimiting:Admin:WindowSeconds` | `60` |
 | `RateLimiting:Search:PermitLimit` | `120` |
 | `RateLimiting:Search:WindowSeconds` | `60` |
+| `RateLimiting:AlertRulePreview:PermitLimit` | `10` |
+| `RateLimiting:AlertRulePreview:WindowSeconds` | `60` |
 | `RateLimiting:Login:PermitLimit` | `50` |
 | `RateLimiting:Login:WindowSeconds` | `300` |
 | `RateLimiting:Login:IPv6PrefixBits` | `128` |

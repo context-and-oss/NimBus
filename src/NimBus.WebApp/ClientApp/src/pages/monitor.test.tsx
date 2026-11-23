@@ -82,6 +82,7 @@ interface EndpointOptions {
   /** Backlog at the oldest sample — lower than current means "growing". */
   pendingWas?: number;
   heartbeat?: { liveness: string; answeredMsAgo?: number };
+  alertRuleFiring?: boolean;
 }
 
 function endpoint({
@@ -97,6 +98,7 @@ function endpoint({
   blocked,
   pendingWas,
   heartbeat,
+  alertRuleFiring,
 }: EndpointOptions): MonitorEndpoint {
   const now = Date.now();
   const samples =
@@ -120,6 +122,7 @@ function endpoint({
     firstFailureAt,
     isFreshFailure: false,
     blockedSessionCount: blocked,
+    alertRuleFiring,
     heartbeat: heartbeat
       ? ({
           liveness: heartbeat.liveness,
@@ -392,6 +395,56 @@ describe("Monitor wall", () => {
     expect(within(tile("Blocked sessions")).getByText("not reported")).toBeDefined();
   });
 
+  it("marks an endpoint whose alert rule is firing, and only that one", () => {
+    mocks.endpoints = [
+      endpoint({ id: "Billing", failed: 3, firstFailureAt: Date.now(), alertRuleFiring: true }),
+      endpoint({ id: "Warehouse", alertRuleFiring: true }),
+      endpoint({ id: "Crm", alertRuleFiring: false }),
+      endpoint({ id: "Erp" }),
+    ];
+
+    render(<Monitor />);
+
+    const row = (id: string) => within(screen.getByRole("row", { name: new RegExp(id) }));
+    const marker = row("Billing").getByText("rule firing");
+    expect(marker.closest("[title]")?.getAttribute("title")).toBe("An alert rule is firing");
+    // A healthy endpoint can have a firing rule too, such as silence.
+    expect(row("Warehouse").getByText("rule firing")).toBeDefined();
+    expect(row("Crm").queryByText("rule firing")).toBeNull();
+    expect(row("Erp").queryByText("rule firing")).toBeNull();
+  });
+
+  it("counts the endpoints with a firing rule", () => {
+    mocks.endpoints = [
+      endpoint({ id: "Billing", alertRuleFiring: true }),
+      endpoint({ id: "Warehouse", alertRuleFiring: true }),
+      endpoint({ id: "Crm", alertRuleFiring: false }),
+      endpoint({ id: "Erp" }),
+    ];
+
+    render(<Monitor />);
+
+    const tiles = within(screen.getByRole("region", { name: "Fleet summary" }))
+      .getAllByText(/^(Blocked sessions|Rules firing)$/)
+      .map((label) => label.textContent);
+    expect(tiles).toEqual(["Blocked sessions", "Rules firing"]);
+    expect(within(tile("Rules firing")).getByText("2")).toBeDefined();
+    expect(within(tile("Rules firing")).getByText("endpoints with a firing rule")).toBeDefined();
+  });
+
+  it("says no rule is firing, or shows a dash when no endpoint reports rules", () => {
+    mocks.endpoints = [endpoint({ id: "Billing", alertRuleFiring: false }), endpoint({ id: "Erp" })];
+    render(<Monitor />);
+    expect(within(tile("Rules firing")).getByText("0")).toBeDefined();
+    expect(within(tile("Rules firing")).getByText("nothing firing")).toBeDefined();
+    cleanup();
+
+    mocks.endpoints = [endpoint({ id: "Billing" }), endpoint({ id: "Erp" })];
+    render(<Monitor />);
+    expect(within(tile("Rules firing")).getByText("–")).toBeDefined();
+    expect(within(tile("Rules firing")).getByText("not reported")).toBeDefined();
+  });
+
   it("works out throughput, success rate and time to handle from the metrics feed", () => {
     mocks.endpoints = [endpoint({ id: "Billing" })];
     mocks.metrics = {
@@ -619,6 +672,16 @@ describe("Monitor with a dashboard token", () => {
     expect(mocks.dataOptions).toHaveBeenCalledWith({ token: "nbdt_abc" });
     expect(mocks.useAccess).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "ack" })).toBeNull();
+  });
+
+  it("shows a firing rule as the signed-in wall does", () => {
+    mocks.token = "nbdt_abc";
+    mocks.endpoints = [endpoint({ id: "BillingEndpoint", alertRuleFiring: true })];
+
+    render(<Monitor />);
+
+    expect(within(screen.getByRole("row", { name: /BillingEndpoint/ })).getByText("rule firing")).toBeDefined();
+    expect(within(tile("Rules firing")).getByText("1")).toBeDefined();
   });
 
   it("says when the token is refused and stays on the page", () => {

@@ -2334,6 +2334,82 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Preview an alert rule
+     * @param body (optional) 
+     * @return OK
+     */
+    postEndpointAlertRulePreview(endpointId: string, body?: AlertRulePreviewRequest | undefined): Promise<AlertRulePreview> {
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/alert-rules/preview";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostEndpointAlertRulePreview(_response);
+        });
+    }
+
+    protected processPostEndpointAlertRulePreview(response: Response): Promise<AlertRulePreview> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AlertRulePreview.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store alert rules", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AlertRulePreview>(null as any);
+    }
+
+    /**
      * Change an alert rule
      * @param body (optional) 
      * @return OK
@@ -12317,6 +12393,8 @@ export class AlertRuleCondition implements IAlertRuleCondition {
     minutes?: number | undefined;
     /** The number of deferred events at which a blocked-session rule fires. A blocked-session rule needs minutes, deferredThreshold or both. */
     deferredThreshold?: number | undefined;
+    /** Failure-classification categories to count (backlog and occurrences; Phase 3). Only failures an agent classified into one of them count. Needs Integration Intelligence; see AlertRuleList.classificationAvailable. */
+    categories?: string[];
 
     [key: string]: any;
 
@@ -12351,6 +12429,11 @@ export class AlertRuleCondition implements IAlertRuleCondition {
             this.windowMinutes = _data["windowMinutes"];
             this.minutes = _data["minutes"];
             this.deferredThreshold = _data["deferredThreshold"];
+            if (Array.isArray(_data["categories"])) {
+                this.categories = [] as any;
+                for (let item of _data["categories"])
+                    this.categories!.push(item);
+            }
         }
     }
 
@@ -12383,6 +12466,11 @@ export class AlertRuleCondition implements IAlertRuleCondition {
         data["windowMinutes"] = this.windowMinutes;
         data["minutes"] = this.minutes;
         data["deferredThreshold"] = this.deferredThreshold;
+        if (Array.isArray(this.categories)) {
+            data["categories"] = [];
+            for (let item of this.categories)
+                data["categories"].push(item);
+        }
         return data;
     }
 
@@ -12412,6 +12500,8 @@ export interface IAlertRuleCondition {
     minutes?: number | undefined;
     /** The number of deferred events at which a blocked-session rule fires. A blocked-session rule needs minutes, deferredThreshold or both. */
     deferredThreshold?: number | undefined;
+    /** Failure-classification categories to count (backlog and occurrences; Phase 3). Only failures an agent classified into one of them count. Needs Integration Intelligence; see AlertRuleList.classificationAvailable. */
+    categories?: string[];
 
     [key: string]: any;
 }
@@ -12855,6 +12945,10 @@ export class AlertRuleList implements IAlertRuleList {
     canManage?: boolean;
     /** The condition kinds this deployment's storage provider can evaluate. */
     availableKinds?: string[];
+    /** Whether rules can filter by failure-classification category (Integration Intelligence can be read). */
+    classificationAvailable?: boolean;
+    /** The categories a rule can filter by, when classificationAvailable. */
+    categories?: string[];
 
     [key: string]: any;
 
@@ -12887,6 +12981,12 @@ export class AlertRuleList implements IAlertRuleList {
                 for (let item of _data["availableKinds"])
                     this.availableKinds!.push(item);
             }
+            this.classificationAvailable = _data["classificationAvailable"];
+            if (Array.isArray(_data["categories"])) {
+                this.categories = [] as any;
+                for (let item of _data["categories"])
+                    this.categories!.push(item);
+            }
         }
     }
 
@@ -12917,6 +13017,12 @@ export class AlertRuleList implements IAlertRuleList {
             for (let item of this.availableKinds)
                 data["availableKinds"].push(item);
         }
+        data["classificationAvailable"] = this.classificationAvailable;
+        if (Array.isArray(this.categories)) {
+            data["categories"] = [];
+            for (let item of this.categories)
+                data["categories"].push(item);
+        }
         return data;
     }
 
@@ -12940,6 +13046,353 @@ export interface IAlertRuleList {
     canManage?: boolean;
     /** The condition kinds this deployment's storage provider can evaluate. */
     availableKinds?: string[];
+    /** Whether rules can filter by failure-classification category (Integration Intelligence can be read). */
+    classificationAvailable?: boolean;
+    /** The categories a rule can filter by, when classificationAvailable. */
+    categories?: string[];
+
+    [key: string]: any;
+}
+
+export class AlertRulePreviewRequest implements IAlertRulePreviewRequest {
+    condition?: AlertRuleCondition;
+    resolveAfterMinutes?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRulePreviewRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.condition = _data["condition"] ? AlertRuleCondition.fromJS(_data["condition"]) : undefined as any;
+            this.resolveAfterMinutes = _data["resolveAfterMinutes"];
+        }
+    }
+
+    static fromJS(data: any): AlertRulePreviewRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRulePreviewRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["condition"] = this.condition ? this.condition.toJSON() : undefined as any;
+        data["resolveAfterMinutes"] = this.resolveAfterMinutes;
+        return data;
+    }
+
+    clone(): AlertRulePreviewRequest {
+        const json = this.toJSON();
+        let result = new AlertRulePreviewRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRulePreviewRequest {
+    condition?: AlertRuleCondition;
+    resolveAfterMinutes?: number;
+
+    [key: string]: any;
+}
+
+export class AlertRulePreview implements IAlertRulePreview {
+    /** The condition's value now (a count capped at the threshold, or minutes); null when it can't be read. */
+    valueNow?: number | undefined;
+    /** Whether the rule would fire now; null when it can't be read. */
+    holdsNow?: boolean | undefined;
+    /** Why the value now can't be read (kind_unavailable, classification_unavailable, classification_scan_limit). */
+    nowUnavailableReason?: string | undefined;
+    replay?: AlertRuleReplay | undefined;
+    /** Why there is no replay (no_history, categories, kind_unavailable). */
+    replayUnsupportedReason?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRulePreview) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.valueNow = _data["valueNow"];
+            this.holdsNow = _data["holdsNow"];
+            this.nowUnavailableReason = _data["nowUnavailableReason"];
+            this.replay = _data["replay"] ? AlertRuleReplay.fromJS(_data["replay"]) : undefined as any;
+            this.replayUnsupportedReason = _data["replayUnsupportedReason"];
+        }
+    }
+
+    static fromJS(data: any): AlertRulePreview {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRulePreview();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["valueNow"] = this.valueNow;
+        data["holdsNow"] = this.holdsNow;
+        data["nowUnavailableReason"] = this.nowUnavailableReason;
+        data["replay"] = this.replay ? this.replay.toJSON() : undefined as any;
+        data["replayUnsupportedReason"] = this.replayUnsupportedReason;
+        return data;
+    }
+
+    clone(): AlertRulePreview {
+        const json = this.toJSON();
+        let result = new AlertRulePreview();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRulePreview {
+    /** The condition's value now (a count capped at the threshold, or minutes); null when it can't be read. */
+    valueNow?: number | undefined;
+    /** Whether the rule would fire now; null when it can't be read. */
+    holdsNow?: boolean | undefined;
+    /** Why the value now can't be read (kind_unavailable, classification_unavailable, classification_scan_limit). */
+    nowUnavailableReason?: string | undefined;
+    replay?: AlertRuleReplay | undefined;
+    /** Why there is no replay (no_history, categories, kind_unavailable). */
+    replayUnsupportedReason?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class AlertRuleReplay implements IAlertRuleReplay {
+    fromUtc?: moment.Moment;
+    toUtc?: moment.Moment;
+    /** The condition's value over the replay (failures in the window, or minutes since the last completed message), at most 288 points. */
+    series?: AlertRulePreviewPoint[];
+    /** When the rule would have been firing. An open period has no toUtc. */
+    periods?: AlertRulePreviewPeriod[];
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRuleReplay) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.fromUtc = _data["fromUtc"] ? moment(_data["fromUtc"].toString()) : undefined as any;
+            this.toUtc = _data["toUtc"] ? moment(_data["toUtc"].toString()) : undefined as any;
+            if (Array.isArray(_data["series"])) {
+                this.series = [] as any;
+                for (let item of _data["series"])
+                    this.series!.push(AlertRulePreviewPoint.fromJS(item));
+            }
+            if (Array.isArray(_data["periods"])) {
+                this.periods = [] as any;
+                for (let item of _data["periods"])
+                    this.periods!.push(AlertRulePreviewPeriod.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): AlertRuleReplay {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRuleReplay();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["fromUtc"] = this.fromUtc ? this.fromUtc.toISOString() : undefined as any;
+        data["toUtc"] = this.toUtc ? this.toUtc.toISOString() : undefined as any;
+        if (Array.isArray(this.series)) {
+            data["series"] = [];
+            for (let item of this.series)
+                data["series"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.periods)) {
+            data["periods"] = [];
+            for (let item of this.periods)
+                data["periods"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): AlertRuleReplay {
+        const json = this.toJSON();
+        let result = new AlertRuleReplay();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRuleReplay {
+    fromUtc?: moment.Moment;
+    toUtc?: moment.Moment;
+    /** The condition's value over the replay (failures in the window, or minutes since the last completed message), at most 288 points. */
+    series?: AlertRulePreviewPoint[];
+    /** When the rule would have been firing. An open period has no toUtc. */
+    periods?: AlertRulePreviewPeriod[];
+
+    [key: string]: any;
+}
+
+export class AlertRulePreviewPoint implements IAlertRulePreviewPoint {
+    atUtc?: moment.Moment;
+    value?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRulePreviewPoint) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.atUtc = _data["atUtc"] ? moment(_data["atUtc"].toString()) : undefined as any;
+            this.value = _data["value"];
+        }
+    }
+
+    static fromJS(data: any): AlertRulePreviewPoint {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRulePreviewPoint();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["atUtc"] = this.atUtc ? this.atUtc.toISOString() : undefined as any;
+        data["value"] = this.value;
+        return data;
+    }
+
+    clone(): AlertRulePreviewPoint {
+        const json = this.toJSON();
+        let result = new AlertRulePreviewPoint();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRulePreviewPoint {
+    atUtc?: moment.Moment;
+    value?: number;
+
+    [key: string]: any;
+}
+
+export class AlertRulePreviewPeriod implements IAlertRulePreviewPeriod {
+    fromUtc?: moment.Moment;
+    toUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRulePreviewPeriod) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.fromUtc = _data["fromUtc"] ? moment(_data["fromUtc"].toString()) : undefined as any;
+            this.toUtc = _data["toUtc"] ? moment(_data["toUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): AlertRulePreviewPeriod {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRulePreviewPeriod();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["fromUtc"] = this.fromUtc ? this.fromUtc.toISOString() : undefined as any;
+        data["toUtc"] = this.toUtc ? this.toUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): AlertRulePreviewPeriod {
+        const json = this.toJSON();
+        let result = new AlertRulePreviewPeriod();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRulePreviewPeriod {
+    fromUtc?: moment.Moment;
+    toUtc?: moment.Moment | undefined;
 
     [key: string]: any;
 }
@@ -23471,6 +23924,8 @@ export class MonitorFeedEndpoint implements IMonitorFeedEndpoint {
     blockedSessionCount?: number | undefined;
     heartbeat?: MonitorFeedHeartbeat;
     acknowledgement?: MonitorAcknowledgement;
+    /** Whether an alert rule on the endpoint is firing (Spec 053 Phase 3). Never which rule. Null when the store has no alert rules or they couldn't be read. */
+    alertRuleFiring?: boolean | undefined;
 
     [key: string]: any;
 
@@ -23493,6 +23948,7 @@ export class MonitorFeedEndpoint implements IMonitorFeedEndpoint {
             this.blockedSessionCount = _data["blockedSessionCount"];
             this.heartbeat = _data["heartbeat"] ? MonitorFeedHeartbeat.fromJS(_data["heartbeat"]) : undefined as any;
             this.acknowledgement = _data["acknowledgement"] ? MonitorAcknowledgement.fromJS(_data["acknowledgement"]) : undefined as any;
+            this.alertRuleFiring = _data["alertRuleFiring"];
         }
     }
 
@@ -23513,6 +23969,7 @@ export class MonitorFeedEndpoint implements IMonitorFeedEndpoint {
         data["blockedSessionCount"] = this.blockedSessionCount;
         data["heartbeat"] = this.heartbeat ? this.heartbeat.toJSON() : undefined as any;
         data["acknowledgement"] = this.acknowledgement ? this.acknowledgement.toJSON() : undefined as any;
+        data["alertRuleFiring"] = this.alertRuleFiring;
         return data;
     }
 
@@ -23530,6 +23987,8 @@ export interface IMonitorFeedEndpoint {
     blockedSessionCount?: number | undefined;
     heartbeat?: MonitorFeedHeartbeat;
     acknowledgement?: MonitorAcknowledgement;
+    /** Whether an alert rule on the endpoint is firing (Spec 053 Phase 3). Never which rule. Null when the store has no alert rules or they couldn't be read. */
+    alertRuleFiring?: boolean | undefined;
 
     [key: string]: any;
 }

@@ -134,12 +134,19 @@ public sealed class AlertRuleCondition
     /// <summary>The number of deferred events on the endpoint at which a blocked-session rule fires.</summary>
     public int? DeferredThreshold { get; set; }
 
+    /// <summary>
+    /// Failure-classification categories to count (backlog and occurrences, Phase 3); empty counts
+    /// every failure. With categories, only failures an agent classified into one of them count.
+    /// </summary>
+    public List<string> Categories { get; set; } = new();
+
     /// <summary>A copy.</summary>
     public AlertRuleCondition Clone()
     {
         var copy = (AlertRuleCondition)MemberwiseClone();
         copy.EventTypes = EventTypes.ToList();
         copy.Statuses = Statuses.ToList();
+        copy.Categories = Categories.ToList();
         return copy;
     }
 }
