@@ -103,6 +103,7 @@ var app = builder.Build();
 var e2e = app.MapE2eControls();
 e2e?.MapE2eWireControls("ErpEndpoint");
 e2e?.MapE2eOutboxControls();
+e2e?.MapPost("/dataplatform-inbox/{session:guid}", E2eDataPlatformInbox.SendAsync);
 e2e?.MapPost("/handoff-jobs/{eventId}/release", (string eventId, HandoffJobTracker tracker) =>
     tracker.Release(eventId) ? Results.NoContent() : Results.NotFound());
 app.UseCors();

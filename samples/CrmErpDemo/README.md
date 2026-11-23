@@ -67,6 +67,7 @@ graph TB
 - **Session-based ordering** — `[SessionKey(nameof(AccountId))]` keeps the round-trip `CrmAccountCreated → ErpCustomerCreated → link-erp` ordered for each account.
 - **Operator surface** — reuses the existing `NimBus.WebApp` + Resolver from the main repo for full audit trail and resubmit/skip.
 - **Inbox deduplication on CRM** — `Crm.Adapter` opts into platform-level dedup (`UseInbox`, SQL store in the crm DB); redelivery of the same broker `MessageId` is skipped as `DuplicateDetected`, contrasting with ERP's application-level idempotent upserts. Operator resubmit uses a new message identity.
+- **[Azure Table Storage inbox on DataPlatform](#showcase-azure-table-storage-inbox-dataplatformendpoint)** — the Functions adapter keeps receipts in its host storage account. The duplicate-delivery scenario checks handler logs, Resolver history and both table rows.
 - **Request/reply (synchronous credit check)** — CRM asks ERP for a customer's credit standing via `PublisherClient.Request` and gets a typed answer back over the `CrmEndpoint-reply` session subscription.
 - **Routing keys (regional hubs)** — CRM account events carry their country as a routing key, and three hub endpoints served by one adapter each receive only their own countries; an account in a country no hub claims is dead-lettered on the unmatched consumer with a reason naming the key. See [Showcase: Routing keys](#showcase-routing-keys-regional-hubs).
 - **Commands (imperative, exactly one consumer)** — `PlaceCustomerOnCreditHold : Command` is fire-and-forget with a single declared consumer (`ErpEndpoint`); platform validation fails provisioning if anyone adds a second consumer (ADR-014).
@@ -824,6 +825,26 @@ both browsable in DbGate.
 ### Automated coverage
 
 `tests/NimBus.EndToEnd.Tests/InboxEndToEndTests.cs` (core) and `e2e/tests/08-inbox-dedup.spec.ts` (demo).
+
+## Showcase: Azure Table Storage inbox (DataPlatformEndpoint)
+
+The DataPlatform Functions adapter uses its host storage account for the `DataPlatformInbox` table. The worker creates the table before accepting deliveries. Locally, Aspire supplies the Azurite connection string. On Azure, it supplies the primary Table service URI and grants the Functions identity Storage Table Data Contributor on its host account.
+
+Start the [local E2E profile](e2e/README.md#run-against-an-isolated-local-demo). From `samples/CrmErpDemo/e2e`, run:
+
+```shell
+npm run test:live -- 08-dataplatform-inbox
+```
+
+The scenario sends an `ErpCustomerCreated` delivery directly to `DataPlatformEndpoint`, waits for the successful response, then sends it again with the same broker `MessageId`. Use the printed message ID to follow the delivery:
+
+| Where to look | What to expect |
+| --- | --- |
+| Aspire dashboard, `dataplatform-adapter` structured logs | One “DataPlatform received ErpCustomerCreated” line for the test customer. |
+| NimBus event history, `DataPlatformEndpoint` | One `ResolutionResponse` and one `SkipResponse` with reason `DuplicateDetected`. The event stays completed. |
+| Azurite, `DataPlatformInbox` | One receipt (`R…`) and one creation-time index entry (`E…-R…`) in the endpoint’s partition. The Playwright report attachment includes the exact keys. |
+
+The same inbox covers the adapter’s enriched-contact handler. Its retention and crash behavior follow the [consumer inbox](../../docs/inbox-pattern.md#azure-table-storage-for-lightweight-adapters).
 
 ## Showcase: Request/reply (synchronous ERP credit check)
 

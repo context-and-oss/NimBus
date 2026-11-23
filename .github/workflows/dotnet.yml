@@ -23,6 +23,11 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
+      azurite:
+        image: mcr.microsoft.com/azure-storage/azurite:3.35.0
+        ports:
+          - 10002:10002
+
       # SQL Server service container for the SQL Server message store conformance suite.
       # Tests skip themselves when NIMBUS_SQL_TEST_CONNECTION is unset, so this only
       # adds runtime cost when the SQL provider needs real coverage in CI.
@@ -58,6 +63,7 @@ jobs:
           - 8080:8080
 
     env:
+      NIMBUS_TABLE_TEST_CONNECTION: "UseDevelopmentStorage=true"
       NIMBUS_SQL_TEST_CONNECTION: "Server=localhost,1433;User ID=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;Database=master"
       # The emulator's well-known public key; DisableServerCertificateValidation replaces
       # importing its self-signed certificate into the runner's trust store.
