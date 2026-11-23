@@ -7,7 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import * as api from "api-client";
 import EndpointDetails from "./endpoint-details";
 
@@ -65,10 +65,19 @@ function Navigate() {
   const navigate = useNavigate();
   return <button onClick={() => navigate("/endpoint/erp")}>Go to ERP</button>;
 }
-function setup() {
+function BackButton() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(-1)}>Back</button>;
+}
+function LocationProbe() {
+  const location = useLocation();
+  return <output aria-label="Location">{location.pathname + location.search}</output>;
+}
+function setup(url = "/endpoint/crm") {
   return render(
-    <MemoryRouter initialEntries={["/endpoint/crm"]}>
+    <MemoryRouter initialEntries={[url]}>
       <Navigate />
+      <LocationProbe />
       <Routes>
         <Route path="/endpoint/:id" element={<EndpointDetails />} />
       </Routes>
@@ -147,6 +156,50 @@ describe("endpoint tab loading", () => {
     expect(
       screen.getByRole("link", { name: "endpoint list" }).getAttribute("href"),
     ).toBe("/Endpoints");
+  });
+
+  it("opens the tab named in the URL", async () => {
+    setup("/endpoint/crm?tab=alerts");
+    expect(
+      screen.getByRole("tab", { name: "Alerts" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(await screen.findByText("No alert rules")).toBeTruthy();
+    expect(alertRules).toHaveBeenCalledWith("crm");
+  });
+
+  it("falls back to Messages for a tab it doesn't know", () => {
+    setup("/endpoint/crm?tab=settings");
+    expect(
+      screen.getByRole("tab", { name: "Messages" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.getByLabelText("Message filter")).toBeTruthy();
+    expect(alertRules).not.toHaveBeenCalled();
+  });
+
+  it("keeps the URL on the open tab without adding history entries", () => {
+    render(
+      <MemoryRouter initialEntries={["/start", "/endpoint/crm?tab=audit&x=1"]} initialIndex={1}>
+        <BackButton />
+        <LocationProbe />
+        <Routes>
+          <Route path="/endpoint/:id" element={<EndpointDetails />} />
+          <Route path="/start" element={<p>Start page</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const location = () => screen.getByLabelText("Location").textContent;
+    expect(screen.getByText("Audit content")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Alerts" }));
+    expect(location()).toBe("/endpoint/crm?tab=alerts&x=1");
+    fireEvent.click(screen.getByRole("tab", { name: "Messages" }));
+    expect(location()).toBe("/endpoint/crm?x=1");
+    // The tab opened from the URL stays mounted, like any visited tab.
+    fireEvent.click(screen.getByRole("tab", { name: "Audit" }));
+    expect(audits).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByText("Back"));
+    expect(screen.getByText("Start page")).toBeTruthy();
   });
 
   it("resets visited panels on endpoint navigation and ignores stale alert probes", async () => {
