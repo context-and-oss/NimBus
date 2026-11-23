@@ -5,6 +5,8 @@ Status: **approved** (2026-11-20) with every decision in §12 and the answers in
 changes from a Codex review (§16). Revision 5 (2026-11-23): Phase 1, built with one evaluator lease
 per tick and a threshold of 1–100 after a live measurement (§7). Revision 6 (2026-11-23): Phase 2,
 the conditions `failure_occurrences`, `blocked_session` and `silence` (§5.1), measured on a live
+account (§7). Revision 7 (2026-11-23): Phase 3, the rule preview (§5.8), a classification category
+filter (§5.1), and firing rules on the Monitor wall and in the MCP worklist (§9), measured on a live
 account (§7). Target: a 5.x minor.
 Baseline: master `108dd6c2` plus the endpoint alert webhooks delivered in the same pull request as
 this spec ([plan](../../plan/2026-11-16-alert-webhook.md)).
@@ -150,6 +152,19 @@ condition being false; the API keeps only the fields the kind uses.
   quiet rule is not written).
 - The reads are an optional store capability, `IAlertSignalStore` (§5.7). Without it a deployment
   offers only `failure_backlog`; the rule list's `availableKinds` says which kinds it can evaluate.
+
+**Classification categories** (revision 7, Phase 3). A backlog or occurrences rule may list up to 8
+failure-classification categories (Integration Intelligence's `FailureClassificationQuestionSet`,
+not `unknown`). Then only failures count whose latest live classification names the same source,
+has one of those categories, and has known guidance other than `Uncertain`. Insights uses the same
+rule (`ClassificationMatch`).
+- Classifications are written by agents after the failure, so such a rule lags it. A retry is a new,
+  unclassified attempt.
+- The evaluator reads them in bulk for at most 1,000 failures a reading. When it can't read them, or
+  that ceiling is reached below the threshold, it leaves the state as it is for the tick rather
+  than resolving, and logs the reason.
+- The API refuses categories when classifications can't be read; `availableKinds`' sibling
+  `classificationAvailable` tells the UI.
 
 Limits: 20 rules per endpoint, 10 targets per rule. Mail targets reuse the subscription's address
 validation; webhook targets reuse `EndpointAlertWebhook.IsValidUrl` and the Resolver's connect
@@ -354,7 +369,7 @@ every other endpoint-scoped path; tag `AlertRules`; NSwag generates the controll
 | PUT | `/{ruleId}` | Same. Existing targets keep their id and secret; new ones get a secret |
 | DELETE | `/{ruleId}` | Same |
 | GET | `/api/v1/alert-rules/firing` | Anyone; the endpoints the caller can read that have a Firing rule, for the endpoint list |
-| POST | `/{ruleId}/preview` | Same as PUT. The backlog over the last 24 h (Phase 3) |
+| POST | `/preview` | Anyone who can read the endpoint (revision 7). Evaluates a draft condition and resolve time without saving: the value now, and for `failure_occurrences` and `silence` without categories, when it would have fired in the last 24 h, replayed minute by minute through the evaluator's state machine from message history. Backlog and blocked-session rules get no replay: deletes leave no trace and there is no past deferred count. Its own rate limit, 10 a minute per user (§7) |
 
 Every `{ruleId}` call loads the rule by the endpoint in the URL and the rule id together, and
 answers 404 when the rule belongs to another endpoint, as subscription deletion binds its id to the
@@ -421,6 +436,13 @@ about 0.03 RU each, so a 24-hour error-text rule on an endpoint with 20,000 fail
 about 600 RU a minute; the docs name it. The deferred count reuses the endpoint state count, about
 0.01 RU per event on the endpoint (49.5 RU at 5,000), read once per endpoint per tick.
 
+**Measured in Phase 3** on a live serverless account, the Phase 2 data set
+([plan](../../plan/2026-11-23-spec-053-phase-3.md)). A preview's per-minute read over a day costs
+166–168 RU over about 2,000 failures and 304–312 RU over about 17,000 completed messages. The
+Search rate limit would have allowed about 37,000 RU a minute per user, so the preview has its own
+policy, 10 a minute per user. Listing 1,000 failed attempts for a category rule costs about 52 RU,
+plus the classification bulk read.
+
 The evaluation interval stays fixed at 60 s. A setting (`NimBus:Alerts:Rules:EvaluationInterval`,
 minimum 60 s) is added only if a deployment needs it.
 
@@ -460,7 +482,7 @@ minimum 60 s) is added only if a deployment needs it.
 | 0 | **Done 2026-11-21.** Verify §14. Move the senders to the shared library with no behaviour change |
 | 1 | **Built 2026-11-23.** Measure the backlog read (§7). Store, evaluator, `failure_backlog`, state machine, pending notices, mail and webhook notices, API, the Rules section, deploy settings, docs |
 | 2 | **Built 2026-11-23.** `failure_occurrences`, `blocked_session` (age of the oldest blocking event, or the deferred count) and `silence` (no completed message), §5.1; read through the new `IAlertSignalStore` on all three providers instead of `GetEndpointMetrics`, which reads every endpoint's messages; measured (§7) |
-| 3 | Preview over the last 24 h; a failure-classification category filter (only when Integration Intelligence is on, and only for classified failures); firing rules in the Monitor and in MCP `nimbus_get_worklist` |
+| 3 | **Built 2026-11-23.** Preview (§5.8): the value now for every kind, a 24 h replay for `failure_occurrences` and `silence`. A classification category filter on backlog and occurrences (§5.1). Firing rules on the Monitor wall, as a marker and a count, never a rule's name, and in MCP `nimbus_get_worklist` (`firingRules`) |
 | v6 | Subscriptions become a built-in rule (§13, answer 1): deprecated with `[Obsolete]` and a bridge in a 5.x minor once rules ship, migrated and removed in v6 (`docs/versioning.md`). How a subscription's per-window notice maps onto a rule needs its own spec before v6. Its acceptance criterion: a migrated subscriber keeps today's behaviour, including a new notice after each window while failures keep arriving, which a Firing rule does not send |
 
 Each phase is its own pull request; a phase's parts are commits in it.
@@ -579,3 +601,8 @@ Details and the measurement: [Phase 0 plan](../../plan/2026-11-21-spec-053-phase
   event's age **or** the deferred count, and `silence` = no completed message. The three conditions
   read a new optional `IAlertSignalStore` (§5.1, §5.7), measured on a live account (§7); the webhook
   body gains `conditionKind` (§5.5).
+- 2026-11-23, revision 7: Phase 3. The repo owner chose an exact-only preview (no approximate replay
+  for backlog or blocked sessions), a category filter on backlog and occurrences, and a firing
+  flag and count on the Monitor wall without rule names. The preview previews a draft
+  (`/alert-rules/preview`) instead of a saved rule, and has its own rate limit after the
+  measurement (§5.8, §7).

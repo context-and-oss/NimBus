@@ -478,7 +478,8 @@ and again when it is over: "5 or more events on `ErpEndpoint` are failed right n
 containing `timeout`". The endpoint page's **Alerts** tab lists the rules above the subscriptions;
 an endpoint Owner (or Site Owner) creates, changes, disables and deletes them there. Everyone who
 can read the endpoint sees the rules and their state; only Owners see where notices go. The
-endpoint list marks an endpoint with a firing rule.
+endpoint list and the [Monitor wall](webapp-monitor.md) mark an endpoint with a firing rule, and the
+MCP worklist ([`nimbus_get_worklist`](mcp-server.md)) lists firing rules.
 
 | | Subscription | Alert rule |
 |---|---|---|
@@ -530,6 +531,37 @@ an endpoint that receives no messages, so set it on endpoints that are expected 
 
 A count (backlog, occurrences) is capped at the threshold: "≥ 5" means at least five. A blocked or
 silent rule reports minutes.
+
+### Classification categories
+
+When [Integration Intelligence](integration-intelligence.md) is on, a backlog or occurrences rule
+can count only failures classified into chosen categories, for example *transient dependency* or
+*authentication / configuration*: "3 or more failures in 15 min classified as authentication
+configuration". A failure counts only once an agent has classified it, with a result for that
+attempt that is not *unknown* or *uncertain*; until then it doesn't count. So:
+
+- such a rule lags the failure by however long classification takes, and never fires for failures
+  nobody classifies;
+- a retry is a new attempt, unclassified until an agent classifies it again, so the rule can dip
+  between a retry and its classification.
+
+Classifications are read in bulk, at most 1,000 failures a minute per rule. When they can't be read,
+or more unclassified failures remain than that before the threshold is reached, the rule's state is
+left as it is for that minute instead of resolving, and the evaluator logs it.
+
+### Preview
+
+**Preview** in the rule form evaluates the draft without saving it: whether it would fire now, and
+its value. For **failure occurrences** and **silence** it also replays the last 24 hours from
+message history, minute by minute with the draft's resolve time, and shows the value over the day
+and when the rule would have been firing. That replay is exact. Backlog and blocked-session rules
+get no replay: deleted events leave no trace in history, and there is no record of past deferred
+counts, so a replay would be a guess. Rules with categories get no replay either, because
+classifications arrive after the failure.
+
+Anyone who can read the endpoint can preview. A preview reads a day of the endpoint's messages of
+one type, about 170 RU on Cosmos DB over 2,000 failures and 310 RU over 17,000 completed messages, so
+it has its own rate limit: 10 a minute per user by default (`RateLimiting:AlertRulePreview`).
 
 ### When rules are evaluated
 

@@ -25,7 +25,7 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_get_capabilities` | Environment, caller, readable endpoints, limits and features. Call it first | Signed in |
 | `nimbus_list_endpoints` | Readable endpoints with the event types each produces and consumes | Endpoint Reader |
 | `nimbus_get_overview` | Counts by status, oldest failure and Monitor acknowledgements across readable endpoints | Endpoint Reader |
-| `nimbus_get_worklist` | "What needs me?": open failed and dead-lettered messages grouped by endpoint, event type and error pattern, each with the newest open message, the sessions it blocks, its saved classification, a shared ticket and [options](#options-in-results) | Endpoint Reader |
+| `nimbus_get_worklist` | "What needs me?": open failed and dead-lettered messages grouped by endpoint, event type and error pattern, each with the newest open message, the sessions it blocks, its saved classification, a shared ticket and [options](#options-in-results); and the [alert rules](notifications.md#alert-rules-alerts-tab) firing on the same endpoints, with their condition in words | Endpoint Reader |
 | `nimbus_get_endpoint` | The same for one endpoint, with its ownership: owner, team, contacts, source system, adapter repository and ticket link | Endpoint Reader |
 | `nimbus_find_messages` | Tracked messages on one endpoint, filtered by status, event type, session, event id and time. With `includeClassification`, whether each failed message's latest attempt is classified, and how | Endpoint Reader |
 | `nimbus_get_message` | Status, latest attempt, latest error, Web UI link, `messageVersion` and the `eligibleActions` you may take; the payload only with `includePayload=true` | Endpoint Reader; payloads also need PiiReader (and, with Entra, the `nimbus.payload.read` scope) |
@@ -76,7 +76,7 @@ them as a numbered choice, with the client's own question UI where it has one.
 | Result | Options |
 | --- | --- |
 | `nimbus_get_message` | Look at its history, resubmit, classify, mark reported or skip. For a pending handoff or a deferred message: settle it, reprocess its session or check for a stale tracking record, when those are switched on, otherwise open it in the Web UI. For a failed message, resubmit it with an edited payload when that is switched on |
-| `nimbus_get_worklist` | Per group: investigate the example, resubmit it, resubmit every failure under the group's ticket, classify, mark reported |
+| `nimbus_get_worklist` | Per group: investigate the example, resubmit it, resubmit every failure under the group's ticket, classify, mark reported. Per firing rule: open the endpoint's Alerts tab |
 | `nimbus_prepare_action` | Run the prepared action; `needs` lists `reason` and `idempotencyKey`, plus `outcome` for a settlement and `eventContent` for an edited resubmit |
 | `nimbus_resubmit_message`, `nimbus_skip_message` | Check the operation. A resubmit by ticket has none: each item carries its own `operationId` |
 | `nimbus_get_operation` | Check again while it runs; read the message again after `Failed` or `NotSent`; the Web UI after `OutcomeUnknown`; nothing after `Succeeded` |

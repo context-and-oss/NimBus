@@ -28,6 +28,7 @@ UTC time.
 | Unresolved failures | Messages that need an operator now: failed, dead-lettered and unsupported |
 | Blocked sessions | An estimate: sessions with a failed, dead-lettered or pending hand-off message, and the endpoint with most. A message dead-lettered on its first attempt does not block its session but is counted; sessions only waiting for replays are not. The exact state lives on Service Bus and is too slow to read every few seconds |
 | Backlog | Pending plus deferred messages, and how fast that changes per minute |
+| Rules firing | Endpoints with an [alert rule](notifications.md#alert-rules-alerts-tab) firing now. Never which rule: a dashboard token sees every endpoint. "–" when the storage provider has no alert rules |
 | Throughput now | Messages published in the last complete minute. Below it, the success rate over the last 60 minutes: handled ÷ (handled + failed attempts). It counts attempts: a message that failed twice and then succeeded counts two failures and one success. The tile is marked amber from 1 % failed attempts and red from 5 % |
 | Time to handle · last hour | Average queue wait plus average processing time over the last 60 minutes, each from the messages that recorded it |
 
@@ -50,6 +51,9 @@ backlog (deepest first), then the rest A to Z. The state badge says what is happ
 | Acked · n | Still failing, but someone has acknowledged it; their name shows beside it |
 | Queued | Nothing failing; messages pending or deferred, counted in the Backlog column |
 | Healthy | Nothing failed and nothing waiting |
+
+A **Rule firing** marker beside the state means an alert rule on the endpoint is firing. Open the
+endpoint's Alerts tab to see which.
 
 | Column | Meaning |
 |---|---|
