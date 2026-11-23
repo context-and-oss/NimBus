@@ -17,6 +17,12 @@ public static class RateLimitPolicyNames
     /// <summary>Fixed-window limiter guarding the message and audit search endpoints.</summary>
     public const string Search = "nimbus-search";
 
+    /// <summary>
+    /// Fixed-window limiter guarding the alert rule preview (Spec 053 Phase 3), which reads a day of
+    /// an endpoint's message history: about 170–310 RU on Cosmos DB per preview.
+    /// </summary>
+    public const string AlertRulePreview = "nimbus-alert-rule-preview";
+
     /// <summary>Per-client-IP fixed-window limiter guarding <c>POST /account/login</c>.</summary>
     public const string Login = "nimbus-login";
 
