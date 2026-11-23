@@ -26,7 +26,7 @@ public sealed class AlertRuleSignalConditionTests
 {
     private const string Endpoint = "ErpEndpoint";
 
-    private readonly InMemoryMessageStore _store = new();
+    private readonly CountingStore _store = new();
     private readonly ScriptedSignals _signals = new();
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 23, 9, 0, 0, TimeSpan.Zero));
     private readonly List<AlertRuleNotice> _sent = [];
@@ -214,6 +214,19 @@ public sealed class AlertRuleSignalConditionTests
         Assert.IsNotNull((await Reload(backlog)).State.SinceUtc, "The backlog rule was.");
     }
 
+    [TestMethod]
+    public async Task Blocked_session_rules_on_one_endpoint_share_the_deferred_count_in_a_tick()
+    {
+        await CreateRule(new AlertRuleCondition { Kind = AlertRuleConditionKinds.BlockedSession, DeferredThreshold = 2 });
+        await CreateRule(new AlertRuleCondition { Kind = AlertRuleConditionKinds.BlockedSession, DeferredThreshold = 5 });
+
+        await Tick();
+        Assert.AreEqual(1, _store.StateCountReads);
+
+        await Tick();
+        Assert.AreEqual(2, _store.StateCountReads, "Each tick reads it again.");
+    }
+
     private Task Defer(string eventId) => _store.UploadDeferredMessage(eventId, "s1", Endpoint, Event(eventId));
 
     private UnresolvedEvent Event(string eventId) => new()
@@ -227,6 +240,17 @@ public sealed class AlertRuleSignalConditionTests
         LastMessageId = "m-" + eventId,
         MessageContent = new MessageContent(),
     };
+
+    private sealed class CountingStore : InMemoryMessageStore
+    {
+        public int StateCountReads { get; private set; }
+
+        public override Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId)
+        {
+            StateCountReads++;
+            return base.DownloadEndpointStateCount(endpointId);
+        }
+    }
 
     private sealed class ScriptedSignals : IAlertSignalStore
     {

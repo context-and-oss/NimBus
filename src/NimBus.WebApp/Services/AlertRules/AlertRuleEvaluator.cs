@@ -40,6 +40,10 @@ public sealed partial class AlertRuleEvaluator
     private readonly IAlertRuleStore _rules;
     private readonly IMessageTrackingStore _events;
     private readonly IAlertSignalStore? _signals;
+
+    // The deferred count is an endpoint-wide read (about 50 RU on Cosmos DB for 5,000 events), so
+    // blocked-session rules on one endpoint share it within a tick.
+    private readonly Dictionary<string, Task<EndpointStateCount>> _stateCounts = new(StringComparer.Ordinal);
     private readonly AlertRuleDelivery _delivery;
     private readonly TimeProvider _time;
     private readonly ILogger<AlertRuleEvaluator> _logger;
@@ -78,6 +82,7 @@ public sealed partial class AlertRuleEvaluator
     /// <param name="cancellationToken">Stops the tick between rules.</param>
     public async Task<AlertRuleTickResult> RunTickAsync(CancellationToken cancellationToken)
     {
+        _stateCounts.Clear();
         var now = _time.GetUtcNow().UtcDateTime;
         var previous = await _rules.GetAlertRuleEvaluatorStatus().ConfigureAwait(false);
         if (!await _rules.TryClaimAlertRuleEvaluatorTick(now - Interval + ClaimSlack, now, _instanceId).ConfigureAwait(false))
@@ -321,7 +326,13 @@ public sealed partial class AlertRuleEvaluator
 
                 if (!holds && condition.DeferredThreshold is { } deferredThreshold)
                 {
-                    var counts = await _events.DownloadEndpointStateCount(rule.EndpointId).ConfigureAwait(false);
+                    if (!_stateCounts.TryGetValue(rule.EndpointId, out var read))
+                    {
+                        read = _events.DownloadEndpointStateCount(rule.EndpointId);
+                        _stateCounts[rule.EndpointId] = read;
+                    }
+
+                    var counts = await read.ConfigureAwait(false);
                     holds = counts.DeferredCount >= deferredThreshold;
                 }
 
