@@ -44,6 +44,7 @@ public sealed class CosmosBicepContainerSyncTests
         ["heartbeatgaps"] = "/EndpointId",
         ["endpointacknowledgements"] = "/id",
         ["operatoroperations"] = "/id",
+        ["alertrules"] = "/endpointId",
     };
 
     [TestMethod]

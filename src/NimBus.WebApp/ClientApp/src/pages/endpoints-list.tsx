@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Tooltip } from "components/ui/tooltip";
+import { Badge } from "components/ui/badge";
 import * as api from "api-client";
 import {
   EndpointStatus,
@@ -23,6 +24,8 @@ type EndpointState = {
   loading: boolean;
   // The set of endpoint ids whose checkbox is ticked. Empty means "show all".
   checked: string[];
+  // Endpoints with a firing alert rule. Empty when the lookup fails.
+  firing: string[];
 };
 
 enum ITableData {
@@ -55,6 +58,7 @@ export default class EndpointsList extends React.Component<
       statusById: this.indexById(mappedProps ?? []),
       loading: !mappedProps,
       checked: this.readPersistedFilter(),
+      firing: [],
     };
 
     this.handleCheck = this.handleCheck.bind(this);
@@ -65,6 +69,7 @@ export default class EndpointsList extends React.Component<
     const persisted = this.readPersistedFilter();
 
     this.client = new api.Client(api.CookieAuth());
+    void this.loadFiring();
     // If we didn't rehydrate with endpoint states, call the api to get them.
     const endPointIds = this.props.endpointIds
       ? this.props.endpointIds
@@ -101,6 +106,16 @@ export default class EndpointsList extends React.Component<
       statusById: this.mergeStatuses(prev.statusById, endpoints),
       loading: false,
     }));
+  }
+
+  // The Firing markers are a hint: a failed lookup leaves the list without them.
+  private async loadFiring(): Promise<void> {
+    try {
+      const firing = await this.client.getAlertRulesFiring();
+      this.setState({ firing: Array.isArray(firing) ? firing : [] });
+    } catch {
+      this.setState({ firing: [] });
+    }
   }
 
   // The ticked endpoint ids survive navigation and reloads in a cookie.
@@ -275,8 +290,17 @@ export default class EndpointsList extends React.Component<
           ITableData.name,
           {
             value: (
-              <span className="text-delegate-blue-600 dark:text-delegate-blue-400 font-bold hover:underline">
-                {endpointId}
+              <span className="inline-flex items-center gap-2">
+                <span className="text-delegate-blue-600 dark:text-delegate-blue-400 font-bold hover:underline">
+                  {endpointId}
+                </span>
+                {this.state.firing.includes(endpointId) && (
+                  <Tooltip content="An alert rule is firing" position="top">
+                    <Badge variant="error" size="sm">
+                      Firing
+                    </Badge>
+                  </Tooltip>
+                )}
               </span>
             ),
             searchValue: endpointId,

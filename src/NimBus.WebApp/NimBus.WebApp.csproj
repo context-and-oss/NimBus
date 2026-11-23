@@ -101,6 +101,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\NimBus.Alerts\NimBus.Alerts.csproj" />
     <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
     <ProjectReference Include="..\NimBus.Extensions.Identity\NimBus.Extensions.Identity.csproj" />
     <ProjectReference Include="..\NimBus.Extensions.IntegrationIntelligence\NimBus.Extensions.IntegrationIntelligence.csproj" />

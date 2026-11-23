@@ -14,6 +14,7 @@ import { waitFor } from "../helpers/wait-for.js";
 interface ReceivedEndpointAlert {
   body: string;
   subscription: string | null;
+  notice: string | null;
   delivery: string | null;
   timestamp: string | null;
   signature: string | null;
@@ -97,6 +98,85 @@ test("a failed event reaches an alert subscriber by mail and by a signed webhook
     expect(mail.text).toContain(flow.eventType);
   } finally {
     await harness.nimbus.unsubscribeFromAlerts(flow.endpoint, subscription.id);
+    await Promise.all([erp.dispose(), mailpit.dispose()]);
+  }
+});
+
+interface RuleNoticeBody {
+  version: number;
+  kind: string;
+  noticeId: string;
+  ruleId: string;
+  endpointId: string;
+  status: "Firing" | "Resolved";
+  reason: string | null;
+  value: number | null;
+  threshold: number;
+}
+
+/**
+ * Alert rules end to end (Spec 053): a rule on the failure backlog opens when an event fails and
+ * resolves once it is skipped, telling its webhook and mail targets once each time. The WebApp's
+ * evaluator runs every minute, so this test takes a few minutes.
+ */
+test("an alert rule opens on a failed event and resolves when it is cleared", async ({ harness }) => {
+  test.setTimeout(8 * 60_000);
+  const flow = await harness.createFlow("crm-to-erp");
+  const mailbox = `e2e-rule-${randomUUID()}@example.com`;
+  const erp = await request.newContext({ baseURL: ServiceUrls.erpApi, ignoreHTTPSErrors: true });
+  const mailpit = await request.newContext({ baseURL: ServiceUrls.mailpit });
+  const saved = await harness.nimbus.createAlertRule(flow.endpoint, {
+    name: `E2E backlog ${flow.session}`,
+    enabled: true,
+    // Failed only: earlier scenarios leave dead-lettered events of this type behind on purpose,
+    // and a dead letter is never cleared, so a rule counting them would never resolve.
+    condition: { threshold: 1, eventTypes: [flow.eventType], statuses: ["Failed"] },
+    resolveAfterMinutes: 1,
+    targets: [
+      { type: "webhook", url: `${ServiceUrls.erpApi}/api/webhooks/endpoint-alerts` },
+      { type: "mail", address: mailbox },
+    ],
+  });
+  const ruleId = saved.rule.id;
+  const webhookTarget = saved.rule.targets.find(t => t.type === "webhook")!;
+  const secret = saved.secrets.find(s => s.targetId === webhookTarget.id)?.signingSecret;
+  try {
+    expect(secret, "A new webhook target returns its signing secret once").toMatch(/^nbwh_/);
+
+    const notices = async (status: RuleNoticeBody["status"]) => {
+      const response = await erp.get("/api/admin/endpoint-alerts");
+      if (!response.ok()) throw new Error(`Read endpoint alerts: ${response.status()}`);
+      return (await response.json() as ReceivedEndpointAlert[])
+        .map(r => ({ received: r, body: JSON.parse(r.body) as RuleNoticeBody }))
+        .filter(n => n.body.kind === "alert_rule" && n.body.ruleId === ruleId && n.body.status === status);
+    };
+
+    await flow.script(["fail"]);
+    await flow.update("alert-rule");
+    const [failed] = await flow.status("Failed");
+
+    const opened = await waitFor(async () => (await notices("Firing"))[0] ?? null,
+      { timeoutMs: 180_000, description: "Opened alert rule notice" });
+    expect(opened.body).toMatchObject({ version: 2, endpointId: flow.endpoint, value: 1, threshold: 1, reason: null });
+    expect(opened.received.notice).toBe(opened.body.noticeId);
+    expect(signatureMatches(secret!, opened.received), "The rule notice verifies with the target's secret").toBe(true);
+
+    await waitFor(async () => {
+      const response = await mailpit.get("/api/v1/search", { params: { query: `to:"${mailbox}"` } });
+      if (!response.ok()) throw new Error(`Search Mailpit: ${response.status()}`);
+      const found = await response.json() as MailpitSearch;
+      return (found.messages ?? []).find(m => m.Subject.startsWith("[NimBus] Firing:")) ?? null;
+    }, { timeoutMs: 60_000, description: "Opened alert rule mail" });
+
+    await harness.nimbus.skipMessage(failed.eventId, failed.lastMessageId);
+
+    const resolved = await waitFor(async () => (await notices("Resolved"))[0] ?? null,
+      { timeoutMs: 240_000, description: "Resolved alert rule notice" });
+    expect(resolved.body.reason).toBe("cleared");
+    expect(signatureMatches(secret!, resolved.received)).toBe(true);
+    expect((await notices("Firing")).length, "One opened notice for the incident").toBe(1);
+  } finally {
+    await harness.nimbus.deleteAlertRule(flow.endpoint, ruleId);
     await Promise.all([erp.dispose(), mailpit.dispose()]);
   }
 });

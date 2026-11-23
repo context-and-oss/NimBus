@@ -7,6 +7,8 @@ import Page from "components/page";
 import EventsPanel from "components/endpoint-details/events-panel";
 import EventTypesPanel from "components/endpoint-details/event-types-panel";
 import SubscriptionsTab from "components/endpoint-details/tabs/subscriptions-tab";
+import AlertRulesSection from "components/endpoint-details/alert-rules/alert-rules-section";
+import { WorkspaceSection } from "components/workspace/workspace";
 import AuditTab from "components/endpoint-details/tabs/audit-tab";
 import MetadataTab from "components/endpoint-details/tabs/metadata-tab";
 import NotFoundPage from "components/not-found-page";
@@ -46,11 +48,10 @@ const EndpointDetailsContent = (
   const [alertProbe, setAlertProbe] = useState<"loading" | "loaded" | "failed">(
     "loading",
   );
-  const [isSubscriptionTabEnabled, setIsSubscriptionTabEnabled] =
-    useState(false);
+  const [hasSubscriptions, setHasSubscriptions] = useState(false);
 
-  // Discover availability without mounting the Alerts panel. Reuse these rows
-  // when it is first opened so discovery does not cause a second request.
+  // Load the subscriptions without mounting the Alerts panel. Reuse these rows
+  // when it is first opened so opening it does not cause a second request.
   useEffect(() => {
     let active = true;
     client
@@ -59,7 +60,7 @@ const EndpointDetailsContent = (
         if (!active) return;
         setAlertProbe("loaded");
         setAlertSubscriptions(subscriptions);
-        setIsSubscriptionTabEnabled(subscriptions.length > 0);
+        setHasSubscriptions(subscriptions.length > 0);
       })
       .catch(() => {
         if (active) setAlertProbe("failed");
@@ -100,15 +101,15 @@ const EndpointDetailsContent = (
     };
   }, [client, endpointId, props.endpointState]);
 
-  const tabs = useMemo<{ id: DetailTab; label: string; enabled: boolean }[]>(
+  const tabs = useMemo<{ id: DetailTab; label: string }[]>(
     () => [
-      { id: "messages", label: "Messages", enabled: true },
-      { id: "event-types", label: "Event Types", enabled: true },
-      { id: "alerts", label: "Alerts", enabled: isSubscriptionTabEnabled },
-      { id: "ownership", label: "Ownership", enabled: true },
-      { id: "audit", label: "Audit", enabled: true },
+      { id: "messages", label: "Messages" },
+      { id: "event-types", label: "Event Types" },
+      { id: "alerts", label: "Alerts" },
+      { id: "ownership", label: "Ownership" },
+      { id: "audit", label: "Audit" },
     ],
-    [isSubscriptionTabEnabled],
+    [],
   );
 
   if (endpointIsInvalid) {
@@ -121,18 +122,6 @@ const EndpointDetailsContent = (
     <Page title={endpointId} subtitle="Endpoint details">
       <div className="flex flex-col gap-4 w-full">
         <TabStrip tabs={tabs} activeTab={activeTab} onChange={selectTab} />
-        {!isSubscriptionTabEnabled && alertProbe !== "loading" && (
-          <p id="alerts-help" className="text-sm text-muted-foreground">
-            {alertProbe === "failed"
-              ? "Alert subscriptions could not be loaded."
-              : "No alert subscriptions are configured for this endpoint."}{" "}
-            Configure alerts from this endpoint's menu on the{" "}
-            <Link to="/Endpoints" className="text-primary hover:underline">
-              endpoint list
-            </Link>
-            .
-          </p>
-        )}
         {/* Mount on first visit; retain visited panels to preserve filters and pages. */}
         <div className={activeTab === "messages" ? "" : "hidden"}>
           <EventsPanel endpointId={endpointId} />
@@ -143,11 +132,39 @@ const EndpointDetailsContent = (
           </div>
         )}
         {visitedTabs.has("alerts") && (
-          <div className={activeTab === "alerts" ? "" : "hidden"}>
-            <SubscriptionsTab
-              initialSubscriptions={alertSubscriptions}
-              setIsTabEnabled={setIsSubscriptionTabEnabled}
-            />
+          <div
+            className={cn(
+              "flex flex-col gap-8",
+              activeTab === "alerts" ? "" : "hidden",
+            )}
+          >
+            <AlertRulesSection endpointId={endpointId} />
+            <WorkspaceSection
+              title="Every failure"
+              intro="Subscriptions get a notice about each failed or dead-lettered event, no more often than their frequency."
+            >
+              {hasSubscriptions ? (
+                <SubscriptionsTab
+                  initialSubscriptions={alertSubscriptions}
+                  setIsTabEnabled={setHasSubscriptions}
+                />
+              ) : alertProbe === "loading" ? (
+                <p role="status" className="m-0 text-sm text-muted-foreground">
+                  Loading alert subscriptions…
+                </p>
+              ) : (
+                <p id="alerts-help" className="m-0 text-sm text-muted-foreground">
+                  {alertProbe === "failed"
+                    ? "Alert subscriptions could not be loaded."
+                    : "No alert subscriptions are configured for this endpoint."}{" "}
+                  Configure alerts from this endpoint's menu on the{" "}
+                  <Link to="/Endpoints" className="text-primary hover:underline">
+                    endpoint list
+                  </Link>
+                  .
+                </p>
+              )}
+            </WorkspaceSection>
           </div>
         )}
         {visitedTabs.has("ownership") && (
@@ -166,7 +183,7 @@ const EndpointDetailsContent = (
 };
 
 interface TabStripProps {
-  tabs: { id: DetailTab; label: string; enabled: boolean }[];
+  tabs: { id: DetailTab; label: string }[];
   activeTab: DetailTab;
   onChange: (tab: DetailTab) => void;
 }
@@ -175,23 +192,12 @@ const TabStrip: React.FC<TabStripProps> = ({ tabs, activeTab, onChange }) => (
   <div role="tablist" className="flex gap-1 border-b border-border -mb-1">
     {tabs.map((t) => {
       const isActive = activeTab === t.id;
-      const isDisabled = !t.enabled;
       return (
         <button
           key={t.id}
           role="tab"
           type="button"
           aria-selected={isActive}
-          aria-disabled={isDisabled || undefined}
-          disabled={isDisabled}
-          title={
-            isDisabled && t.id === "alerts"
-              ? "Alerts require subscriptions. Configure them from the endpoint list menu."
-              : undefined
-          }
-          aria-describedby={
-            isDisabled && t.id === "alerts" ? "alerts-help" : undefined
-          }
           onClick={() => onChange(t.id)}
           className={cn(
             "bg-transparent border-0 px-[18px] py-[11px] text-[13.5px] font-semibold cursor-pointer",
@@ -200,7 +206,6 @@ const TabStrip: React.FC<TabStripProps> = ({ tabs, activeTab, onChange }) => (
             isActive
               ? "text-primary-600 border-b-primary bg-linear-to-b from-transparent to-primary-tint"
               : "text-ink-2 hover:text-ink",
-            isDisabled && "opacity-40 cursor-not-allowed hover:text-ink-2",
           )}
         >
           {t.label}

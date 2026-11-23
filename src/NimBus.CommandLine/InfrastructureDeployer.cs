@@ -594,7 +594,7 @@ internal sealed class InfrastructureDeployer
     }
 
     /// <summary>
-    /// Endpoint alert mail for the Resolver. Nothing is passed when it is off, so the template
+    /// Alert mail for the Resolver (endpoint alerts) and the WebApp (alert rules, Spec 053). Nothing is passed when it is off, so the template
     /// leaves the settings out; the Resolver's app settings are template-owned, so that also
     /// turns off alert mail an earlier run turned on. Unset optional values keep the template
     /// defaults. The password is a secure parameter, never a process argument.
@@ -688,6 +688,11 @@ internal sealed class InfrastructureDeployer
         var pinned = new List<(string Name, string Location)>();
         AddPinnedLocation(arguments, existingLocations, names.WebAppName, "webAppLocation", pinned);
         AddPinnedLocation(arguments, existingLocations, names.ManagementAppServicePlanName, "managementAppServicePlanLocation", pinned);
+        AddAlertMailParameters(arguments, options.AlertMail);
+        if (options.AlertWebhook is { BearerTokens.Count: > 0 } webAppAlertWebhookTokens)
+        {
+            arguments.Add($"alertWebhookBearerTokens={JsonSerializer.Serialize(webAppAlertWebhookTokens.BearerTokens.Select(token => new { urlPrefix = token.UrlPrefix, audience = token.Audience }))}");
+        }
 
         using var command = new AzureDeploymentCommand(arguments);
         command.AddSecureParameter("instrumentationKey", instrumentationKey);
@@ -698,10 +703,16 @@ internal sealed class InfrastructureDeployer
         }
 
         // The WebApp derives each webhook subscription's signing secret from the same key the
-        // Resolver signs with.
+        // Resolver signs with, and since Spec 053 it also delivers alert rule notices itself, so
+        // it gets the same mail settings and token prefixes.
         if (options.AlertWebhook is { } alertWebhook)
         {
             command.AddSecureParameter("alertWebhookSigningKey", alertWebhook.SigningKey);
+        }
+
+        if (options.AlertMail?.SmtpPassword is { } alertMailSmtpPassword)
+        {
+            command.AddSecureParameter("alertMailSmtpPassword", alertMailSmtpPassword);
         }
 
         await _az.EnsureSuccessAsync(

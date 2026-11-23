@@ -156,6 +156,8 @@ public partial class Startup
         services.AddTransient<IAgentKeysApiController, AgentKeysImplementation>();
         // Settings → Dashboard tokens; DashboardTokenService comes with AddNimBusDashboardTokens.
         services.AddTransient<IDashboardTokensApiController, DashboardTokensImplementation>();
+        // Spec 053: alert rules.
+        services.AddTransient<IAlertRulesApiController, AlertRulesImplementation>();
         services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();
         services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
 
@@ -165,5 +167,9 @@ public partial class Startup
         services.AddSingleton<IHeartbeatMessageSender, ServiceBusHeartbeatMessageSender>();
         services.AddScoped<IHeartbeatService, HeartbeatService>();
         services.AddHostedService<HeartbeatBackgroundService>();
+
+        // Spec 053: alert rules. The evaluator runs only with a storage provider that offers a
+        // rule store.
+        Services.AlertRules.AlertRuleServiceCollectionExtensions.AddNimBusAlertRules(services);
     }
 }

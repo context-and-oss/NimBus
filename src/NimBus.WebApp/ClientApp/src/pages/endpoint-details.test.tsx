@@ -11,8 +11,9 @@ import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import * as api from "api-client";
 import EndpointDetails from "./endpoint-details";
 
-const { subscriptions, eventTypes, audits } = vi.hoisted(() => ({
+const { subscriptions, alertRules, eventTypes, audits } = vi.hoisted(() => ({
   subscriptions: vi.fn(),
+  alertRules: vi.fn(),
   eventTypes: vi.fn(),
   audits: vi.fn(),
 }));
@@ -24,6 +25,7 @@ vi.mock("api-client", async () => {
     CookieAuth: () => ({}),
     Client: class {
       getEndpointSubscribe = subscriptions;
+      getEndpointAlertRules = alertRules;
       getEventtypesByEndpointId = vi.fn().mockResolvedValue({});
       getApiEndpointstatusStatusEndpointName = vi.fn().mockResolvedValue({});
     },
@@ -76,6 +78,9 @@ function setup() {
 beforeEach(() => {
   vi.clearAllMocks();
   subscriptions.mockResolvedValue([]);
+  alertRules.mockResolvedValue(
+    api.AlertRuleList.fromJS({ rules: [], canManage: false }),
+  );
 });
 afterEach(cleanup);
 
@@ -116,25 +121,28 @@ describe("endpoint tab loading", () => {
       new api.EndpointSubscription({ id: "alert-1", mail: "ops@example.test" }),
     ]);
     setup();
-    await waitFor(() =>
-      expect(
-        (screen.getByRole("tab", { name: "Alerts" }) as HTMLButtonElement)
-          .disabled,
-      ).toBe(false),
-    );
+    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("ops@example.test")).toBeNull();
+    expect(alertRules).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("tab", { name: "Alerts" }));
     expect(await screen.findByText("ops@example.test")).toBeTruthy();
     expect(subscriptions).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps Alerts disabled when there are no subscriptions", async () => {
+  it("enables Alerts without subscriptions and shows the Rules section first", async () => {
     setup();
     await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(1));
-    expect(
-      (screen.getByRole("tab", { name: "Alerts" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    const alerts = screen.getByRole("tab", { name: "Alerts" }) as HTMLButtonElement;
+    expect(alerts.disabled).toBe(false);
+    expect(screen.queryByText(/No alert subscriptions/)).toBeNull();
+    fireEvent.click(alerts);
+    expect(await screen.findByText("No alert rules")).toBeTruthy();
+    expect(alertRules).toHaveBeenCalledWith("crm");
+    const sections = screen
+      .getAllByRole("region")
+      .map((r) => r.getAttribute("aria-labelledby"))
+      .map((id) => document.getElementById(id!)?.textContent);
+    expect(sections).toEqual(["Rules", "Every failure"]);
     expect(screen.getByText(/No alert subscriptions/)).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "endpoint list" }).getAttribute("href"),
@@ -163,9 +171,9 @@ describe("endpoint tab loading", () => {
         .getAttribute("aria-selected"),
     ).toBe("true");
     expect(screen.queryByText("Audit content")).toBeNull();
-    expect(
-      (screen.getByRole("tab", { name: "Alerts" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: "Alerts" }));
+    expect(screen.getByText(/No alert subscriptions/)).toBeTruthy();
+    expect(alertRules).toHaveBeenCalledWith("erp");
+    expect(alertRules).not.toHaveBeenCalledWith("crm");
   });
 });

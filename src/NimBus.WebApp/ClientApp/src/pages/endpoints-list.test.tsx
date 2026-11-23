@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { cleanup, render, waitFor, act } from "@testing-library/react";
+import { cleanup, render, waitFor, act, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import * as React from "react";
 import * as api from "api-client";
@@ -34,6 +34,7 @@ it("does not reparse hydrated endpoint dates through Moment's string fallback", 
 const mocks = vi.hoisted(() => ({
   getEndpointsAll: vi.fn(),
   postApiEndpointStatusCount: vi.fn(),
+  getAlertRulesFiring: vi.fn(),
   cookieGet: vi.fn(() => "ep1" as string | undefined),
   cookieSet: vi.fn(),
   cookieRemove: vi.fn(),
@@ -53,10 +54,14 @@ vi.mock("js-cookie", () => ({
 // Capture the DataTable props instead of rendering the full TanStack table —
 // the rows array and checkedEndpointIds are all we need to assert what the
 // user would see for a given checkbox state.
-const captured: { rows?: { id: string }[]; checked?: string[] } = {};
+type CapturedRow = {
+  id: string;
+  data: Map<string, { value: React.ReactNode }>;
+};
+const captured: { rows?: CapturedRow[]; checked?: string[] } = {};
 vi.mock("components/data-table", () => ({
   default: (props: {
-    rows: { id: string }[];
+    rows: CapturedRow[];
     checkedEndpointIds?: string[];
   }) => {
     captured.rows = props.rows;
@@ -71,6 +76,7 @@ vi.mock("api-client", async () => {
   class FakeClient {
     getEndpointsAll = mocks.getEndpointsAll;
     postApiEndpointStatusCount = mocks.postApiEndpointStatusCount;
+    getAlertRulesFiring = mocks.getAlertRulesFiring;
     postApiMetadatashort = vi.fn().mockResolvedValue([]);
     getEndpointStatusCountId = vi.fn();
     getMetadataEndpoint = vi.fn();
@@ -87,6 +93,7 @@ beforeEach(() => {
   mocks.cookieSet.mockReset();
   mocks.cookieRemove.mockReset();
   mocks.getEndpointsAll.mockReset().mockResolvedValue(["ep1", "ep2", "ep3"]);
+  mocks.getAlertRulesFiring.mockReset().mockResolvedValue([]);
   mocks.postApiEndpointStatusCount
     .mockReset()
     .mockImplementation(async (ids: string[]) =>
@@ -222,5 +229,50 @@ describe("EndpointsList filter persistence", () => {
       "ep1",
       expect.objectContaining({ sameSite: "lax" }),
     );
+  });
+});
+
+describe("EndpointsList firing alert rules", () => {
+  // The name cell of a row, rendered on its own.
+  const nameCell = (id: string) => {
+    const row = (captured.rows ?? []).find((r) => r.id === id);
+    const { container } = render(<MemoryRouter>{row?.data.get("name")?.value}</MemoryRouter>);
+    return within(container);
+  };
+
+  const mount = async () => {
+    mocks.cookieGet.mockReturnValue(undefined);
+    const ref = React.createRef<InstanceType<typeof EndpointsList>>();
+    render(
+      <MemoryRouter>
+        <EndpointsList ref={ref} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(ref.current?.state.loading).toBe(false));
+    return ref;
+  };
+
+  it("marks the endpoints that have a firing rule", async () => {
+    mocks.getAlertRulesFiring.mockResolvedValue(["ep2"]);
+    const ref = await mount();
+    await waitFor(() => expect(ref.current?.state.firing).toEqual(["ep2"]));
+
+    expect(nameCell("ep2").getByText("Firing")).toBeTruthy();
+    expect(nameCell("ep1").queryByText("Firing")).toBeNull();
+    expect(nameCell("ep3").queryByText("Firing")).toBeNull();
+  });
+
+  it("shows the list without markers when the firing lookup fails", async () => {
+    mocks.getAlertRulesFiring.mockRejectedValue(new Error("boom"));
+    const ref = await mount();
+    await waitFor(() => expect(mocks.getAlertRulesFiring).toHaveBeenCalledTimes(1));
+
+    expect(rowIds()).toEqual(["ep1", "ep2", "ep3"]);
+    expect(ref.current!.state.firing).toEqual([]);
+    for (const id of ["ep1", "ep2", "ep3"]) {
+      const cell = nameCell(id);
+      expect(cell.getByText(id)).toBeTruthy();
+      expect(cell.queryByText("Firing")).toBeNull();
+    }
   });
 });

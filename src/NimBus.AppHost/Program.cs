@@ -128,6 +128,13 @@ resolver
     .WithEnvironment("NimBus__Alerts__Mail__Smtp__UseSsl", "false")
     .WithEnvironment("NimBus__Alerts__Mail__From", "nimbus-alerts@nimbus.example")
     .WithEnvironment("NimBus__Alerts__Mail__WebAppUrl", webapp.GetEndpoint("https"));
+// Alert rules (Spec 053) mail their targets from the WebApp, through the same Mailpit.
+webapp
+    .WithEnvironment("NimBus__Alerts__Mail__Smtp__Host", smtp.Property(EndpointProperty.Host))
+    .WithEnvironment("NimBus__Alerts__Mail__Smtp__Port", smtp.Property(EndpointProperty.Port))
+    .WithEnvironment("NimBus__Alerts__Mail__Smtp__UseSsl", "false")
+    .WithEnvironment("NimBus__Alerts__Mail__From", "nimbus-alerts@nimbus.example")
+    .WithEnvironment("NimBus__Alerts__Mail__WebAppUrl", webapp.GetEndpoint("https"));
 
 // Endpoint alert webhooks (a webhook subscription on the same Alerts tab). This AppHost only
 // runs locally, so it switches them on with a key that is only good for development and lets
@@ -139,7 +146,8 @@ resolver
     .WithEnvironment("NimBus__Alerts__Webhook__AllowPrivateNetworks", "true");
 webapp
     .WithEnvironment("NimBus__Alerts__Webhook__SigningKey", localAlertWebhookSigningKey)
-    .WithEnvironment("NimBus__Alerts__Webhook__AllowInsecureHttp", "true");
+    .WithEnvironment("NimBus__Alerts__Webhook__AllowInsecureHttp", "true")
+    .WithEnvironment("NimBus__Alerts__Webhook__AllowPrivateNetworks", "true");
 
 // Bind the active storage provider to both runtime services. Each provider package
 // resolves its own connection string at runtime.

@@ -40,6 +40,25 @@ param identityAdminPassword string = ''
 // webhooks off: the WebApp then refuses webhook subscriptions.
 @secure()
 param alertWebhookSigningKey string = ''
+// Alert rules (Spec 053): the WebApp evaluates rules and calls their webhook targets, so it
+// gets the same token prefixes as the Resolver: [{ urlPrefix, audience }]. The WebApp's own
+// identity needs the role at the receiver.
+param alertWebhookBearerTokens array = []
+
+// Alert rules (Spec 053) mail their targets from the WebApp: the same SMTP settings as
+// deploy.core.bicep gives the Resolver. Off unless both alertMailSmtpHost and alertMailFrom
+// are set. Pass them on every deploy, like the Resolver's.
+param alertMailSmtpHost string = ''
+@minValue(1)
+@maxValue(65535)
+param alertMailSmtpPort int = 587
+param alertMailSmtpUseSsl bool = true
+param alertMailSmtpUsername string = ''
+@secure()
+param alertMailSmtpPassword string = ''
+param alertMailFrom string = ''
+// The WebApp's public URL, linked from each notice. Empty means this WebApp's default host name.
+param alertMailWebAppUrl string = ''
 
 // Per-resource location override. Empty means "use the global locationParam".
 // The CLI pins this to the existing web app's location when one is already
@@ -217,7 +236,50 @@ var identitySettings = identityEnabled ? [
   }
 ] : []
 
-var baseWebAppSettings = concat(coreWebAppSettings, cosmosSetting, identitySettings)
+var alertMailEnabled = !empty(alertMailSmtpHost) && !empty(alertMailFrom)
+
+// Alert rules (Spec 053): SMTP for mail targets, the same keys the Resolver reads.
+var alertMailSettings = alertMailEnabled ? concat([
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__Host'
+    value: alertMailSmtpHost
+  }
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__Port'
+    value: string(alertMailSmtpPort)
+  }
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__UseSsl'
+    value: string(alertMailSmtpUseSsl)
+  }
+  {
+    name: 'NimBus__Alerts__Mail__From'
+    value: alertMailFrom
+  }
+  {
+    name: 'NimBus__Alerts__Mail__WebAppUrl'
+    value: empty(alertMailWebAppUrl) ? 'https://${managementWebAppName}.azurewebsites.net' : alertMailWebAppUrl
+  }
+], empty(alertMailSmtpUsername) ? [] : [
+  {
+    name: 'NimBus__Alerts__Mail__Smtp__Username'
+    value: alertMailSmtpUsername
+  }
+]) : []
+
+// App settings express a list as Key__<index>__Name.
+var alertWebhookTokenSettings = empty(alertWebhookSigningKey) ? [] : flatten(map(range(0, length(alertWebhookBearerTokens)), i => [
+  {
+    name: 'NimBus__Alerts__Webhook__BearerTokens__${i}__UrlPrefix'
+    value: string(alertWebhookBearerTokens[i].urlPrefix)
+  }
+  {
+    name: 'NimBus__Alerts__Webhook__BearerTokens__${i}__Audience'
+    value: string(alertWebhookBearerTokens[i].audience)
+  }
+]))
+
+var baseWebAppSettings = concat(coreWebAppSettings, cosmosSetting, identitySettings, alertMailSettings, alertWebhookTokenSettings)
 
 // Secret settings cross the nested-deployment boundary as a secure object. If
 // they were folded into the ordinary settings array, Azure deployment history
@@ -255,7 +317,11 @@ var alertWebhookSecretSettings = empty(alertWebhookSigningKey) ? {} : {
   NimBus__Alerts__Webhook__SigningKey: alertWebhookSigningKey
 }
 
-var webAppSecretSettings = union(preservedExistingSettings, coreWebAppSecretSettings, sqlSecretSettings, identitySecretSettings, alertWebhookSecretSettings)
+var alertMailSecretSettings = alertMailEnabled && !empty(alertMailSmtpPassword) ? {
+  NimBus__Alerts__Mail__Smtp__Password: alertMailSmtpPassword
+} : {}
+
+var webAppSecretSettings = union(preservedExistingSettings, coreWebAppSecretSettings, sqlSecretSettings, identitySecretSettings, alertWebhookSecretSettings, alertMailSecretSettings)
 
 var developmentDiagnosticSettings = isDevelopmentEnvironment ? [
   {

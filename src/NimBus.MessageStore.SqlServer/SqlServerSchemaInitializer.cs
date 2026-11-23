@@ -52,6 +52,8 @@ internal sealed partial class SqlServerSchemaInitializer : IHostedService
         "DashboardTokens",
         "DashboardTokenUsage",
         "OperatorOperations",
+        "AlertRules",
+        "AlertRuleEvaluator",
     };
 
     private static readonly string[] RequiredViews =

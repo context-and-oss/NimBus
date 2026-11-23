@@ -55,6 +55,22 @@ public sealed class AlertMailTests
     }
 
     [TestMethod]
+    public async Task A_local_run_points_the_WebApp_at_Mailpit_for_alert_rules()
+    {
+        await using var builder = await DistributedApplicationTestingBuilder.CreateAsync<AppHost::Projects.CrmErpDemo_AppHost>();
+        var webApp = builder.Resources.OfType<IResourceWithEnvironment>().Single(r => r.Name == "nimbus-ops");
+
+        var environment = await EnvironmentOf(webApp, builder.ExecutionContext);
+
+        foreach (var setting in AlertMailSettings)
+        {
+            Assert.IsTrue(environment.ContainsKey(setting), $"missing {setting}");
+        }
+
+        Assert.AreEqual("false", environment["NimBus__Alerts__Mail__Smtp__UseSsl"]);
+    }
+
+    [TestMethod]
     public async Task The_Azure_deployment_has_no_Mailpit_and_no_alert_mail()
     {
         await using var builder = await DistributedApplicationTestingBuilder.CreateAsync<AppHost::Projects.CrmErpDemo_AppHost>(

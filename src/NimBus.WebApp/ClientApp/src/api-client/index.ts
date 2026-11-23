@@ -2194,6 +2194,349 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * List the endpoint's alert rules
+     * @return OK
+     */
+    getEndpointAlertRules(endpointId: string): Promise<AlertRuleList> {
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/alert-rules";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetEndpointAlertRules(_response);
+        });
+    }
+
+    protected processGetEndpointAlertRules(response: Response): Promise<AlertRuleList> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AlertRuleList.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store alert rules", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AlertRuleList>(null as any);
+    }
+
+    /**
+     * Create an alert rule
+     * @param body (optional) 
+     * @return OK
+     */
+    postEndpointAlertRule(endpointId: string, body?: AlertRuleRequest | undefined): Promise<AlertRuleSaved> {
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/alert-rules";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostEndpointAlertRule(_response);
+        });
+    }
+
+    protected processPostEndpointAlertRule(response: Response): Promise<AlertRuleSaved> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AlertRuleSaved.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store alert rules", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AlertRuleSaved>(null as any);
+    }
+
+    /**
+     * Change an alert rule
+     * @param body (optional) 
+     * @return OK
+     */
+    putEndpointAlertRule(endpointId: string, ruleId: string, body?: AlertRuleRequest | undefined): Promise<AlertRuleSaved> {
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/alert-rules/{ruleId}";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (ruleId === undefined || ruleId === null)
+            throw new globalThis.Error("The parameter 'ruleId' must be defined.");
+        url_ = url_.replace("{ruleId}", encodeURIComponent("" + ruleId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPutEndpointAlertRule(_response);
+        });
+    }
+
+    protected processPutEndpointAlertRule(response: Response): Promise<AlertRuleSaved> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AlertRuleSaved.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The rule changed while it was being saved; read it again", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store alert rules", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AlertRuleSaved>(null as any);
+    }
+
+    /**
+     * Delete an alert rule
+     * @return Deleted
+     */
+    deleteEndpointAlertRule(endpointId: string, ruleId: string): Promise<void> {
+        let url_ = this.baseUrl + "/api/v1/endpoint/{endpointId}/alert-rules/{ruleId}";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (ruleId === undefined || ruleId === null)
+            throw new globalThis.Error("The parameter 'ruleId' must be defined.");
+        url_ = url_.replace("{ruleId}", encodeURIComponent("" + ruleId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteEndpointAlertRule(_response);
+        });
+    }
+
+    protected processDeleteEndpointAlertRule(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 204) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = ProblemDetails.fromJS(resultData409);
+            return throwException("The rule changed while it was being deleted; try again", status, _responseText, _headers, result409);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            let result501: any = null;
+            let resultData501 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result501 = ProblemDetails.fromJS(resultData501);
+            return throwException("The storage provider cannot store alert rules", status, _responseText, _headers, result501);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * Endpoints with a firing alert rule
+     * @return OK
+     */
+    getAlertRulesFiring(): Promise<string[]> {
+        let url_ = this.baseUrl + "/api/v1/alert-rules/firing";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAlertRulesFiring(_response);
+        });
+    }
+
+    protected processGetAlertRulesFiring(response: Response): Promise<string[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(item);
+            }
+            else {
+                result200 = null as any;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<string[]>(null as any);
+    }
+
+    /**
      * @return OK
      */
     postEndpointPurge(endpointName: string): Promise<void> {
@@ -11952,6 +12295,747 @@ export interface IEndpointSubscription {
     payload?: string;
     frequency?: number;
     id?: string;
+
+    [key: string]: any;
+}
+
+/** What a rule watches. Phase 1 has one kind, failure_backlog: the events on the endpoint that are failed now (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time window. */
+export class AlertRuleCondition implements IAlertRuleCondition {
+    /** failure_backlog. */
+    kind?: string;
+    /** Event types to count; empty counts every type. */
+    eventTypes?: string[];
+    /** Statuses to count (Failed, DeadLettered, Unsupported); empty counts all three. */
+    statuses?: string[];
+    /** A case-insensitive substring the error text must contain. */
+    errorTextContains?: string | undefined;
+    /** The backlog at which the rule fires. */
+    threshold?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRuleCondition) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.kind = _data["kind"];
+            if (Array.isArray(_data["eventTypes"])) {
+                this.eventTypes = [] as any;
+                for (let item of _data["eventTypes"])
+                    this.eventTypes!.push(item);
+            }
+            if (Array.isArray(_data["statuses"])) {
+                this.statuses = [] as any;
+                for (let item of _data["statuses"])
+                    this.statuses!.push(item);
+            }
+            this.errorTextContains = _data["errorTextContains"];
+            this.threshold = _data["threshold"];
+        }
+    }
+
+    static fromJS(data: any): AlertRuleCondition {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRuleCondition();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["kind"] = this.kind;
+        if (Array.isArray(this.eventTypes)) {
+            data["eventTypes"] = [];
+            for (let item of this.eventTypes)
+                data["eventTypes"].push(item);
+        }
+        if (Array.isArray(this.statuses)) {
+            data["statuses"] = [];
+            for (let item of this.statuses)
+                data["statuses"].push(item);
+        }
+        data["errorTextContains"] = this.errorTextContains;
+        data["threshold"] = this.threshold;
+        return data;
+    }
+
+    clone(): AlertRuleCondition {
+        const json = this.toJSON();
+        let result = new AlertRuleCondition();
+        result.init(json);
+        return result;
+    }
+}
+
+/** What a rule watches. Phase 1 has one kind, failure_backlog: the events on the endpoint that are failed now (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time window. */
+export interface IAlertRuleCondition {
+    /** failure_backlog. */
+    kind?: string;
+    /** Event types to count; empty counts every type. */
+    eventTypes?: string[];
+    /** Statuses to count (Failed, DeadLettered, Unsupported); empty counts all three. */
+    statuses?: string[];
+    /** A case-insensitive substring the error text must contain. */
+    errorTextContains?: string | undefined;
+    /** The backlog at which the rule fires. */
+    threshold?: number;
+
+    [key: string]: any;
+}
+
+export class AlertRuleTargetModel implements IAlertRuleTargetModel {
+    /** The target's id within the rule. Omit for a new target; send it to keep an existing one and its secret. */
+    id?: string | undefined;
+    /** mail or webhook. */
+    type?: string;
+    /** The mail address of a mail target. Shown to Owners only. */
+    address?: string | undefined;
+    /** The URL of a webhook target. Shown to Owners only. */
+    url?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRuleTargetModel) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.id = _data["id"];
+            this.type = _data["type"];
+            this.address = _data["address"];
+            this.url = _data["url"];
+        }
+    }
+
+    static fromJS(data: any): AlertRuleTargetModel {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRuleTargetModel();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["id"] = this.id;
+        data["type"] = this.type;
+        data["address"] = this.address;
+        data["url"] = this.url;
+        return data;
+    }
+
+    clone(): AlertRuleTargetModel {
+        const json = this.toJSON();
+        let result = new AlertRuleTargetModel();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRuleTargetModel {
+    /** The target's id within the rule. Omit for a new target; send it to keep an existing one and its secret. */
+    id?: string | undefined;
+    /** mail or webhook. */
+    type?: string;
+    /** The mail address of a mail target. Shown to Owners only. */
+    address?: string | undefined;
+    /** The URL of a webhook target. Shown to Owners only. */
+    url?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class AlertRuleRequest implements IAlertRuleRequest {
+    name?: string;
+    enabled?: boolean;
+    condition?: AlertRuleCondition;
+    /** How long the condition must be false, continuously, before the rule resolves. */
+    resolveAfterMinutes?: number;
+    targets?: AlertRuleTargetModel[];
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRuleRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+            this.enabled = _data["enabled"];
+            this.condition = _data["condition"] ? AlertRuleCondition.fromJS(_data["condition"]) : undefined as any;
+            this.resolveAfterMinutes = _data["resolveAfterMinutes"];
+            if (Array.isArray(_data["targets"])) {
+                this.targets = [] as any;
+                for (let item of _data["targets"])
+                    this.targets!.push(AlertRuleTargetModel.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): AlertRuleRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRuleRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        data["enabled"] = this.enabled;
+        data["condition"] = this.condition ? this.condition.toJSON() : undefined as any;
+        data["resolveAfterMinutes"] = this.resolveAfterMinutes;
+        if (Array.isArray(this.targets)) {
+            data["targets"] = [];
+            for (let item of this.targets)
+                data["targets"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): AlertRuleRequest {
+        const json = this.toJSON();
+        let result = new AlertRuleRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRuleRequest {
+    name?: string;
+    enabled?: boolean;
+    condition?: AlertRuleCondition;
+    /** How long the condition must be false, continuously, before the rule resolves. */
+    resolveAfterMinutes?: number;
+    targets?: AlertRuleTargetModel[];
+
+    [key: string]: any;
+}
+
+export class AlertRuleTransitionModel implements IAlertRuleTransitionModel {
+    seq?: number;
+    /** Ok or Firing. */
+    status?: string;
+    atUtc?: moment.Moment;
+    value?: number | undefined;
+    /** For a move to Ok, why (cleared, rule_changed, rule_disabled, rule_deleted). */
+    reason?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRuleTransitionModel) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.seq = _data["seq"];
+            this.status = _data["status"];
+            this.atUtc = _data["atUtc"] ? moment(_data["atUtc"].toString()) : undefined as any;
+            this.value = _data["value"];
+            this.reason = _data["reason"];
+        }
+    }
+
+    static fromJS(data: any): AlertRuleTransitionModel {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRuleTransitionModel();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["seq"] = this.seq;
+        data["status"] = this.status;
+        data["atUtc"] = this.atUtc ? this.atUtc.toISOString() : undefined as any;
+        data["value"] = this.value;
+        data["reason"] = this.reason;
+        return data;
+    }
+
+    clone(): AlertRuleTransitionModel {
+        const json = this.toJSON();
+        let result = new AlertRuleTransitionModel();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRuleTransitionModel {
+    seq?: number;
+    /** Ok or Firing. */
+    status?: string;
+    atUtc?: moment.Moment;
+    value?: number | undefined;
+    /** For a move to Ok, why (cleared, rule_changed, rule_disabled, rule_deleted). */
+    reason?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class AlertRuleStateModel implements IAlertRuleStateModel {
+    /** Ok or Firing. */
+    status?: string;
+    sinceUtc?: moment.Moment | undefined;
+    /** The last backlog read, capped at the threshold; equal to the threshold means at least that many. */
+    lastValue?: number | undefined;
+    conditionFalseSinceUtc?: moment.Moment | undefined;
+    /** Notices saved with a transition and not delivered yet. */
+    pendingNotices?: number;
+    transitions?: AlertRuleTransitionModel[];
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRuleStateModel) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.status = _data["status"];
+            this.sinceUtc = _data["sinceUtc"] ? moment(_data["sinceUtc"].toString()) : undefined as any;
+            this.lastValue = _data["lastValue"];
+            this.conditionFalseSinceUtc = _data["conditionFalseSinceUtc"] ? moment(_data["conditionFalseSinceUtc"].toString()) : undefined as any;
+            this.pendingNotices = _data["pendingNotices"];
+            if (Array.isArray(_data["transitions"])) {
+                this.transitions = [] as any;
+                for (let item of _data["transitions"])
+                    this.transitions!.push(AlertRuleTransitionModel.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): AlertRuleStateModel {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRuleStateModel();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["status"] = this.status;
+        data["sinceUtc"] = this.sinceUtc ? this.sinceUtc.toISOString() : undefined as any;
+        data["lastValue"] = this.lastValue;
+        data["conditionFalseSinceUtc"] = this.conditionFalseSinceUtc ? this.conditionFalseSinceUtc.toISOString() : undefined as any;
+        data["pendingNotices"] = this.pendingNotices;
+        if (Array.isArray(this.transitions)) {
+            data["transitions"] = [];
+            for (let item of this.transitions)
+                data["transitions"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): AlertRuleStateModel {
+        const json = this.toJSON();
+        let result = new AlertRuleStateModel();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRuleStateModel {
+    /** Ok or Firing. */
+    status?: string;
+    sinceUtc?: moment.Moment | undefined;
+    /** The last backlog read, capped at the threshold; equal to the threshold means at least that many. */
+    lastValue?: number | undefined;
+    conditionFalseSinceUtc?: moment.Moment | undefined;
+    /** Notices saved with a transition and not delivered yet. */
+    pendingNotices?: number;
+    transitions?: AlertRuleTransitionModel[];
+
+    [key: string]: any;
+}
+
+export class AlertRuleModel implements IAlertRuleModel {
+    id?: string;
+    endpointId?: string;
+    name?: string;
+    enabled?: boolean;
+    condition?: AlertRuleCondition;
+    resolveAfterMinutes?: number;
+    targets?: AlertRuleTargetModel[];
+    state?: AlertRuleStateModel;
+    createdBy?: string;
+    createdAtUtc?: moment.Moment;
+    updatedBy?: string | undefined;
+    updatedAtUtc?: moment.Moment;
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRuleModel) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.id = _data["id"];
+            this.endpointId = _data["endpointId"];
+            this.name = _data["name"];
+            this.enabled = _data["enabled"];
+            this.condition = _data["condition"] ? AlertRuleCondition.fromJS(_data["condition"]) : undefined as any;
+            this.resolveAfterMinutes = _data["resolveAfterMinutes"];
+            if (Array.isArray(_data["targets"])) {
+                this.targets = [] as any;
+                for (let item of _data["targets"])
+                    this.targets!.push(AlertRuleTargetModel.fromJS(item));
+            }
+            this.state = _data["state"] ? AlertRuleStateModel.fromJS(_data["state"]) : undefined as any;
+            this.createdBy = _data["createdBy"];
+            this.createdAtUtc = _data["createdAtUtc"] ? moment(_data["createdAtUtc"].toString()) : undefined as any;
+            this.updatedBy = _data["updatedBy"];
+            this.updatedAtUtc = _data["updatedAtUtc"] ? moment(_data["updatedAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): AlertRuleModel {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRuleModel();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["id"] = this.id;
+        data["endpointId"] = this.endpointId;
+        data["name"] = this.name;
+        data["enabled"] = this.enabled;
+        data["condition"] = this.condition ? this.condition.toJSON() : undefined as any;
+        data["resolveAfterMinutes"] = this.resolveAfterMinutes;
+        if (Array.isArray(this.targets)) {
+            data["targets"] = [];
+            for (let item of this.targets)
+                data["targets"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["state"] = this.state ? this.state.toJSON() : undefined as any;
+        data["createdBy"] = this.createdBy;
+        data["createdAtUtc"] = this.createdAtUtc ? this.createdAtUtc.toISOString() : undefined as any;
+        data["updatedBy"] = this.updatedBy;
+        data["updatedAtUtc"] = this.updatedAtUtc ? this.updatedAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): AlertRuleModel {
+        const json = this.toJSON();
+        let result = new AlertRuleModel();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRuleModel {
+    id?: string;
+    endpointId?: string;
+    name?: string;
+    enabled?: boolean;
+    condition?: AlertRuleCondition;
+    resolveAfterMinutes?: number;
+    targets?: AlertRuleTargetModel[];
+    state?: AlertRuleStateModel;
+    createdBy?: string;
+    createdAtUtc?: moment.Moment;
+    updatedBy?: string | undefined;
+    updatedAtUtc?: moment.Moment;
+
+    [key: string]: any;
+}
+
+export class AlertRuleList implements IAlertRuleList {
+    rules?: AlertRuleModel[];
+    /** When the evaluator last finished a tick; rules are evaluated every minute while a WebApp instance runs. */
+    evaluatorLastCompletedAtUtc?: moment.Moment | undefined;
+    /** Whether this deployment can mail rule targets. */
+    mailEnabled?: boolean;
+    /** Whether this deployment can call rule webhook targets. */
+    webhookEnabled?: boolean;
+    /** Whether the caller may create, change and delete rules on this endpoint. */
+    canManage?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRuleList) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["rules"])) {
+                this.rules = [] as any;
+                for (let item of _data["rules"])
+                    this.rules!.push(AlertRuleModel.fromJS(item));
+            }
+            this.evaluatorLastCompletedAtUtc = _data["evaluatorLastCompletedAtUtc"] ? moment(_data["evaluatorLastCompletedAtUtc"].toString()) : undefined as any;
+            this.mailEnabled = _data["mailEnabled"];
+            this.webhookEnabled = _data["webhookEnabled"];
+            this.canManage = _data["canManage"];
+        }
+    }
+
+    static fromJS(data: any): AlertRuleList {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRuleList();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.rules)) {
+            data["rules"] = [];
+            for (let item of this.rules)
+                data["rules"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["evaluatorLastCompletedAtUtc"] = this.evaluatorLastCompletedAtUtc ? this.evaluatorLastCompletedAtUtc.toISOString() : undefined as any;
+        data["mailEnabled"] = this.mailEnabled;
+        data["webhookEnabled"] = this.webhookEnabled;
+        data["canManage"] = this.canManage;
+        return data;
+    }
+
+    clone(): AlertRuleList {
+        const json = this.toJSON();
+        let result = new AlertRuleList();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRuleList {
+    rules?: AlertRuleModel[];
+    /** When the evaluator last finished a tick; rules are evaluated every minute while a WebApp instance runs. */
+    evaluatorLastCompletedAtUtc?: moment.Moment | undefined;
+    /** Whether this deployment can mail rule targets. */
+    mailEnabled?: boolean;
+    /** Whether this deployment can call rule webhook targets. */
+    webhookEnabled?: boolean;
+    /** Whether the caller may create, change and delete rules on this endpoint. */
+    canManage?: boolean;
+
+    [key: string]: any;
+}
+
+export class AlertRuleSecret implements IAlertRuleSecret {
+    targetId?: string;
+    signingSecret?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRuleSecret) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.targetId = _data["targetId"];
+            this.signingSecret = _data["signingSecret"];
+        }
+    }
+
+    static fromJS(data: any): AlertRuleSecret {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRuleSecret();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["targetId"] = this.targetId;
+        data["signingSecret"] = this.signingSecret;
+        return data;
+    }
+
+    clone(): AlertRuleSecret {
+        const json = this.toJSON();
+        let result = new AlertRuleSecret();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRuleSecret {
+    targetId?: string;
+    signingSecret?: string;
+
+    [key: string]: any;
+}
+
+export class AlertRuleSaved implements IAlertRuleSaved {
+    rule?: AlertRuleModel;
+    /** The signing secret of each new webhook target, shown only in this response. */
+    secrets?: AlertRuleSecret[];
+
+    [key: string]: any;
+
+    constructor(data?: IAlertRuleSaved) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.rule = _data["rule"] ? AlertRuleModel.fromJS(_data["rule"]) : undefined as any;
+            if (Array.isArray(_data["secrets"])) {
+                this.secrets = [] as any;
+                for (let item of _data["secrets"])
+                    this.secrets!.push(AlertRuleSecret.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): AlertRuleSaved {
+        data = typeof data === 'object' ? data : {};
+        let result = new AlertRuleSaved();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["rule"] = this.rule ? this.rule.toJSON() : undefined as any;
+        if (Array.isArray(this.secrets)) {
+            data["secrets"] = [];
+            for (let item of this.secrets)
+                data["secrets"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): AlertRuleSaved {
+        const json = this.toJSON();
+        let result = new AlertRuleSaved();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAlertRuleSaved {
+    rule?: AlertRuleModel;
+    /** The signing secret of each new webhook target, shown only in this response. */
+    secrets?: AlertRuleSecret[];
 
     [key: string]: any;
 }
@@ -24731,6 +25815,9 @@ export enum MessageAuditAuditType {
     DashboardTokenRemoved = "dashboardTokenRemoved",
     UpdateEndpointMetadata = "updateEndpointMetadata",
     ReprocessDeferred = "reprocessDeferred",
+    AlertRuleCreated = "alertRuleCreated",
+    AlertRuleUpdated = "alertRuleUpdated",
+    AlertRuleDeleted = "alertRuleDeleted",
 }
 
 export class MessageContent implements IMessageContent {
@@ -24897,6 +25984,9 @@ export enum AuditSearchFilterAuditType {
     DashboardTokenRemoved = "dashboardTokenRemoved",
     UpdateEndpointMetadata = "updateEndpointMetadata",
     ReprocessDeferred = "reprocessDeferred",
+    AlertRuleCreated = "alertRuleCreated",
+    AlertRuleUpdated = "alertRuleUpdated",
+    AlertRuleDeleted = "alertRuleDeleted",
 }
 
 export enum StalePendingRowVerdict {
@@ -24986,6 +26076,9 @@ export enum AuditEntryAuditType {
     DashboardTokenRemoved = "dashboardTokenRemoved",
     UpdateEndpointMetadata = "updateEndpointMetadata",
     ReprocessDeferred = "reprocessDeferred",
+    AlertRuleCreated = "alertRuleCreated",
+    AlertRuleUpdated = "alertRuleUpdated",
+    AlertRuleDeleted = "alertRuleDeleted",
 }
 
 export enum AgentSettleRequestOutcome {

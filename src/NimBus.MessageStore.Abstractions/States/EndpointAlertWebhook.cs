@@ -35,8 +35,12 @@ public static class EndpointAlertWebhook
     /// <summary>Header: the signature, as returned by <see cref="Sign"/>.</summary>
     public const string SignatureHeader = "X-NimBus-Signature";
 
+    /// <summary>Header: an alert rule notice's id, the same on every retry of the notice (Spec 053).</summary>
+    public const string NoticeHeader = "X-NimBus-Notice";
+
     private const string SignatureVersion = "v1";
     private const string DerivationLabel = "nimbus-alert-webhook/v1/";
+    private const string RuleDerivationLabel = "nimbus-alert-rule-webhook/v1/";
 
     /// <summary>
     /// Whether <paramref name="url"/> can be a webhook subscription's URL: absolute, HTTPS, without
@@ -69,7 +73,30 @@ public static class EndpointAlertWebhook
         ArgumentException.ThrowIfNullOrEmpty(signingKey);
         ArgumentException.ThrowIfNullOrEmpty(subscriptionId);
 
-        var hash = HMACSHA256.HashData(Encoding.UTF8.GetBytes(signingKey), Encoding.UTF8.GetBytes(DerivationLabel + subscriptionId));
+        return Derive(signingKey, DerivationLabel + subscriptionId);
+    }
+
+    /// <summary>
+    /// The secret an alert rule's webhook target is signed with (Spec 053):
+    /// <c>nbwh_</c> + base64url(HMAC-SHA256(<paramref name="signingKey"/>,
+    /// "nimbus-alert-rule-webhook/v1/" + <paramref name="ruleId"/> + "/" + <paramref name="targetId"/>)).
+    /// Its own label keeps a rule target's secret apart from every subscription's.
+    /// </summary>
+    /// <param name="signingKey">The deployment's <c>NimBus:Alerts:Webhook:SigningKey</c>.</param>
+    /// <param name="ruleId">The rule's id.</param>
+    /// <param name="targetId">The target's id within the rule.</param>
+    public static string DeriveRuleTargetSigningSecret(string signingKey, string ruleId, string targetId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(signingKey);
+        ArgumentException.ThrowIfNullOrEmpty(ruleId);
+        ArgumentException.ThrowIfNullOrEmpty(targetId);
+
+        return Derive(signingKey, RuleDerivationLabel + ruleId + "/" + targetId);
+    }
+
+    private static string Derive(string signingKey, string input)
+    {
+        var hash = HMACSHA256.HashData(Encoding.UTF8.GetBytes(signingKey), Encoding.UTF8.GetBytes(input));
         return SecretPrefix + Convert.ToBase64String(hash).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 

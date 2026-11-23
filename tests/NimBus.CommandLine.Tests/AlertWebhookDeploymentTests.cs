@@ -142,7 +142,7 @@ public sealed class AlertWebhookDeploymentTests
     }
 
     [Fact]
-    public async Task The_token_entries_reach_the_core_template_as_json()
+    public async Task The_token_entries_reach_both_templates_as_json()
     {
         var (core, webApp) = await DeployAsync(new AlertWebhookDeployment(
             SigningKey,
@@ -154,7 +154,8 @@ public sealed class AlertWebhookDeploymentTests
         var entry = json.RootElement.EnumerateArray().Single();
         Assert.Equal("https://agent.example.com/api/triggers", entry.GetProperty("urlPrefix").GetString());
         Assert.Equal("https://azuresre.dev", entry.GetProperty("audience").GetString());
-        Assert.DoesNotContain(webApp.Arguments, a => a.StartsWith(name, StringComparison.Ordinal));
+        // Spec 053: the WebApp delivers alert rule notices, so it gets the same prefixes.
+        Assert.Equal(argument, webApp.Arguments.Single(a => a.StartsWith(name, StringComparison.Ordinal)));
     }
 
     [Fact]

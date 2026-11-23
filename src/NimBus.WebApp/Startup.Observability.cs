@@ -60,7 +60,8 @@ public partial class Startup
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
                     .AddNimBusInstrumentation()
-                    .AddMeter(NimBusIntelligenceTelemetry.Name);
+                    .AddMeter(NimBusIntelligenceTelemetry.Name)
+                    .AddMeter(Services.AlertRules.AlertRuleTelemetry.Name);
             })
             .WithTracing(tracing =>
             {

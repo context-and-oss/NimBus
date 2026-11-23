@@ -29,7 +29,7 @@ namespace NimBus.MessageStore.SqlServer;
 /// Concurrency: ROWVERSION on UnresolvedEvents enables optimistic conflict
 /// detection if needed by future writers.
 /// </summary>
-public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore
+public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore
 {
     private readonly SqlServerMessageStoreOptions _options;
     private readonly string _schema;
@@ -44,6 +44,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     private readonly SqlServerEndpointMetadataStore _endpointMetadata;
     private readonly SqlServerMessageTrackingStore _messageTracking;
     private readonly SqlServerOperatorOperationStore _operations;
+    private readonly SqlServerAlertRuleStore _alertRules;
 
     public SqlServerMessageStore(IOptions<SqlServerMessageStoreOptions> options)
     {
@@ -67,6 +68,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
         _endpointMetadata = new SqlServerEndpointMetadataStore(context);
         _messageTracking = new SqlServerMessageTrackingStore(context);
         _operations = new SqlServerOperatorOperationStore(context);
+        _alertRules = new SqlServerAlertRuleStore(context);
     }
 
     private async Task<SqlConnection> OpenAsync()
@@ -200,6 +202,31 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
         => _operations.ListDueOperatorOperations(statuses, updatedBeforeUtc, limit);
     public Task<int> CountOperatorOperations(OperatorOperationQuery query) => _operations.CountOperatorOperations(query);
     public Task<int> PurgeExpiredOperatorOperations(DateTime nowUtc, int limit) => _operations.PurgeExpiredOperatorOperations(nowUtc, limit);
+
+    // ───────── Alert rules (IAlertRuleStore) — implementation in SqlServerAlertRuleStore ─────────
+    /// <inheritdoc />
+    public Task<IReadOnlyList<AlertRule>> ListAlertRulesByEndpoint(string endpointId) => _alertRules.ListAlertRulesByEndpoint(endpointId);
+    /// <inheritdoc />
+    public Task<IReadOnlyList<AlertRule>> ListAlertRulesToEvaluate(int limit) => _alertRules.ListAlertRulesToEvaluate(limit);
+    /// <inheritdoc />
+    public Task<IReadOnlyList<string>> ListEndpointsWithFiringAlertRules() => _alertRules.ListEndpointsWithFiringAlertRules();
+    /// <inheritdoc />
+    public Task<AlertRule?> GetAlertRule(string endpointId, string ruleId) => _alertRules.GetAlertRule(endpointId, ruleId);
+    /// <inheritdoc />
+    public Task<AlertRule?> TrySaveAlertRuleDefinition(AlertRule rule, long? expectedVersion) => _alertRules.TrySaveAlertRuleDefinition(rule, expectedVersion);
+    /// <inheritdoc />
+    public Task<long?> TrySaveAlertRuleState(string endpointId, string ruleId, long expectedVersion, AlertRuleState state)
+        => _alertRules.TrySaveAlertRuleState(endpointId, ruleId, expectedVersion, state);
+    /// <inheritdoc />
+    public Task<bool> DeleteAlertRule(string endpointId, string ruleId, long expectedVersion) => _alertRules.DeleteAlertRule(endpointId, ruleId, expectedVersion);
+    /// <inheritdoc />
+    public Task<bool> TryClaimAlertRuleEvaluatorTick(DateTime dueBefore, DateTime nowUtc, string instanceId)
+        => _alertRules.TryClaimAlertRuleEvaluatorTick(dueBefore, nowUtc, instanceId);
+    /// <inheritdoc />
+    public Task<bool> CompleteAlertRuleEvaluatorTick(DateTime claimedAtUtc, DateTime completedAtUtc)
+        => _alertRules.CompleteAlertRuleEvaluatorTick(claimedAtUtc, completedAtUtc);
+    /// <inheritdoc />
+    public Task<AlertRuleEvaluatorStatus> GetAlertRuleEvaluatorStatus() => _alertRules.GetAlertRuleEvaluatorStatus();
 
     // ───────── Dashboard tokens (IDashboardTokenStore) — implementation in SqlServerEndpointMetadataStore ─────────
     public Task<DashboardTokenSettings> GetDashboardTokenSettings() => _endpointMetadata.GetDashboardTokenSettings();

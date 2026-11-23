@@ -91,3 +91,13 @@ public sealed class CosmosDbOperatorOperationStoreTests : OperatorOperationStore
     protected override IOperatorOperationStore CreateStore()
         => (IOperatorOperationStore)CosmosDbStoreTestHarness.CreateStore();
 }
+
+[TestClass]
+public sealed class CosmosDbAlertRuleStoreTests : AlertRuleStoreConformanceTests
+{
+    // One database shared by every run with no reset: the lease outlives a test.
+    protected override bool SharesEvaluatorLease => true;
+
+    protected override IAlertRuleStore CreateStore()
+        => (IAlertRuleStore)CosmosDbStoreTestHarness.CreateStore();
+}

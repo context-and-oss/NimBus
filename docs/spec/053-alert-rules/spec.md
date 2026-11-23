@@ -2,7 +2,8 @@
 
 Status: **approved** (2026-11-20) with every decision in §12 and the answers in §13. Revision 3
 (2026-11-21): Phase 0 is done (§14). Revision 4 (2026-11-22, approved by the repo owner): the
-changes from a Codex review (§16). Phase 1 is not started. Target: a 5.x minor.
+changes from a Codex review (§16). Revision 5 (2026-11-23): Phase 1, built with one evaluator lease
+per tick and a threshold of 1–100 after a live measurement (§7). Target: a 5.x minor.
 Baseline: master `108dd6c2` plus the endpoint alert webhooks delivered in the same pull request as
 this spec ([plan](../../plan/2026-11-16-alert-webhook.md)).
 Related: [Spec 051](../051-operations-agent-support/spec.md) §2 (the webhook this spec reuses),
@@ -64,9 +65,9 @@ Store queries a rule evaluator can reuse:
    failure.
 3. Rules reuse the existing mail and webhook channels, the webhook signature and the bearer-token
    mode. No new transport.
-4. Scaled-out WebApp instances never evaluate a rule twice for one interval, and only the current
-   claimant may commit a state change. A claimant that stops after claiming loses that interval;
-   the next one evaluates the rule again.
+4. Scaled-out WebApp instances never evaluate a rule twice for one interval, and a write based on
+   an older read never lands. An instance that stops after claiming a tick loses that interval;
+   the next tick evaluates the rules again.
 5. Rules are visible to everyone who can read the endpoint: what the rule is, whether it is firing,
    and since when.
 6. The existing per-failure subscriptions keep working unchanged.
@@ -97,7 +98,7 @@ Store queries a rule evaluator can reuse:
     "eventTypes": ["CustomerChanged"],          // optional; empty = all
     "statuses": ["Failed", "DeadLettered"],     // optional; empty = Failed, DeadLettered, Unsupported
     "errorTextContains": "timeout",             // optional; ≤ 200 chars, case-insensitive
-    "threshold": 5                              // 1–1,000 (provisional, §7)
+    "threshold": 5                              // 1–100 (§7)
   },
   "resolveAfterMinutes": 5,      // condition false this long before Resolved; 1–60
   "targets": [
@@ -154,32 +155,36 @@ An `AlertRuleEvaluatorService : BackgroundService` in the WebApp, modelled on
 `HeartbeatBackgroundService`: a `PeriodicTimer` every 60 s, one scope per tick, every failure logged
 and swallowed.
 
-Each tick:
+Each tick (revision 5: one lease per tick instead of per-rule claims, decided from the Phase 1
+measurement in §7):
 
-1. List the enabled rules due for evaluation (`IAlertRuleStore.ListDueAsync(now)`: rules whose
-   `nextEvaluationAtUtc` has passed or that have pending notices, without their transition history).
-2. Claim each: `TryClaimEvaluationAsync(endpointId, ruleId, expectedVersion, claimedUntil: now + 60 s)`
-   returns a claim token, or null when another instance won. A lost claim skips the rule.
-3. Evaluate: `GetFailedEventsAcrossEndpoints(filter, [endpointId], null, maxItemCount: threshold)`,
-   where `filter` maps `eventTypes`, `statuses` and `errorTextContains`, with no date bounds, and
-   count the rows. The rule only needs to know whether the backlog reaches the threshold, so it asks
-   for at most `threshold` failures and never follows the continuation token; a count of `threshold`
-   means "at least". This bounds the rows returned, not the work done (on Cosmos DB the store reads
-   whole service pages and projects the error content), so its charge is still to be measured (§7).
-4. Apply the state machine (§5.4). Save the new state, and a pending notice per target for a
-   transition, in one write with the claim token: `TrySaveStateAsync(endpointId, ruleId, claim,
-   state)`. A token invalidated by an edit, a delete or a newer claim fails the save, so only the
-   current claimant commits.
-5. Deliver the rule's pending notices (§5.5). A delivered notice is removed from the state with the
-   same token; a failed one stays pending and is retried on the following ticks with the same
+1. Claim the tick: `TryClaimAlertRuleEvaluatorTick(dueBefore: now − 55 s, now, instanceId)`. Scaled-out
+   instances all try; the store lets exactly one win per interval. A lost claim ends the tick.
+2. List the rules to look at (`ListAlertRulesToEvaluate`): every enabled rule, and every disabled
+   rule that still has pending notices, without their transition history.
+3. Evaluate each enabled rule: `GetFailedEventsAcrossEndpoints(filter, [endpointId], null,
+   maxItemCount: threshold)`, where `filter` maps `eventTypes`, `statuses` and `errorTextContains`,
+   with no date bounds, and count the rows. The rule only needs to know whether the backlog reaches
+   the threshold, so it asks for at most `threshold` failures and never follows the continuation
+   token; a count of `threshold` means "at least". Measured at about 5 RU for thresholds up to 5
+   whatever the backlog, and 16–30 RU at 100 (§7).
+4. Apply the state machine (§5.4). Only when the state changed (a transition, the start of a false
+   run, a new backlog value, a delivered or failed notice) save it, with a pending notice per target
+   for a transition, conditional on the version read this tick:
+   `TrySaveAlertRuleState(endpointId, ruleId, expectedVersion, state)`. An edit, a delete or another
+   instance's newer write fails the save, and the next tick sees the new rule.
+5. Deliver the rule's pending notices (§5.5). A delivered notice is removed with a second
+   conditional save; a failed one stays pending and is retried on the following ticks with the same
    notice id, for up to 24 hours. A crash between saving and sending no longer loses the only
    *opened* notice.
+6. Record the tick as completed (`CompleteAlertRuleEvaluatorTick`).
+
+A quiet rule therefore costs one read a minute and no write.
 
 **Hosting prerequisite.** Rules run only while a WebApp instance runs. The App Service template
 keeps Always On on by default (`alwaysOnEnabled`), and Aspire/ACA deployments must keep at least one
-replica. The Rules section shows each rule's last evaluation time, and the WebApp reports the time
-of the evaluator's last successful tick with its other health data, so a stopped evaluator is
-visible.
+replica. The Rules section shows when the evaluator last completed a tick, and warns when that is
+more than a few minutes ago, so a stopped evaluator is visible.
 
 **Why the WebApp and not the Resolver.** The Resolver runs on Service Bus triggers and, on Flex
 Consumption, scales to zero when there is no traffic, which is exactly when a silence rule (Phase 2)
@@ -195,22 +200,22 @@ docs recommend one for the critical endpoints (§11).
   "status": "Ok" | "Firing",
   "since": "2026-11-20T09:14:00Z",          // when the current status began
   "lastValue": 5,                           // last count, capped at the threshold ("≥ 5")
-  "lastEvaluatedAtUtc": "2026-11-20T09:20:00Z",
   "conditionFalseSinceUtc": null,           // while Firing: first evaluation that found it false
-  "nextEvaluationAtUtc": "2026-11-20T09:21:00Z",
-  "version": 412,                           // bumped by every claim, save and edit
-  "claimToken": "…", "claimedUntilUtc": "…", // the current claimant
+  "updatedAtUtc": "2026-11-20T09:20:00Z",   // the last state write (not the last evaluation)
   "transitionSeq": 7,                       // numbers the transitions; part of each notice id
-  "pendingNotices": [ { "noticeId": "c1f0…:7:t2", "targetId": "t2", "attempts": 1, "firstTriedAtUtc": "…" } ],
+  "pendingNotices": [ { "noticeId": "c1f0…:7:t2", "target": { … }, "attempts": 1, "createdAtUtc": "…" } ],
   "transitions": [ { "seq": 7, "status": "Firing", "atUtc": "…", "value": 5 }, … ]   // last 20
 }
 ```
 
+The rule's `version`, outside the state, is bumped by every definition and state write. The
+evaluator lease (§5.7) holds when the last tick was claimed and completed.
+
 - **Ok → Firing** when `lastValue >= threshold`. Notice: *opened*.
 - **Firing → Ok** when the condition has been false for `resolveAfterMinutes` of continuous
   observation. Notice: *resolved*, reason `cleared`. A true evaluation clears
-  `conditionFalseSinceUtc`, and so does a gap of more than two intervals since
-  `lastEvaluatedAtUtc`: two false samples an hour apart don't prove the backlog stayed low.
+  `conditionFalseSinceUtc`, and so does a gap of more than two intervals since the evaluator's
+  previous completed tick: two false samples an hour apart don't prove the backlog stayed low.
 - No repeated notices while Firing: one *opened* notice, and the receiving tool tracks the incident
   (§13, answer 3). Retrying an undelivered notice is not a reminder: it is the same notice id.
 - Editing a Firing rule's condition, disabling it or deleting it closes the incident: a *resolved*
@@ -268,51 +273,57 @@ The evaluator sends from the WebApp, so the senders move to a shared place:
 
 ### 5.7 Storage
 
-New `IAlertRuleStore` in `NimBus.MessageStore.Abstractions`:
-
-Every rule operation names the endpoint as well as the rule: Cosmos point operations need the
-partition key, and the API checks that the rule belongs to the endpoint in the URL (§5.8).
+`IAlertRuleStore` in `NimBus.MessageStore.Abstractions` (revision 5, as built in Phase 1). Every
+rule operation names the endpoint as well as the rule: Cosmos point operations need the partition
+key, and the API checks that the rule belongs to the endpoint in the URL (§5.8).
 
 ```csharp
-Task<IReadOnlyList<AlertRule>> ListByEndpointAsync(string endpointId, CancellationToken ct = default);
-Task<IReadOnlyList<AlertRuleDue>> ListDueAsync(DateTime nowUtc, CancellationToken ct = default);  // no history
-Task<AlertRule?> GetAsync(string endpointId, string ruleId, CancellationToken ct = default);
-Task<AlertRule?> TrySaveDefinitionAsync(AlertRule rule, long? expectedVersion, AlertRuleState? resetState, CancellationToken ct = default);
-Task<bool> DeleteAsync(string endpointId, string ruleId, long expectedVersion, CancellationToken ct = default);
-Task<AlertRuleClaim?> TryClaimEvaluationAsync(string endpointId, string ruleId, long expectedVersion, DateTime claimedUntilUtc, CancellationToken ct = default);
-Task<bool> TrySaveStateAsync(string endpointId, string ruleId, AlertRuleClaim claim, AlertRuleState state, CancellationToken ct = default);
+Task<IReadOnlyList<AlertRule>> ListAlertRulesByEndpoint(string endpointId);
+Task<IReadOnlyList<AlertRule>> ListAlertRulesToEvaluate(int limit);            // no transitions
+Task<IReadOnlyList<string>> ListEndpointsWithFiringAlertRules();
+Task<AlertRule?> GetAlertRule(string endpointId, string ruleId);
+Task<AlertRule?> TrySaveAlertRuleDefinition(AlertRule rule, long? expectedVersion);
+Task<long?> TrySaveAlertRuleState(string endpointId, string ruleId, long expectedVersion, AlertRuleState state);
+Task<bool> DeleteAlertRule(string endpointId, string ruleId, long expectedVersion);
+Task<bool> TryClaimAlertRuleEvaluatorTick(DateTime dueBefore, DateTime nowUtc, string instanceId);
+Task<bool> CompleteAlertRuleEvaluatorTick(DateTime claimedAtUtc, DateTime completedAtUtc);
+Task<AlertRuleEvaluatorStatus> GetAlertRuleEvaluatorStatus();
 ```
 
-- `TrySaveDefinitionAsync` creates (`expectedVersion` null) or replaces a definition, and writes
-  `resetState` in the same write when an edit closes an incident (§5.4). It bumps the version, so an
-  outstanding claim can no longer save.
-- `AlertRuleClaim` carries the token and the version it was granted at. `TrySaveStateAsync` succeeds
-  only while the stored token and version still match.
-- **Cosmos DB:** a new `alert-rules` container partitioned by `/endpointId`. The logical `version`
-  is stored in the document, and every conditional write also sends the ETag read with it
-  (`IfMatchEtag`), as `CosmosDbEndpointMetadataStore` does for its revisions. `ListDueAsync` is a
-  cross-partition query over a small container, projecting no history.
-- **SQL Server:** migration `0029_AlertRules.sql`, a table with the definition and state as JSON
-  columns plus `Version`, `EndpointId`, `Enabled`, `ClaimToken` and `NextEvaluationAtUtc`;
-  conditional writes are `UPDATE … WHERE Version = @expected`.
+- Every rule write bumps the logical `version`; conditional writes compare it.
+  `TrySaveAlertRuleDefinition` creates (`expectedVersion` null) or replaces the whole rule,
+  including the state an edit resets (§5.4), in one write. `TrySaveAlertRuleState` replaces only
+  the state.
+- The evaluator lease is one record: a claim succeeds only when the last one is older than
+  `dueBefore`, and concurrent claimants for one tick get exactly one success.
+- **Cosmos DB:** a new `alertrules` container (lowercase, like the store's other containers)
+  partitioned by `/endpointId`, also listed in `deploy/bicep/templates/cosmosDB.bicep`. Every
+  conditional write also sends the ETag read with it (`IfMatchEtag`), as
+  `CosmosDbEndpointMetadataStore` does for its revisions. The lease is a document in a reserved
+  partition. `ListAlertRulesToEvaluate` is a cross-partition query projecting no transitions.
+- **SQL Server:** migration `0029_AlertRules.sql`: `AlertRules` (definition and state as JSON, the
+  transitions in their own column, plus `Version`, `Enabled`, `Status` and `HasPendingNotices`) and
+  a one-row `AlertRuleEvaluator`; conditional writes are `UPDATE … WHERE Version = @expected`.
 - **In-memory:** a dictionary under a lock.
-- The conformance suite covers create, read, list, delete, a lost claim, a save with a stale token,
-  a save after an edit invalidated the claim, the edit-and-reset write, and the endpoint check.
+- The conformance suite covers create, read, list, delete, the endpoint check, stale-version saves,
+  an edit invalidating a state save, the edit-and-reset write, and concurrent lease claims.
 - `InstrumentingMessageTrackingStoreDecorator` decorates `IMessageTrackingStore` only. The new store
-  is a separate interface and needs no forwarding there (§14, fact 4).
+  is a separate interface and needs no forwarding there (§14, fact 4); the evaluator has its own
+  meters (`NimBus.AlertRules`).
 
 ### 5.8 API and permissions
 
-Under `/api/v1/endpoints/{endpointId}/alert-rules` in `api-spec.yaml` (NSwag generates the
-controller and client):
+Under `/api/v1/endpoint/{endpointId}/alert-rules` in `api-spec.yaml` (singular `endpoint`, like
+every other endpoint-scoped path; tag `AlertRules`; NSwag generates the controller and client):
 
 | Method | Path | Who |
 |---|---|---|
-| GET | `/` | Anyone who can read the endpoint. Readers get each rule's condition, state and last evaluation, and only the number and kind of its targets. Owners also get mail addresses and webhook hosts; never a secret |
+| GET | `/` | Anyone who can read the endpoint. Readers get each rule's condition and state, and only the id and kind of its targets. Owners also get mail addresses and webhook URLs; never a secret. The response also says when the evaluator last completed a tick and which channels are configured |
 | POST | `/` | Endpoint Owner or Site Owner. Returns the rule and each new webhook target's secret, once |
 | PUT | `/{ruleId}` | Same. Existing targets keep their id and secret; new ones get a secret |
 | DELETE | `/{ruleId}` | Same |
-| POST | `/{ruleId}/preview` | Same. The backlog over the last 24 h (Phase 3) |
+| GET | `/api/v1/alert-rules/firing` | Anyone; the endpoints the caller can read that have a Firing rule, for the endpoint list |
+| POST | `/{ruleId}/preview` | Same as PUT. The backlog over the last 24 h (Phase 3) |
 
 Every `{ruleId}` call loads the rule by the endpoint in the URL and the rule id together, and
 answers 404 when the rule belongs to another endpoint, as subscription deletion binds its id to the
@@ -355,12 +366,23 @@ is not a proven bound: the Cosmos read loop reads whole service pages, and its p
 than the histogram's. Revision 4 dropped the window, so the read no longer discards candidates at a
 date boundary.
 
-**Open until measured (Phase 1, before the evaluator ships):** the backlog read on a live account
-at thresholds 1 and 1,000, on sparse and outage-sized backlogs, with long error texts and a
-selective text filter, counting the RU of every service page; plus the per-minute cost of listing
-due rules, claiming and saving state. The evaluation interval (60 s) and the threshold limit (1–1,000,
-one page of `PaginationLimits.MaxPageSize`) are provisional until then. A setting
-(`NimBus:Alerts:Rules:EvaluationInterval`, minimum 60 s) is added if the numbers call for it.
+**Measured in Phase 1** on a live serverless account
+([plan](../../plan/2026-11-22-spec-053-phase-1.md)). The backlog read costs about 5 RU at
+thresholds up to 5 whether the endpoint has 10 or 10,000 failures, 16–30 RU at threshold 100, and
+120–180 RU at threshold 1,000. A selective error-text filter costs 4.2 RU, or 58.7 RU over 1,000
+failures with 4 KB error texts, which Cosmos scans. Rule bookkeeping: listing 900 rules costs
+56.7 RU, a point read 1 RU, and a conditional replace of a 2 KB rule 13.4 RU.
+
+Two decisions follow (repo owner, 2026-11-22):
+
+- **One lease per tick** (§5.3). Per-rule claims and saves would cost about 27 RU of writes per rule
+  per minute whether anything changed: about 450 RU/s for 1,000 rules on a provisioned account, or
+  $0.29 per rule per month on serverless. With the lease, a quiet rule costs one read a minute and
+  no write.
+- **Threshold 1–100** (§5.1), so every read stays at about 30 RU or less.
+
+The evaluation interval stays fixed at 60 s. A setting (`NimBus:Alerts:Rules:EvaluationInterval`,
+minimum 60 s) is added only if a deployment needs it.
 
 ## 8. Tests
 
@@ -368,10 +390,9 @@ one page of `PaginationLimits.MaxPageSize`) are provisional until then. A settin
 - Evaluator (in-memory store, fake clock): fires at the threshold and not below; resolves only
   after `resolveAfterMinutes` of continuous false; a true evaluation, or a gap of more than two
   intervals, restarts that time; one evaluation per minute when two evaluator instances share a
-  store; a lost claim skips; the read asks for at most `threshold` failures with no date bounds; a
-  claimant that stops after claiming commits nothing and the next interval evaluates again; a
-  claimant paused past its interval cannot commit over the next claimant's state; a disabled rule
-  is not evaluated.
+  store (one lease per tick); a quiet rule is not written; the read asks for at most `threshold`
+  failures with no date bounds; a save based on a version an edit or another instance changed is
+  dropped; a disabled rule is not evaluated, but its pending notices are still delivered.
 - Notices: a failed send stays pending and is retried with the same notice id, and is dropped after
   24 hours; a crash after the state save still delivers the *opened* notice on the next tick;
   editing, disabling or deleting a Firing rule sends a *resolved* notice with its reason, and the
@@ -397,7 +418,7 @@ one page of `PaginationLimits.MaxPageSize`) are provisional until then. A settin
 | Phase | Content |
 |---|---|
 | 0 | **Done 2026-11-21.** Verify §14. Move the senders to the shared library with no behaviour change |
-| 1 | Measure the backlog read (§7). Store, evaluator, `failure_backlog`, state machine, pending notices, mail and webhook notices, API, the Rules section, deploy settings, docs |
+| 1 | **Built 2026-11-23.** Measure the backlog read (§7). Store, evaluator, `failure_backlog`, state machine, pending notices, mail and webhook notices, API, the Rules section, deploy settings, docs |
 | 2 | `failure_occurrences`: *N* or more failed attempts in a window, counted from the message history even if resolved later; the source (`IMetricsStore.GetEndpointMetrics` failed counts, or `GetFailedMessageInsights` when an error-text filter applies) and its cost are settled first. `blocked_session`: a Failed or handoff event has held its session for more than *T* minutes, or more than *N* events wait behind it; needs a new store query for the oldest blocking event per endpoint (all providers, conformance). `silence`: no message handled on the endpoint for *T* minutes, from `GetEndpointMetrics(from, to)` |
 | 3 | Preview over the last 24 h; a failure-classification category filter (only when Integration Intelligence is on, and only for classified failures); firing rules in the Monitor and in MCP `nimbus_get_worklist` |
 | v6 | Subscriptions become a built-in rule (§13, answer 1): deprecated with `[Obsolete]` and a bridge in a 5.x minor once rules ship, migrated and removed in v6 (`docs/versioning.md`). How a subscription's per-window notice maps onto a rule needs its own spec before v6. Its acceptance criterion: a migrated subscriber keeps today's behaviour, including a new notice after each window while failures keep arriving, which a Firing rule does not send |
@@ -462,7 +483,7 @@ Details and the measurement: [Phase 0 plan](../../plan/2026-11-21-spec-053-phase
 1. **RU charge on Cosmos DB.** Measured on a live serverless account: 2.8 RU with no match at
    10,000 and 100,000 events, 42.6 RU for 873 failures in the window, 472.7 RU (750 ms) for 10,000.
    The charge follows the matching failures, not the container size. Led to the capped read in
-   §5.3 and the 1–1,000 threshold in §5.1, both provisional until the capped read is measured (§7).
+   §5.3. Phase 1 measured that read (§7): the threshold is 1–100 and evaluators share one lease.
 2. **`ErrorText` parity.** Case-insensitive substring on all three providers (SQL Server under the
    default CI collation, with `%`, `_` and `[` escaped). A new conformance test,
    `GetFailedEventHistogram_matches_error_text_as_a_case_insensitive_substring`, passes on all three.
@@ -510,3 +531,7 @@ Details and the measurement: [Phase 0 plan](../../plan/2026-11-21-spec-053-phase
   - §5.8: every rule call checks the rule belongs to the endpoint in the URL; Readers don't see
     recipient addresses.
   - §9: the v6 migration keeps subscribers' per-window behaviour.
+- 2026-11-23, revision 5: Phase 1 measured the backlog read and the rule bookkeeping on a live
+  Cosmos DB account (§7). Per-rule claims became one evaluator lease per tick with writes only on a
+  change (§5.3, §5.4, §5.7), the threshold limit became 1–100 (§5.1), and the API, container and
+  store names follow what was built (§5.7, §5.8).

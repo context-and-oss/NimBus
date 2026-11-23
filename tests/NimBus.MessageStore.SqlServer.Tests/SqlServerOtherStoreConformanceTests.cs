@@ -188,3 +188,18 @@ public sealed class SqlServerOperatorOperationStoreTests : OperatorOperationStor
     protected override IOperatorOperationStore CreateStore()
         => (IOperatorOperationStore)SqlServerStoreTestHarness.CreateStore(typeof(SqlServerOperatorOperationStoreTests));
 }
+
+[TestClass]
+public sealed class SqlServerAlertRuleStoreTests : AlertRuleStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerAlertRuleStoreTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerAlertRuleStoreTests));
+
+    protected override IAlertRuleStore CreateStore()
+        => (IAlertRuleStore)SqlServerStoreTestHarness.CreateStore(typeof(SqlServerAlertRuleStoreTests));
+}
