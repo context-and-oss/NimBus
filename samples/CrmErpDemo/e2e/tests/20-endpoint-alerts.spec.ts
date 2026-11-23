@@ -128,7 +128,9 @@ test("an alert rule opens on a failed event and resolves when it is cleared", as
   const saved = await harness.nimbus.createAlertRule(flow.endpoint, {
     name: `E2E backlog ${flow.session}`,
     enabled: true,
-    condition: { threshold: 1, eventTypes: [flow.eventType] },
+    // Failed only: earlier scenarios leave dead-lettered events of this type behind on purpose,
+    // and a dead letter is never cleared, so a rule counting them would never resolve.
+    condition: { threshold: 1, eventTypes: [flow.eventType], statuses: ["Failed"] },
     resolveAfterMinutes: 1,
     targets: [
       { type: "webhook", url: `${ServiceUrls.erpApi}/api/webhooks/endpoint-alerts` },
