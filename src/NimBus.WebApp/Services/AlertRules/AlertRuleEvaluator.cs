@@ -287,7 +287,7 @@ public sealed partial class AlertRuleEvaluator
                 pending.Value,
                 rule.Condition,
                 pending.SinceUtc,
-                AlertRuleText.FailedMessagesUrl(_delivery.WebAppUrl, rule.EndpointId, rule.Condition));
+                AlertRuleText.LinkFor(_delivery.WebAppUrl, rule.EndpointId, rule.Condition));
             try
             {
                 await _delivery.DeliverAsync(notice, pending.Target, cancellationToken).ConfigureAwait(false);

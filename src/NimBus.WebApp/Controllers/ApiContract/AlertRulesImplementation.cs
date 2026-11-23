@@ -273,7 +273,7 @@ public class AlertRulesImplementation : Api.IAlertRulesApiController
         {
             var notice = new AlertRuleNotice(pending.NoticeId, rule.RuleId, rule.Name, rule.EndpointId, AlertRuleStatus.Ok,
                 AlertRuleResolveReasons.RuleDeleted, null, rule.Condition, now,
-                AlertRuleText.FailedMessagesUrl(_delivery.WebAppUrl, rule.EndpointId, rule.Condition));
+                AlertRuleText.LinkFor(_delivery.WebAppUrl, rule.EndpointId, rule.Condition));
             try
             {
                 await _delivery.DeliverAsync(notice, pending.Target, _context.RequestAborted);

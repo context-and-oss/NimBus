@@ -171,6 +171,7 @@ public sealed class AlertWebhookSender : IAlertWebhookSender, IAlertRuleWebhookS
             writer.WriteString("ruleId", notice.RuleId);
             writer.WriteString("ruleName", notice.RuleName);
             writer.WriteString("endpointId", notice.EndpointId);
+            writer.WriteString("conditionKind", notice.Condition.Kind);
             writer.WriteString("status", notice.StatusName);
             if (notice.Reason is null)
             {

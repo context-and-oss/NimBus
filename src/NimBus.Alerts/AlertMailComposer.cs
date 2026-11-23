@@ -85,8 +85,9 @@ public sealed class AlertMailComposer
         var headline = firing
             ? $"{notice.RuleName} is firing on {notice.EndpointId}"
             : $"{notice.RuleName} resolved on {notice.EndpointId}";
+        var counted = notice.Condition.Kind is AlertRuleConditionKinds.FailureBacklog or AlertRuleConditionKinds.FailureOccurrences;
         var value = notice.Value is { } v
-            ? (v >= notice.Condition.Threshold
+            ? (counted && v >= notice.Condition.Threshold
                 ? string.Create(CultureInfo.InvariantCulture, $"at least {v}")
                 : v.ToString(CultureInfo.InvariantCulture))
             : null;
@@ -96,9 +97,9 @@ public sealed class AlertMailComposer
             ("Rule", notice.RuleName),
             ("Endpoint", notice.EndpointId),
             ("Condition", condition),
-            ("Failed events", value),
+            (AlertRuleText.ValueLabel(notice.Condition), value),
             (firing ? "Firing since" : "Resolved at", since),
-            ("Reason", firing ? null : DescribeReason(notice.Reason)),
+            ("Reason", firing ? null : DescribeReason(notice.Reason, notice.Condition)),
         };
         var footer = $"You get this mail because {to} is a target of the alert rule \"{notice.RuleName}\" on "
             + $"{notice.EndpointId}. You get one mail when the rule starts firing and one when it resolves. "
@@ -112,9 +113,9 @@ public sealed class AlertMailComposer
             RuleTextBody(headline, facts, notice.WebUiUrl, footer));
     }
 
-    private static string? DescribeReason(string? reason) => reason switch
+    private static string? DescribeReason(string? reason, AlertRuleCondition condition) => reason switch
     {
-        AlertRuleResolveReasons.Cleared => "The failed events were cleared.",
+        AlertRuleResolveReasons.Cleared => AlertRuleText.ClearedText(condition),
         AlertRuleResolveReasons.RuleChanged => "The rule was changed.",
         AlertRuleResolveReasons.RuleDisabled => "The rule was disabled.",
         AlertRuleResolveReasons.RuleDeleted => "The rule was deleted.",
@@ -136,7 +137,7 @@ public sealed class AlertMailComposer
         html.Append("</table>");
         if (url is not null)
         {
-            html.Append(CultureInfo.InvariantCulture, $"<p><a href=\"{E(url)}\">Open the failed events</a></p>");
+            html.Append(CultureInfo.InvariantCulture, $"<p><a href=\"{E(url)}\">Open in NimBus</a></p>");
         }
 
         html.Append(CultureInfo.InvariantCulture, $"<p style=\"color:#59636e;font-size:12px\">{E(footer)}</p>");
@@ -157,7 +158,7 @@ public sealed class AlertMailComposer
         if (url is not null)
         {
             text.AppendLine();
-            text.AppendLine(CultureInfo.InvariantCulture, $"Open the failed events: {url}");
+            text.AppendLine(CultureInfo.InvariantCulture, $"Open in NimBus: {url}");
         }
 
         text.AppendLine();
