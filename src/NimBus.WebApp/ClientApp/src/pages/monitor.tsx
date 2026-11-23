@@ -284,6 +284,8 @@ interface SummaryShape {
   blockedSessionsTotal: number | undefined;
   /** The endpoint with most blocked sessions; undefined when none are blocked. */
   topBlocked: { id: string; count: number } | undefined;
+  /** Endpoints with a firing alert rule; undefined when no endpoint says whether one is. */
+  rulesFiringCount: number | undefined;
 }
 
 type Tone = "danger" | "warning" | "neutral";
@@ -358,6 +360,20 @@ const SummaryRow = ({
             : summary.topBlocked
               ? `${formatBigNumber(summary.topBlocked.count)} on ${summary.topBlocked.id}`
               : "nothing blocked"
+        }
+      />
+      <Tile
+        label="Rules firing"
+        title="Endpoints with at least one alert rule firing. The endpoint's Alerts tab names the rule."
+        tone={(summary.rulesFiringCount ?? 0) > 0 ? "danger" : "neutral"}
+        value={summary.rulesFiringCount === undefined ? "–" : formatBigNumber(summary.rulesFiringCount)}
+        valueClass={(summary.rulesFiringCount ?? 0) > 0 ? DANGER_TEXT : undefined}
+        sub={
+          summary.rulesFiringCount === undefined
+            ? "not reported"
+            : summary.rulesFiringCount === 0
+              ? "nothing firing"
+              : `${summary.rulesFiringCount === 1 ? "endpoint" : "endpoints"} with a firing rule`
         }
       />
       <Tile
@@ -762,6 +778,7 @@ const EndpointRow = ({
           {state === "nogo" && endpoint.firstFailureAt && (
             <span className={cn("font-sans text-[0.8em]", DANGER_TEXT)}>for {formatDuration(now - endpoint.firstFailureAt)}</span>
           )}
+          {endpoint.alertRuleFiring === true && <RuleFiringBadge />}
         </span>
       </td>
       <td className={cell}>
@@ -844,6 +861,24 @@ const StateBadge = ({ state, count, fresh }: { state: EndpointState; count?: num
     {STATE_BADGE[state].label}
     {count !== undefined ? ` · ${formatBigNumber(count)}` : ""}
     {fresh ? " · new" : ""}
+  </span>
+);
+
+/**
+ * The endpoint list's Firing badge at the wall's scale: the error tint with a red dot, so it reads
+ * apart from the solid "failing" pill. The feed never says which rule fires.
+ */
+const RuleFiringBadge = () => (
+  <span
+    title="An alert rule is firing"
+    className={cn(
+      "inline-flex items-center gap-[0.6em] font-mono text-[0.72em] tracking-[0.14em] uppercase font-bold",
+      "px-[0.95em] py-[0.35em] rounded-full border",
+      "bg-status-danger-50 border-status-danger/40 text-status-danger-ink dark:bg-red-950/40 dark:text-red-200",
+    )}
+  >
+    <span aria-hidden="true" className="w-[0.65em] h-[0.65em] rounded-full bg-status-danger" />
+    rule firing
   </span>
 );
 
@@ -1111,6 +1146,7 @@ function summarize(endpoints: MonitorEndpoint[]): SummaryShape {
     backlogDeltaPerMin: 0,
     blockedSessionsTotal: undefined,
     topBlocked: undefined,
+    rulesFiringCount: undefined,
   };
 
   for (const e of endpoints) {
@@ -1126,6 +1162,9 @@ function summarize(endpoints: MonitorEndpoint[]): SummaryShape {
     summary.deferredTotal += e.status.deferredCount ?? 0;
     if (e.blockedSessionCount !== undefined) {
       summary.blockedSessionsTotal = (summary.blockedSessionsTotal ?? 0) + e.blockedSessionCount;
+    }
+    if (e.alertRuleFiring !== undefined) {
+      summary.rulesFiringCount = (summary.rulesFiringCount ?? 0) + (e.alertRuleFiring ? 1 : 0);
     }
     // Backlog rate over the same sample window the status hook keeps.
     if (e.samples.length >= 2) {

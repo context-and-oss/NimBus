@@ -90,6 +90,11 @@ export type MonitorEndpoint = {
   blockedSessionCount?: number;
   /** Heartbeat liveness, when the endpoint takes part in heartbeats. */
   heartbeat?: api.MonitorFeedHeartbeat;
+  /**
+   * Whether an alert rule on the endpoint is firing (never which one); undefined when the server
+   * has no alert rules or could not read them.
+   */
+  alertRuleFiring?: boolean;
 };
 
 /** What the status feed says about the deployment and the caller. */
@@ -398,6 +403,7 @@ export function useMonitorData(
         ratePerMin,
         blockedSessionCount: extras?.blockedSessionCount ?? undefined,
         heartbeat: extras?.heartbeat ?? undefined,
+        alertRuleFiring: extras?.alertRuleFiring ?? undefined,
       };
     });
 
