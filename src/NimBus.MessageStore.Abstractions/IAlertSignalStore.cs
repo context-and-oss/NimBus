@@ -13,7 +13,7 @@ namespace NimBus.MessageStore.Abstractions;
 /// </summary>
 /// <remarks>
 /// Every read is for one endpoint, matched exactly (never as a prefix), and bounded: the evaluator
-/// calls these once a minute per rule.
+/// calls these once a minute per rule. A null or empty endpoint id throws <see cref="ArgumentException"/>.
 /// </remarks>
 public interface IAlertSignalStore
 {
