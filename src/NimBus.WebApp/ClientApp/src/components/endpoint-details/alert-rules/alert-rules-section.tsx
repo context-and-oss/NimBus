@@ -14,13 +14,16 @@ import {
 import { WorkspaceSection } from "components/workspace/workspace";
 import AlertRuleFormModal from "./alert-rule-form-modal";
 import {
+  availableKindsOf,
   describeCondition,
   evaluatorFreshness,
-  failedEventsText,
+  lastValueText,
   requestFromRule,
+  resolveText,
   ruleStatus,
   targetLabel,
   targetsSummary,
+  valueLabel,
 } from "./alert-rules-model";
 
 type Form = { mode: "new" } | { mode: "edit"; rule: api.AlertRuleModel };
@@ -46,9 +49,10 @@ function Targets({ targets }: { targets: api.AlertRuleTargetModel[] | undefined 
 }
 
 /**
- * The Rules section of an endpoint's Alerts tab (Spec 053): rules that fire on the endpoint's
- * failure backlog. Everyone who can read the endpoint sees the rules and their state; Owners also
- * see the targets' addresses and can create, change and delete rules.
+ * The Rules section of an endpoint's Alerts tab (Spec 053): rules that fire on a condition of the
+ * endpoint, such as its failure backlog, failures in a time window, a blocked session or silence.
+ * Everyone who can read the endpoint sees the rules and their state; Owners also see the targets'
+ * addresses and can create, change and delete rules.
  */
 export default function AlertRulesSection({ endpointId }: { endpointId: string }) {
   const { addToast } = useToast();
@@ -151,9 +155,9 @@ export default function AlertRulesSection({ endpointId }: { endpointId: string }
       count={rules.length}
       intro={
         <>
-          A rule fires when this many events on the endpoint are failed at once, and resolves when they are cleared
-          (resubmitted and completed, skipped or deleted) and the count stays below the threshold for the
-          resolve-after time. Each target gets one notice when the rule starts firing and one when it resolves.
+          A rule fires when its condition holds on the endpoint, for example when failed events pile up or a session
+          stays blocked, and resolves when the condition has stayed clear for the resolve-after time. Each target
+          gets one notice when the rule starts firing and one when it resolves.
         </>
       }
       action={
@@ -192,7 +196,7 @@ export default function AlertRulesSection({ endpointId }: { endpointId: string }
             <p className="m-0 font-medium">No alert rules</p>
             {canManage && (
               <p className="m-0 text-sm text-muted-foreground">
-                Create a rule to be told when failures pile up on this endpoint, and again when they are cleared.
+                Create a rule to be told when something goes wrong on this endpoint, and again when it clears.
               </p>
             )}
           </div>
@@ -203,7 +207,7 @@ export default function AlertRulesSection({ endpointId }: { endpointId: string }
                 <th scope="col" className={WORKSPACE_TH}>Name</th>
                 <th scope="col" className={WORKSPACE_TH}>Condition</th>
                 <th scope="col" className={WORKSPACE_TH}>Status</th>
-                <th scope="col" className={WORKSPACE_TH}>Failed events</th>
+                <th scope="col" className={WORKSPACE_TH}>Last value</th>
                 <th scope="col" className={WORKSPACE_TH}>Targets</th>
                 {canManage && <RowActionsHeader />}
               </tr>
@@ -218,16 +222,16 @@ export default function AlertRulesSection({ endpointId }: { endpointId: string }
                     </td>
                     <td className="px-4 py-2">
                       {describeCondition(rule.condition)}
-                      <div className="text-xs text-muted-foreground">
-                        Resolves after {rule.resolveAfterMinutes} min below the threshold
-                      </div>
+                      <div className="text-xs text-muted-foreground">{resolveText(rule)}</div>
                     </td>
                     <td className="px-4 py-2">
                       <Badge variant={status.variant} title={status.title}>
                         {status.label}
                       </Badge>
                     </td>
-                    <td className="px-4 py-2 tabular-nums">{failedEventsText(rule)}</td>
+                    <td className="px-4 py-2 tabular-nums">
+                      <span title={valueLabel(rule.condition)}>{lastValueText(rule)}</span>
+                    </td>
                     <td className="max-w-[16rem] px-4 py-2">
                       <Targets targets={rule.targets} />
                     </td>
@@ -246,6 +250,7 @@ export default function AlertRulesSection({ endpointId }: { endpointId: string }
           rule={form.mode === "edit" ? form.rule : undefined}
           mailEnabled={!!list.mailEnabled}
           webhookEnabled={!!list.webhookEnabled}
+          availableKinds={availableKindsOf(list.availableKinds)}
           onClose={() => setForm(undefined)}
           onSaved={() => void load()}
         />

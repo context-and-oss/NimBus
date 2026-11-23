@@ -74,6 +74,30 @@ const OWNER_RULES = [
   }),
 ];
 
+const ALL_KINDS = ["failure_backlog", "failure_occurrences", "blocked_session", "silence"];
+
+const KIND_RULES = [
+  ruleJson({
+    id: "k1",
+    name: "Failure burst",
+    condition: { kind: "failure_occurrences", threshold: 2, windowMinutes: 15, eventTypes: [], statuses: [] },
+    state: { status: "Firing", sinceUtc: SINCE, lastValue: 2, pendingNotices: 0, transitions: [] },
+  }),
+  ruleJson({
+    id: "k2",
+    name: "Stuck session",
+    condition: { kind: "blocked_session", minutes: 30, deferredThreshold: 50, threshold: 1, eventTypes: [], statuses: [] },
+    state: { status: "Firing", sinceUtc: SINCE, lastValue: 31, pendingNotices: 0, transitions: [] },
+  }),
+  ruleJson({
+    id: "k3",
+    name: "Quiet endpoint",
+    enabled: false,
+    condition: { kind: "silence", minutes: 60, threshold: 1, eventTypes: [], statuses: [] },
+    state: { status: "Ok", lastValue: 0, pendingNotices: 0, transitions: [] },
+  }),
+];
+
 const list = (overrides: Record<string, unknown> = {}) =>
   api.AlertRuleList.fromJS({
     rules: OWNER_RULES,
@@ -129,7 +153,7 @@ describe("AlertRulesSection table", () => {
     const firing = await rowOf("ERP timeouts");
     expect(
       within(firing).getByText(
-        '≥ 5 failed events (Failed, DeadLettered) of type OrderPlaced, error contains "timeout"',
+        '5 or more failed events (Failed, DeadLettered) of type OrderPlaced with an error containing "timeout"',
       ),
     ).toBeTruthy();
     expect(within(firing).getByText("Firing since 00:01")).toBeTruthy();
@@ -140,7 +164,7 @@ describe("AlertRulesSection table", () => {
 
     const ok = await rowOf("Any failure");
     expect(within(ok).getByText("Ok")).toBeTruthy();
-    expect(within(ok).getByText("≥ 3 failed events")).toBeTruthy();
+    expect(within(ok).getByText("3 or more failed events")).toBeTruthy();
     expect(within(ok).getByText("1")).toBeTruthy();
 
     const paused = await rowOf("Paused rule");
@@ -150,6 +174,28 @@ describe("AlertRulesSection table", () => {
     expect(screen.getByRole("button", { name: "New rule" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /^Actions for / })).toHaveLength(3);
     expect(apiMocks.getEndpointAlertRules).toHaveBeenCalledWith("ErpEndpoint");
+  });
+
+  it("describes and reads each condition kind in its own words", async () => {
+    apiMocks.getEndpointAlertRules.mockResolvedValue(list({ rules: KIND_RULES, availableKinds: ALL_KINDS }));
+    renderSection();
+
+    const burst = await rowOf("Failure burst");
+    expect(within(burst).getByText("2 or more failures in 15 min")).toBeTruthy();
+    expect(within(burst).getByText("≥ 2")).toBeTruthy();
+    expect(within(burst).getByText("Resolves after 5 min below the threshold")).toBeTruthy();
+
+    const stuck = await rowOf("Stuck session");
+    expect(within(stuck).getByText("a session blocked for 30 min, or 50 or more deferred events")).toBeTruthy();
+    expect(within(stuck).getByText("31 min").getAttribute("title")).toBe("Blocked for (minutes)");
+    expect(within(stuck).getByText("Resolves after 5 min without the condition")).toBeTruthy();
+
+    const quiet = await rowOf("Quiet endpoint");
+    expect(within(quiet).getByText("no completed message for 1 h")).toBeTruthy();
+    expect(within(quiet).getByText("0 min")).toBeTruthy();
+
+    expect(screen.getByRole("columnheader", { name: "Last value" })).toBeTruthy();
+    expect(screen.queryByText(/failed at once/)).toBeNull();
   });
 
   it("offers Edit, Disable and Delete last in an Owner's row menu", async () => {
@@ -342,6 +388,136 @@ describe("AlertRulesSection form", () => {
     expect(within(dialog).getByText(/Alert mail is not configured on this WebApp/)).toBeTruthy();
   });
 
+  it("offers only the deployment's condition kinds, and only the backlog when it names none", async () => {
+    const user = userEvent.setup();
+    renderSection();
+    await user.click(await screen.findByRole("button", { name: "New rule" }));
+    let kind = within(screen.getByRole("dialog", { name: "New rule" })).getByLabelText("Condition") as HTMLSelectElement;
+    expect([...kind.options].map((o) => o.value)).toEqual(["failure_backlog"]);
+    cleanup();
+
+    apiMocks.getEndpointAlertRules.mockResolvedValue(list({ availableKinds: ["failure_backlog", "silence"] }));
+    renderSection();
+    await user.click(await screen.findByRole("button", { name: "New rule" }));
+    kind = within(screen.getByRole("dialog", { name: "New rule" })).getByLabelText("Condition") as HTMLSelectElement;
+    expect([...kind.options].map((o) => o.value)).toEqual(["failure_backlog", "silence"]);
+    expect(kind.value).toBe("failure_backlog");
+  });
+
+  it("creates a failures-in-a-window rule with only its own fields", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(list({ availableKinds: ALL_KINDS }));
+    apiMocks.postEndpointAlertRule.mockResolvedValue(api.AlertRuleSaved.fromJS({ rule: KIND_RULES[0], secrets: [] }));
+    renderSection();
+    await user.click(await screen.findByRole("button", { name: "New rule" }));
+    const dialog = screen.getByRole("dialog", { name: "New rule" });
+
+    await user.selectOptions(within(dialog).getByLabelText("Condition"), "failure_occurrences");
+    expect(within(dialog).getByText(/failed attempts on ErpEndpoint in the window/)).toBeTruthy();
+    expect(within(dialog).queryByLabelText("Failed")).toBeNull();
+    expect((within(dialog).getByLabelText("Window (minutes)") as HTMLInputElement).value).toBe("15");
+
+    await user.type(within(dialog).getByLabelText("Name"), "Failure burst");
+    await user.clear(within(dialog).getByLabelText("Threshold"));
+    await user.type(within(dialog).getByLabelText("Threshold"), "2");
+    await user.clear(within(dialog).getByLabelText("Window (minutes)"));
+    await user.type(within(dialog).getByLabelText("Window (minutes)"), "1441");
+    await user.click(within(dialog).getByRole("button", { name: "Add mail" }));
+    await user.type(within(dialog).getByLabelText("Mail address 1"), "erp@example.com");
+    await user.click(within(dialog).getByRole("button", { name: "Create rule" }));
+    expect(within(dialog).getByText("Enter a whole number of minutes from 5 to 1440.")).toBeTruthy();
+    expect(apiMocks.postEndpointAlertRule).not.toHaveBeenCalled();
+
+    await user.clear(within(dialog).getByLabelText("Window (minutes)"));
+    await user.type(within(dialog).getByLabelText("Window (minutes)"), "30");
+    await user.click(within(dialog).getByRole("button", { name: "Create rule" }));
+
+    await waitFor(() => expect(apiMocks.postEndpointAlertRule).toHaveBeenCalledTimes(1));
+    const [, body] = apiMocks.postEndpointAlertRule.mock.calls[0];
+    expect(JSON.parse(JSON.stringify(body)).condition).toEqual({
+      kind: "failure_occurrences",
+      eventTypes: [],
+      threshold: 2,
+      windowMinutes: 30,
+    });
+  });
+
+  it("needs blocked minutes, deferred events or both for a blocked-session rule", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(list({ availableKinds: ALL_KINDS }));
+    apiMocks.postEndpointAlertRule.mockResolvedValue(api.AlertRuleSaved.fromJS({ rule: KIND_RULES[1], secrets: [] }));
+    renderSection();
+    await user.click(await screen.findByRole("button", { name: "New rule" }));
+    const dialog = screen.getByRole("dialog", { name: "New rule" });
+
+    await user.selectOptions(within(dialog).getByLabelText("Condition"), "blocked_session");
+    expect(within(dialog).queryByLabelText("Threshold")).toBeNull();
+    expect(within(dialog).queryByLabelText("Error text contains")).toBeNull();
+    expect((within(dialog).getByLabelText("Blocked for (minutes)") as HTMLInputElement).value).toBe("30");
+    expect((within(dialog).getByLabelText("Or deferred events at least") as HTMLInputElement).value).toBe("");
+
+    await user.type(within(dialog).getByLabelText("Name"), "Stuck session");
+    await user.clear(within(dialog).getByLabelText("Blocked for (minutes)"));
+    await user.click(within(dialog).getByRole("button", { name: "Add mail" }));
+    await user.type(within(dialog).getByLabelText("Mail address 1"), "erp@example.com");
+    await user.click(within(dialog).getByRole("button", { name: "Create rule" }));
+    expect(within(dialog).getByText("Enter the blocked minutes, the deferred events or both.")).toBeTruthy();
+    expect(apiMocks.postEndpointAlertRule).not.toHaveBeenCalled();
+
+    await user.type(within(dialog).getByLabelText("Or deferred events at least"), "50");
+    await user.click(within(dialog).getByRole("button", { name: "Create rule" }));
+    await waitFor(() => expect(apiMocks.postEndpointAlertRule).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(JSON.stringify(apiMocks.postEndpointAlertRule.mock.calls[0][1])).condition).toEqual({
+      kind: "blocked_session",
+      deferredThreshold: 50,
+    });
+  });
+
+  it("creates a silence rule with its default minutes", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(list({ availableKinds: ALL_KINDS }));
+    apiMocks.postEndpointAlertRule.mockResolvedValue(api.AlertRuleSaved.fromJS({ rule: KIND_RULES[2], secrets: [] }));
+    renderSection();
+    await user.click(await screen.findByRole("button", { name: "New rule" }));
+    const dialog = screen.getByRole("dialog", { name: "New rule" });
+
+    await user.selectOptions(within(dialog).getByLabelText("Condition"), "silence");
+    expect(within(dialog).getByText(/no message on ErpEndpoint has completed/)).toBeTruthy();
+    await user.type(within(dialog).getByLabelText("Name"), "Quiet endpoint");
+    await user.click(within(dialog).getByRole("button", { name: "Add mail" }));
+    await user.type(within(dialog).getByLabelText("Mail address 1"), "erp@example.com");
+    await user.click(within(dialog).getByRole("button", { name: "Create rule" }));
+
+    await waitFor(() => expect(apiMocks.postEndpointAlertRule).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(JSON.stringify(apiMocks.postEndpointAlertRule.mock.calls[0][1])).condition).toEqual({
+      kind: "silence",
+      minutes: 60,
+    });
+  });
+
+  it("opens an existing rule with its kind and values", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(list({ rules: KIND_RULES, availableKinds: ALL_KINDS }));
+    renderSection();
+    await openMenu(user, "Stuck session", "Edit…");
+    const dialog = screen.getByRole("dialog", { name: "Edit rule Stuck session" });
+    expect((within(dialog).getByLabelText("Condition") as HTMLSelectElement).value).toBe("blocked_session");
+    expect((within(dialog).getByLabelText("Blocked for (minutes)") as HTMLInputElement).value).toBe("30");
+    expect((within(dialog).getByLabelText("Or deferred events at least") as HTMLInputElement).value).toBe("50");
+  });
+
+  it("keeps an existing rule's kind selectable when the deployment no longer offers it", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(list({ rules: KIND_RULES }));
+    renderSection();
+    await openMenu(user, "Failure burst", "Edit…");
+    const kind = within(screen.getByRole("dialog", { name: "Edit rule Failure burst" })).getByLabelText(
+      "Condition",
+    ) as HTMLSelectElement;
+    expect(kind.value).toBe("failure_occurrences");
+    expect([...kind.options].map((o) => o.value)).toEqual(["failure_backlog", "failure_occurrences"]);
+  });
+
   it("edits a rule and keeps its targets' ids", async () => {
     const user = userEvent.setup();
     apiMocks.putEndpointAlertRule.mockResolvedValue(api.AlertRuleSaved.fromJS({ rule: ruleJson(), secrets: [] }));
@@ -384,6 +560,30 @@ describe("AlertRulesSection row actions", () => {
     expect(ruleId).toBe("r3");
     expect(body.enabled).toBe(true);
     await waitFor(() => expect(apiMocks.getEndpointAlertRules).toHaveBeenCalledTimes(3));
+  });
+
+  it("keeps a rule's condition kind and its fields when disabling or enabling it", async () => {
+    const user = userEvent.setup();
+    apiMocks.getEndpointAlertRules.mockResolvedValue(list({ rules: KIND_RULES, availableKinds: ALL_KINDS }));
+    apiMocks.putEndpointAlertRule.mockResolvedValue(api.AlertRuleSaved.fromJS({ rule: KIND_RULES[1], secrets: [] }));
+    renderSection();
+
+    await openMenu(user, "Stuck session", "Disable");
+    await waitFor(() => expect(apiMocks.putEndpointAlertRule).toHaveBeenCalledTimes(1));
+    let body = JSON.parse(JSON.stringify(apiMocks.putEndpointAlertRule.mock.calls[0][2]));
+    expect(body.enabled).toBe(false);
+    expect(body.condition).toEqual({ kind: "blocked_session", minutes: 30, deferredThreshold: 50 });
+
+    await openMenu(user, "Failure burst", "Disable");
+    await waitFor(() => expect(apiMocks.putEndpointAlertRule).toHaveBeenCalledTimes(2));
+    body = JSON.parse(JSON.stringify(apiMocks.putEndpointAlertRule.mock.calls[1][2]));
+    expect(body.condition).toEqual({ kind: "failure_occurrences", eventTypes: [], threshold: 2, windowMinutes: 15 });
+
+    await openMenu(user, "Quiet endpoint", "Enable");
+    await waitFor(() => expect(apiMocks.putEndpointAlertRule).toHaveBeenCalledTimes(3));
+    body = JSON.parse(JSON.stringify(apiMocks.putEndpointAlertRule.mock.calls[2][2]));
+    expect(body.enabled).toBe(true);
+    expect(body.condition).toEqual({ kind: "silence", minutes: 60 });
   });
 
   it("deletes a rule only after confirming, then refreshes", async () => {

@@ -1,24 +1,48 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import * as api from "api-client";
 import { errorMessage } from "api-client/problem";
-import { Button, Checkbox, Input, Label, Modal, ModalBody, ModalFooter, ModalHeader, Toggle, useToast } from "components/ui";
+import {
+  Button,
+  Checkbox,
+  Input,
+  Label,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Select,
+  Toggle,
+  useToast,
+} from "components/ui";
 import { Combobox, type ComboboxOption } from "components/ui/combobox";
 import { getEventTypesByEndpoint } from "hooks/event-types";
 import { copyToClipboard } from "lib/clipboard";
 import {
+  BLOCKED_MAX,
+  BLOCKED_MIN,
+  CONDITION_KINDS,
+  DEFERRED_MAX,
+  DEFERRED_MIN,
   ERROR_TEXT_MAX,
   FAILURE_STATUSES,
+  KIND_LABELS,
   NAME_MAX,
   RESOLVE_MAX,
   RESOLVE_MIN,
+  SILENCE_MAX,
+  SILENCE_MIN,
   TARGETS_MAX,
   THRESHOLD_MAX,
   THRESHOLD_MIN,
+  WINDOW_MAX,
+  WINDOW_MIN,
   draftFromRule,
   emptyDraft,
+  kindOf,
   newTargetKey,
   requestFromDraft,
   validateDraft,
+  type ConditionKind,
   type RuleDraft,
   type TargetType,
 } from "./alert-rules-model";
@@ -29,6 +53,8 @@ export interface AlertRuleFormModalProps {
   rule?: api.AlertRuleModel;
   mailEnabled: boolean;
   webhookEnabled: boolean;
+  /** The condition kinds the deployment can evaluate; an edited rule's own kind is offered too. */
+  availableKinds: ConditionKind[];
   onClose: () => void;
   /** Called after a successful save, before any secret is shown. */
   onSaved: (saved: api.AlertRuleSaved) => void;
@@ -47,11 +73,62 @@ const Hint = ({ children }: { children: ReactNode }) => (
   <p className="m-0 mt-1 text-xs text-muted-foreground">{children}</p>
 );
 
+/** What each kind watches, under the kind picker. */
+function kindHelp(kind: ConditionKind, endpointId: string): string {
+  switch (kind) {
+    case "failure_occurrences":
+      return `Counts the failed attempts on ${endpointId} in the window, from message history, even when the events were resolved since.`;
+    case "blocked_session":
+      return `Watches for sessions on ${endpointId} held up by a failure: the oldest Failed or handed-off event has not changed for the given minutes, or at least the given number of events are deferred.`;
+    case "silence":
+      return `Fires when no message on ${endpointId} has completed for the given minutes, for example when a producer stops sending.`;
+    default:
+      return `Counts the events on ${endpointId} that are failed now (Failed, DeadLettered or Unsupported, narrowed by the filters below), however long ago they failed. Resolved means the failures were cleared by a resubmit, skip or delete.`;
+  }
+}
+
+interface NumberFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  min: number;
+  max: number;
+  error?: string;
+  /** The id of an error this field shares with another, which also marks this field. */
+  sharedErrorId?: string;
+  hint: ReactNode;
+  onChange: (value: string) => void;
+}
+
+const NumberField = ({ id, label, value, min, max, error, sharedErrorId, hint, onChange }: NumberFieldProps) => {
+  const errorId = `${id}-error`;
+  const describedBy = [error ? errorId : undefined, sharedErrorId].filter(Boolean).join(" ") || undefined;
+  return (
+    <div>
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        className="mt-1"
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        value={value}
+        error={!!error || !!sharedErrorId}
+        aria-describedby={describedBy}
+        onChange={(e) => onChange(e.currentTarget.value)}
+      />
+      <FieldError id={errorId} text={error} />
+      <Hint>{hint}</Hint>
+    </div>
+  );
+};
+
 // New rule / Edit rule. The endpoint details page is a Page, not a Workspace, so the form lives
 // in a modal instead of the Manage pages' inspector drawer. A new webhook target's signing secret
 // comes back only in the save response, so the modal then stays open on the secrets until Done.
 export default function AlertRuleFormModal(props: AlertRuleFormModalProps) {
-  const { endpointId, rule, mailEnabled, webhookEnabled, onClose, onSaved } = props;
+  const { endpointId, rule, mailEnabled, webhookEnabled, availableKinds, onClose, onSaved } = props;
   const editing = !!rule;
   const { addToast } = useToast();
   const [client] = useState(() => new api.Client(api.CookieAuth()));
@@ -194,6 +271,28 @@ export default function AlertRuleFormModal(props: AlertRuleFormModalProps) {
 
   const atTargetLimit = draft.targets.length >= TARGETS_MAX;
   const title = editing ? `Edit rule ${rule?.name ?? ""}`.trim() : "New rule";
+  // A rule keeps its own kind selectable even if the deployment no longer offers it.
+  const kindOptions = CONDITION_KINDS.filter(
+    (k) => availableKinds.includes(k) || (rule !== undefined && kindOf(rule.condition) === k),
+  ).map((k) => ({ value: k, label: KIND_LABELS[k] }));
+  const counted = draft.kind === "failure_backlog" || draft.kind === "failure_occurrences";
+  const resolveField = (
+    <NumberField
+      id="alert-rule-resolve"
+      label="Resolve after (minutes)"
+      value={draft.resolveAfterMinutes}
+      min={RESOLVE_MIN}
+      max={RESOLVE_MAX}
+      error={errors.resolveAfterMinutes}
+      hint={
+        <>
+          How long the {counted ? "count must stay below the threshold" : "condition must stay clear"} before the rule
+          resolves ({RESOLVE_MIN} to {RESOLVE_MAX}).
+        </>
+      }
+      onChange={(resolveAfterMinutes) => update({ resolveAfterMinutes })}
+    />
+  );
 
   return (
     <Modal isOpen onClose={onClose} size="xl" closeOnOverlayClick={false} label={title}>
@@ -201,11 +300,8 @@ export default function AlertRuleFormModal(props: AlertRuleFormModalProps) {
       <ModalBody>
         <form id={FORM_ID} noValidate onSubmit={(e) => void save(e)} className="space-y-4">
           <p className="m-0 text-sm text-muted-foreground">
-            The rule counts the events on {endpointId} that are failed now (Failed, DeadLettered or Unsupported,
-            narrowed by the filters below), however long ago they failed. It fires when the count reaches the
-            threshold, and resolves when it has stayed below for the resolve-after time: resolved means the failures
-            were cleared by a resubmit, skip or delete. Each target gets one notice when the rule starts firing and
-            one when it resolves.
+            The rule fires when its condition holds on {endpointId}, and resolves when the condition has stayed clear for
+            the resolve-after time. Each target gets one notice when the rule starts firing and one when it resolves.
           </p>
 
           <div>
@@ -223,90 +319,164 @@ export default function AlertRuleFormModal(props: AlertRuleFormModalProps) {
             <FieldError id="alert-rule-name-error" text={errors.name} />
           </div>
 
+          <div>
+            <Label htmlFor="alert-rule-kind">Condition</Label>
+            <Select
+              id="alert-rule-kind"
+              className="mt-1"
+              value={draft.kind}
+              options={kindOptions}
+              aria-describedby="alert-rule-kind-help"
+              onChange={(e) => update({ kind: e.currentTarget.value as ConditionKind })}
+            />
+            <p id="alert-rule-kind-help" className="m-0 mt-1 text-xs text-muted-foreground">
+              {kindHelp(draft.kind, endpointId)}
+            </p>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="alert-rule-threshold">Threshold</Label>
-              <Input
+            {counted && (
+              <NumberField
                 id="alert-rule-threshold"
-                className="mt-1"
-                type="number"
-                inputMode="numeric"
+                label="Threshold"
+                value={draft.threshold}
                 min={THRESHOLD_MIN}
                 max={THRESHOLD_MAX}
-                value={draft.threshold}
-                error={!!errors.threshold}
-                aria-describedby={errors.threshold ? "alert-rule-threshold-error" : undefined}
-                onChange={(e) => update({ threshold: e.currentTarget.value })}
+                error={errors.threshold}
+                hint={
+                  draft.kind === "failure_occurrences" ? (
+                    <>
+                      Fire when at least this many attempts fail in the window ({THRESHOLD_MIN} to {THRESHOLD_MAX}).
+                    </>
+                  ) : (
+                    <>
+                      Fire when at least this many events are failed at once ({THRESHOLD_MIN} to {THRESHOLD_MAX}).
+                    </>
+                  )
+                }
+                onChange={(threshold) => update({ threshold })}
               />
-              <FieldError id="alert-rule-threshold-error" text={errors.threshold} />
-              <Hint>
-                Fire when at least this many events are failed at once ({THRESHOLD_MIN} to {THRESHOLD_MAX}).
-              </Hint>
-            </div>
-            <div>
-              <Label htmlFor="alert-rule-resolve">Resolve after (minutes)</Label>
-              <Input
-                id="alert-rule-resolve"
-                className="mt-1"
-                type="number"
-                inputMode="numeric"
-                min={RESOLVE_MIN}
-                max={RESOLVE_MAX}
-                value={draft.resolveAfterMinutes}
-                error={!!errors.resolveAfterMinutes}
-                aria-describedby={errors.resolveAfterMinutes ? "alert-rule-resolve-error" : undefined}
-                onChange={(e) => update({ resolveAfterMinutes: e.currentTarget.value })}
+            )}
+            {draft.kind === "failure_occurrences" && (
+              <NumberField
+                id="alert-rule-window"
+                label="Window (minutes)"
+                value={draft.windowMinutes}
+                min={WINDOW_MIN}
+                max={WINDOW_MAX}
+                error={errors.windowMinutes}
+                hint={
+                  <>
+                    How far back failed attempts are counted ({WINDOW_MIN} to {WINDOW_MAX}).
+                  </>
+                }
+                onChange={(windowMinutes) => update({ windowMinutes })}
               />
-              <FieldError id="alert-rule-resolve-error" text={errors.resolveAfterMinutes} />
-              <Hint>
-                How long the count must stay below the threshold before the rule resolves ({RESOLVE_MIN} to{" "}
-                {RESOLVE_MAX}).
-              </Hint>
-            </div>
-          </div>
-
-          <fieldset className="m-0 border-0 p-0">
-            <legend className="mb-2 text-sm font-medium text-foreground">Statuses</legend>
-            <div className="flex flex-wrap gap-4">
-              {FAILURE_STATUSES.map((status) => (
-                <Checkbox
-                  key={status}
-                  id={`alert-rule-status-${status}`}
-                  label={status}
-                  checked={draft.statuses.includes(status)}
-                  onChange={(e) => toggleStatus(status, e.currentTarget.checked)}
+            )}
+            {draft.kind === "blocked_session" && (
+              <>
+                <NumberField
+                  id="alert-rule-blocked-minutes"
+                  label="Blocked for (minutes)"
+                  value={draft.blockedMinutes}
+                  min={BLOCKED_MIN}
+                  max={BLOCKED_MAX}
+                  error={errors.blockedMinutes}
+                  sharedErrorId={errors.blocked ? "alert-rule-blocked-error" : undefined}
+                  hint={
+                    <>
+                      Optional. Fire when the oldest blocking event has not changed for this long ({BLOCKED_MIN} to{" "}
+                      {BLOCKED_MAX}).
+                    </>
+                  }
+                  onChange={(blockedMinutes) => update({ blockedMinutes })}
                 />
-              ))}
-            </div>
-            <Hint>None picked counts all three.</Hint>
-          </fieldset>
-
-          <div>
-            <p className="m-0 mb-1 text-sm font-medium text-foreground">Event types</p>
-            <Combobox
-              options={eventTypeOptions}
-              value={draft.eventTypes}
-              onChange={(eventTypes) => update({ eventTypes })}
-              placeholder="Type an event"
-            />
-            <FieldError id="alert-rule-event-types-error" text={errors.eventTypes} />
-            <Hint>Leave empty to count every event type on this endpoint.</Hint>
+                <NumberField
+                  id="alert-rule-deferred"
+                  label="Or deferred events at least"
+                  value={draft.deferredThreshold}
+                  min={DEFERRED_MIN}
+                  max={DEFERRED_MAX}
+                  error={errors.deferredThreshold}
+                  sharedErrorId={errors.blocked ? "alert-rule-blocked-error" : undefined}
+                  hint={
+                    <>
+                      Optional. Fire when at least this many events wait behind failures ({DEFERRED_MIN} to{" "}
+                      {DEFERRED_MAX}).
+                    </>
+                  }
+                  onChange={(deferredThreshold) => update({ deferredThreshold })}
+                />
+              </>
+            )}
+            {draft.kind === "silence" && (
+              <NumberField
+                id="alert-rule-silence"
+                label="Silent for (minutes)"
+                value={draft.silenceMinutes}
+                min={SILENCE_MIN}
+                max={SILENCE_MAX}
+                error={errors.silenceMinutes}
+                hint={
+                  <>
+                    Fire when no message has completed for this long ({SILENCE_MIN} to {SILENCE_MAX}).
+                  </>
+                }
+                onChange={(silenceMinutes) => update({ silenceMinutes })}
+              />
+            )}
+            {resolveField}
           </div>
+          {draft.kind === "blocked_session" && <FieldError id="alert-rule-blocked-error" text={errors.blocked} />}
 
-          <div>
-            <Label htmlFor="alert-rule-error-text">Error text contains</Label>
-            <Input
-              id="alert-rule-error-text"
-              className="mt-1"
-              value={draft.errorTextContains}
-              maxLength={ERROR_TEXT_MAX}
-              placeholder="timeout"
-              error={!!errors.errorTextContains}
-              onChange={(e) => update({ errorTextContains: e.currentTarget.value })}
-            />
-            <FieldError id="alert-rule-error-text-error" text={errors.errorTextContains} />
-            <Hint>Optional. Counts only failures whose error text contains this, ignoring case.</Hint>
-          </div>
+          {draft.kind === "failure_backlog" && (
+            <fieldset className="m-0 border-0 p-0">
+              <legend className="mb-2 text-sm font-medium text-foreground">Statuses</legend>
+              <div className="flex flex-wrap gap-4">
+                {FAILURE_STATUSES.map((status) => (
+                  <Checkbox
+                    key={status}
+                    id={`alert-rule-status-${status}`}
+                    label={status}
+                    checked={draft.statuses.includes(status)}
+                    onChange={(e) => toggleStatus(status, e.currentTarget.checked)}
+                  />
+                ))}
+              </div>
+              <Hint>None picked counts all three.</Hint>
+            </fieldset>
+          )}
+
+          {counted && (
+            <>
+              <div>
+                <p className="m-0 mb-1 text-sm font-medium text-foreground">Event types</p>
+                <Combobox
+                  options={eventTypeOptions}
+                  value={draft.eventTypes}
+                  onChange={(eventTypes) => update({ eventTypes })}
+                  placeholder="Type an event"
+                />
+                <FieldError id="alert-rule-event-types-error" text={errors.eventTypes} />
+                <Hint>Leave empty to count every event type on this endpoint.</Hint>
+              </div>
+
+              <div>
+                <Label htmlFor="alert-rule-error-text">Error text contains</Label>
+                <Input
+                  id="alert-rule-error-text"
+                  className="mt-1"
+                  value={draft.errorTextContains}
+                  maxLength={ERROR_TEXT_MAX}
+                  placeholder="timeout"
+                  error={!!errors.errorTextContains}
+                  onChange={(e) => update({ errorTextContains: e.currentTarget.value })}
+                />
+                <FieldError id="alert-rule-error-text-error" text={errors.errorTextContains} />
+                <Hint>Optional. Counts only failures whose error text contains this, ignoring case.</Hint>
+              </div>
+            </>
+          )}
 
           <div className="flex items-center gap-3">
             <Toggle aria-label="Enabled" checked={draft.enabled} onChange={(enabled) => update({ enabled })} />
