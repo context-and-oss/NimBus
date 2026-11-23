@@ -76,13 +76,14 @@ public class RateLimitEndpointMetadataTests
     }
 
     [TestMethod]
-    public void Search_policy_binds_to_both_search_endpoints()
+    public void Search_policy_binds_to_both_search_endpoints_and_the_alert_rule_preview()
     {
         CollectionAssert.AreEquivalent(
             new[]
             {
                 "POST api/v1/messages/search", "POST api/v1/audits/search",
                 "POST api/messages/search", "POST api/audits/search",
+                "POST api/v1/endpoint/{endpointId}/alert-rules/preview", "POST api/endpoint/{endpointId}/alert-rules/preview",
             },
             Routes(RateLimitPolicyNames.Search));
     }
