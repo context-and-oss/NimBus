@@ -209,17 +209,17 @@ test("a failure-occurrences rule opens when attempts fail in its window", async 
   });
   const ruleId = saved.rule.id;
   const secret = saved.secrets[0]?.signingSecret;
-  let failed: Awaited<ReturnType<typeof flow.status>>[number] | undefined;
   try {
     await flow.script(["fail", "fail"]);
     await flow.update("occurrences");
-    [failed] = await flow.status("Failed");
+    const [failed] = await flow.status("Failed");
     await harness.nimbus.resubmit(failed.eventId, failed.lastMessageId);
     await waitFor(async () => {
       const history = await harness.nimbus.history(flow.endpoint, failed!.eventId);
-      return history.filter(m => m.messageType === "ErrorResponse").length >= 2 ? true : null;
+      // The API names message types in camelCase ("errorResponse").
+      return history.filter(m => /^errorresponse$/i.test(m.messageType)).length >= 2 ? true : null;
     }, { timeoutMs: 120_000, description: "Two failed attempts in the event's history" });
-    [failed] = await flow.status("Failed");
+    await flow.status("Failed");
 
     const opened = await waitFor(async () => (await ruleNotices(erp, ruleId, "Firing"))[0] ?? null,
       { timeoutMs: 180_000, description: "Opened failure-occurrences notice" });
@@ -227,7 +227,8 @@ test("a failure-occurrences rule opens when attempts fail in its window", async 
     expect(signatureMatches(secret!, opened.received)).toBe(true);
   } finally {
     await harness.nimbus.deleteAlertRule(flow.endpoint, ruleId);
-    if (failed) await harness.nimbus.skipMessage(failed.eventId, failed.lastMessageId);
+    // Skip the event as it is now: a resubmit changes its last message id.
+    for (const event of await flow.events("Failed")) await harness.nimbus.skipMessage(event.eventId, event.lastMessageId);
     await erp.dispose();
   }
 });
