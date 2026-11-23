@@ -149,6 +149,8 @@ public static class CosmosDbMessageStoreBuilderExtensions
             (IOperatorOperationStore)sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IAlertRuleStore>(sp =>
             (IAlertRuleStore)sp.GetRequiredService<INimBusMessageStore>());
+        services.AddSingleton<IAlertSignalStore>(sp =>
+            (IAlertSignalStore)sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IStorageProviderRegistration>(_ => new CosmosDbStorageProviderRegistration());
         services.AddSingleton<IStorageProviderCapabilities>(_ => new CosmosDbStorageProviderCapabilities());
         services.AddSingleton<ICosmosContainerAdmin>(sp =>

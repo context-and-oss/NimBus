@@ -101,3 +101,10 @@ public sealed class CosmosDbAlertRuleStoreTests : AlertRuleStoreConformanceTests
     protected override IAlertRuleStore CreateStore()
         => (IAlertRuleStore)CosmosDbStoreTestHarness.CreateStore();
 }
+
+[TestClass]
+public sealed class CosmosDbAlertSignalStoreTests : AlertSignalStoreConformanceTests
+{
+    protected override IAlertSignalStore CreateStore()
+        => (IAlertSignalStore)CosmosDbStoreTestHarness.CreateStore();
+}
