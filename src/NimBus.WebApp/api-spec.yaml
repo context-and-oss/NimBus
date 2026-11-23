@@ -6073,33 +6073,57 @@ components:
       title: AlertRuleCondition
       type: object
       description: >-
-        What a rule watches. Phase 1 has one kind, failure_backlog: the events on the endpoint that
-        are failed now (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time
-        window.
+        What a rule watches. failure_backlog: the events on the endpoint that are failed now
+        (Failed, DeadLettered or Unsupported), narrowed by the filters, with no time window.
+        failure_occurrences: failed attempts on the endpoint in the last windowMinutes, counted
+        from message history even if the events were resolved later. blocked_session: the oldest
+        Failed or handed-off event has not changed for minutes, or at least deferredThreshold
+        events are deferred on the endpoint. silence: no message on the endpoint completed for
+        minutes. Fields that don't apply to the kind are ignored.
       properties:
         kind:
           type: string
-          description: failure_backlog.
+          description: failure_backlog, failure_occurrences, blocked_session or silence. Omitted means failure_backlog.
         eventTypes:
           type: array
-          description: Event types to count; empty counts every type.
+          description: Event types to count (backlog and occurrences); empty counts every type.
           items:
             type: string
         statuses:
           type: array
-          description: Statuses to count (Failed, DeadLettered, Unsupported); empty counts all three.
+          description: Statuses to count (backlog only; Failed, DeadLettered, Unsupported); empty counts all three.
           items:
             type: string
         errorTextContains:
           type: string
           nullable: true
           maxLength: 200
-          description: A case-insensitive substring the error text must contain.
+          description: A case-insensitive substring the error text must contain (backlog and occurrences).
         threshold:
           type: integer
           minimum: 1
           maximum: 100
-          description: The backlog at which the rule fires.
+          description: The count at which the rule fires (backlog and occurrences).
+        windowMinutes:
+          type: integer
+          nullable: true
+          minimum: 5
+          maximum: 1440
+          description: The window failed attempts are counted in (occurrences; required there).
+        minutes:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 1440
+          description: >-
+            Blocked session: how long the oldest blocking event has not changed (1–1440). Silence:
+            how long nothing completed (5–1440; required there).
+        deferredThreshold:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 1000
+          description: The number of deferred events at which a blocked-session rule fires. A blocked-session rule needs minutes, deferredThreshold or both.
     AlertRuleTargetModel:
       title: AlertRuleTargetModel
       type: object
@@ -6241,6 +6265,11 @@ components:
         canManage:
           type: boolean
           description: Whether the caller may create, change and delete rules on this endpoint.
+        availableKinds:
+          type: array
+          description: The condition kinds this deployment's storage provider can evaluate.
+          items:
+            type: string
     AlertRuleSecret:
       title: AlertRuleSecret
       type: object

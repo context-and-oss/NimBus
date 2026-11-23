@@ -39,6 +39,7 @@ public sealed partial class AlertRuleEvaluator
 
     private readonly IAlertRuleStore _rules;
     private readonly IMessageTrackingStore _events;
+    private readonly IAlertSignalStore? _signals;
     private readonly AlertRuleDelivery _delivery;
     private readonly TimeProvider _time;
     private readonly ILogger<AlertRuleEvaluator> _logger;
@@ -46,19 +47,25 @@ public sealed partial class AlertRuleEvaluator
 
     /// <summary>Creates the evaluator.</summary>
     /// <param name="rules">The rule store.</param>
-    /// <param name="events">The message store the backlog is read from.</param>
+    /// <param name="events">The message store the backlog and the deferred count are read from.</param>
     /// <param name="delivery">The notice channels.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">Diagnostics.</param>
     /// <param name="instanceId">This instance's name, recorded with the tick it claims.</param>
+    /// <param name="signals">
+    /// The reads the occurrence, blocked-session and silence conditions need, or null when the
+    /// storage provider has none: rules with those conditions are then skipped.
+    /// </param>
     public AlertRuleEvaluator(
         IAlertRuleStore rules,
         IMessageTrackingStore events,
         AlertRuleDelivery delivery,
         TimeProvider time,
         ILogger<AlertRuleEvaluator> logger,
-        string instanceId)
+        string instanceId,
+        IAlertSignalStore? signals = null)
     {
+        _signals = signals;
         _rules = rules ?? throw new ArgumentNullException(nameof(rules));
         _events = events ?? throw new ArgumentNullException(nameof(events));
         _delivery = delivery ?? throw new ArgumentNullException(nameof(delivery));
@@ -108,13 +115,22 @@ public sealed partial class AlertRuleEvaluator
     {
         // The listed rule has no transition history, so it only decides whether anything must be
         // written; a write starts from the full rule, read again at the same version.
-        int? backlog = null;
+        ConditionReading? reading = null;
         var changed = false;
         if (listed.Enabled)
         {
-            backlog = await ReadBacklogAsync(listed).ConfigureAwait(false);
-            changed = Apply(listed, listed.State.Clone(), backlog.Value, now, gap);
-            AlertRuleTelemetry.Evaluated.Add(1);
+            reading = await ReadConditionAsync(listed, now).ConfigureAwait(false);
+            if (reading is null)
+            {
+                // The storage provider cannot evaluate this kind; the API refuses to create such
+                // rules, so this is a rule created before the provider changed.
+                LogKindUnavailable(listed.RuleId, listed.EndpointId, listed.Condition.Kind);
+            }
+            else
+            {
+                changed = Apply(listed, listed.State.Clone(), reading, now, gap);
+                AlertRuleTelemetry.Evaluated.Add(1);
+            }
         }
 
         if (!changed && listed.State.PendingNotices.Count == 0)
@@ -130,9 +146,9 @@ public sealed partial class AlertRuleEvaluator
         }
 
         var state = rule.State.Clone();
-        if (backlog is { } value)
+        if (reading is not null)
         {
-            changed = Apply(rule, state, value, now, gap);
+            changed = Apply(rule, state, reading, now, gap);
         }
 
         var version = rule.Version;
@@ -164,11 +180,19 @@ public sealed partial class AlertRuleEvaluator
     /// <summary>
     /// Applies the state machine of spec §5.4 to <paramref name="state"/>; true when it changed.
     /// </summary>
-    internal static bool Apply(AlertRule rule, AlertRuleState state, int backlog, DateTime now, bool gap)
+    internal static bool Apply(AlertRule rule, AlertRuleState state, ConditionReading reading, DateTime now, bool gap)
     {
-        var holds = backlog >= rule.Condition.Threshold;
-        var changed = state.LastValue != backlog;
-        state.LastValue = backlog;
+        var holds = reading.Holds;
+        var backlog = reading.Value;
+
+        // A count is saved when it changes. A duration (minutes blocked or silent) changes every
+        // minute, so it is recorded only with a transition: a quiet rule is not written each tick.
+        var changed = false;
+        if (!reading.VolatileValue)
+        {
+            changed = state.LastValue != backlog;
+            state.LastValue = backlog;
+        }
 
         if (state.Status == AlertRuleStatus.Ok)
         {
@@ -180,6 +204,7 @@ public sealed partial class AlertRuleEvaluator
 
             if (holds)
             {
+                state.LastValue = backlog;
                 Transition(rule, state, AlertRuleStatus.Firing, reason: null, backlog, now);
                 return true;
             }
@@ -206,6 +231,7 @@ public sealed partial class AlertRuleEvaluator
 
         if (now - state.ConditionFalseSinceUtc.Value >= TimeSpan.FromMinutes(rule.ResolveAfterMinutes))
         {
+            state.LastValue = backlog;
             Transition(rule, state, AlertRuleStatus.Ok, AlertRuleResolveReasons.Cleared, backlog, now);
             return true;
         }
@@ -251,6 +277,72 @@ public sealed partial class AlertRuleEvaluator
         }
 
         AlertRuleTelemetry.Transitions.Add(1, new KeyValuePair<string, object?>("status", status.ToString()));
+    }
+
+    /// <summary>
+    /// Reads the rule's condition: whether it holds, and the value a notice reports. Null when the
+    /// storage provider cannot evaluate the condition's kind.
+    /// </summary>
+    private async Task<ConditionReading?> ReadConditionAsync(AlertRule rule, DateTime now)
+    {
+        var condition = rule.Condition;
+        switch (condition.Kind)
+        {
+            case AlertRuleConditionKinds.FailureOccurrences:
+            {
+                if (_signals is null)
+                    return null;
+                var window = TimeSpan.FromMinutes(condition.WindowMinutes ?? 0);
+                var count = await _signals.CountFailedAttempts(
+                    rule.EndpointId,
+                    now - window,
+                    now,
+                    condition.EventTypes.Count > 0 ? condition.EventTypes : null,
+                    string.IsNullOrWhiteSpace(condition.ErrorTextContains) ? null : condition.ErrorTextContains,
+                    condition.Threshold).ConfigureAwait(false);
+                return new ConditionReading(count >= condition.Threshold, Math.Min(count, condition.Threshold), VolatileValue: false);
+            }
+
+            case AlertRuleConditionKinds.BlockedSession:
+            {
+                if (_signals is null)
+                    return null;
+                var holds = false;
+                var minutesBlocked = 0;
+                if (condition.Minutes is { } minutes)
+                {
+                    var oldest = await _signals.GetOldestBlockingEvent(rule.EndpointId).ConfigureAwait(false);
+                    if (oldest is not null)
+                    {
+                        minutesBlocked = Math.Max(0, (int)(now - oldest.UpdatedAtUtc).TotalMinutes);
+                        holds = minutesBlocked >= minutes;
+                    }
+                }
+
+                if (!holds && condition.DeferredThreshold is { } deferredThreshold)
+                {
+                    var counts = await _events.DownloadEndpointStateCount(rule.EndpointId).ConfigureAwait(false);
+                    holds = counts.DeferredCount >= deferredThreshold;
+                }
+
+                return new ConditionReading(holds, minutesBlocked, VolatileValue: true);
+            }
+
+            case AlertRuleConditionKinds.Silence:
+            {
+                if (_signals is null)
+                    return null;
+                var minutes = condition.Minutes ?? 0;
+                var completed = await _signals.HasCompletedMessageSince(rule.EndpointId, now - TimeSpan.FromMinutes(minutes)).ConfigureAwait(false);
+                return new ConditionReading(!completed, completed ? 0 : minutes, VolatileValue: false);
+            }
+
+            default:
+            {
+                var backlog = await ReadBacklogAsync(rule).ConfigureAwait(false);
+                return new ConditionReading(backlog >= condition.Threshold, backlog, VolatileValue: false);
+            }
+        }
     }
 
     private async Task<int> ReadBacklogAsync(AlertRule rule)
@@ -316,6 +408,9 @@ public sealed partial class AlertRuleEvaluator
         return changed;
     }
 
+    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "Alert rule {RuleId} on {EndpointId} has the condition {Kind}, which this storage provider cannot evaluate; it is skipped.")]
+    private partial void LogKindUnavailable(string ruleId, string endpointId, string kind);
+
     [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "Alert rule {RuleId} on {EndpointId} could not be evaluated.")]
     private partial void LogRuleFailed(Exception exception, string ruleId, string endpointId);
 
@@ -328,3 +423,9 @@ public sealed partial class AlertRuleEvaluator
     [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "Alert rule notice {NoticeId} was dropped after {Attempts} attempts over 24 hours: {Error}.")]
     private partial void LogNoticeDropped(string noticeId, int attempts, string error);
 }
+
+/// <summary>One reading of a rule's condition.</summary>
+/// <param name="Holds">Whether the condition holds now.</param>
+/// <param name="Value">The value a notice reports: a count capped at the threshold, or minutes.</param>
+/// <param name="VolatileValue">Whether the value changes on its own every minute (a duration).</param>
+internal sealed record ConditionReading(bool Holds, int Value, bool VolatileValue);
