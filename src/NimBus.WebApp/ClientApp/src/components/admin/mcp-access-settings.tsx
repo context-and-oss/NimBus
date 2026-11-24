@@ -26,6 +26,33 @@ const OBSERVE_DESCRIPTION = "Endpoint health, messages, history, sessions, metri
 // within 30 seconds without a restart.
 
 const FORM_ID = "mcp-access-settings";
+
+type AgentField = "allowWorkloadAnnotation" | "allowWorkloadClassification" | "allowWorkloadResubmit";
+
+// The capabilities an unattended agent (a workload token or an agent API key) may be given. Every
+// other capability stays with a signed-in person, whatever the switches say.
+const AGENT_SWITCHES: Partial<Record<CapabilityKey, { field: AgentField; label: string; description: string }>> = {
+  report: { field: "allowWorkloadAnnotation", label: "Allow workloads to mark messages reported",
+    description: "Workloads with the Nimbus.Workload.Annotate app role may call nimbus_set_message_reported, for example with the ticket they filed. They still need Contributor on the endpoint and Mark reported must be on. Changes nothing on the bus. Off by default." },
+  classify: { field: "allowWorkloadClassification", label: "Allow workloads to record classifications",
+    description: "Workloads with the Nimbus.Workload.Classify app role may call nimbus_record_classification. They still need Contributor on the endpoint in Access Control, and Classify failures must be on. Recording is advisory and changes no message. Off by default." },
+  resubmit: { field: "allowWorkloadResubmit", label: "Allow workloads to resubmit",
+    description: "Workloads with the Nimbus.Workload.Resubmit app role may resubmit failed messages without a person, through the operation journal. They still need Contributor on the endpoint and Resubmit messages must be on. Off by default." },
+};
+const AGENT_NEVER: Partial<Record<CapabilityKey, string>> = {
+  payloads: "Agents never read payloads. Only a signed-in PiiReader gets them.",
+  skip: "Agents never skip. Skip always stays with a person.",
+  settleHandoffs: "Agents never settle a handoff. It stays with a person.",
+  recoverDeferred: "Agents never recover deferred messages. It stays with a person.",
+  editPayloads: "Agents never resubmit an edited payload. It stays with a person.",
+};
+const AGENT_SWITCH_COUNT = Object.keys(AGENT_SWITCHES).length;
+
+const CAPABILITY_GROUPS: { label: string; tone: string; observe?: boolean; keys: CapabilityKey[] }[] = [
+  { label: "Read", tone: "text-status-info-ink", observe: true, keys: ["payloads"] },
+  { label: "Annotate · changes nothing on the bus", tone: "text-status-success-ink", keys: ["report", "classify"] },
+  { label: "Change messages", tone: "text-status-warning-ink", keys: ["resubmit", "skip", "settleHandoffs", "recoverDeferred", "editPayloads"] },
+];
 const settingsUrl = "/api/v1/admin/mcp/settings";
 const turnOffUrl = "/api/v1/admin/mcp/turn-off";
 const activityUrl = "/api/v1/admin/mcp/activity?hours=24";
@@ -211,45 +238,55 @@ export default function McpAccessSettings() {
 
           <PanelSection tab="permissions">
             <Card><CardHeader><CardTitle>02 · What agents may do</CardTitle></CardHeader><CardContent className="space-y-4 pt-4">
-              <p className="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
-                A tool runs only when <b className="text-primary-600">the switch on this page</b> AND the Entra scope AND the NimBus role on the endpoint AND the message state allow it.
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="m-0 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>A tool runs only when all four allow it:</span>
+                  <span className="rounded bg-primary-50 px-2 py-0.5 font-semibold text-primary-700">1 The switch on this page</span>
+                  <span className="rounded bg-muted px-2 py-0.5">2 Entra scope</span>
+                  <span className="rounded bg-muted px-2 py-0.5">3 NimBus role on the endpoint</span>
+                  <span className="rounded bg-muted px-2 py-0.5">4 Message state</span>
+                </p>
+                <p className="m-0 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full border border-border bg-background px-3 py-1"><b>{CAPABILITIES.filter(c => draft.capabilities[c.key]).length}</b> of {CAPABILITIES.length} on for operators</span>
+                  <span className="rounded-full border border-border bg-background px-3 py-1"><b>{Object.values(AGENT_SWITCHES).filter(a => draft[a.field]).length}</b> of {AGENT_SWITCH_COUNT} on for agents</span>
+                </p>
+              </div>
               <CapabilityTable draft={draft} saved={state.saved} classifyAvailable={state.failureIntelligenceEnabled}
-                selected={selectedCapability} onSelect={setSelectedCapability}
-                onToggle={(key, v) => edit(s => { s.capabilities[key] = v; })} />
-              <SettingRow label="Unattended workloads (app-only tokens)" description="Callers with the Nimbus.Workload.Observe app role may use the read tools. Workloads never skip or read payloads, and change messages only as the switches below allow.">
-                <Toggle aria-label="Allow workload tokens" checked={draft.allowWorkloads} disabled={local} onChange={v => edit(s => { s.allowWorkloads = v; })} />
-              </SettingRow>
-              <SettingRow label="Agent API keys" description={
-                local ? "Keys are not accepted in local development, where every loopback caller is the local developer."
-                  : !deployment.agentKeysEnabled ? "This deployment doesn't accept keys on /mcp. Set the app setting NimBus__Mcp__AgentKeys__Enabled=true first."
-                  : "Hosted agents may connect with an MCP key from Settings → Agent keys. A key acts as a workload: the switches below and the budget apply, and a key never skips messages or reads payloads. Off by default."}>
-                <Toggle aria-label="Allow agent API keys" checked={Boolean(draft.allowAgentKeys)}
-                  disabled={local || !deployment.agentKeysEnabled || !draft.allowWorkloads} onChange={v => edit(s => { s.allowAgentKeys = v; })} />
-              </SettingRow>
-              <SettingRow label="Workloads may record classifications" description="Workloads with the Nimbus.Workload.Classify app role may call nimbus_record_classification. They still need Contributor on the endpoint in Access Control, and Classify failures must be on. Recording is advisory and changes no message. Off by default.">
-                <Toggle aria-label="Allow workloads to record classifications" checked={Boolean(draft.allowWorkloadClassification)}
-                  disabled={local || !draft.allowWorkloads} onChange={v => edit(s => { s.allowWorkloadClassification = v; })} />
-              </SettingRow>
-              <SettingRow label="Workloads may mark messages reported" description="Workloads with the Nimbus.Workload.Annotate app role may call nimbus_set_message_reported, for example with the ticket they filed. They still need Contributor on the endpoint and Mark reported must be on. Changes nothing on the bus. Off by default.">
-                <Toggle aria-label="Allow workloads to mark messages reported" checked={Boolean(draft.allowWorkloadAnnotation)}
-                  disabled={local || !draft.allowWorkloads} onChange={v => edit(s => { s.allowWorkloadAnnotation = v; })} />
-              </SettingRow>
-              <SettingRow label="Workloads may resubmit" description="Workloads with the Nimbus.Workload.Resubmit app role may resubmit failed messages without a person, through the operation journal. They still need Contributor on the endpoint and Resubmit messages must be on. Skip always stays with a person. Off by default.">
-                <Toggle aria-label="Allow workloads to resubmit" checked={Boolean(draft.allowWorkloadResubmit)}
-                  disabled={local || !draft.allowWorkloads} onChange={v => edit(s => { s.allowWorkloadResubmit = v; })} />
-              </SettingRow>
-              {draft.allowWorkloadResubmit && (
-                <div className="space-y-3 rounded-md border p-3">
-                  <WorkloadLimitRow label="Resubmits per agent per day" min={0} max={500} fallback={WORKLOAD_RESUBMITS_PER_DAY}
-                    description="Each workload client application, over a rolling 24 hours. The per-minute change limit still applies."
-                    value={draft.workloadResubmitsPerDay} onChange={v => edit(s => { s.workloadResubmitsPerDay = v; })} />
-                  <WorkloadLimitRow label="Unsuccessful resubmits per message" min={1} max={5} fallback={WORKLOAD_RESUBMITS_PER_MESSAGE}
-                    description="Across all agents. After this many, NimBus refuses another unattended resubmit and the message stays with a person."
-                    value={draft.workloadResubmitsPerMessage} onChange={v => edit(s => { s.workloadResubmitsPerMessage = v; })} />
+                selected={selectedCapability} onSelect={setSelectedCapability} agentsLocked={local || !draft.allowWorkloads}
+                onToggle={(key, v) => edit(s => { s.capabilities[key] = v; })}
+                onAgentToggle={(field, v) => edit(s => { s[field] = v; })} />
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(17rem,1fr))] gap-4">
+                <div className="space-y-3 rounded-md border border-border p-3">
+                  <p className="m-0 text-sm font-bold">Which agents may connect</p>
+                  <SettingRow label="Unattended workloads (app-only tokens)" description="Callers with the Nimbus.Workload.Observe app role may use the read tools.">
+                    <Toggle aria-label="Allow workload tokens" checked={draft.allowWorkloads} disabled={local} onChange={v => edit(s => { s.allowWorkloads = v; })} />
+                  </SettingRow>
+                  <SettingRow label="Agent API keys" description={
+                    local ? "Keys are not accepted in local development, where every loopback caller is the local developer."
+                      : !deployment.agentKeysEnabled ? "This deployment doesn't accept keys on /mcp. Set the app setting NimBus__Mcp__AgentKeys__Enabled=true first."
+                      : "Hosted agents may connect with an MCP key from Settings → Agent keys. A key acts as a workload. Off by default."}>
+                    <Toggle aria-label="Allow agent API keys" checked={Boolean(draft.allowAgentKeys)}
+                      disabled={local || !deployment.agentKeysEnabled || !draft.allowWorkloads} onChange={v => edit(s => { s.allowAgentKeys = v; })} />
+                  </SettingRow>
                 </div>
-              )}
-              <p className="text-xs text-muted-foreground">Switched-off tools are removed from <code>tools/list</code> and from <code>permittedActions</code>; a direct call gets <code>[PermissionDenied]</code>.</p>
+                <div className="space-y-3 rounded-md border border-border p-3">
+                  <p className="m-0 text-sm font-bold">Limits on agent resubmits</p>
+                  {draft.allowWorkloadResubmit ? <>
+                    <WorkloadLimitRow label="Resubmits per agent per day" min={0} max={500} fallback={WORKLOAD_RESUBMITS_PER_DAY}
+                      description="Each workload client application, over a rolling 24 hours. The per-minute change limit still applies."
+                      value={draft.workloadResubmitsPerDay} onChange={v => edit(s => { s.workloadResubmitsPerDay = v; })} />
+                    <WorkloadLimitRow label="Unsuccessful resubmits per message" min={1} max={5} fallback={WORKLOAD_RESUBMITS_PER_MESSAGE}
+                      description="Across all agents. After this many, NimBus refuses another unattended resubmit and the message stays with a person."
+                      value={draft.workloadResubmitsPerMessage} onChange={v => edit(s => { s.workloadResubmitsPerMessage = v; })} />
+                  </> : <p className="m-0 text-xs text-muted-foreground">The limits apply once agents may resubmit. Turn on the Agents switch on the Resubmit messages row.</p>}
+                </div>
+                <div className="space-y-2 rounded-md bg-muted p-3 text-xs text-muted-foreground">
+                  <p className="m-0 text-sm font-bold text-foreground">Good to know</p>
+                  <p className="m-0">An Agents switch needs the Operators switch on the same row.</p>
+                  <p className="m-0">Agents never skip messages or read payloads.</p>
+                  <p className="m-0">Switched-off tools are removed from <code>tools/list</code> and from <code>permittedActions</code>; a direct call gets <code>[PermissionDenied]</code>.</p>
+                </div>
+              </div>
             </CardContent></Card>
           </PanelSection>
 
@@ -538,10 +575,11 @@ const WARNING_MARK = (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 3 2 21h20L12 3z" /><path d="M12 10v5M12 18h.01" /></svg>
 );
 
-/** The capability table of the Permissions tab. The row switches; the inspector describes the selected row. */
-function CapabilityTable({ draft, saved, classifyAvailable, selected, onSelect, onToggle }: {
-  draft: McpSettings; saved: McpSettings; classifyAvailable: boolean;
+/** The capability matrix of the Permissions tab: one row per capability, one switch per kind of caller. The inspector describes the selected row. */
+function CapabilityTable({ draft, saved, classifyAvailable, selected, agentsLocked, onSelect, onToggle, onAgentToggle }: {
+  draft: McpSettings; saved: McpSettings; classifyAvailable: boolean; agentsLocked: boolean;
   selected?: SelectedCapability; onSelect: (key: SelectedCapability | undefined) => void; onToggle: (key: CapabilityKey, on: boolean) => void;
+  onAgentToggle: (field: AgentField, on: boolean) => void;
 }) {
   const inPanel = useInPanel();
   const cap = CAPABILITIES.find(c => c.key === selected);
@@ -558,6 +596,9 @@ function CapabilityTable({ draft, saved, classifyAvailable, selected, onSelect, 
       onClose={() => onSelect(undefined)}>
       <InspectorTiles label="Also requires" tiles={[{ label: "Entra scope", value: cap.scope }, { label: "Role", value: cap.role }]} />
       {tools(cap.tools)}
+      <InspectorBlock label="Unattended agents">
+        <p className="m-0 text-xs text-muted-foreground">{AGENT_SWITCHES[cap.key]?.description ?? AGENT_NEVER[cap.key]}</p>
+      </InspectorBlock>
       {cap.note && (
         <InspectorBlock label={capOn ? "Before you leave this on" : "Before you turn this on"}>
           <p className="m-0 rounded-md border border-status-warning/40 bg-status-warning/10 p-2 text-xs text-foreground">{cap.note}</p>
@@ -572,48 +613,68 @@ function CapabilityTable({ draft, saved, classifyAvailable, selected, onSelect, 
     </Inspector>
   ) : <Inspector empty="Select a capability to see what it allows." />;
 
+  const alwaysOn = <span className="whitespace-nowrap text-xs font-semibold text-status-success-ink">Always on</span>;
+  const capabilityRow = (c: (typeof CAPABILITIES)[number]) => {
+    const on = Boolean(draft.capabilities[c.key]);
+    // A missing switch is off, as on the server.
+    const changed = on !== Boolean(saved.capabilities[c.key]);
+    const agent = AGENT_SWITCHES[c.key];
+    return (
+      <tr key={c.key} className={selectableRowClass(selected === c.key)}>
+        <td className="px-4">
+          <RowSelect selected={selected === c.key} onSelect={() => onSelect(c.key)} after={<>
+            {c.risk === "high" && <Risk risk="high" text="high" />}
+            {on && c.note && <span className="shrink-0 text-status-warning-ink" title="Has a warning">{WARNING_MARK}<span className="sr-only">Has a warning</span></span>}
+            {changed && <span className="shrink-0 text-[11px] font-semibold text-status-warning-ink">Changed</span>}
+          </>}>{c.label}</RowSelect>
+          <p className="m-0 -mt-1.5 pb-2 text-xs text-muted-foreground">{c.hint}</p>
+        </td>
+        <td className="px-4 py-2 font-mono text-[11px]">
+          <span className="flex flex-wrap gap-1">
+            <span className="whitespace-nowrap rounded bg-status-info-50 px-1.5 text-status-info-ink">{c.scope}</span>
+            <span className="whitespace-nowrap rounded bg-nimbus-purple-50 px-1.5 text-nimbus-purple">{c.role}</span>
+          </span>
+        </td>
+        <td className="px-4 py-2"><Toggle aria-label={c.label} checked={on} onChange={v => onToggle(c.key, v)} /></td>
+        <td className="px-4 py-2">
+          {agent
+            ? <Toggle aria-label={agent.label} checked={Boolean(draft[agent.field])} disabled={agentsLocked} onChange={v => onAgentToggle(agent.field, v)} />
+            : <span className="whitespace-nowrap text-xs text-muted-foreground">Never for agents</span>}
+        </td>
+      </tr>
+    );
+  };
+
   return (
     <>
       <WorkspaceTableFrame>
-        <table className="w-full min-w-[36rem] text-sm" aria-label="What agents may do">
+        <table className="w-full min-w-[44rem] text-sm" aria-label="What agents may do">
           <thead>
             <tr className={WORKSPACE_HEAD_ROW}>
               <th scope="col" className={WORKSPACE_TH}>Capability</th>
-              <th scope="col" className={WORKSPACE_TH}>Risk</th>
-              <th scope="col" className={WORKSPACE_TH}>Entra scope</th>
-              <th scope="col" className={WORKSPACE_TH}>Role</th>
-              <th scope="col" className={cn(WORKSPACE_TH, "text-right")}>Agents</th>
+              <th scope="col" className={WORKSPACE_TH}>Also needs</th>
+              <th scope="col" className={WORKSPACE_TH} title="Signed-in people using an MCP client">Operators</th>
+              <th scope="col" className={WORKSPACE_TH} title="Unattended workloads and agent API keys">Agents</th>
             </tr>
           </thead>
           <tbody>
-            <tr className={selectableRowClass(selected === OBSERVE)}>
-              <td className="px-4"><RowSelect selected={selected === OBSERVE} onSelect={() => onSelect(OBSERVE)}>Observe</RowSelect></td>
-              <td className="px-4 py-2"><Risk risk="low" text="read" /></td>
-              <td className="px-4 py-2 text-muted-foreground">—</td>
-              <td className="px-4 py-2 text-muted-foreground">—</td>
-              <td className="px-4 py-2 text-right">
-                <span className="whitespace-nowrap rounded-full border border-dashed border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">Always on</span>
-              </td>
-            </tr>
-            {CAPABILITIES.map(c => {
-              const on = Boolean(draft.capabilities[c.key]);
-              // A missing switch is off, as on the server.
-              const changed = on !== Boolean(saved.capabilities[c.key]);
-              return (
-                <tr key={c.key} className={selectableRowClass(selected === c.key)}>
+            {CAPABILITY_GROUPS.map(group => [
+              <tr key={group.label} className="border-t border-border bg-muted/50">
+                <td colSpan={4} className={cn("px-4 py-1.5 text-xs font-bold", group.tone)}>{group.label}</td>
+              </tr>,
+              group.observe && (
+                <tr key={OBSERVE} className={selectableRowClass(selected === OBSERVE)}>
                   <td className="px-4">
-                    <RowSelect selected={selected === c.key} onSelect={() => onSelect(c.key)} after={<>
-                      {on && c.note && <span className="shrink-0 text-status-warning-ink" title="Has a warning">{WARNING_MARK}<span className="sr-only">Has a warning</span></span>}
-                      {changed && <span className="shrink-0 text-[11px] font-semibold text-status-warning-ink">Changed</span>}
-                    </>}>{c.label}</RowSelect>
+                    <RowSelect selected={selected === OBSERVE} onSelect={() => onSelect(OBSERVE)}>Observe</RowSelect>
+                    <p className="m-0 -mt-1.5 pb-2 text-xs text-muted-foreground">Health, messages, sessions and metrics</p>
                   </td>
-                  <td className="px-4 py-2"><Risk risk={c.risk} text={c.riskText} /></td>
-                  <td className="px-4 py-2 font-mono text-[11px]"><span className="rounded bg-status-info-50 px-1.5 text-status-info-ink">{c.scope}</span></td>
-                  <td className="px-4 py-2 font-mono text-[11px]"><span className="rounded bg-nimbus-purple-50 px-1.5 text-nimbus-purple">{c.role}</span></td>
-                  <td className="px-4 py-2 text-right"><Toggle aria-label={c.label} checked={on} onChange={v => onToggle(c.key, v)} /></td>
+                  <td className="px-4 py-2 text-muted-foreground">—</td>
+                  <td className="px-4 py-2">{alwaysOn}</td>
+                  <td className="px-4 py-2">{draft.allowWorkloads ? alwaysOn : <span className="whitespace-nowrap text-xs text-muted-foreground">Workloads off</span>}</td>
                 </tr>
-              );
-            })}
+              ),
+              ...CAPABILITIES.filter(c => group.keys.includes(c.key)).map(capabilityRow),
+            ])}
           </tbody>
         </table>
       </WorkspaceTableFrame>
@@ -626,7 +687,7 @@ function CapabilityTable({ draft, saved, classifyAvailable, selected, onSelect, 
 function Risk({ risk, text }: { risk: "data" | "low" | "medium" | "high"; text: string }) {
   const tone = { data: "bg-nimbus-purple-50 text-nimbus-purple", low: "bg-status-success-50 text-status-success-ink",
     medium: "bg-status-warning-50 text-status-warning-ink", high: "bg-status-danger-50 text-status-danger-ink" }[risk];
-  return <span className={cn("rounded-full px-1.5 py-px align-middle font-mono text-[9.5px] font-bold uppercase tracking-wider", tone)}>{text}</span>;
+  return <span className={cn("shrink-0 whitespace-nowrap rounded-full px-1.5 py-px align-middle font-mono text-[9.5px] font-bold uppercase tracking-wider", tone)}>{text}</span>;
 }
 
 function PreviewCard({ draft, state, dirty }: { draft: McpSettings; state: McpState; dirty: boolean }) {

@@ -274,7 +274,7 @@ may mark messages reported** switch is on.
 A workload resubmits failed messages without a person when:
 
 - its token carries the `Nimbus.Workload.Resubmit` app role;
-- the Owner turned on **Workloads may resubmit** in **Settings → MCP access** (off by default,
+- the Owner turned on the **Agents** switch on the **Resubmit messages** row in **Settings → MCP access** (off by default,
   effective only while workload tokens are accepted and **Resubmit messages** is on);
 - its object id has Contributor on the endpoint in Access Control; and
 - the deployment has the operation journal.
@@ -322,7 +322,7 @@ the event's metadata remain, so the prompt tells agents never to copy payload va
 reports or tests.
 
 **Unattended recording.** A workload (an app-only token) may record when it holds the
-`Nimbus.Workload.Classify` app role, the Owner turned on **Workloads may record classifications** in
+`Nimbus.Workload.Classify` app role, the Owner turned on the **Agents** switch on the **Classify failures** row in
 **Settings → MCP access** (off by default, and effective only while workload tokens are accepted),
 and the workload's object id has Contributor on the endpoint in Access Control. The role admits
 `nimbus_record_classification` only: never resubmit, skip or report.
@@ -347,9 +347,9 @@ The policy covers:
 | Raw payloads, mark reported, classify, resubmit, skip | A switched-off tool is removed from `tools/list` and from `permittedActions`; a direct call gets `[PermissionDenied] … turned off by an administrator`. The read tools have no switch. |
 | Settle pending handoffs, recover deferred messages, resubmit with an edited payload | The same, for `nimbus_settle_handoff`, for `nimbus_reprocess_deferred` and `nimbus_skip_deferred_tracking`, and for `nimbus_resubmit_with_changes`. Off by default, also in a policy saved before the switches existed: nothing changes on upgrade until an Owner turns one on. |
 | Unattended workloads | Whether app-only (`Nimbus.Workload.Observe`) tokens are accepted for the read tools. |
-| Workloads may record classifications | Whether workloads with the `Nimbus.Workload.Classify` app role may call `nimbus_record_classification`. Off by default; effective only while workload tokens are accepted and **Classify failures** is on. |
-| Workloads may mark messages reported | Whether workloads with the `Nimbus.Workload.Annotate` app role may call `nimbus_set_message_reported`. Off by default. |
-| Workloads may resubmit | Whether workloads with the `Nimbus.Workload.Resubmit` app role may resubmit unattended, with the resubmits per agent per day and the unsuccessful resubmits per message (see [Unattended resubmits](#unattended-resubmits)). Off by default. |
+| Classify failures, Agents column | Whether workloads with the `Nimbus.Workload.Classify` app role may call `nimbus_record_classification`. Off by default; effective only while workload tokens are accepted and **Classify failures** is on. |
+| Mark reported, Agents column | Whether workloads with the `Nimbus.Workload.Annotate` app role may call `nimbus_set_message_reported`. Off by default. |
+| Resubmit messages, Agents column | Whether workloads with the `Nimbus.Workload.Resubmit` app role may resubmit unattended, with the resubmits per agent per day and the unsuccessful resubmits per message (see [Unattended resubmits](#unattended-resubmits)). Off by default. |
 | Agent API keys | Whether hosted agents may connect with an agent API key issued for MCP (see [Agent API keys on /mcp](#agent-api-keys-on-mcp)). Off by default; effective only while workload tokens are accepted and the deployment sets `NimBus__Mcp__AgentKeys__Enabled`. The client list does not apply to keys. |
 | People | Everyone with a NimBus role, or only listed users and groups (email, user object id, or a group object id from the `groups` claim). Workloads are governed by the workload switch instead. |
 | Client applications | Any client Entra lets sign in, or only approved ones, matched on `azp` (then `appid`). Each approved client can be allowed or denied the tools that change messages. |
