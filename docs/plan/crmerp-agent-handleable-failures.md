@@ -33,8 +33,11 @@ the Integration Intelligence card, so the changes below help the demo with or wi
 ## Part 1: the CRM outage reads as a real outage (done)
 
 `CrmOutageSimulationHandler` returns a 503 whose reason phrase and body come from
-`CrmErpDemo.Contracts/Demo/CrmOutageResponse.cs`: a gateway's "temporarily unavailable" text and a
-`Retry-After`, with no mention of the switch. `CrmOutageResponseTests` pins that.
+`CrmErpDemo.Contracts/Demo/CrmOutageResponse.cs`: a gateway's "temporarily unavailable" text with
+no mention of the switch. `CrmOutageResponseTests` pins that. A first version also sent
+`Retry-After: 30`; the local run showed the adapter's HTTP client honours it inside a 30-second
+retry budget, so the handler failed with the client's own timeout and the text was lost. The header
+was removed.
 
 A retry still fails while the switch is on. That is the right behaviour: the new attempt fails, and
 the circuit breaker showcase is unchanged.

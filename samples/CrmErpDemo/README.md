@@ -718,7 +718,8 @@ crm-web ("CRM API outage" toggle)
 - **Fail** — `Crm.Api/ErrorModeState.cs` + `/api/admin/error-mode` (mirrors the ERP toggles);
   `Crm.Adapter/Clients/CrmOutageSimulationHandler.cs` injects the 503s *below* the handlers, so
   failures take the authentic `CrmApiClient` path and count toward the breaker. The 503 reads as a
-  real gateway outage and never names the switch (`CrmErpDemo.Contracts/Demo/CrmOutageResponse.cs`),
+  real gateway outage, never names the switch and carries no `Retry-After` (the HTTP client would
+  wait it out and fail with its own timeout) (`CrmErpDemo.Contracts/Demo/CrmOutageResponse.cs`),
   so the failure evidence classifies as a transient fault of the target that a retry can get past.
 - **Break** — `Crm.Adapter/Program.cs` opts in with `WithCircuitBreaker(...)`, thresholds from the
   `Crm:CircuitBreaker` appsettings section (5 outcomes / 50% / 60s window / 20s break / 2 probes).

@@ -8,6 +8,11 @@ namespace CrmErpDemo.Contracts.Demo;
 /// the failure evidence. They read as a gateway reporting a real, temporary outage and never name
 /// the demo switch: evidence that says the outage is a setting someone turned on is classified as
 /// a failure only a person can end, so neither an operator nor an agent would retry it.
+/// <para>
+/// The response carries no <c>Retry-After</c>. The adapter's HTTP client retries a 503 inside a
+/// 30-second budget and honours that header, so a long one makes the client wait the budget out
+/// and fail with its own timeout, and the text here never reaches the failure evidence.
+/// </para>
 /// </remarks>
 public static class CrmOutageResponse
 {
@@ -18,7 +23,4 @@ public static class CrmOutageResponse
     public const string Body =
         "The CRM API is temporarily unavailable: upstream connect error or disconnect/reset before headers " +
         "(reset reason: connection failure). Retry the request later.";
-
-    /// <summary>The <c>Retry-After</c> the response carries.</summary>
-    public static readonly TimeSpan RetryAfter = TimeSpan.FromSeconds(30);
 }

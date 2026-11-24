@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using CrmErpDemo.Contracts.Demo;
 
 namespace Crm.Adapter.Clients;
@@ -23,14 +22,12 @@ public sealed class CrmOutageSimulationHandler(IErrorModeClient errorMode) : Del
     {
         if (await errorMode.IsErrorModeEnabledAsync(cancellationToken))
         {
-            var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
             {
                 RequestMessage = request,
                 ReasonPhrase = CrmOutageResponse.ReasonPhrase,
                 Content = new StringContent(CrmOutageResponse.Body),
             };
-            response.Headers.RetryAfter = new RetryConditionHeaderValue(CrmOutageResponse.RetryAfter);
-            return response;
         }
 
         return await base.SendAsync(request, cancellationToken);

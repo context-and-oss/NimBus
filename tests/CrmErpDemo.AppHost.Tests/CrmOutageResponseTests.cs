@@ -32,6 +32,5 @@ public sealed class CrmOutageResponseTests
         Assert.AreEqual("Service Unavailable", CrmOutageResponse.ReasonPhrase);
         StringAssert.Contains(CrmOutageResponse.Body, "temporarily unavailable");
         StringAssert.Contains(CrmOutageResponse.Body, "Retry");
-        Assert.IsTrue(CrmOutageResponse.RetryAfter > TimeSpan.Zero);
     }
 }
