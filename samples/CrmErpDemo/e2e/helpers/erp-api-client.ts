@@ -179,10 +179,11 @@ export class ErpApiClient {
 
   /**
    * Restore both failure modes to off; safe to call from afterEach hooks. Also puts the failure
-   * rate back to every message, so error-mode tests never inherit a lower rate.
+   * rate back to every message and the reason back to the generic one, so error-mode tests never
+   * inherit a lower rate or a reason that NimBus retries.
    */
   async resetFailureModes(): Promise<void> {
-    await this.setErrorMode(false, undefined, 1);
+    await this.setErrorMode(false, "handler_exception", 1);
     await this.setServiceMode(false);
   }
 

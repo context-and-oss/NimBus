@@ -65,6 +65,7 @@ graph TB
 - **Receiving adapter calls the target REST API** — typed `HttpClient` per system; handlers are idempotent (upsert keyed on the originator's id).
 - **Two hosting models, identical handlers** — same `IEventHandler<T>` works in a worker container (CRM) and in Azure Functions (ERP). Demonstrates that hosting is a deployment concern, not a code concern.
 - **Session-based ordering** — `[SessionKey(nameof(AccountId))]` keeps the round-trip `CrmAccountCreated → ErpCustomerCreated → link-erp` ordered for each account.
+- **[A retry rule on ERP](#a-failure-nimbus-retries-by-itself-retry-rule-showcase)** — `Erp.Adapter.Functions` retries one kind of failure, a rate-limited call, three times before the message is recorded as Failed; every other failure waits for an operator on its first attempt.
 - **Operator surface** — reuses the existing `NimBus.WebApp` + Resolver from the main repo for full audit trail and resubmit/skip.
 - **Inbox deduplication on CRM** — `Crm.Adapter` opts into platform-level dedup (`UseInbox`, SQL store in the crm DB); redelivery of the same broker `MessageId` is skipped as `DuplicateDetected`, contrasting with ERP's application-level idempotent upserts. Operator resubmit uses a new message identity.
 - **[Azure Table Storage inbox on DataPlatform](#showcase-azure-table-storage-inbox-dataplatformendpoint)** — the Functions adapter keeps receipts in its host storage account. The duplicate-delivery scenario checks handler logs, Resolver history and both table rows.
@@ -254,7 +255,7 @@ sequenceDiagram
 
 ### Flow 4 — Failure + resubmit (operator path)
 
-When an ordinary downstream handler call fails, NimBus records **Failed** and **blocks the session** so subsequent events for the same entity wait. Automatic NimBus retries require an explicit retry policy; broker MaxDeliveryCount applies to unsettled redeliveries. The operator resubmits via `nimbus-ops`, which re-publishes the failed message; the deferred-processor subscription then drains any messages parked behind it.
+When an ordinary downstream handler call fails, NimBus records **Failed** and **blocks the session** so subsequent events for the same entity wait. Automatic NimBus retries require an explicit retry policy, and the ERP adapter has one rule, for [rate-limited calls](#a-failure-nimbus-retries-by-itself-retry-rule-showcase); broker MaxDeliveryCount applies to unsettled redeliveries. The operator resubmits via `nimbus-ops`, which re-publishes the failed message; the deferred-processor subscription then drains any messages parked behind it.
 
 ```mermaid
 sequenceDiagram
@@ -505,7 +506,7 @@ The databases don't use the serverless free offer, which is Aspire's default for
 
 1. In the Aspire dashboard, **stop `erp-api`**.
 2. Create another account in **crm-web**.
-3. The `erp-adapter` Function fires and the HTTP call to `erp-api` fails. The adapter registers no retry policy, so NimBus records the message as **Failed** without retrying it and **blocks the session**.
+3. The `erp-adapter` Function fires and the HTTP call to `erp-api` fails. The adapter's one retry rule covers only a rate-limited call, so NimBus records the message as **Failed** without retrying it and **blocks the session**.
 4. **nimbus-ops** shows the blocked session.
 5. Restart `erp-api` from the Aspire dashboard.
 6. From **nimbus-ops**, resubmit the failed message → flow completes; the link-erp callback updates the account.
@@ -630,6 +631,7 @@ below, and the [bad country](#failures-that-come-from-the-data) ERP rejects.
 |---|---|---|---|
 | Generic handler exception (default) | `HandlerErrorModeException` | Failed | `unknown` — the control case with no usable evidence |
 | Downstream timeout (transient) | `TimeoutException` 503 + connection reset | Failed | `transient_dependency` |
+| Rate limited (retried automatically) | `ErpPricingThrottledException` 429 with `Retry-After: 5` | Retried three times, then Failed | `transient_dependency` |
 | Expired credentials (auth/config) | `UnauthorizedAccessException` 401, expired secret | Failed | `authentication_configuration` |
 | Customer closed (business rule) | `InvalidOperationException` rule ERP-CUST-017 | Failed | `business_rule` |
 | Missing posting group (application defect) | `KeyNotFoundException` from a real defect in the adapter, for accounts in FI or any country its table lacks; other messages go through | Failed | `application_defect` |
@@ -644,7 +646,49 @@ blocked, the rest flowing, and failed messages with different error types to cla
 **Mostly transient** is the mix to pick when something recovers failures unattended, such as an
 operations agent working through the NimBus MCP server: with a failure rate below 100% most
 failures are ones a resubmit gets past, and the rest still need a person. **Random** spreads evenly
-over five reasons, of which a retry helps only one.
+over six reasons, of which a retry helps only two.
+
+### A failure NimBus retries by itself (retry rule showcase)
+
+Every reason but one is recorded as Failed on its first attempt and waits for someone to resubmit
+it. **Rate limited (retried automatically)** is the exception: the ERP adapter has a
+[retry rule](../../docs/building-adapters.md#retry-and-permanent-failures) for it.
+
+- **Fail** — the reason throws `ErpPricingThrottledException`
+  (`CrmErpDemo.Contracts/Demo/ErpPricingThrottledException.cs`): HTTP 429 from the pricing service
+  with `Retry-After: 5`. The exception implements `IRetryAfterHint`, which hands that wait to NimBus.
+- **Retry** — `Erp.Adapter.Functions/ErpResilience.cs` holds the rule, matched on the exception's
+  type: three retries, exponential from 2 seconds. Each wait is the longer of the rule's delay and
+  the `Retry-After`, so the retries come 5, 5 and 8 seconds apart. `Program.cs` passes the rule to
+  `ConfigureRetryPolicies`.
+- **Outcome** — a retry is a scheduled message in the same session, so later events for the same
+  account wait behind it in order. Each failed attempt adds an error response to the event's
+  history, and the event shows as Failed until a retry gets through.
+  If a retry gets through, the event completes and the session drains without anyone touching it.
+  If all three fail, the event stays Failed and is recovered like any other: resubmit or skip.
+
+The **Downstream timeout** reason deliberately has no rule. Its failures stay in Failed so there is
+something for an operator, or an operations agent, to diagnose as transient and resubmit.
+
+#### Manual smoke flow
+
+1. In **erp-web**, flip **Error mode** ON, pick **Rate limited (retried automatically)** and set
+   the **Failure rate** to about 50%.
+2. Create a few accounts in **crm-web**.
+3. In **nimbus-ops**, open ErpEndpoint. About half the accounts completed on the first attempt.
+   Most of the rest complete within twenty seconds: open one and its history shows an error
+   response for each failed attempt, five seconds apart, and then the completion. About one in
+   sixteen fails all four attempts and stays Failed.
+4. Set the failure rate to 100% and create one more account: after three retries it stays Failed.
+   Turn error mode OFF and resubmit it.
+
+#### Automated coverage
+
+- [`e2e/tests/21-retry-rule.spec.ts`](e2e/tests/21-retry-rule.spec.ts) — at a 100% failure rate
+  the event fails exactly four times (the first attempt and three retries), stays Failed, and
+  completes after a resubmit.
+- `tests/CrmErpDemo.AppHost.Tests/ErpRetryRuleTests.cs` — the rule matches the rate-limited
+  failure and no other error-mode reason.
 
 ### Failures that come from the data
 
@@ -1073,6 +1117,7 @@ No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure 
 | CRM subscriber handlers                 | `Crm.Adapter/Handlers/*.cs`                                                                |
 | ERP Function adapter                    | `Erp.Adapter.Functions/Functions/ErpEndpointFunction.cs` + deferred function                |
 | ERP subscriber handlers                 | `Erp.Adapter.Functions/Handlers/*.cs`                                                       |
+| ERP retry rule                          | `Erp.Adapter.Functions/ErpResilience.cs` (wired by `ConfigureRetryPolicies` in `Program.cs`) |
 | Aspire wiring                           | `CrmErpDemo.AppHost/Program.cs`                                                            |
 | CloudEvents partner (external, no NimBus) | `PartnerPortal/Program.cs`                                                               |
 | CloudEvents inbound handler             | `Crm.Adapter/Handlers/PartnerLeadSubmittedHandler.cs`                                      |
