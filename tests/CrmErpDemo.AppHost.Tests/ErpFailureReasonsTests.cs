@@ -16,6 +16,18 @@ namespace CrmErpDemo.AppHost.Tests;
 [TestClass]
 public sealed class ErpFailureReasonsTests
 {
+    /// <summary>The reasons whose failure is a thrown, written exception. The defect is real code in the adapter.</summary>
+    private static readonly System.Collections.Generic.List<ErpFailureReason> Simulated =
+        ErpFailureReasons.All.Where(r => r.Id != ErpFailureReasons.ApplicationDefect).ToList();
+
+    [TestMethod]
+    public void Catalog_HoldsNoFailureWhoseTextContradictsTheMessage()
+    {
+        // These two quoted a country and an account id that the message never carried.
+        Assert.IsNull(ErpFailureReasons.Find("contract_schema"));
+        Assert.IsNull(ErpFailureReasons.Find("missing_reference_data"));
+    }
+
     [TestMethod]
     public void Catalog_HasUniqueIdsAndAKnownDefault()
     {
@@ -48,7 +60,7 @@ public sealed class ErpFailureReasonsTests
         // falls back to DefaultFailureDispositionClassifier; with no retry policy either, a failure
         // it does not dead-letter is recorded as Failed.
         var classifier = new DefaultFailureDispositionClassifier();
-        foreach (var reason in ErpFailureReasons.All)
+        foreach (var reason in Simulated)
         {
             var ex = ErpFailureReasons.CreateException(reason.Id, "CrmAccountCreated");
             var expected = classifier.Classify(ex, "CrmAccountCreated", "ErpEndpoint") == FailureDisposition.DeadLetter
@@ -64,14 +76,14 @@ public sealed class ErpFailureReasonsTests
     [TestMethod]
     public void EveryReason_ProducesDistinctExceptionTypesWithEvidenceInTheMessage()
     {
-        var byType = ErpFailureReasons.All
+        var byType = Simulated
             .Select(r => ErpFailureReasons.CreateException(r.Id, "CrmContactCreated"))
             .GroupBy(e => e.GetType())
             .ToList();
-        Assert.AreEqual(ErpFailureReasons.All.Count, byType.Count, "each reason should surface a different ErrorType in the WebApp");
+        Assert.AreEqual(Simulated.Count, byType.Count, "each reason should surface a different ErrorType in the WebApp");
 
         // NimBus stores only the message, never a stack trace, so the message is the evidence.
-        foreach (var reason in ErpFailureReasons.All.Where(r => r.Id != ErpFailureReasons.Default))
+        foreach (var reason in Simulated.Where(r => r.Id != ErpFailureReasons.Default))
         {
             var message = ErpFailureReasons.CreateException(reason.Id, "CrmContactCreated").Message;
             Assert.IsTrue(message.Length > 80, $"{reason.Id} message is too thin to classify: '{message}'");
@@ -79,14 +91,28 @@ public sealed class ErpFailureReasonsTests
     }
 
     [TestMethod]
-    public void Selectable_IsTheCatalogPlusRandomLast()
+    public void Selectable_IsTheCatalogThenTheTwoMixes()
     {
         CollectionAssert.AreEqual(
-            ErpFailureReasons.All.Select(r => r.Id).Append(ErpFailureReasons.Random).ToList(),
+            ErpFailureReasons.All.Select(r => r.Id).Append(ErpFailureReasons.MostlyTransient).Append(ErpFailureReasons.Random).ToList(),
             ErpFailureReasons.Selectable.Select(r => r.Id).ToList());
         CollectionAssert.AllItemsAreUnique(ErpFailureReasons.Selectable.Select(r => r.Id).ToList());
         Assert.AreEqual(ErpFailureReasons.Random, ErpFailureReasons.Find("RANDOM")!.Id);
-        Assert.IsFalse(ErpFailureReasons.All.Any(r => r.Id == ErpFailureReasons.Random), "All holds only failures that can be thrown");
+        Assert.AreEqual(ErpFailureReasons.MostlyTransient, ErpFailureReasons.Find("Mostly_Transient")!.Id);
+        Assert.IsFalse(
+            ErpFailureReasons.All.Any(r => r.Id is ErpFailureReasons.Random or ErpFailureReasons.MostlyTransient),
+            "All holds only failures that can be thrown");
+    }
+
+    [TestMethod]
+    public void Decide_MostlyTransient_DrawsTheTransientFailureForMostMessagesAndEveryOtherSometimes()
+    {
+        var rng = new Random(11);
+        var picked = Enumerable.Range(0, 10_000).Select(_ => ErpFailureReasons.Decide(1.0, ErpFailureReasons.MostlyTransient, rng)!.Id).ToList();
+
+        var transient = picked.Count(id => id == "transient_dependency");
+        Assert.IsTrue(transient is > 6_500 and < 7_500, $"expected about 70% of 10,000 to be transient, got {transient}");
+        CollectionAssert.AreEquivalent(ErpFailureReasons.All.Select(r => r.Id).ToList(), picked.Distinct().ToList());
     }
 
     [TestMethod]
@@ -111,8 +137,8 @@ public sealed class ErpFailureReasonsTests
     public void Decide_ConcreteReasonAlwaysThrowsThatReason()
     {
         var rng = new Random(3);
-        var picked = Enumerable.Range(0, 200).Select(_ => ErpFailureReasons.Decide(1.0, "contract_schema", rng)!.Id).Distinct().ToList();
-        CollectionAssert.AreEqual(new[] { "contract_schema" }, picked);
+        var picked = Enumerable.Range(0, 200).Select(_ => ErpFailureReasons.Decide(1.0, "business_rule", rng)!.Id).Distinct().ToList();
+        CollectionAssert.AreEqual(new[] { "business_rule" }, picked);
     }
 
     [TestMethod]
@@ -121,23 +147,5 @@ public sealed class ErpFailureReasonsTests
         var rng = new Random(7);
         var picked = Enumerable.Range(0, 2_000).Select(_ => ErpFailureReasons.Decide(1.0, ErpFailureReasons.Random, rng)!.Id).ToHashSet();
         CollectionAssert.AreEquivalent(ErpFailureReasons.All.Select(r => r.Id).ToList(), picked.ToList());
-    }
-
-    [TestMethod]
-    public void CreateException_Random_ThrowsOneOfTheConcreteFailures()
-    {
-        var concreteTypes = ErpFailureReasons.All.Select(r => ErpFailureReasons.CreateException(r.Id, "CrmAccountCreated").GetType()).ToHashSet();
-        for (var i = 0; i < 50; i++)
-        {
-            var ex = ErpFailureReasons.CreateException(ErpFailureReasons.Random, "CrmAccountCreated");
-            Assert.IsTrue(concreteTypes.Contains(ex.GetType()), $"{ex.GetType().Name} is not a catalog failure");
-        }
-    }
-
-    [TestMethod]
-    public void ContractSchema_QuotesTheInboundEventType()
-    {
-        var message = ErpFailureReasons.CreateException("contract_schema", "CrmAccountUpdated").Message;
-        StringAssert.Contains(message, "CrmAccountUpdated", StringComparison.Ordinal);
     }
 }

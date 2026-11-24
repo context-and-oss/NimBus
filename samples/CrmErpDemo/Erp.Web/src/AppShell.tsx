@@ -108,7 +108,7 @@ function ErrorModeBanner() {
   if (!errorMode?.enabled) return null;
   const selected = reasons.find((r) => r.id === errorMode.reason);
   const percent = failurePercent(errorMode.failureRate);
-  const random = selected?.id === 'random';
+  const random = selected?.expectedCategory === 'varies';
   return (
     <div className="flex shrink-0 flex-col gap-0.5 bg-[#fff4ce] px-5 py-1.5 text-[13px] text-[#5c3a00]">
       <div>

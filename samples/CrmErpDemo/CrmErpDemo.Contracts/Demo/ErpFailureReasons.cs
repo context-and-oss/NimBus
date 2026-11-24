@@ -28,16 +28,31 @@ public sealed record ErpFailureReason(
 /// erp-web SPA (which renders the dropdown).
 /// </summary>
 /// <remarks>
+/// <para>
 /// NimBus records only the exception's type name and message as the failure evidence
 /// (<c>ErrorContent.ErrorType</c> / <c>ErrorText</c>, no stack trace), so each reason's message
 /// carries the cues a real failure of that kind would: status codes, identifiers, the
 /// downstream system, and what would have to change. That is what Integration Intelligence
 /// classifies. Reason ids match the classification category they are meant to land in.
+/// </para>
+/// <para>
+/// A written message must never contradict the message it fails: whoever classifies the failure,
+/// a person or an agent, compares the two and stops trusting the evidence when they disagree. So
+/// no reason here quotes a field of the payload. Failures that depend on the data are real ones
+/// instead: ERP rejects a country that is not an ISO code (<c>Erp.Api</c>'s <c>CountryCodes</c>),
+/// and <see cref="ApplicationDefect"/> runs a real defect in the adapter.
+/// </para>
 /// </remarks>
 public static class ErpFailureReasons
 {
     /// <summary>The original, generic error-mode failure. Selected when no reason has been chosen.</summary>
     public const string Default = "handler_exception";
+
+    /// <summary>
+    /// The one reason that is not a thrown, written exception: the adapter runs a mapping step
+    /// with a real defect, which fails only for the messages the defect mishandles.
+    /// </summary>
+    public const string ApplicationDefect = "application_defect";
 
     public static readonly IReadOnlyList<ErpFailureReason> All =
     [
@@ -60,27 +75,16 @@ public static class ErpFailureReasons
             "authentication_configuration",
             "Failed"),
         new(
-            "contract_schema",
-            "Schema mismatch (contract)",
-            "The payload fails deserialization: CountryCode carries a full country name instead of an ISO 3166-1 alpha-2 code. It is not dead-lettered: that needs a permanent-failure classifier, which the ERP adapter does not register.",
-            "contract_schema",
-            "Failed"),
-        new(
             "business_rule",
             "Customer closed (business rule)",
             "Technically valid data rejected by a domain rule: the ERP customer is in status Closed and cannot be modified. Someone must reopen the customer before a replay can succeed.",
             "business_rule",
             "Failed"),
         new(
-            "missing_reference_data",
-            "Customer not found (missing reference)",
-            "The CRM account referenced by the message has no ERP customer yet, typically because the CrmAccountCreated event has not been processed. Replaying after the reference exists succeeds.",
-            "missing_reference_data",
-            "Failed"),
-        new(
-            "application_defect",
-            "Null reference (application defect)",
-            "A programming error inside the adapter's mapping code: a NullReferenceException where an address was assumed to be present. Only a code change fixes it.",
+            ApplicationDefect,
+            "Missing posting group (application defect)",
+            "Runs a real mapping step in the adapter that has a real defect: its country table has no entry for Finland, so accounts in FI " +
+            "(and any country outside the table) fail with a KeyNotFoundException that quotes the country. Other messages go through. Only a code change fixes it.",
             "application_defect",
             "Failed"),
     ];
@@ -99,8 +103,34 @@ public static class ErpFailureReasons
         "varies",
         "Failed");
 
-    /// <summary>What erp-web offers: every failure in <see cref="All"/>, then <see cref="RandomReason"/>.</summary>
-    public static readonly IReadOnlyList<ErpFailureReason> Selectable = [.. All, RandomReason];
+    /// <summary>
+    /// The selection that throws the transient failure for most failing messages and one of the
+    /// other catalog failures for the rest: the mix an integration sees on an ordinary bad day.
+    /// </summary>
+    public const string MostlyTransient = "mostly_transient";
+
+    /// <summary>The share of <see cref="MostlyTransient"/>'s failures that are the transient one.</summary>
+    public const double TransientShare = 0.7;
+
+    private const string Transient = "transient_dependency";
+
+    /// <summary>
+    /// The dropdown entry for <see cref="MostlyTransient"/>. Like <see cref="RandomReason"/> it is
+    /// not in <see cref="All"/>: it chooses among the failures there.
+    /// </summary>
+    public static readonly ErpFailureReason MostlyTransientReason = new(
+        MostlyTransient,
+        "Mostly transient (realistic mix)",
+        "About 7 in 10 failing messages hit the downstream timeout, which a retry gets past; the rest draw one of the other failure types. " +
+        "With a failure rate below 100% this is the mix where most failures can be recovered without a person.",
+        "varies",
+        "Failed");
+
+    /// <summary>
+    /// What erp-web offers: every failure in <see cref="All"/>, then the two selections that pick
+    /// among them, <see cref="MostlyTransientReason"/> and <see cref="RandomReason"/>.
+    /// </summary>
+    public static readonly IReadOnlyList<ErpFailureReason> Selectable = [.. All, MostlyTransientReason, RandomReason];
 
     /// <summary>Looks a selectable reason up by id, case-insensitively. Null when unknown.</summary>
     public static ErpFailureReason? Find(string? id) =>
@@ -112,7 +142,8 @@ public static class ErpFailureReasons
     /// Decides what one message does while error mode is on: null when it goes through, otherwise
     /// the failure to throw. A message fails when a roll in [0, 1) is below
     /// <paramref name="failureRate"/>, so 1 fails every message and 0 none. <see cref="Random"/>
-    /// picks one failure from <see cref="All"/>; an unknown id throws the generic failure.
+    /// picks one failure from <see cref="All"/> evenly and <see cref="MostlyTransient"/> picks the
+    /// transient one for <see cref="TransientShare"/> of them; an unknown id throws the generic failure.
     /// </summary>
     /// <param name="failureRate">The share of messages that fail, from 0 to 1.</param>
     /// <param name="reasonId">The reason selected in erp-web.</param>
@@ -123,25 +154,43 @@ public static class ErpFailureReasons
         if (rng.NextDouble() >= failureRate)
             return null;
 
-        var reason = Find(reasonId) ?? All[0];
-        return reason.Id == Random ? All[rng.Next(All.Count)] : reason;
+        return Resolve(Find(reasonId) ?? All[0], rng);
+    }
+
+    /// <summary>Turns a selection into the failure to throw: itself, or for a mix the failure it draws.</summary>
+    private static ErpFailureReason Resolve(ErpFailureReason reason, System.Random rng)
+    {
+        switch (reason.Id)
+        {
+            case Random:
+                return All[rng.Next(All.Count)];
+            case MostlyTransient:
+                if (rng.NextDouble() < TransientShare)
+                    return All.First(r => r.Id == Transient);
+
+                var others = All.Where(r => r.Id != Transient).ToList();
+                return others[rng.Next(others.Count)];
+            default:
+                return reason;
+        }
     }
 
     /// <summary>
-    /// Creates the exception the adapter throws for <paramref name="reasonId"/>. Unknown ids
-    /// fall back to <see cref="Default"/> so a stale selection can never turn error mode off.
+    /// Creates the exception the adapter throws for <paramref name="reasonId"/>, the id of a
+    /// failure in <see cref="All"/>. Unknown ids fall back to <see cref="Default"/> so a stale
+    /// selection can never turn error mode off; so do the two mixes, which <see cref="Decide"/>
+    /// resolves, and <see cref="ApplicationDefect"/>, which the adapter runs instead of throwing.
     /// </summary>
-    /// <param name="reasonId">The selected reason.</param>
-    /// <param name="eventType">The inbound event type, quoted in messages that mention the payload.</param>
+    /// <param name="reasonId">The reason <see cref="Decide"/> returned.</param>
+    /// <param name="eventType">The inbound event type. Kept for callers; no message quotes the payload.</param>
     public static Exception CreateException(string? reasonId, string eventType)
     {
+        ArgumentNullException.ThrowIfNull(eventType);
         var reason = Find(reasonId) ?? All[0];
-        if (reason.Id == Random)
-            reason = All[System.Random.Shared.Next(All.Count)];
 
         return reason.Id switch
         {
-            "transient_dependency" => new TimeoutException(
+            Transient => new TimeoutException(
                 "ERP pricing service did not respond within 30s: HTTP 503 Service Unavailable from https://erp-pricing.internal/api/v2/customers " +
                 "(socket error: connection reset by peer). The service was reachable a moment ago and is usually back within minutes."),
 
@@ -149,23 +198,9 @@ public static class ErpFailureReasons
                 "ERP API rejected the request with HTTP 401 Unauthorized (WWW-Authenticate: Bearer error=\"invalid_token\", error_description=\"The client secret has expired\"). " +
                 "The client secret for app registration 'erp-adapter' expired on 2026-09-01; renew it and update ErpApi:ClientSecret."),
 
-            "contract_schema" => new FormatException(
-                $"Could not deserialize {eventType}: property 'CountryCode' must be an ISO 3166-1 alpha-2 code (2 characters) but was 'Denmark'. " +
-                "The producer appears to send contract version 2.1 while this consumer expects 2.0."),
-
             "business_rule" => new InvalidOperationException(
                 "ERP rejected the change: customer C-100245 is in status Closed and cannot be modified (rule ERP-CUST-017). " +
                 "Reopen the customer in ERP before replaying this message."),
-
-            "missing_reference_data" => new KeyNotFoundException(
-                "ERP customer for CRM account 6f1c0a5e-4b2d-4e8a-9c3f-1a2b3c4d5e01 was not found. " +
-                "The CrmAccountCreated event for this account has not been processed yet, so there is no Customer row to attach the change to."),
-
-#pragma warning disable CA2201 // The demo deliberately reproduces a real NullReferenceException as failure evidence.
-            "application_defect" => new NullReferenceException(
-                "Object reference not set to an instance of an object. " +
-                "(Erp.Adapter.Functions.Mapping.CustomerMapper.MapAddress: dto.Address was null; the mapper assumes every customer has a billing address)"),
-#pragma warning restore CA2201
 
             _ => new HandlerErrorModeException(),
         };

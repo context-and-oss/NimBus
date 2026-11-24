@@ -1,5 +1,6 @@
 using Erp.Api.Entities;
 using Erp.Api.Mapping;
+using Erp.Api.Validation;
 using Microsoft.EntityFrameworkCore;
 using NimBus.SDK;
 
@@ -108,8 +109,15 @@ public static class CustomerEndpoints
         // upsert endpoint is only reachable from CrmAccount* event handlers.
         // When isNew, the entity insert and the outbox publish commit together;
         // the update branch doesn't publish so the scope is just a passthrough.
+        //
+        // ERP's rule for what CRM sends: the country is an ISO 3166-1 alpha-2 code. CRM does not
+        // check it, so a mistyped country is rejected here with the value quoted, and the adapter's
+        // handler fails with that text. This is the demo's data-quality failure.
         group.MapPut("/by-crm/{crmAccountId:guid}", async (Guid crmAccountId, CustomerUpsertRequest req, ErpDbContext db, IPublisherClient publisher) =>
         {
+            if (CountryCodes.Problem(req.CountryCode) is { } problem)
+                return Results.Problem(detail: problem, statusCode: StatusCodes.Status422UnprocessableEntity, title: "ERP rejected the customer");
+
             var existing = await db.Customers.FirstOrDefaultAsync(c => c.CrmAccountId == crmAccountId);
             if (existing is null && req.ErpCustomerId is { } erpCustomerId && erpCustomerId != Guid.Empty)
                 existing = await db.Customers.FindAsync(erpCustomerId);

@@ -49,7 +49,7 @@ public sealed class CrmAccountCreatedHandler(
             return;
         }
 
-        await ErrorModeGuard.ThrowIfEnabledAsync(modeClient, context, logger, cancellationToken);
+        await ErrorModeGuard.ThrowIfEnabledAsync(modeClient, context, logger, cancellationToken, message);
         logger.LogInformation("Creating ERP customer from CRM account {AccountId} ({LegalName})", message.AccountId, message.LegalName);
 
         await erp.UpsertCustomerAsync(
