@@ -33,7 +33,7 @@ sequenceDiagram
     participant T as Service Bus Topic
     participant S as Subscriber
     participant R as Resolver
-    participant DB as Cosmos DB
+    participant DB as Message Store
 
     P->>T: EventRequest (Session X)
     T->>S: Deliver to session
@@ -51,7 +51,7 @@ sequenceDiagram
     participant S as Subscriber (Session X)
     participant D as Deferred Subscription
     participant R as Resolver
-    participant DB as Cosmos DB
+    participant DB as Message Store
 
     Note over S: Message A arrives
     T->>S: EventRequest A
@@ -91,7 +91,7 @@ sequenceDiagram
     participant S as Subscriber (Session X)
     participant D as Deferred Subscription
     participant R as Resolver
-    participant DB as Cosmos DB
+    participant DB as Message Store
 
     Note over W: User resubmits failed event A
     W->>T: ResubmissionRequest A

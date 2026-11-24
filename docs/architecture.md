@@ -543,19 +543,19 @@ sequenceDiagram
     participant Bus as Azure Service Bus
     participant Resolver as NimBus.Resolver
     participant Store as NimBus.MessageStore
-    participant Cosmos as Cosmos DB
+    participant DB as Cosmos DB or SQL Server
 
     Bus->>Resolver: ServiceBusTrigger message
     Resolver->>Store: StoreMessage(MessageEntity)
     Resolver->>Store: Upload state projection by ResolutionStatus
-    Store->>Cosmos: Persist history + endpoint state
+    Store->>DB: Persist history + endpoint state
     Resolver->>Bus: Complete / Abandon / DeadLetter / ScheduleRedelivery
 ```
 
 Key behaviors:
 
 - `RetryRequest` creates an audit entry before normal persistence
-- Cosmos throttling triggers exponential backoff and scheduled redelivery
+- store throttling (Cosmos DB rate limiting) and transient provider failures trigger exponential backoff and scheduled redelivery
 - dead-letter metadata overrides status mapping
 
 ### 4. Management and recovery flow
