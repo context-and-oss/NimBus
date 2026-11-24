@@ -70,14 +70,14 @@ For Cosmos deployments, provision the `failureclassifications` and `intelligence
 | Mode | When | What is available |
 |---|---|---|
 | Off | `Enabled` is false, the configuration can't be bound, or saved Admin settings can't be read | Nothing. Classification storage is not read. |
-| Read-only | Enabled with storage configured, but threshold or evidence settings fail validation | Saved classifications: the classification GET and `history` routes, the MCP `nimbus_get_classification` tool and Failed Message Insights enrichment. Storage, its schema and the retention reconciler run. Status reports `ReadOnly`. |
+| Read-only | Enabled with storage configured, but threshold or evidence settings fail validation | Saved classifications: the classification GET and `history` routes, the MCP `nimbus_get_classification` tool and the Failed page's classification groupings. Storage, its schema and the retention reconciler run. Status reports `ReadOnly`. |
 | Recordable | Storage configured and evidence and threshold settings valid | Saved results, plus `nimbus_get_failure_evidence` and `nimbus_record_classification`. Status reports `Recordable`. |
 
 Read-only mode means a bad threshold edit never hides results that were already saved.
 
 ## Upgrading from 4.x
 
-NimBus 4.x deprecated the built-in TypeSafe provider (Spec 044); 5.0.0 removes it. Stored classifications, including those with `Provider: "TypeSafe"` and question set version 1, stay readable, and the question set, the guidance rules and Insights are unchanged.
+NimBus 4.x deprecated the built-in TypeSafe provider (Spec 044); 5.0.0 removes it. Stored classifications, including those with `Provider: "TypeSafe"` and question set version 1, stay readable, and the question set, the guidance rules and the Failed page's groupings are unchanged.
 
 | Removed in 5.0.0 | Use instead |
 |---|---|

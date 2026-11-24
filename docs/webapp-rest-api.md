@@ -385,9 +385,21 @@ event types, IDs, From/To, error text, UpdatedAt range):
   to 500).
 - `POST /api/v1/failed/histogram` — counts per time bucket by status and endpoint, zero-filled.
   The bucket follows `period` (5 minutes for `1h` … one day for `30d`), or a custom
-  `from`/`to` of up to 90 days with at most 60 buckets.
-- `POST /api/v1/failed/error-groups` — the Insights grouping (category, then normalized
-  pattern) with each pattern's failures; up to 5,000 failures, `truncated` beyond that.
+  `from`/`to` of up to 90 days with at most 60 buckets. `classificationsAvailable` is true
+  when failure intelligence is on, so `error-groups` can group by saved classification.
+- `POST /api/v1/failed/error-groups` — groups, then normalized patterns, then each pattern's
+  failures; up to 5,000 failures, `truncated` beyond that. `groupBy` picks the top level:
+  `errorPattern` (the default: the error category), `cause`, `guidance` or `faultOrigin`, from
+  the saved classification of each failure's latest failed attempt (`lastMessageId`). Reading
+  it never starts an analysis.
+  - `enrichment` is `available`, `disabled`, `unavailable`, `unsupported` or `limitExceeded`
+    (more failures than `NimBus:Insights:EnrichmentCeiling`). Every value except `available`
+    leaves `coverage` null and returns error-category groups whatever `groupBy` asks for.
+  - With classifications, the response, each group and each pattern carry `coverage`
+    (`classified`, `uncertain`, `notAnalyzed`, `notEligible`), and each failure carries
+    `analysisState` and, when it has a result, `category`, `guidance` and `faultOrigin`.
+  - Each group has a `groupKey` and a `label`; `errorCategory` holds the label too.
+  - `analysisAvailable` is false when agents can't record new classifications.
 
 Naming an endpoint the caller cannot read returns 403. See
 [Failed messages page](webapp-failed-messages.md).
@@ -409,6 +421,11 @@ curl -H "Authorization: Bearer $TOKEN" \
 ```
 
 #### Failed insights
+
+> **Deprecated.** The Insights page that used these three operations was folded into the
+> [Failed page](webapp-failed-messages.md#grouping-by-saved-classification). They keep working
+> and are removed in the next major version. For unresolved failures, use
+> `POST /api/v1/failed/error-groups` with `groupBy`.
 
 `GET /api/v1/metrics/failed-insights` groups failure occurrences (one per failed attempt) by error
 pattern. When saved failure classifications are readable it also groups them by likely cause

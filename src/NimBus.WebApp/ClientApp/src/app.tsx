@@ -12,7 +12,7 @@ import { isDashboardTokenMode } from "lib/monitor-access";
 
 // Pages are route-level code-split: the initial bundle carries only the shell
 // (sidebar/topbar/footer) and whichever route the user lands on. Each page —
-// and its heavy, page-specific deps (recharts on Insights, react-d3-tree on
+// and its heavy, page-specific deps (recharts on Metrics, react-d3-tree on
 // event details) — is fetched on demand when its route is first visited.
 const EndpointDetails = lazy(() => import("pages/endpoint-details"));
 const EventDetails = lazy(() => import("pages/event-details"));
@@ -27,7 +27,7 @@ const AccessControl = lazy(() => import("pages/access-control"));
 const Metrics = lazy(() => import("pages/metrics"));
 const Flow = lazy(() => import("pages/flow"));
 const Heartbeat = lazy(() => import("pages/heartbeat"));
-const Insights = lazy(() => import("pages/insights"));
+const InsightsRedirect = lazy(() => import("pages/insights-redirect"));
 const FailedMessages = lazy(() => import("pages/failed-messages"));
 const Monitor = lazy(() => import("pages/monitor"));
 const AuditsList = lazy(() => import("pages/audits-list"));
@@ -107,10 +107,11 @@ const navigation: Navigation = [
     render: () => <Monitor />,
   },
   {
+    // Folded into the Failed page's groupings; old links keep working.
     name: "Insights",
     path: "/Insights",
-    header: true,
-    render: () => <Insights />,
+    header: false,
+    render: () => <InsightsRedirect />,
   },
   {
     name: "Audit Log",

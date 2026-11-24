@@ -52,7 +52,6 @@ skip blocked work.
 
 - [Monitor wall](webapp-monitor.md)
 - [Failed messages](webapp-failed-messages.md)
-- [Failed message insights](webapp-insights.md)
 - [Simulating traffic](webapp-simulate.md)
 
 ## Reference

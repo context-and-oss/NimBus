@@ -96,17 +96,6 @@ const Icon = {
       />
     </svg>
   ),
-  insights: (
-    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
-      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4" />
-      <path
-        d="M8 5v3l2 2"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-    </svg>
-  ),
   audit: (
     <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
       <path
@@ -296,7 +285,6 @@ const NAV: NavGroup[] = [
   {
     label: "Diagnose",
     items: [
-      { name: "Insights", path: "/Insights", icon: Icon.insights },
       { name: "Audit Log", path: "/Audits", icon: Icon.audit },
     ],
   },

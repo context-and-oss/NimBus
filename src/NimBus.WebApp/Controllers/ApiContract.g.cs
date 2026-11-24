@@ -2962,11 +2962,11 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedHistogram>> PostFailedHistogramAsync(FailedHistogramRequest body);
 
         /// <summary>
-        /// Group unresolved failures by error category and pattern
+        /// Group unresolved failures by error pattern, likely cause, recovery guidance or fault origin
         /// </summary>
 
         /// <remarks>
-        /// Groups every failure matched by the filter (up to a server cap) by error category and normalized error pattern, the same grouping as the Insights page, with the individual failures of each pattern.
+        /// Groups every failure matched by the filter (up to a server cap), with the individual failures of each normalized error pattern. groupBy picks the top level: the error category (default), or the likely cause, recovery guidance or fault origin of each failure's saved classification. When saved classifications can't be read (see enrichment), the groups are error categories whatever groupBy asks for. Never starts an analysis.
         /// </remarks>
 
         /// <returns>OK</returns>
@@ -3014,10 +3014,10 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Group unresolved failures by error category and pattern
+        /// Group unresolved failures by error pattern, likely cause, recovery guidance or fault origin
         /// </summary>
         /// <remarks>
-        /// Groups every failure matched by the filter (up to a server cap) by error category and normalized error pattern, the same grouping as the Insights page, with the individual failures of each pattern.
+        /// Groups every failure matched by the filter (up to a server cap), with the individual failures of each normalized error pattern. groupBy picks the top level: the error category (default), or the likely cause, recovery guidance or fault origin of each failure's saved classification. When saved classifications can't be read (see enrichment), the groups are error categories whatever groupBy asks for. Never starts an analysis.
         /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/v1/failed/error-groups")]
@@ -3101,6 +3101,9 @@ namespace NimBus.WebApp.ManagementApi
         /// Get failed message insights grouped by error pattern
         /// </summary>
 
+        /// <remarks>
+        /// Deprecated: the WebApp page that used it was folded into the Failed page, and the operation is removed in the next major version. Use POST /api/v1/failed/error-groups with groupBy for unresolved failures.
+        /// </remarks>
 
         /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
 
@@ -3119,7 +3122,7 @@ namespace NimBus.WebApp.ManagementApi
         /// </summary>
 
         /// <remarks>
-        /// Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis.
+        /// Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis. Deprecated: the WebApp page that used it was folded into the Failed page, and the operation is removed in the next major version. Use POST /api/v1/failed/error-groups with groupBy for unresolved failures.
         /// </remarks>
 
         /// <param name="from">Window start (inclusive), as returned by the overview.</param>
@@ -3139,6 +3142,10 @@ namespace NimBus.WebApp.ManagementApi
         /// <summary>
         /// Page the error patterns of one likely-cause or recovery-guidance group
         /// </summary>
+
+        /// <remarks>
+        /// Deprecated: the WebApp page that used it was folded into the Failed page, and the operation is removed in the next major version. Use POST /api/v1/failed/error-groups with groupBy for unresolved failures.
+        /// </remarks>
 
 
 
@@ -3219,6 +3226,9 @@ namespace NimBus.WebApp.ManagementApi
         /// <summary>
         /// Get failed message insights grouped by error pattern
         /// </summary>
+        /// <remarks>
+        /// Deprecated: the WebApp page that used it was folded into the Failed page, and the operation is removed in the next major version. Use POST /api/v1/failed/error-groups with groupBy for unresolved failures.
+        /// </remarks>
         /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
         /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
         /// <param name="endpointId">Exact endpoint id to narrow the failures to. Omitted selects every endpoint.</param>
@@ -3235,7 +3245,7 @@ namespace NimBus.WebApp.ManagementApi
         /// Page the failure occurrences of one insights group
         /// </summary>
         /// <remarks>
-        /// Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis.
+        /// Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis. Deprecated: the WebApp page that used it was folded into the Failed page, and the operation is removed in the next major version. Use POST /api/v1/failed/error-groups with groupBy for unresolved failures.
         /// </remarks>
         /// <param name="from">Window start (inclusive), as returned by the overview.</param>
         /// <param name="to">Window end (exclusive), as returned by the overview.</param>
@@ -3252,6 +3262,9 @@ namespace NimBus.WebApp.ManagementApi
         /// <summary>
         /// Page the error patterns of one likely-cause or recovery-guidance group
         /// </summary>
+        /// <remarks>
+        /// Deprecated: the WebApp page that used it was folded into the Failed page, and the operation is removed in the next major version. Use POST /api/v1/failed/error-groups with groupBy for unresolved failures.
+        /// </remarks>
         /// <param name="perspective">cause or guidance.</param>
         /// <param name="pageSize">1 to 100; default 50.</param>
         /// <returns>One page of error patterns, most frequent first</returns>
@@ -12287,6 +12300,7 @@ namespace NimBus.WebApp.ManagementApi
         private System.Collections.Generic.List<FailedHistogramBucket> _buckets;
         private FailedHistogramTotals _totals;
         private bool _truncated;
+        private bool _classificationsAvailable;
 
         /// <summary>
         /// Nominal bucket size in minutes. Each bucket ends where the next one starts, so a bar across a daylight-saving change is shorter or longer.
@@ -12376,6 +12390,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_truncated != value)
                 {
                     _truncated = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True when failure intelligence is on, so error-groups can group by saved classification.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("classificationsAvailable", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool ClassificationsAvailable    {
+            get { return _classificationsAvailable; }
+            set
+            {
+                if (_classificationsAvailable != value)
+                {
+                    _classificationsAvailable = value;
                     RaisePropertyChanged();
                 }
             }
@@ -12703,6 +12733,7 @@ namespace NimBus.WebApp.ManagementApi
     public partial class FailedErrorGroupsRequest : System.ComponentModel.INotifyPropertyChanged
     {
         private FailedSearchFilter _filter;
+        private InsightsPerspective _groupBy;
 
         [Newtonsoft.Json.JsonProperty("filter", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public FailedSearchFilter Filter    {
@@ -12712,6 +12743,20 @@ namespace NimBus.WebApp.ManagementApi
                 if (_filter != value)
                 {
                     _filter = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("groupBy", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public InsightsPerspective GroupBy    {
+            get { return _groupBy; }
+            set
+            {
+                if (_groupBy != value)
+                {
+                    _groupBy = value;
                     RaisePropertyChanged();
                 }
             }
@@ -12754,6 +12799,10 @@ namespace NimBus.WebApp.ManagementApi
         private System.Collections.Generic.List<FailedErrorGroup> _groups;
         private int _total;
         private bool _truncated;
+        private InsightsEnrichmentStatus _enrichment;
+        private int _enrichmentLimit;
+        private bool _analysisAvailable;
+        private InsightsCoverage _coverage;
 
         [Newtonsoft.Json.JsonProperty("groups", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<FailedErrorGroup> Groups    {
@@ -12800,6 +12849,65 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        [Newtonsoft.Json.JsonProperty("enrichment", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public InsightsEnrichmentStatus Enrichment    {
+            get { return _enrichment; }
+            set
+            {
+                if (_enrichment != value)
+                {
+                    _enrichment = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Largest number of failures whose saved classifications are read.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("enrichmentLimit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int EnrichmentLimit    {
+            get { return _enrichmentLimit; }
+            set
+            {
+                if (_enrichmentLimit != value)
+                {
+                    _enrichmentLimit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether agents can record new classifications in this deployment.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("analysisAvailable", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AnalysisAvailable    {
+            get { return _analysisAvailable; }
+            set
+            {
+                if (_analysisAvailable != value)
+                {
+                    _analysisAvailable = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -12835,6 +12943,9 @@ namespace NimBus.WebApp.ManagementApi
     public partial class FailedErrorGroup : System.ComponentModel.INotifyPropertyChanged
     {
         private string _errorCategory;
+        private string _groupKey;
+        private string _label;
+        private InsightsCoverage _coverage;
         private int _count;
         private System.Collections.Generic.List<string> _endpoints;
         private System.Collections.Generic.List<string> _eventTypes;
@@ -12842,6 +12953,9 @@ namespace NimBus.WebApp.ManagementApi
         private string _exampleErrorText;
         private System.Collections.Generic.List<FailedErrorSubGroup> _subGroups;
 
+        /// <summary>
+        /// The error category; for a cause, guidance or fault-origin grouping, the group's label.
+        /// </summary>
         [Newtonsoft.Json.JsonProperty("errorCategory", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string ErrorCategory    {
             get { return _errorCategory; }
@@ -12850,6 +12964,51 @@ namespace NimBus.WebApp.ManagementApi
                 if (_errorCategory != value)
                 {
                     _errorCategory = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The error category, or the cause, guidance or fault-origin key the group stands for.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("groupKey", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string GroupKey    {
+            get { return _groupKey; }
+            set
+            {
+                if (_groupKey != value)
+                {
+                    _groupKey = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reader-facing name of the group.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("label", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Label    {
+            get { return _label; }
+            set
+            {
+                if (_label != value)
+                {
+                    _label = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
                     RaisePropertyChanged();
                 }
             }
@@ -12968,6 +13127,7 @@ namespace NimBus.WebApp.ManagementApi
     public partial class FailedErrorSubGroup : System.ComponentModel.INotifyPropertyChanged
     {
         private string _normalizedPattern;
+        private InsightsCoverage _coverage;
         private int _count;
         private System.Collections.Generic.List<string> _endpoints;
         private System.Collections.Generic.List<string> _eventTypes;
@@ -12983,6 +13143,19 @@ namespace NimBus.WebApp.ManagementApi
                 if (_normalizedPattern != value)
                 {
                     _normalizedPattern = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public InsightsCoverage Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
                     RaisePropertyChanged();
                 }
             }
@@ -13108,6 +13281,10 @@ namespace NimBus.WebApp.ManagementApi
         private string _resolutionStatus;
         private System.DateTime _updatedAt;
         private string _errorText;
+        private InsightAnalysisState _analysisState;
+        private string _category;
+        private string _guidance;
+        private string _faultOrigin;
 
         [Newtonsoft.Json.JsonProperty("eventId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string EventId    {
@@ -13208,6 +13385,68 @@ namespace NimBus.WebApp.ManagementApi
                 if (_errorText != value)
                 {
                     _errorText = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("analysisState", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public InsightAnalysisState AnalysisState    {
+            get { return _analysisState; }
+            set
+            {
+                if (_analysisState != value)
+                {
+                    _analysisState = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Saved likely-cause category, when the failure is classified.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("category", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Category    {
+            get { return _category; }
+            set
+            {
+                if (_category != value)
+                {
+                    _category = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Saved recovery guidance, as recorded when the failure was analyzed.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("guidance", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Guidance    {
+            get { return _guidance; }
+            set
+            {
+                if (_guidance != value)
+                {
+                    _guidance = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Saved fault origin.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("faultOrigin", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string FaultOrigin    {
+            get { return _faultOrigin; }
+            set
+            {
+                if (_faultOrigin != value)
+                {
+                    _faultOrigin = value;
                     RaisePropertyChanged();
                 }
             }

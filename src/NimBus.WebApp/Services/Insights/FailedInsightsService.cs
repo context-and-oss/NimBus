@@ -192,49 +192,10 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     /// <summary>Failure-occurrence and window cache lifetime; mirrors the other metrics endpoints.</summary>
     internal static readonly TimeSpan MetricsTtl = TimeSpan.FromSeconds(30);
 
-    internal const string Uncertain = "uncertain";
-    internal const string NotAnalyzed = "notAnalyzed";
-    internal const string NotEligible = "notEligible";
-
-    private static readonly Dictionary<string, string> CauseLabels = new(StringComparer.Ordinal)
-    {
-        ["transient_dependency"] = "Transient dependency",
-        ["authentication_configuration"] = "Authentication / configuration",
-        ["contract_schema"] = "Contract / schema",
-        ["business_rule"] = "Business rule",
-        ["missing_reference_data"] = "Missing reference data",
-        ["application_defect"] = "Application defect",
-        ["messaging_platform"] = "Messaging platform",
-        [Uncertain] = "Uncertain",
-        [NotAnalyzed] = "Not analyzed",
-        [NotEligible] = "Not eligible",
-    };
-
-    internal const string NotAssessed = "notAssessed";
-
-    private static readonly Dictionary<string, string> OriginLabels = new(StringComparer.Ordinal)
-    {
-        ["source_data"] = "Source data",
-        ["adapter_code"] = "Adapter code",
-        ["target_system"] = "Target system",
-        ["configuration"] = "Configuration",
-        ["platform"] = "Platform",
-        ["unknown"] = "Unknown origin",
-        [NotAssessed] = "Origin not assessed",
-        [Uncertain] = "Uncertain",
-        [NotAnalyzed] = "Not analyzed",
-        [NotEligible] = "Not eligible",
-    };
-
-    private static readonly Dictionary<string, string> GuidanceLabels = new(StringComparer.Ordinal)
-    {
-        [nameof(FailureGuidance.RetryMayHelp)] = "Retry may help",
-        [nameof(FailureGuidance.ChangeLikelyRequired)] = "Change likely required",
-        [nameof(FailureGuidance.Investigate)] = "Investigate",
-        [nameof(FailureGuidance.Uncertain)] = "Uncertain",
-        [NotAnalyzed] = "Not analyzed",
-        [NotEligible] = "Not eligible",
-    };
+    internal const string Uncertain = FailureAssessor.Uncertain;
+    internal const string NotAnalyzed = FailureAssessor.NotAnalyzed;
+    internal const string NotEligible = FailureAssessor.NotEligible;
+    internal const string NotAssessed = FailureAssessor.NotAssessed;
 
     private readonly IMetricsStore _metricsStore;
     private readonly IMessageTrackingStore _events;
@@ -289,9 +250,9 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             EnrichmentLimit = _options.EnrichmentCeiling,
             AnalysisAvailable = _enrichment.IsEnabled && _enrichment.CanRecord,
             Coverage = assessed is null ? null : Coverage(assessed.Values),
-            CauseGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.CauseKey, CauseLabels),
-            GuidanceGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.GuidanceKey, GuidanceLabels),
-            FaultOriginGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.OriginKey, OriginLabels),
+            CauseGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.CauseKey, FailureAssessor.CauseLabels),
+            GuidanceGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.GuidanceKey, FailureAssessor.GuidanceLabels),
+            FaultOriginGroups = assessed is null ? null : BuildInsightGroups(rows, assessed, a => a.OriginKey, FailureAssessor.OriginLabels),
         });
     }
 
@@ -646,51 +607,12 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
         foreach (var row in scoped)
         {
             snapshots.TryGetValue(row.Info.MessageId!, out var snapshot);
-            var live = snapshot is { Deleted: false } ? snapshot : null;
-            var latest = live?.Latest;
-            var marker = Marker(live);
-            if (latest is null)
-            {
-                var state = _enrichment.IsEligible(row.Info.EndpointId) ? CoverageState.NotAnalyzed : CoverageState.NotEligible;
-                var key = state == CoverageState.NotAnalyzed ? NotAnalyzed : NotEligible;
-                assessed[row] = new Assessment(state, key, key, null, marker, key);
-                continue;
-            }
-
-            if (!ClassificationMatch.IsSameSource(latest, row.Info.EndpointId, row.Info.EventId))
-            {
-                // A result that names another source is never shown, only counted as uncertain.
-                mismatches++;
-                assessed[row] = new Assessment(CoverageState.Uncertain, Uncertain, nameof(FailureGuidance.Uncertain), null, "identityMismatch", Uncertain);
-                continue;
-            }
-
-            // Stored guidance is a Newtonsoft integer: an out-of-range value deserializes without error.
-            var guidanceKey = Enum.IsDefined(latest.Guidance) ? latest.Guidance.ToString() : nameof(FailureGuidance.Uncertain);
-            var classified = ClassificationMatch.IsClassified(latest);
-            // Version 1 records have no origin (Spec 044 §6.2); an origin outside the set is unknown.
-            var originKey = string.IsNullOrEmpty(latest.FaultOrigin)
-                ? NotAssessed
-                : FailureClassificationQuestionSet.FaultOrigins.Contains(latest.FaultOrigin) ? latest.FaultOrigin : "unknown";
-            assessed[row] = classified
-                ? new Assessment(CoverageState.Classified, latest.Category, guidanceKey, latest, marker, originKey)
-                : new Assessment(CoverageState.Uncertain, Uncertain, guidanceKey, latest, marker, originKey);
+            assessed[row] = FailureAssessor.Assess(_enrichment.IsEligible(row.Info.EndpointId), row.Info.EndpointId, row.Info.EventId, snapshot, out var mismatch);
+            if (mismatch) mismatches++;
         }
         if (mismatches > 0) NimBusIntelligenceTelemetry.InsightsIdentityMismatches.Add(mismatches);
         return assessed;
     }
-
-    /// <summary>
-    /// Why the latest operation differs from the counted result: a newer analysis is running, its
-    /// outcome is unknown, or it failed (spec 043 §5). Null when the latest operation completed.
-    /// </summary>
-    private static string? Marker(ClassificationSnapshot? snapshot) => snapshot?.LatestOperationStatus switch
-    {
-        "Active" => "analysisRunning",
-        "Failed" when snapshot.LatestOperationErrorCode == "AnalysisOutcomeUnknown" => "outcomeUnknown",
-        "Failed" => "lastAnalysisFailed",
-        _ => null,
-    };
 
     private static List<ErrorPatternGroup> BuildErrorPatternGroups(IReadOnlyList<OccurrenceRow> scoped, Dictionary<OccurrenceRow, Assessment>? assessed)
         => scoped
@@ -733,7 +655,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             .ToList();
 
     private List<InsightGroup> BuildInsightGroups(IReadOnlyList<OccurrenceRow> scoped, Dictionary<OccurrenceRow, Assessment> assessed,
-        Func<Assessment, string> keyOf, Dictionary<string, string> labels)
+        Func<Assessment, string> keyOf, IReadOnlyDictionary<string, string> labels)
         => scoped
             .GroupBy(r => keyOf(assessed[r]), StringComparer.Ordinal)
             .Select(g =>
@@ -772,29 +694,7 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
             .OrderByDescending(g => g.Count).ThenBy(g => g.GroupKey, StringComparer.Ordinal)
             .ToList();
 
-    private static InsightsCoverage Coverage(IEnumerable<Assessment> assessments)
-    {
-        int classified = 0, uncertain = 0, notAnalyzed = 0, notEligible = 0;
-        foreach (var assessment in assessments)
-        {
-            switch (assessment.State)
-            {
-                case CoverageState.Classified: classified++; break;
-                case CoverageState.Uncertain: uncertain++; break;
-                case CoverageState.NotAnalyzed: notAnalyzed++; break;
-                default: notEligible++; break;
-            }
-        }
-        return new InsightsCoverage
-        {
-            Total = classified + uncertain + notAnalyzed + notEligible,
-            Analyzed = classified + uncertain,
-            Classified = classified,
-            Uncertain = uncertain,
-            NotAnalyzed = notAnalyzed,
-            NotEligible = notEligible,
-        };
-    }
+    private static InsightsCoverage Coverage(IEnumerable<Assessment> assessments) => FailureAssessor.Coverage(assessments);
 
     private static List<string> Distinct(IEnumerable<string?> values)
         => values.Where(v => v is not null).Select(v => v!).Distinct().ToList();
@@ -802,11 +702,6 @@ public sealed class FailedInsightsService : IFailedInsightsQuery
     /// <summary>Opaque, query-string-safe group key: a prefix plus 32 hex characters of SHA-256.</summary>
     internal static string Key(string prefix, string text)
         => $"{prefix}:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..32].ToLowerInvariant()}";
-
-    internal enum CoverageState { Classified, Uncertain, NotAnalyzed, NotEligible }
-
-    /// <summary>One occurrence's coverage state, perspective keys, the result shown in details and its operation marker.</summary>
-    internal sealed record Assessment(CoverageState State, string CauseKey, string GuidanceKey, FailureClassification? Result, string? Marker, string OriginKey);
 
     internal sealed record OccurrenceRow(FailedMessageInfo Info, string Category, string CategoryKey, string Pattern, string PatternKey);
 
