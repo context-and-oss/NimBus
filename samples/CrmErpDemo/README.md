@@ -322,7 +322,7 @@ role center: a **Home** page with tiles that count customers, credit holds, pend
 alerts, customer lists with a details box for the selected row, and customer cards with
 collapsible sections. Both borrow the layout patterns only; the names and styling are the demo's own.
 
-Every demo switch (simulated traffic, CRM API outage, partner leads, service and error mode,
+Every demo switch (simulated traffic, sloppy data entry, CRM API outage, partner leads, service and error mode,
 pending handoff, processing delay, data reset) sits in the **Demo controls** pane on the right
 of each app. The pane is open by default; the gear button in the app bar closes and reopens it,
 and the browser remembers the choice. A mode that is on also shows as a label in the app bar,
@@ -621,15 +621,18 @@ classify. NimBus stores only the exception's type name and message as failure ev
 trace), so each reason's message carries the cues a real failure of that kind would: status codes,
 identifiers, the downstream system, and what would have to change.
 
+No written message quotes a field of the message it fails. Whoever classifies a failure, a person
+or an agent, compares the error with the payload and stops trusting the evidence when the two
+disagree. The failures that depend on the data are therefore real ones: the application defect
+below, and the [bad country](#failures-that-come-from-the-data) ERP rejects.
+
 | Dropdown entry | Throws | NimBus outcome | Designed to classify as |
 |---|---|---|---|
 | Generic handler exception (default) | `HandlerErrorModeException` | Failed | `unknown` — the control case with no usable evidence |
 | Downstream timeout (transient) | `TimeoutException` 503 + connection reset | Failed | `transient_dependency` |
 | Expired credentials (auth/config) | `UnauthorizedAccessException` 401, expired secret | Failed | `authentication_configuration` |
-| Schema mismatch (contract) | `FormatException` on `CountryCode` | Failed | `contract_schema` |
 | Customer closed (business rule) | `InvalidOperationException` rule ERP-CUST-017 | Failed | `business_rule` |
-| Customer not found (missing reference) | `KeyNotFoundException` for the CRM account | Failed | `missing_reference_data` |
-| Null reference (application defect) | `NullReferenceException` in the mapper | Failed | `application_defect` |
+| Missing posting group (application defect) | `KeyNotFoundException` from a real defect in the adapter, for accounts in FI or any country its table lacks; other messages go through | Failed | `application_defect` |
 | Mostly transient (realistic mix) | The downstream timeout for about 7 in 10 failing messages, one of the other entries for the rest | Failed | Varies with the failure drawn |
 | Random (any failure type) | One of the entries above, picked per failing message | Failed | Varies with the failure drawn |
 
@@ -641,12 +644,39 @@ blocked, the rest flowing, and failed messages with different error types to cla
 **Mostly transient** is the mix to pick when something recovers failures unattended, such as an
 operations agent working through the NimBus MCP server: with a failure rate below 100% most
 failures are ones a resubmit gets past, and the rest still need a person. **Random** spreads evenly
-over seven reasons, of which a retry helps only one.
+over five reasons, of which a retry helps only one.
+
+### Failures that come from the data
+
+Two failures are not simulated. Their error text quotes the value the message carried, so the
+evidence and the payload agree.
+
+**A country ERP does not accept.** ERP takes a customer from CRM only with an ISO 3166-1 alpha-2
+country (`Erp.Api/Validation/CountryCodes.cs`); CRM does not check. Type `UK` as an account's
+country in crm-web, or switch **Sloppy data entry** on under *Simulated activity* so about one in
+five simulated accounts gets it. CRM saves and publishes the account as typed, ERP answers 422, and
+the message fails on ErpEndpoint with `CountryCode 'UK' is not an ISO 3166-1 alpha-2 country code`.
+Error mode stays off for this. The way out is the one a real integration has: correct the country
+on the account in crm-web, which publishes a new `CrmAccountUpdated`, and skip the failed message.
+`UK` is in no regional hub, so the [unrouted hub](#showcase-routing-keys-regional-hubs) also
+dead-letters the same account, as it does for any country no hub claims.
+
+**A defect in the adapter.** With the **Missing posting group (application defect)** reason
+selected, the ERP adapter runs `Erp.Adapter.Functions/Mapping/CustomerPostingGroup.cs` on each
+account event. Its country table has no entry for Finland, so an account in `FI` fails with a
+`KeyNotFoundException` that names the country, and accounts in the countries it does list go
+through. The defect is deliberate and marked as such in the file; nothing calls it while another
+reason is selected or error mode is off.
+
+An agent files an adapter defect against the endpoint's repository, and names the endpoint's source
+system in a data-quality report. The demo records neither. Set them on the endpoint's page in the
+NimBus WebApp (**Endpoints → ErpEndpoint → Ownership**) and point the repository at a fork you own:
+never at the NimBus repository, where an agent with issue rights would file demo issues.
 
 The catalog lives in `CrmErpDemo.Contracts/Demo/ErpFailureReasons.cs` and is shared by `Erp.Api`
 (stores and validates the selection, `GET/PUT /api/admin/error-mode` with `reason` and
 `failureRate` from 0 to 1, `GET /api/admin/error-mode/reasons`), `Erp.Adapter.Functions`
-(`ErrorModeGuard` rolls against the rate and throws the matching exception from every handler) and
+(`ErrorModeGuard` rolls against the rate and throws the matching exception from every handler, or runs the defect) and
 the erp-web dropdown, so the three cannot drift.
 
 The AppHost turns on failure classification and the operator MCP endpoint at
