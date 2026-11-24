@@ -50,10 +50,10 @@ carries the roles in `roles` and no `scp` claim; NimBus names it after its clien
 In **Settings → MCP access** (site Owner):
 
 - **Unattended workloads** on.
-- **Workloads may record classifications** on.
-- **Workloads may resubmit** on, with **Resubmits per agent per day** (default 20) and
+- The **Agents** switch on the **Classify failures** row on.
+- The **Agents** switch on the **Resubmit messages** row on, with **Resubmits per agent per day** (default 20) and
   **Unsuccessful resubmits per message** (default 2). The per-minute change limit still applies.
-- **Workloads may mark messages reported** on, if the agent should link failures to tickets.
+- The **Agents** switch on the **Mark reported** row on, if the agent should link failures to tickets.
 - Optionally approve the runner's client id under **Client applications**, so no other app-only
   client gets in.
 

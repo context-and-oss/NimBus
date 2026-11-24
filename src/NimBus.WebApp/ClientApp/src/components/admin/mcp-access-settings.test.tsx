@@ -177,13 +177,51 @@ describe("MCP access: capability table and inspector", () => {
     renderInPanel(<McpAccessSettings />, "mcp", "permissions");
 
     const table = await screen.findByRole("table", { name: "What agents may do" });
-    expect(within(table).getAllByRole("columnheader").map(h => h.textContent)).toEqual(["Capability", "Risk", "Entra scope", "Role", "Agents"]);
-    // The header, the always-on read row and one row per capability.
-    expect(within(table).getAllByRole("row")).toHaveLength(CAPABILITIES.length + 2);
+    expect(within(table).getAllByRole("columnheader").map(h => h.textContent)).toEqual(["Capability", "Also needs", "Operators", "Agents"]);
+    // The header, three group rows, the always-on read row and one row per capability.
+    expect(within(table).getAllByRole("row")).toHaveLength(CAPABILITIES.length + 5);
+    expect(within(table).getByText("Read")).toBeTruthy();
+    expect(within(table).getByText("Annotate · changes nothing on the bus")).toBeTruthy();
+    expect(within(table).getByText("Change messages")).toBeTruthy();
     const skip = within(table).getByRole("row", { name: /Skip messages/ });
     expect(within(skip).getByText("nimbus.skip")).toBeTruthy();
     expect(within(skip).getByText("Contributor")).toBeTruthy();
     expect(within(skip).getByRole("switch", { name: "Skip messages" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("gives agents a switch on the rows they may use and says never on the rest", async () => {
+    const some = { ...settings(), allowWorkloadResubmit: true };
+    mockFetch(Response.json(state({ saved: some, effective: some })), Response.json(activity));
+    const user = userEvent.setup();
+    renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    const table = await screen.findByRole("table", { name: "What agents may do" });
+    const row = (name: RegExp) => within(within(table).getByRole("row", { name }));
+    expect(row(/Resubmit messages/).getByRole("switch", { name: "Allow workloads to resubmit" }).getAttribute("aria-checked")).toBe("true");
+    expect(row(/Classify failures/).getByRole("switch", { name: "Allow workloads to record classifications" }).getAttribute("aria-checked")).toBe("false");
+    expect(row(/Mark reported/).getByRole("switch", { name: "Allow workloads to mark messages reported" })).toBeTruthy();
+    for (const name of [/Raw payloads/, /Skip messages/, /Settle pending handoffs/, /Recover deferred messages/, /Resubmit with an edited payload/]) {
+      expect(row(name).getByText("Never for agents")).toBeTruthy();
+      expect(row(name).getAllByRole("switch")).toHaveLength(1);
+    }
+    expect(row(/Observe/).getAllByText("Always on")).toHaveLength(2);
+    expect(screen.getByText(/of 3 on for agents/).textContent).toBe("1 of 3 on for agents");
+
+    await user.click(row(/Classify failures/).getByRole("switch", { name: "Allow workloads to record classifications" }));
+
+    expect(screen.getByText(/of 3 on for agents/).textContent).toBe("2 of 3 on for agents");
+  });
+
+  it("explains an agent switch in the inspector of its capability", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    const user = userEvent.setup();
+    renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    await user.click(await screen.findByRole("button", { name: "Resubmit messages" }));
+    expect(inspector().getByText(/Nimbus\.Workload\.Resubmit app role/)).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Skip messages" }));
+    expect(inspector().getByText(/Agents never skip/)).toBeTruthy();
   });
 
   it("keeps the inspector drawer closed until a capability is selected, and closes it again", async () => {

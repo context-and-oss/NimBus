@@ -104,6 +104,8 @@ export type CapabilityKey = keyof McpSettings["capabilities"];
 export interface CapabilityInfo {
   key: CapabilityKey; label: string; risk: "data" | "low" | "medium" | "high"; riskText: string;
   tools: string[]; scope: string; role: string; description: string; note?: string;
+  /** A few words under the label in the capability table. */
+  hint: string;
 }
 
 /** The tools that only read, without nimbus_prepare_action. They have no switch. */
@@ -112,32 +114,32 @@ export const READ_TOOL_COUNT = 15;
 export const TOTAL_TOOL_COUNT = 24;
 
 export const CAPABILITIES: CapabilityInfo[] = [
-  { key: "payloads", label: "Raw payloads", risk: "data", riskText: "data", tools: ["nimbus_get_message · includePayload"],
+  { key: "payloads", label: "Raw payloads", hint: "May contain personal data", risk: "data", riskText: "data", tools: ["nimbus_get_message · includePayload"],
     scope: "nimbus.payload.read", role: "PiiReader",
     description: "Return the stored event payload when an agent asks for it. Without this, agents see status, errors and history only.",
     note: "Payloads go into the agent's model context and may leave your tenant with the AI provider. Only callers who are PiiReader on the endpoint get them." },
-  { key: "report", label: "Mark reported", risk: "low", riskText: "low", tools: ["nimbus_set_message_reported"],
+  { key: "report", label: "Mark reported", hint: "Link a failed message to a ticket", risk: "low", riskText: "low", tools: ["nimbus_set_message_reported"],
     scope: "nimbus.annotate", role: "Contributor",
     description: "Set or clear the \"reported\" marker, optionally with an external ticket ID." },
-  { key: "classify", label: "Classify failures", risk: "low", riskText: "low", tools: ["nimbus_record_classification"],
+  { key: "classify", label: "Classify failures", hint: "Record an advisory classification", risk: "low", riskText: "low", tools: ["nimbus_record_classification"],
     scope: "nimbus.classify", role: "Contributor",
     description: "Let agents record their classification of a failure. It is advisory, changes no message, and NimBus composes the guidance." },
-  { key: "resubmit", label: "Resubmit messages", risk: "medium", riskText: "medium", tools: ["nimbus_prepare_action", "nimbus_resubmit_message"],
+  { key: "resubmit", label: "Resubmit messages", hint: "Replay the stored payload", risk: "medium", riskText: "medium", tools: ["nimbus_prepare_action", "nimbus_resubmit_message"],
     scope: "nimbus.resubmit", role: "Contributor",
     description: "Replay the latest stored payload to the endpoint after a preview, with a state guard and an audit row written first." },
-  { key: "skip", label: "Skip messages", risk: "high", riskText: "high", tools: ["nimbus_prepare_action", "nimbus_skip_message"],
+  { key: "skip", label: "Skip messages", hint: "Never processed; may release the session", risk: "high", riskText: "high", tools: ["nimbus_prepare_action", "nimbus_skip_message"],
     scope: "nimbus.skip", role: "Contributor",
     description: "Mark a message as never to be processed. This can release the later messages waiting in its session and can't be undone.",
     note: "Agents should show the preview and ask before skipping, but NimBus can't verify that a person approved it. Consider leaving Skip to the Web UI until a pilot has run for a while." },
-  { key: "settleHandoffs", label: "Settle pending handoffs", risk: "medium", riskText: "medium", tools: ["nimbus_prepare_action", "nimbus_settle_handoff"],
+  { key: "settleHandoffs", label: "Settle pending handoffs", hint: "Complete or fail a handoff", risk: "medium", riskText: "medium", tools: ["nimbus_prepare_action", "nimbus_settle_handoff"],
     scope: "nimbus.settle", role: "Contributor",
     description: "Complete or fail a message that waits for external work. The endpoint records the outcome without running its handler again.",
     note: "The agent states the outcome of work that happened outside NimBus. NimBus can't check it: the person at the agent must know whether the external job finished." },
-  { key: "recoverDeferred", label: "Recover deferred messages", risk: "medium", riskText: "medium", tools: ["nimbus_prepare_action", "nimbus_reprocess_deferred", "nimbus_skip_deferred_tracking"],
+  { key: "recoverDeferred", label: "Recover deferred messages", hint: "Reprocess a session's deferred messages", risk: "medium", riskText: "medium", tools: ["nimbus_prepare_action", "nimbus_reprocess_deferred", "nimbus_skip_deferred_tracking"],
     scope: "nimbus.recover", role: "Contributor",
     description: "Reprocess the deferred messages of a session that no failed message still blocks, or mark a stale Deferred tracking record as Skipped after the broker shows no matching message.",
     note: "Skipping a tracking record changes NimBus only. Nothing is removed from Service Bus, and work that is already running is not cancelled." },
-  { key: "editPayloads", label: "Resubmit with an edited payload", risk: "high", riskText: "high", tools: ["nimbus_prepare_action", "nimbus_resubmit_with_changes"],
+  { key: "editPayloads", label: "Resubmit with an edited payload", hint: "Replace the payload, then replay", risk: "high", riskText: "high", tools: ["nimbus_prepare_action", "nimbus_resubmit_with_changes"],
     scope: "nimbus.edit", role: "Contributor + PiiReader",
     description: "Replay a failed message with a payload the agent edited. The event type can't change, masked values are refused, and the audit row records which fields changed, not their values.",
     note: "The endpoint processes what the agent sends in place of the stored payload. Agents should show the changed fields and ask first, but NimBus can't verify that a person approved them." },
