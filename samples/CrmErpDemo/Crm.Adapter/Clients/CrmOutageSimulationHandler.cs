@@ -1,11 +1,14 @@
 using System.Net;
+using System.Net.Http.Headers;
+using CrmErpDemo.Contracts.Demo;
 
 namespace Crm.Adapter.Clients;
 
 /// <summary>
 /// Circuit-breaker showcase: when the crm-api error-mode flag is on, every
 /// ICrmApiClient call short-circuits to a synthetic 503 before leaving the
-/// process. All CRM handlers then fail through the authentic
+/// process, written as a real outage would be (see <see cref="CrmOutageResponse"/>).
+/// All CRM handlers then fail through the authentic
 /// CrmApiClient.EnsureSuccessOrThrowAsync path — a sustained, retry-classified
 /// failure spike with zero handler edits, exactly what opens the circuit.
 /// Sits below the handler (not in the NimBus pipeline) because the circuit
@@ -20,12 +23,14 @@ public sealed class CrmOutageSimulationHandler(IErrorModeClient errorMode) : Del
     {
         if (await errorMode.IsErrorModeEnabledAsync(cancellationToken))
         {
-            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
             {
                 RequestMessage = request,
-                ReasonPhrase = "CRM outage simulation (error mode) is enabled",
-                Content = new StringContent("Simulated crm-api outage: error mode is enabled via /api/admin/error-mode."),
+                ReasonPhrase = CrmOutageResponse.ReasonPhrase,
+                Content = new StringContent(CrmOutageResponse.Body),
             };
+            response.Headers.RetryAfter = new RetryConditionHeaderValue(CrmOutageResponse.RetryAfter);
+            return response;
         }
 
         return await base.SendAsync(request, cancellationToken);
