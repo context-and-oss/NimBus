@@ -65,8 +65,6 @@ function useBreadcrumbs(): Crumb[] {
       return [{ label: "Messages" }];
     case "Metrics":
       return [{ label: "Metrics" }];
-    case "Insights":
-      return [{ label: "Insights" }];
     case "Audits":
       return [{ label: "Audit Log" }];
     case "Operations": {

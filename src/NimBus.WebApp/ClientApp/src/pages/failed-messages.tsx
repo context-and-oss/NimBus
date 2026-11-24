@@ -26,7 +26,10 @@ import FailedItemList, {
 } from "components/failed-messages/failed-item-list";
 import FailureDetailPanel from "components/failed-messages/failure-detail-panel";
 import { SidePanel } from "components/ui/side-panel";
-import FailedErrorGroupsView from "components/failed-messages/failed-error-groups";
+import FailedErrorGroupsView, {
+  GROUPING_PERSPECTIVE,
+  type FailedGrouping,
+} from "components/failed-messages/failed-error-groups";
 import { useUrlFilters } from "hooks/use-url-filters";
 import { formatMoment } from "functions/endpoint.functions";
 import { notifyError, notifySuccess } from "functions/notifications.functions";
@@ -111,7 +114,25 @@ const statusVariant = (status: string | undefined) =>
       ? "unsupported"
       : "failed";
 
-type View = "list" | "endpoint" | "error";
+type View = "list" | "endpoint" | FailedGrouping;
+
+const VIEWS: readonly View[] = [
+  "list",
+  "endpoint",
+  "error",
+  "cause",
+  "guidance",
+  "origin",
+];
+const isGrouping = (view: View): view is FailedGrouping =>
+  view !== "list" && view !== "endpoint";
+
+// The classification views exist only while failure intelligence is on.
+const CLASSIFICATION_TABS = [
+  ["cause", "Group by cause"],
+  ["guidance", "Group by guidance"],
+  ["origin", "Group by origin"],
+] as const;
 
 // Only the search fields and the range drive data; view, split and the selected bar are
 // presentation (the selected bar narrows the list, but never the chart).
@@ -128,9 +149,10 @@ export default function FailedMessages() {
     useUrlFilters<FailedFilterValues>(EMPTY_FAILED_FILTER, {
       persistKey: "nimbus.failed.filters",
     });
-  const view = (
-    ["list", "endpoint", "error"].includes(applied.view) ? applied.view : "list"
-  ) as View;
+  const view: View = VIEWS.includes(applied.view as View)
+    ? (applied.view as View)
+    : "list";
+  const grouped = isGrouping(view);
   const split = applied.split === "endpoint" ? "endpoint" : "status";
   const client = React.useMemo(() => new api.Client(api.CookieAuth()), []);
 
@@ -139,7 +161,12 @@ export default function FailedMessages() {
   const [events, setEvents] = React.useState<api.Event[]>([]);
   const [continuationToken, setContinuationToken] = React.useState<string>();
   const [listLoading, setListLoading] = React.useState(false);
-  const [errorGroups, setErrorGroups] = React.useState<api.FailedErrorGroups>();
+  // Kept with the grouping it was loaded for: another grouping's groups never show under
+  // this tab while its own load, and a reload after an action keeps the rows in place.
+  const [errorGroups, setErrorGroups] = React.useState<{
+    view: View;
+    groups: api.FailedErrorGroups;
+  }>();
   const [groupsLoading, setGroupsLoading] = React.useState(false);
   const [blocked, setBlocked] = React.useState<Record<string, number>>({});
   const [backlog, setBacklog] = React.useState<number>();
@@ -298,16 +325,18 @@ export default function FailedMessages() {
     void fetchPage(undefined, false);
   }, [view, fetchPage, refresh]);
 
-  // Error groups: every matching failure in the range (or the selected bar).
+  // Groups: every matching failure in the range (or the selected bar), by error or by its
+  // saved classification.
   React.useEffect(() => {
-    if (view !== "error") return;
+    if (!isGrouping(view)) return;
     let cancelled = false;
     setGroupsLoading(true);
     const body = new api.FailedErrorGroupsRequest();
     body.filter = toFailedSearchFilter(applied, windowFor(applied));
+    body.groupBy = GROUPING_PERSPECTIVE[view];
     client
       .postFailedErrorGroups(body)
-      .then((g) => !cancelled && setErrorGroups(g))
+      .then((g) => !cancelled && setErrorGroups({ view, groups: g }))
       .catch((e) => !cancelled && console.error("Failed to group failures", e))
       .finally(() => !cancelled && setGroupsLoading(false));
     return () => {
@@ -777,13 +806,14 @@ export default function FailedMessages() {
             aria-label="View"
             className="flex flex-wrap items-end gap-3"
           >
-            {(
-              [
-                ["list", "Failures"],
-                ["endpoint", "Group by endpoint"],
-                ["error", "Group by error"],
-              ] as const
-            ).map(([key, label]) => (
+            {[
+              ["list", "Failures"] as const,
+              ["endpoint", "Group by endpoint"] as const,
+              ["error", "Group by error"] as const,
+              ...(histogram?.classificationsAvailable
+                ? CLASSIFICATION_TABS
+                : []),
+            ].map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -830,10 +860,12 @@ export default function FailedMessages() {
             <p className="font-semibold">Search failed</p>
             <p className="text-sm text-muted-foreground">{searchError}</p>
           </div>
-        ) : view === "error" ? (
+        ) : grouped ? (
           <FailedErrorGroupsView
-            groups={errorGroups}
+            key={view}
+            groups={errorGroups?.view === view ? errorGroups.groups : undefined}
             isLoading={groupsLoading}
+            grouping={view}
             onAct={act}
           />
         ) : view === "endpoint" ? (

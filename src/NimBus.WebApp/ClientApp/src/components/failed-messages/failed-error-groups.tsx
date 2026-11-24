@@ -5,11 +5,43 @@ import { Badge } from "components/ui/badge";
 import { EmptyState } from "components/ui/empty-state";
 import TruncatedGuid from "components/common/truncated-guid";
 import { formatMoment } from "functions/endpoint.functions";
+import { CoverageBar } from "components/insights/coverage-bar";
+import {
+  causeLabel,
+  enrichmentMessage,
+  guidanceLabel,
+} from "components/insights/insights-labels";
 import { cn } from "lib/utils";
+
+/** What the top level of the grouping is. */
+export type FailedGrouping = "error" | "cause" | "guidance" | "origin";
+
+export const GROUPING_PERSPECTIVE: Record<
+  FailedGrouping,
+  api.InsightsPerspective
+> = {
+  error: api.InsightsPerspective.ErrorPattern,
+  cause: api.InsightsPerspective.Cause,
+  guidance: api.InsightsPerspective.Guidance,
+  origin: api.InsightsPerspective.FaultOrigin,
+};
+
+const GROUPING_HEADER: Record<FailedGrouping, string> = {
+  error: "Error",
+  cause: "Likely cause",
+  guidance: "Recovery guidance",
+  origin: "Fault origin",
+};
+
+// Saved guidance is a record of the analysis, not a current instruction (spec 043 §6).
+const SAVED_RESULT_NOTE =
+  "Saved results describe each failure when it was analyzed.";
 
 export interface FailedErrorGroupsProps {
   groups: api.FailedErrorGroups | undefined;
   isLoading: boolean;
+  /** The grouping asked for; without saved classifications the groups are error groups. */
+  grouping?: FailedGrouping;
   /** Resubmits or skips the given failures; resolves once the requests were sent. */
   onAct: (action: "Resubmit" | "Skip", events: api.FailedEventRef[]) => void;
 }
@@ -61,16 +93,21 @@ function Chips({
 function GroupActions({
   events,
   onAct,
+  note,
 }: {
   events: api.FailedEventRef[];
   onAct: FailedErrorGroupsProps["onAct"];
+  /** Added to the confirmation of an action on several failures. */
+  note?: string;
 }) {
   const act = (action: "Resubmit" | "Skip") => (e: React.MouseEvent) => {
     e.stopPropagation();
     const noun = events.length === 1 ? "failure" : "failures";
     if (
       events.length > 1 &&
-      !window.confirm(`${action} ${events.length} ${noun}?`)
+      !window.confirm(
+        `${action} ${events.length} ${noun}?${note ? `\n\n${note}` : ""}`,
+      )
     )
       return;
     onAct(action, events);
@@ -95,6 +132,17 @@ function GroupActions({
   );
 }
 
+function EnrichmentBanner({ text }: { text: string }) {
+  return (
+    <p
+      role="status"
+      className="mb-2 rounded-md border border-status-warning/40 bg-status-warning/10 px-4 py-3 text-sm"
+    >
+      {text}
+    </p>
+  );
+}
+
 // Failures listed per expanded pattern before "Show more".
 const FAILURES_PER_PAGE = 20;
 
@@ -102,14 +150,28 @@ const allEvents = (group: api.FailedErrorGroup): api.FailedEventRef[] =>
   (group.subGroups ?? []).flatMap((s) => s.events ?? []);
 
 /**
- * Failures grouped like the Insights page: error category, then normalized pattern, then the
- * individual failures. Every level can be expanded and resubmitted or skipped as a whole.
+ * Failures grouped by error category or by their saved classification (likely cause, recovery
+ * guidance, fault origin), then by normalized pattern, then the individual failures. Every
+ * level can be expanded and resubmitted or skipped as a whole.
  */
 export default function FailedErrorGroupsView({
   groups,
   isLoading,
+  grouping: requested = "error",
   onAct,
 }: FailedErrorGroupsProps) {
+  const enriched =
+    groups?.enrichment === api.InsightsEnrichmentStatus.Available;
+  // Without saved classifications the server groups by error, whatever was asked for.
+  const grouping: FailedGrouping = groups && !enriched ? "error" : requested;
+  const note = grouping === "error" ? undefined : SAVED_RESULT_NOTE;
+  // Off is a deployment choice and needs no explanation; the other states are worth one.
+  const banner =
+    groups &&
+    !enriched &&
+    groups.enrichment !== api.InsightsEnrichmentStatus.Disabled
+      ? enrichmentMessage(groups.enrichment, groups.enrichmentLimit)
+      : undefined;
   const [openGroups, setOpenGroups] = React.useState<Set<string>>(new Set());
   const [openPatterns, setOpenPatterns] = React.useState<Set<string>>(
     new Set(),
@@ -141,11 +203,14 @@ export default function FailedErrorGroupsView({
   const list = groups?.groups ?? [];
   if (list.length === 0) {
     return (
-      <EmptyState
-        icon="◌"
-        title="No failures to group"
-        description="No unresolved failures match these filters in this window."
-      />
+      <>
+        {banner && <EnrichmentBanner text={banner} />}
+        <EmptyState
+          icon="◌"
+          title="No failures to group"
+          description="No unresolved failures match these filters in this window."
+        />
+      </>
     );
   }
 
@@ -168,6 +233,13 @@ export default function FailedErrorGroupsView({
             {ev.resolutionStatus}
           </Badge>
         </span>
+        {(ev.category || ev.guidance) && (
+          <div className="mt-1 truncate text-[11.5px] text-muted-foreground">
+            {[causeLabel(ev.category ?? undefined), guidanceLabel(ev.guidance ?? undefined)]
+              .filter(Boolean)
+              .join(" · ")}
+          </div>
+        )}
       </td>
       <td className={cell} />
       <td className={cn(cell, "truncate")}>
@@ -195,7 +267,7 @@ export default function FailedErrorGroupsView({
         {ev.errorText}
       </td>
       <td className={cell}>
-        <GroupActions events={[ev]} onAct={onAct} />
+        <GroupActions events={[ev]} onAct={onAct} note={note} />
       </td>
     </tr>
   );
@@ -234,11 +306,23 @@ export default function FailedErrorGroupsView({
 
   return (
     <div className="overflow-x-auto">
+      {banner && <EnrichmentBanner text={banner} />}
       {groups?.truncated && (
         <p className="mb-2 text-[13px] text-status-warning-ink">
           Grouped the newest {groups.total?.toLocaleString()} failures only —
           narrow the filters to group the rest.
         </p>
+      )}
+      {groups?.coverage && (
+        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
+          <CoverageBar coverage={groups.coverage} />
+          {groups.analysisAvailable === false && (
+            <span>
+              Agents can&apos;t record new classifications in this deployment;
+              saved results are shown.
+            </span>
+          )}
+        </div>
       )}
       <table className="w-full table-fixed border-collapse text-sm">
         <colgroup>
@@ -252,7 +336,9 @@ export default function FailedErrorGroupsView({
         </colgroup>
         <thead>
           <tr className="border-b border-border bg-muted text-left font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
-            <th className="px-3 py-2 font-medium">Error</th>
+            <th className="px-3 py-2 font-medium">
+              {GROUPING_HEADER[grouping]}
+            </th>
             <th className="px-3 py-2 font-medium">Count</th>
             <th className="px-3 py-2 font-medium">Endpoints</th>
             <th className="px-3 py-2 font-medium">Event types</th>
@@ -263,7 +349,8 @@ export default function FailedErrorGroupsView({
         </thead>
         <tbody>
           {list.map((group) => {
-            const groupKey = group.errorCategory ?? "";
+            const groupKey = group.groupKey ?? group.errorCategory ?? "";
+            const groupTitle = group.label ?? group.errorCategory ?? "";
             const groupOpen = openGroups.has(groupKey);
             const subs = group.subGroups ?? [];
             // A category with one pattern expands straight to its failures.
@@ -276,15 +363,27 @@ export default function FailedErrorGroupsView({
                   aria-expanded={groupOpen}
                 >
                   <td className={cell}>
-                    <span className="flex min-w-0 items-start gap-1 font-mono text-[12px]">
+                    <span
+                      className={cn(
+                        "flex min-w-0 items-start gap-1",
+                        grouping === "error"
+                          ? "font-mono text-[12px]"
+                          : "text-[13.5px] font-semibold",
+                      )}
+                    >
                       {chevron(groupOpen)}
-                      <span className="truncate" title={groupKey}>
-                        {groupKey}
+                      <span className="truncate" title={groupTitle}>
+                        {groupTitle}
                       </span>
                     </span>
                     {!single && (
                       <div className="ml-4 text-[11px] text-muted-foreground">
                         {subs.length} patterns
+                      </div>
+                    )}
+                    {group.coverage && (
+                      <div className="ml-4 mt-1">
+                        <CoverageBar coverage={group.coverage} compact />
                       </div>
                     )}
                   </td>
@@ -317,7 +416,11 @@ export default function FailedErrorGroupsView({
                     {group.exampleErrorText}
                   </td>
                   <td className={cell}>
-                    <GroupActions events={allEvents(group)} onAct={onAct} />
+                    <GroupActions
+                      events={allEvents(group)}
+                      onAct={onAct}
+                      note={note}
+                    />
                   </td>
                 </tr>
                 {groupOpen &&
@@ -378,6 +481,7 @@ export default function FailedErrorGroupsView({
                             <GroupActions
                               events={sub.events ?? []}
                               onAct={onAct}
+                              note={note}
                             />
                           </td>
                         </tr>

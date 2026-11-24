@@ -463,6 +463,48 @@ describe("Failed messages page", () => {
     expect(screen.getByText("No failures to group")).toBeTruthy();
   });
 
+  it("offers the classification groupings only while failure intelligence is on", async () => {
+    renderPage();
+    await waitFor(() => expect(mocks.histogram).toHaveBeenCalled());
+    await waitFor(() => expect(listItems()).toHaveLength(3));
+
+    expect(screen.getByRole("tab", { name: "Group by error" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Group by cause" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Group by guidance" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Group by origin" })).toBeNull();
+  });
+
+  it("groups by the saved likely cause from its tab", async () => {
+    mocks.histogram.mockResolvedValue(
+      new api.FailedHistogram({ ...histogram, classificationsAvailable: true }),
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Group by cause" }));
+
+    await waitFor(() => expect(mocks.errorGroups).toHaveBeenCalledTimes(1));
+    expect(mocks.errorGroups.mock.calls[0][0].groupBy).toBe(
+      api.InsightsPerspective.Cause,
+    );
+    expect(
+      screen
+        .getByRole("tab", { name: "Group by cause" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it.each([
+    ["error", api.InsightsPerspective.ErrorPattern],
+    ["guidance", api.InsightsPerspective.Guidance],
+    ["origin", api.InsightsPerspective.FaultOrigin],
+  ])("asks for the %s grouping from a deep link", async (view, groupBy) => {
+    renderPage(`/Failed?view=${view}`);
+
+    await waitFor(() => expect(mocks.errorGroups).toHaveBeenCalledTimes(1));
+    expect(mocks.errorGroups.mock.calls[0][0].groupBy).toBe(groupBy);
+    expect(mocks.search).not.toHaveBeenCalled();
+  });
+
   it("drills from the By endpoint view into one endpoint's failures", async () => {
     renderPage("/Failed?view=endpoint");
     await waitFor(() => expect(screen.getByText("Crm")).toBeTruthy());
