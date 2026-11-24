@@ -630,12 +630,18 @@ identifiers, the downstream system, and what would have to change.
 | Customer closed (business rule) | `InvalidOperationException` rule ERP-CUST-017 | Failed | `business_rule` |
 | Customer not found (missing reference) | `KeyNotFoundException` for the CRM account | Failed | `missing_reference_data` |
 | Null reference (application defect) | `NullReferenceException` in the mapper | Failed | `application_defect` |
+| Mostly transient (realistic mix) | The downstream timeout for about 7 in 10 failing messages, one of the other entries for the rest | Failed | Varies with the failure drawn |
 | Random (any failure type) | One of the entries above, picked per failing message | Failed | Varies with the failure drawn |
 
 The **Failure rate** slider under the dropdown sets the share of messages that fail (default 100%).
 Each delivery rolls on its own, so at 30% most messages reach ERP, about a third fail, and a
 resubmit rolls again. Together with **Random** this gives a mixed failure picture: some sessions
 blocked, the rest flowing, and failed messages with different error types to classify.
+
+**Mostly transient** is the mix to pick when something recovers failures unattended, such as an
+operations agent working through the NimBus MCP server: with a failure rate below 100% most
+failures are ones a resubmit gets past, and the rest still need a person. **Random** spreads evenly
+over seven reasons, of which a retry helps only one.
 
 The catalog lives in `CrmErpDemo.Contracts/Demo/ErpFailureReasons.cs` and is shared by `Erp.Api`
 (stores and validates the selection, `GET/PUT /api/admin/error-mode` with `reason` and
@@ -681,7 +687,9 @@ crm-web ("CRM API outage" toggle)
 
 - **Fail** — `Crm.Api/ErrorModeState.cs` + `/api/admin/error-mode` (mirrors the ERP toggles);
   `Crm.Adapter/Clients/CrmOutageSimulationHandler.cs` injects the 503s *below* the handlers, so
-  failures take the authentic `CrmApiClient` path and count toward the breaker.
+  failures take the authentic `CrmApiClient` path and count toward the breaker. The 503 reads as a
+  real gateway outage and never names the switch (`CrmErpDemo.Contracts/Demo/CrmOutageResponse.cs`),
+  so the failure evidence classifies as a transient fault of the target that a retry can get past.
 - **Break** — `Crm.Adapter/Program.cs` opts in with `WithCircuitBreaker(...)`, thresholds from the
   `Crm:CircuitBreaker` appsettings section (5 outcomes / 50% / 60s window / 20s break / 2 probes).
   One breaker pauses both receivers — CrmEndpoint *and* the PartnerInbound ingress.

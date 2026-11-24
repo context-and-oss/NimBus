@@ -79,14 +79,39 @@ public sealed class ErpFailureReasonsTests
     }
 
     [TestMethod]
-    public void Selectable_IsTheCatalogPlusRandomLast()
+    public void Selectable_IsTheCatalogThenTheTwoMixes()
     {
         CollectionAssert.AreEqual(
-            ErpFailureReasons.All.Select(r => r.Id).Append(ErpFailureReasons.Random).ToList(),
+            ErpFailureReasons.All.Select(r => r.Id).Append(ErpFailureReasons.MostlyTransient).Append(ErpFailureReasons.Random).ToList(),
             ErpFailureReasons.Selectable.Select(r => r.Id).ToList());
         CollectionAssert.AllItemsAreUnique(ErpFailureReasons.Selectable.Select(r => r.Id).ToList());
         Assert.AreEqual(ErpFailureReasons.Random, ErpFailureReasons.Find("RANDOM")!.Id);
-        Assert.IsFalse(ErpFailureReasons.All.Any(r => r.Id == ErpFailureReasons.Random), "All holds only failures that can be thrown");
+        Assert.AreEqual(ErpFailureReasons.MostlyTransient, ErpFailureReasons.Find("Mostly_Transient")!.Id);
+        Assert.IsFalse(
+            ErpFailureReasons.All.Any(r => r.Id is ErpFailureReasons.Random or ErpFailureReasons.MostlyTransient),
+            "All holds only failures that can be thrown");
+    }
+
+    [TestMethod]
+    public void Decide_MostlyTransient_DrawsTheTransientFailureForMostMessagesAndEveryOtherSometimes()
+    {
+        var rng = new Random(11);
+        var picked = Enumerable.Range(0, 10_000).Select(_ => ErpFailureReasons.Decide(1.0, ErpFailureReasons.MostlyTransient, rng)!.Id).ToList();
+
+        var transient = picked.Count(id => id == "transient_dependency");
+        Assert.IsTrue(transient is > 6_500 and < 7_500, $"expected about 70% of 10,000 to be transient, got {transient}");
+        CollectionAssert.AreEquivalent(ErpFailureReasons.All.Select(r => r.Id).ToList(), picked.Distinct().ToList());
+    }
+
+    [TestMethod]
+    public void CreateException_MostlyTransient_ThrowsOneOfTheConcreteFailures()
+    {
+        var concreteTypes = ErpFailureReasons.All.Select(r => ErpFailureReasons.CreateException(r.Id, "CrmAccountCreated").GetType()).ToHashSet();
+        for (var i = 0; i < 50; i++)
+        {
+            var ex = ErpFailureReasons.CreateException(ErpFailureReasons.MostlyTransient, "CrmAccountCreated");
+            Assert.IsTrue(concreteTypes.Contains(ex.GetType()), $"{ex.GetType().Name} is not a catalog failure");
+        }
     }
 
     [TestMethod]

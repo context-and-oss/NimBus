@@ -99,8 +99,34 @@ public static class ErpFailureReasons
         "varies",
         "Failed");
 
-    /// <summary>What erp-web offers: every failure in <see cref="All"/>, then <see cref="RandomReason"/>.</summary>
-    public static readonly IReadOnlyList<ErpFailureReason> Selectable = [.. All, RandomReason];
+    /// <summary>
+    /// The selection that throws the transient failure for most failing messages and one of the
+    /// other catalog failures for the rest: the mix an integration sees on an ordinary bad day.
+    /// </summary>
+    public const string MostlyTransient = "mostly_transient";
+
+    /// <summary>The share of <see cref="MostlyTransient"/>'s failures that are the transient one.</summary>
+    public const double TransientShare = 0.7;
+
+    private const string Transient = "transient_dependency";
+
+    /// <summary>
+    /// The dropdown entry for <see cref="MostlyTransient"/>. Like <see cref="RandomReason"/> it is
+    /// not in <see cref="All"/>: it chooses among the failures there.
+    /// </summary>
+    public static readonly ErpFailureReason MostlyTransientReason = new(
+        MostlyTransient,
+        "Mostly transient (realistic mix)",
+        "About 7 in 10 failing messages hit the downstream timeout, which a retry gets past; the rest draw one of the other failure types. " +
+        "With a failure rate below 100% this is the mix where most failures can be recovered without a person.",
+        "varies",
+        "Failed");
+
+    /// <summary>
+    /// What erp-web offers: every failure in <see cref="All"/>, then the two selections that pick
+    /// among them, <see cref="MostlyTransientReason"/> and <see cref="RandomReason"/>.
+    /// </summary>
+    public static readonly IReadOnlyList<ErpFailureReason> Selectable = [.. All, MostlyTransientReason, RandomReason];
 
     /// <summary>Looks a selectable reason up by id, case-insensitively. Null when unknown.</summary>
     public static ErpFailureReason? Find(string? id) =>
@@ -112,7 +138,8 @@ public static class ErpFailureReasons
     /// Decides what one message does while error mode is on: null when it goes through, otherwise
     /// the failure to throw. A message fails when a roll in [0, 1) is below
     /// <paramref name="failureRate"/>, so 1 fails every message and 0 none. <see cref="Random"/>
-    /// picks one failure from <see cref="All"/>; an unknown id throws the generic failure.
+    /// picks one failure from <see cref="All"/> evenly and <see cref="MostlyTransient"/> picks the
+    /// transient one for <see cref="TransientShare"/> of them; an unknown id throws the generic failure.
     /// </summary>
     /// <param name="failureRate">The share of messages that fail, from 0 to 1.</param>
     /// <param name="reasonId">The reason selected in erp-web.</param>
@@ -123,8 +150,25 @@ public static class ErpFailureReasons
         if (rng.NextDouble() >= failureRate)
             return null;
 
-        var reason = Find(reasonId) ?? All[0];
-        return reason.Id == Random ? All[rng.Next(All.Count)] : reason;
+        return Resolve(Find(reasonId) ?? All[0], rng);
+    }
+
+    /// <summary>Turns a selection into the failure to throw: itself, or for a mix the failure it draws.</summary>
+    private static ErpFailureReason Resolve(ErpFailureReason reason, System.Random rng)
+    {
+        switch (reason.Id)
+        {
+            case Random:
+                return All[rng.Next(All.Count)];
+            case MostlyTransient:
+                if (rng.NextDouble() < TransientShare)
+                    return All.First(r => r.Id == Transient);
+
+                var others = All.Where(r => r.Id != Transient).ToList();
+                return others[rng.Next(others.Count)];
+            default:
+                return reason;
+        }
     }
 
     /// <summary>
@@ -135,13 +179,11 @@ public static class ErpFailureReasons
     /// <param name="eventType">The inbound event type, quoted in messages that mention the payload.</param>
     public static Exception CreateException(string? reasonId, string eventType)
     {
-        var reason = Find(reasonId) ?? All[0];
-        if (reason.Id == Random)
-            reason = All[System.Random.Shared.Next(All.Count)];
+        var reason = Resolve(Find(reasonId) ?? All[0], System.Random.Shared);
 
         return reason.Id switch
         {
-            "transient_dependency" => new TimeoutException(
+            Transient => new TimeoutException(
                 "ERP pricing service did not respond within 30s: HTTP 503 Service Unavailable from https://erp-pricing.internal/api/v2/customers " +
                 "(socket error: connection reset by peer). The service was reachable a moment ago and is usually back within minutes."),
 
