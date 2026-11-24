@@ -16,6 +16,7 @@ public class CrmAccountDeleted : Event
     };
 
     [Required]
+    [Description("The CRM account that was deleted. Session key for the end-to-end flow.")]
     public Guid AccountId { get; set; }
 
     [Description("ERP customer id if the account was previously linked; null otherwise.")]

@@ -28,17 +28,22 @@ public class ErpCustomerUpdated : Event
     public Guid? CrmAccountId { get; set; }
 
     [Required]
+    [Description("The ERP-side customer identifier.")]
     public Guid ErpCustomerId { get; set; }
 
     [Required]
+    [Description("The ERP customer number (human-readable reference).")]
     public string CustomerNumber { get; set; } = string.Empty;
 
     [Required]
+    [Description("The legal name of the customer.")]
     public string LegalName { get; set; } = string.Empty;
 
     [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 4)]
+    [Description("Tax identifier (VAT, EIN, etc).")]
     public string? TaxId { get; set; }
 
     [Required]
+    [Description("ISO 3166-1 alpha-2 country code.")]
     public string CountryCode { get; set; } = string.Empty;
 }

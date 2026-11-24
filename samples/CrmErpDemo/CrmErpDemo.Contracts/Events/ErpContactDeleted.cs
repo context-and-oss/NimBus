@@ -15,6 +15,7 @@ public class ErpContactDeleted : Event
     };
 
     [Required]
+    [Description("The identifier of the contact deleted in ERP, shared by CRM and ERP. Session key for the contact's events.")]
     public Guid ContactId { get; set; }
 
     [Description("When the deletion occurred in ERP.")]
