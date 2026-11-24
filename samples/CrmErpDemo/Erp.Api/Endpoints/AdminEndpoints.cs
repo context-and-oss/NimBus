@@ -75,13 +75,16 @@ public static class AdminEndpoints
         // living in this database — pending outbox rows would otherwise publish
         // ghost events about entities that no longer exist. Publishes NO delete
         // events; NimBus message history is untouched.
-        group.MapDelete("/data", async (ErpDbContext db) =>
+        // Batched: a single DELETE per table times out on the Azure demo's Basic database.
+        group.MapDelete("/data", async (ErpDbContext db, CancellationToken ct) =>
         {
-            var contacts = await db.Contacts.ExecuteDeleteAsync();
-            var customers = await db.Customers.ExecuteDeleteAsync();
-            var audits = await db.Audits.ExecuteDeleteAsync();
-            var outboxRows = await db.Database.ExecuteSqlRawAsync(
-                "IF OBJECT_ID(N'[nimbus].[OutboxMessages]') IS NOT NULL DELETE FROM [nimbus].[OutboxMessages];");
+            var contacts = await BatchedDelete.AllAsync(db.Contacts, ct);
+            var customers = await BatchedDelete.AllAsync(db.Customers, ct);
+            var audits = await BatchedDelete.AllAsync(db.Audits, ct);
+            var outboxRows = await BatchedDelete.RepeatAsync(
+                c => db.Database.ExecuteSqlRawAsync(
+                    "IF OBJECT_ID(N'[nimbus].[OutboxMessages]') IS NOT NULL DELETE TOP (1000) FROM [nimbus].[OutboxMessages];", c),
+                ct);
             return Results.Ok(new DataResetResponse(customers, contacts, audits, outboxRows));
         });
     }
