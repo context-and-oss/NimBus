@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\samples\CrmErpDemo\PartnerPortal\PartnerPortal.csproj" />
     <ProjectReference Include="..\..\samples\CrmErpDemo\Crm.Api\Crm.Api.csproj" Aliases="CrmApi" />
     <ProjectReference Include="..\..\samples\CrmErpDemo\Erp.Api\Erp.Api.csproj" Aliases="ErpApi" />
+    <ProjectReference Include="..\..\samples\CrmErpDemo\Erp.Adapter.Functions\Erp.Adapter.Functions.csproj" Aliases="ErpAdapter" />
     <ProjectReference Include="..\..\src\NimBus.Extensions.Identity\NimBus.Extensions.Identity.csproj" />
   </ItemGroup>
 

@@ -28,16 +28,31 @@ public sealed record ErpFailureReason(
 /// erp-web SPA (which renders the dropdown).
 /// </summary>
 /// <remarks>
+/// <para>
 /// NimBus records only the exception's type name and message as the failure evidence
 /// (<c>ErrorContent.ErrorType</c> / <c>ErrorText</c>, no stack trace), so each reason's message
 /// carries the cues a real failure of that kind would: status codes, identifiers, the
 /// downstream system, and what would have to change. That is what Integration Intelligence
 /// classifies. Reason ids match the classification category they are meant to land in.
+/// </para>
+/// <para>
+/// A written message must never contradict the message it fails: whoever classifies the failure,
+/// a person or an agent, compares the two and stops trusting the evidence when they disagree. So
+/// no reason here quotes a field of the payload. Failures that depend on the data are real ones
+/// instead: ERP rejects a country that is not an ISO code (<c>Erp.Api</c>'s <c>CountryCodes</c>),
+/// and <see cref="ApplicationDefect"/> runs a real defect in the adapter.
+/// </para>
 /// </remarks>
 public static class ErpFailureReasons
 {
     /// <summary>The original, generic error-mode failure. Selected when no reason has been chosen.</summary>
     public const string Default = "handler_exception";
+
+    /// <summary>
+    /// The one reason that is not a thrown, written exception: the adapter runs a mapping step
+    /// with a real defect, which fails only for the messages the defect mishandles.
+    /// </summary>
+    public const string ApplicationDefect = "application_defect";
 
     public static readonly IReadOnlyList<ErpFailureReason> All =
     [
@@ -60,27 +75,16 @@ public static class ErpFailureReasons
             "authentication_configuration",
             "Failed"),
         new(
-            "contract_schema",
-            "Schema mismatch (contract)",
-            "The payload fails deserialization: CountryCode carries a full country name instead of an ISO 3166-1 alpha-2 code. It is not dead-lettered: that needs a permanent-failure classifier, which the ERP adapter does not register.",
-            "contract_schema",
-            "Failed"),
-        new(
             "business_rule",
             "Customer closed (business rule)",
             "Technically valid data rejected by a domain rule: the ERP customer is in status Closed and cannot be modified. Someone must reopen the customer before a replay can succeed.",
             "business_rule",
             "Failed"),
         new(
-            "missing_reference_data",
-            "Customer not found (missing reference)",
-            "The CRM account referenced by the message has no ERP customer yet, typically because the CrmAccountCreated event has not been processed. Replaying after the reference exists succeeds.",
-            "missing_reference_data",
-            "Failed"),
-        new(
-            "application_defect",
-            "Null reference (application defect)",
-            "A programming error inside the adapter's mapping code: a NullReferenceException where an address was assumed to be present. Only a code change fixes it.",
+            ApplicationDefect,
+            "Missing posting group (application defect)",
+            "Runs a real mapping step in the adapter that has a real defect: its country table has no entry for Finland, so accounts in FI " +
+            "(and any country outside the table) fail with a KeyNotFoundException that quotes the country. Other messages go through. Only a code change fixes it.",
             "application_defect",
             "Failed"),
     ];
@@ -172,14 +176,17 @@ public static class ErpFailureReasons
     }
 
     /// <summary>
-    /// Creates the exception the adapter throws for <paramref name="reasonId"/>. Unknown ids
-    /// fall back to <see cref="Default"/> so a stale selection can never turn error mode off.
+    /// Creates the exception the adapter throws for <paramref name="reasonId"/>, the id of a
+    /// failure in <see cref="All"/>. Unknown ids fall back to <see cref="Default"/> so a stale
+    /// selection can never turn error mode off; so do the two mixes, which <see cref="Decide"/>
+    /// resolves, and <see cref="ApplicationDefect"/>, which the adapter runs instead of throwing.
     /// </summary>
-    /// <param name="reasonId">The selected reason.</param>
-    /// <param name="eventType">The inbound event type, quoted in messages that mention the payload.</param>
+    /// <param name="reasonId">The reason <see cref="Decide"/> returned.</param>
+    /// <param name="eventType">The inbound event type. Kept for callers; no message quotes the payload.</param>
     public static Exception CreateException(string? reasonId, string eventType)
     {
-        var reason = Resolve(Find(reasonId) ?? All[0], System.Random.Shared);
+        ArgumentNullException.ThrowIfNull(eventType);
+        var reason = Find(reasonId) ?? All[0];
 
         return reason.Id switch
         {
@@ -191,23 +198,9 @@ public static class ErpFailureReasons
                 "ERP API rejected the request with HTTP 401 Unauthorized (WWW-Authenticate: Bearer error=\"invalid_token\", error_description=\"The client secret has expired\"). " +
                 "The client secret for app registration 'erp-adapter' expired on 2026-09-01; renew it and update ErpApi:ClientSecret."),
 
-            "contract_schema" => new FormatException(
-                $"Could not deserialize {eventType}: property 'CountryCode' must be an ISO 3166-1 alpha-2 code (2 characters) but was 'Denmark'. " +
-                "The producer appears to send contract version 2.1 while this consumer expects 2.0."),
-
             "business_rule" => new InvalidOperationException(
                 "ERP rejected the change: customer C-100245 is in status Closed and cannot be modified (rule ERP-CUST-017). " +
                 "Reopen the customer in ERP before replaying this message."),
-
-            "missing_reference_data" => new KeyNotFoundException(
-                "ERP customer for CRM account 6f1c0a5e-4b2d-4e8a-9c3f-1a2b3c4d5e01 was not found. " +
-                "The CrmAccountCreated event for this account has not been processed yet, so there is no Customer row to attach the change to."),
-
-#pragma warning disable CA2201 // The demo deliberately reproduces a real NullReferenceException as failure evidence.
-            "application_defect" => new NullReferenceException(
-                "Object reference not set to an instance of an object. " +
-                "(Erp.Adapter.Functions.Mapping.CustomerMapper.MapAddress: dto.Address was null; the mapper assumes every customer has a billing address)"),
-#pragma warning restore CA2201
 
             _ => new HandlerErrorModeException(),
         };

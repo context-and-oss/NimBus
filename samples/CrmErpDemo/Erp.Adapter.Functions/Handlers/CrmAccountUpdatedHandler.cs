@@ -13,7 +13,7 @@ public sealed class CrmAccountUpdatedHandler(
 {
     public async Task Handle(CrmAccountUpdated message, IEventHandlerContext context, CancellationToken cancellationToken = default)
     {
-        await ErrorModeGuard.ThrowIfEnabledAsync(modeClient, context, logger, cancellationToken);
+        await ErrorModeGuard.ThrowIfEnabledAsync(modeClient, context, logger, cancellationToken, message);
         logger.LogInformation("Updating ERP customer from CRM account {AccountId}", message.AccountId);
 
         await erp.UpsertCustomerAsync(
