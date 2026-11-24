@@ -323,7 +323,7 @@ public class FulfillmentHandler : IEventHandler<OrderPlacedV2> { ... }
 - [ ] Polymorphic dispatch: handler for `T` receives all messages assignable to `T`
 - [ ] Version metadata recorded in Service Bus application properties
 - [ ] WebApp shows the version on Event Details
-- [ ] Documentation: contract evolution playbook in `docs/message-versioning.md`
+- [x] Documentation: contract evolution playbook in `docs/message-versioning.md`
 - [ ] Unit tests for inheritance dispatch
 - [ ] Integration test: V1 handler receives V2 messages with new fields ignored
 - [ ] (Stretch) Source-generator-based compile-time schema diff with `NB100..NB199` diagnostics
@@ -332,6 +332,13 @@ public class FulfillmentHandler : IEventHandler<OrderPlacedV2> { ... }
 - NServiceBus polymorphic message handling: https://docs.particular.net/nservicebus/messaging/polymorphic-messages
 - Confluent Schema Registry (Kafka pattern, conceptually similar)
 - Wolverine message versioning
+
+**Status (2026-11-24):** The contract evolution playbook is written:
+[`message-versioning.md`](message-versioning.md). It settles the first open question below for
+today's NimBus: a breaking change is a **separate event type** (`OrderPlacedV2` does not inherit
+from `OrderPlaced`), because polymorphic dispatch does not exist. The `[MessageVersion]`
+attribute, polymorphic dispatch and a version on the wire remain unbuilt, and the proposed API
+above is not how NimBus behaves.
 
 **Open questions:**
 - Inheritance vs separate types? Inheritance gives polymorphic dispatch for free; separate types are cleaner but require explicit migration handlers.

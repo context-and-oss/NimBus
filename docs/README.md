@@ -27,6 +27,8 @@ skip blocked work.
 ## Build integrations
 
 - [Building adapters](building-adapters.md) is the main guide for publishers, handlers and hosting.
+- [Evolving event contracts](message-versioning.md) is the policy for changing an event without
+  breaking consumers.
 - [Azure Functions hosting](azure-functions-hosting.md) covers subscribers on Azure Functions.
 - [Pipeline middleware](pipeline-middleware.md) covers cross-cutting behaviors around handlers.
 - [Testing](testing.md) covers the in-memory transport and the test fixture.

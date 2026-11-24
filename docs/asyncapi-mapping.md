@@ -152,7 +152,8 @@ A management-UI download of the enriched document (issue capability #6) is a fol
   breaking changes for build gating.
   A tightened bound is breaking; a relaxed/removed bound and metadata edits are non-breaking but still
   reported (so a metadata-only delta never shows as "No differences"). See
-  [`docs/cli.md`](cli.md#nb-asyncapi-diff-old-file-new-file) for the exact breaking-change list.
+  [`docs/cli.md`](cli.md#nb-asyncapi-diff-old-file-new-file) for the exact breaking-change list, and
+  [Evolving event contracts](message-versioning.md) for the policy the check enforces.
 
 ## Schema generation
 
