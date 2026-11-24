@@ -20,19 +20,24 @@ public class PartnerLeadSubmitted : Event
     };
 
     [Required]
+    [Description("The partner system's lead identifier. Session key for the lead's events.")]
     public Guid LeadId { get; set; }
 
     [Required]
+    [Description("The lead's first name.")]
     public string FirstName { get; set; } = string.Empty;
 
     [Required]
+    [Description("The lead's last name.")]
     public string LastName { get; set; } = string.Empty;
 
     [EmailAddress]
     [Sensitive(Mode = MaskMode.Hash)]
+    [Description("The lead's email address.")]
     public string? Email { get; set; }
 
     [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 3)]
+    [Description("The lead's phone number.")]
     public string? Phone { get; set; }
 
     [Description("Name of the company the lead works for, as known by the partner system.")]

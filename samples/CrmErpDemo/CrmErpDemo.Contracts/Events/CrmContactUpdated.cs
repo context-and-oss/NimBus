@@ -20,20 +20,26 @@ public class CrmContactUpdated : Event
     };
 
     [Required]
+    [Description("The CRM contact identifier. Session key for the contact's events.")]
     public Guid ContactId { get; set; }
 
+    [Description("The CRM account this contact belongs to.")]
     public Guid? AccountId { get; set; }
 
     [Required]
+    [Description("The contact's first name.")]
     public string FirstName { get; set; } = string.Empty;
 
     [Required]
+    [Description("The contact's last name.")]
     public string LastName { get; set; } = string.Empty;
 
     [EmailAddress]
     [Sensitive(Mode = MaskMode.Hash)]
+    [Description("The contact's email address.")]
     public string? Email { get; set; }
 
     [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 3)]
+    [Description("The contact's phone number.")]
     public string? Phone { get; set; }
 }

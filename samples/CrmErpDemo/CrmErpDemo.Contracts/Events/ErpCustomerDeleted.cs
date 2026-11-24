@@ -20,6 +20,7 @@ public class ErpCustomerDeleted : Event
     public Guid AccountId { get; set; }
 
     [Required]
+    [Description("The ERP-side identifier of the deleted customer.")]
     public Guid ErpCustomerId { get; set; }
 
     [Description("When the deletion occurred in ERP.")]

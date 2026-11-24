@@ -22,18 +22,22 @@ public class CrmAccountUpdated : Event
     };
 
     [Required]
+    [Description("The CRM account identifier. Session key for the end-to-end flow.")]
     public Guid AccountId { get; set; }
 
     [Description("ERP customer id if this CRM account was previously linked to an ERP-originated or mirrored customer.")]
     public Guid? ErpCustomerId { get; set; }
 
     [Required]
+    [Description("The legal name of the account.")]
     public string LegalName { get; set; } = string.Empty;
 
     [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 4)]
+    [Description("Tax identifier (VAT, EIN, etc).")]
     public string? TaxId { get; set; }
 
     [Required]
+    [Description("ISO 3166-1 alpha-2 country code.")]
     public string CountryCode { get; set; } = string.Empty;
 
     [Description("When the update occurred in CRM.")]

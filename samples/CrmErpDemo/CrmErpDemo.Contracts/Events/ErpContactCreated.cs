@@ -20,21 +20,26 @@ public class ErpContactCreated : Event
     };
 
     [Required]
+    [Description("The contact identifier, shared by CRM and ERP. Session key for the contact's events.")]
     public Guid ContactId { get; set; }
 
     [Description("The ERP customer this contact belongs to (ERP-side id). Receivers must resolve to their local FK if needed.")]
     public Guid? CustomerId { get; set; }
 
     [Required]
+    [Description("The contact's first name.")]
     public string FirstName { get; set; } = string.Empty;
 
     [Required]
+    [Description("The contact's last name.")]
     public string LastName { get; set; } = string.Empty;
 
     [EmailAddress]
     [Sensitive(Mode = MaskMode.Hash)]
+    [Description("The contact's email address.")]
     public string? Email { get; set; }
 
     [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 3)]
+    [Description("The contact's phone number.")]
     public string? Phone { get; set; }
 }

@@ -20,6 +20,7 @@ public class CrmContactCreated : Event
     };
 
     [Required]
+    [Description("The CRM contact identifier. Session key for the contact's events.")]
     public Guid ContactId { get; set; }
 
     [Description("The CRM account this contact belongs to.")]
@@ -28,18 +29,22 @@ public class CrmContactCreated : Event
     // Names stay readable: operators need them to recognise the record in the
     // message list. Contact channels are the sensitive part.
     [Required]
+    [Description("The contact's first name.")]
     public string FirstName { get; set; } = string.Empty;
 
     [Required]
+    [Description("The contact's last name.")]
     public string LastName { get; set; } = string.Empty;
 
     // Hashed rather than redacted so the same address stays correlatable across
     // messages without being readable.
     [EmailAddress]
     [Sensitive(Mode = MaskMode.Hash)]
+    [Description("The contact's email address.")]
     public string? Email { get; set; }
 
     // Last three digits visible: enough to confirm a number a customer reads out.
     [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 3)]
+    [Description("The contact's phone number.")]
     public string? Phone { get; set; }
 }

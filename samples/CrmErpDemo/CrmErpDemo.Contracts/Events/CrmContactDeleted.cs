@@ -15,6 +15,7 @@ public class CrmContactDeleted : Event
     };
 
     [Required]
+    [Description("The CRM contact that was deleted. Session key for the contact's events.")]
     public Guid ContactId { get; set; }
 
     [Description("When the deletion occurred in CRM.")]
