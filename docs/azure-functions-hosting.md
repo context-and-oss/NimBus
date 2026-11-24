@@ -276,6 +276,7 @@ For production, **separate Function App projects per endpoint** is recommended f
 | **Session support** | Native via `IsSessionsEnabled` | Via `AddNimBusReceiver()` |
 | **Cost** | Pay-per-execution (Consumption) | Always-on |
 | **DeferredProcessor** | Separate function (sessions=OFF) | Background `DeferredProcessorService` |
+| **Circuit breaker** | Records failures, metrics and notifications, but cannot pause the trigger ([limitation](circuit-breaker.md#azure-functions-limitation)) | Pauses the receiver while the circuit is open |
 | **Best for** | Production workloads | Local development, Aspire |
 
 Both models use the same `ISubscriberClient` and `IEventHandler<T>` — the handler code is identical regardless of hosting model.
