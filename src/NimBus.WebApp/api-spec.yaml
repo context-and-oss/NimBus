@@ -4081,11 +4081,14 @@ paths:
               $ref: '#/components/schemas/FailedHistogramRequest'
   /api/v1/failed/error-groups:
     post:
-      summary: Group unresolved failures by error category and pattern
+      summary: Group unresolved failures by error pattern, likely cause, recovery guidance or fault origin
       description: >-
-        Groups every failure matched by the filter (up to a server cap) by
-        error category and normalized error pattern, the same grouping as the
-        Insights page, with the individual failures of each pattern.
+        Groups every failure matched by the filter (up to a server cap), with
+        the individual failures of each normalized error pattern. groupBy picks
+        the top level: the error category (default), or the likely cause,
+        recovery guidance or fault origin of each failure's saved classification.
+        When saved classifications can't be read (see enrichment), the groups
+        are error categories whatever groupBy asks for. Never starts an analysis.
       operationId: post-failed-error-groups
       responses:
         '200':
@@ -4212,6 +4215,7 @@ paths:
   /api/v1/metrics/failed-insights:
     get:
       summary: Get failed message insights grouped by error pattern
+      description: "Deprecated: the WebApp page that used it was folded into the Failed page, and the operation is removed in the next major version. Use POST /api/v1/failed/error-groups with groupBy for unresolved failures."
       operationId: get-metrics-failed-insights
       parameters:
         - name: period
@@ -4263,7 +4267,7 @@ paths:
   /api/v1/metrics/failed-insights/occurrences:
     get:
       summary: Page the failure occurrences of one insights group
-      description: Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis.
+      description: "Newest first. Send the from and to returned by the overview unchanged. A live read, not a snapshot; membership can change between pages. Never starts an analysis. Deprecated: the WebApp page that used it was folded into the Failed page, and the operation is removed in the next major version. Use POST /api/v1/failed/error-groups with groupBy for unresolved failures."
       operationId: get-metrics-failed-insights-occurrences
       parameters:
         - name: from
@@ -4325,6 +4329,7 @@ paths:
   /api/v1/metrics/failed-insights/patterns:
     get:
       summary: Page the error patterns of one likely-cause or recovery-guidance group
+      description: "Deprecated: the WebApp page that used it was folded into the Failed page, and the operation is removed in the next major version. Use POST /api/v1/failed/error-groups with groupBy for unresolved failures."
       operationId: get-metrics-failed-insights-patterns
       parameters:
         - name: from
@@ -6908,6 +6913,9 @@ components:
         truncated:
           type: boolean
           description: True when the store stopped counting at its cap; counts are then a lower bound.
+        classificationsAvailable:
+          type: boolean
+          description: True when failure intelligence is on, so error-groups can group by saved classification.
     FailedHistogramBucket:
       title: FailedHistogramBucket
       type: object
@@ -6957,6 +6965,8 @@ components:
       properties:
         filter:
           $ref: '#/components/schemas/FailedSearchFilter'
+        groupBy:
+          $ref: '#/components/schemas/InsightsPerspective'
     FailedErrorGroups:
       title: FailedErrorGroups
       type: object
@@ -6971,12 +6981,31 @@ components:
         truncated:
           type: boolean
           description: True when more failures matched than the server groups; the groups cover the newest ones.
+        enrichment:
+          $ref: '#/components/schemas/InsightsEnrichmentStatus'
+        enrichmentLimit:
+          type: integer
+          description: Largest number of failures whose saved classifications are read.
+        analysisAvailable:
+          type: boolean
+          description: Whether agents can record new classifications in this deployment.
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
     FailedErrorGroup:
       title: FailedErrorGroup
       type: object
       properties:
         errorCategory:
           type: string
+          description: The error category; for a cause, guidance or fault-origin grouping, the group's label.
+        groupKey:
+          type: string
+          description: The error category, or the cause, guidance or fault-origin key the group stands for.
+        label:
+          type: string
+          description: Reader-facing name of the group.
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
         count:
           type: integer
         endpoints:
@@ -7002,6 +7031,8 @@ components:
       properties:
         normalizedPattern:
           type: string
+        coverage:
+          $ref: '#/components/schemas/InsightsCoverage'
         count:
           type: integer
         endpoints:
@@ -7046,6 +7077,20 @@ components:
         errorText:
           type: string
           nullable: true
+        analysisState:
+          $ref: '#/components/schemas/InsightAnalysisState'
+        category:
+          type: string
+          nullable: true
+          description: Saved likely-cause category, when the failure is classified.
+        guidance:
+          type: string
+          nullable: true
+          description: Saved recovery guidance, as recorded when the failure was analyzed.
+        faultOrigin:
+          type: string
+          nullable: true
+          description: Saved fault origin.
     MessageSearchRequest:
       title: MessageSearchRequest
       type: object

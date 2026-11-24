@@ -8,13 +8,17 @@ using SearchResponse = NimBus.WebApp.ManagementApi.SearchResponse;
 using StoreEventFilter = NimBus.MessageStore.EventFilter;
 using StoreResolutionStatus = NimBus.MessageStore.ResolutionStatus;
 using NimBus.WebApp.ManagementApi;
+using Microsoft.Extensions.Options;
+using NimBus.Extensions.IntegrationIntelligence;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Insights;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
 /// <summary>
 /// The Failed page: unresolved failures (Failed, DeadLettered, Unsupported) across every
-/// endpoint the caller can read — search, a per-bucket histogram, and grouping by error.
+/// endpoint the caller can read — search, a per-bucket histogram, and grouping by error or by
+/// each failure's saved classification (likely cause, recovery guidance, fault origin).
 /// </summary>
 public class FailedImplementation : IFailedApiController
 {
@@ -50,6 +54,9 @@ public class FailedImplementation : IFailedApiController
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly PayloadRedaction _payloadRedaction;
     private readonly ILogger<FailedImplementation> _logger;
+    private readonly IInsightsEnrichmentSource _enrichment;
+    private readonly IStoreResultCache _cache;
+    private readonly FailedInsightsOptions _insightsOptions;
     private readonly TimeProvider _timeProvider;
 
     /// <summary>Creates the implementation; <paramref name="timeProvider"/> defaults to the system clock.</summary>
@@ -61,6 +68,9 @@ public class FailedImplementation : IFailedApiController
         IHttpContextAccessor httpContextAccessor,
         PayloadRedaction payloadRedaction,
         ILogger<FailedImplementation> logger,
+        IInsightsEnrichmentSource enrichment,
+        IStoreResultCache cache,
+        IOptions<FailedInsightsOptions> insightsOptions,
         TimeProvider? timeProvider = null)
     {
         _platform = platform;
@@ -70,6 +80,9 @@ public class FailedImplementation : IFailedApiController
         _httpContextAccessor = httpContextAccessor;
         _payloadRedaction = payloadRedaction;
         _logger = logger;
+        _enrichment = enrichment;
+        _cache = cache;
+        _insightsOptions = insightsOptions.Value;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -114,7 +127,9 @@ public class FailedImplementation : IFailedApiController
         // steps, because every time zone offset and daylight-saving shift is a multiple of 15 minutes.
         var step = window.Bucket < StoreStep ? window.Bucket : StoreStep;
         var histogram = await _messageStore.GetFailedEventHistogram(ToEventFilter(body.Filter), scope!, window.From, window.To, step);
-        return BuildHistogram(histogram, window);
+        var result = BuildHistogram(histogram, window);
+        result.ClassificationsAvailable = _enrichment.IsEnabled;
+        return result;
     }
 
     /// <inheritdoc />
@@ -138,7 +153,65 @@ public class FailedImplementation : IFailedApiController
         await _auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, _httpContextAccessor.HttpContext!, data: auditData);
 
         var truncated = failures.Count > ErrorGroupCap || !string.IsNullOrEmpty(token);
-        return BuildErrorGroups(failures.Take(ErrorGroupCap).ToList(), truncated);
+        var grouped = failures.Take(ErrorGroupCap).ToList();
+        var (enrichment, assessed) = await AssessAsync(grouped);
+
+        // Without saved classifications there is nothing to group by but the error.
+        var result = BuildErrorGroups(grouped, truncated, assessed == null ? InsightsPerspective.ErrorPattern : body.GroupBy, assessed);
+        result.Enrichment = enrichment;
+        result.EnrichmentLimit = _insightsOptions.EnrichmentCeiling;
+        result.AnalysisAvailable = _enrichment.IsEnabled && _enrichment.CanRecord;
+        return result;
+    }
+
+    /// <summary>
+    /// Reads the saved classification of each failure's latest failed attempt and assesses it with
+    /// the rules Failed Message Insights uses. The failures are ones the caller may already read,
+    /// so the shared, cached classification read holds nothing the caller could not see.
+    /// </summary>
+    private async Task<(InsightsEnrichmentStatus Status, Dictionary<UnresolvedEvent, Assessment>? Assessed)> AssessAsync(List<UnresolvedEvent> failures)
+    {
+        if (!_enrichment.IsEnabled) return (InsightsEnrichmentStatus.Disabled, null);
+        if (failures.Count > _insightsOptions.EnrichmentCeiling) return (InsightsEnrichmentStatus.LimitExceeded, null);
+
+        // A failure without a failed-attempt id has no saved result: it is not analyzed, and it
+        // doesn't stop the others from being read.
+        var ids = failures.Select(e => e.LastMessageId).Where(id => !string.IsNullOrEmpty(id)).Select(id => id!)
+            .ToHashSet(StringComparer.Ordinal);
+        IReadOnlyDictionary<string, ClassificationSnapshot> snapshots = new Dictionary<string, ClassificationSnapshot>();
+        if (ids.Count > 0)
+        {
+            var key = FailedInsightsService.Key("failed:error-groups:enrichment", string.Join('|', ids.Order(StringComparer.Ordinal)));
+            var options = new ClassificationBulkReadOptions(_insightsOptions.BulkReadBatchSize, _insightsOptions.BulkReadConcurrency);
+            // The read is shared by every caller asking for the same failures, so it takes no caller's token.
+            var read = await _cache.GetOrCreateAsync(key, TimeSpan.FromSeconds(_insightsOptions.EnrichmentCacheSeconds),
+                () => _enrichment.ReadAsync(ids, options, CancellationToken.None));
+            if (read.Status != ClassificationBulkReadStatus.Available)
+            {
+                // An unavailable read must not stick: the next request retries storage.
+                _cache.Remove(key);
+                return (read.Status == ClassificationBulkReadStatus.Unsupported
+                    ? InsightsEnrichmentStatus.Unsupported
+                    : InsightsEnrichmentStatus.Unavailable, null);
+            }
+
+            snapshots = read.Snapshots;
+        }
+
+        var assessed = new Dictionary<UnresolvedEvent, Assessment>(failures.Count, ReferenceEqualityComparer.Instance);
+        var mismatches = 0;
+        foreach (var failure in failures)
+        {
+            ClassificationSnapshot? snapshot = null;
+            if (!string.IsNullOrEmpty(failure.LastMessageId)) snapshots.TryGetValue(failure.LastMessageId, out snapshot);
+            // No handler ran for an Unsupported event, so there is no failure to analyze.
+            var eligible = failure.ResolutionStatus != StoreResolutionStatus.Unsupported && _enrichment.IsEligible(failure.EndpointId);
+            assessed[failure] = FailureAssessor.Assess(eligible, failure.EndpointId, failure.EventId, snapshot, out var mismatch);
+            if (mismatch) mismatches++;
+        }
+
+        if (mismatches > 0) NimBusIntelligenceTelemetry.InsightsIdentityMismatches.Add(mismatches);
+        return (InsightsEnrichmentStatus.Available, assessed);
     }
 
     // The endpoints to query: those named in the filter (every one must be readable), else
@@ -361,56 +434,104 @@ public class FailedImplementation : IFailedApiController
     }
 
     /// <summary>
-    /// Groups failures by error category, then by normalized pattern — the same grouping as the
-    /// Insights page — keeping each pattern's failures, newest first.
+    /// Groups failures by <paramref name="perspective"/> (the error category, or the likely cause,
+    /// recovery guidance or fault origin in <paramref name="assessed"/>), then by normalized
+    /// pattern, keeping each pattern's failures, newest first.
     /// </summary>
-    internal static FailedErrorGroups BuildErrorGroups(IReadOnlyList<UnresolvedEvent> failures, bool truncated)
+    internal static FailedErrorGroups BuildErrorGroups(IReadOnlyList<UnresolvedEvent> failures, bool truncated,
+        InsightsPerspective perspective = InsightsPerspective.ErrorPattern, IReadOnlyDictionary<UnresolvedEvent, Assessment>? assessed = null)
     {
+        if (assessed == null) perspective = InsightsPerspective.ErrorPattern;
         var rows = failures
             .Select(e => (Event: e, ErrorText: ErrorTextOf(e)))
             .OrderByDescending(r => r.Event.UpdatedAt)
             .ToList();
 
+        string GroupKeyOf(UnresolvedEvent e, string? errorText) => perspective switch
+        {
+            InsightsPerspective.Cause => assessed![e].CauseKey,
+            InsightsPerspective.Guidance => assessed![e].GuidanceKey,
+            InsightsPerspective.FaultOrigin => assessed![e].OriginKey,
+            _ => ErrorPatternNormalizer.ExtractCategory(errorText ?? string.Empty),
+        };
+        var labels = perspective switch
+        {
+            InsightsPerspective.Cause => FailureAssessor.CauseLabels,
+            InsightsPerspective.Guidance => FailureAssessor.GuidanceLabels,
+            InsightsPerspective.FaultOrigin => FailureAssessor.OriginLabels,
+            _ => null,
+        };
+        InsightsCoverage? CoverageOf(IEnumerable<UnresolvedEvent> events) =>
+            assessed == null ? null : FailureAssessor.Coverage(events.Select(e => assessed[e]));
+
         var groups = rows
-            .GroupBy(r => ErrorPatternNormalizer.ExtractCategory(r.ErrorText ?? string.Empty))
-            .Select(category => new FailedErrorGroup
+            .GroupBy(r => GroupKeyOf(r.Event, r.ErrorText), StringComparer.Ordinal)
+            .Select(group =>
             {
-                ErrorCategory = category.Key,
-                Count = category.Count(),
-                Endpoints = DistinctValues(category.Select(r => r.Event.EndpointId)),
-                EventTypes = DistinctValues(category.Select(r => r.Event.EventTypeId)),
-                LatestOccurrence = category.Max(r => r.Event.UpdatedAt),
-                ExampleErrorText = Truncate(category.First().ErrorText) ?? string.Empty,
-                SubGroups = category
-                    .GroupBy(r => ErrorPatternNormalizer.Normalize(r.ErrorText ?? string.Empty))
-                    .Select(pattern => new FailedErrorSubGroup
-                    {
-                        NormalizedPattern = pattern.Key,
-                        Count = pattern.Count(),
-                        Endpoints = DistinctValues(pattern.Select(r => r.Event.EndpointId)),
-                        EventTypes = DistinctValues(pattern.Select(r => r.Event.EventTypeId)),
-                        LatestOccurrence = pattern.Max(r => r.Event.UpdatedAt),
-                        ExampleErrorText = Truncate(pattern.First().ErrorText) ?? string.Empty,
-                        Events = pattern.Select(r => new FailedEventRef
+                var label = labels != null && labels.TryGetValue(group.Key, out var known) ? known : group.Key;
+                return new FailedErrorGroup
+                {
+                    GroupKey = group.Key,
+                    Label = label,
+                    ErrorCategory = label,
+                    Count = group.Count(),
+                    Coverage = CoverageOf(group.Select(r => r.Event)),
+                    Endpoints = DistinctValues(group.Select(r => r.Event.EndpointId)),
+                    EventTypes = DistinctValues(group.Select(r => r.Event.EventTypeId)),
+                    LatestOccurrence = group.Max(r => r.Event.UpdatedAt),
+                    ExampleErrorText = Truncate(group.First().ErrorText) ?? string.Empty,
+                    SubGroups = group
+                        .GroupBy(r => ErrorPatternNormalizer.Normalize(r.ErrorText ?? string.Empty))
+                        .Select(pattern => new FailedErrorSubGroup
                         {
-                            EventId = r.Event.EventId,
-                            LastMessageId = r.Event.LastMessageId,
-                            EndpointId = r.Event.EndpointId,
-                            SessionId = r.Event.SessionId,
-                            EventTypeId = r.Event.EventTypeId,
-                            ResolutionStatus = r.Event.ResolutionStatus.ToString(),
-                            UpdatedAt = r.Event.UpdatedAt,
-                            ErrorText = Truncate(r.ErrorText),
-                        }).ToList(),
-                    })
-                    .OrderByDescending(p => p.Count)
-                    .ToList(),
+                            NormalizedPattern = pattern.Key,
+                            Count = pattern.Count(),
+                            Coverage = CoverageOf(pattern.Select(r => r.Event)),
+                            Endpoints = DistinctValues(pattern.Select(r => r.Event.EndpointId)),
+                            EventTypes = DistinctValues(pattern.Select(r => r.Event.EventTypeId)),
+                            LatestOccurrence = pattern.Max(r => r.Event.UpdatedAt),
+                            ExampleErrorText = Truncate(pattern.First().ErrorText) ?? string.Empty,
+                            Events = pattern.Select(r => EventRef(r.Event, r.ErrorText, assessed?[r.Event])).ToList(),
+                        })
+                        .OrderByDescending(p => p.Count)
+                        .ToList(),
+                };
             })
             .OrderByDescending(g => g.Count)
             .ToList();
 
-        return new FailedErrorGroups { Groups = groups, Total = rows.Count, Truncated = truncated };
+        return new FailedErrorGroups
+        {
+            Groups = groups,
+            Total = rows.Count,
+            Truncated = truncated,
+            Coverage = CoverageOf(rows.Select(r => r.Event)),
+        };
     }
+
+    private static FailedEventRef EventRef(UnresolvedEvent e, string? errorText, Assessment? assessment) => new()
+    {
+        EventId = e.EventId,
+        LastMessageId = e.LastMessageId,
+        EndpointId = e.EndpointId,
+        SessionId = e.SessionId,
+        EventTypeId = e.EventTypeId,
+        ResolutionStatus = e.ResolutionStatus.ToString(),
+        UpdatedAt = e.UpdatedAt,
+        ErrorText = Truncate(errorText),
+        AnalysisState = assessment?.State switch
+        {
+            CoverageState.Classified => InsightAnalysisState.Classified,
+            CoverageState.Uncertain => InsightAnalysisState.Uncertain,
+            CoverageState.NotAnalyzed => InsightAnalysisState.NotAnalyzed,
+            CoverageState.NotEligible => InsightAnalysisState.NotEligible,
+            _ => InsightAnalysisState.Unavailable,
+        },
+        // A result that names another source has no Result: it is counted, never shown.
+        Category = assessment?.Result?.Category,
+        Guidance = assessment?.Result == null ? null : assessment.GuidanceKey,
+        FaultOrigin = assessment?.Result?.FaultOrigin,
+    };
 
     /// <summary>Grouping text for an Unsupported event that carries no error of its own.</summary>
     internal const string UnsupportedErrorText = "Unsupported: no handler for this event type";

@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
@@ -18,7 +19,9 @@ using NimBus.MessageStore;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
+using NimBus.Extensions.IntegrationIntelligence;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Insights;
 using FailedEventHistogram = NimBus.MessageStore.States.FailedEventHistogram;
 using FailedEventHistogramRow = NimBus.MessageStore.States.FailedEventHistogramRow;
 using StoreResolutionStatus = NimBus.MessageStore.ResolutionStatus;
@@ -372,6 +375,179 @@ public sealed class FailedImplementationTests
         Assert.AreEqual(1, (await AllAudits(harness.Store)).Count);
     }
 
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task Histogram_says_whether_failures_can_be_grouped_by_classification(bool intelligenceOn)
+    {
+        var harness = await CreateHarness(readable: new[] { "Crm" }, new FailedInsightsServiceTests.FakeEnrichment { IsEnabled = intelligenceOn });
+
+        var histogram = (await harness.Controller.PostFailedHistogramAsync(new FailedHistogramRequest { Period = Period._1d })).Value!;
+
+        Assert.AreEqual(intelligenceOn, histogram.ClassificationsAvailable);
+    }
+
+    [TestMethod]
+    public async Task ErrorGroups_without_failure_intelligence_report_disabled_and_group_by_error_whatever_is_asked()
+    {
+        var harness = await CreateHarness(readable: new[] { "Crm", "Erp" });
+
+        var result = (await harness.Controller.PostFailedErrorGroupsAsync(
+            new FailedErrorGroupsRequest { Filter = new FailedSearchFilter(), GroupBy = InsightsPerspective.Cause })).Value!;
+
+        Assert.AreEqual(InsightsEnrichmentStatus.Disabled, result.Enrichment);
+        Assert.IsNull(result.Coverage);
+        CollectionAssert.AreEquivalent(new[] { "HttpRequestException", "MaxDeliveryCount exceeded" }, result.Groups.Select(g => g.ErrorCategory).ToList());
+        Assert.IsTrue(result.Groups.SelectMany(g => g.SubGroups).SelectMany(s => s.Events).All(e => e.AnalysisState == InsightAnalysisState.Unavailable));
+    }
+
+    [TestMethod]
+    public async Task ErrorGroups_by_error_carry_coverage_and_each_failure_s_saved_classification()
+    {
+        var enrichment = new FailedInsightsServiceTests.FakeEnrichment();
+        enrichment.Save(FailedInsightsServiceTests.Result("m-crm-1", "crm-1", "Crm", "transient_dependency", FailureGuidance.RetryMayHelp));
+        var harness = await CreateHarness(readable: new[] { "Crm", "Erp" }, enrichment);
+
+        var result = (await harness.Controller.PostFailedErrorGroupsAsync(new FailedErrorGroupsRequest { Filter = new FailedSearchFilter() })).Value!;
+
+        Assert.AreEqual(InsightsEnrichmentStatus.Available, result.Enrichment);
+        Assert.IsTrue(result.AnalysisAvailable);
+        Assert.AreEqual(3, result.Coverage!.Total);
+        Assert.AreEqual(1, result.Coverage.Classified);
+        Assert.AreEqual(2, result.Coverage.NotAnalyzed);
+        var http = result.Groups.Single(g => g.ErrorCategory == "HttpRequestException");
+        Assert.AreEqual("HttpRequestException", http.GroupKey);
+        Assert.AreEqual(1, http.Coverage!.Classified);
+        Assert.AreEqual(1, http.SubGroups.Single().Coverage!.NotAnalyzed);
+        var classified = http.SubGroups.Single().Events.Single(e => e.EventId == "crm-1");
+        Assert.AreEqual(InsightAnalysisState.Classified, classified.AnalysisState);
+        Assert.AreEqual("transient_dependency", classified.Category);
+        Assert.AreEqual("RetryMayHelp", classified.Guidance);
+        Assert.AreEqual(InsightAnalysisState.NotAnalyzed, http.SubGroups.Single().Events.Single(e => e.EventId == "crm-2").AnalysisState);
+    }
+
+    [TestMethod]
+    [DataRow(InsightsPerspective.Cause, "transient_dependency", "Transient dependency")]
+    [DataRow(InsightsPerspective.Guidance, "RetryMayHelp", "Retry may help")]
+    [DataRow(InsightsPerspective.FaultOrigin, "target_system", "Target system")]
+    public async Task ErrorGroups_group_by_the_saved_classification_then_by_pattern(InsightsPerspective groupBy, string key, string label)
+    {
+        var enrichment = new FailedInsightsServiceTests.FakeEnrichment();
+        var saved = FailedInsightsServiceTests.Result("m-crm-1", "crm-1", "Crm", "transient_dependency", FailureGuidance.RetryMayHelp);
+        enrichment.Save(saved with { FaultOrigin = "target_system" });
+        var harness = await CreateHarness(readable: new[] { "Crm", "Erp" }, enrichment);
+
+        var result = (await harness.Controller.PostFailedErrorGroupsAsync(
+            new FailedErrorGroupsRequest { Filter = new FailedSearchFilter(), GroupBy = groupBy })).Value!;
+
+        Assert.AreEqual(3, result.Total);
+        CollectionAssert.AreEqual(new[] { "notAnalyzed", key }, result.Groups.Select(g => g.GroupKey).ToList(), "Largest group first.");
+        var rest = result.Groups[0];
+        Assert.AreEqual("Not analyzed", rest.Label);
+        Assert.AreEqual("Not analyzed", rest.ErrorCategory, "A client that reads only errorCategory still gets a title.");
+        Assert.AreEqual(2, rest.Count);
+        Assert.AreEqual(2, rest.SubGroups.Count, "Its failures stay split by error pattern.");
+        CollectionAssert.AreEquivalent(new[] { "Crm", "Erp" }, rest.Endpoints.ToList());
+
+        var group = result.Groups[1];
+        Assert.AreEqual(label, group.Label);
+        Assert.AreEqual(1, group.Coverage!.Classified);
+        Assert.AreEqual("crm-1", group.SubGroups.Single().Events.Single().EventId);
+        Assert.AreEqual("m-crm-1", group.SubGroups.Single().Events.Single().LastMessageId, "The group can be resubmitted as a whole.");
+    }
+
+    [TestMethod]
+    public async Task ErrorGroups_count_unsupported_events_and_disallowed_endpoints_as_not_eligible()
+    {
+        var enrichment = new FailedInsightsServiceTests.FakeEnrichment();
+        enrichment.Disallowed.Add("Erp");
+        var harness = await CreateHarness(readable: new[] { "Crm", "Erp", "Billing" }, enrichment);
+
+        var result = (await harness.Controller.PostFailedErrorGroupsAsync(
+            new FailedErrorGroupsRequest { Filter = new FailedSearchFilter(), GroupBy = InsightsPerspective.Cause })).Value!;
+
+        Assert.AreEqual(4, result.Coverage!.Total);
+        Assert.AreEqual(2, result.Coverage.NotEligible, "Erp is outside the allow-list; the Billing event is Unsupported.");
+        var notEligible = result.Groups.Single(g => g.GroupKey == "notEligible");
+        CollectionAssert.AreEquivalent(new[] { "erp-1", "billing-1" },
+            notEligible.SubGroups.SelectMany(s => s.Events).Select(e => e.EventId).ToList());
+    }
+
+    [TestMethod]
+    public async Task ErrorGroups_treat_a_failure_without_a_message_id_as_not_analyzed()
+    {
+        var enrichment = new FailedInsightsServiceTests.FakeEnrichment();
+        var harness = await CreateHarness(readable: new[] { "Crm" }, enrichment);
+        await Upload(harness.Store, "Crm", "crm-9", StoreResolutionStatus.Failed, "Timeout", lastMessageId: null);
+
+        var result = (await harness.Controller.PostFailedErrorGroupsAsync(
+            new FailedErrorGroupsRequest { Filter = new FailedSearchFilter(), GroupBy = InsightsPerspective.Cause })).Value!;
+
+        Assert.AreEqual(InsightsEnrichmentStatus.Available, result.Enrichment);
+        Assert.AreEqual(3, result.Coverage!.NotAnalyzed);
+        CollectionAssert.AreEqual(new[] { 2 }, enrichment.RequestedCounts, "Only failures with a message id are looked up.");
+    }
+
+    [TestMethod]
+    public async Task ErrorGroups_read_classifications_only_for_endpoints_the_caller_can_read()
+    {
+        var enrichment = new FailedInsightsServiceTests.FakeEnrichment();
+        enrichment.Save(FailedInsightsServiceTests.Result("m-erp-1", "erp-1", "Erp", "business_rule", FailureGuidance.ChangeLikelyRequired));
+        var harness = await CreateHarness(readable: new[] { "Crm" }, enrichment);
+
+        var result = (await harness.Controller.PostFailedErrorGroupsAsync(
+            new FailedErrorGroupsRequest { Filter = new FailedSearchFilter(), GroupBy = InsightsPerspective.Cause })).Value!;
+
+        Assert.AreEqual(2, result.Total);
+        CollectionAssert.AreEqual(new[] { "notAnalyzed" }, result.Groups.Select(g => g.GroupKey).ToList());
+        CollectionAssert.AreEqual(new[] { 2 }, enrichment.RequestedCounts, "The Erp failure is never looked up.");
+    }
+
+    [TestMethod]
+    public async Task ErrorGroups_never_show_a_result_saved_for_another_event()
+    {
+        var enrichment = new FailedInsightsServiceTests.FakeEnrichment();
+        enrichment.Save(FailedInsightsServiceTests.Result("m-crm-1", "another-event", "Crm", "business_rule", FailureGuidance.ChangeLikelyRequired));
+        var harness = await CreateHarness(readable: new[] { "Crm" }, enrichment);
+
+        var result = (await harness.Controller.PostFailedErrorGroupsAsync(
+            new FailedErrorGroupsRequest { Filter = new FailedSearchFilter(), GroupBy = InsightsPerspective.Cause })).Value!;
+
+        var uncertain = result.Groups.Single(g => g.GroupKey == "uncertain").SubGroups.Single().Events.Single();
+        Assert.AreEqual("crm-1", uncertain.EventId);
+        Assert.AreEqual(InsightAnalysisState.Uncertain, uncertain.AnalysisState);
+        Assert.IsNull(uncertain.Category);
+    }
+
+    [TestMethod]
+    [DataRow(ClassificationBulkReadStatus.Unavailable, InsightsEnrichmentStatus.Unavailable)]
+    [DataRow(ClassificationBulkReadStatus.Unsupported, InsightsEnrichmentStatus.Unsupported)]
+    public async Task ErrorGroups_fall_back_to_error_groups_when_classifications_cannot_be_read(ClassificationBulkReadStatus read, InsightsEnrichmentStatus expected)
+    {
+        var enrichment = new FailedInsightsServiceTests.FakeEnrichment { Status = read };
+        var harness = await CreateHarness(readable: new[] { "Crm" }, enrichment);
+
+        var result = (await harness.Controller.PostFailedErrorGroupsAsync(
+            new FailedErrorGroupsRequest { Filter = new FailedSearchFilter(), GroupBy = InsightsPerspective.Guidance })).Value!;
+
+        Assert.AreEqual(expected, result.Enrichment);
+        Assert.IsNull(result.Coverage);
+        Assert.AreEqual("HttpRequestException", result.Groups.Single().ErrorCategory);
+    }
+
+    [TestMethod]
+    public async Task ErrorGroups_over_the_enrichment_ceiling_report_the_limit_without_reading()
+    {
+        var enrichment = new FailedInsightsServiceTests.FakeEnrichment();
+        var harness = await CreateHarness(readable: new[] { "Crm", "Erp" }, enrichment, new FailedInsightsOptions { EnrichmentCeiling = 2 });
+
+        var result = (await harness.Controller.PostFailedErrorGroupsAsync(new FailedErrorGroupsRequest { Filter = new FailedSearchFilter() })).Value!;
+
+        Assert.AreEqual(InsightsEnrichmentStatus.LimitExceeded, result.Enrichment);
+        Assert.AreEqual(2, result.EnrichmentLimit);
+        Assert.AreEqual(0, enrichment.Reads);
+    }
+
     private static NimBus.MessageStore.UnresolvedEvent Failure(string endpointId, string eventId, StoreResolutionStatus status, string? errorText, int minutesAgo) => new()
     {
         EndpointId = endpointId,
@@ -389,8 +565,10 @@ public sealed class FailedImplementationTests
     private static async Task<List<AuditSearchItem>> AllAudits(InMemoryMessageStore store) =>
         (await store.SearchAudits(new AuditFilter(), continuationToken: null, maxItemCount: 50)).Audits.ToList();
 
-    private static async Task<Harness> CreateHarness(string[] readable)
+    private static async Task<Harness> CreateHarness(string[] readable, FailedInsightsServiceTests.FakeEnrichment? enrichment = null,
+        FailedInsightsOptions? options = null)
     {
+        enrichment ??= new FailedInsightsServiceTests.FakeEnrichment { IsEnabled = false };
         var store = new InMemoryMessageStore();
         await Upload(store, "Crm", "crm-1", StoreResolutionStatus.Failed, "HttpRequestException: 503");
         await Upload(store, "Crm", "crm-2", StoreResolutionStatus.Failed, "HttpRequestException: 503");
@@ -409,11 +587,15 @@ public sealed class FailedImplementationTests
             new AuditLogService(NullLogger<AuditLogService>.Instance, store),
             new StubHttpContextAccessor { HttpContext = context },
             PayloadRedactionTests.NewRedaction(),
-            NullLogger<FailedImplementation>.Instance);
+            NullLogger<FailedImplementation>.Instance,
+            enrichment,
+            FailedInsightsServiceTests.NewCache(),
+            Options.Create(options ?? new FailedInsightsOptions()));
         return new Harness(controller, store);
     }
 
-    private static Task Upload(InMemoryMessageStore store, string endpointId, string eventId, StoreResolutionStatus status, string? errorText)
+    private static Task Upload(InMemoryMessageStore store, string endpointId, string eventId, StoreResolutionStatus status, string? errorText,
+        string? lastMessageId = "")
     {
         var content = new NimBus.MessageStore.UnresolvedEvent
         {
@@ -421,7 +603,7 @@ public sealed class FailedImplementationTests
             EventId = eventId,
             SessionId = "s-" + eventId,
             EventTypeId = "OrderPlaced",
-            LastMessageId = "m-" + eventId,
+            LastMessageId = lastMessageId == "" ? "m-" + eventId : lastMessageId,
             MessageContent = new MessageContent
             {
                 ErrorContent = errorText == null ? null : new ErrorContent { ErrorText = errorText },

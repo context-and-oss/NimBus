@@ -7255,7 +7255,7 @@ export class Client extends ApiClientBase {
     }
 
     /**
-     * Group unresolved failures by error category and pattern
+     * Group unresolved failures by error pattern, likely cause, recovery guidance or fault origin
      * @param body (optional) 
      * @return OK
      */
@@ -14946,6 +14946,8 @@ export class FailedHistogram implements IFailedHistogram {
     totals?: FailedHistogramTotals;
     /** True when the store stopped counting at its cap; counts are then a lower bound. */
     truncated?: boolean;
+    /** True when failure intelligence is on, so error-groups can group by saved classification. */
+    classificationsAvailable?: boolean;
 
     [key: string]: any;
 
@@ -14974,6 +14976,7 @@ export class FailedHistogram implements IFailedHistogram {
             }
             this.totals = _data["totals"] ? FailedHistogramTotals.fromJS(_data["totals"]) : undefined as any;
             this.truncated = _data["truncated"];
+            this.classificationsAvailable = _data["classificationsAvailable"];
         }
     }
 
@@ -15000,6 +15003,7 @@ export class FailedHistogram implements IFailedHistogram {
         }
         data["totals"] = this.totals ? this.totals.toJSON() : undefined as any;
         data["truncated"] = this.truncated;
+        data["classificationsAvailable"] = this.classificationsAvailable;
         return data;
     }
 
@@ -15023,6 +15027,8 @@ export interface IFailedHistogram {
     totals?: FailedHistogramTotals;
     /** True when the store stopped counting at its cap; counts are then a lower bound. */
     truncated?: boolean;
+    /** True when failure intelligence is on, so error-groups can group by saved classification. */
+    classificationsAvailable?: boolean;
 
     [key: string]: any;
 }
@@ -15254,6 +15260,7 @@ export interface IFailedEndpointTotals {
 
 export class FailedErrorGroupsRequest implements IFailedErrorGroupsRequest {
     filter?: FailedSearchFilter;
+    groupBy?: InsightsPerspective;
 
     [key: string]: any;
 
@@ -15273,6 +15280,7 @@ export class FailedErrorGroupsRequest implements IFailedErrorGroupsRequest {
                     this[property] = _data[property];
             }
             this.filter = _data["filter"] ? FailedSearchFilter.fromJS(_data["filter"]) : undefined as any;
+            this.groupBy = _data["groupBy"];
         }
     }
 
@@ -15290,6 +15298,7 @@ export class FailedErrorGroupsRequest implements IFailedErrorGroupsRequest {
                 data[property] = this[property];
         }
         data["filter"] = this.filter ? this.filter.toJSON() : undefined as any;
+        data["groupBy"] = this.groupBy;
         return data;
     }
 
@@ -15303,6 +15312,7 @@ export class FailedErrorGroupsRequest implements IFailedErrorGroupsRequest {
 
 export interface IFailedErrorGroupsRequest {
     filter?: FailedSearchFilter;
+    groupBy?: InsightsPerspective;
 
     [key: string]: any;
 }
@@ -15313,6 +15323,12 @@ export class FailedErrorGroups implements IFailedErrorGroups {
     total?: number;
     /** True when more failures matched than the server groups; the groups cover the newest ones. */
     truncated?: boolean;
+    enrichment?: InsightsEnrichmentStatus;
+    /** Largest number of failures whose saved classifications are read. */
+    enrichmentLimit?: number;
+    /** Whether agents can record new classifications in this deployment. */
+    analysisAvailable?: boolean;
+    coverage?: InsightsCoverage | undefined;
 
     [key: string]: any;
 
@@ -15338,6 +15354,10 @@ export class FailedErrorGroups implements IFailedErrorGroups {
             }
             this.total = _data["total"];
             this.truncated = _data["truncated"];
+            this.enrichment = _data["enrichment"];
+            this.enrichmentLimit = _data["enrichmentLimit"];
+            this.analysisAvailable = _data["analysisAvailable"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
         }
     }
 
@@ -15361,6 +15381,10 @@ export class FailedErrorGroups implements IFailedErrorGroups {
         }
         data["total"] = this.total;
         data["truncated"] = this.truncated;
+        data["enrichment"] = this.enrichment;
+        data["enrichmentLimit"] = this.enrichmentLimit;
+        data["analysisAvailable"] = this.analysisAvailable;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
         return data;
     }
 
@@ -15378,12 +15402,24 @@ export interface IFailedErrorGroups {
     total?: number;
     /** True when more failures matched than the server groups; the groups cover the newest ones. */
     truncated?: boolean;
+    enrichment?: InsightsEnrichmentStatus;
+    /** Largest number of failures whose saved classifications are read. */
+    enrichmentLimit?: number;
+    /** Whether agents can record new classifications in this deployment. */
+    analysisAvailable?: boolean;
+    coverage?: InsightsCoverage | undefined;
 
     [key: string]: any;
 }
 
 export class FailedErrorGroup implements IFailedErrorGroup {
+    /** The error category; for a cause, guidance or fault-origin grouping, the group's label. */
     errorCategory?: string;
+    /** The error category, or the cause, guidance or fault-origin key the group stands for. */
+    groupKey?: string;
+    /** Reader-facing name of the group. */
+    label?: string;
+    coverage?: InsightsCoverage | undefined;
     count?: number;
     endpoints?: string[];
     eventTypes?: string[];
@@ -15409,6 +15445,9 @@ export class FailedErrorGroup implements IFailedErrorGroup {
                     this[property] = _data[property];
             }
             this.errorCategory = _data["errorCategory"];
+            this.groupKey = _data["groupKey"];
+            this.label = _data["label"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
             this.count = _data["count"];
             if (Array.isArray(_data["endpoints"])) {
                 this.endpoints = [] as any;
@@ -15444,6 +15483,9 @@ export class FailedErrorGroup implements IFailedErrorGroup {
                 data[property] = this[property];
         }
         data["errorCategory"] = this.errorCategory;
+        data["groupKey"] = this.groupKey;
+        data["label"] = this.label;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
         data["count"] = this.count;
         if (Array.isArray(this.endpoints)) {
             data["endpoints"] = [];
@@ -15474,7 +15516,13 @@ export class FailedErrorGroup implements IFailedErrorGroup {
 }
 
 export interface IFailedErrorGroup {
+    /** The error category; for a cause, guidance or fault-origin grouping, the group's label. */
     errorCategory?: string;
+    /** The error category, or the cause, guidance or fault-origin key the group stands for. */
+    groupKey?: string;
+    /** Reader-facing name of the group. */
+    label?: string;
+    coverage?: InsightsCoverage | undefined;
     count?: number;
     endpoints?: string[];
     eventTypes?: string[];
@@ -15487,6 +15535,7 @@ export interface IFailedErrorGroup {
 
 export class FailedErrorSubGroup implements IFailedErrorSubGroup {
     normalizedPattern?: string;
+    coverage?: InsightsCoverage | undefined;
     count?: number;
     endpoints?: string[];
     eventTypes?: string[];
@@ -15512,6 +15561,7 @@ export class FailedErrorSubGroup implements IFailedErrorSubGroup {
                     this[property] = _data[property];
             }
             this.normalizedPattern = _data["normalizedPattern"];
+            this.coverage = _data["coverage"] ? InsightsCoverage.fromJS(_data["coverage"]) : undefined as any;
             this.count = _data["count"];
             if (Array.isArray(_data["endpoints"])) {
                 this.endpoints = [] as any;
@@ -15547,6 +15597,7 @@ export class FailedErrorSubGroup implements IFailedErrorSubGroup {
                 data[property] = this[property];
         }
         data["normalizedPattern"] = this.normalizedPattern;
+        data["coverage"] = this.coverage ? this.coverage.toJSON() : undefined as any;
         data["count"] = this.count;
         if (Array.isArray(this.endpoints)) {
             data["endpoints"] = [];
@@ -15578,6 +15629,7 @@ export class FailedErrorSubGroup implements IFailedErrorSubGroup {
 
 export interface IFailedErrorSubGroup {
     normalizedPattern?: string;
+    coverage?: InsightsCoverage | undefined;
     count?: number;
     endpoints?: string[];
     eventTypes?: string[];
@@ -15597,6 +15649,13 @@ export class FailedEventRef implements IFailedEventRef {
     resolutionStatus?: string;
     updatedAt?: moment.Moment;
     errorText?: string | undefined;
+    analysisState?: InsightAnalysisState;
+    /** Saved likely-cause category, when the failure is classified. */
+    category?: string | undefined;
+    /** Saved recovery guidance, as recorded when the failure was analyzed. */
+    guidance?: string | undefined;
+    /** Saved fault origin. */
+    faultOrigin?: string | undefined;
 
     [key: string]: any;
 
@@ -15623,6 +15682,10 @@ export class FailedEventRef implements IFailedEventRef {
             this.resolutionStatus = _data["resolutionStatus"];
             this.updatedAt = _data["updatedAt"] ? moment(_data["updatedAt"].toString()) : undefined as any;
             this.errorText = _data["errorText"];
+            this.analysisState = _data["analysisState"];
+            this.category = _data["category"];
+            this.guidance = _data["guidance"];
+            this.faultOrigin = _data["faultOrigin"];
         }
     }
 
@@ -15647,6 +15710,10 @@ export class FailedEventRef implements IFailedEventRef {
         data["resolutionStatus"] = this.resolutionStatus;
         data["updatedAt"] = this.updatedAt ? this.updatedAt.toISOString() : undefined as any;
         data["errorText"] = this.errorText;
+        data["analysisState"] = this.analysisState;
+        data["category"] = this.category;
+        data["guidance"] = this.guidance;
+        data["faultOrigin"] = this.faultOrigin;
         return data;
     }
 
@@ -15667,6 +15734,13 @@ export interface IFailedEventRef {
     resolutionStatus?: string;
     updatedAt?: moment.Moment;
     errorText?: string | undefined;
+    analysisState?: InsightAnalysisState;
+    /** Saved likely-cause category, when the failure is classified. */
+    category?: string | undefined;
+    /** Saved recovery guidance, as recorded when the failure was analyzed. */
+    guidance?: string | undefined;
+    /** Saved fault origin. */
+    faultOrigin?: string | undefined;
 
     [key: string]: any;
 }
