@@ -4,6 +4,10 @@ Status: Phase 1 implemented (context-and-oss/NimBus#324 to #328, #336, #337 and 
 v4.11.0). Revision 2 (2026-11-06: review findings applied). Of the §12 follow-ups,
 [Spec 044](../044-agent-first/spec.md) withdraws selective analysis, representative pattern
 hypotheses and resumable bulk execution; the others stand.
+Superseded in the WebApp (2026-11-24): the Insights page was folded into the Failed page's
+groupings by [this plan](../../plan/2026-11-24-insights-into-failed-page.md). The page, its
+drill-down and the occurrence-based history described here are no longer shown; the query
+service stays for the MCP tools, and the three REST operations are deprecated.
 Feature area: WebApp Insights and Integration Intelligence.
 Related: [Spec 033 — Failure Classification](../033-integration-intelligence-failure-classification/spec.md),
 [Integration Intelligence](../../integration-intelligence.md).

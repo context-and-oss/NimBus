@@ -13,7 +13,7 @@ Manage. From there the simulator:
 
 Everything runs inside the WebApp process, so it works the same on a deployed dev site as in
 the local Aspire stack. The messages are real: they go through Service Bus and the Resolver,
-and they show up in Messages, Flow, Insights and the audit log like any other traffic.
+and they show up in Messages, Flow, the Failed page and the audit log like any other traffic.
 
 ## Where it may run
 
@@ -68,7 +68,7 @@ the same endpoint is running, they compete for the same messages. So ownership i
 
 A mode can be limited to some of the endpoint's event types and to sessions matching a glob
 (`*` and `?` only), and can revert to Healthy after a number of minutes. The exception
-message is configurable, so Insights groups simulated failures under stable text. Simulated
+message is configurable, so the Failed page groups simulated failures under stable text. Simulated
 handlers use a fixed retry policy: 3 retries, 5 seconds apart.
 
 ## Marking simulated traffic

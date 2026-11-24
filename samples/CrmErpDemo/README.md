@@ -689,7 +689,7 @@ failure's evidence and records its classification (see the
 2. Connect an agent, for example `claude mcp add --transport http nimbus https://localhost:18443/mcp`
    (no sign-in under Aspire), and run the `handle-failures` prompt.
 3. Open the failed message in the NimBus WebApp: the intelligence card shows the agent's category,
-   guidance, fault origin and rationale, and **Insights** groups the failures by cause.
+   guidance, fault origin and rationale, and the **Failed** page groups the failures by cause.
 
 Switch reasons and repeat to compare categories and guidance. `PUT /api/admin/error-mode` still
 accepts a bare `{ "enabled": true }`, which keeps the current reason and rate, so the e2e suite and

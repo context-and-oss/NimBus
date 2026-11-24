@@ -84,7 +84,6 @@ const sidebars = {
       items: [
         { type: 'doc', id: 'webapp-monitor', label: 'Monitor wall' },
         { type: 'doc', id: 'webapp-failed-messages', label: 'Failed messages' },
-        { type: 'doc', id: 'webapp-insights', label: 'Failed message insights' },
         { type: 'doc', id: 'webapp-simulate', label: 'Simulating traffic' },
       ],
     },
