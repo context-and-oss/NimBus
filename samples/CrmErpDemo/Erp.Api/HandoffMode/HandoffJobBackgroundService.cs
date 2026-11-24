@@ -135,6 +135,10 @@ internal sealed class HandoffJobBackgroundService(
         var payload = JsonConvert.DeserializeObject<CrmAccountCreated>(job.PayloadJson)
             ?? throw new InvalidOperationException($"Handoff payload was empty for event {job.EventId}.");
 
+        // The same rule the adapter's upsert endpoint applies; the job settles as failed with this text.
+        if (Validation.CountryCodes.Problem(payload.CountryCode) is { } problem)
+            throw new InvalidOperationException(problem);
+
         var db = scopedServices.GetRequiredService<ErpDbContext>();
         var publisher = scopedServices.GetRequiredService<IPublisherClient>();
 

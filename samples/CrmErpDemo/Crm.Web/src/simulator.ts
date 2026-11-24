@@ -17,12 +17,28 @@ export const MIN_RATE_PER_MINUTE = 10;
 export const MAX_RATE_PER_MINUTE = 300;
 export const DEFAULT_RATE_PER_MINUTE = 60;
 
+/** What a hurried user types for the United Kingdom. The ISO code is GB, so ERP rejects it. */
+export const SLOPPY_COUNTRY = 'UK';
+/** The share of simulated accounts that get the mistyped country while sloppy data entry is on. */
+export const SLOPPY_SHARE = 0.2;
+
+/**
+ * The company a simulated user enters. With sloppy data entry on, about one in five gets the
+ * mistyped country. CRM saves and publishes it as typed; ERP is the system that rejects it.
+ * Pure, so the share is unit-testable.
+ */
+export function enteredCompany<T extends { countryCode: string }>(company: T, sloppy: boolean, rnd: number = Math.random()): T {
+  return sloppy && rnd < SLOPPY_SHARE ? { ...company, countryCode: SLOPPY_COUNTRY } : company;
+}
+
 export interface SimStats {
   running: boolean;
   actions: number;
   lastAction: string | null;
   /** Target actions per minute across all workers. */
   ratePerMinute: number;
+  /** Whether some simulated accounts get a mistyped country. */
+  sloppy: boolean;
 }
 
 type ActionKind =
@@ -66,6 +82,7 @@ class Simulator {
   private actions = 0;
   private lastAction: string | null = null;
   private ratePerMinute = DEFAULT_RATE_PER_MINUTE;
+  private sloppy = false;
   // Bumped on every start() so workers from a previous run exit instead of
   // doubling up if the toggle is flipped off then on again quickly.
   private generation = 0;
@@ -75,6 +92,7 @@ class Simulator {
     actions: 0,
     lastAction: null,
     ratePerMinute: DEFAULT_RATE_PER_MINUTE,
+    sloppy: false,
   };
 
   // Stable identities required by useSyncExternalStore.
@@ -118,12 +136,20 @@ class Simulator {
     this.emit();
   }
 
+  /** Turns sloppy data entry on or off; workers read it live. */
+  setSloppy(sloppy: boolean): void {
+    if (sloppy === this.sloppy) return;
+    this.sloppy = sloppy;
+    this.emit();
+  }
+
   private emit(): void {
     this.snapshot = {
       running: this.running,
       actions: this.actions,
       lastAction: this.lastAction,
       ratePerMinute: this.ratePerMinute,
+      sloppy: this.sloppy,
     };
     this.listeners.forEach(l => l());
   }
@@ -157,14 +183,14 @@ class Simulator {
   }
 
   private async createAccount(): Promise<string> {
-    const a = await api.createAccount(randomCompany());
+    const a = await api.createAccount(enteredCompany(randomCompany(), this.sloppy));
     return `Created account ${a.legalName}`;
   }
 
   private async updateAccount(): Promise<string> {
     const target = randomPick((await api.listAccounts({ deleted: false })).items);
     if (!target) return this.createAccount();
-    const a = await api.updateAccount(target.id, randomCompany());
+    const a = await api.updateAccount(target.id, enteredCompany(randomCompany(), this.sloppy));
     return `Updated account ${a.legalName}`;
   }
 

@@ -1,4 +1,4 @@
-import { MAX_RATE_PER_MINUTE, MIN_RATE_PER_MINUTE, simulator, useSimulator } from '../../simulator';
+import { MAX_RATE_PER_MINUTE, MIN_RATE_PER_MINUTE, SLOPPY_COUNTRY, simulator, useSimulator } from '../../simulator';
 import { PaneSection, SwitchButton } from '../shell/ui';
 
 // Auto-generates account and contact activity in this browser to drive Service Bus traffic.
@@ -32,6 +32,18 @@ export default function SimulatorPanel() {
           aria-label="Simulated messages per minute"
         />
       </label>
+      <SwitchButton
+        on={sim.sloppy}
+        onClick={() => simulator.setSloppy(!sim.sloppy)}
+        label={sim.sloppy ? 'Sloppy data entry: ON' : 'Sloppy data entry'}
+        title={`About one in five simulated accounts gets the country "${SLOPPY_COUNTRY}", which is not an ISO code. CRM publishes it as typed and ERP rejects it.`}
+      />
+      {sim.sloppy ? (
+        <p className="text-xs text-ink-muted">
+          About one in five simulated accounts is saved with country <code className="font-mono">{SLOPPY_COUNTRY}</code>. CRM
+          publishes it as typed; ERP rejects it, and the message fails on ErpEndpoint with the value quoted.
+        </p>
+      ) : null}
     </PaneSection>
   );
 }
