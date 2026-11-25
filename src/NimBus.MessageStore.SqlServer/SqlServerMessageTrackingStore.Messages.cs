@@ -153,9 +153,9 @@ VALUES (
     public async Task<int> PurgeStoredMessages(string endpointId)
     {
         await using var conn = await OpenAsync();
-        return await conn.ExecuteAsync(
-            $"DELETE FROM {T("Messages")} WHERE EndpointId = @EndpointId",
-            new { EndpointId = endpointId }, commandTimeout: _context.CommandTimeout);
+        var sql = $"DELETE TOP (@Batch) FROM {T("Messages")} WHERE EndpointId = @EndpointId";
+        return await RepeatPurgeBatchAsync(() => conn.ExecuteAsync(
+            sql, new { Batch = PurgeBatchSize, EndpointId = endpointId }, commandTimeout: _context.CommandTimeout));
     }
 
     private static MessageEntity MapMessageRow(dynamic row)

@@ -294,10 +294,36 @@ SELECT @@ROWCOUNT;";
     public async Task<bool> PurgeMessages(string endpointId)
     {
         await using var conn = await OpenAsync();
-        var rows = await conn.ExecuteAsync(
-            $"UPDATE {T("UnresolvedEvents")} SET Deleted = 1 WHERE EndpointId = @E",
-            new { E = endpointId }, commandTimeout: _context.CommandTimeout);
+        // "AND Deleted = 0" lets each batch move on to rows it hasn't marked yet.
+        var sql = $"UPDATE TOP (@Batch) {T("UnresolvedEvents")} SET Deleted = 1 WHERE EndpointId = @E AND Deleted = 0";
+        var rows = await RepeatPurgeBatchAsync(() => conn.ExecuteAsync(
+            sql, new { Batch = PurgeBatchSize, E = endpointId }, commandTimeout: _context.CommandTimeout));
         return rows > 0;
+    }
+
+    /// <summary>
+    /// Rows a whole-endpoint purge touches per statement. One unbounded statement over a
+    /// large endpoint runs past the command timeout on a small database (Azure SQL Basic,
+    /// 5 DTU), rolls back and purges nothing; short batches each commit and finish.
+    /// </summary>
+    internal const int PurgeBatchSize = 1000;
+
+    /// <summary>
+    /// Runs <paramref name="purgeBatch"/>, which touches at most <see cref="PurgeBatchSize"/>
+    /// rows, until a batch comes back short, and returns the rows touched in total.
+    /// </summary>
+    internal static async Task<int> RepeatPurgeBatchAsync(Func<Task<int>> purgeBatch)
+    {
+        var total = 0;
+        int rows;
+        do
+        {
+            rows = await purgeBatch();
+            total += rows;
+        }
+        while (rows == PurgeBatchSize);
+
+        return total;
     }
 
     public async Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId)
