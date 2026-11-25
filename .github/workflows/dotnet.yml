@@ -92,8 +92,8 @@ jobs:
       # CrmErpDemo.AppHost sets AspireUseCliBundle. On a runner without the bundle, each
       # AppHost that sets it runs this same setup into ~/.aspire during the parallel build,
       # and one that loses the race fails with ASPIRE009. Preparing it once here avoids
-      # that. Keep the version in step with Aspire.AppHost.Sdk.
-      run: dotnet dnx --yes aspire.cli@13.5.4 -- setup --install-path "$HOME/.aspire"
+      # that. Keep the version in step with the Aspire.Hosting.AppHost package.
+      run: dotnet dnx --yes aspire.cli@17.0.0 -- setup --install-path "$HOME/.aspire"
     - name: Build
       run: dotnet build src/NimBus.slnx --no-restore --configuration Release
     - name: Wait for Cosmos DB emulator
