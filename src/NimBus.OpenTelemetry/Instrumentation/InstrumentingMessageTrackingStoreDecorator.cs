@@ -224,6 +224,12 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) =>
         InstrumentAsync(nameof(ArchiveFailedEvent), () => _inner.ArchiveFailedEvent(eventId, sessionId, endpointId));
 
+    public Task<EventErasureResult> EraseEventCopyAsync(EventErasureRequest request, CancellationToken cancellationToken = default) =>
+        InstrumentAsync(nameof(EraseEventCopyAsync), () => _inner.EraseEventCopyAsync(request, cancellationToken));
+
+    public Task<RetentionPurgeResult> PurgeExpiredData(RetentionPeriods periods, System.DateTime nowUtc, int batchSize, CancellationToken cancellationToken = default) =>
+        InstrumentAsync(nameof(PurgeExpiredData), () => _inner.PurgeExpiredData(periods, nowUtc, batchSize, cancellationToken));
+
     // ── Per-message history records ─────────────────────────────────────
 
     public Task StoreMessage(MessageEntity message) =>

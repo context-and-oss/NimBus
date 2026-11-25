@@ -28022,6 +28022,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"alertRuleDeleted")]
         AlertRuleDeleted = 49,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"eraseEvent")]
+        EraseEvent = 50,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -28391,6 +28394,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"alertRuleDeleted")]
         AlertRuleDeleted = 49,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"eraseEvent")]
+        EraseEvent = 50,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -28648,6 +28654,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"alertRuleDeleted")]
         AlertRuleDeleted = 49,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"eraseEvent")]
+        EraseEvent = 50,
 
     }
 

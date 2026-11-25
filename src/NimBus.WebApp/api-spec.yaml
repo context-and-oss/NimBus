@@ -6051,6 +6051,7 @@ components:
             - alertRuleCreated
             - alertRuleUpdated
             - alertRuleDeleted
+            - eraseEvent
         comment:
           type: string
           nullable: true
@@ -8252,6 +8253,7 @@ components:
             - alertRuleCreated
             - alertRuleUpdated
             - alertRuleDeleted
+            - eraseEvent
         createdAtFrom:
           type: string
           format: date-time
@@ -9676,6 +9678,7 @@ components:
             - alertRuleCreated
             - alertRuleUpdated
             - alertRuleDeleted
+            - eraseEvent
         comment:
           type: string
           nullable: true

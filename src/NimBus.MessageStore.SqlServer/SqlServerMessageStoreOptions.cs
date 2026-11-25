@@ -29,6 +29,24 @@ public sealed class SqlServerMessageStoreOptions
     /// Default command timeout for storage operations, in seconds.
     /// </summary>
     public int CommandTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Configuration key the retention interval binds from (environment form:
+    /// <c>NimBus__SqlServer__RetentionInterval</c>). A delegate passed to
+    /// <c>AddSqlServerMessageStore(configure)</c> runs after binding and overrides it.
+    /// </summary>
+    public const string RetentionIntervalKey = "NimBus:SqlServer:RetentionInterval";
+
+    /// <summary>
+    /// Time between the start of one retention run and the start of the next (Spec 050). Defaults to
+    /// one hour; must be greater than zero and at most 49 days. Used only when the host registers the
+    /// cleanup with <c>AddSqlServerMessageStoreRetention()</c>. The periods themselves are not SQL
+    /// Server settings: they come from <c>NimBus:Retention:*</c> (see <c>RetentionPolicy</c>).
+    /// </summary>
+    public TimeSpan RetentionInterval { get; set; } = TimeSpan.FromHours(1);
+
+    // PeriodicTimer's upper bound (uint.MaxValue - 1 ms, about 49.7 days), rounded down to 49 days.
+    internal static readonly TimeSpan MaxRetentionInterval = TimeSpan.FromDays(49);
 }
 
 public enum SchemaProvisioningMode

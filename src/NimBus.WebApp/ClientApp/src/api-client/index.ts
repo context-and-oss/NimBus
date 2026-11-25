@@ -26383,6 +26383,7 @@ export enum MessageAuditAuditType {
     AlertRuleCreated = "alertRuleCreated",
     AlertRuleUpdated = "alertRuleUpdated",
     AlertRuleDeleted = "alertRuleDeleted",
+    EraseEvent = "eraseEvent",
 }
 
 export class MessageContent implements IMessageContent {
@@ -26552,6 +26553,7 @@ export enum AuditSearchFilterAuditType {
     AlertRuleCreated = "alertRuleCreated",
     AlertRuleUpdated = "alertRuleUpdated",
     AlertRuleDeleted = "alertRuleDeleted",
+    EraseEvent = "eraseEvent",
 }
 
 export enum StalePendingRowVerdict {
@@ -26644,6 +26646,7 @@ export enum AuditEntryAuditType {
     AlertRuleCreated = "alertRuleCreated",
     AlertRuleUpdated = "alertRuleUpdated",
     AlertRuleDeleted = "alertRuleDeleted",
+    EraseEvent = "eraseEvent",
 }
 
 export enum AgentSettleRequestOutcome {

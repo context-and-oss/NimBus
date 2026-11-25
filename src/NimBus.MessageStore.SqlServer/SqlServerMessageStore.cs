@@ -146,6 +146,8 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<bool> PurgeMessages(string endpointId, string sessionId) => _messageTracking.PurgeMessages(endpointId, sessionId);
     public Task<bool> PurgeMessages(string endpointId) => _messageTracking.PurgeMessages(endpointId);
     public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => _messageTracking.ArchiveFailedEvent(eventId, sessionId, endpointId);
+    public Task<EventErasureResult> EraseEventCopyAsync(EventErasureRequest request, CancellationToken cancellationToken = default) => _messageTracking.EraseEventCopyAsync(request, cancellationToken);
+    public Task<RetentionPurgeResult> PurgeExpiredData(RetentionPeriods periods, DateTime nowUtc, int batchSize, CancellationToken cancellationToken = default) => _messageTracking.PurgeExpiredData(periods, nowUtc, batchSize, cancellationToken);
     public Task<string> GetEndpointErrorList(string endpointId) => _messageTracking.GetEndpointErrorList(endpointId);
     // ───────── Subscription store — implementation in SqlServerSubscriptionStore ─────────
     public Task<EndpointSubscription?> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)

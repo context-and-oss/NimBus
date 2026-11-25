@@ -16,7 +16,7 @@ namespace NimBus.Testing.Conformance;
 /// Each concrete provider supplies a freshly-initialized store or isolated ids.
 /// </summary>
 [TestClass]
-public abstract class MessageTrackingStoreConformanceTests
+public abstract partial class MessageTrackingStoreConformanceTests
 {
     private readonly string _scope = $"ct-{Guid.NewGuid():N}"[..16];
 

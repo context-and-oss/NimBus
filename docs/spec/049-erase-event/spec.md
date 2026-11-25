@@ -1,6 +1,6 @@
 # Spec 049: Erase event
 
-Status: proposed (2026-11-13, revised 2026-11-14). Issue: context-and-oss/NimBus#291, part of the Operations cleanup
+Status: phase 1 (store contract) implemented 2026-11-25 for #291; phases 2–6 open. Proposed 2026-11-13, revised 2026-11-14. Issue: context-and-oss/NimBus#291, part of the Operations cleanup
 gap analysis (#292). Builds on Spec 042 (Recall wrongly published messages, #290) and stays
 consistent with #298 (keep the event that blocks its session, merged as 39843a06).
 

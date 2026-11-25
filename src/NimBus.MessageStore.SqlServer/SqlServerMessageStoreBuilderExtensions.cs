@@ -1,6 +1,7 @@
 using System;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -47,12 +48,31 @@ public static class SqlServerMessageStoreBuilderExtensions
                         ?? configuration.GetValue<string>("SqlServerConnection")
                         ?? string.Empty;
                 }
+
+                var interval = configuration.GetValue<TimeSpan?>(SqlServerMessageStoreOptions.RetentionIntervalKey);
+                if (interval is not null)
+                    options.RetentionInterval = interval.Value;
             })
             .Configure(configure)
             .Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString),
                 "SqlServerMessageStoreOptions.ConnectionString is required (set 'SqlConnection', the 'sqlserver' connection string, or 'SqlServerConnection').")
             .Validate(o => !string.IsNullOrWhiteSpace(o.Schema),
-                "SqlServerMessageStoreOptions.Schema is required.");
+                "SqlServerMessageStoreOptions.Schema is required.")
+            .Validate(o => o.RetentionInterval > TimeSpan.Zero && o.RetentionInterval <= SqlServerMessageStoreOptions.MaxRetentionInterval,
+                $"SqlServerMessageStoreOptions.RetentionInterval ('{SqlServerMessageStoreOptions.RetentionIntervalKey}') must be greater than zero and at most 49 days.");
+
+        services.TryAddSingleton<SqlServerSchemaReadiness>();
+
+        // Retention periods (Spec 050): SQL Server keeps everything unless a period is pinned in
+        // host configuration (NimBus:Retention:*). Read once; an invalid pin fails the host that
+        // resolves it, which is the one running the cleanup.
+        services.TryAddSingleton(sp =>
+        {
+            var configuration = sp.GetService<IConfiguration>();
+            return new RetentionPolicy(
+                RetentionPeriods.AllUnlimited,
+                key => configuration?[$"{RetentionPolicy.SectionName}:{key}"]);
+        });
 
         services.AddSingleton<INimBusMessageStore, SqlServerMessageStore>();
         services.AddSingleton<IMessageTrackingStore>(sp =>
@@ -88,6 +108,24 @@ public static class SqlServerMessageStoreBuilderExtensions
         services.AddSingleton<SqlServerMessageStoreHealthCheck>();
         services.AddSingleton<IHostedService, SqlServerSchemaInitializer>();
 
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers the SQL Server retention cleanup (Spec 050): a hosted service that, once per
+    /// <see cref="SqlServerMessageStoreOptions.RetentionInterval"/>, deletes the rows whose
+    /// retention period ran out, with the periods of <see cref="RetentionPolicy"/>. On SQL Server
+    /// every period is unlimited until it is pinned in <c>NimBus:Retention:*</c>, so by default
+    /// the cleanup deletes nothing. Call it from one kind of host only (the WebApp), after
+    /// <see cref="AddSqlServerMessageStore(INimBusBuilder)"/>; calling it twice registers one cleanup.
+    /// </summary>
+    public static INimBusBuilder AddSqlServerMessageStoreRetention(this INimBusBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Services.TryAddSingleton<SqlServerSchemaReadiness>();
+        // TryAddEnumerable by implementation type: a second call adds nothing.
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SqlServerRetentionService>());
         return builder;
     }
 }

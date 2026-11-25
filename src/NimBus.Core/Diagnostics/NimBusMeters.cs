@@ -113,4 +113,12 @@ public static class NimBusMeters
 
     public static readonly Counter<long> StoreOperationFailed = Store.CreateCounter<long>(
         "nimbus.store.operation.failed", "{ops}", "Message-store operations that threw.");
+
+    /// <summary>
+    /// Rows the message store deleted because their retention period ran out (Spec 050), tagged with
+    /// <c>nimbus.retention.period</c>: <c>open_events</c>, <c>resolved_events</c>, <c>message_history</c> or
+    /// <c>audit_trail</c>. Recorded by the SQL Server cleanup; Cosmos DB expires data by TTL and records nothing.
+    /// </summary>
+    public static readonly Counter<long> RetentionDeleted = Store.CreateCounter<long>(
+        "nimbus.retention.deleted", "{rows}", "Rows deleted because their retention period ran out.");
 }

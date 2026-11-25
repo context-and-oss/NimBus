@@ -1,6 +1,6 @@
 # Spec 050 — Retention settings in the WebApp
 
-Status: **proposed** (2026-11-15). Nothing is implemented. Target: a 4.x minor.
+Status: **proposed** (2026-11-15). Partly implemented (2026-11-25, #291): the SQL cleanup of §5.4 (job, `PurgeExpiredData` seam, index script `0031`, metric) and a `RetentionPolicy` that reads the `NimBus:Retention:*` pins of §5.2 over the provider defaults. Not yet: the saved settings and the page (§5.1, §5.5), Cosmos stamping from the policy and the legacy-key pin (§5.3), and the CLI and template pins (§5.2). Target: a 4.x minor.
 Implementation plan: [2026-11-15-spec-050-implementation-plan.md](../../plan/2026-11-15-spec-050-implementation-plan.md).
 Baseline: master `3cd73dad`.
 Related: [Spec 048](../048-sql-server-default-provider/spec.md), whose default flip waits for this

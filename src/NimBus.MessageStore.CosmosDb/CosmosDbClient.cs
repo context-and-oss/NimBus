@@ -351,6 +351,8 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetEventReports(endpointId, eventIds);
     public Task<IReadOnlyList<EventReport>> FindEventReports(string endpointId, string? ticketId, int limit) => _messageTracking.FindEventReports(endpointId, ticketId, limit);
     public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => _messageTracking.ArchiveFailedEvent(eventId, sessionId, endpointId);
+    public Task<EventErasureResult> EraseEventCopyAsync(EventErasureRequest request, CancellationToken cancellationToken = default) => _messageTracking.EraseEventCopyAsync(request, cancellationToken);
+    public Task<RetentionPurgeResult> PurgeExpiredData(RetentionPeriods periods, DateTime nowUtc, int batchSize, CancellationToken cancellationToken = default) => _messageTracking.PurgeExpiredData(periods, nowUtc, batchSize, cancellationToken);
     public Task<string> GetEndpointErrorList(string endpointId) => _messageTracking.GetEndpointErrorList(endpointId);
 
     internal const string MessageSearchProjection = CosmosDbMessageTrackingStore.MessageSearchProjection;

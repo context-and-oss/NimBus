@@ -10,4 +10,7 @@ public sealed class CosmosDbMessageTrackingStoreTests : MessageTrackingStoreConf
 {
     protected override IMessageTrackingStore CreateStore()
         => CosmosDbStoreTestHarness.CreateStore();
+
+    // Cosmos DB expires data by TTL; PurgeExpiredData returns zeros.
+    protected override bool DeletesExpiredDataByAge => false;
 }

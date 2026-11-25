@@ -120,6 +120,92 @@ public sealed class SqlServerMessageTrackingStoreTests : MessageTrackingStoreCon
         Assert.AreEqual(0, await store.PurgeStoredMessages("ep-batch"));
     }
 
+    [TestMethod]
+    public async Task EraseEventCopy_failed_compose_redaction_retains_history_and_row_until_a_healed_rerun()
+    {
+        var store = CreateStore();
+        const string payload = "{\"email\":\"leaked@example.com\"}";
+        var content = new MessageContent { EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = payload } };
+        await store.UploadDeadletteredMessage("erase-event", "s1", "ep-erase", new UnresolvedEvent
+        {
+            EventId = "erase-event", SessionId = "s1", EndpointId = "ep-erase", EnqueuedTimeUtc = DateTime.UtcNow, MessageContent = content,
+        });
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = "erase-event", MessageId = "erase-message", EndpointId = "ep-erase", SessionId = "s1",
+            EventTypeId = "OrderPlaced", To = "ep-erase", EnqueuedTimeUtc = DateTime.UtcNow, MessageContent = content,
+        });
+        await store.StoreMessageAudit(string.Empty, new MessageAuditEntity
+        {
+            AuditorName = "op", AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Compose,
+            Data = Newtonsoft.Json.JsonConvert.SerializeObject(new { eventTypeId = "OrderPlaced", eventContent = payload }),
+        }, "producer", "OrderPlaced");
+        var request = new EventErasureRequest("ep-erase", "erase-event", "erasure-1", "producer", "OrderPlaced", false);
+
+        // A trigger refuses every update of a Compose audit row: the provider error of the place.
+        await ExecuteAsync($@"CREATE TRIGGER [{Schema}].[FailComposeRedaction] ON [{Schema}].[MessageAudits] AFTER UPDATE AS
+IF EXISTS (SELECT 1 FROM inserted WHERE AuditType = N'Compose') THROW 50000, 'compose redaction refused', 1;");
+        EventErasureResult first;
+        try
+        {
+            first = await store.EraseEventCopyAsync(request);
+        }
+        finally
+        {
+            await ExecuteAsync($"DROP TRIGGER [{Schema}].[FailComposeRedaction];");
+        }
+
+        Assert.AreEqual(ErasureOutstandingReasons.WriteFailed, first[ErasurePlace.ComposeAudits].OutstandingReason);
+        Assert.AreEqual(ErasureOutstandingReasons.RetainedForRetry, first[ErasurePlace.MessageHistory].OutstandingReason);
+        Assert.AreEqual(ErasureOutstandingReasons.RetainedForRetry, first[ErasurePlace.TrackingRow].OutstandingReason);
+        Assert.AreEqual(1, await CountAsync("UnresolvedEvents", "ep-erase"));
+        Assert.AreEqual(1, await CountAsync("Messages", "ep-erase"));
+
+        var rerun = await store.EraseEventCopyAsync(request);
+
+        Assert.IsTrue(rerun.IsComplete, string.Join(", ", rerun.Places));
+        Assert.AreEqual(ErasurePlaceState.Redacted, rerun[ErasurePlace.ComposeAudits].State);
+        Assert.AreEqual(0, await CountAsync("UnresolvedEvents", "ep-erase"));
+        Assert.AreEqual(0, await CountAsync("Messages", "ep-erase"));
+    }
+
+    [TestMethod]
+    public async Task EraseEventCopy_reports_every_place_outstanding_when_the_database_is_unreachable()
+    {
+        var store = new SqlServerMessageStore(Microsoft.Extensions.Options.Options.Create(new SqlServerMessageStoreOptions
+        {
+            ConnectionString = "Server=tcp:127.0.0.1,1;Database=none;User Id=sa;Password=not-a-real-password;Connect Timeout=1;TrustServerCertificate=True",
+            Schema = "nimbus",
+        }));
+
+        var result = await store.EraseEventCopyAsync(new EventErasureRequest("ep", "e", "erasure-1", "producer", "OrderPlaced", false));
+
+        Assert.IsTrue(result.Places.All(p => p.OutstandingReason == ErasureOutstandingReasons.WriteFailed), string.Join(", ", result.Places));
+    }
+
+    [TestMethod]
+    public async Task Retention_index_script_creates_the_cutoff_indexes()
+    {
+        await using var connection = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(
+            "SELECT COUNT(*) FROM sys.indexes i JOIN sys.tables t ON i.object_id = t.object_id JOIN sys.schemas s ON t.schema_id = s.schema_id " +
+            "WHERE s.name = @Schema AND i.name IN ('IX_Messages_CreatedAtUtc', 'IX_UnresolvedEvents_Deleted_UpdatedAtUtc')", connection);
+        command.Parameters.AddWithValue("@Schema", Schema);
+
+        Assert.AreEqual(2, (int)(await command.ExecuteScalarAsync())!);
+    }
+
+    private static string Schema => SqlServerStoreTestHarness.GetSchema(typeof(SqlServerMessageTrackingStoreTests));
+
+    private static async Task ExecuteAsync(string sql)
+    {
+        await using var connection = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static async Task<int> CountAsync(string table, string endpointId, string extraFilter = "")
     {
         await using var connection = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
