@@ -1,4 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace NimBus.Adapter.Mcp;
 
@@ -120,6 +123,19 @@ public sealed class AdapterCallLog
 
         call = null;
         return false;
+    }
+
+    /// <summary>
+    /// The one registration both <c>AddAdapterCallLog</c> and <c>AddAdapterMcp</c> make, so the
+    /// configured capacity holds whichever of them runs first.
+    /// </summary>
+    internal static void Register(IServiceCollection services)
+    {
+        services.AddOptions();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(sp => new AdapterCallLog(
+            sp.GetRequiredService<IOptions<AdapterMcpOptions>>().Value.CallLogCapacity,
+            sp.GetRequiredService<TimeProvider>()));
     }
 
     private sealed class KeyComparer : IEqualityComparer<(string Entity, string Key)>

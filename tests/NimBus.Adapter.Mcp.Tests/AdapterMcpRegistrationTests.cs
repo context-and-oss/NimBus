@@ -51,4 +51,20 @@ public sealed class AdapterMcpRegistrationTests
         Assert.AreEqual(25, provider.GetRequiredService<AdapterCallLog>().Capacity);
         Assert.IsInstanceOfType<FakeAdapterSystem>(provider.CreateScope().ServiceProvider.GetRequiredService<IAdapterSystem>());
     }
+
+    [TestMethod]
+    public void The_call_log_capacity_holds_when_the_client_is_registered_first()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>(TestTokens.Settings())
+        {
+            ["AdapterMcp:CallLogCapacity"] = "25",
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddSingleton<FakeAdapterData>();
+        services.AddHttpClient("erp").AddAdapterCallLog("customer", _ => null);
+        services.AddAdapterMcp<FakeAdapterSystem>(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.AreEqual(25, provider.GetRequiredService<AdapterCallLog>().Capacity);
+    }
 }

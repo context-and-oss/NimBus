@@ -39,10 +39,7 @@ public static class AdapterMcpServiceCollectionExtensions
                 $"{AdapterMcpOptions.SectionName}:{nameof(AdapterMcpOptions.TenantId)} and {AdapterMcpOptions.SectionName}:{nameof(AdapterMcpOptions.Audience)} are required: the tenant and the client id of the adapter MCP resource.")
             .ValidateOnStart();
         services.AddScoped<IAdapterSystem, TSystem>();
-        services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton(sp => new AdapterCallLog(
-            sp.GetRequiredService<IOptions<AdapterMcpOptions>>().Value.CallLogCapacity,
-            sp.GetRequiredService<TimeProvider>()));
+        AdapterCallLog.Register(services);
         services.TryAddSingleton(sp => new AdapterTokenValidator(sp.GetRequiredService<IOptions<AdapterMcpOptions>>().Value));
         services.TryAddSingleton(sp => new AdapterRecordMasker(sp.GetRequiredService<IOptions<AdapterMcpOptions>>().Value.PiiHashSalt));
         services.TryAddSingleton<AdapterReadLog>();
