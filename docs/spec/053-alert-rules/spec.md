@@ -354,7 +354,7 @@ errorTextContains, cap)` over the stored `ErrorResponse` messages, `GetOldestBlo
 (non-deleted Failed, or Pending with sub-status Handoff, oldest by `UpdatedAt`), and
 `HasCompletedMessageSince(endpointId, since)` over `ResolutionResponse` messages. Cosmos DB reads the
 shared `messages` container by endpoint, type and widened date bounds, refined in code; SQL Server
-seeks `IX_Messages_EndpointId_EnqueuedTimeUtc`. All three providers implement it, with a conformance
+seeks `IX_Messages_EndpointId_MessageType_EnqueuedTimeUtc` (migration `0030`, §7). All three providers implement it, with a conformance
 suite.
 
 ### 5.8 API and permissions
@@ -442,6 +442,29 @@ about 600 RU a minute; the docs name it. The deferred count reuses the endpoint 
 Search rate limit would have allowed about 37,000 RU a minute per user, so the preview has its own
 policy, 10 a minute per user. Listing 1,000 failed attempts for a category rule costs about 52 RU,
 plus the classification bulk read.
+
+**Measured on SQL Server** (#442) on LocalDB (SQL Server 2019), the Phase 2 data set: 200,000
+messages over 24 hours on ten endpoints, about 1 KB each, plus an endpoint that has only failed for
+the last two hours. Logical reads on `Messages`, the plan compiled for each call's values (the
+clustered index is 40,190 pages):
+
+| Read | Case | Before | After |
+|---|---|---|---|
+| `CountFailedAttempts` | 15 min, cap 5 / cap 100 | 349 / 921 (seek + lookups) | 3 / 4 |
+| | 24 h, cap 100 | 2,009 (clustered scan) | 5 |
+| | 24 h, cap 100, two event types | 4,019 (clustered scan) | 6 |
+| `HasCompletedMessageSince` | busy or silent endpoint | 3–7 | 3 |
+| | only failures for 60 min / 2 h | 2,570 / 40,190 (scan, 188 ms) | 3 / 3 |
+| `CountMessagesPerMinute` | 24 h, 2,000 failures / 17,000 completions | 40,190 (scan, 165–175 ms) | 34 / 290 (9–15 ms) |
+| `ListFailedAttempts` | 24 h, limit 100 | 40,190 (scan, 143 ms) | 34 (2 ms) |
+
+Without `MessageType` in an index, a read either looked up every message of the endpoint in the
+window or scanned the table, and which one depended on the values the cached plan was compiled
+for. Migration `0030` adds `IX_Messages_EndpointId_MessageType_EnqueuedTimeUtc` on
+`(EndpointId, MessageType, EnqueuedTimeUtc DESC) INCLUDE (EventTypeId, MessageId, EventId)`, which
+covers every read without an error-text filter (3,294 pages, next to 793 for the endpoint-time
+index). Without `MessageId` and `EventId`, `ListFailedAttempts` still read 1,469 pages. An error-text
+filter still reads each candidate's JSON from the clustered index.
 
 The evaluation interval stays fixed at 60 s. A setting (`NimBus:Alerts:Rules:EvaluationInterval`,
 minimum 60 s) is added only if a deployment needs it.

@@ -16,9 +16,10 @@ namespace NimBus.MessageStore.SqlServer;
 /// <c>UnresolvedEvents</c>.
 /// </summary>
 /// <remarks>
-/// Every read is for one endpoint (<c>EndpointId = @EndpointId</c>), so it seeks the endpoint's
-/// rows by <c>IX_Messages_EndpointId_EnqueuedTimeUtc</c> or
-/// <c>IX_UnresolvedEvents_EndpointId_UpdatedAtUtc</c>, and the count stops at the cap.
+/// Every read is for one endpoint (<c>EndpointId = @EndpointId</c>). The <c>Messages</c> reads seek
+/// the endpoint and message type by <c>IX_Messages_EndpointId_MessageType_EnqueuedTimeUtc</c>
+/// (migration 0030, which covers them unless an error-text filter needs the JSON), the blocking
+/// event read seeks <c>IX_UnresolvedEvents_EndpointId_UpdatedAtUtc</c>, and the count stops at the cap.
 /// </remarks>
 internal sealed class SqlServerAlertSignalStore : IAlertSignalStore
 {
