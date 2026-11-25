@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Interactive architecture of the NimBus reference implementation: CRM and ERP systems integrated over Azure Service Bus.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<!-- Interactive companion to docs/reference-implementation.md. The static diagram in
+     docs/images/crmerp-reference-architecture.svg is drawn from the same model; update both together. -->
+<title>NimBus · Reference implementation architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap">
+<style>
+/* Layout: one wide system diagram (CRM | Service Bus | ERP, NimBus on top, extra subscribers below),
+   then a detail panel that follows the selection, then two reference tables. Palette from the NimBus WebApp. */
+:root {
+  --bg: #F4F2EA;
+  --surface: #FAF8F2;
+  --surface-2: #ECE7DA;
+  --line: #E5DFCE;
+  --line-strong: #C9C1AB;
+  --ink: #1A1814;
+  --ink-2: #4A463D;
+  --ink-3: #8A8473;
+  --accent: #E8743C;
+  --accent-ink: #A94B1D;
+  --crm: #3A6FB0;
+  --erp: #6B3FA3;
+  --fwd: #4A463D;
+  --ext: #8A8473;
+  --danger: #C2412E;
+  --font-sans: Manrope, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F0E0B; --surface: #1A1814; --surface-2: #2A2620; --line: #2A2620; --line-strong: #3D3830;
+    --ink: #F4F2EA; --ink-2: #A8A293; --ink-3: #7D776A; --accent: #E8743C; --accent-ink: #F0A478;
+    --crm: #78A2DA; --erp: #A988D6; --fwd: #A8A293; --ext: #7D776A; --danger: #E06A55;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F0E0B; --surface: #1A1814; --surface-2: #2A2620; --line: #2A2620; --line-strong: #3D3830;
+  --ink: #F4F2EA; --ink-2: #A8A293; --ink-3: #7D776A; --accent: #E8743C; --accent-ink: #F0A478;
+  --crm: #78A2DA; --erp: #A988D6; --fwd: #A8A293; --ext: #7D776A; --danger: #E06A55;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+a { color: var(--accent-ink); text-underline-offset: 2px; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  padding-block: 36px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 28px; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+header { display: grid; gap: 10px; }
+h1 {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 800;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+h1 .arrow { color: var(--accent); font-weight: 600; }
+.lede { margin: 0; max-width: 72ch; color: var(--ink-2); }
+.lede code, td code, .panel code {
+  font-family: var(--font-mono);
+  font-size: .86em;
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.flows { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.flows .eyebrow { margin-right: 4px; }
+.chip {
+  font: 600 13px/1 var(--font-sans);
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.chip:hover { border-color: var(--accent); color: var(--ink); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip:focus-visible, .node:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+figure.diagram {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow-x: auto;
+  padding: 10px;
+}
+figure.diagram svg { display: block; width: 100%; min-width: 1000px; height: auto; }
+
+/* SVG */
+.grp rect { fill: none; stroke: var(--line-strong); stroke-dasharray: 3 4; }
+.grp.nb rect { fill: color-mix(in srgb, var(--accent) 5%, transparent); stroke: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); }
+.grp.sb rect { fill: color-mix(in srgb, var(--ink) 3%, transparent); }
+.grp text { font: 600 10.5px var(--font-mono); letter-spacing: .12em; fill: var(--ink-3); }
+.grp.crm text { fill: var(--crm); }
+.grp.erp text { fill: var(--erp); }
+.grp.nb text { fill: var(--accent-ink); }
+.grp .note { font: 400 10px var(--font-mono); letter-spacing: 0; }
+
+.node { cursor: pointer; transition: opacity .2s; }
+.node .box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.2; transition: stroke-width .15s; }
+.node.store .box { fill: var(--surface-2); }
+.node .kind { font: 500 9.5px var(--font-mono); letter-spacing: .1em; fill: var(--ink-3); }
+.node .title { font: 700 14px var(--font-sans); fill: var(--ink); }
+.node .sub { font: 500 11px var(--font-sans); fill: var(--ink-2); }
+.node.crm .box { stroke: color-mix(in srgb, var(--crm) 55%, var(--line-strong)); fill: color-mix(in srgb, var(--crm) 6%, var(--surface)); }
+.node.crm .kind { fill: var(--crm); }
+.node.erp .box { stroke: color-mix(in srgb, var(--erp) 55%, var(--line-strong)); fill: color-mix(in srgb, var(--erp) 6%, var(--surface)); }
+.node.erp .kind { fill: var(--erp); }
+.node.nb .box { stroke: color-mix(in srgb, var(--accent) 65%, var(--line-strong)); fill: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.node.nb .kind { fill: var(--accent-ink); }
+.node.store.crm .box { fill: color-mix(in srgb, var(--crm) 12%, var(--surface-2)); }
+.node.store.erp .box { fill: color-mix(in srgb, var(--erp) 12%, var(--surface-2)); }
+.node.store.nb .box { fill: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); }
+.node.ext .box { stroke-dasharray: 5 4; fill: var(--bg); }
+.node:hover .box { stroke-width: 2; }
+.node.sel .box { stroke: var(--accent); stroke-width: 2.4; }
+.node.warn .box { stroke: var(--danger); stroke-width: 2.4; fill: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+.node .tag { font: 700 9px var(--font-mono); letter-spacing: .08em; fill: var(--danger); }
+
+.card .box { fill: var(--surface); stroke: var(--line-strong); }
+.card .rowline { stroke: var(--line); }
+.card .subname { font: 500 10.5px var(--font-mono); fill: var(--ink); }
+.card .subtarget { font: 500 10.5px var(--font-sans); fill: var(--ink-3); }
+.card .topicname { font: 800 15px var(--font-sans); fill: var(--ink); }
+.card.crm .topicname { fill: var(--crm); }
+.card.erp .topicname { fill: var(--erp); }
+
+.pill .box { fill: var(--surface); stroke: var(--line-strong); }
+.pill .pname { font: 700 10px var(--font-sans); fill: var(--ink); }
+.pill .psub { font: 500 8.5px var(--font-mono); fill: var(--ink-3); letter-spacing: .04em; }
+.pill.ext .box { stroke-dasharray: 4 3; }
+
+.edge { transition: opacity .2s; }
+.edge path { fill: none; stroke-width: 1.6; stroke-linejoin: round; }
+.edge.crm path { stroke: var(--crm); }
+.edge.erp path { stroke: var(--erp); }
+.edge.nb path { stroke: var(--accent); }
+.edge.fwd path { stroke: var(--fwd); stroke-dasharray: 5 4; }
+.edge.ext path { stroke: var(--ext); stroke-dasharray: 2 4; stroke-linecap: round; }
+.edge.demo path { stroke: var(--ink-3); }
+.edge.warn path { stroke: var(--danger); stroke-dasharray: 3 4; }
+.elabel {
+  font: 500 9.5px var(--font-mono);
+  fill: var(--ink-3);
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  transition: opacity .2s;
+}
+.mk-crm { fill: var(--crm); } .mk-erp { fill: var(--erp); } .mk-nb { fill: var(--accent); }
+.mk-fwd { fill: var(--fwd); } .mk-ext { fill: var(--ext); } .mk-demo { fill: var(--ink-3); } .mk-warn { fill: var(--danger); }
+
+svg.focus .node:not(.on), svg.focus .edge:not(.on), svg.focus .elabel:not(.on) { opacity: .16; }
+svg.focus .edge.on path { stroke-width: 2.4; }
+svg.focus .elabel.on { fill: var(--ink); }
+@media (prefers-reduced-motion: no-preference) {
+  svg.focus .edge.on path { stroke-dasharray: 7 5; animation: march .9s linear infinite; }
+  svg.focus .edge.on.ext path { stroke-dasharray: 2 5; }
+  @keyframes march { to { stroke-dashoffset: -24; } }
+}
+
+/* Panel + legend */
+.below { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 860px) { .below { grid-template-columns: minmax(0, 1fr); } }
+.panel, .legend {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px 22px;
+  min-width: 0;
+}
+.panel h2 { margin: 4px 0 8px; font-size: 20px; font-weight: 800; letter-spacing: -.01em; }
+.panel p { margin: 0 0 10px; color: var(--ink-2); max-width: 70ch; }
+.panel ol { margin: 6px 0 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 10px; }
+.panel ol li { counter-increment: step; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; color: var(--ink-2); }
+.panel ol li::before {
+  content: counter(step);
+  font: 700 12px/26px var(--font-mono);
+  text-align: center;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent-ink);
+}
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 12px 0 0; font-size: 14px; }
+.facts dt { font: 500 11px/1.9 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.facts dd { margin: 0; color: var(--ink-2); }
+.legend h3 { margin: 0 0 12px; }
+.legend ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 14px; color: var(--ink-2); }
+.legend li { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; }
+.legend svg { width: 44px; height: 16px; }
+.legend .sw { width: 44px; height: 18px; border-radius: 5px; border: 1.5px solid; }
+.sw.crm { border-color: var(--crm); background: color-mix(in srgb, var(--crm) 8%, var(--surface)); }
+.sw.erp { border-color: var(--erp); background: color-mix(in srgb, var(--erp) 8%, var(--surface)); }
+.sw.nb { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
+.sw.ext { border-color: var(--ext); border-style: dashed; background: var(--bg); }
+
+section h2 { margin: 0 0 4px; font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
+section > p { margin: 0 0 14px; color: var(--ink-2); max-width: 72ch; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 640px; }
+th {
+  text-align: left;
+  font: 600 10.5px var(--font-mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  background: var(--surface-2);
+  padding: 10px 16px;
+}
+td { padding: 10px 16px; border-top: 1px solid var(--line); color: var(--ink-2); vertical-align: top; }
+td:first-child { color: var(--ink); font-weight: 600; }
+.who { font: 600 12px var(--font-mono); white-space: nowrap; }
+.who.crm { color: var(--crm); } .who.erp { color: var(--erp); } .who.ext { color: var(--ink-3); } .who.nb { color: var(--accent-ink); }
+.badge {
+  display: inline-block;
+  font: 600 9.5px/1 var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 4px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: 2px;
+  background: var(--surface-2);
+  color: var(--ink-3);
+}
+footer { color: var(--ink-3); font-size: 13px; }
+footer code { font-family: var(--font-mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">NimBus reference implementation · samples/CrmErpDemo · <a href="docs/reference-implementation">Read the guide</a></div>
+    <h1>CRM <span class="arrow">⇄</span> ERP on NimBus</h1>
+    <p class="lede">Two business systems keep accounts, customers and contacts in sync through Azure Service Bus. NimBus provides the topology, session ordering, the outbox and inbox, and the Resolver that records every message so an operator can see, resubmit or skip it in nimbus-ops.</p>
+  </header>
+
+  <div class="flows" role="group" aria-label="Trace a flow">
+    <span class="eyebrow">Trace a flow</span>
+    <button class="chip" type="button" id="flow-all" data-flow="" aria-pressed="true">All components</button>
+    <button class="chip" type="button" id="flow-round-trip" data-flow="round-trip" aria-pressed="false">Account round trip</button>
+    <button class="chip" type="button" id="flow-erp-customer" data-flow="erp-customer" aria-pressed="false">ERP-created customer</button>
+    <button class="chip" type="button" id="flow-failure" data-flow="failure" aria-pressed="false">Failure and resubmit</button>
+    <button class="chip" type="button" id="flow-partner" data-flow="partner" aria-pressed="false">Partner lead</button>
+    <button class="chip" type="button" id="flow-agent" data-flow="agent" aria-pressed="false">Agent enrichment</button>
+    <button class="chip" type="button" id="flow-routing" data-flow="routing" aria-pressed="false">Regional routing</button>
+  </div>
+
+  <figure class="diagram">
+    <svg id="arch" viewBox="0 0 1200 880" role="img" aria-labelledby="arch-title">
+      <title id="arch-title">CrmErpDemo architecture: CRM and ERP systems exchange events through Azure Service Bus topics, with the NimBus Resolver, nimbus-ops and provisioner above and further subscribers below.</title>
+      <defs id="defs"></defs>
+      <g id="groups"></g>
+      <g id="edges"></g>
+      <g id="labels"></g>
+      <g id="nodes"></g>
+    </svg>
+  </figure>
+
+  <div class="below">
+    <div class="panel" id="panel" aria-live="polite"></div>
+    <aside class="legend" aria-label="Legend">
+      <h3 class="eyebrow">Legend</h3>
+      <ul>
+        <li><span class="sw crm"></span>CRM system and its traffic</li>
+        <li><span class="sw erp"></span>ERP system and its traffic</li>
+        <li><span class="sw nb"></span>NimBus platform services</li>
+        <li><span class="sw ext"></span>External system without NimBus</li>
+        <li><svg viewBox="0 0 44 16" aria-hidden="true"><path d="M2 8H42" stroke="var(--fwd)" stroke-width="1.6" stroke-dasharray="5 4" fill="none"/></svg>Forwarding subscription copies an event to a consumer's topic</li>
+        <li><svg viewBox="0 0 44 16" aria-hidden="true"><path d="M2 8H42" stroke="var(--ext)" stroke-width="1.6" stroke-dasharray="2 4" stroke-linecap="round" fill="none"/></svg>Raw CloudEvents, no NimBus envelope</li>
+      </ul>
+    </aside>
+  </div>
+
+  <section>
+    <h2>Event routes</h2>
+    <p>Each event has exactly one producer, named by its prefix. The provisioner turns these declarations in <code>CrmErpDemo.Contracts</code> into topics, forwarding subscriptions and filter rules.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Event</th><th>Producer</th><th>Consumers</th><th>Session key</th></tr></thead>
+        <tbody>
+          <tr><td>CrmAccountCreated, CrmAccountUpdated</td><td><span class="who crm">CrmEndpoint</span></td><td>ErpEndpoint, plus one regional hub chosen by country (NordicHub, DachHub, or UnroutedHub)</td><td><code>AccountId</code></td></tr>
+          <tr><td>CrmAccountDeleted</td><td><span class="who crm">CrmEndpoint</span></td><td>ErpEndpoint</td><td><code>AccountId</code></td></tr>
+          <tr><td>CrmContactCreated</td><td><span class="who crm">CrmEndpoint</span></td><td>ErpEndpoint, AgentZoneEndpoint</td><td><code>ContactId</code></td></tr>
+          <tr><td>CrmContactUpdated, CrmContactDeleted</td><td><span class="who crm">CrmEndpoint</span></td><td>ErpEndpoint</td><td><code>ContactId</code></td></tr>
+          <tr><td>ErpCreditCheckRequested<span class="badge">request</span></td><td><span class="who crm">CrmEndpoint</span></td><td>ErpEndpoint answers on <code>CrmEndpoint-reply</code></td><td><code>AccountId</code></td></tr>
+          <tr><td>PlaceCustomerOnCreditHold<span class="badge">command</span></td><td><span class="who crm">CrmEndpoint</span></td><td>ErpEndpoint only; a second consumer fails provisioning</td><td><code>AccountId</code></td></tr>
+          <tr><td>ErpCustomerCreated</td><td><span class="who erp">ErpEndpoint</span></td><td>CrmEndpoint, DataPlatformEndpoint</td><td><code>AccountId</code></td></tr>
+          <tr><td>ErpCustomerUpdated, ErpCustomerDeleted</td><td><span class="who erp">ErpEndpoint</span></td><td>CrmEndpoint</td><td><code>AccountId</code></td></tr>
+          <tr><td>ErpContactCreated, ErpContactUpdated, ErpContactDeleted</td><td><span class="who erp">ErpEndpoint</span></td><td>CrmEndpoint</td><td><code>ContactId</code></td></tr>
+          <tr><td>PartnerLeadSubmitted</td><td><span class="who ext">partner-portal</span></td><td>CrmEndpoint, read from the plain <code>PartnerInbound</code> topic</td><td><code>LeadId</code></td></tr>
+          <tr><td>crm.contact.enriched.v1<span class="badge">dynamic</span></td><td><span class="who nb">AgentZoneEndpoint</span></td><td>DataPlatformEndpoint, through a dynamic forward</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Local run and Azure</h2>
+    <p>The same AppHost runs the demo on your machine with <code>aspire run</code> and deploys it to Azure Container Apps with <code>aspire deploy</code>. These are the parts that change between the two.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Concern</th><th>Local run</th><th>Azure</th></tr></thead>
+        <tbody>
+          <tr><td>Service Bus</td><td>NimBus Service Bus emulator, in process, no container needed</td><td>Azure Service Bus; services connect with managed identity, SAS keys disabled</td></tr>
+          <tr><td>Databases</td><td>SQL Server container with <code>crm</code>, <code>erp</code> and <code>nimbus</code> databases; Cosmos DB optional for the message store</td><td>Azure SQL, Basic tier, Entra-only authentication</td></tr>
+          <tr><td>Hosting</td><td>Aspire on your machine</td><td>Azure Container Apps; stateful apps pinned to one replica</td></tr>
+          <tr><td>Sign-in</td><td>Local development bypass</td><td>NimBus Identity on nimbus-ops, crm-api and erp-api; adapters present a shared service key</td></tr>
+          <tr><td>Topology</td><td>Provisioner runs before the other services start</td><td>Container Apps job, started once after each deploy</td></tr>
+          <tr><td>Web UIs</td><td>Vite dev servers proxy <code>/api</code> to crm-api and erp-api</td><td>Each API serves its built UI from <code>wwwroot</code></td></tr>
+          <tr><td>Alerts</td><td>Mailpit catches alert mail; webhooks may call local http receivers</td><td>Alert mail and webhooks off</td></tr>
+          <tr><td>Database browsing</td><td>DbGate</td><td>Not deployed</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>Drawn from <code>CrmErpDemo.AppHost/Program.cs</code>, the endpoint declarations in <code>CrmErpDemo.Contracts</code> and the demo README. The <a href="docs/reference-implementation">reference implementation guide</a> covers the patterns and the code to start from.</footer>
+</div>
+
+<script>
+(function () {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('arch');
+  const el = (tag, attrs, parent, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (text != null) n.textContent = text;
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+
+  // Arrowheads, one per edge tone.
+  const defs = document.getElementById('defs');
+  ['crm', 'erp', 'nb', 'fwd', 'ext', 'demo', 'warn'].forEach(t => {
+    const m = el('marker', { id: 'm-' + t, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' }, defs);
+    el('path', { d: 'M0 0 L10 5 L0 10 z', class: 'mk-' + t }, m);
+  });
+
+  // Boundaries.
+  const groups = document.getElementById('groups');
+  [
+    { x: 10, y: 10, w: 1180, h: 150, cls: 'nb', label: 'NIMBUS PLATFORM' },
+    { x: 10, y: 195, w: 270, h: 510, cls: 'crm', label: 'CRM · SYSTEM A' },
+    { x: 295, y: 195, w: 610, h: 510, cls: 'sb', label: 'AZURE SERVICE BUS', note: 'local run: NimBus emulator' },
+    { x: 920, y: 195, w: 270, h: 510, cls: 'erp', label: 'ERP · SYSTEM B' },
+    { x: 10, y: 730, w: 1180, h: 140, cls: 'ext', label: 'MORE SUBSCRIBERS AND AN EXTERNAL PARTNER', bottom: true }
+  ].forEach(g => {
+    const gg = el('g', { class: 'grp ' + g.cls }, groups);
+    el('rect', { x: g.x, y: g.y, width: g.w, height: g.h, rx: 14 }, gg);
+    el('text', { x: g.x + 18, y: g.bottom ? g.y + g.h - 12 : g.y + 24 }, gg, g.label);
+    if (g.note) el('text', { x: g.x + g.w - 18, y: g.y + 24, 'text-anchor': 'end', class: 'note' }, gg, g.note);
+  });
+
+  // Components. Details feed the panel when a component is selected.
+  const NODES = [
+    // NimBus platform
+    { id: 'nimbus-db', x: 40, y: 78, w: 220, tone: 'nb', store: true, kind: 'SQL DATABASE', title: 'nimbus DB', sub: 'message store · audit · identity',
+      body: 'The NimBus message store: every message, its status and history, the audit trail of operator actions, and failure classifications.',
+      facts: { Local: 'Database in the SQL Server container. Cosmos DB can replace it as the message store.', Azure: 'Azure SQL database. Also holds the NimBus Identity users that nimbus-ops, crm-api and erp-api sign in against.' } },
+    { id: 'resolver', x: 310, y: 78, w: 175, tone: 'nb', kind: 'AZURE FUNCTIONS', title: 'resolver', sub: 'records every message',
+      body: 'Has a Resolver subscription on every endpoint topic. It records each message, its outcome and its session state in the message store. That record is what lets NimBus detect a blocked session and what makes resubmit and skip possible.',
+      facts: { Also: 'Notifies nimbus-ops so the Flow page updates live, and sends endpoint alert mail and webhooks.' } },
+    { id: 'nimbus-ops', x: 512, y: 78, w: 175, tone: 'nb', kind: 'NIMBUS WEBAPP', title: 'nimbus-ops', sub: 'operator UI · MCP · API',
+      body: 'The NimBus WebApp. Operators see endpoints, event types and failed or deferred messages, and resubmit or skip them. It loads the CRM/ERP catalog from <code>CrmErpDemo.Contracts</code>, which is where the Event Types page gets its descriptions.',
+      facts: { Also: 'Serves the operator MCP endpoint and the agent REST API that enrichment-agent uses.', Azure: 'Requires sign-in with NimBus Identity. Pinned to one replica because it keeps live connections in memory.' } },
+    { id: 'provisioner', x: 715, y: 78, w: 175, tone: 'nb', kind: 'CONTAINER APPS JOB', title: 'provisioner', sub: 'creates the topology',
+      body: 'Reads the platform configuration and creates every topic, subscription and filter rule with <code>ServiceBusTopologyProvisioner</code>. It also creates the plain <code>PartnerInbound</code> topic and the <code>PartnerPortalCapture</code> subscription for the partner.',
+      facts: { Local: 'Every other service waits for it to finish.', Azure: 'A Container Apps job, started once after each deploy.' } },
+    { id: 'enrichment-agent', x: 940, y: 78, w: 220, tone: 'demo', kind: 'DEMO AGENT', title: 'enrichment-agent', sub: 'classifies parked contacts',
+      body: 'Runs a receive, classify, define, publish, settle loop against the agent REST API on nimbus-ops. It uses Claude when an Anthropic API key is set and a deterministic classifier otherwise.',
+      facts: { Azure: 'Needs an agent API key that an Owner issues in nimbus-ops (Settings → Agent keys).' } },
+
+    // CRM
+    { id: 'crm-web', x: 35, y: 245, w: 200, tone: 'crm', kind: 'VITE · REACT SPA', title: 'crm-web', sub: 'CRM user interface',
+      body: 'Where a CRM user creates and edits accounts and contacts, runs a credit check against ERP, and turns the partner leads on or off.' },
+    { id: 'crm-api', x: 35, y: 350, w: 200, tone: 'crm', kind: 'ASP.NET CORE', title: 'crm-api', sub: 'publishes directly',
+      body: 'Owns the CRM data and publishes CRM events straight to the CrmEndpoint topic with <code>AddNimBusPublisher</code>, using the account or contact id as the session key. It also sends the <code>ErpCreditCheckRequested</code> request and the <code>PlaceCustomerOnCreditHold</code> command.' },
+    { id: 'crm-db', x: 35, y: 455, w: 200, tone: 'crm', store: true, kind: 'SQL DATABASE', title: 'crm DB', sub: 'accounts · contacts · inbox',
+      body: 'CRM accounts and contacts. It also holds <code>[nimbus].[InboxMessages]</code>, the inbox crm-adapter uses to skip a message it has already processed.' },
+    { id: 'crm-adapter', x: 35, y: 596, w: 200, tone: 'crm', kind: '.NET WORKER', title: 'crm-adapter', sub: 'NimBus subscriber',
+      body: 'Receives ERP events from the CrmEndpoint session subscription and applies them to CRM through crm-api\'s REST API. It deduplicates with the SQL inbox, so a redelivered message is recorded as a duplicate instead of being applied twice.',
+      facts: { Also: 'A second receiver reads raw CloudEvents from PartnerInbound in AutoDetect mode.' } },
+
+    // ERP
+    { id: 'erp-web', x: 965, y: 245, w: 200, tone: 'erp', kind: 'VITE · REACT SPA', title: 'erp-web', sub: 'ERP user interface',
+      body: 'Where an ERP user creates and edits customers and contacts, and switches the demo\'s error and handoff modes.' },
+    { id: 'erp-api', x: 965, y: 350, w: 200, tone: 'erp', kind: 'ASP.NET CORE', title: 'erp-api', sub: 'outbox + dispatcher',
+      body: 'Owns the ERP data. It writes each ERP event to the SQL outbox in the same transaction as the data change and hosts the dispatcher that sends staged events to Service Bus every second.',
+      facts: { Also: 'Handoff mode: a long-running import is parked as Pending and settled later through the NimBus handoff client.' } },
+    { id: 'erp-db', x: 965, y: 455, w: 200, tone: 'erp', store: true, kind: 'SQL DATABASE', title: 'erp DB', sub: 'customers · contacts · outbox',
+      body: 'ERP customers and contacts, plus <code>[nimbus].[OutboxMessages]</code>, the transactional outbox that erp-api\'s dispatcher drains.' },
+    { id: 'erp-adapter', x: 965, y: 596, w: 200, tone: 'erp', kind: 'AZURE FUNCTIONS', title: 'erp-adapter', sub: 'ServiceBusTrigger handlers',
+      body: 'Azure Functions (isolated worker) with <code>[ServiceBusTrigger]</code> handlers on the ErpEndpoint session subscription. The handlers are the same <code>IEventHandler&lt;T&gt;</code> code a worker would run; hosting is a deployment choice.',
+      facts: { Retries: 'A NimBus retry rule retries a rate-limited pricing call up to three times, in the same session. Other failures wait in Failed for an operator.', Also: 'Answers the credit-check request synchronously on CrmEndpoint-reply.' } },
+
+    // More subscribers
+    { id: 'partner', x: 30, y: 772, w: 190, tone: 'ext', kind: 'EXTERNAL SYSTEM', title: 'partner-portal', sub: 'raw CloudEvents only',
+      body: 'Simulates an external partner. It references only <code>Azure.Messaging.ServiceBus</code>, with no NimBus code. It sends leads as raw CloudEvents 1.0 to PartnerInbound and reads ERP events from the <code>PartnerPortalCapture</code> subscription on the ErpEndpoint topic.' },
+    { id: 'agent-zone', x: 250, y: 772, w: 190, tone: 'demo', kind: 'NIMBUS SUBSCRIBER', title: 'agent-zone', sub: 'parks contacts for agents',
+      body: 'Subscribes to AgentZoneEndpoint and parks every <code>CrmContactCreated</code> as Pending (Handoff), so an external agent can pick the work up through nimbus-ops and settle it.' },
+    { id: 'hubs', x: 470, y: 772, w: 340, tone: 'demo', kind: 'NIMBUS SUBSCRIBER × 3', title: 'hub-nordic · hub-dach · hub-unrouted', sub: 'one RegionalHub project, routed by country',
+      body: 'One RegionalHub project started three times, once per endpoint. The Nordic hub takes accounts in DK, SE, NO and FI; the DACH hub takes DE, AT and CH. An account from any other country reaches the unrouted hub, which dead-letters it with a reason that names the country.' },
+    { id: 'dataplatform', x: 840, y: 772, w: 210, tone: 'demo', kind: 'AZURE FUNCTIONS', title: 'dataplatform-adapter', sub: 'analytics sink · Table inbox',
+      body: 'A terminal subscriber. It logs each <code>ErpCustomerCreated</code> where a real sink would write to a lake or warehouse, and keeps its inbox receipts in Azure Table Storage.' }
+  ];
+
+  // Topic cards: subscriptions listed top to bottom; the session subscription sits last.
+  const CARDS = [
+    { id: 'topic-crm', x: 315, y: 245, w: 250, tone: 'crm', name: 'CrmEndpoint',
+      rows: [['CrmEndpoint-reply', 'request/reply'], ['ErpEndpoint', 'forward'], ['AgentZoneEndpoint', 'forward'], ['3 hub endpoints', 'forward by country'], ['Resolver', 'audit'], ['Deferred · DeferredProcessor', 'replay'], ['CrmEndpoint', 'session → crm-adapter']],
+      body: 'Carries every event CRM publishes. Forwarding subscriptions copy each event to the topic of every endpoint that consumes it, filtered on event type and, for the hubs, on the routing key. They forward only original publishes, which is what prevents loops.',
+      facts: { Deferred: 'When a session is blocked by a failure, later messages wait as Deferred. The DeferredProcessor subscription replays them once the failure is resubmitted or skipped.' } },
+    { id: 'topic-erp', x: 635, y: 245, w: 250, tone: 'erp', name: 'ErpEndpoint',
+      rows: [['CrmEndpoint', 'forward'], ['DataPlatformEndpoint', 'forward'], ['PartnerPortalCapture', 'partner-portal'], ['Resolver', 'audit'], ['Deferred · DeferredProcessor', 'replay'], ['ErpEndpoint', 'session → erp-adapter']],
+      body: 'Carries every event ERP publishes. ERP sends them as binary-mode CloudEvents, so the plain PartnerPortalCapture subscription can hand them to a partner that has no NimBus code.' }
+  ];
+
+  const PILLS = [
+    { id: 'pill-partner', name: 'PartnerInbound', sub: 'plain topic', ext: true,
+      body: 'A plain topic outside the NimBus catalog. partner-portal sends raw CloudEvents to it and crm-adapter reads them.' },
+    { id: 'pill-agent', name: 'AgentZone', sub: 'endpoint topic', body: 'The AgentZoneEndpoint topic. It receives every CrmContactCreated.' },
+    { id: 'pill-nordic', name: 'NordicHub', sub: 'endpoint topic', body: 'The NordicHubEndpoint topic. Its forwarding rule takes CRM account events whose country is DK, SE, NO or FI.' },
+    { id: 'pill-dach', name: 'DachHub', sub: 'endpoint topic', body: 'The DachHubEndpoint topic. Its forwarding rule takes CRM account events whose country is DE, AT or CH.' },
+    { id: 'pill-unrouted', name: 'UnroutedHub', sub: 'endpoint topic', body: 'The UnroutedHubEndpoint topic, the unmatched consumer. It receives CRM account events whose country no hub claims.' },
+    { id: 'pill-dp', name: 'DataPlatform', sub: 'endpoint topic', body: 'The DataPlatformEndpoint topic. It receives ErpCustomerCreated and the enriched contact events from the Agent Zone.' }
+  ].map((p, i) => Object.assign(p, { x: 315 + i * 96.5, y: 610, w: 87.5, h: 36 }));
+
+  const EDGES = [
+    { id: 'e-web-api-crm', tone: 'crm', d: ['M135 309 V350'], ends: ['crm-web', 'crm-api'] },
+    { id: 'e-api-db-crm', tone: 'crm', d: ['M135 414 V455'], ends: ['crm-api', 'crm-db'] },
+    { id: 'e-api-topic-crm', tone: 'crm', d: ['M235 372 H315'], ends: ['crm-api', 'topic-crm'] },
+    { id: 'e-session-crm', tone: 'crm', d: ['M315 453 H287 V612 H235'], ends: ['topic-crm', 'crm-adapter'] },
+    { id: 'e-adapter-api-crm', tone: 'crm', d: ['M35 625 H22 V400 H35'], ends: ['crm-adapter', 'crm-api'] },
+    { id: 'e-adapter-db-crm', tone: 'crm', d: ['M135 596 V519'], ends: ['crm-adapter', 'crm-db'] },
+    { id: 'e-inbound-crm', tone: 'ext', d: ['M315 640 H235'], ends: ['pill-partner', 'crm-adapter'] },
+
+    { id: 'e-web-api-erp', tone: 'erp', d: ['M1065 309 V350'], ends: ['erp-web', 'erp-api'] },
+    { id: 'e-api-db-erp', tone: 'erp', d: ['M1065 414 V455'], ends: ['erp-api', 'erp-db'] },
+    { id: 'e-api-topic-erp', tone: 'erp', d: ['M965 372 H885'], ends: ['erp-api', 'topic-erp'] },
+    { id: 'e-session-erp', tone: 'erp', d: ['M885 429 H913 V612 H965'], ends: ['topic-erp', 'erp-adapter'] },
+    { id: 'e-adapter-api-erp', tone: 'erp', d: ['M1165 625 H1178 V400 H1165'], ends: ['erp-adapter', 'erp-api'] },
+
+    { id: 'e-fwd-crm-erp', tone: 'fwd', d: ['M565 262 H635'], ends: ['topic-crm', 'topic-erp'] },
+    { id: 'e-fwd-erp-crm', tone: 'fwd', d: ['M635 280 H565'], ends: ['topic-erp', 'topic-crm'] },
+    { id: 'e-fwd-agent', tone: 'fwd', d: ['M440 473 V585 H455.25 V610'], ends: ['topic-crm', 'pill-agent'] },
+    { id: 'e-fwd-hubs', tone: 'fwd', d: ['M440 473 V585 H744.75 V610', 'M551.75 585 V610', 'M648.25 585 V610'], ends: ['topic-crm', 'pill-nordic', 'pill-dach', 'pill-unrouted'] },
+    { id: 'e-fwd-dp', tone: 'fwd', d: ['M841.25 449 V610'], ends: ['topic-erp', 'pill-dp'] },
+
+    { id: 'e-pill-partner', tone: 'ext', d: ['M125 772 V680 H358.75 V646'], ends: ['partner', 'pill-partner'] },
+    { id: 'e-pill-agent', tone: 'demo', d: ['M455.25 646 V690 H345 V772'], ends: ['pill-agent', 'agent-zone'] },
+    { id: 'e-pill-hubs', tone: 'demo', d: ['M551.75 646 V772', 'M648.25 646 V772', 'M744.75 646 V772'], ends: ['pill-nordic', 'pill-dach', 'pill-unrouted', 'hubs'] },
+    { id: 'e-pill-dp', tone: 'demo', d: ['M841.25 646 V712 H945 V772'], ends: ['pill-dp', 'dataplatform'] },
+
+    { id: 'e-resolver', tone: 'nb', d: ['M397.5 195 V142'], ends: ['resolver', 'topic-crm', 'topic-erp'] },
+    { id: 'e-ops-sb', tone: 'nb', d: ['M599.5 142 V195'], ends: ['nimbus-ops', 'topic-crm', 'topic-erp'] },
+    { id: 'e-prov', tone: 'nb', d: ['M802.5 142 V195'], ends: ['provisioner', 'topic-crm', 'topic-erp'] },
+    { id: 'e-db-resolver', tone: 'nb', d: ['M310 110 H260'], ends: ['resolver', 'nimbus-db'] },
+    { id: 'e-db-ops', tone: 'nb', d: ['M570 78 V56 H150 V78'], ends: ['nimbus-ops', 'nimbus-db'], both: true },
+    { id: 'e-enrich-ops', tone: 'nb', d: ['M1050 78 V56 H630 V78'], ends: ['enrichment-agent', 'nimbus-ops'] }
+  ];
+
+  const LABELS = [
+    { x: 275, y: 364, t: 'publish', e: 'e-api-topic-crm' },
+    { x: 925, y: 364, t: 'outbox', e: 'e-api-topic-erp' },
+    { x: 143, y: 561, t: 'inbox', a: 'start', e: 'e-adapter-db-crm' },
+    { x: 1073, y: 439, t: 'one SQL tx', a: 'start', e: 'e-api-db-erp' },
+    { x: 600, y: 303, t: 'forward', e: 'e-fwd-crm-erp' },
+    { x: 449, y: 529, t: 'forwarded by event type;', a: 'start', e: 'e-fwd-hubs' },
+    { x: 449, y: 542, t: 'hubs also by country', a: 'start', e: 'e-fwd-hubs' },
+    { x: 240, y: 674, t: 'raw CloudEvents', e: 'e-pill-partner' },
+    { x: 405, y: 174, t: 'subscribes to every topic', a: 'start', e: 'e-resolver' },
+    { x: 607, y: 174, t: 'resubmit · skip', a: 'start', e: 'e-ops-sb' },
+    { x: 810, y: 174, t: 'creates topology', a: 'start', e: 'e-prov' },
+    { x: 360, y: 50, t: 'messages · audit trail', e: 'e-db-ops' },
+    { x: 840, y: 50, t: 'agent REST API', e: 'e-enrich-ops' },
+    { x: 268, y: 255, t: 'REST', a: 'start', e: 'e-adapter-api-crm', hidden: true }
+  ].filter(l => !l.hidden);
+
+  const FLOWS = {
+    'round-trip': {
+      title: 'Account round trip: CRM → ERP → CRM',
+      intro: 'The headline scenario. One account travels to ERP and comes back as an acknowledgment that links the two records, in order, on one session.',
+      nodes: ['crm-web', 'crm-api', 'crm-db', 'topic-crm', 'topic-erp', 'erp-adapter', 'erp-api', 'erp-db', 'crm-adapter', 'pill-dp', 'dataplatform', 'resolver', 'nimbus-db', 'nimbus-ops'],
+      edges: ['e-web-api-crm', 'e-api-db-crm', 'e-api-topic-crm', 'e-fwd-crm-erp', 'e-session-erp', 'e-adapter-api-erp', 'e-api-db-erp', 'e-api-topic-erp', 'e-fwd-erp-crm', 'e-fwd-dp', 'e-pill-dp', 'e-session-crm', 'e-adapter-api-crm', 'e-resolver', 'e-db-resolver', 'e-db-ops'],
+      steps: [
+        'A CRM user creates an account in crm-web. crm-api saves it in the crm database.',
+        'crm-api publishes <code>CrmAccountCreated</code> to the CrmEndpoint topic, with the account id as the session key.',
+        'The ErpEndpoint forwarding subscription copies the event to the ErpEndpoint topic.',
+        'erp-adapter receives it in session order and calls <code>PUT /api/customers/by-crm/{id}</code> on erp-api.',
+        'erp-api saves the customer and stages <code>ErpCustomerCreated</code> in its outbox in the same SQL transaction. The dispatcher publishes it within a second.',
+        'Forwarding subscriptions copy it to CrmEndpoint and DataPlatformEndpoint. crm-adapter links the CRM account to the new ERP customer through crm-api.',
+        'The Resolver records every message and outcome in the nimbus database, so nimbus-ops shows the whole chain.'
+      ] },
+    'erp-customer': {
+      title: 'Customer created in ERP',
+      intro: 'A one-way flow: ERP publishes once and CRM creates a matching account. No acknowledgment is needed because CRM had no record to link.',
+      nodes: ['erp-web', 'erp-api', 'erp-db', 'topic-erp', 'topic-crm', 'crm-adapter', 'crm-api', 'crm-db', 'pill-dp', 'dataplatform'],
+      edges: ['e-web-api-erp', 'e-api-db-erp', 'e-api-topic-erp', 'e-fwd-erp-crm', 'e-session-crm', 'e-adapter-api-crm', 'e-api-db-crm', 'e-fwd-dp', 'e-pill-dp'],
+      steps: [
+        'An ERP user creates a customer in erp-web.',
+        'erp-api writes the customer and <code>ErpCustomerCreated</code> (Origin = Erp) to the erp database in one transaction.',
+        'The outbox dispatcher publishes the event to the ErpEndpoint topic.',
+        'Forwarding subscriptions copy it to CrmEndpoint and DataPlatformEndpoint.',
+        'crm-adapter creates the account through <code>PUT /api/accounts/external/{erpId}</code>. dataplatform-adapter logs it as an analytics sink.'
+      ] },
+    'failure': {
+      title: 'Failure and resubmit',
+      intro: 'erp-api is stopped, so the handler call fails. NimBus blocks the session instead of letting later events for the same account overtake the failed one.',
+      warnNodes: ['erp-api'], warnEdges: ['e-adapter-api-erp'],
+      nodes: ['crm-api', 'topic-crm', 'topic-erp', 'erp-adapter', 'erp-api', 'resolver', 'nimbus-db', 'nimbus-ops'],
+      edges: ['e-api-topic-crm', 'e-fwd-crm-erp', 'e-session-erp', 'e-adapter-api-erp', 'e-resolver', 'e-db-resolver', 'e-db-ops', 'e-ops-sb'],
+      steps: [
+        'erp-adapter receives <code>CrmAccountCreated</code>, but erp-api is down and the call fails.',
+        'The Resolver records the message as Failed. Its session, the account id, is now blocked: later events for that account wait as Deferred.',
+        'An operator finds the blocked session in nimbus-ops, fixes the cause and selects Resubmit.',
+        'nimbus-ops publishes the message again to the ErpEndpoint topic, and erp-adapter processes it.',
+        'The DeferredProcessor subscription replays the waiting messages and the session unblocks. Every operator action is in the audit trail.'
+      ] },
+    'partner': {
+      title: 'Partner lead over CloudEvents',
+      intro: 'An external system with no NimBus code exchanges events with the demo in both directions, using CloudEvents 1.0.',
+      nodes: ['partner', 'pill-partner', 'crm-adapter', 'crm-api', 'crm-db', 'topic-erp', 'erp-api'],
+      edges: ['e-pill-partner', 'e-inbound-crm', 'e-adapter-api-crm', 'e-api-db-crm', 'e-api-topic-erp'],
+      steps: [
+        'partner-portal sends <code>PartnerLeadSubmitted</code> as a raw CloudEvents message to the PartnerInbound topic.',
+        'crm-adapter\'s second receiver reads it in AutoDetect mode, recognises the CloudEvent and creates a Partner-origin contact through crm-api.',
+        'In the other direction, ERP publishes its events as binary-mode CloudEvents. partner-portal reads them from the plain PartnerPortalCapture subscription on the ErpEndpoint topic.'
+      ] },
+    'agent': {
+      title: 'Agent enrichment',
+      intro: 'New CRM contacts are parked for an agent, which classifies them and publishes an enriched event through the NimBus agent API.',
+      nodes: ['crm-api', 'topic-crm', 'pill-agent', 'agent-zone', 'enrichment-agent', 'nimbus-ops', 'pill-dp', 'dataplatform'],
+      edges: ['e-api-topic-crm', 'e-fwd-agent', 'e-pill-agent', 'e-enrich-ops', 'e-ops-sb', 'e-pill-dp'],
+      steps: [
+        'Every <code>CrmContactCreated</code> is also forwarded to the AgentZoneEndpoint topic.',
+        'agent-zone parks it as Pending (Handoff) instead of processing it.',
+        'enrichment-agent pulls the parked work through the agent REST API on nimbus-ops and classifies the contact.',
+        'The agent publishes <code>crm.contact.enriched.v1</code> and settles the parked message. A dynamic forward delivers the new event to DataPlatformEndpoint.'
+      ] },
+    'routing': {
+      title: 'Regional routing by country',
+      intro: 'Routing keys send each account event to the one hub that serves its country, without a separate event type per region.',
+      nodes: ['crm-api', 'topic-crm', 'pill-nordic', 'pill-dach', 'pill-unrouted', 'hubs'],
+      edges: ['e-api-topic-crm', 'e-fwd-hubs', 'e-pill-hubs'],
+      steps: [
+        '<code>CrmAccountCreated</code> and <code>CrmAccountUpdated</code> carry the account\'s country code as a routing key.',
+        'The hub forwarding rules filter on it: DK, SE, NO and FI go to NordicHubEndpoint; DE, AT and CH go to DachHubEndpoint.',
+        'An account in any other country goes to UnroutedHubEndpoint, which dead-letters it with a reason that names the country.'
+      ] }
+  };
+
+  // ---- Render ----
+  const nodesG = document.getElementById('nodes');
+  const edgesG = document.getElementById('edges');
+  const labelsG = document.getElementById('labels');
+  const byId = {};
+  const details = {};
+
+  function makeFocusable(g, id, label) {
+    g.setAttribute('tabindex', '0');
+    g.setAttribute('role', 'button');
+    g.setAttribute('aria-label', label);
+    g.dataset.id = id;
+  }
+
+  NODES.forEach(n => {
+    const h = 64;
+    const g = el('g', { class: 'node ' + n.tone + (n.store ? ' store' : '') }, nodesG);
+    makeFocusable(g, n.id, n.title);
+    el('rect', { class: 'box', x: n.x, y: n.y, width: n.w, height: h, rx: n.store ? 14 : 9 }, g);
+    if (n.store) el('path', { d: `M${n.x + 10} ${n.y + 7} H${n.x + n.w - 10}`, stroke: 'var(--line-strong)', 'stroke-width': 1, fill: 'none' }, g);
+    el('text', { class: 'kind', x: n.x + 12, y: n.y + 19 }, g, n.kind);
+    el('text', { class: 'title', x: n.x + 12, y: n.y + 38 }, g, n.title);
+    el('text', { class: 'sub', x: n.x + 12, y: n.y + 54 }, g, n.sub);
+    const tag = el('text', { class: 'tag', x: n.x + n.w - 10, y: n.y + 19, 'text-anchor': 'end' }, g, 'DOWN');
+    tag.style.display = 'none';
+    byId[n.id] = g;
+    details[n.id] = { kind: n.kind, title: n.title, body: n.body, facts: n.facts };
+  });
+
+  CARDS.forEach(c => {
+    const h = 52 + c.rows.length * 24 + 8;
+    const g = el('g', { class: 'node card ' + c.tone }, nodesG);
+    makeFocusable(g, c.id, c.name + ' topic');
+    el('rect', { class: 'box', x: c.x, y: c.y, width: c.w, height: h, rx: 10 }, g);
+    el('text', { class: 'kind', x: c.x + 12, y: c.y + 19 }, g, 'TOPIC');
+    el('text', { class: 'kind', x: c.x + c.w - 12, y: c.y + 19, 'text-anchor': 'end' }, g, 'SUBSCRIPTIONS');
+    el('text', { class: 'topicname', x: c.x + 12, y: c.y + 39 }, g, c.name);
+    c.rows.forEach((r, i) => {
+      const y = c.y + 52 + i * 24;
+      el('line', { class: 'rowline', x1: c.x + 10, x2: c.x + c.w - 10, y1: y, y2: y }, g);
+      el('text', { class: 'subname', x: c.x + 12, y: y + 16 }, g, r[0]);
+      el('text', { class: 'subtarget', x: c.x + c.w - 12, y: y + 16, 'text-anchor': 'end' }, g, r[1]);
+    });
+    byId[c.id] = g;
+    details[c.id] = { kind: 'SERVICE BUS TOPIC', title: c.name, body: c.body, facts: c.facts };
+  });
+
+  PILLS.forEach(p => {
+    const g = el('g', { class: 'node pill' + (p.ext ? ' ext' : '') }, nodesG);
+    makeFocusable(g, p.id, p.name + ' topic');
+    el('rect', { class: 'box', x: p.x, y: p.y, width: p.w, height: p.h, rx: 8 }, g);
+    el('text', { class: 'pname', x: p.x + p.w / 2, y: p.y + 16, 'text-anchor': 'middle' }, g, p.name);
+    el('text', { class: 'psub', x: p.x + p.w / 2, y: p.y + 28, 'text-anchor': 'middle' }, g, p.sub);
+    byId[p.id] = g;
+    details[p.id] = { kind: 'SERVICE BUS TOPIC', title: p.name, body: p.body };
+  });
+
+  const edgeEls = {};
+  EDGES.forEach(e => {
+    const g = el('g', { class: 'edge ' + e.tone }, edgesG);
+    e.d.forEach((d, i) => {
+      const p = el('path', { d }, g);
+      p.setAttribute('marker-end', `url(#m-${e.tone})`);
+      if (e.both && i === 0) p.setAttribute('marker-start', `url(#m-${e.tone})`);
+    });
+    edgeEls[e.id] = g;
+  });
+
+  const labelEls = [];
+  LABELS.forEach(l => {
+    const t = el('text', { class: 'elabel', x: l.x, y: l.y, 'text-anchor': l.a || 'middle' }, labelsG, l.t);
+    labelEls.push({ el: t, edge: l.e });
+  });
+
+  // ---- Selection ----
+  const panel = document.getElementById('panel');
+  const chips = Array.from(document.querySelectorAll('.chip'));
+  let current = null;
+
+  function setTone(edgeId, warn) {
+    const e = EDGES.find(x => x.id === edgeId);
+    const g = edgeEls[edgeId];
+    g.classList.toggle('warn', !!warn);
+    g.querySelectorAll('path').forEach((p, i) => {
+      const tone = warn ? 'warn' : e.tone;
+      p.setAttribute('marker-end', `url(#m-${tone})`);
+      if (e.both && i === 0) p.setAttribute('marker-start', `url(#m-${tone})`);
+    });
+  }
+
+  function apply(onNodes, onEdges, selNode, warnNodes, warnEdges) {
+    const focus = onNodes !== null;
+    svg.classList.toggle('focus', focus);
+    Object.entries(byId).forEach(([id, g]) => {
+      g.classList.toggle('on', focus && onNodes.has(id));
+      g.classList.toggle('sel', id === selNode);
+      const warn = (warnNodes || []).includes(id);
+      g.classList.toggle('warn', warn);
+      const tag = g.querySelector('.tag');
+      if (tag) tag.style.display = warn ? '' : 'none';
+    });
+    Object.entries(edgeEls).forEach(([id, g]) => {
+      g.classList.toggle('on', focus && onEdges.has(id));
+      setTone(id, (warnEdges || []).includes(id));
+    });
+    labelEls.forEach(l => l.el.classList.toggle('on', focus && onEdges.has(l.edge)));
+  }
+
+  function renderOverview() {
+    panel.innerHTML = `
+      <div class="eyebrow">Overview</div>
+      <h2>Two systems, one bus, one operator view</h2>
+      <p>CRM publishes straight from its API; ERP publishes through a transactional outbox. Each system has an adapter that receives the other side's events in session order and calls its own API. Forwarding subscriptions on Service Bus decide who receives what, and the Resolver records every message so nimbus-ops can show, resubmit or skip it.</p>
+      <p>Select a flow above to trace it step by step, or select any box in the diagram to see what it does.</p>`;
+  }
+
+  function renderFlow(f) {
+    panel.innerHTML = `
+      <div class="eyebrow">Flow</div>
+      <h2>${f.title}</h2>
+      <p>${f.intro}</p>
+      <ol>${f.steps.map(s => `<li><span>${s}</span></li>`).join('')}</ol>`;
+  }
+
+  function renderNode(id) {
+    const d = details[id];
+    const facts = d.facts ? `<dl class="facts">${Object.entries(d.facts).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>` : '';
+    panel.innerHTML = `
+      <div class="eyebrow">${d.kind}</div>
+      <h2>${d.title}</h2>
+      <p>${d.body}</p>${facts}`;
+  }
+
+  function pressChip(flowId) {
+    chips.forEach(c => c.setAttribute('aria-pressed', String(c.dataset.flow === (flowId || ''))));
+  }
+
+  function selectFlow(flowId) {
+    current = flowId ? { type: 'flow', id: flowId } : null;
+    pressChip(flowId);
+    if (!flowId) { apply(null, null); renderOverview(); return; }
+    const f = FLOWS[flowId];
+    apply(new Set(f.nodes), new Set(f.edges), null, f.warnNodes, f.warnEdges);
+    renderFlow(f);
+  }
+
+  function selectNode(id) {
+    if (current && current.type === 'node' && current.id === id) { selectFlow(''); return; }
+    current = { type: 'node', id };
+    pressChip(null);
+    const onEdges = new Set();
+    const onNodes = new Set([id]);
+    EDGES.forEach(e => {
+      if (e.ends.includes(id)) { onEdges.add(e.id); e.ends.forEach(n => onNodes.add(n)); }
+    });
+    apply(onNodes, onEdges, id);
+    renderNode(id);
+  }
+
+  chips.forEach(c => c.addEventListener('click', () => selectFlow(c.dataset.flow)));
+  nodesG.addEventListener('click', ev => {
+    const g = ev.target.closest('[data-id]');
+    if (g) selectNode(g.dataset.id);
+  });
+  nodesG.addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const g = ev.target.closest('[data-id]');
+    if (g) { ev.preventDefault(); selectNode(g.dataset.id); }
+  });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') selectFlow(''); });
+
+  renderOverview();
+})();
+</script>
+</body>
+</html>
