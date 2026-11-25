@@ -13,7 +13,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting" Version="13.6.5" />
+    <PackageReference Include="Aspire.Hosting" Version="17.0.0" />
+    <!-- AddDotnetProject, for the emulator run from its project file. -->
+    <PackageReference Include="Aspire.Hosting.Dotnet" Version="17.0.0" />
   </ItemGroup>
 
   <ItemGroup>
