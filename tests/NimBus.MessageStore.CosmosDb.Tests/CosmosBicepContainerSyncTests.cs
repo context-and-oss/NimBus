@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json.Linq;
+using NimBus.Core.Messages;
 
 namespace NimBus.MessageStore.CosmosDb.Tests;
 
@@ -86,6 +88,65 @@ public sealed class CosmosBicepContainerSyncTests
             Assert.IsFalse(declared.ContainsKey(id),
                 $"cosmosDB.bicep now declares '{id}'; remove it from {nameof(NotDeclaredByPlatformTemplate)}.");
         }
+    }
+
+    /// <summary>
+    /// Cosmos index paths are case-sensitive. An excluded path that names no property of the
+    /// stored document excludes nothing, so message payloads and stack traces would be indexed.
+    /// </summary>
+    [TestMethod]
+    public void Messages_container_excluded_paths_name_properties_of_the_stored_document()
+    {
+        var document = JObject.FromObject(new MessageDocument
+        {
+            Id = "id",
+            EventId = "event",
+            EndpointId = "endpoint",
+            Message = new MessageEntity
+            {
+                MessageContent = new MessageContent
+                {
+                    EventContent = new EventContent { EventTypeId = "Type", EventJson = "{}" },
+                    ErrorContent = new ErrorContent { ErrorText = "error", ExceptionStackTrace = "trace" },
+                },
+            },
+        });
+
+        var excluded = MessagesContainerExcludedPaths().Where(p => !p.StartsWith("/\"_", StringComparison.Ordinal)).ToList();
+
+        Assert.IsNotEmpty(excluded, "Could not parse the messages container's excludedPaths in cosmosDB.bicep.");
+        foreach (var path in excluded)
+        {
+            JToken? token = document;
+            foreach (var segment in path.TrimEnd('*', '?').Trim('/').Split('/'))
+            {
+                token = token?[segment];
+            }
+
+            Assert.IsNotNull(token, $"Excluded path '{path}' of the messages container names no property of a stored MessageDocument.");
+        }
+    }
+
+    [TestMethod]
+    public void Messages_container_keeps_the_filtered_error_text_indexed()
+    {
+        // The alert signal reads filter on ErrorText with CONTAINS; excluding it would load every candidate document.
+        const string ErrorTextPath = "/message/MessageContent/ErrorContent/ErrorText";
+
+        foreach (var path in MessagesContainerExcludedPaths())
+        {
+            var prefix = path.TrimEnd('*', '?').TrimEnd('/');
+            Assert.IsFalse(ErrorTextPath.Equals(prefix, StringComparison.Ordinal) || ErrorTextPath.StartsWith(prefix + "/", StringComparison.Ordinal),
+                $"Excluded path '{path}' removes ErrorText from the messages container's index.");
+        }
+    }
+
+    private static List<string> MessagesContainerExcludedPaths()
+    {
+        var block = Regex.Match(ReadCosmosBicep(), @"id:\s*'messages'.*?excludedPaths:\s*\[(?<body>.*?)\n\s*\]", RegexOptions.Singleline);
+        Assert.IsTrue(block.Success, "cosmosDB.bicep has no excludedPaths for the messages container.");
+
+        return Regex.Matches(block.Groups["body"].Value, @"path:\s*'(?<path>[^']+)'").Select(m => m.Groups["path"].Value).ToList();
     }
 
     /// <summary>Entries of the <c>sharedContainers</c> array: <c>{ name: 'x', pk: '/y' ... }</c>.</summary>
