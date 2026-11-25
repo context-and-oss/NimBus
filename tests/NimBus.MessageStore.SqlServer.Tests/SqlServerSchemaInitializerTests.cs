@@ -62,6 +62,20 @@ public sealed class SqlServerSchemaInitializerTests
     }
 
     [TestMethod]
+    public async Task AutoApply_creates_the_endpoint_message_type_index_the_alert_signal_reads_seek()
+    {
+        var schema = NewSchemaName();
+        var initializer = CreateInitializer(schema, SchemaProvisioningMode.AutoApply);
+
+        await initializer.StartAsync(CancellationToken.None);
+
+        // Keys in seek order, then the included columns that make the alert signal reads covering.
+        Assert.AreEqual(
+            "EndpointId,MessageType,EnqueuedTimeUtc DESC|EventTypeId,MessageId,EventId",
+            await IndexShape(schema, "Messages", "IX_Messages_EndpointId_MessageType_EnqueuedTimeUtc"));
+    }
+
+    [TestMethod]
     public async Task AutoApply_adds_nullable_CloudEvent_columns_to_tracking_and_audit_tables()
     {
         var schema = NewSchemaName();
@@ -165,6 +179,34 @@ WHERE s.name = @Schema AND t.name = @Table AND i.name = @Index";
         cmd.Parameters.AddWithValue("@Index", indexName);
         var result = await cmd.ExecuteScalarAsync();
         return result is int count && count > 0;
+    }
+
+    // "key1,key2 DESC|include1,include2", or "" when the index doesn't exist.
+    private static async Task<string> IndexShape(string schema, string table, string indexName)
+    {
+        await using var conn = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+SELECT
+    ISNULL(STRING_AGG(CASE WHEN ic.is_included_column = 0
+                           THEN c.name + CASE WHEN ic.is_descending_key = 1 THEN ' DESC' ELSE '' END END, ',')
+           WITHIN GROUP (ORDER BY ic.is_included_column, ic.key_ordinal, ic.index_column_id), '')
+    + '|' +
+    ISNULL(STRING_AGG(CASE WHEN ic.is_included_column = 1 THEN c.name END, ',')
+           WITHIN GROUP (ORDER BY ic.is_included_column, ic.key_ordinal, ic.index_column_id), '')
+FROM sys.indexes i
+INNER JOIN sys.tables t ON i.object_id = t.object_id
+INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+INNER JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+WHERE s.name = @Schema AND t.name = @Table AND i.name = @Index
+HAVING COUNT(*) > 0";
+        cmd.Parameters.AddWithValue("@Schema", schema);
+        cmd.Parameters.AddWithValue("@Table", table);
+        cmd.Parameters.AddWithValue("@Index", indexName);
+        var result = await cmd.ExecuteScalarAsync();
+        return result as string ?? string.Empty;
     }
 
     private static async Task<bool> NullableColumnExists(string schema, string table, string column)
