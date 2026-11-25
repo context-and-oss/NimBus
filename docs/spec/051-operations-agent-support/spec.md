@@ -257,6 +257,9 @@ belongs with the adapter kit, not in the platform's core.
   record by key. A caller that should be limited has to limit itself, with the record bindings of
   §5, and an adapter author can leave an entity out of the server.
 - An adapter that serves no MCP server changes nothing for anyone.
+- The package is `src/NimBus.Adapter.Mcp` in this repository (`Akaule.NimBus.Adapter.Mcp`), and the
+  adapter kit references it; no core project does. Its guide is
+  [adapter-mcp](../../adapter-mcp.md).
 
 ## 8. Paging for reports
 
@@ -285,7 +288,7 @@ belongs with the adapter kit, not in the platform's core.
 | Approval requests | §3 | A new store member on every provider, a background task, `api-spec.yaml`, the MCP tools, the Approvals page, Settings, `docs/mcp-server.md`. The Web UI change comes with a screenshot |
 | Correction settings and record bindings | §4, §5 | `EndpointMetadata` on every provider, the endpoint's settings, `nimbus_get_failure_evidence`. Needed before approval requests are useful |
 | Adapter address | §6 | `EndpointMetadata` on every provider, the Ownership tab, `nimbus_get_endpoint` |
-| Adapter MCP kit | §7 | The adapter kit repository, a guide under `docs/` and the Entra set-up in `docs/mcp-server.md` |
+| Adapter MCP kit | §7 | `src/NimBus.Adapter.Mcp` in this repository, referenced by the adapter kit; the guide `docs/adapter-mcp.md` with the Entra set-up, linked from `docs/mcp-server.md` |
 | Paging for reports | §8 | The report store query on every provider, the two MCP tools, `docs/mcp-server.md` |
 | Report marker option | §9 | The report store write on every provider, the MCP tool |
 
