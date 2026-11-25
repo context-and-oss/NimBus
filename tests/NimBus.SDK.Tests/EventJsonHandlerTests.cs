@@ -179,9 +179,96 @@ public class EventJsonHandlerTests
         }
     }
 
+    // The four tests below pin what docs/message-versioning.md promises about a
+    // payload whose shape differs from the handler's event class.
+
+    [TestMethod]
+    public async Task Handle_PayloadWithUnknownProperty_IgnoresItAndInvokesHandler()
+    {
+        var handler = new ContractHandler<ContractEvent>();
+        var sut = new EventJsonHandler<ContractEvent>(handler);
+
+        await sut.Handle(MessageContextStub.ForEventType(
+            nameof(ContractEvent),
+            "{\"Name\":\"Ada\",\"Quantity\":2,\"AddedByNewerPublisher\":\"x\"}"));
+
+        Assert.AreEqual(1, handler.Calls);
+        Assert.AreEqual("Ada", handler.LastEvent?.Name);
+        Assert.AreEqual(2, handler.LastEvent?.Quantity);
+    }
+
+    [TestMethod]
+    public async Task Handle_PayloadMissingProperties_LeavesDefaultsWithoutValidating()
+    {
+        // An older payload reaches a newer event class. The receive path does
+        // not run DataAnnotations, so even a [Required] property arrives null.
+        var handler = new ContractHandler<ContractEvent>();
+        var sut = new EventJsonHandler<ContractEvent>(handler);
+
+        await sut.Handle(MessageContextStub.ForEventType(nameof(ContractEvent), "{}"));
+
+        Assert.AreEqual(1, handler.Calls);
+        Assert.IsNull(handler.LastEvent?.Name);
+        Assert.AreEqual(0, handler.LastEvent?.Quantity);
+    }
+
+    [TestMethod]
+    public async Task Handle_PayloadMissingCSharpRequiredMember_LeavesItNull()
+    {
+        var handler = new ContractHandler<RequiredMemberEvent>();
+        var sut = new EventJsonHandler<RequiredMemberEvent>(handler);
+
+        await sut.Handle(MessageContextStub.ForEventType(nameof(RequiredMemberEvent), "{}"));
+
+        Assert.AreEqual(1, handler.Calls);
+        Assert.IsNull(handler.LastEvent?.Name);
+    }
+
+    [TestMethod]
+    public async Task Handle_PayloadWithRetypedProperty_RejectsBeforeInvokingHandler()
+    {
+        var handler = new ContractHandler<ContractEvent>();
+        var sut = new EventJsonHandler<ContractEvent>(handler);
+
+        var exception = await Assert.ThrowsExactlyAsync<PermanentFailureException>(() =>
+            sut.Handle(MessageContextStub.ForEventType(
+                nameof(ContractEvent),
+                "{\"Name\":\"Ada\",\"Quantity\":\"two\"}")));
+
+        Assert.IsInstanceOfType<JsonException>(exception.InnerException);
+        Assert.AreEqual(0, handler.Calls);
+    }
+
     public sealed class TestEvent : Event
     {
         public object? Value { get; set; }
+    }
+
+    public sealed class ContractEvent : Event
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        public string? Name { get; set; }
+
+        public int Quantity { get; set; }
+    }
+
+    public sealed class RequiredMemberEvent : Event
+    {
+        public required string Name { get; init; }
+    }
+
+    private sealed class ContractHandler<TEvent> : IEventHandler<TEvent>
+        where TEvent : IEvent
+    {
+        public int Calls { get; private set; }
+        public TEvent? LastEvent { get; private set; }
+
+        public Task Handle(TEvent message, IEventHandlerContext context, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            LastEvent = message;
+            return Task.CompletedTask;
+        }
     }
 
     public sealed class HostilePayload
