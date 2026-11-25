@@ -14457,6 +14457,10 @@ export class Metadata implements IMetadata {
     repositoryUrl?: string | undefined;
     /** The issue tracker as an https link template containing {ticketId}. Overrides the site's ticket link for this endpoint (Spec 044 Phase 3). */
     ticketLinkTemplate?: string | undefined;
+    /** The https address of the read-only MCP server the endpoint's adapter serves (Spec 051 §6). No credentials, query string or fragment. */
+    adapterMcpUrl?: string | undefined;
+    /** Per event type, the payload path holding the key of an entity in this endpoint's adapter (Spec 051 §5). */
+    recordBindings?: RecordBinding[];
 
     [key: string]: any;
 
@@ -14488,6 +14492,12 @@ export class Metadata implements IMetadata {
             this.sourceSystem = _data["sourceSystem"];
             this.repositoryUrl = _data["repositoryUrl"];
             this.ticketLinkTemplate = _data["ticketLinkTemplate"];
+            this.adapterMcpUrl = _data["adapterMcpUrl"];
+            if (Array.isArray(_data["recordBindings"])) {
+                this.recordBindings = [] as any;
+                for (let item of _data["recordBindings"])
+                    this.recordBindings!.push(RecordBinding.fromJS(item));
+            }
         }
     }
 
@@ -14517,6 +14527,12 @@ export class Metadata implements IMetadata {
         data["sourceSystem"] = this.sourceSystem;
         data["repositoryUrl"] = this.repositoryUrl;
         data["ticketLinkTemplate"] = this.ticketLinkTemplate;
+        data["adapterMcpUrl"] = this.adapterMcpUrl;
+        if (Array.isArray(this.recordBindings)) {
+            data["recordBindings"] = [];
+            for (let item of this.recordBindings)
+                data["recordBindings"].push(item ? item.toJSON() : undefined as any);
+        }
         return data;
     }
 
@@ -14541,6 +14557,10 @@ export interface IMetadata {
     repositoryUrl?: string | undefined;
     /** The issue tracker as an https link template containing {ticketId}. Overrides the site's ticket link for this endpoint (Spec 044 Phase 3). */
     ticketLinkTemplate?: string | undefined;
+    /** The https address of the read-only MCP server the endpoint's adapter serves (Spec 051 §6). No credentials, query string or fragment. */
+    adapterMcpUrl?: string | undefined;
+    /** Per event type, the payload path holding the key of an entity in this endpoint's adapter (Spec 051 §5). */
+    recordBindings?: RecordBinding[];
 
     [key: string]: any;
 }
@@ -14600,6 +14620,75 @@ export class TechnicalContact implements ITechnicalContact {
 export interface ITechnicalContact {
     name?: string;
     email?: string;
+
+    [key: string]: any;
+}
+
+/** The value at payloadPath in messages of eventTypeId is the key of entity in this endpoint's adapter (Spec 051 §5). */
+export class RecordBinding implements IRecordBinding {
+    eventTypeId?: string;
+    /** A dotted JSON path such as $.AccountId. No wildcards, indexes or filters. */
+    payloadPath?: string;
+    /** The name the adapter serves the entity under, such as customer. */
+    entity?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IRecordBinding) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventTypeId = _data["eventTypeId"];
+            this.payloadPath = _data["payloadPath"];
+            this.entity = _data["entity"];
+        }
+    }
+
+    static fromJS(data: any): RecordBinding {
+        data = typeof data === 'object' ? data : {};
+        let result = new RecordBinding();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventTypeId"] = this.eventTypeId;
+        data["payloadPath"] = this.payloadPath;
+        data["entity"] = this.entity;
+        return data;
+    }
+
+    clone(): RecordBinding {
+        const json = this.toJSON();
+        let result = new RecordBinding();
+        result.init(json);
+        return result;
+    }
+}
+
+/** The value at payloadPath in messages of eventTypeId is the key of entity in this endpoint's adapter (Spec 051 §5). */
+export interface IRecordBinding {
+    eventTypeId?: string;
+    /** A dotted JSON path such as $.AccountId. No wildcards, indexes or filters. */
+    payloadPath?: string;
+    /** The name the adapter serves the entity under, such as customer. */
+    entity?: string;
 
     [key: string]: any;
 }

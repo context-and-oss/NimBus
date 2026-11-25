@@ -93,10 +93,12 @@ public class OperatorMessageToolsTests
             SourceSystem = "Dynamics 365 Sales",
             RepositoryUrl = "https://github.com/example/crm-adapter",
             TicketLinkTemplate = "https://github.com/example/crm-adapter/issues/{ticketId}",
+            AdapterMcpUrl = "https://crm-adapter.example.com/mcp",
         });
 
         var ownership = (await CallAsync("nimbus_get_endpoint", new() { ["endpointId"] = "CrmEndpoint" })).GetProperty("ownership");
 
+        Assert.AreEqual("https://crm-adapter.example.com/mcp", ownership.GetProperty("adapterMcpUrl").GetString());
         Assert.AreEqual("Alice", ownership.GetProperty("owner").GetString());
         Assert.AreEqual("Dynamics 365 Sales", ownership.GetProperty("sourceSystem").GetString());
         Assert.AreEqual("https://github.com/example/crm-adapter", ownership.GetProperty("repositoryUrl").GetString());

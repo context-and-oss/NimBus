@@ -124,6 +124,30 @@ const MetadataColumn = (props: IMetadataColumnProps) => {
 
         <span className="font-bold py-1">Ticket link</span>
         <div className="col-span-2 py-1 truncate font-mono text-xs">{endpointMetadata?.ticketLinkTemplate || "Site default"}</div>
+
+        <div className="col-span-3 text-center border-0 text-foreground font-bold py-2 mt-2">
+          Adapter reads
+        </div>
+
+        <span className="font-bold py-1">Adapter MCP address</span>
+        <div className="col-span-2 py-1 truncate font-mono text-xs">
+          {endpointMetadata?.adapterMcpUrl || "Not set: agents read no records from the adapter"}
+        </div>
+
+        <span className="font-bold py-1">Record bindings</span>
+        <div className="col-span-2 py-1">
+          {endpointMetadata?.recordBindings?.length ? (
+            <ul className="font-mono text-xs space-y-1">
+              {endpointMetadata.recordBindings.map((b, idx) => (
+                <li key={idx} className="truncate" title={`${b.eventTypeId}: ${b.payloadPath} → ${b.entity}`}>
+                  {b.eventTypeId}: {b.payloadPath} → {b.entity}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            "None: agents read no record for this endpoint's messages"
+          )}
+        </div>
       </div>
       <br />
       <hr className="border-border" />

@@ -10,6 +10,7 @@ import {
   ModalFooter,
 } from "components/ui/modal";
 import { validateRepositoryUrl, validateSourceSystem, validateTicketLinkTemplate } from "./code-location";
+import { RecordBindingInput, validateAdapterMcpUrl, validateRecordBindings } from "./adapter-mcp";
 
 // Icons
 const AddIcon = () => (
@@ -80,6 +81,15 @@ export default function MetadataButton(props: IInformationButtonProps) {
   const codeLocationError =
     validateSourceSystem(sourceSystem) ?? validateRepositoryUrl(repositoryUrl) ?? validateTicketLinkTemplate(ticketLinkTemplate);
 
+  // Spec 051 §5–6: where an agent reads the adapter's records, and which records a message names.
+  const [adapterMcpUrl, setAdapterMcpUrl] = useState(props.metaData?.adapterMcpUrl ?? "");
+  const [recordBindings, setRecordBindings] = useState<RecordBindingInput[]>(
+    (props.metaData?.recordBindings ?? []).map((b) => ({ eventTypeId: b.eventTypeId, payloadPath: b.payloadPath, entity: b.entity })),
+  );
+  const adapterError = validateAdapterMcpUrl(adapterMcpUrl) ?? validateRecordBindings(recordBindings);
+  const updateBinding = (index: number, change: Partial<RecordBindingInput>) =>
+    setRecordBindings(recordBindings.map((b, i) => (i === index ? { ...b, ...change } : b)));
+
   const [technicalContacts, setTechnicalContacts] = useState<
     api.TechnicalContact[]
   >(
@@ -97,7 +107,7 @@ export default function MetadataButton(props: IInformationButtonProps) {
 
   React.useEffect(() => {
     validate();
-  }, [endpointOwner, endpointOwnerTeam, technicalContacts, endpointOwnerEmail, codeLocationError]);
+  }, [endpointOwner, endpointOwnerTeam, technicalContacts, endpointOwnerEmail, codeLocationError, adapterError]);
 
   const handleOwnerInputChange = (e: React.FormEvent<HTMLInputElement>) => {
     setEndpointOwner(e.currentTarget.value);
@@ -181,7 +191,8 @@ export default function MetadataButton(props: IInformationButtonProps) {
       endpointOwnerTeam === "" ||
       !pattern.test(endpointOwnerEmail) ||
       !technicalContactValidation ||
-      codeLocationError !== undefined
+      codeLocationError !== undefined ||
+      adapterError !== undefined
     ) {
       setValidation(false);
     } else {
@@ -224,6 +235,10 @@ export default function MetadataButton(props: IInformationButtonProps) {
       sourceSystem: sourceSystem.trim() || undefined,
       repositoryUrl: repositoryUrl.trim() || undefined,
       ticketLinkTemplate: ticketLinkTemplate.trim() || undefined,
+      adapterMcpUrl: adapterMcpUrl.trim() || undefined,
+      recordBindings: recordBindings.map(
+        (b) => new api.RecordBinding({ eventTypeId: b.eventTypeId?.trim(), payloadPath: b.payloadPath?.trim(), entity: b.entity?.trim() }),
+      ),
     });
     client
       .postMetadataEndpoint(params.id!, body)
@@ -338,6 +353,83 @@ export default function MetadataButton(props: IInformationButtonProps) {
           />
           {codeLocationError && (
             <p role="alert" className="mt-1 text-sm text-status-danger">{codeLocationError}</p>
+          )}
+          <p className="font-bold mt-2">Adapter MCP address</p>
+          <p className="text-xs text-muted-foreground">
+            The adapter's read-only MCP server. Agents read the records a failed message names from it, with their own sign-in to the adapter.
+          </p>
+          <Input
+            aria-label="Adapter MCP address"
+            placeholder="https://your-adapter.example.com/mcp"
+            value={adapterMcpUrl}
+            onChange={(e) => setAdapterMcpUrl(e.currentTarget.value)}
+          />
+          <p className="font-bold mt-2">Record bindings</p>
+          <p className="text-xs text-muted-foreground">
+            For an event type, the payload path whose value is the key of a record in this endpoint's adapter. Agents read only the records a binding names.
+          </p>
+          <table className="w-full text-sm mt-1">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left py-2 font-semibold">Event type</th>
+                <th className="text-left py-2 font-semibold">Payload path</th>
+                <th className="text-left py-2 font-semibold">Entity</th>
+                <th className="text-left py-2 font-semibold">Delete</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recordBindings.map((binding, idx) => (
+                <tr key={idx} className="border-b border-border">
+                  <td className="py-2 pr-2">
+                    <Input
+                      aria-label={`Event type of binding ${idx + 1}`}
+                      placeholder="CrmAccountCreated"
+                      value={binding.eventTypeId ?? ""}
+                      onChange={(e) => updateBinding(idx, { eventTypeId: e.currentTarget.value })}
+                    />
+                  </td>
+                  <td className="py-2 pr-2">
+                    <Input
+                      aria-label={`Payload path of binding ${idx + 1}`}
+                      placeholder="$.AccountId"
+                      value={binding.payloadPath ?? ""}
+                      onChange={(e) => updateBinding(idx, { payloadPath: e.currentTarget.value })}
+                    />
+                  </td>
+                  <td className="py-2 pr-2">
+                    <Input
+                      aria-label={`Entity of binding ${idx + 1}`}
+                      placeholder="customer"
+                      value={binding.entity ?? ""}
+                      onChange={(e) => updateBinding(idx, { entity: e.currentTarget.value })}
+                    />
+                  </td>
+                  <td className="py-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      colorScheme="red"
+                      aria-label={`Delete binding ${idx + 1}`}
+                      onClick={() => setRecordBindings(recordBindings.filter((_, i) => i !== idx))}
+                    >
+                      <DeleteIcon />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Add record binding"
+            leftIcon={<AddIcon />}
+            onClick={() => setRecordBindings([...recordBindings, { eventTypeId: "", payloadPath: "", entity: "" }])}
+          >
+            Add binding
+          </Button>
+          {adapterError && (
+            <p role="alert" className="mt-1 text-sm text-status-danger">{adapterError}</p>
           )}
           <br />
 

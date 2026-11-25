@@ -11608,6 +11608,8 @@ namespace NimBus.WebApp.ManagementApi
         private string _sourceSystem;
         private string _repositoryUrl;
         private string _ticketLinkTemplate;
+        private string _adapterMcpUrl;
+        private System.Collections.Generic.List<RecordBinding> _recordBindings;
 
         [Newtonsoft.Json.JsonProperty("id", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string Id    {
@@ -11735,6 +11737,38 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// The https address of the read-only MCP server the endpoint's adapter serves (Spec 051 §6). No credentials, query string or fragment.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("adapterMcpUrl", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string AdapterMcpUrl    {
+            get { return _adapterMcpUrl; }
+            set
+            {
+                if (_adapterMcpUrl != value)
+                {
+                    _adapterMcpUrl = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Per event type, the payload path holding the key of an entity in this endpoint's adapter (Spec 051 §5).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("recordBindings", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<RecordBinding> RecordBindings    {
+            get { return _recordBindings; }
+            set
+            {
+                if (_recordBindings != value)
+                {
+                    _recordBindings = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -11817,6 +11851,92 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<TechnicalContact>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// The value at payloadPath in messages of eventTypeId is the key of entity in this endpoint's adapter (Spec 051 §5).
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class RecordBinding : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _eventTypeId;
+        private string _payloadPath;
+        private string _entity;
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// A dotted JSON path such as $.AccountId. No wildcards, indexes or filters.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("payloadPath", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string PayloadPath    {
+            get { return _payloadPath; }
+            set
+            {
+                if (_payloadPath != value)
+                {
+                    _payloadPath = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The name the adapter serves the entity under, such as customer.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("entity", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Entity    {
+            get { return _entity; }
+            set
+            {
+                if (_entity != value)
+                {
+                    _entity = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static RecordBinding FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<RecordBinding>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;

@@ -33,18 +33,21 @@ public sealed class OperatorInsightTools
     private readonly OperatorQueries _queries;
     private readonly IOperatorClassificationSource _classifications;
     private readonly IEndpointAuthorizationService _authorization;
+    private readonly NimBus.MessageStore.Abstractions.IEndpointMetadataStore? _metadata;
 
     /// <summary>Creates the tools for one request.</summary>
     public OperatorInsightTools(
         OperatorEndpointCatalog catalog,
         OperatorQueries queries,
         IOperatorClassificationSource classifications,
-        IEndpointAuthorizationService authorization)
+        IEndpointAuthorizationService authorization,
+        IEnumerable<NimBus.MessageStore.Abstractions.IEndpointMetadataStore> metadata)
     {
         _catalog = catalog;
         _queries = queries;
         _classifications = classifications;
         _authorization = authorization;
+        _metadata = metadata.LastOrDefault();
     }
 
     /// <summary>Processing messages across all endpoints.</summary>
@@ -253,7 +256,25 @@ public sealed class OperatorInsightTools
             input.EventPayloadJson,
             QuestionSetInfo.Current(),
             latest,
-            includeStackTrace ? input.StackTrace : null) { GuidanceRules = evidence.GuidanceRules };
+            includeStackTrace ? input.StackTrace : null)
+        {
+            GuidanceRules = evidence.GuidanceRules,
+            RecordBindings = await RecordBindingsAsync(endpoint, input.EventTypeId).ConfigureAwait(false),
+        };
+    }
+
+    // The Owner's record bindings for the event type (Spec 051 §5): paths and entity names only,
+    // never a key or a value beyond what the redacted payload already holds.
+    private async Task<IReadOnlyList<RecordBindingInfo>> RecordBindingsAsync(string endpoint, string eventTypeId)
+    {
+        if (_metadata is null)
+            return [];
+
+        var metadata = await _metadata.GetEndpointMetadata(endpoint).ConfigureAwait(false);
+        return (metadata?.RecordBindings ?? [])
+            .Where(b => string.Equals(b.EventTypeId, eventTypeId, StringComparison.OrdinalIgnoreCase))
+            .Select(b => new RecordBindingInfo(b.PayloadPath, b.Entity))
+            .ToList();
     }
 
     private async Task<string> ResolveAttemptAsync(string endpoint, string id, string? messageId)
@@ -451,7 +472,19 @@ public sealed record FailureEvidenceResult(
 {
     /// <summary>The versioned guidance rules NimBus applies to the answers, in priority order.</summary>
     public GuidanceRuleSet? GuidanceRules { get; init; }
+
+    /// <summary>
+    /// The endpoint Owner's record bindings for this event type (Spec 051 §5): the value at each
+    /// path in the redacted payload is the key of that entity in the endpoint's adapter. Read only
+    /// the records a binding names. A binding does not vouch for the message.
+    /// </summary>
+    public IReadOnlyList<RecordBindingInfo> RecordBindings { get; init; } = [];
 }
+
+/// <summary>A record binding: the payload path holding the key, and the adapter's entity.</summary>
+/// <param name="PayloadPath">A dotted JSON path into the payload, such as $.AccountId.</param>
+/// <param name="Entity">The entity the endpoint's adapter serves, such as customer.</param>
+public sealed record RecordBindingInfo(string PayloadPath, string Entity);
 
 /// <summary>A scrubbed exception.</summary>
 /// <param name="Type">Exception or error type.</param>

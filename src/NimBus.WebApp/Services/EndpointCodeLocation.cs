@@ -23,6 +23,11 @@ public static class EndpointCodeLocation
     public static string? ValidateRepositoryUrl(string? url)
         => string.IsNullOrWhiteSpace(url) ? null : ValidateHttps(url.Trim(), "The repository address");
 
+    /// <summary>Null when <paramref name="url"/> is empty or a valid adapter MCP address (Spec 051 §6); otherwise why not.</summary>
+    /// <param name="url">The address.</param>
+    public static string? ValidateAdapterMcpUrl(string? url)
+        => string.IsNullOrWhiteSpace(url) ? null : ValidateHttps(url.Trim(), "The adapter MCP address");
+
     /// <summary>Null when <paramref name="template"/> is empty or a valid ticket-link template; otherwise why not.</summary>
     /// <param name="template">The template.</param>
     public static string? ValidateTicketLinkTemplate(string? template)

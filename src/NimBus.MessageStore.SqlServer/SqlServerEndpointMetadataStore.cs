@@ -71,14 +71,16 @@ WHEN MATCHED THEN UPDATE SET
     SourceSystem = @SourceSystem,
     RepositoryUrl = @RepositoryUrl,
     TicketLinkTemplate = @TicketLinkTemplate,
+    AdapterMcpUrl = @AdapterMcpUrl,
+    RecordBindingsJson = @RecordBindingsJson,
     UpdatedAtUtc = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT (
     EndpointId, EndpointOwner, EndpointOwnerTeam, EndpointOwnerEmail,
     IsHeartbeatEnabled, EndpointHeartbeatStatus, TechnicalContactsJson, SubscriptionStatus,
-    SourceSystem, RepositoryUrl, TicketLinkTemplate)
+    SourceSystem, RepositoryUrl, TicketLinkTemplate, AdapterMcpUrl, RecordBindingsJson)
 VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
     @IsHeartbeatEnabled, @Status, @TechnicalContactsJson, @SubscriptionStatus,
-    @SourceSystem, @RepositoryUrl, @TicketLinkTemplate);";
+    @SourceSystem, @RepositoryUrl, @TicketLinkTemplate, @AdapterMcpUrl, @RecordBindingsJson);";
         await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(sql, new
         {
@@ -93,6 +95,8 @@ VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
             endpointMetadata.SourceSystem,
             endpointMetadata.RepositoryUrl,
             endpointMetadata.TicketLinkTemplate,
+            endpointMetadata.AdapterMcpUrl,
+            RecordBindingsJson = JsonConvert.SerializeObject(endpointMetadata.RecordBindings ?? new List<RecordBinding>()),
         }, commandTimeout: _context.CommandTimeout);
         return rows > 0;
     }
@@ -115,6 +119,10 @@ VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
         SourceSystem = row.SourceSystem,
         RepositoryUrl = row.RepositoryUrl,
         TicketLinkTemplate = row.TicketLinkTemplate,
+        AdapterMcpUrl = row.AdapterMcpUrl,
+        RecordBindings = string.IsNullOrEmpty((string?)row.RecordBindingsJson)
+            ? new List<RecordBinding>()
+            : JsonConvert.DeserializeObject<List<RecordBinding>>((string)row.RecordBindingsJson) ?? new List<RecordBinding>(),
     };
 
     // ───────── Endpoint heartbeat ─────────

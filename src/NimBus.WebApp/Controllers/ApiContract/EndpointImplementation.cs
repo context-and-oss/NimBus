@@ -1027,6 +1027,8 @@ public partial class EndpointImplementation : IEndpointApiController
         metadata.SourceSystem = EndpointCodeLocation.Normalize(body.SourceSystem);
         metadata.RepositoryUrl = EndpointCodeLocation.Normalize(body.RepositoryUrl);
         metadata.TicketLinkTemplate = EndpointCodeLocation.Normalize(body.TicketLinkTemplate);
+        metadata.AdapterMcpUrl = EndpointCodeLocation.Normalize(body.AdapterMcpUrl);
+        metadata.RecordBindings = EndpointRecordBindings.Normalize(Bindings(body));
 
         try
         {
@@ -1067,10 +1069,17 @@ public partial class EndpointImplementation : IEndpointApiController
             return $"At most {MaximumTechnicalContacts} technical contacts.";
         if (contacts.Any(c => c is null || c.Name?.Length > MaximumMetadataNameLength || c.Email?.Length > MaximumMetadataEmailLength))
             return $"Each technical contact needs a name of at most {MaximumMetadataNameLength} and an email of at most {MaximumMetadataEmailLength} characters.";
+        if (body.RecordBindings?.Any(b => b is null) == true)
+            return "A record binding may not be empty.";
         return EndpointCodeLocation.ValidateSourceSystem(body.SourceSystem)
             ?? EndpointCodeLocation.ValidateRepositoryUrl(body.RepositoryUrl)
-            ?? EndpointCodeLocation.ValidateTicketLinkTemplate(body.TicketLinkTemplate);
+            ?? EndpointCodeLocation.ValidateTicketLinkTemplate(body.TicketLinkTemplate)
+            ?? EndpointCodeLocation.ValidateAdapterMcpUrl(body.AdapterMcpUrl)
+            ?? EndpointRecordBindings.Validate(Bindings(body));
     }
+
+    private static IEnumerable<(string? EventTypeId, string? PayloadPath, string? Entity)>? Bindings(Metadata body)
+        => body.RecordBindings?.Select(b => ((string?)b.EventTypeId, (string?)b.PayloadPath, (string?)b.Entity));
 
     private static object? Ownership(EndpointMetadata? metadata) => metadata is null ? null : new
     {
@@ -1081,6 +1090,8 @@ public partial class EndpointImplementation : IEndpointApiController
         sourceSystem = metadata.SourceSystem,
         repositoryUrl = metadata.RepositoryUrl,
         ticketLinkTemplate = metadata.TicketLinkTemplate,
+        adapterMcpUrl = metadata.AdapterMcpUrl,
+        recordBindings = metadata.RecordBindings?.Select(b => new { eventTypeId = b.EventTypeId, payloadPath = b.PayloadPath, entity = b.Entity }),
     };
 
     private async Task SetSubscriptionStatusMetadata(EndpointMetadata metadata)
