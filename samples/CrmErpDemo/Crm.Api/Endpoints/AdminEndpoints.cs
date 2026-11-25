@@ -45,16 +45,16 @@ public static class AdminEndpoints
         // Demo reset: wipes every CRM business row plus the NimBus inbox-dedup
         // rows living in this database. Publishes NO delete events — this is a
         // reset, not business activity; NimBus message history is untouched.
-        // Batched: a single DELETE per table times out on the Azure demo's Basic database.
-        group.MapDelete("/data", async (CrmDbContext db, CancellationToken ct) =>
+        // TRUNCATE in one transaction: all or nothing, and done in seconds even on the
+        // Azure demo's Basic database (see DemoReset).
+        group.MapDelete("/data", async (CrmDbContext db) =>
         {
-            var contacts = await BatchedDelete.AllAsync(db.Contacts, ct);
-            var accounts = await BatchedDelete.AllAsync(db.Accounts, ct);
-            var audits = await BatchedDelete.AllAsync(db.Audits, ct);
-            var inboxRows = await BatchedDelete.RepeatAsync(
-                c => db.Database.ExecuteSqlRawAsync(
-                    "IF OBJECT_ID(N'[nimbus].[InboxMessages]') IS NOT NULL DELETE TOP (1000) FROM [nimbus].[InboxMessages];", c),
-                ct);
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            var contacts = await DemoReset.TruncateAsync(db, "[dbo].[Contacts]");
+            var accounts = await DemoReset.TruncateAsync(db, "[dbo].[Accounts]");
+            var audits = await DemoReset.TruncateAsync(db, "[dbo].[Audits]");
+            var inboxRows = await DemoReset.TruncateAsync(db, "[nimbus].[InboxMessages]");
+            await transaction.CommitAsync();
             return Results.Ok(new DataResetResponse(accounts, contacts, audits, inboxRows));
         });
 
