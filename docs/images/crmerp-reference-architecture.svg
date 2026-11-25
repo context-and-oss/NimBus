@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 880" width="1200" height="880" role="img" aria-labelledby="title">
+<title id="title">CrmErpDemo reference architecture: the CRM and ERP systems exchange events through Azure Service Bus topics; the NimBus Resolver, nimbus-ops and the provisioner sit above, and further subscribers and an external partner below.</title>
+<!-- Generated from the interactive diagram in site/reference-implementation.html. Update both together. -->
+<style>
+:root {
+  --bg: #F4F2EA;
+  --surface: #FAF8F2;
+  --surface-2: #ECE7DA;
+  --line: #E5DFCE;
+  --line-strong: #C9C1AB;
+  --ink: #1A1814;
+  --ink-2: #4A463D;
+  --ink-3: #8A8473;
+  --accent: #E8743C;
+  --accent-ink: #A94B1D;
+  --crm: #3A6FB0;
+  --erp: #6B3FA3;
+  --fwd: #4A463D;
+  --ext: #8A8473;
+  --danger: #C2412E;
+  --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0F0E0B; --surface: #1A1814; --surface-2: #2A2620; --line: #2A2620; --line-strong: #3D3830;
+    --ink: #F4F2EA; --ink-2: #A8A293; --ink-3: #7D776A; --accent: #E8743C; --accent-ink: #F0A478;
+    --crm: #78A2DA; --erp: #A988D6; --fwd: #A8A293; --ext: #7D776A; --danger: #E06A55;
+    color-scheme: dark;
+  }
+}
+
+.bg { fill: var(--surface); stroke: var(--line); }
+
+.grp rect { fill: none; stroke: var(--line-strong); stroke-dasharray: 3 4; }
+.grp.nb rect { fill: color-mix(in srgb, var(--accent) 5%, transparent); stroke: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); }
+.grp.sb rect { fill: color-mix(in srgb, var(--ink) 3%, transparent); }
+.grp text { font: 600 10.5px var(--font-mono); letter-spacing: .12em; fill: var(--ink-3); }
+.grp.crm text { fill: var(--crm); }
+.grp.erp text { fill: var(--erp); }
+.grp.nb text { fill: var(--accent-ink); }
+.grp .note { font: 400 10px var(--font-mono); letter-spacing: 0; }
+
+.node { cursor: pointer; transition: opacity .2s; }
+.node .box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.2; transition: stroke-width .15s; }
+.node.store .box { fill: var(--surface-2); }
+.node .kind { font: 500 9.5px var(--font-mono); letter-spacing: .1em; fill: var(--ink-3); }
+.node .title { font: 700 14px var(--font-sans); fill: var(--ink); }
+.node .sub { font: 500 11px var(--font-sans); fill: var(--ink-2); }
+.node.crm .box { stroke: color-mix(in srgb, var(--crm) 55%, var(--line-strong)); fill: color-mix(in srgb, var(--crm) 6%, var(--surface)); }
+.node.crm .kind { fill: var(--crm); }
+.node.erp .box { stroke: color-mix(in srgb, var(--erp) 55%, var(--line-strong)); fill: color-mix(in srgb, var(--erp) 6%, var(--surface)); }
+.node.erp .kind { fill: var(--erp); }
+.node.nb .box { stroke: color-mix(in srgb, var(--accent) 65%, var(--line-strong)); fill: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.node.nb .kind { fill: var(--accent-ink); }
+.node.store.crm .box { fill: color-mix(in srgb, var(--crm) 12%, var(--surface-2)); }
+.node.store.erp .box { fill: color-mix(in srgb, var(--erp) 12%, var(--surface-2)); }
+.node.store.nb .box { fill: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); }
+.node.ext .box { stroke-dasharray: 5 4; fill: var(--bg); }
+
+.card .box { fill: var(--surface); stroke: var(--line-strong); }
+.card .rowline { stroke: var(--line); }
+.card .subname { font: 500 10.5px var(--font-mono); fill: var(--ink); }
+.card .subtarget { font: 500 10.5px var(--font-sans); fill: var(--ink-3); }
+.card .topicname { font: 800 15px var(--font-sans); fill: var(--ink); }
+.card.crm .topicname { fill: var(--crm); }
+.card.erp .topicname { fill: var(--erp); }
+
+.pill .box { fill: var(--surface); stroke: var(--line-strong); }
+.pill .pname { font: 700 10px var(--font-sans); fill: var(--ink); }
+.pill .psub { font: 500 8.5px var(--font-mono); fill: var(--ink-3); letter-spacing: .04em; }
+.pill.ext .box { stroke-dasharray: 4 3; }
+
+.edge { transition: opacity .2s; }
+.edge path { fill: none; stroke-width: 1.6; stroke-linejoin: round; }
+.edge.crm path { stroke: var(--crm); }
+.edge.erp path { stroke: var(--erp); }
+.edge.nb path { stroke: var(--accent); }
+.edge.fwd path { stroke: var(--fwd); stroke-dasharray: 5 4; }
+.edge.ext path { stroke: var(--ext); stroke-dasharray: 2 4; stroke-linecap: round; }
+.edge.demo path { stroke: var(--ink-3); }
+.elabel {
+  font: 500 9.5px var(--font-mono);
+  fill: var(--ink-3);
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  transition: opacity .2s;
+}
+.mk-crm { fill: var(--crm); } .mk-erp { fill: var(--erp); } .mk-nb { fill: var(--accent); }
+.mk-fwd { fill: var(--fwd); } .mk-ext { fill: var(--ext); } .mk-demo { fill: var(--ink-3); } .mk-warn { fill: var(--danger); }
+
+
+</style>
+<rect class="bg" x="0.5" y="0.5" width="1199" height="879" rx="14"/>
+<defs id="defs"><marker id="m-crm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="mk-crm"></path></marker><marker id="m-erp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="mk-erp"></path></marker><marker id="m-nb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="mk-nb"></path></marker><marker id="m-fwd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="mk-fwd"></path></marker><marker id="m-ext" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="mk-ext"></path></marker><marker id="m-demo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="mk-demo"></path></marker><marker id="m-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="mk-warn"></path></marker></defs>
+      <g id="groups"><g class="grp nb"><rect x="10" y="10" width="1180" height="150" rx="14"></rect><text x="28" y="34">NIMBUS PLATFORM</text></g><g class="grp crm"><rect x="10" y="195" width="270" height="510" rx="14"></rect><text x="28" y="219">CRM · SYSTEM A</text></g><g class="grp sb"><rect x="295" y="195" width="610" height="510" rx="14"></rect><text x="313" y="219">AZURE SERVICE BUS</text><text x="887" y="219" text-anchor="end" class="note">local run: NimBus emulator</text></g><g class="grp erp"><rect x="920" y="195" width="270" height="510" rx="14"></rect><text x="938" y="219">ERP · SYSTEM B</text></g><g class="grp ext"><rect x="10" y="730" width="1180" height="140" rx="14"></rect><text x="28" y="858">MORE SUBSCRIBERS AND AN EXTERNAL PARTNER</text></g></g>
+      <g id="edges"><g class="edge crm"><path d="M135 309 V350" marker-end="url(#m-crm)"></path></g><g class="edge crm"><path d="M135 414 V455" marker-end="url(#m-crm)"></path></g><g class="edge crm"><path d="M235 372 H315" marker-end="url(#m-crm)"></path></g><g class="edge crm"><path d="M315 453 H287 V612 H235" marker-end="url(#m-crm)"></path></g><g class="edge crm"><path d="M35 625 H22 V400 H35" marker-end="url(#m-crm)"></path></g><g class="edge crm"><path d="M135 596 V519" marker-end="url(#m-crm)"></path></g><g class="edge ext"><path d="M315 640 H235" marker-end="url(#m-ext)"></path></g><g class="edge erp"><path d="M1065 309 V350" marker-end="url(#m-erp)"></path></g><g class="edge erp"><path d="M1065 414 V455" marker-end="url(#m-erp)"></path></g><g class="edge erp"><path d="M965 372 H885" marker-end="url(#m-erp)"></path></g><g class="edge erp"><path d="M885 429 H913 V612 H965" marker-end="url(#m-erp)"></path></g><g class="edge erp"><path d="M1165 625 H1178 V400 H1165" marker-end="url(#m-erp)"></path></g><g class="edge fwd"><path d="M565 262 H635" marker-end="url(#m-fwd)"></path></g><g class="edge fwd"><path d="M635 280 H565" marker-end="url(#m-fwd)"></path></g><g class="edge fwd"><path d="M440 473 V585 H455.25 V610" marker-end="url(#m-fwd)"></path></g><g class="edge fwd"><path d="M440 473 V585 H744.75 V610" marker-end="url(#m-fwd)"></path><path d="M551.75 585 V610" marker-end="url(#m-fwd)"></path><path d="M648.25 585 V610" marker-end="url(#m-fwd)"></path></g><g class="edge fwd"><path d="M841.25 449 V610" marker-end="url(#m-fwd)"></path></g><g class="edge ext"><path d="M125 772 V680 H358.75 V646" marker-end="url(#m-ext)"></path></g><g class="edge demo"><path d="M455.25 646 V690 H345 V772" marker-end="url(#m-demo)"></path></g><g class="edge demo"><path d="M551.75 646 V772" marker-end="url(#m-demo)"></path><path d="M648.25 646 V772" marker-end="url(#m-demo)"></path><path d="M744.75 646 V772" marker-end="url(#m-demo)"></path></g><g class="edge demo"><path d="M841.25 646 V712 H945 V772" marker-end="url(#m-demo)"></path></g><g class="edge nb"><path d="M397.5 195 V142" marker-end="url(#m-nb)"></path></g><g class="edge nb"><path d="M599.5 142 V195" marker-end="url(#m-nb)"></path></g><g class="edge nb"><path d="M802.5 142 V195" marker-end="url(#m-nb)"></path></g><g class="edge nb"><path d="M310 110 H260" marker-end="url(#m-nb)"></path></g><g class="edge nb"><path d="M570 78 V56 H150 V78" marker-end="url(#m-nb)" marker-start="url(#m-nb)"></path></g><g class="edge nb"><path d="M1050 78 V56 H630 V78" marker-end="url(#m-nb)"></path></g></g>
+      <g id="labels"><text class="elabel" x="275" y="364" text-anchor="middle">publish</text><text class="elabel" x="925" y="364" text-anchor="middle">outbox</text><text class="elabel" x="143" y="561" text-anchor="start">inbox</text><text class="elabel" x="1073" y="439" text-anchor="start">one SQL tx</text><text class="elabel" x="600" y="303" text-anchor="middle">forward</text><text class="elabel" x="449" y="529" text-anchor="start">forwarded by event type;</text><text class="elabel" x="449" y="542" text-anchor="start">hubs also by country</text><text class="elabel" x="240" y="674" text-anchor="middle">raw CloudEvents</text><text class="elabel" x="405" y="174" text-anchor="start">subscribes to every topic</text><text class="elabel" x="607" y="174" text-anchor="start">resubmit · skip</text><text class="elabel" x="810" y="174" text-anchor="start">creates topology</text><text class="elabel" x="360" y="50" text-anchor="middle">messages · audit trail</text><text class="elabel" x="840" y="50" text-anchor="middle">agent REST API</text></g>
+      <g id="nodes"><g class="node nb store"><rect class="box" x="40" y="78" width="220" height="64" rx="14"></rect><path d="M50 85 H250" stroke="var(--line-strong)" stroke-width="1" fill="none"></path><text class="kind" x="52" y="97">SQL DATABASE</text><text class="title" x="52" y="116">nimbus DB</text><text class="sub" x="52" y="132">message store · audit · identity</text></g><g class="node nb"><rect class="box" x="310" y="78" width="175" height="64" rx="9"></rect><text class="kind" x="322" y="97">AZURE FUNCTIONS</text><text class="title" x="322" y="116">resolver</text><text class="sub" x="322" y="132">records every message</text></g><g class="node nb"><rect class="box" x="512" y="78" width="175" height="64" rx="9"></rect><text class="kind" x="524" y="97">NIMBUS WEBAPP</text><text class="title" x="524" y="116">nimbus-ops</text><text class="sub" x="524" y="132">operator UI · MCP · API</text></g><g class="node nb"><rect class="box" x="715" y="78" width="175" height="64" rx="9"></rect><text class="kind" x="727" y="97">CONTAINER APPS JOB</text><text class="title" x="727" y="116">provisioner</text><text class="sub" x="727" y="132">creates the topology</text></g><g class="node demo"><rect class="box" x="940" y="78" width="220" height="64" rx="9"></rect><text class="kind" x="952" y="97">DEMO AGENT</text><text class="title" x="952" y="116">enrichment-agent</text><text class="sub" x="952" y="132">classifies parked contacts</text></g><g class="node crm"><rect class="box" x="35" y="245" width="200" height="64" rx="9"></rect><text class="kind" x="47" y="264">VITE · REACT SPA</text><text class="title" x="47" y="283">crm-web</text><text class="sub" x="47" y="299">CRM user interface</text></g><g class="node crm"><rect class="box" x="35" y="350" width="200" height="64" rx="9"></rect><text class="kind" x="47" y="369">ASP.NET CORE</text><text class="title" x="47" y="388">crm-api</text><text class="sub" x="47" y="404">publishes directly</text></g><g class="node crm store"><rect class="box" x="35" y="455" width="200" height="64" rx="14"></rect><path d="M45 462 H225" stroke="var(--line-strong)" stroke-width="1" fill="none"></path><text class="kind" x="47" y="474">SQL DATABASE</text><text class="title" x="47" y="493">crm DB</text><text class="sub" x="47" y="509">accounts · contacts · inbox</text></g><g class="node crm"><rect class="box" x="35" y="596" width="200" height="64" rx="9"></rect><text class="kind" x="47" y="615">.NET WORKER</text><text class="title" x="47" y="634">crm-adapter</text><text class="sub" x="47" y="650">NimBus subscriber</text></g><g class="node erp"><rect class="box" x="965" y="245" width="200" height="64" rx="9"></rect><text class="kind" x="977" y="264">VITE · REACT SPA</text><text class="title" x="977" y="283">erp-web</text><text class="sub" x="977" y="299">ERP user interface</text></g><g class="node erp"><rect class="box" x="965" y="350" width="200" height="64" rx="9"></rect><text class="kind" x="977" y="369">ASP.NET CORE</text><text class="title" x="977" y="388">erp-api</text><text class="sub" x="977" y="404">outbox + dispatcher</text></g><g class="node erp store"><rect class="box" x="965" y="455" width="200" height="64" rx="14"></rect><path d="M975 462 H1155" stroke="var(--line-strong)" stroke-width="1" fill="none"></path><text class="kind" x="977" y="474">SQL DATABASE</text><text class="title" x="977" y="493">erp DB</text><text class="sub" x="977" y="509">customers · contacts · outbox</text></g><g class="node erp"><rect class="box" x="965" y="596" width="200" height="64" rx="9"></rect><text class="kind" x="977" y="615">AZURE FUNCTIONS</text><text class="title" x="977" y="634">erp-adapter</text><text class="sub" x="977" y="650">ServiceBusTrigger handlers</text></g><g class="node ext"><rect class="box" x="30" y="772" width="190" height="64" rx="9"></rect><text class="kind" x="42" y="791">EXTERNAL SYSTEM</text><text class="title" x="42" y="810">partner-portal</text><text class="sub" x="42" y="826">raw CloudEvents only</text></g><g class="node demo"><rect class="box" x="250" y="772" width="190" height="64" rx="9"></rect><text class="kind" x="262" y="791">NIMBUS SUBSCRIBER</text><text class="title" x="262" y="810">agent-zone</text><text class="sub" x="262" y="826">parks contacts for agents</text></g><g class="node demo"><rect class="box" x="470" y="772" width="340" height="64" rx="9"></rect><text class="kind" x="482" y="791">NIMBUS SUBSCRIBER × 3</text><text class="title" x="482" y="810">hub-nordic · hub-dach · hub-unrouted</text><text class="sub" x="482" y="826">one RegionalHub project, routed by country</text></g><g class="node demo"><rect class="box" x="840" y="772" width="210" height="64" rx="9"></rect><text class="kind" x="852" y="791">AZURE FUNCTIONS</text><text class="title" x="852" y="810">dataplatform-adapter</text><text class="sub" x="852" y="826">analytics sink · Table inbox</text></g><g class="node card crm"><rect class="box" x="315" y="245" width="250" height="228" rx="10"></rect><text class="kind" x="327" y="264">TOPIC</text><text class="kind" x="553" y="264" text-anchor="end">SUBSCRIPTIONS</text><text class="topicname" x="327" y="284">CrmEndpoint</text><line class="rowline" x1="325" x2="555" y1="297" y2="297"></line><text class="subname" x="327" y="313">CrmEndpoint-reply</text><text class="subtarget" x="553" y="313" text-anchor="end">request/reply</text><line class="rowline" x1="325" x2="555" y1="321" y2="321"></line><text class="subname" x="327" y="337">ErpEndpoint</text><text class="subtarget" x="553" y="337" text-anchor="end">forward</text><line class="rowline" x1="325" x2="555" y1="345" y2="345"></line><text class="subname" x="327" y="361">AgentZoneEndpoint</text><text class="subtarget" x="553" y="361" text-anchor="end">forward</text><line class="rowline" x1="325" x2="555" y1="369" y2="369"></line><text class="subname" x="327" y="385">3 hub endpoints</text><text class="subtarget" x="553" y="385" text-anchor="end">forward by country</text><line class="rowline" x1="325" x2="555" y1="393" y2="393"></line><text class="subname" x="327" y="409">Resolver</text><text class="subtarget" x="553" y="409" text-anchor="end">audit</text><line class="rowline" x1="325" x2="555" y1="417" y2="417"></line><text class="subname" x="327" y="433">Deferred · DeferredProcessor</text><text class="subtarget" x="553" y="433" text-anchor="end">replay</text><line class="rowline" x1="325" x2="555" y1="441" y2="441"></line><text class="subname" x="327" y="457">CrmEndpoint</text><text class="subtarget" x="553" y="457" text-anchor="end">session → crm-adapter</text></g><g class="node card erp"><rect class="box" x="635" y="245" width="250" height="204" rx="10"></rect><text class="kind" x="647" y="264">TOPIC</text><text class="kind" x="873" y="264" text-anchor="end">SUBSCRIPTIONS</text><text class="topicname" x="647" y="284">ErpEndpoint</text><line class="rowline" x1="645" x2="875" y1="297" y2="297"></line><text class="subname" x="647" y="313">CrmEndpoint</text><text class="subtarget" x="873" y="313" text-anchor="end">forward</text><line class="rowline" x1="645" x2="875" y1="321" y2="321"></line><text class="subname" x="647" y="337">DataPlatformEndpoint</text><text class="subtarget" x="873" y="337" text-anchor="end">forward</text><line class="rowline" x1="645" x2="875" y1="345" y2="345"></line><text class="subname" x="647" y="361">PartnerPortalCapture</text><text class="subtarget" x="873" y="361" text-anchor="end">partner-portal</text><line class="rowline" x1="645" x2="875" y1="369" y2="369"></line><text class="subname" x="647" y="385">Resolver</text><text class="subtarget" x="873" y="385" text-anchor="end">audit</text><line class="rowline" x1="645" x2="875" y1="393" y2="393"></line><text class="subname" x="647" y="409">Deferred · DeferredProcessor</text><text class="subtarget" x="873" y="409" text-anchor="end">replay</text><line class="rowline" x1="645" x2="875" y1="417" y2="417"></line><text class="subname" x="647" y="433">ErpEndpoint</text><text class="subtarget" x="873" y="433" text-anchor="end">session → erp-adapter</text></g><g class="node pill ext"><rect class="box" x="315" y="610" width="87.5" height="36" rx="8"></rect><text class="pname" x="358.75" y="626" text-anchor="middle">PartnerInbound</text><text class="psub" x="358.75" y="638" text-anchor="middle">plain topic</text></g><g class="node pill"><rect class="box" x="411.5" y="610" width="87.5" height="36" rx="8"></rect><text class="pname" x="455.25" y="626" text-anchor="middle">AgentZone</text><text class="psub" x="455.25" y="638" text-anchor="middle">endpoint topic</text></g><g class="node pill"><rect class="box" x="508" y="610" width="87.5" height="36" rx="8"></rect><text class="pname" x="551.75" y="626" text-anchor="middle">NordicHub</text><text class="psub" x="551.75" y="638" text-anchor="middle">endpoint topic</text></g><g class="node pill"><rect class="box" x="604.5" y="610" width="87.5" height="36" rx="8"></rect><text class="pname" x="648.25" y="626" text-anchor="middle">DachHub</text><text class="psub" x="648.25" y="638" text-anchor="middle">endpoint topic</text></g><g class="node pill"><rect class="box" x="701" y="610" width="87.5" height="36" rx="8"></rect><text class="pname" x="744.75" y="626" text-anchor="middle">UnroutedHub</text><text class="psub" x="744.75" y="638" text-anchor="middle">endpoint topic</text></g><g class="node pill"><rect class="box" x="797.5" y="610" width="87.5" height="36" rx="8"></rect><text class="pname" x="841.25" y="626" text-anchor="middle">DataPlatform</text><text class="psub" x="841.25" y="638" text-anchor="middle">endpoint topic</text></g></g>
+</svg>

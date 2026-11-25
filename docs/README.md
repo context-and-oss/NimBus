@@ -12,6 +12,7 @@ skip blocked work.
 | Run NimBus on your machine | [Getting started](getting-started.md) |
 | See what the platform does | [Features](features.md) |
 | Understand the components and how they fit | [Architecture](architecture.md) |
+| See a complete CRM and ERP integration built on NimBus | [Reference implementation](reference-implementation.md) |
 | Take a customer project from zero to go-live | [Onboarding a customer project](onboarding.md) |
 
 ## How it works

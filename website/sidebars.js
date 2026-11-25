@@ -28,6 +28,7 @@ const sidebars = {
         { type: 'doc', id: 'getting-started', label: 'Getting started' },
         { type: 'doc', id: 'features', label: 'Features' },
         { type: 'doc', id: 'architecture', label: 'Architecture' },
+        { type: 'doc', id: 'reference-implementation', label: 'Reference implementation' },
         { type: 'doc', id: 'onboarding', label: 'Onboarding a customer project' },
       ],
     },
