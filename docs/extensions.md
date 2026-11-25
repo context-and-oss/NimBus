@@ -19,7 +19,7 @@ When adding a feature to NimBus, ask whether it belongs in core or in an extensi
 
 **Optional platform services** (not core but ship with the repo): `NimBus.MessageStore`, `NimBus.Resolver`, `NimBus.Manager`, `NimBus.WebApp`.
 
-**Extensions** (separate NuGet packages): `NimBus.Extensions.Notifications`, `Akaule.NimBus.Extensions.IntegrationIntelligence`, and any future `NimBus.Extensions.*` packages.
+**Extensions** (separate NuGet packages): `Akaule.NimBus.Extensions.Notifications`, `Akaule.NimBus.Extensions.IntegrationIntelligence`, and the other `Akaule.NimBus.Extensions.*` packages listed under [package naming](#4-package-naming-convention).
 
 ### Integration Intelligence
 
@@ -320,17 +320,18 @@ services.AddNimBus(builder =>
 
 ### 4. Package naming convention
 
-Follow the naming pattern `NimBus.Extensions.{Name}`:
+Name the project, assembly and namespace `NimBus.Extensions.{Name}`. The NuGet package is published as `Akaule.NimBus.Extensions.{Name}`: the `Akaule.` prefix is added by `Directory.Build.props`, because the bare `NimBus.*` package id prefix is reserved by another owner on nuget.org.
 
 | Package | Description |
 |---------|-------------|
-| `NimBus.Extensions.Notifications` | Notification channels on failures/dead-letters |
-| `NimBus.Extensions.Identity` | Username/password authentication with email verification |
-| `NimBus.Extensions.IntegrationIntelligence` | Advisory failure classification for the management WebApp |
+| `Akaule.NimBus.Extensions.Notifications` | Notification channels on failures/dead-letters |
+| `Akaule.NimBus.Extensions.Identity` | Username/password authentication with email verification |
+| `Akaule.NimBus.Extensions.IntegrationIntelligence` | Advisory failure classification for the management WebApp |
+| `Akaule.NimBus.Extensions.Http` | HTTP helpers for adapters: a cached Microsoft Entra bearer-token handler for external-system clients |
 
 ## Worked example: Notifications extension
 
-The `NimBus.Extensions.Notifications` package ships with the repository as a reference implementation.
+The `Akaule.NimBus.Extensions.Notifications` package ships with the repository as a reference implementation.
 
 ### What it does
 
