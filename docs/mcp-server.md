@@ -544,6 +544,10 @@ The endpoint accepts v2.0 tokens (issuer `https://login.microsoftonline.com/<ten
 audience the client id) and v1.0 tokens (issuer `https://sts.windows.net/<tenant>/`, audience the
 Application ID URI).
 
+Adapters' own MCP servers use a separate registration with an `Adapter.Read` app role: a token
+for this resource is not accepted by an adapter, nor the other way round. See
+[Adapter MCP server](adapter-mcp.md#sign-in).
+
 ### 2. Configure the WebApp
 
 Set these app settings on the management WebApp:
