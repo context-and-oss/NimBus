@@ -26,14 +26,7 @@ public static class E2eExecution
             client.Timeout = TimeSpan.FromSeconds(10);
         });
         services.AddSingleton<IFailureDispositionClassifier, E2eClassifier>();
-        services.AddSingleton<IRetryPolicyProvider>(new DefaultRetryPolicyProvider().AddExceptionRule(
-            "E2E configured retry", new RetryPolicy
-            {
-                MaxRetries = 2,
-                Strategy = BackoffStrategy.Fixed,
-                BaseDelay = TimeSpan.FromSeconds(2),
-                MaxDelay = TimeSpan.FromSeconds(2),
-            }));
+        services.AddSingleton<IRetryPolicyProvider>(new DefaultRetryPolicyProvider().AddE2eRetryRule());
         foreach (var descriptor in services.Where(descriptor => descriptor.ServiceType.IsGenericType &&
             descriptor.ServiceType.GetGenericTypeDefinition() == typeof(IEventHandler<>)).ToArray())
         {
@@ -44,6 +37,30 @@ public static class E2eExecution
             services.Add(ServiceDescriptor.Describe(descriptor.ServiceType, provider =>
                 ActivatorUtilities.CreateInstance(provider, wrapper, ActivatorUtilities.CreateInstance(provider, implementation)), descriptor.Lifetime));
         }
+    }
+
+    /// <summary>
+    /// Adds the scripted retry rule of the E2E profile: two retries, two seconds apart, for
+    /// failures tagged <c>E2E configured retry</c>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="AddE2eExecution"/> registers a provider with this rule in DI, which a subscriber
+    /// uses only when it configures no retry policies of its own. A subscriber that calls
+    /// <c>ConfigureRetryPolicies</c> builds its own provider and has to add the rule there.
+    /// </remarks>
+    /// <param name="policies">The provider to add the rule to.</param>
+    /// <returns><paramref name="policies"/>, for chaining.</returns>
+    public static DefaultRetryPolicyProvider AddE2eRetryRule(this DefaultRetryPolicyProvider policies)
+    {
+        ArgumentNullException.ThrowIfNull(policies);
+        return policies.AddExceptionRule(
+            "E2E configured retry", new RetryPolicy
+            {
+                MaxRetries = 2,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromSeconds(2),
+                MaxDelay = TimeSpan.FromSeconds(2),
+            });
     }
 }
 

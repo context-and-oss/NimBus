@@ -100,6 +100,7 @@ aspire stop --apphost ../CrmErpDemo.AppHost --non-interactive
 | Session isolation, deferral, FIFO recovery | 03, 12 | Observe failure and deferred siblings before recovery; independent session progresses; exact business revision sequence |
 | Resubmit, skip, replay failure | 02, 03, 12 | Real Actions-menu resubmit, skip without applying bad revision, new blocked head during replay |
 | No policy, automatic retry, exhausted budget | 12 | Exact attempt counts, two configured retries, stable event lineage, no implicit retry or implicit DLQ on exhaustion |
+| The ERP adapter's own retry rule | 21 | The "Rate limited" error-mode reason fails exactly four times (the first attempt and the three retries of `ErpResilience`), stays Failed, and completes after a resubmit |
 | Transient redelivery and broker exhaustion | 12, 19 | Same message redelivery, no error/retry response, actual MaxDeliveryCountExceeded DLQ entry |
 | Permanent and discard classifications | 12 | Exact DeadLettered/Skipped status, actual DLQ, no duplicate business effects, discard releases a blocked retry |
 | Middleware and validation rejection | 12, 14 | Exact DeadLettered outcome; one physical dead letter; no handler invocation for invalid payloads |
@@ -128,7 +129,10 @@ two receiving subscriptions and disables automatic lock renewal on both test
 receivers so transient lock-expiry retries are bounded. Normal demo provisioning
 and receiver settings remain unchanged. The
 scripted NimBus retry policy is separate: two retries with a 2-second delay, and
-only exceptions tagged `E2E configured retry` match it.
+only exceptions tagged `E2E configured retry` match it. The ERP adapter configures
+retry policies of its own, which replace a provider registered in DI, so it adds
+the scripted rule to that provider (`AddE2eRetryRule`); the CRM adapter takes it
+from DI.
 The DataPlatform sink uses 64 concurrent sessions with a one-second idle timeout
 in this profile so its deliberate ingestion delay does not build a backlog across
 the suite. The enrichment agent uses the deterministic classifier.

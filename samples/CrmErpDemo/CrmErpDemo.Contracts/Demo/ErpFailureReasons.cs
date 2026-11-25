@@ -12,7 +12,8 @@ namespace CrmErpDemo.Contracts.Demo;
 /// </param>
 /// <param name="Disposition">
 /// How NimBus treats the thrown exception: <c>Failed</c> (session blocked, retryable,
-/// resubmit from the WebApp) or <c>DeadLettered</c> (permanent, straight to the DLQ).
+/// resubmit from the WebApp) or <c>DeadLettered</c> (permanent, straight to the DLQ). For the
+/// one reason with a retry rule it is where the message ends when its retries run out.
 /// </param>
 public sealed record ErpFailureReason(
     string Id,
@@ -33,7 +34,8 @@ public sealed record ErpFailureReason(
 /// (<c>ErrorContent.ErrorType</c> / <c>ErrorText</c>, no stack trace), so each reason's message
 /// carries the cues a real failure of that kind would: status codes, identifiers, the
 /// downstream system, and what would have to change. That is what Integration Intelligence
-/// classifies. Reason ids match the classification category they are meant to land in.
+/// classifies. Reason ids match the classification category they are meant to land in, except
+/// <see cref="Throttled"/>, which is a second transient failure with an id of its own.
 /// </para>
 /// <para>
 /// A written message must never contradict the message it fails: whoever classifies the failure,
@@ -54,6 +56,13 @@ public static class ErpFailureReasons
     /// </summary>
     public const string ApplicationDefect = "application_defect";
 
+    /// <summary>
+    /// The one reason NimBus retries without a person: it throws
+    /// <see cref="ErpPricingThrottledException"/>, which the ERP adapter's retry rule matches.
+    /// Every other reason is recorded as Failed on its first attempt.
+    /// </summary>
+    public const string Throttled = "throttled_dependency";
+
     public static readonly IReadOnlyList<ErpFailureReason> All =
     [
         new(
@@ -66,6 +75,14 @@ public static class ErpFailureReasons
             "transient_dependency",
             "Downstream timeout (transient)",
             "The ERP pricing service is unreachable: HTTP 503 after a 30s timeout with a connection reset. Nothing about the message needs to change; a retry later is expected to succeed.",
+            "transient_dependency",
+            "Failed"),
+        new(
+            Throttled,
+            "Rate limited (retried automatically)",
+            "The ERP pricing service answers HTTP 429 with Retry-After: 5. This is the one failure the ERP adapter has a retry rule for: " +
+            "NimBus retries the message up to three times, a few seconds apart, and every failed attempt is in the event's history. " +
+            "With a failure rate below 100% most messages get through on a retry; when all three fail the message ends as Failed.",
             "transient_dependency",
             "Failed"),
         new(
@@ -193,6 +210,11 @@ public static class ErpFailureReasons
             Transient => new TimeoutException(
                 "ERP pricing service did not respond within 30s: HTTP 503 Service Unavailable from https://erp-pricing.internal/api/v2/customers " +
                 "(socket error: connection reset by peer). The service was reachable a moment ago and is usually back within minutes."),
+
+            Throttled => new ErpPricingThrottledException(
+                "ERP pricing service rejected the request with HTTP 429 Too Many Requests from https://erp-pricing.internal/api/v2/customers " +
+                "(Retry-After: 5). The adapter's quota of 60 requests per minute is used up; the same request is accepted once the window has passed.",
+                TimeSpan.FromSeconds(5)),
 
             "authentication_configuration" => new UnauthorizedAccessException(
                 "ERP API rejected the request with HTTP 401 Unauthorized (WWW-Authenticate: Bearer error=\"invalid_token\", error_description=\"The client secret has expired\"). " +

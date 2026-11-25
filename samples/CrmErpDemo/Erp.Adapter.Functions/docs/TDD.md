@@ -291,15 +291,20 @@ Notable points:
 
 `Erp.Adapter.Functions` only handles `Crm*` events (six of them); it never receives an `Erp*` event because the `ErpEndpoint` topic's `ErpEndpoint` subscription is filtered to `user.To = 'ErpEndpoint'`, which excludes ERP's own publishes.
 
-### 4.3 Transient-fault retry  <!-- [AUTO] — no explicit retry policy is configured -->
+### 4.3 Transient-fault retry  <!-- [AUTO] — one retry rule, in ErpResilience.cs -->
 
-The adapter does **not** call `subscriber.RetryPolicies(...)` in `AddNimBusSubscriber("ErpEndpoint", ...)`. Behaviour falls back to NimBus defaults plus the Functions Service Bus extension's retry settings:
+The adapter calls `sub.ConfigureRetryPolicies(...)` in `AddNimBusSubscriber("ErpEndpoint", ...)` with the rules in `ErpResilience.ConfigureRetries`. There is one rule, kept as the sample's retry showcase:
 
-- The `StrictMessageHandler` is constructed without an `IRetryPolicyProvider` (no provider is registered in DI).
+| Matches | Policy | Waits |
+|---|---|---|
+| `ErpPricingThrottledException` (HTTP 429 from the pricing service; thrown only by the "Rate limited" error-mode reason) | 3 retries, exponential from 2 s, cap 30 s | The exception carries `Retry-After: 5` through `IRetryAfterHint`, so the waits are 5 s, 5 s and 8 s |
+
+- A retry is a NimBus-scheduled message in the same session. When the three retries are spent the message is recorded as **Failed**, its session stays blocked, and an operator resubmits or skips it.
+- No rule matches any other handler exception, including every failure of `erp-api` itself (§4.4): those are recorded as **Failed** on the first attempt, with no retry.
+- In the E2E profile the same provider also gets the scripted rule from `E2eExecution.AddE2eRetryRule`. Policies configured on the subscriber replace an `IRetryPolicyProvider` registered in DI, so the rule has to be added here.
 - Functions Service Bus extension client retry is configured in `host.json`: exponential, 3 attempts, base 0.8 s, cap 1 m. This applies to Service Bus client operations (lock renewal, completion), **not** to handler invocations.
-- Handler exceptions surface to NimBus's pipeline, which abandons the message; Service Bus then redelivers up to namespace `MaxDeliveryCount`, then dead-letters.
 
-For a demo this is acceptable; for production, document explicit retry budgets per event type. See §8.
+For a demo this is acceptable; for production, map each failure of the target system to a typed exception and give each kind its own rule. See §8 and `docs/building-adapters.md#resilience`.
 
 ### 4.4 Missing-reference-data policy  <!-- [AUTO] -->
 

@@ -4,6 +4,7 @@ using CrmErpDemo.Contracts.E2E;
 using CrmErpDemo.Contracts.Dtos;
 using CrmErpDemo.Contracts.Events;
 using CrmErpDemo.Contracts.Security;
+using Erp.Adapter.Functions;
 using Erp.Adapter.Functions.Clients;
 using Erp.Adapter.Functions.HandoffMode;
 using Erp.Adapter.Functions.Handlers;
@@ -23,9 +24,10 @@ var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.ConfigureFunctionsWebApplication();
 
-// This demo adapter stays deliberately minimal: no NimBus retry rules, inbox or circuit breaker (a
-// Functions trigger can't be paused by a breaker anyway), and its HTTP clients retry inside the
-// standard resilience handler. The e2e suite is tuned to that timing. For the shape a production
+// This demo adapter stays deliberately minimal: one NimBus retry rule (ErpResilience, the retry
+// showcase), no inbox or circuit breaker (a Functions trigger can't be paused by a breaker anyway),
+// and its HTTP clients retry inside the standard resilience handler. The e2e suite is tuned to that
+// timing: failures of erp-api itself are still not retried by NimBus. For the shape a production
 // adapter should follow, see docs/building-adapters.md#resilience and the template in
 // akakaule/nimbus-adapter-kit.
 builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
@@ -111,6 +113,16 @@ builder.Services.AddNimBusSubscriber("ErpEndpoint", sub =>
     // Request/reply responder — request handlers are registered explicitly
     // (not assembly-scanned); the reply travels back on CrmEndpoint-reply.
     sub.AddRequestHandler<ErpCreditCheckRequested, ErpCreditCheckResult, ErpCreditCheckRequestedHandler>();
+
+    // Retry showcase: a rate-limited call (the "Rate limited" error-mode reason) is retried by
+    // NimBus; every other failure is recorded as Failed on its first attempt. Policies configured
+    // here replace a provider registered in DI, so the E2E profile's scripted rule is added to
+    // the same provider instead of relying on the one AddE2eExecution registers.
+    sub.ConfigureRetryPolicies(policies =>
+    {
+        ErpResilience.ConfigureRetries(policies);
+        if (E2eSettings.IsEnabled(builder.Configuration, builder.Environment)) policies.AddE2eRetryRule();
+    });
 });
 
 // Demo notifications: when an inbound ERP message fails, dead-letters, or blocks its session,

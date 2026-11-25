@@ -57,8 +57,9 @@ public sealed class ErpFailureReasonsTests
     public void EveryReason_DispositionMatchesTheErpAdaptersFailureHandling()
     {
         // Erp.Adapter.Functions registers no failure disposition classifier, so StrictMessageHandler
-        // falls back to DefaultFailureDispositionClassifier; with no retry policy either, a failure
-        // it does not dead-letter is recorded as Failed.
+        // falls back to DefaultFailureDispositionClassifier; a failure it does not dead-letter is
+        // recorded as Failed. The adapter's one retry rule (ErpRetryRuleTests) only delays that
+        // for the rate-limited reason, which ends as Failed when its retries run out.
         var classifier = new DefaultFailureDispositionClassifier();
         foreach (var reason in Simulated)
         {
