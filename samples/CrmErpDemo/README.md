@@ -350,7 +350,7 @@ end-to-end helpers use to search it.
 
 NimBus's message store (audit trail, resolver state, blocked sessions, metrics) runs against **SQL Server by default**, in a database named `nimbus` on the same Aspire-managed SQL Server container that already hosts `crm` and `erp`. No Azure connection strings are needed with the default emulator.
 
-Cosmos is an alternative — supply `ConnectionStrings:cosmos` as a user secret and pass `--StorageProvider cosmos` to the AppHost. The AppHost reads the flag at `samples/CrmErpDemo/CrmErpDemo.AppHost/Program.cs:7-11`; the same value is bridged to the Resolver and `nimbus-ops` WebApp via `NimBus__StorageProvider` so they call the matching `AddSqlServerMessageStore()` / `AddCosmosDbMessageStore()` registration.
+Cosmos is an alternative — supply `ConnectionStrings:cosmos` as a user secret and pass `--StorageProvider cosmos` to the AppHost. The AppHost reads the flag near the top of `samples/CrmErpDemo/CrmErpDemo.AppHost/Program.cs`; the same value is bridged to the Resolver and `nimbus-ops` WebApp via `NimBus__StorageProvider` so they call the matching `AddSqlServerMessageStore()` / `AddCosmosDbMessageStore()` registration.
 
 The CRM and ERP business databases are always SQL Server regardless of the message-store choice. Only ERP uses the `nimbus.OutboxMessages` outbox table.
 

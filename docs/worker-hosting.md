@@ -39,7 +39,7 @@ Add the packages. Use the NimBus version your Resolver and WebApp run:
 <ItemGroup>
   <PackageReference Include="Akaule.NimBus.SDK" Version="$(NimBusVersion)" />
   <PackageReference Include="Akaule.NimBus.ServiceDefaults" Version="$(NimBusVersion)" />
-  <PackageReference Include="Aspire.Azure.Messaging.ServiceBus" Version="13.6.5" />
+  <PackageReference Include="Aspire.Azure.Messaging.ServiceBus" Version="17.0.0" />
 </ItemGroup>
 ```
 

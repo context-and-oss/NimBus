@@ -987,13 +987,33 @@ session settings, retry counts, and routing rules.
 
 An adapter repository can run the Service Bus emulator, topology provisioning,
 the Resolver and the WebApp from NuGet packages, without a NimBus source
-checkout. Add `Akaule.NimBus.AspireHosting` and `Aspire.Hosting.SqlServer` to the
-AppHost. Reference the contracts project that holds your `IPlatform` without
-making it an Aspire resource:
+checkout. The AppHost is an ordinary `Microsoft.NET.Sdk` project on Aspire 17.
+Add `Akaule.NimBus.AspireHosting` and `Aspire.Hosting.SqlServer` next to Aspire's
+own `Aspire.Hosting.AppHost` and `Aspire.Hosting.Dotnet`, and reference the
+contracts project that holds your `IPlatform`:
 
 ```xml
-<ProjectReference Include="..\Acme.Contracts\Acme.Contracts.csproj" IsAspireProjectResource="false" />
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="17.0.0" />
+    <PackageReference Include="Aspire.Hosting.Dotnet" Version="17.0.0" />
+    <PackageReference Include="Aspire.Hosting.SqlServer" Version="17.0.0" />
+    <PackageReference Include="Akaule.NimBus.AspireHosting" Version="$(NimBusVersion)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Acme.Contracts\Acme.Contracts.csproj" />
+  </ItemGroup>
+</Project>
 ```
+
+Aspire 17 retires `Aspire.AppHost.Sdk` and `AddProject`. An AppHost that still
+uses that SDK keeps working, with a warning; there the contracts reference needs
+`IsAspireProjectResource="false"`. The adapter itself is added by path and needs
+no project reference.
 
 The AppHost:
 
@@ -1019,7 +1039,7 @@ builder.AddNimBusResolver()
     .WithNimBusWebAppNotifications(webApp)
     .WaitForCompletion(topology);
 
-builder.AddProject<Projects.Acme_Adapter>("acme-adapter")
+builder.AddDotnetProject("acme-adapter", "../Acme.Adapter/Acme.Adapter.csproj")
     .WithReference(servicebus)
     .WithReference(nimbusDb) // the adapter's inbox table
     .WaitForCompletion(topology);
