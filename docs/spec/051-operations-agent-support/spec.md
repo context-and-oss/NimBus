@@ -1,8 +1,9 @@
 # Spec 051 — Platform support for operations agents
 
-Status: proposed, revision 5 (2026-11-16). Revised three times after reviews of an agent design that
-builds on this spec, and once when §2 was built; the changes are listed in §13. §2 (the wake-up
-webhook) is built. The other parts are not yet approved and not built.
+Status: revision 6 (2026-11-25). Revised three times after reviews of an agent design that builds on
+this spec, once when §2 was built and once when §5–7 were approved; the changes are listed in §13.
+§2 (the wake-up webhook) and §5–6 (record bindings and the adapter's MCP address) are built. §7 is
+approved. The other parts are not yet approved and not built.
 Baseline: master `7122b1bd`; the latest release is v4.17.0.
 Builds on [Spec 035](../035-mcp-operator-access/spec.md),
 [Spec 037](../037-mcp-admin-access/spec.md),
@@ -363,6 +364,15 @@ belongs with the adapter kit, not in the platform's core.
 | Windows of 5 and 15 minutes (§2) | With hourly as the shortest window, a receiver that starts a run per request had to choose between one run per failure and a wake-up up to an hour late |
 | The Resolver connects to public addresses only and follows no redirect (§2, §11) | The URL is chosen by an endpoint Owner, and the Resolver may sit inside a private network |
 | §2 is built | Status |
+
+### 13.5 Revision 6
+
+| Change | Why |
+|---|---|
+| §5–7 approved; Q2 (an Owner enters the address) and Q4 (one Entra resource for all adapters) settled as the spec proposed | The ops agent's phase 3 reads adapters through them |
+| A binding's path is a plain dotted path (`$.a.b`), with no wildcards, indexes or filters (§5) | A caller takes exactly one key from the redacted payload; a query could name many records |
+| Bindings and the address are stored with the endpoint's metadata (SQL migration 0032) and edited on the Ownership tab with the other ownership fields (§5, §6) | One Owner-only, audited write, as for the code location of Spec 044 |
+| §5–6 are built | Status |
 
 ## 14. Out of scope
 

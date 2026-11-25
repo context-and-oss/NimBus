@@ -6775,6 +6775,15 @@ components:
           type: string
           nullable: true
           description: The issue tracker as an https link template containing {ticketId}. Overrides the site's ticket link for this endpoint (Spec 044 Phase 3).
+        adapterMcpUrl:
+          type: string
+          nullable: true
+          description: The https address of the read-only MCP server the endpoint's adapter serves (Spec 051 §6). No credentials, query string or fragment.
+        recordBindings:
+          type: array
+          description: Per event type, the payload path holding the key of an entity in this endpoint's adapter (Spec 051 §5).
+          items:
+            $ref: '#/components/schemas/RecordBinding'
     TechnicalContact:
       title: TechnicalContact
       x-stoplight:
@@ -6785,6 +6794,19 @@ components:
           type: string
         email:
           type: string
+    RecordBinding:
+      title: RecordBinding
+      type: object
+      description: The value at payloadPath in messages of eventTypeId is the key of entity in this endpoint's adapter (Spec 051 §5).
+      properties:
+        eventTypeId:
+          type: string
+        payloadPath:
+          type: string
+          description: A dotted JSON path such as $.AccountId. No wildcards, indexes or filters.
+        entity:
+          type: string
+          description: The name the adapter serves the entity under, such as customer.
     MetadataShort:
       title: MetadataShort
       x-stoplight:
