@@ -1,4 +1,3 @@
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using NimBus.Adapter.Mcp;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -21,8 +20,7 @@ public static class AdapterCallLogHttpClientBuilderExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(entity);
         ArgumentNullException.ThrowIfNull(keyFromRequest);
 
-        builder.Services.TryAddSingleton(TimeProvider.System);
-        builder.Services.TryAddSingleton(sp => new AdapterCallLog(AdapterCallLog.DefaultCapacity, sp.GetRequiredService<TimeProvider>()));
+        AdapterCallLog.Register(builder.Services);
         return builder.AddHttpMessageHandler(sp => new AdapterCallLogHandler(sp.GetRequiredService<AdapterCallLog>(), entity, keyFromRequest));
     }
 }
