@@ -54,6 +54,10 @@ public class AgentClassificationToolsTests
         Assert.AreEqual(Attempt, evidence.GetProperty("messageId").GetString());
         Assert.AreEqual("PartnerPortal", evidence.GetProperty("sourceEndpoint").GetString());
         Assert.AreEqual(FailureClassificationQuestionSet.Version, evidence.GetProperty("questionSet").GetProperty("version").GetInt32());
+        var guidance = evidence.GetProperty("guidanceRules");
+        Assert.AreEqual(1, guidance.GetProperty("version").GetInt32());
+        Assert.AreEqual("Investigate", guidance.GetProperty("otherwise").GetString());
+        Assert.AreEqual("categoryConfidence", guidance.GetProperty("rules")[0].GetProperty("field").GetString());
         var questions = evidence.GetProperty("questionSet").GetProperty("questions").EnumerateArray().ToList();
         var origin = questions.Single(q => q.GetProperty("id").GetString() == "fault_origin");
         Assert.AreEqual("faultOrigin and faultOriginConfidence", origin.GetProperty("answer").GetString());

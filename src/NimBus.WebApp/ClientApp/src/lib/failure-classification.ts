@@ -1,9 +1,11 @@
 /**
  * Failure-classification vocabulary shared by the admin explainer, the event-details card and
  * Insights. Mirrors NimBus.Extensions.IntegrationIntelligence: FailureClassificationQuestionSet
- * (v2 for agents, v1 for the deprecated provider) and FailureGuidanceRules.Compose. Keep them in
+ * (v2 for agents, v1 for the deprecated provider). Keep the vocabulary in
  * sync when the question set changes.
  */
+
+import template from "../../../../NimBus.Extensions.IntegrationIntelligence/guidance-rules.json";
 
 export type FailureGuidance = "Uncertain" | "RetryMayHelp" | "ChangeLikelyRequired" | "Investigate";
 
@@ -66,12 +68,21 @@ export const GUIDANCE_BADGE: Record<FailureGuidance, "secondary" | "success" | "
 
 export const isFailureGuidance = (value: string): value is FailureGuidance => Object.prototype.hasOwnProperty.call(GUIDANCE_MEANING, value);
 
+type Rule = {
+  field: Exclude<keyof GuidanceSignals, "category">; comparison: "lt" | "gte";
+  threshold: keyof GuidanceThresholds; category?: string; guidance: FailureGuidance;
+};
+export const guidanceRules = template.rules as Rule[];
+export const otherwise = template.otherwise as FailureGuidance;
+
 /** Applies the ordered guidance rules; `rule` is the zero-based index of the rule that matched. */
 export function composeGuidance(signals: GuidanceSignals, thresholds: GuidanceThresholds): { rule: number; guidance: FailureGuidance } {
-  if (signals.categoryConfidence < thresholds.minimumCategoryConfidence) return { rule: 0, guidance: "Uncertain" };
-  if (signals.category === "transient_dependency" && signals.retryLikelihood >= thresholds.retryLikely) return { rule: 1, guidance: "RetryMayHelp" };
-  if (signals.changeRequiredLikelihood >= thresholds.changeRequired) return { rule: 2, guidance: "ChangeLikelyRequired" };
-  return { rule: 3, guidance: "Investigate" };
+  const rule = guidanceRules.findIndex(row => {
+    if (row.category && signals.category !== row.category) return false;
+    const value = signals[row.field], threshold = thresholds[row.threshold];
+    return row.comparison === "lt" ? value < threshold : value >= threshold;
+  });
+  return rule < 0 ? { rule: guidanceRules.length, guidance: otherwise } : { rule, guidance: guidanceRules[rule].guidance };
 }
 
 export type SampleFailure = GuidanceSignals & {

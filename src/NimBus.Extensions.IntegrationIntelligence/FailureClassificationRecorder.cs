@@ -67,7 +67,11 @@ public sealed record FailureClassificationRecording
 /// <summary>The evidence an agent classifies, and the latest saved classification of the same attempt.</summary>
 /// <param name="Input">The bounded, redacted evidence, with the sending endpoints.</param>
 /// <param name="Latest">The latest saved classification, or null.</param>
-public sealed record FailureEvidence(FailureClassificationInput Input, FailureClassification? Latest);
+public sealed record FailureEvidence(FailureClassificationInput Input, FailureClassification? Latest)
+{
+    /// <summary>The effective rules for previewing guidance on this evidence.</summary>
+    public GuidanceRuleSet? GuidanceRules { get; init; }
+}
 
 /// <summary>
 /// Records classifications that agents make over MCP (Spec 044 §6.4). It checks Contributor and
@@ -139,7 +143,7 @@ public sealed class FailureClassificationRecorder
         {
             throw new ClassificationServiceException("ClassificationUnavailable", 503, inner: exception);
         }
-        return new FailureEvidence(input, latest);
+        return new FailureEvidence(input, latest) { GuidanceRules = FailureGuidanceRules.Describe(_options) };
     }
 
     /// <summary>
