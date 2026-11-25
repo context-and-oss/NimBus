@@ -181,6 +181,21 @@ public sealed class StoreDecoratorTests
         Assert.IsFalse(await sut.TrySkipDeferredMessage("missing", "s1", "ep-1", null, DateTime.UtcNow));
     }
 
+    [TestMethod]
+    public async Task Decorator_forwards_EraseEventCopyAsync_and_PurgeExpiredData_to_inner_store()
+    {
+        var inner = new InMemoryMessageStore();
+        await inner.UploadCompletedMessage("e1", "s1", "ep-1", new UnresolvedEvent { EventId = "e1", SessionId = "s1", EndpointId = "ep-1" });
+        var sut = NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore(inner, "test");
+
+        var erased = await sut.EraseEventCopyAsync(new EventErasureRequest("ep-1", "e1", "erasure-1", null, null, ComposeConfirmed: true));
+        var purged = await sut.PurgeExpiredData(RetentionPeriods.AllUnlimited, DateTime.UtcNow, 10);
+
+        Assert.AreEqual(ErasurePlaceState.Removed, erased[ErasurePlace.TrackingRow].State);
+        Assert.IsNull(await inner.GetEvent("ep-1", "e1"));
+        Assert.AreEqual(RetentionPurgeResult.None, purged);
+    }
+
     private static MetricPoint First(Metric metric)
     {
         foreach (ref readonly var point in metric.GetMetricPoints())
@@ -255,6 +270,7 @@ internal sealed class ThrowingStore : IMessageTrackingStore
     public Task<bool> PurgeMessages(string endpointId, string sessionId) => _passthrough.PurgeMessages(endpointId, sessionId);
     public Task<bool> PurgeMessages(string endpointId) => _passthrough.PurgeMessages(endpointId);
     public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => _passthrough.ArchiveFailedEvent(eventId, sessionId, endpointId);
+    public Task<EventErasureResult> EraseEventCopyAsync(EventErasureRequest request, System.Threading.CancellationToken cancellationToken = default) => _passthrough.EraseEventCopyAsync(request, cancellationToken);
     public Task StoreMessage(NimBus.MessageStore.MessageEntity message) => _passthrough.StoreMessage(message);
     public Task<NimBus.MessageStore.MessageEntity?> GetMessage(string eventId, string messageId) => _passthrough.GetMessage(eventId, messageId);
     public Task<IEnumerable<NimBus.MessageStore.MessageEntity>> GetEventHistory(string eventId) => _passthrough.GetEventHistory(eventId);

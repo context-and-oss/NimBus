@@ -240,4 +240,10 @@ public enum MessageAuditType
 
     /// <summary>An endpoint Owner deleted an alert rule (Spec 053). Data carries the rule as it was. Always recorded.</summary>
     AlertRuleDeleted,
+
+    /// <summary>
+    /// A Site Owner erased an event copy (Spec 049). Data carries identifiers, counts per place and
+    /// the outcome, never payload. An erasure never redacts or deletes these records. Always recorded.
+    /// </summary>
+    EraseEvent,
 }

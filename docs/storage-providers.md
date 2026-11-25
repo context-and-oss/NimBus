@@ -41,7 +41,7 @@ in how they scale, in how the apps authenticate, and in a few operator tools.
 | Scaling | Change the database tier. `nb` deploys S0, and every `nb infra apply` sets it back to S0, so scale up in the portal again after each run | Raise a container's throughput; each container scales separately |
 | App authentication | SQL login and password in the `SqlConnection` app setting | Managed identity only; no secrets |
 | Bring your own store | Yes: `--sql-mode external` with the connection string in `NIMBUS_SQL_CONNECTION_STRING` ([details](#sql-only-deployment)) | No: `nb` always creates the account |
-| Data retention | **Nothing is deleted**: tracking rows, messages and audits stay until you remove them, so the database keeps growing toward its tier's limit (250 GB on S0) | Expires automatically: completed rows after 30 days, messages after 90, audits after a year ([details](#retention-of-unresolved-rows)) |
+| Data retention | **Nothing is deleted by default**: tracking rows, messages and audits stay until you pin retention periods for the WebApp's cleanup job ([details](#retention)), so by default the database keeps growing toward its tier's limit (250 GB on S0) | Expires automatically: completed rows after 30 days, messages after 90, audits after a year ([details](#retention-of-unresolved-rows)) |
 | Cosmos-only tools | — | `nb container` commands, Copy Endpoint Data, Topology → Storage ([details](#operator-tools-that-are-cosmos-only-in-v1)) |
 | Deploy pipelines (`deploy.yml`, `pipelines/azure-pipelines-deploy.yml`) | Not yet: neither passes `--storage-provider`, so both deploy Cosmos | Yes |
 
@@ -338,7 +338,7 @@ expires anything. The fix is a one-method override forwarding to
 #### Provider scope
 
 The SQL Server provider has no TTL mechanism and is unaffected by this setting;
-retention there needs a delete job and is tracked separately.
+it deletes by age instead, see [SQL Server retention](#retention).
 
 ## SQL Server
 
@@ -374,6 +374,40 @@ schema (default `nimbus`).
 
 When using `VerifyOnly`, run DbUp from the deployment pipeline against an
 arbitrary connection string before the application starts.
+
+### Retention
+
+SQL Server has no TTL, so the WebApp runs a cleanup job that deletes rows whose
+retention period ran out (Spec 050). In 4.x every period is **unlimited by default**:
+an upgraded SQL Server deployment deletes nothing until you pin a period in host
+configuration on the WebApp.
+
+| Key (environment form `NimBus__Retention__…`) | Rows deleted when older than the period |
+|---|---|
+| `NimBus:Retention:OpenEventsDays` | `UnresolvedEvents` in Pending, Failed, Deferred, DeadLettered or Unsupported, by last update |
+| `NimBus:Retention:ResolvedEventsDays` | Completed and Skipped rows, archived failures and removed or purged rows, by last update |
+| `NimBus:Retention:MessageHistoryDays` | `Messages` (the Flow tab and message details), by when they were stored |
+| `NimBus:Retention:AuditTrailDays` | `MessageAudits`, by when they were stored |
+
+Each value is a number of days (1 to 3650; the audit trail at least 30), or `-1` /
+`unlimited`. A bounded audit trail must be at least as long as every other bounded
+period. An invalid value fails the WebApp at startup with the key and the value.
+To match the Cosmos DB defaults, set resolved events to 30, message history to 90
+and the audit trail to 365.
+
+- The job runs once per `NimBus:SqlServer:RetentionInterval` (default `01:00:00`),
+  after the schema initializer, in `DELETE TOP (5000)` batches until each period has
+  nothing older than its cutoff. Each run logs the rows deleted per period and records
+  them in the `nimbus.retention.deleted` metric.
+- Only the WebApp registers it (`AddSqlServerMessageStoreRetention()`); the Resolver
+  and other hosts never delete.
+- Deleting an open row takes its resubmit and skip with it. A deleted Failed row no
+  longer shows in the WebApp, but its Service Bus session stays blocked.
+- Script `0031_RetentionIndexes.sql` adds `IX_Messages_CreatedAtUtc` and
+  `IX_UnresolvedEvents_Deleted_UpdatedAtUtc` so each batch seeks.
+
+Settings → Retention (setting the periods from the WebApp) and pinning them through
+`nb infra apply` are later phases of Spec 050.
 
 ### Schema layout
 

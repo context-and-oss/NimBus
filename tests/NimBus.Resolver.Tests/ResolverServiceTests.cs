@@ -955,6 +955,7 @@ public class ResolverServiceTests
         public Task<int> PurgeStoredMessages(string endpointId) => throw new NotSupportedException();
         public Task<IEnumerable<MessageAuditEntity>> GetMessageAudits(string eventId) => throw new NotSupportedException();
         public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => throw new NotSupportedException();
+        public Task<EventErasureResult> EraseEventCopyAsync(EventErasureRequest request, System.Threading.CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => throw new NotSupportedException();
         public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from) => throw new NotSupportedException();
         public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from) => throw new NotSupportedException();

@@ -73,6 +73,7 @@ public sealed partial class AuditSettingsProvider : IAuditSettingsProvider
         MessageAuditType.AlertRuleCreated,
         MessageAuditType.AlertRuleUpdated,
         MessageAuditType.AlertRuleDeleted,
+        MessageAuditType.EraseEvent,
     };
 
     /// <summary>

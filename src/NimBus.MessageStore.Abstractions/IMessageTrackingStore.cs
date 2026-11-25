@@ -245,6 +245,43 @@ public interface IMessageTrackingStore
     Task<bool> PurgeMessages(string endpointId);
     Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId);
 
+    /// <summary>
+    /// Erases one event copy from this store (Spec 049): hard-deletes its tracking rows (every
+    /// status and session, archived and soft-deleted included) unless a visible row blocks its
+    /// session, deletes its event report marker and every message-history entry for the event id
+    /// on the endpoint, and redacts the payload-carrying audit entries for the event id and the
+    /// Compose audit entries that hold the event's payload. Keeps the tracking rows and history
+    /// while the Compose audits are outstanding (source retention). Never touches
+    /// <see cref="MessageAuditType.EraseEvent"/> records. Idempotent: a call that finds nothing
+    /// left reports every place as <see cref="ErasurePlaceState.AlreadyAbsent"/>.
+    /// <para>A failed write is reported as <see cref="ErasurePlaceState.Outstanding"/> for its
+    /// place, never thrown, so the caller can aggregate; argument errors throw
+    /// <see cref="ArgumentException"/> and cancellation throws
+    /// <see cref="OperationCanceledException"/>. Providers implement it with
+    /// <see cref="EventErasureRunner"/>, which applies the shared rules. There is deliberately no
+    /// default implementation: one that silently did nothing would report an erasure that never
+    /// happened.</para>
+    /// </summary>
+    Task<EventErasureResult> EraseEventCopyAsync(EventErasureRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes at most <paramref name="batchSize"/> rows per bounded period of
+    /// <paramref name="periods"/> whose age at <paramref name="nowUtc"/> exceeds it (Spec 050):
+    /// open tracking rows (Pending, Failed, Deferred, DeadLettered, Unsupported) and resolved ones
+    /// (Completed, Skipped, archived and removed) by their last update, message history and audit
+    /// entries by when they were written. Unlimited periods delete nothing. Callers repeat the call
+    /// until every count comes back below <paramref name="batchSize"/>.
+    /// <para>Providers that expire data themselves (Cosmos DB, by TTL) return zeros. The default
+    /// implementation throws <see cref="NotSupportedException"/>, so a provider that has not
+    /// implemented it is reported instead of silently keeping data.</para>
+    /// </summary>
+    Task<RetentionPurgeResult> PurgeExpiredData(
+        RetentionPeriods periods,
+        DateTime nowUtc,
+        int batchSize,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException($"This {nameof(IMessageTrackingStore)} implementation does not delete expired data.");
+
     // Per-message history records
     Task StoreMessage(MessageEntity message);
     /// <summary>Returns the stored message, or null.</summary>

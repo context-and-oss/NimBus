@@ -290,7 +290,9 @@ public sealed class AdminCleanupAuditTests
         // Alert rule changes (Spec 053) were appended after that.
         Assert.AreEqual(47, (int)MessageAuditType.AlertRuleCreated);
         Assert.AreEqual(49, (int)MessageAuditType.AlertRuleDeleted);
-        Assert.AreEqual(MessageAuditType.AlertRuleDeleted, Enum.GetValues<MessageAuditType>().Max());
+        // Erasure records (Spec 049) were appended after that.
+        Assert.AreEqual(50, (int)MessageAuditType.EraseEvent);
+        Assert.AreEqual(MessageAuditType.EraseEvent, Enum.GetValues<MessageAuditType>().Max());
     }
 
     [TestMethod]

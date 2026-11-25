@@ -22,7 +22,7 @@ namespace NimBus.Testing.Conformance;
 /// transitions, message persistence, and basic queries the conformance suite cares
 /// about. Search/pagination methods return empty results.
 /// </summary>
-public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore, IAlertSignalStore
+public partial class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore, ISubscriptionNotificationStore, IMonitorMetricsStore, IDashboardTokenStore, IOperatorOperationStore, IAlertRuleStore, IAlertSignalStore
 {
     // The operator operation journal (Spec 044 Phase 2), kept in its own class.
     private readonly InMemoryOperatorOperationStore _operations = new();
@@ -460,8 +460,19 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
             .Select(ToBlockedMessageEvent)
             .ToList());
 
+    // Removed and archived rows are kept out of sight, as the SQL Server and Cosmos DB providers keep
+    // them soft-deleted, so an erasure (Spec 049) still finds them.
     public Task<bool> RemoveMessage(string eventId, string sessionId, string endpointId)
-        => Task.FromResult(_events.TryRemove(Key(endpointId, eventId, sessionId), out _));
+        => Task.FromResult(Hide(Key(endpointId, eventId, sessionId)));
+
+    private bool Hide((string, string, string) key)
+    {
+        if (!_events.TryRemove(key, out var row))
+            return false;
+
+        _archived[key] = row;
+        return true;
+    }
 
     public Task<bool> PurgeMessages(string endpointId, string sessionId)
     {
@@ -479,13 +490,14 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
 
     public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId)
     {
-        _events.TryRemove(Key(endpointId, eventId, sessionId), out _);
+        Hide(Key(endpointId, eventId, sessionId));
         return Task.CompletedTask;
     }
 
     public Task StoreMessage(MessageEntity message)
     {
         _messages[(message.EventId, message.MessageId)] = message;
+        _messageCreatedAt.TryAdd((message.EventId, message.MessageId), DateTime.UtcNow);
         return Task.CompletedTask;
     }
 
@@ -558,6 +570,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore,
         // filter on them.
         auditEntity.EventId ??= eventId;
         auditEntity.EndpointId ??= endpointId;
+        _auditMetadata[auditEntity] = new AuditMetadata(eventTypeId, DateTime.UtcNow);
         _audits.GetOrAdd(eventId, _ => new List<MessageAuditEntity>()).Add(auditEntity);
         return Task.CompletedTask;
     }

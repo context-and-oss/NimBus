@@ -21,7 +21,8 @@ public sealed partial class AuditLogService : IAuditLogService
 {
     /// <summary>4 KB cap on the <c>Data</c> field per NFR-004.</summary>
     internal const int DataTruncationLimit = 4096;
-    internal const string TruncationSuffix = "… [truncated]";
+    // Shared with ErasureRules, which recognises truncated Compose entries when it erases an event.
+    internal const string TruncationSuffix = ErasureRules.AuditTruncationSuffix;
     internal const string AnonymousAuditorName = "anonymous";
     internal const string StructuredLogMessage = "Webapp AuditEvent occurred";
 
