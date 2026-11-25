@@ -5,6 +5,7 @@ using CrmErpDemo.Contracts.Dtos;
 using CrmErpDemo.Contracts.Events;
 using CrmErpDemo.Contracts.Security;
 using Erp.Adapter.Functions;
+using Erp.Adapter.Functions.AdapterMcp;
 using Erp.Adapter.Functions.Clients;
 using Erp.Adapter.Functions.HandoffMode;
 using Erp.Adapter.Functions.Handlers;
@@ -68,8 +69,8 @@ static string ResolveErpApiBaseUrl(IConfiguration cfg) =>
 // presents the demo service key (Demo__ServiceKey).
 builder.Services.AddDemoServiceKey(builder.Configuration, ResolveErpApiBaseUrl(builder.Configuration));
 
-builder.Services.AddHttpClient<IErpApiClient, ErpApiClient>(c =>
-    c.BaseAddress = new Uri(ResolveErpApiBaseUrl(builder.Configuration)));
+// The ERP client records its calls per customer for the adapter MCP server's adapter_get_last_call.
+ErpAdapterMcp.AddErpApiClient(builder.Services, ResolveErpApiBaseUrl(builder.Configuration));
 
 builder.Services.AddHttpClient<IServiceModeClient, ServiceModeClient>(c =>
 {
@@ -149,4 +150,9 @@ builder.Services.AddNimBusNotifications(channels =>
 });
 
 builder.Services.AddE2eExecution(builder.Configuration, builder.Environment, ResolveErpApiBaseUrl(builder.Configuration));
+
+// The adapter's read-only MCP server (Spec 051 §7) at /api/mcp, for operations agents that look
+// into ERP while they work on a failed message. Only with an Entra adapter registration
+// (AdapterMcp__TenantId, AdapterMcp__Audience); without one AdapterMcpFunction answers 404.
+ErpAdapterMcp.AddServer(builder.Services, builder.Configuration);
 builder.Build().Run();
