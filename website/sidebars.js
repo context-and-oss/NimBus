@@ -54,6 +54,7 @@ const sidebars = {
         { type: 'doc', id: 'building-adapters', label: 'Building adapters' },
         { type: 'doc', id: 'message-versioning', label: 'Evolving event contracts' },
         { type: 'doc', id: 'azure-functions-hosting', label: 'Azure Functions hosting' },
+        { type: 'doc', id: 'worker-hosting', label: 'Worker hosting (Container Apps)' },
         { type: 'doc', id: 'pipeline-middleware', label: 'Pipeline middleware' },
         { type: 'doc', id: 'testing', label: 'Testing' },
         { type: 'doc', id: 'extensions', label: 'Extensions' },
