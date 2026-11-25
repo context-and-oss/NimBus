@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "rules": [
+    { "field": "categoryConfidence", "comparison": "lt", "threshold": "minimumCategoryConfidence", "guidance": "Uncertain" },
+    { "field": "retryLikelihood", "comparison": "gte", "threshold": "retryLikely", "category": "transient_dependency", "guidance": "RetryMayHelp" },
+    { "field": "changeRequiredLikelihood", "comparison": "gte", "threshold": "changeRequired", "guidance": "ChangeLikelyRequired" }
+  ],
+  "otherwise": "Investigate"
+}

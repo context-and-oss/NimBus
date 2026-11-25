@@ -3,7 +3,7 @@ import { Badge } from "components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "components/ui/card";
 import { cn } from "lib/utils";
 import {
-  composeGuidance, FAILURE_CATEGORIES, GUIDANCE_BADGE, GUIDANCE_MEANING, QUESTION_SET_VERSION, SAMPLE_FAILURES,
+  composeGuidance, guidanceRules, otherwise, FAILURE_CATEGORIES, GUIDANCE_BADGE, GUIDANCE_MEANING, AGENT_QUESTION_SET_VERSION, SAMPLE_FAILURES,
   type FailureGuidance, type GuidanceThresholds,
 } from "lib/failure-classification";
 
@@ -16,8 +16,8 @@ const fixed = (value: number) => value.toFixed(2);
 
 const steps = [
   { who: "NimBus", title: "Collect evidence", text: "Exception, retries, history and the redacted payload." },
-  { who: "Jev", title: `Question set v${QUESTION_SET_VERSION}`, text: "One category choice and three likelihoods, one request." },
-  { who: "Jev", title: "Answers", text: "A category, eight probabilities, three likelihoods." },
+  { who: "NimBus", title: `Question set v${AGENT_QUESTION_SET_VERSION}`, text: "Defines the category, fault origin and three likelihood questions." },
+  { who: "Agent", title: "Answers", text: "Classifies the failure and records its answers over MCP." },
   { who: "NimBus", title: "Validate", text: "Unknown categories or bad distributions are rejected." },
   { who: "NimBus", title: "Guidance rules", text: "Fixed rules using the thresholds below." },
 ];
@@ -34,12 +34,13 @@ export default function FailureClassificationExplainer({ thresholds, onChange }:
   const [sampleIndex, setSampleIndex] = useState(0);
   const sample = SAMPLE_FAILURES[sampleIndex];
   const { rule: matched, guidance } = composeGuidance(sample, thresholds);
-  const rules: [string, FailureGuidance][] = [
-    [`Category confidence ${fixed(sample.categoryConfidence)} < minimum ${fixed(thresholds.minimumCategoryConfidence)}`, "Uncertain"],
-    [`Category is transient_dependency and retry ${fixed(sample.retryLikelihood)} ≥ ${fixed(thresholds.retryLikely)}`, "RetryMayHelp"],
-    [`Change required ${fixed(sample.changeRequiredLikelihood)} ≥ ${fixed(thresholds.changeRequired)}`, "ChangeLikelyRequired"],
-    ["Otherwise", "Investigate"],
-  ];
+  const signalLabels = { categoryConfidence: "Category confidence", retryLikelihood: "retry", changeRequiredLikelihood: "Change required" };
+  const rules = guidanceRules.map((row): [string, FailureGuidance] => {
+    const category = row.category ? `Category is ${row.category} and ` : "";
+    const comparison = row.comparison === "lt" ? "<" : "≥";
+    return [`${category}${signalLabels[row.field]} ${fixed(sample[row.field])} ${comparison} ${fixed(thresholds[row.threshold])}`, row.guidance];
+  });
+  rules.push(["Otherwise", otherwise]);
   const likelihoods = [
     { label: "Retry unchanged", value: sample.retryLikelihood, threshold: thresholds.retryLikely, question: "Likely to succeed if processed again without any change?" },
     { label: "Change required", value: sample.changeRequiredLikelihood, threshold: thresholds.changeRequired, question: "Must data, configuration, permissions or code change first?" },
@@ -47,11 +48,11 @@ export default function FailureClassificationExplainer({ thresholds, onChange }:
   ];
 
   return <Card><CardHeader><CardTitle>04 · How failures are classified</CardTitle>
-    <p className="text-xs text-muted-foreground">Jev answers a fixed question set. NimBus turns the answers into guidance with the rules below. Nothing is retried, skipped or resubmitted automatically.</p>
+    <p className="text-xs text-muted-foreground">The agent answers the NimBus question set. Try a sample to see how NimBus turns those answers into guidance using your draft thresholds.</p>
   </CardHeader><CardContent className="space-y-6">
     <ol aria-label="Classification steps" className="grid gap-2 sm:grid-cols-5">
-      {steps.map(step => <li key={step.title} className={cn("rounded-md border bg-background p-3", step.who === "Jev" && "border-dashed border-status-info")}>
-        <p className={cn("text-[10px] font-semibold uppercase tracking-wider", step.who === "Jev" ? "text-status-info" : "text-primary")}>{step.who}</p>
+      {steps.map(step => <li key={step.title} className={cn("rounded-md border bg-background p-3", step.who === "Agent" && "border-dashed border-status-info")}>
+        <p className={cn("text-[10px] font-semibold uppercase tracking-wider", step.who === "Agent" ? "text-status-info" : "text-primary")}>{step.who}</p>
         <p className="text-sm font-semibold">{step.title}</p><p className="text-xs text-muted-foreground">{step.text}</p>
       </li>)}
     </ol>
@@ -107,7 +108,7 @@ export default function FailureClassificationExplainer({ thresholds, onChange }:
       <p role="status" aria-label="Sample guidance" className="text-sm"><Badge variant={GUIDANCE_BADGE[guidance]}>{guidance}</Badge> <span className="font-mono text-xs">{sample.category}</span> — {GUIDANCE_MEANING[guidance]}</p>
     </section>
 
-    <details><summary className="cursor-pointer text-sm font-semibold">Failure categories · question set v{QUESTION_SET_VERSION}</summary>
+    <details><summary className="cursor-pointer text-sm font-semibold">Failure categories · question set v{AGENT_QUESTION_SET_VERSION}</summary>
       <div className="mt-3 overflow-x-auto"><table className="w-full text-left text-xs">
         <thead><tr className="border-b text-muted-foreground"><th className="p-2">Category</th><th className="p-2">Meaning</th><th className="p-2">Typical evidence</th></tr></thead>
         <tbody>{FAILURE_CATEGORIES.map(category => <tr key={category.id} className={cn("border-b align-top", category.id === sample.category && "bg-primary/10")}>

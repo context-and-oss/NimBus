@@ -44,6 +44,22 @@ public sealed class RecorderTests
     }
 
     [TestMethod]
+    public async Task Evidence_and_recording_share_the_configured_retry_threshold()
+    {
+        var fixture = new RecorderFixture();
+        fixture.Options.RetryLikely = 0.95;
+        var evidence = await fixture.Recorder.GetEvidenceAsync("endpoint", "event", "failure", default);
+        var request = Answers() with { Category = "transient_dependency", RetryLikelihood = 0.94, ChangeRequiredLikelihood = 0.1 };
+
+        var (stored, _) = await fixture.Recorder.RecordAsync(request, default);
+
+        var rules = evidence.GuidanceRules!;
+        Assert.AreEqual(FailureGuidance.Investigate, stored.Guidance);
+        Assert.AreEqual(stored.Guidance, rules.Compose(request.Category, request.CategoryConfidence, request.RetryLikelihood, request.ChangeRequiredLikelihood));
+        Assert.AreEqual(FailureGuidance.RetryMayHelp, rules.Compose(request.Category, request.CategoryConfidence, 0.95, 0.99));
+    }
+
+    [TestMethod]
     public async Task A_Missing_Model_Is_Stored_As_Unspecified()
     {
         var fixture = new RecorderFixture();

@@ -177,7 +177,11 @@ It returns:
 - the redacted payload, when the Owner's payload setting is on;
 - the current question set: its version and each question with its instructions and criteria;
 - the `messageId` it resolved, which the record tool requires;
-- a summary of the latest saved classification, if there is one.
+- a summary of the latest saved classification, if there is one;
+- `guidanceRules`, the effective rule snapshot for previewing guidance. Version 1 evaluates
+  `rules` in order. Each row compares the named numeric answer to its threshold using `lt`
+  or `gte` and optionally requires an exact category. The first match supplies `guidance`;
+  otherwise the result is `otherwise`. Recording always uses the server's current rules.
 
 Rules:
 

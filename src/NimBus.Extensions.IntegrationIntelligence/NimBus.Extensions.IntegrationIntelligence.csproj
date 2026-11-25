@@ -31,6 +31,7 @@
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="/" />
+    <EmbeddedResource Include="guidance-rules.json" LogicalName="NimBus.FailureGuidanceRules" />
     <EmbeddedResource Include="Schema\*.sql" />
   </ItemGroup>
 </Project>
