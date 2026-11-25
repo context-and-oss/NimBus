@@ -60,8 +60,13 @@ resource messagesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/c
         includedPaths: [
           { path: '/*' }
         ]
+        // Paths are case-sensitive and must match the stored (PascalCase) properties.
+        // Payloads and stack traces are excluded; ErrorText stays indexed for the
+        // error-text filters of the alert reads. Changing this policy on an existing
+        // container starts an online reindex.
         excludedPaths: [
-          { path: '/message/messageContent/*' }
+          { path: '/message/MessageContent/EventContent/EventJson/?' }
+          { path: '/message/MessageContent/ErrorContent/ExceptionStackTrace/?' }
           { path: '/"_etag"/?' }
         ]
       }
