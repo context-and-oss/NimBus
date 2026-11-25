@@ -1,8 +1,10 @@
 #pragma warning disable CA1707, CA2007
 using System.Threading.Tasks;
 using System;
+using System.Linq;
 using Microsoft.Data.SqlClient;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.Messages;
 using NimBus.MessageStore.Abstractions;
 using NimBus.Testing.Conformance;
 
@@ -70,5 +72,62 @@ public sealed class SqlServerMessageTrackingStoreTests : MessageTrackingStoreCon
         }
 
         Assert.AreNotEqual(0, offGrid, "UpdatedAtUtc was rounded to SQL datetime precision.");
+    }
+
+    [TestMethod]
+    public async Task Whole_endpoint_purges_work_through_more_than_one_batch()
+    {
+        // Delete all events purges in batches so it finishes on a small database; an endpoint
+        // with more rows than one batch must still be purged completely, and only that endpoint.
+        var store = CreateStore();
+        var rowCount = (SqlServerMessageTrackingStore.PurgeBatchSize * 2) + 1;
+        var t = DateTime.UtcNow;
+        for (var start = 0; start < rowCount; start += 50)
+        {
+            await Task.WhenAll(Enumerable.Range(start, Math.Min(50, rowCount - start)).Select(async i =>
+            {
+                var eventId = $"batch-event-{i}";
+                await store.UploadFailedMessage(eventId, $"session-{i}", "ep-batch", new UnresolvedEvent
+                {
+                    EventId = eventId, SessionId = $"session-{i}", EndpointId = "ep-batch", EnqueuedTimeUtc = t,
+                });
+                await store.StoreMessage(new MessageEntity
+                {
+                    EventId = eventId, MessageId = $"batch-message-{i}", EndpointId = "ep-batch",
+                    EnqueuedTimeUtc = t, MessageContent = new MessageContent(),
+                });
+            }));
+        }
+
+        await store.UploadFailedMessage("kept-event", "kept-session", "ep-kept", new UnresolvedEvent
+        {
+            EventId = "kept-event", SessionId = "kept-session", EndpointId = "ep-kept", EnqueuedTimeUtc = t,
+        });
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = "kept-event", MessageId = "kept-message", EndpointId = "ep-kept",
+            EnqueuedTimeUtc = t, MessageContent = new MessageContent(),
+        });
+
+        Assert.IsTrue(await store.PurgeMessages("ep-batch"));
+        Assert.AreEqual(rowCount, await store.PurgeStoredMessages("ep-batch"));
+
+        Assert.AreEqual(0, await CountAsync("UnresolvedEvents", "ep-batch", "AND Deleted = 0"));
+        Assert.AreEqual(0, await CountAsync("Messages", "ep-batch"));
+        Assert.AreEqual(1, await CountAsync("UnresolvedEvents", "ep-kept", "AND Deleted = 0"));
+        Assert.AreEqual(1, await CountAsync("Messages", "ep-kept"));
+        Assert.IsFalse(await store.PurgeMessages("ep-batch"), "A second purge has nothing left to mark deleted.");
+        Assert.AreEqual(0, await store.PurgeStoredMessages("ep-batch"));
+    }
+
+    private static async Task<int> CountAsync(string table, string endpointId, string extraFilter = "")
+    {
+        await using var connection = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
+        await connection.OpenAsync();
+        var schema = SqlServerStoreTestHarness.GetSchema(typeof(SqlServerMessageTrackingStoreTests));
+        await using var command = new SqlCommand(
+            $"SELECT COUNT(*) FROM [{schema}].[{table}] WHERE EndpointId = @EndpointId {extraFilter}", connection);
+        command.Parameters.AddWithValue("@EndpointId", endpointId);
+        return (int)(await command.ExecuteScalarAsync())!;
     }
 }
