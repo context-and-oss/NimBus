@@ -188,7 +188,10 @@ Aspire-specific:
 
 - `builder.AddAzureServiceBus(...)` → Service Bus reference.
 - `builder.AddAzureCosmosDB(...)` → Cosmos reference.
-- `builder.AddProject<Projects.Crm_Adapter>("crm-adapter")` → deployable unit.
+- `builder.AddDotnetProject("crm-adapter", "../Crm.Adapter/Crm.Adapter.csproj")` (Aspire 17), or
+  `builder.AddProject<Projects.Crm_Adapter>("crm-adapter")` before it → deployable unit.
+- `builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions>("erp-adapter")` → deployable
+  unit hosted in Azure Functions.
 - `.WithReference(serviceBus)` → role binding.
 
 ## Authentication

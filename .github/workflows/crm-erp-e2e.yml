@@ -90,7 +90,26 @@ jobs:
 
       - name: Build demo
         timeout-minutes: 15
-        run: dotnet build "$E2E_APPHOST" --configuration Debug --maxcpucount:2
+        run: |
+          dotnet build "$E2E_APPHOST" --configuration Debug --maxcpucount:2
+          # The AppHost adds these projects by path (AddDotnetProject) and has no project
+          # reference to them, so building the AppHost does not build them. Build them here
+          # so the start step only starts things.
+          demo="${{ github.workspace }}/samples/CrmErpDemo"
+          src="${{ github.workspace }}/src"
+          for project in \
+            "$demo/CrmErpDemo.Provisioner/CrmErpDemo.Provisioner.csproj" \
+            "$demo/Crm.Api/Crm.Api.csproj" \
+            "$demo/Crm.Adapter/Crm.Adapter.csproj" \
+            "$demo/Erp.Api/Erp.Api.csproj" \
+            "$demo/PartnerPortal/PartnerPortal.csproj" \
+            "$demo/CrmErpDemo.AgentZone/CrmErpDemo.AgentZone.csproj" \
+            "$demo/EnrichmentAgent/EnrichmentAgent.csproj" \
+            "$demo/RegionalHub/RegionalHub.csproj" \
+            "$src/NimBus.WebApp/NimBus.WebApp.csproj" \
+            "$src/NimBus.ServiceBusEmulator/NimBus.ServiceBusEmulator.csproj"; do
+            dotnet build "$project" --configuration Debug --maxcpucount:2
+          done
 
       - name: Start isolated demo
         id: start

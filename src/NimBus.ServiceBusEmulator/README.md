@@ -27,9 +27,13 @@ var servicebus = builder.AddNimBusServiceBusEmulatorProject(
 builder.AddDotnetProject("provisioner", "../../samples/AspirePubSub/AspirePubSub.Provisioner/AspirePubSub.Provisioner.csproj")
     .WithReference(servicebus.ConnectionString)
     .WaitFor(servicebus.Project);
+```
 
-// Without the sources, from the Akaule.NimBus.ServiceBusEmulator tool package:
-var packaged = builder.AddNimBusServiceBusEmulator("servicebus");
+An AppHost without the sources runs the emulator from the `Akaule.NimBus.ServiceBusEmulator`
+tool package instead:
+
+```csharp
+var servicebus = builder.AddNimBusServiceBusEmulator("servicebus");
 ```
 
 `AddNimBusServiceBusEmulator<TProject>(name)` and `AddNimBusServiceBusEmulator(name, projectPath)`
