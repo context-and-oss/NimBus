@@ -380,8 +380,23 @@ var erpAdapter = builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions
     .WithEnvironment("TopicName", "ErpEndpoint")
     .WithEnvironment("SubscriptionName", "ErpEndpoint")
     .WaitFor(erpApi)
-    .WaitForCompletion(provisioner);
+    .WaitForCompletion(provisioner)
+    // Operations agents connect to the adapter's read-only MCP server at /api/mcp directly.
+    .WithExternalHttpEndpoints();
 WithFunctionsServiceBus(erpAdapter);
+
+// The adapter MCP server (Spec 051 §7, docs/adapter-mcp.md) accepts tokens for the deployment's
+// Entra adapter registration. Given only when the deploy supplies its tenant and client id
+// (adapter-tenant-id, adapter-audience); without them the adapter serves no MCP server, so a local
+// run needs neither. adapter-app-id-uri is needed only when the App ID URI is not api://<client id>.
+if (HasParameter("adapter-tenant-id") && HasParameter("adapter-audience"))
+{
+    erpAdapter
+        .WithEnvironment("AdapterMcp__TenantId", builder.AddParameter("adapter-tenant-id"))
+        .WithEnvironment("AdapterMcp__Audience", builder.AddParameter("adapter-audience"));
+    if (HasParameter("adapter-app-id-uri"))
+        erpAdapter.WithEnvironment("AdapterMcp__ApplicationIdUri", builder.AddParameter("adapter-app-id-uri"));
+}
 
 var erpWeb = builder.AddViteApp("erp-web", "../Erp.Web")
     .WithReference(erpApi)
@@ -564,12 +579,15 @@ void WithFunctionsServiceBus<T>(IResourceBuilder<T> resource) where T : IResourc
 // dashes as underscores) only when the deploy process supplies a value.
 void WithOptionalSecret<T>(IResourceBuilder<T> resource, string parameterName, string variable) where T : IResourceWithEnvironment
 {
-    // An environment variable can't carry the dashes, so look for both spellings, as Aspire does.
-    var supplied = builder.Configuration[$"Parameters:{parameterName}"]
-        ?? builder.Configuration[$"Parameters:{parameterName.Replace('-', '_')}"];
-    if (!string.IsNullOrEmpty(supplied))
+    if (HasParameter(parameterName))
         resource.WithEnvironment(variable, builder.AddParameter(parameterName, secret: true));
 }
+
+// Whether the deploy process supplies a value for an optional parameter. An environment variable
+// can't carry the dashes, so look for both spellings, as Aspire does.
+bool HasParameter(string parameterName) =>
+    !string.IsNullOrEmpty(builder.Configuration[$"Parameters:{parameterName}"]
+        ?? builder.Configuration[$"Parameters:{parameterName.Replace('-', '_')}"]);
 
 static void PinToOneReplica(Azure.Provisioning.AppContainers.ContainerApp app)
 {

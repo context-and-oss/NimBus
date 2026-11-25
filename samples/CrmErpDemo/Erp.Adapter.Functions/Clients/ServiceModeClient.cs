@@ -18,6 +18,25 @@ public sealed class ServiceModeClient(HttpClient http, ILogger<ServiceModeClient
         return mode is null ? ErrorModeSnapshot.Disabled : new ErrorModeSnapshot(mode.Enabled, mode.Reason, mode.FailureRate ?? 1.0);
     }
 
+    public async Task<ErpModeProbe> ProbeAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var mode = await http.GetFromJsonAsync<ModeResponse>("/api/admin/service-mode", cancellationToken);
+            return new ErpModeProbe(Reachable: true, ServiceMode: mode?.Enabled ?? false, Problem: null);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is { } status)
+        {
+            return new ErpModeProbe(Reachable: false, ServiceMode: false, Problem: $"erp-api answered {(int)status}");
+        }
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+            && !cancellationToken.IsCancellationRequested)
+        {
+            // The kind only: the message can name hosts and ports.
+            return new ErpModeProbe(Reachable: false, ServiceMode: false, Problem: $"erp-api did not answer ({ex.GetType().Name})");
+        }
+    }
+
     private async Task<ModeResponse?> ReadAsync(string path, string modeName, CancellationToken cancellationToken)
     {
         try

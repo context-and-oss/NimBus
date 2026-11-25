@@ -10,6 +10,9 @@ public interface IErpApiClient
     /// <summary>Looks up the ERP customer linked to a CRM account; null when none exists.</summary>
     Task<ErpCustomerStatusResponse?> GetCustomerByCrmAccountIdAsync(Guid crmAccountId, CancellationToken ct);
 
+    /// <summary>The whole ERP customer linked to a CRM account, for the adapter MCP server; null when none exists.</summary>
+    Task<ErpCustomerRecord?> GetCustomerByCrmIdAsync(Guid crmAccountId, CancellationToken ct);
+
     /// <summary>Places the ERP customer linked to a CRM account on credit hold; false when no customer exists.</summary>
     Task<bool> PlaceCreditHoldByCrmIdAsync(Guid crmAccountId, string? reason, CancellationToken ct);
 }
