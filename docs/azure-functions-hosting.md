@@ -1,6 +1,6 @@
 # Hosting Subscribers with Azure Functions
 
-This guide explains how to host NimBus subscribers as Azure Functions using the .NET isolated worker model with Service Bus session triggers. This is the recommended production hosting model.
+This guide explains how to host NimBus subscribers as Azure Functions using the .NET isolated worker model with Service Bus session triggers. For a long-running Worker in a container, which is what the adapter kit generates and the only host whose circuit breaker can pause receiving, see [Worker hosting](worker-hosting.md).
 
 ## Why Azure Functions?
 
@@ -269,15 +269,15 @@ For production, **separate Function App projects per endpoint** is recommended f
 
 ## Worker Service vs Azure Functions
 
-| Aspect | Azure Functions | Worker Service (Aspire sample) |
+| Aspect | Azure Functions | Worker ([Container Apps](worker-hosting.md)) |
 |---|---|---|
-| **Hosting** | Serverless / App Service Plan | Self-hosted / Container |
-| **Scaling** | Auto-scale by session count | Manual / Kubernetes HPA |
+| **Hosting** | Serverless / App Service Plan | Container (Azure Container Apps, Kubernetes) |
+| **Scaling** | Auto-scale by session count | Replica count, or a KEDA rule on the subscription backlog |
 | **Session support** | Native via `IsSessionsEnabled` | Via `AddNimBusReceiver()` |
-| **Cost** | Pay-per-execution (Consumption) | Always-on |
-| **DeferredProcessor** | Separate function (sessions=OFF) | Background `DeferredProcessorService` |
+| **Cost** | Pay-per-execution (Consumption) | At least one replica always on |
+| **DeferredProcessor** | Separate function (sessions=OFF) | `AddNimBusDeferredProcessorHostedService` |
 | **Circuit breaker** | Records failures, metrics and notifications, but cannot pause the trigger ([limitation](circuit-breaker.md#azure-functions-limitation)) | Pauses the receiver while the circuit is open |
-| **Best for** | Production workloads | Local development, Aspire |
+| **Best for** | Bursty workloads with no always-on process | Adapters that need the circuit breaker or in-process background services (outbox dispatcher, polling) |
 
 Both models use the same `ISubscriberClient` and `IEventHandler<T>` — the handler code is identical regardless of hosting model.
 

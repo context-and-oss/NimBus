@@ -28,6 +28,7 @@ skip blocked work.
 
 - [Building adapters](building-adapters.md) is the main guide for publishers, handlers and hosting.
 - [Azure Functions hosting](azure-functions-hosting.md) covers subscribers on Azure Functions.
+- [Worker hosting](worker-hosting.md) covers adapters as a Worker in Azure Container Apps.
 - [Pipeline middleware](pipeline-middleware.md) covers cross-cutting behaviors around handlers.
 - [Testing](testing.md) covers the in-memory transport and the test fixture.
 - [Extensions](extensions.md), [Notification channels](notifications.md) and

@@ -47,7 +47,8 @@ Architecture context for Resolver, WebApp, message state, and sessions lives in
 | Azure Functions isolated worker | Serverless scaling, bursty workloads, session-trigger based consumption, no always-on process | [`samples/CrmErpDemo/Erp.Adapter.Functions/Program.cs`](../samples/CrmErpDemo/Erp.Adapter.Functions/Program.cs) |
 
 Functions-specific setup is covered in
-[azure-functions-hosting.md](azure-functions-hosting.md).
+[azure-functions-hosting.md](azure-functions-hosting.md), and running the Worker in
+Azure Container Apps in [worker-hosting.md](worker-hosting.md).
 
 ### Do you need an outbox?
 
@@ -1107,6 +1108,8 @@ Functions-hosted Resolver and the WebApp from `Akaule.NimBus.Deploy`. See
   durable state, timeouts, and compensation.
 - [azure-functions-hosting.md](azure-functions-hosting.md) - isolated worker
   setup, `host.json`, triggers, and deferred processor function.
+- [worker-hosting.md](worker-hosting.md) - the Worker in Azure Container Apps:
+  identity, scaling, replicas, and shutdown.
 - [pipeline-middleware.md](pipeline-middleware.md) - custom middleware and
   lifecycle observers.
 - [error-handling.md](error-handling.md) - retry, dead-letter, and failure
