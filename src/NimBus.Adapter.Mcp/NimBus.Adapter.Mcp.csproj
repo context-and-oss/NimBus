@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <Description>A read-only MCP server an adapter host adds next to its handlers (Spec 051 §7): the record a message is about, the adapter's mapping, its last call to the system and its health, behind an Entra resource and role. Runs in ASP.NET Core and in an Azure Functions HttpTrigger.</Description>
+    <PackageTags>azure;servicebus;messaging;nimbus;adapter;mcp</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.3.1" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.23.0" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- [Sensitive], MaskMode and EventJsonMasker: masking follows NimBus exactly. -->
+    <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NimBus.Adapter.Mcp.Tests" />
+  </ItemGroup>
+
+</Project>

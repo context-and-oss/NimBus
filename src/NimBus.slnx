@@ -109,6 +109,7 @@
   <Project Path="../samples/CrmErpDemo/EnrichmentAgent/EnrichmentAgent.csproj" />
   <Project Path="../samples/CrmErpDemo/RegionalHub/RegionalHub.csproj" />
   <Project Path="../tests/EnrichmentAgent.Tests/EnrichmentAgent.Tests.csproj" />
+  <Project Path="../tests/NimBus.Adapter.Mcp.Tests/NimBus.Adapter.Mcp.Tests.csproj" />
   <Project Path="../tests/NimBus.Agents.Tests/NimBus.Agents.Tests.csproj" />
   <Project Path="../tests/NimBus.AspireHosting.Tests/NimBus.AspireHosting.Tests.csproj" />
   <Project Path="../tests/NimBus.Extensions.Http.Tests/NimBus.Extensions.Http.Tests.csproj" />
@@ -120,6 +121,7 @@
   <Project Path="../tests/NimBus.Outbox.SqlServer.Tests/NimBus.Outbox.SqlServer.Tests.csproj" />
   <Project Path="../tests/NimBus.ServiceBusEmulator.Tests/NimBus.ServiceBusEmulator.Tests.csproj" />
   <Project Path="../tests/NimBus.WebApp.Tests/NimBus.WebApp.Tests.csproj" />
+  <Project Path="NimBus.Adapter.Mcp/NimBus.Adapter.Mcp.csproj" />
   <Project Path="NimBus.Agents/NimBus.Agents.csproj" />
   <Project Path="NimBus.AspireHosting/NimBus.AspireHosting.csproj" />
   <Project Path="NimBus.Extensions.Http/NimBus.Extensions.Http.csproj" />
