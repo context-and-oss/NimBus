@@ -31,6 +31,25 @@ public sealed class SqlServerMessageStoreOptions
     public int CommandTimeoutSeconds { get; set; } = 30;
 
     /// <summary>
+    /// Configuration key the schema-upgrade timeout binds from (environment form:
+    /// <c>NimBus__SqlServer__SchemaUpgradeTimeoutSeconds</c>). A delegate passed to
+    /// <c>AddSqlServerMessageStore(configure)</c> runs after binding and overrides it.
+    /// </summary>
+    public const string SchemaUpgradeTimeoutKey = "NimBus:SqlServer:SchemaUpgradeTimeoutSeconds";
+
+    /// <summary>The default of <see cref="SchemaUpgradeTimeoutSeconds"/>: 30 minutes.</summary>
+    public const int DefaultSchemaUpgradeTimeoutSeconds = 1800;
+
+    /// <summary>
+    /// The longest one schema migration script may run at startup (<c>AutoApply</c>), in seconds.
+    /// Defaults to 30 minutes, so an index build on a large <c>Messages</c> table, or on a small
+    /// database tier, completes instead of failing at SqlClient's 30-second default. <c>0</c> sets
+    /// no limit. It is also how long a second instance that starts during an upgrade waits for the
+    /// upgrade lock (at least a minute; without a limit when this is <c>0</c>).
+    /// </summary>
+    public int SchemaUpgradeTimeoutSeconds { get; set; } = DefaultSchemaUpgradeTimeoutSeconds;
+
+    /// <summary>
     /// Configuration key the retention interval binds from (environment form:
     /// <c>NimBus__SqlServer__RetentionInterval</c>). A delegate passed to
     /// <c>AddSqlServerMessageStore(configure)</c> runs after binding and overrides it.

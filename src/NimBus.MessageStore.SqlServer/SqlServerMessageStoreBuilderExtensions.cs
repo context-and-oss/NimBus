@@ -52,6 +52,10 @@ public static class SqlServerMessageStoreBuilderExtensions
                 var interval = configuration.GetValue<TimeSpan?>(SqlServerMessageStoreOptions.RetentionIntervalKey);
                 if (interval is not null)
                     options.RetentionInterval = interval.Value;
+
+                var upgradeTimeout = configuration.GetValue<int?>(SqlServerMessageStoreOptions.SchemaUpgradeTimeoutKey);
+                if (upgradeTimeout is not null)
+                    options.SchemaUpgradeTimeoutSeconds = upgradeTimeout.Value;
             })
             .Configure(configure)
             .Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString),
@@ -59,7 +63,9 @@ public static class SqlServerMessageStoreBuilderExtensions
             .Validate(o => !string.IsNullOrWhiteSpace(o.Schema),
                 "SqlServerMessageStoreOptions.Schema is required.")
             .Validate(o => o.RetentionInterval > TimeSpan.Zero && o.RetentionInterval <= SqlServerMessageStoreOptions.MaxRetentionInterval,
-                $"SqlServerMessageStoreOptions.RetentionInterval ('{SqlServerMessageStoreOptions.RetentionIntervalKey}') must be greater than zero and at most 49 days.");
+                $"SqlServerMessageStoreOptions.RetentionInterval ('{SqlServerMessageStoreOptions.RetentionIntervalKey}') must be greater than zero and at most 49 days.")
+            .Validate(o => o.SchemaUpgradeTimeoutSeconds >= 0,
+                $"SqlServerMessageStoreOptions.SchemaUpgradeTimeoutSeconds ('{SqlServerMessageStoreOptions.SchemaUpgradeTimeoutKey}') must be zero (no limit) or a number of seconds.");
 
         services.TryAddSingleton<SqlServerSchemaReadiness>();
 
