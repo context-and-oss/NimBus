@@ -14,6 +14,7 @@
     <PackageReference Include="Aspire.Hosting.Testing" Version="17.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.14" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="ModelContextProtocol" Version="2.3.1" />
     <PackageReference Include="MSTest.TestAdapter" Version="4.5.2" />
     <PackageReference Include="MSTest.TestFramework" Version="4.5.2" />
   </ItemGroup>
@@ -26,6 +27,7 @@
     <ProjectReference Include="..\..\samples\CrmErpDemo\Erp.Api\Erp.Api.csproj" Aliases="ErpApi" />
     <ProjectReference Include="..\..\samples\CrmErpDemo\Erp.Adapter.Functions\Erp.Adapter.Functions.csproj" Aliases="ErpAdapter" />
     <ProjectReference Include="..\..\src\NimBus.Extensions.Identity\NimBus.Extensions.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NimBus.Adapter.Mcp\NimBus.Adapter.Mcp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

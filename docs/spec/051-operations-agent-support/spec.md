@@ -1,8 +1,9 @@
 # Spec 051 — Platform support for operations agents
 
-Status: proposed, revision 5 (2026-11-16). Revised three times after reviews of an agent design that
-builds on this spec, and once when §2 was built; the changes are listed in §13. §2 (the wake-up
-webhook) is built. The other parts are not yet approved and not built.
+Status: revision 6 (2026-11-25). Revised three times after reviews of an agent design that builds on
+this spec, once when §2 was built and once when §5–7 were approved; the changes are listed in §13.
+§2 (the wake-up webhook) and §5–6 (record bindings and the adapter's MCP address) are built. §7 is
+approved. The other parts are not yet approved and not built.
 Baseline: master `7122b1bd`; the latest release is v4.17.0.
 Builds on [Spec 035](../035-mcp-operator-access/spec.md),
 [Spec 037](../037-mcp-admin-access/spec.md),
@@ -256,6 +257,9 @@ belongs with the adapter kit, not in the platform's core.
   record by key. A caller that should be limited has to limit itself, with the record bindings of
   §5, and an adapter author can leave an entity out of the server.
 - An adapter that serves no MCP server changes nothing for anyone.
+- The package is `src/NimBus.Adapter.Mcp` in this repository (`Akaule.NimBus.Adapter.Mcp`), and the
+  adapter kit references it; no core project does. Its guide is
+  [adapter-mcp](../../adapter-mcp.md).
 
 ## 8. Paging for reports
 
@@ -284,7 +288,7 @@ belongs with the adapter kit, not in the platform's core.
 | Approval requests | §3 | A new store member on every provider, a background task, `api-spec.yaml`, the MCP tools, the Approvals page, Settings, `docs/mcp-server.md`. The Web UI change comes with a screenshot |
 | Correction settings and record bindings | §4, §5 | `EndpointMetadata` on every provider, the endpoint's settings, `nimbus_get_failure_evidence`. Needed before approval requests are useful |
 | Adapter address | §6 | `EndpointMetadata` on every provider, the Ownership tab, `nimbus_get_endpoint` |
-| Adapter MCP kit | §7 | The adapter kit repository, a guide under `docs/` and the Entra set-up in `docs/mcp-server.md` |
+| Adapter MCP kit | §7 | `src/NimBus.Adapter.Mcp` in this repository, referenced by the adapter kit; the guide `docs/adapter-mcp.md` with the Entra set-up, linked from `docs/mcp-server.md` |
 | Paging for reports | §8 | The report store query on every provider, the two MCP tools, `docs/mcp-server.md` |
 | Report marker option | §9 | The report store write on every provider, the MCP tool |
 
@@ -363,6 +367,15 @@ belongs with the adapter kit, not in the platform's core.
 | Windows of 5 and 15 minutes (§2) | With hourly as the shortest window, a receiver that starts a run per request had to choose between one run per failure and a wake-up up to an hour late |
 | The Resolver connects to public addresses only and follows no redirect (§2, §11) | The URL is chosen by an endpoint Owner, and the Resolver may sit inside a private network |
 | §2 is built | Status |
+
+### 13.5 Revision 6
+
+| Change | Why |
+|---|---|
+| §5–7 approved; Q2 (an Owner enters the address) and Q4 (one Entra resource for all adapters) settled as the spec proposed | The ops agent's phase 3 reads adapters through them |
+| A binding's path is a plain dotted path (`$.a.b`), with no wildcards, indexes or filters (§5) | A caller takes exactly one key from the redacted payload; a query could name many records |
+| Bindings and the address are stored with the endpoint's metadata (SQL migration 0032) and edited on the Ownership tab with the other ownership fields (§5, §6) | One Owner-only, audited write, as for the code location of Spec 044 |
+| §5–6 are built | Status |
 
 ## 14. Out of scope
 

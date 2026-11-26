@@ -26,7 +26,7 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_list_endpoints` | Readable endpoints with the event types each produces and consumes | Endpoint Reader |
 | `nimbus_get_overview` | Counts by status, oldest failure and Monitor acknowledgements across readable endpoints | Endpoint Reader |
 | `nimbus_get_worklist` | "What needs me?": open failed and dead-lettered messages grouped by endpoint, event type and error pattern, each with the newest open message, the sessions it blocks, its saved classification, a shared ticket and [options](#options-in-results); and the [alert rules](notifications.md#alert-rules-alerts-tab) firing on the same endpoints, with their condition in words | Endpoint Reader |
-| `nimbus_get_endpoint` | The same for one endpoint, with its ownership: owner, team, contacts, source system, adapter repository and ticket link | Endpoint Reader |
+| `nimbus_get_endpoint` | The same for one endpoint, with its ownership: owner, team, contacts, source system, adapter repository, ticket link and the adapter's MCP address | Endpoint Reader |
 | `nimbus_find_messages` | Tracked messages on one endpoint, filtered by status, event type, session, event id and time. With `includeClassification`, whether each failed message's latest attempt is classified, and how | Endpoint Reader |
 | `nimbus_get_message` | Status, latest attempt, latest error, Web UI link, `messageVersion` and the `eligibleActions` you may take; the payload only with `includePayload=true` | Endpoint Reader; payloads also need PiiReader (and, with Entra, the `nimbus.payload.read` scope) |
 | `nimbus_get_message_history` | Processing attempts and log entries of one message | Endpoint Reader |
@@ -34,7 +34,7 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_search_messages` | Processing messages across all endpoints | Site Reader |
 | `nimbus_get_metrics` | Throughput, latency or failure groups for 1h to 30d | Site Reader |
 | `nimbus_get_classification` | The stored classification of a failed attempt, with who recorded it, advisory only. A rationale is untrusted | Endpoint Reader; classification enabled |
-| `nimbus_get_failure_evidence` | The scrubbed evidence of one failed attempt, its sending endpoint, a redacted payload when allowed, and the question set to answer | Endpoint Reader; classification recordable |
+| `nimbus_get_failure_evidence` | The scrubbed evidence of one failed attempt, its sending endpoint, a redacted payload when allowed, the question set to answer and the event type's record bindings | Endpoint Reader; classification recordable |
 | `nimbus_prepare_action` | A read-only preview of one recovery action on one message (`resubmit`, `skip`, `settle_handoff`, `reprocess_deferred`, `skip_deferred_tracking` or `resubmit_with_changes`), or of resubmitting the failed messages reported under one `ticketId` (at most 50), and an `actionToken` to run it | The action's scope and endpoint Contributor |
 | `nimbus_resubmit_message` | Runs a prepared resubmit: replays the latest stored payload to the endpoint. Returns an `operationId` | `nimbus.resubmit` (workloads: the `Nimbus.Workload.Resubmit` app role, within a budget) and endpoint Contributor |
 | `nimbus_skip_message` | Runs a prepared skip: the message is never processed, and later messages in its session may be released. Returns an `operationId` | Delegated `nimbus.skip` and endpoint Contributor; never a workload |
@@ -254,6 +254,17 @@ filed and resubmit them after the fix:
   tracker's link template (`{ticketId}`) on the endpoint's **Ownership** tab. `nimbus_get_endpoint`
   returns them. Agents file adapter defects only in that repository, never in the NimBus
   repository; without one they hand adapter faults to a person.
+- **Adapter reads** ([Spec 051](spec/051-operations-agent-support/spec.md) §5, §6). On the same tab
+  the Owner records the address of the adapter's read-only MCP server (https, no credentials or
+  query string) and the **record bindings**: for an event type, the payload path whose value is
+  the key of an entity in this endpoint's adapter, such as `CrmAccountCreated`, `$.AccountId`,
+  `customer`. A path is a plain dotted path, without wildcards, indexes or filters. Both are
+  audited with the endpoint's metadata. `nimbus_get_endpoint` returns the address as
+  `ownership.adapterMcpUrl`, and `nimbus_get_failure_evidence` returns the bindings of the
+  evidence's event type as `recordBindings`, paths and entity names only. NimBus forwards no call
+  to the adapter and holds no credential for it: an agent connects directly, with a token for the
+  adapters' own Entra resource, and reads only the records a binding names. A binding does not
+  vouch for the message: a sender that puts another record's key at the path names that record.
 - **Reuse a ticket.** `nimbus_find_reports` lists an endpoint's reported messages with their ticket
   and normalized error pattern, so a repeated pattern goes on the existing ticket.
 - **Mark a batch.** `nimbus_set_message_reported` with `eventIds` marks up to 50 messages under one
@@ -543,6 +554,10 @@ In the tenant that signs in your operators:
 The endpoint accepts v2.0 tokens (issuer `https://login.microsoftonline.com/<tenant>/v2.0`,
 audience the client id) and v1.0 tokens (issuer `https://sts.windows.net/<tenant>/`, audience the
 Application ID URI).
+
+Adapters' own MCP servers use a separate registration with an `Adapter.Read` app role: a token
+for this resource is not accepted by an adapter, nor the other way round. See
+[Adapter MCP server](adapter-mcp.md#sign-in).
 
 ### 2. Configure the WebApp
 

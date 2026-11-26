@@ -64,6 +64,43 @@ public abstract class EndpointMetadataStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task Adapter_address_and_record_bindings_round_trip()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-adapter");
+        var metadata = SampleMetadata(endpointId);
+        metadata.AdapterMcpUrl = "https://erp-adapter.example.com/api/mcp";
+        metadata.RecordBindings = new List<RecordBinding>
+        {
+            new() { EventTypeId = "CrmAccountCreated", PayloadPath = "$.AccountId", Entity = "customer" },
+            new() { EventTypeId = "CrmContactCreated", PayloadPath = "$.Contact.Id", Entity = "contact" },
+        };
+
+        await store.SetEndpointMetadata(metadata);
+        var fetched = await store.GetEndpointMetadata(endpointId);
+
+        Assert.AreEqual("https://erp-adapter.example.com/api/mcp", fetched!.AdapterMcpUrl);
+        Assert.AreEqual(2, fetched.RecordBindings!.Count);
+        var account = fetched.RecordBindings.Single(b => b.EventTypeId == "CrmAccountCreated");
+        Assert.AreEqual("$.AccountId", account.PayloadPath);
+        Assert.AreEqual("customer", account.Entity);
+        Assert.AreEqual("$.Contact.Id", fetched.RecordBindings.Single(b => b.EventTypeId == "CrmContactCreated").PayloadPath);
+    }
+
+    [TestMethod]
+    public async Task Adapter_address_and_record_bindings_round_trip_as_empty()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-no-adapter");
+
+        await store.SetEndpointMetadata(SampleMetadata(endpointId));
+        var fetched = await store.GetEndpointMetadata(endpointId);
+
+        Assert.IsNull(fetched!.AdapterMcpUrl);
+        Assert.AreEqual(0, fetched.RecordBindings?.Count ?? 0);
+    }
+
+    [TestMethod]
     public async Task GetMetadatas_filters_by_endpoint_ids()
     {
         var store = CreateStore();

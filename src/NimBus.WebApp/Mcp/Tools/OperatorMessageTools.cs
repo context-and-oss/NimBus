@@ -133,7 +133,8 @@ public sealed partial class OperatorMessageTools
             (metadata.TechnicalContacts ?? []).Select(c => new TechnicalContactInfo(c.Name, c.Email)).ToList(),
             metadata.SourceSystem,
             metadata.RepositoryUrl,
-            metadata.TicketLinkTemplate);
+            metadata.TicketLinkTemplate,
+            metadata.AdapterMcpUrl);
     }
 
     /// <summary>Tracked messages on one endpoint.</summary>
@@ -509,9 +510,10 @@ public sealed record EndpointHealthResult(string? Environment, DateTimeOffset As
 /// <param name="SourceSystem">The business system the adapter integrates.</param>
 /// <param name="RepositoryUrl">The adapter's repository: file adapter defects here, never in the NimBus repository.</param>
 /// <param name="TicketLinkTemplate">The issue tracker's link, with {ticketId} where the ticket id goes.</param>
+/// <param name="AdapterMcpUrl">The read-only MCP server the endpoint's adapter serves (Spec 051 §6). Connect to it directly, with a token for the adapter resource, never a NimBus token.</param>
 public sealed record EndpointOwnership(
     string? Owner, string? Team, string? Email, IReadOnlyList<TechnicalContactInfo> TechnicalContacts,
-    string? SourceSystem, string? RepositoryUrl, string? TicketLinkTemplate);
+    string? SourceSystem, string? RepositoryUrl, string? TicketLinkTemplate, string? AdapterMcpUrl = null);
 
 /// <summary>A technical contact.</summary>
 /// <param name="Name">Name.</param>

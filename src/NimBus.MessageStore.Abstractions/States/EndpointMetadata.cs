@@ -48,4 +48,14 @@ public class EndpointMetadata
     /// (Spec 044 Phase 3, §14 Q4). Owner-edited.
     /// </summary>
     public string? TicketLinkTemplate { get; set; }
+
+    /// <summary>
+    /// The https address of the read-only MCP server the endpoint's adapter serves (Spec 051 §6).
+    /// NimBus stores and shows it, and forwards nothing to it: a caller connects directly and the
+    /// adapter decides what it may read. Owner-edited.
+    /// </summary>
+    public string? AdapterMcpUrl { get; set; }
+
+    /// <summary>The record bindings per event type (Spec 051 §5). Owner-edited.</summary>
+    public List<RecordBinding>? RecordBindings { get; set; }
 }

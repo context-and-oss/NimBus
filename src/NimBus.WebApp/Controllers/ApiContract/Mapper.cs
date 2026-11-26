@@ -10,6 +10,7 @@ using NimBus.MessageStore.States;
 using System.Collections;
 using System.Collections.Generic;
 using TechnicalContact = NimBus.WebApp.ManagementApi.TechnicalContact;
+using RecordBinding = NimBus.WebApp.ManagementApi.RecordBinding;
 using ResolutionStatus = NimBus.MessageStore.ResolutionStatus;
 using HeartbeatSettings = NimBus.WebApp.ManagementApi.HeartbeatSettings;
 using StoreHeartbeatSettings = NimBus.MessageStore.States.HeartbeatSettings;
@@ -443,6 +444,10 @@ public static class Mapper
             SourceSystem = endpointMetadata.SourceSystem,
             RepositoryUrl = endpointMetadata.RepositoryUrl,
             TicketLinkTemplate = endpointMetadata.TicketLinkTemplate,
+            AdapterMcpUrl = endpointMetadata.AdapterMcpUrl,
+            RecordBindings = (endpointMetadata.RecordBindings ?? [])
+                .Select(b => new RecordBinding { EventTypeId = b.EventTypeId, PayloadPath = b.PayloadPath, Entity = b.Entity })
+                .ToList(),
         };
     }
 

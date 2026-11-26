@@ -68,6 +68,41 @@ public class AgentClassificationToolsTests
     }
 
     [TestMethod]
+    public async Task Evidence_returns_the_record_bindings_of_its_event_type_only()
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess());
+        await SeedFailureAsync(host);
+        await host.Get<InMemoryMessageStore>().SetEndpointMetadata(new EndpointMetadata
+        {
+            EndpointId = Endpoint,
+            RecordBindings =
+            [
+                new RecordBinding { EventTypeId = "CustomerChanged", PayloadPath = "$.customerId", Entity = "customer" },
+                new RecordBinding { EventTypeId = "OrderPlaced", PayloadPath = "$.orderId", Entity = "order" },
+            ],
+        });
+        await using var client = await host.CreateClientAsync();
+
+        var evidence = await CallAsync(client, "nimbus_get_failure_evidence", new() { ["endpointId"] = Endpoint, ["eventId"] = EventId });
+
+        var binding = evidence.GetProperty("recordBindings").EnumerateArray().Single();
+        Assert.AreEqual("$.customerId", binding.GetProperty("payloadPath").GetString());
+        Assert.AreEqual("customer", binding.GetProperty("entity").GetString());
+    }
+
+    [TestMethod]
+    public async Task Evidence_without_record_bindings_returns_none()
+    {
+        await using var host = await StartAsync(new McpTestHost.StubAccess());
+        await SeedFailureAsync(host);
+        await using var client = await host.CreateClientAsync();
+
+        var evidence = await CallAsync(client, "nimbus_get_failure_evidence", new() { ["endpointId"] = Endpoint, ["eventId"] = EventId });
+
+        Assert.AreEqual(0, evidence.GetProperty("recordBindings").GetArrayLength());
+    }
+
+    [TestMethod]
     public async Task Evidence_refuses_a_message_that_is_no_longer_failed()
     {
         await using var host = await StartAsync(new McpTestHost.StubAccess());

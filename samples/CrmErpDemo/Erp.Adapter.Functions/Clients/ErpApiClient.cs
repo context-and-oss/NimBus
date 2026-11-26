@@ -69,6 +69,18 @@ public sealed class ErpApiClient(HttpClient http) : IErpApiClient
         return await response.Content.ReadFromJsonAsync<ErpCustomerStatusResponse>(cancellationToken: ct);
     }
 
+    public async Task<ErpCustomerRecord?> GetCustomerByCrmIdAsync(Guid crmAccountId, CancellationToken ct)
+    {
+        var response = await http.GetAsync($"/api/customers/by-crm/{crmAccountId}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
+        await response.EnsureSuccessOrThrowAsync(
+            $"Get ERP customer by CRM account {crmAccountId}",
+            ApiName,
+            ct);
+        return await response.Content.ReadFromJsonAsync<ErpCustomerRecord>(cancellationToken: ct);
+    }
+
     public async Task<bool> PlaceCreditHoldByCrmIdAsync(Guid crmAccountId, string? reason, CancellationToken ct)
     {
         var response = await http.PutAsJsonAsync(

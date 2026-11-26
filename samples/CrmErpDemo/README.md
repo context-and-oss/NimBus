@@ -406,7 +406,7 @@ In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver
 | Provisioner runs before the subscribers | Provisioner is a manually started Container Apps job |
 | enrichment-agent signs in through the local-dev bypass | enrichment-agent signs in with an agent API key issued in nimbus-ops (Spec 039) |
 
-Only `crm-api`, `erp-api` and `nimbus-ops` are public. Everything else is internal to the Container Apps environment. The Aspire dashboard URL is printed at the end of the deploy.
+Only `crm-api`, `erp-api`, `nimbus-ops` and `erp-adapter` (for its [adapter MCP server](#showcase-adapter-mcp-server-an-agent-looks-into-erp) at `/api/mcp`, which accepts Entra tokens only) are public. Everything else is internal to the Container Apps environment. The Aspire dashboard URL is printed at the end of the deploy.
 
 CRM and ERP use the nimbus-ops user store, so the same email and password work on all three apps. Users are managed in nimbus-ops, and any signed-in user gets in; there are no roles inside CRM and ERP. Each app is on its own `*.azurecontainerapps.io` host and that domain is a public suffix, so the apps can't share a cookie: you sign in to each once. The health probes (`/health`, `/alive`, `/ready`) and the static UI bundles stay public.
 
@@ -1076,6 +1076,60 @@ dead-letter happens when you ask for it.
 validation, each hub's keys, and the forward rules the provisioner writes on the `CrmEndpoint`
 topic) and `tests/NimBus.ServiceBusEmulator.Tests/RoutingKeyForwardingTests.cs` (core: the
 rules send each key to exactly one consumer on the in-process broker).
+
+## Showcase: Adapter MCP server (an agent looks into ERP)
+
+`erp-adapter` serves a read-only MCP server at `/api/mcp` with
+[NimBus.Adapter.Mcp](../../docs/adapter-mcp.md) (Spec 051 §7). An operations agent working on a
+failed message connects to it directly, with its own Entra token, and asks the adapter what ERP
+holds. NimBus forwards nothing.
+
+| Tool | What the ERP adapter answers |
+|---|---|
+| `adapter_get_record` | Entity `customer`, keyed by the CRM account id: the ERP customer created from that account (`GET /api/customers/by-crm/{id}`), with `taxId` masked as on the CRM events (last four characters) |
+| `adapter_get_mapping` | For each event type the adapter handles (`CrmAccount*`, `CrmContact*`, `ErpCreditCheckRequested`, `PlaceCustomerOnCreditHold`), which payload field goes to which ERP field, and the rules the adapter runs with |
+| `adapter_get_last_call` | What erp-api answered to this adapter instance's most recent call for that customer: status, outcome, reason phrase. The log is in memory and per instance |
+| `adapter_get_health` | Unreachable while ERP is in service mode or erp-api does not answer, with the reason; the commit the adapter was built from |
+
+It is served by an HTTP trigger (`Functions/AdapterMcpFunction.cs`) that hands the request's
+`HttpContext` to `AdapterMcpHandler`; the wiring is in `AdapterMcp/ErpAdapterMcp.cs`.
+
+### Turning it on
+
+The server accepts only tokens for the deployment's Entra adapter registration carrying the
+`Adapter.Read` app role (set-up in [docs/adapter-mcp.md](../../docs/adapter-mcp.md#sign-in)). Pass
+the registration to `aspire deploy`:
+
+```bash
+Parameters__adapter_tenant_id=<tenant id> Parameters__adapter_audience=<client id of the adapter registration> aspire deploy …
+```
+
+Add `Parameters__adapter_app_id_uri` only when the registration's App ID URI is not
+`api://<client id>`. Pass them on every later deploy too. Without them, as in a local run,
+`erp-adapter` serves no MCP server and `/api/mcp` answers 404.
+
+### Telling NimBus where it is
+
+On **ErpEndpoint → Ownership** in nimbus-ops, an Owner sets:
+
+- **Adapter MCP address:** `https://<erp-adapter fqdn>/api/mcp` (list the public URLs as in
+  [Deploy](#deploy)).
+- **Record binding:** event type `CrmAccountCreated`, payload path `$.AccountId`, entity
+  `customer`. NimBus stores event payloads as Newtonsoft.Json writes them, with the C# property
+  names, so the path is PascalCase: `$.AccountId`, not `$.accountId`. The same path binds
+  `CrmAccountUpdated`, `CrmAccountDeleted`, `ErpCreditCheckRequested` and
+  `PlaceCustomerOnCreditHold`, and `CrmContactCreated` and `CrmContactUpdated` (whose `AccountId` is
+  the contact's account) if you want those too.
+
+An agent reading a failed `CrmAccountCreated` through `nimbus_get_failure_evidence` then sees the
+binding, takes the account id from the payload, and calls `adapter_get_record` with entity
+`customer` and that key.
+
+### Automated coverage
+
+`tests/CrmErpDemo.AppHost.Tests/ErpAdapterMcpTests.cs` (the ERP view, the call-log key, the
+trigger driven by the official MCP client) and `ErpAdapterMcpAppHostTests.cs` (the public
+endpoint and the optional parameters).
 
 ## Demo video
 

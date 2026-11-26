@@ -19,6 +19,7 @@ using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using ApiRecordBinding = NimBus.WebApp.ManagementApi.RecordBinding;
 using ApiTechnicalContact = NimBus.WebApp.ManagementApi.TechnicalContact;
 
 namespace NimBus.WebApp.Tests;
@@ -184,6 +185,115 @@ public sealed class EndpointMetadataWriteTests
     }
 
     [TestMethod]
+    public async Task The_adapter_address_and_record_bindings_are_stored_trimmed()
+    {
+        var store = new InMemoryMessageStore();
+        var sut = CreateSut(store, new RecordingAudit());
+        var body = Body(Endpoint, "Owner");
+        body.AdapterMcpUrl = " https://erp-adapter.example.com/api/mcp ";
+        body.RecordBindings = [Binding(" CrmAccountCreated ", " $.AccountId ", " customer ")];
+
+        var result = await sut.PostMetadataEndpointAsync(body, Endpoint);
+
+        Assert.IsInstanceOfType<OkObjectResult>(result);
+        var stored = await store.GetEndpointMetadata(Endpoint);
+        Assert.AreEqual("https://erp-adapter.example.com/api/mcp", stored!.AdapterMcpUrl);
+        var binding = stored.RecordBindings!.Single();
+        Assert.AreEqual("CrmAccountCreated", binding.EventTypeId);
+        Assert.AreEqual("$.AccountId", binding.PayloadPath);
+        Assert.AreEqual("customer", binding.Entity);
+    }
+
+    [TestMethod]
+    public async Task Missing_record_bindings_are_stored_as_none()
+    {
+        var store = new InMemoryMessageStore();
+        var sut = CreateSut(store, new RecordingAudit());
+        var body = Body(Endpoint, "Owner");
+        body.RecordBindings = null!;
+
+        var result = await sut.PostMetadataEndpointAsync(body, Endpoint);
+
+        Assert.IsInstanceOfType<OkObjectResult>(result);
+        Assert.AreEqual(0, (await store.GetEndpointMetadata(Endpoint))!.RecordBindings!.Count);
+    }
+
+    [TestMethod]
+    [DataRow("http://erp-adapter.example.com/api/mcp", DisplayName = "over http")]
+    [DataRow("https://user:secret@erp-adapter.example.com/api/mcp", DisplayName = "with credentials")]
+    [DataRow("https://erp-adapter.example.com/api/mcp?code=1", DisplayName = "with a query string")]
+    [DataRow("erp-adapter.example.com/api/mcp", DisplayName = "not absolute")]
+    public async Task An_unsafe_adapter_address_is_refused(string adapterMcpUrl)
+    {
+        var store = new InMemoryMessageStore();
+        var sut = CreateSut(store, new RecordingAudit());
+        var body = Body(Endpoint, "Owner");
+        body.AdapterMcpUrl = adapterMcpUrl;
+
+        var result = await sut.PostMetadataEndpointAsync(body, Endpoint);
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
+        Assert.IsNull(await store.GetEndpointMetadata(Endpoint));
+    }
+
+    [TestMethod]
+    [DataRow("", "$.AccountId", "customer", DisplayName = "no event type")]
+    [DataRow("CrmAccountCreated", "", "customer", DisplayName = "no path")]
+    [DataRow("CrmAccountCreated", "AccountId", "customer", DisplayName = "path without $")]
+    [DataRow("CrmAccountCreated", "$..AccountId", "customer", DisplayName = "recursive descent")]
+    [DataRow("CrmAccountCreated", "$.Lines[0].Id", "customer", DisplayName = "array index")]
+    [DataRow("CrmAccountCreated", "$.Lines[*].Id", "customer", DisplayName = "wildcard")]
+    [DataRow("CrmAccountCreated", "$.AccountId", "", DisplayName = "no entity")]
+    [DataRow("CrmAccountCreated", "$.AccountId", "customer record", DisplayName = "entity with a space")]
+    public async Task An_invalid_record_binding_is_refused(string eventTypeId, string payloadPath, string entity)
+    {
+        var store = new InMemoryMessageStore();
+        var sut = CreateSut(store, new RecordingAudit());
+        var body = Body(Endpoint, "Owner");
+        body.RecordBindings = [Binding(eventTypeId, payloadPath, entity)];
+
+        var result = await sut.PostMetadataEndpointAsync(body, Endpoint);
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
+        Assert.IsNull(await store.GetEndpointMetadata(Endpoint));
+    }
+
+    [TestMethod]
+    public async Task The_same_path_bound_twice_for_one_event_type_is_refused()
+    {
+        var store = new InMemoryMessageStore();
+        var sut = CreateSut(store, new RecordingAudit());
+        var body = Body(Endpoint, "Owner");
+        body.RecordBindings =
+        [
+            Binding("CrmAccountCreated", "$.AccountId", "customer"),
+            Binding("CrmAccountCreated", "$.accountId", "account"),
+        ];
+
+        var result = await sut.PostMetadataEndpointAsync(body, Endpoint);
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
+    }
+
+    [TestMethod]
+    public async Task The_adapter_address_and_bindings_are_audited()
+    {
+        var store = new InMemoryMessageStore();
+        var audit = new RecordingAudit();
+        var sut = CreateSut(store, audit);
+        var body = Body(Endpoint, "Owner");
+        body.AdapterMcpUrl = "https://erp-adapter.example.com/api/mcp";
+        body.RecordBindings = [Binding("CrmAccountCreated", "$.AccountId", "customer")];
+
+        await sut.PostMetadataEndpointAsync(body, Endpoint);
+
+        var data = audit.Required.Single().Data;
+        StringAssert.Contains(data, "https://erp-adapter.example.com/api/mcp");
+        StringAssert.Contains(data, "$.AccountId");
+        StringAssert.Contains(data, "customer");
+    }
+
+    [TestMethod]
     public void Endpoint_metadata_changes_are_always_recorded()
         => Assert.IsTrue(AuditSettingsProvider.AlwaysRecorded.Contains(MessageAuditType.UpdateEndpointMetadata));
 
@@ -195,6 +305,9 @@ public sealed class EndpointMetadataWriteTests
         EndpointOwnerEmail = "owner@example.com",
         TechnicalContacts = [new ApiTechnicalContact { Name = "Contact", Email = "contact@example.com" }],
     };
+
+    private static ApiRecordBinding Binding(string eventTypeId, string payloadPath, string entity)
+        => new() { EventTypeId = eventTypeId, PayloadPath = payloadPath, Entity = entity };
 
     private static EndpointImplementation CreateSut(InMemoryMessageStore store, RecordingAudit audit)
     {

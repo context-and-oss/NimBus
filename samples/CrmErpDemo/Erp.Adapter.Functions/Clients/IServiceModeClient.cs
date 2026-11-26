@@ -9,7 +9,18 @@ public interface IServiceModeClient
     /// messages that fail. Fail-open: when erp-api cannot be read the mode reports disabled.
     /// </summary>
     Task<ErrorModeSnapshot> GetErrorModeAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Whether erp-api answers and whether it is in service mode, for the adapter's health. Unlike
+    /// <see cref="IsServiceModeEnabledAsync"/>, an erp-api that does not answer is reported as such.
+    /// </summary>
+    Task<ErpModeProbe> ProbeAsync(CancellationToken cancellationToken);
 }
+
+/// <param name="Reachable">Whether erp-api answered.</param>
+/// <param name="ServiceMode">Whether ERP is in service mode; false when it did not answer.</param>
+/// <param name="Problem">Why erp-api could not be read, when it could not: the kind of failure, no detail.</param>
+public sealed record ErpModeProbe(bool Reachable, bool ServiceMode, string? Problem);
 
 /// <param name="Enabled">Whether handlers should throw.</param>
 /// <param name="Reason">An <c>ErpFailureReasons</c> id, possibly <c>random</c>; null means the default generic failure.</param>
