@@ -65,6 +65,7 @@ internal sealed partial class SqlServerSchemaInitializer : IHostedService
     private readonly SqlServerMessageStoreOptions _options;
     private readonly ILogger<SqlServerSchemaInitializer> _logger;
     private readonly SqlServerSchemaReadiness? _readiness;
+    private readonly IReadOnlyList<DbUp.Engine.SqlScript> _additionalScripts;
 
     public SqlServerSchemaInitializer(IOptions<SqlServerMessageStoreOptions> options, ILogger<SqlServerSchemaInitializer> logger)
         : this(options, logger, readiness: null)
@@ -75,11 +76,23 @@ internal sealed partial class SqlServerSchemaInitializer : IHostedService
         IOptions<SqlServerMessageStoreOptions> options,
         ILogger<SqlServerSchemaInitializer> logger,
         SqlServerSchemaReadiness? readiness)
+        : this(options, logger, readiness, additionalScripts: [])
+    {
+    }
+
+    /// <summary>Test seam: <paramref name="additionalScripts"/> run after the embedded scripts.</summary>
+    internal SqlServerSchemaInitializer(
+        IOptions<SqlServerMessageStoreOptions> options,
+        ILogger<SqlServerSchemaInitializer> logger,
+        SqlServerSchemaReadiness? readiness,
+        IReadOnlyList<DbUp.Engine.SqlScript> additionalScripts)
     {
         _options = options.Value;
         _logger = logger;
         _readiness = readiness;
+        _additionalScripts = additionalScripts;
     }
+
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -177,35 +190,69 @@ internal sealed partial class SqlServerSchemaInitializer : IHostedService
             .WithScriptsEmbeddedInAssembly(
                 assembly,
                 name => name.Contains(".Schema.", StringComparison.OrdinalIgnoreCase) && name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+            .WithScripts(_additionalScripts)
             .WithVariable("schema", _options.Schema)
             .JournalToSqlTable(_options.Schema, "DbUpJournal")
+            // Without this every script runs under SqlClient's 30 s command default, and an index
+            // build on a large Messages table (or a small Azure SQL tier) fails the upgrade and the
+            // host with it. TimeSpan.Zero is SqlClient's "no limit".
+            .WithExecutionTimeout(TimeSpan.FromSeconds(_options.SchemaUpgradeTimeoutSeconds))
             .LogToConsole()
             .Build();
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <summary>
+    /// How long a second instance waits for the schema-upgrade lock, in milliseconds; -1 waits
+    /// without limit. The holder may legitimately keep it for as long as one script may run, so
+    /// the wait matches <see cref="SqlServerMessageStoreOptions.SchemaUpgradeTimeoutSeconds"/>, and
+    /// is never shorter than the minute it always was. No script limit means no wait limit.
+    /// </summary>
+    internal static int LockWaitMilliseconds(SqlServerMessageStoreOptions options)
+    {
+        const int minimumSeconds = 60;
+        var seconds = options.SchemaUpgradeTimeoutSeconds;
+        if (seconds <= 0 || seconds > int.MaxValue / 1000)
+            return -1;
+        return Math.Max(seconds, minimumSeconds) * 1000;
+    }
+
     private async Task AcquireSchemaUpgradeLock(SqlConnection conn, CancellationToken cancellationToken)
     {
-        const int lockTimeoutMs = 60_000;
         var resource = $"NimBus.Schema.{_options.Schema}";
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "EXEC @result = sp_getapplock @Resource = @res, @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = @timeout";
-        cmd.CommandTimeout = (lockTimeoutMs / 1000) + 30;
-        var resultParam = cmd.Parameters.Add("@result", System.Data.SqlDbType.Int);
-        resultParam.Direction = System.Data.ParameterDirection.Output;
-        cmd.Parameters.AddWithValue("@res", resource);
-        cmd.Parameters.AddWithValue("@timeout", lockTimeoutMs);
-        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-        var status = resultParam.Value is int i ? i : -999;
+        // Try without waiting first, so a second instance that starts during a long upgrade on
+        // another replica says why its start is held up instead of hanging silently.
+        if (await TryGetApplock(conn, resource, lockTimeoutMs: 0, cancellationToken).ConfigureAwait(false) >= 0)
+            return;
+
+        var waitMs = LockWaitMilliseconds(_options);
+        LogWaitingForSchemaUpgradeLock(_logger, resource, waitMs < 0 ? "without a limit" : $"up to {waitMs / 1000} s");
+
+        var status = await TryGetApplock(conn, resource, waitMs, cancellationToken).ConfigureAwait(false);
         // 0 = lock granted synchronously; 1 = lock granted after waiting for other sessions.
         // Negative values are failures (-1 timeout, -2 cancelled, -3 deadlock, -999 parameter error).
         if (status < 0)
         {
             throw new InvalidOperationException(
                 $"Could not acquire schema-upgrade lock for '{resource}' on the SQL Server (sp_getapplock returned {status}). " +
-                "Another NimBus instance may be holding the lock; retry once it finishes, or extend the lockTimeout.");
+                "Another NimBus instance is still upgrading the schema; this instance starts once it finishes. " +
+                $"To wait longer, raise {SqlServerMessageStoreOptions.SchemaUpgradeTimeoutKey}.");
         }
+    }
+
+    private static async Task<int> TryGetApplock(SqlConnection conn, string resource, int lockTimeoutMs, CancellationToken cancellationToken)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "EXEC @result = sp_getapplock @Resource = @res, @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = @timeout";
+        // The command must outlive the lock wait; 0 is SqlClient's "no limit" for an unlimited wait.
+        cmd.CommandTimeout = lockTimeoutMs < 0 ? 0 : (lockTimeoutMs / 1000) + 30;
+        var resultParam = cmd.Parameters.Add("@result", System.Data.SqlDbType.Int);
+        resultParam.Direction = System.Data.ParameterDirection.Output;
+        cmd.Parameters.AddWithValue("@res", resource);
+        cmd.Parameters.AddWithValue("@timeout", lockTimeoutMs);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return resultParam.Value is int i ? i : -999;
     }
 
     private async Task ReleaseSchemaUpgradeLock(SqlConnection conn, CancellationToken cancellationToken)
@@ -307,6 +354,9 @@ WHERE s.name = @Schema AND o.name = @Name AND o.type = @Type";
 
     [LoggerMessage(Level = LogLevel.Information, Message = "SQL Server message-store schema upgrade applied {Count} script(s).")]
     private static partial void LogSqlServerMessageStoreSchemaUpgrade(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Another instance holds the schema-upgrade lock '{Resource}' and is upgrading the schema; waiting {Wait} for it to finish.")]
+    private static partial void LogWaitingForSchemaUpgradeLock(ILogger logger, string resource, string wait);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to release schema-upgrade lock '{Resource}'; relying on session close.")]
     private static partial void LogFailedToReleaseSchemaUpgradeLock(ILogger logger, Exception exception, string resource);

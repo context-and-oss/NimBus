@@ -344,4 +344,10 @@ public interface IIntegrationIntelligenceStorageSettings
     string SqlSchema { get; }
     string? CosmosDatabaseName { get; }
     CosmosClient? CosmosClient { get; }
+
+    /// <summary>
+    /// The longest one classification-store migration script may run, in seconds; 0 sets no limit.
+    /// The WebApp passes the SQL Server message store's <c>SchemaUpgradeTimeoutSeconds</c>.
+    /// </summary>
+    int SqlSchemaUpgradeTimeoutSeconds => Storage.SqlClassificationStore.DefaultSchemaUpgradeTimeoutSeconds;
 }

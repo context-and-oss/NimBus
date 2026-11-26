@@ -10,18 +10,50 @@ public sealed class SqlClassificationStore(string connectionString, TimeProvider
 {
     private readonly string _connectionString = connectionString;
 
+    /// <summary>The default of <see cref="SchemaUpgradeTimeoutSeconds"/>: 30 minutes, as for the SQL Server message store.</summary>
+    public const int DefaultSchemaUpgradeTimeoutSeconds = 1800;
+
+    private readonly int _schemaUpgradeTimeoutSeconds = DefaultSchemaUpgradeTimeoutSeconds;
+
+    /// <summary>
+    /// The longest one migration script may run in <see cref="EnsureSchemaAsync"/>, in seconds; 0
+    /// sets no limit. Also how long a second instance waits for the migration lock (at least 30 s;
+    /// without a limit when this is 0).
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The value is negative.</exception>
+    public int SchemaUpgradeTimeoutSeconds
+    {
+        get => _schemaUpgradeTimeoutSeconds;
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(value);
+            _schemaUpgradeTimeoutSeconds = value;
+        }
+    }
+
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken = default)
     {
+        // The lock holder may keep it for as long as one script may run, so a second instance
+        // waits that long (never less than the 30 s it always did; without a limit for none).
+        var lockWaitMs = SchemaUpgradeTimeoutSeconds <= 0 || SchemaUpgradeTimeoutSeconds > int.MaxValue / 1000
+            ? -1
+            : Math.Max(SchemaUpgradeTimeoutSeconds, 30) * 1000;
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var gate = connection.CreateCommand();
-        gate.CommandText = "DECLARE @result int; EXEC @result=sp_getapplock @Resource='NimBus.Intelligence.Migrations', @LockMode='Exclusive', @LockOwner='Session', @LockTimeout=30000; IF @result<0 THROW 51000, 'Classification migration lock unavailable', 1;";
+        gate.CommandText = "DECLARE @result int; EXEC @result=sp_getapplock @Resource='NimBus.Intelligence.Migrations', @LockMode='Exclusive', @LockOwner='Session', @LockTimeout=@wait; IF @result<0 THROW 51000, 'Classification migration lock unavailable', 1;";
+        gate.Parameters.AddWithValue("@wait", lockWaitMs);
+        gate.CommandTimeout = lockWaitMs < 0 ? 0 : (lockWaitMs / 1000) + 30;
         await gate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        gate.Parameters.Clear();
+        gate.CommandTimeout = 30;
         try
         {
             var result = DeployChanges.To.SqlDatabase(_connectionString)
                 .WithScriptsEmbeddedInAssembly(typeof(SqlClassificationStore).Assembly)
                 .JournalToSqlTable("dbo", "IntelligenceSchemaVersions")
+                // Not SqlClient's 30 s default: a migration on a large table can take longer.
+                .WithExecutionTimeout(TimeSpan.FromSeconds(SchemaUpgradeTimeoutSeconds))
                 .Build().PerformUpgrade();
             if (!result.Successful) throw new InvalidOperationException("Classification schema initialization failed.", result.Error);
         }

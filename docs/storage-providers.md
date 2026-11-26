@@ -375,6 +375,29 @@ schema (default `nimbus`).
 When using `VerifyOnly`, run DbUp from the deployment pipeline against an
 arbitrary connection string before the application starts.
 
+### Schema upgrade timeout
+
+Each migration script runs with a command timeout of
+`NimBus:SqlServer:SchemaUpgradeTimeoutSeconds` (environment form
+`NimBus__SqlServer__SchemaUpgradeTimeoutSeconds`, or
+`options.SchemaUpgradeTimeoutSeconds`). The default is `1800` (30 minutes); `0` sets no limit.
+An upgrade that builds an index on a large `Messages` table, or runs on a small tier such as
+Azure SQL Basic, can take far longer than SqlClient's 30-second default. Before this setting
+such an upgrade failed with `DbUp failed to apply NimBus message-store schema: Execution Timeout
+Expired`, and the host stopped at startup. A script that times out is rolled back and not
+recorded, so the next start runs it again.
+
+The hosts that use the store (WebApp, Resolver) upgrade the schema under one lock, so a second
+instance that starts during an upgrade waits for it. It logs that another instance is upgrading,
+waits as long as one script may run (at least a minute; without a limit when the setting is
+`0`), then finds the schema up to date. If the wait runs out it fails its start and is
+restarted. The Integration Intelligence classification store in the WebApp uses the same
+setting for its own migrations.
+
+Startup holds until the upgrade (or the wait for it) completes. A platform startup probe that
+gives up sooner restarts the instance mid-upgrade; give it at least this long, or run the
+upgrade from the deployment pipeline and use `VerifyOnly`.
+
 ### Retention
 
 SQL Server has no TTL, so the WebApp runs a cleanup job that deletes rows whose

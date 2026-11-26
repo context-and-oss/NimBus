@@ -84,6 +84,10 @@ public sealed class WebAppIntegrationIntelligenceStorageSettings : IIntegrationI
     public string SqlSchema => _services.GetService<IOptions<SqlServerMessageStoreOptions>>()?.Value.Schema ?? "nimbus";
 
     /// <inheritdoc />
+    public int SqlSchemaUpgradeTimeoutSeconds => _services.GetService<IOptions<SqlServerMessageStoreOptions>>()?.Value.SchemaUpgradeTimeoutSeconds
+        ?? SqlServerMessageStoreOptions.DefaultSchemaUpgradeTimeoutSeconds;
+
+    /// <inheritdoc />
     public string? CosmosDatabaseName => _services.GetService<CosmosClient>() is not null ? "MessageDatabase" : null;
 
     /// <inheritdoc />

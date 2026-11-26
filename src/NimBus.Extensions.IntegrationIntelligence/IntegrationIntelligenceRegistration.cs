@@ -153,7 +153,9 @@ public static class IntegrationIntelligenceRegistration
         if (storage is null) return new UnavailableClassificationStore();
         if (string.Equals(storage.Provider, "sqlserver", StringComparison.OrdinalIgnoreCase))
         {
-            return string.IsNullOrWhiteSpace(storage.SqlConnectionString) ? new UnavailableClassificationStore() : new SqlClassificationStore(storage.SqlConnectionString);
+            return string.IsNullOrWhiteSpace(storage.SqlConnectionString)
+                ? new UnavailableClassificationStore()
+                : new SqlClassificationStore(storage.SqlConnectionString) { SchemaUpgradeTimeoutSeconds = storage.SqlSchemaUpgradeTimeoutSeconds };
         }
         if (string.Equals(storage.Provider, "cosmos", StringComparison.OrdinalIgnoreCase)
             && storage.CosmosClient is not null
