@@ -10,7 +10,14 @@ import {
   ModalFooter,
 } from "components/ui/modal";
 import { validateRepositoryUrl, validateSourceSystem, validateTicketLinkTemplate } from "./code-location";
-import { RecordBindingInput, validateAdapterMcpUrl, validateRecordBindings } from "./adapter-mcp";
+import {
+  ADAPTER_MCP_URL_PLACEHOLDER,
+  BINDING_PLACEHOLDERS,
+  EXAMPLE_PLACEHOLDER_CLASS,
+  RecordBindingInput,
+  validateAdapterMcpUrl,
+  validateRecordBindings,
+} from "./adapter-mcp";
 
 // Icons
 const AddIcon = () => (
@@ -360,7 +367,8 @@ export default function MetadataButton(props: IInformationButtonProps) {
           </p>
           <Input
             aria-label="Adapter MCP address"
-            placeholder="https://your-adapter.example.com/mcp"
+            className={EXAMPLE_PLACEHOLDER_CLASS}
+            placeholder={ADAPTER_MCP_URL_PLACEHOLDER}
             value={adapterMcpUrl}
             onChange={(e) => setAdapterMcpUrl(e.currentTarget.value)}
           />
@@ -383,7 +391,8 @@ export default function MetadataButton(props: IInformationButtonProps) {
                   <td className="py-2 pr-2">
                     <Input
                       aria-label={`Event type of binding ${idx + 1}`}
-                      placeholder="CrmAccountCreated"
+                      className={EXAMPLE_PLACEHOLDER_CLASS}
+                      placeholder={BINDING_PLACEHOLDERS.eventTypeId}
                       value={binding.eventTypeId ?? ""}
                       onChange={(e) => updateBinding(idx, { eventTypeId: e.currentTarget.value })}
                     />
@@ -391,7 +400,8 @@ export default function MetadataButton(props: IInformationButtonProps) {
                   <td className="py-2 pr-2">
                     <Input
                       aria-label={`Payload path of binding ${idx + 1}`}
-                      placeholder="$.AccountId"
+                      className={EXAMPLE_PLACEHOLDER_CLASS}
+                      placeholder={BINDING_PLACEHOLDERS.payloadPath}
                       value={binding.payloadPath ?? ""}
                       onChange={(e) => updateBinding(idx, { payloadPath: e.currentTarget.value })}
                     />
@@ -399,7 +409,8 @@ export default function MetadataButton(props: IInformationButtonProps) {
                   <td className="py-2 pr-2">
                     <Input
                       aria-label={`Entity of binding ${idx + 1}`}
-                      placeholder="customer"
+                      className={EXAMPLE_PLACEHOLDER_CLASS}
+                      placeholder={BINDING_PLACEHOLDERS.entity}
                       value={binding.entity ?? ""}
                       onChange={(e) => updateBinding(idx, { entity: e.currentTarget.value })}
                     />
