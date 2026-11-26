@@ -147,8 +147,8 @@ The demo runs locally via .NET Aspire. The adapter is **not** declared with sepa
 | Service Bus connection | `builder.AddConnectionString("servicebus")` | Topic `ErpEndpoint` (provisioned by `CrmErpDemo.Provisioner`) |
 | Cosmos DB connection (optional) | `builder.AddConnectionString("cosmos")` | Used by `NimBus.Resolver` and `nimbus-ops` when `--StorageProvider cosmos`; not used by the adapter directly |
 | `erp-adapter` Functions project | `builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions>("erp-adapter")` | This adapter |
-| `erp-api` project | `builder.AddProject<Projects.Erp_Api>("erp-api")` | Target of adapter HTTP callbacks + handoff settlement |
-| `provisioner` project | `builder.AddProject<Projects.CrmErpDemo_Provisioner>("provisioner")` | Creates topics/subscriptions (`CrmEndpoint`, `ErpEndpoint`) |
+| `erp-api` project | `builder.AddDotnetProject("erp-api", "../Erp.Api/Erp.Api.csproj")` | Target of adapter HTTP callbacks + handoff settlement |
+| `provisioner` project | `builder.AddDotnetProject("provisioner", "../CrmErpDemo.Provisioner/CrmErpDemo.Provisioner.csproj")` | Creates topics/subscriptions (`CrmEndpoint`, `ErpEndpoint`) |
 
 Aspire `WithReference` calls on `erp-adapter`: `servicebus` (as `AzureWebJobsServiceBus`), `erpApi` (service-discovery URL).
 

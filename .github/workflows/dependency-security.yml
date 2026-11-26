@@ -110,8 +110,8 @@ jobs:
           set -e
           # Two AppHosts set AspireUseCliBundle and would otherwise race to set the bundle up
           # during the parallel build (ASPIRE009); see dotnet.yml. Keep the version in step
-          # with Aspire.AppHost.Sdk.
-          dotnet dnx --yes aspire.cli@13.5.4 -- setup --install-path "$HOME/.aspire"
+          # with the Aspire.Hosting.AppHost package.
+          dotnet dnx --yes aspire.cli@17.0.0 -- setup --install-path "$HOME/.aspire"
           for solution in $(git ls-files '*.sln' '*.slnx'); do
             echo "::group::dotnet build $solution"
             dotnet build "$solution" --configuration Release

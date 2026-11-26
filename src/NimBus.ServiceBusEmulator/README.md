@@ -21,11 +21,24 @@ Set `NIMBUS_SB_EMULATOR=true` when running `src/NimBus.AppHost`. The AppHost cre
 The Aspire integration is also available directly:
 
 ```csharp
-var servicebus = builder.AddNimBusServiceBusEmulator<Projects.NimBus_ServiceBusEmulator>("servicebus");
-builder.AddProject<Projects.AspirePubSub_Provisioner>("provisioner")
+// From the NimBus sources, by project path:
+var servicebus = builder.AddNimBusServiceBusEmulatorProject(
+    "servicebus", "../NimBus.ServiceBusEmulator/NimBus.ServiceBusEmulator.csproj");
+builder.AddDotnetProject("provisioner", "../../samples/AspirePubSub/AspirePubSub.Provisioner/AspirePubSub.Provisioner.csproj")
     .WithReference(servicebus.ConnectionString)
     .WaitFor(servicebus.Project);
 ```
+
+An AppHost without the sources runs the emulator from the `Akaule.NimBus.ServiceBusEmulator`
+tool package instead:
+
+```csharp
+var servicebus = builder.AddNimBusServiceBusEmulator("servicebus");
+```
+
+`AddNimBusServiceBusEmulator<TProject>(name)` and `AddNimBusServiceBusEmulator(name, projectPath)`
+are obsolete: they rest on Aspire's `AddProject`, which Aspire 17 retires. They still work and are
+removed in the next major version.
 
 ## Storage and limits
 

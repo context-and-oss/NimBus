@@ -140,9 +140,9 @@ The demo runs locally via .NET Aspire. The adapter is **not** declared with sepa
 | `crm` database | `sql.AddDatabase("crm")` | CRM entities used by `Crm.Api`; not referenced by the adapter |
 | Service Bus connection | `builder.AddConnectionString("servicebus")` | Topic `CrmEndpoint` (provisioned by `CrmErpDemo.Provisioner`) |
 | Cosmos DB connection | `builder.AddConnectionString("cosmos")` | Used by `NimBus.Resolver` and `nimbus-ops` (not by the adapter directly) |
-| `crm-adapter` project | `builder.AddProject<Projects.Crm_Adapter>("crm-adapter")` | This adapter |
-| `crm-api` project | `builder.AddProject<Projects.Crm_Api>("crm-api")` | Target of adapter HTTP callbacks |
-| `provisioner` project | `builder.AddProject<Projects.CrmErpDemo_Provisioner>("provisioner")` | Creates topics/subscriptions (`CrmEndpoint`, `ErpEndpoint`) |
+| `crm-adapter` project | `builder.AddDotnetProject("crm-adapter", "../Crm.Adapter/Crm.Adapter.csproj")` | This adapter |
+| `crm-api` project | `builder.AddDotnetProject("crm-api", "../Crm.Api/Crm.Api.csproj")` | Target of adapter HTTP callbacks |
+| `provisioner` project | `builder.AddDotnetProject("provisioner", "../CrmErpDemo.Provisioner/CrmErpDemo.Provisioner.csproj")` | Creates topics/subscriptions (`CrmEndpoint`, `ErpEndpoint`) |
 
 Aspire `WithReference` calls on `crm-adapter`: `servicebus`, `crmApi` (service-discovery URL).
 

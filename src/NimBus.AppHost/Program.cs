@@ -1,5 +1,6 @@
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
+using Aspire.Hosting.Dotnet;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -38,10 +39,10 @@ var useServiceBusEmulator = string.Equals(
     StringComparison.OrdinalIgnoreCase);
 
 IResourceBuilder<IResourceWithConnectionString> servicebus;
-IResourceBuilder<ProjectResource>? serviceBusEmulatorProject = null;
+IResourceBuilder<DotnetProjectResource>? serviceBusEmulatorProject = null;
 if (useServiceBusEmulator)
 {
-    var emulator = builder.AddNimBusServiceBusEmulator<Projects.NimBus_ServiceBusEmulator>("servicebus");
+    var emulator = builder.AddNimBusServiceBusEmulatorProject("servicebus", "../NimBus.ServiceBusEmulator/NimBus.ServiceBusEmulator.csproj");
     servicebus = emulator.ConnectionString;
     serviceBusEmulatorProject = emulator.Project;
 }
@@ -82,7 +83,7 @@ if (storageProvider == "sqlserver" || identityEnabled)
 }
 
 // Topology provisioner — runs once then exits
-var provisioner = builder.AddProject<Projects.AspirePubSub_Provisioner>("provisioner")
+var provisioner = builder.AddDotnetProject("provisioner", "../../samples/AspirePubSub/AspirePubSub.Provisioner/AspirePubSub.Provisioner.csproj")
     .WithReference(servicebus);
 if (serviceBusEmulatorProject is not null)
 {
@@ -101,7 +102,7 @@ var resolver = builder.AddAzureFunctionsProject<Projects.NimBus_Resolver>("resol
     .WaitForCompletion(provisioner);
 
 // WebApp (Management UI)
-var webapp = builder.AddProject<Projects.NimBus_WebApp>("webapp")
+var webapp = builder.AddDotnetProject("webapp", "../NimBus.WebApp/NimBus.WebApp.csproj")
     .WithReference(servicebus)
     .WithExternalHttpEndpoints()
     // Operator MCP endpoint (Spec 035) at <webapp>/mcp. The WebApp maps it only when its
@@ -222,13 +223,13 @@ if (simulationEnabled)
 else
 {
     // Sample Publisher (HTTP API for publishing events)
-    builder.AddProject<Projects.AspirePubSub_Publisher>("publisher")
+    builder.AddDotnetProject("publisher", "../../samples/AspirePubSub/AspirePubSub.Publisher/AspirePubSub.Publisher.csproj")
         .WithReference(servicebus)
         .WithExternalHttpEndpoints()
         .WaitForCompletion(provisioner);
 
     // Sample Subscriber (handles events + separated DeferredProcessor)
-    builder.AddProject<Projects.AspirePubSub_Subscriber>("subscriber")
+    builder.AddDotnetProject("subscriber", "../../samples/AspirePubSub/AspirePubSub.Subscriber/AspirePubSub.Subscriber.csproj")
         .WithReference(servicebus)
         .WaitForCompletion(provisioner);
 
@@ -237,7 +238,7 @@ else
     // failures to retry, resubmit and group next to a healthy Billing endpoint. It
     // also keeps WarehouseEndpoint answering heartbeat probes, which only a running
     // subscriber can do.
-    builder.AddProject<Projects.AspirePubSub_WarehouseSubscriber>("warehouse-subscriber")
+    builder.AddDotnetProject("warehouse-subscriber", "../../samples/AspirePubSub/AspirePubSub.WarehouseSubscriber/AspirePubSub.WarehouseSubscriber.csproj")
         .WithReference(servicebus)
         .WaitForCompletion(provisioner);
 }

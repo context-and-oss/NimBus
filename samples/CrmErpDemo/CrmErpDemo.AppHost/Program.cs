@@ -1,4 +1,5 @@
 using Aspire.Hosting.Azure;
+using Aspire.Hosting.Dotnet;
 using Azure.Provisioning.Sql;
 using Microsoft.Extensions.Configuration;
 
@@ -73,7 +74,7 @@ var useEmulator = string.Equals(
     StringComparison.OrdinalIgnoreCase);
 
 IResourceBuilder<IResourceWithConnectionString> servicebus;
-IResourceBuilder<ProjectResource>? serviceBusEmulatorProject = null;
+IResourceBuilder<DotnetProjectResource>? serviceBusEmulatorProject = null;
 // Fully qualified namespace (host name) of the Azure deployment's Service Bus. Null in run mode.
 ReferenceExpression? serviceBusNamespace = null;
 if (isPublish)
@@ -84,7 +85,7 @@ if (isPublish)
 }
 else if (useEmulator)
 {
-    var emulator = builder.AddNimBusServiceBusEmulator<Projects.NimBus_ServiceBusEmulator>("servicebus");
+    var emulator = builder.AddNimBusServiceBusEmulatorProject("servicebus", "../../../src/NimBus.ServiceBusEmulator/NimBus.ServiceBusEmulator.csproj");
     servicebus = emulator.ConnectionString;
     serviceBusEmulatorProject = emulator.Project;
 }
@@ -155,7 +156,7 @@ else
 // ServiceBusTopologyProvisioner works against it exactly like real Azure.
 // In Azure, WaitForCompletion has no effect, so the provisioner becomes a manually
 // triggered Container Apps job that is started once after each deploy.
-var provisioner = builder.AddProject<Projects.CrmErpDemo_Provisioner>("provisioner")
+var provisioner = builder.AddDotnetProject("provisioner", "../CrmErpDemo.Provisioner/CrmErpDemo.Provisioner.csproj")
     .WithReference(servicebus);
 if (serviceBusEmulatorProject is not null)
 {
@@ -184,7 +185,7 @@ WithFunctionsServiceBus(resolver);
 // so the setting is just its file name — the same mechanism `nb deploy apps
 // --platform-package` uses.
 var crmErpContractsPath = typeof(CrmErpDemo.Contracts.CrmErpPlatformConfiguration).Assembly.Location;
-var nimbusOps = builder.AddProject<Projects.NimBus_WebApp>("nimbus-ops")
+var nimbusOps = builder.AddDotnetProject("nimbus-ops", "../../../src/NimBus.WebApp/NimBus.WebApp.csproj")
     .WithReference(servicebus)
     .WithEnvironment("NimBus__PlatformType", typeof(CrmErpDemo.Contracts.CrmErpPlatformConfiguration).FullName!)
     .WithEnvironment("NimBus__PlatformAssembly", isPublish ? Path.GetFileName(crmErpContractsPath) : crmErpContractsPath)
@@ -345,14 +346,14 @@ else // cosmos — connection string is supplied via the AppHost user-secret Con
 }
 
 // CRM side.
-var crmApi = builder.AddProject<Projects.Crm_Api>("crm-api")
+var crmApi = builder.AddDotnetProject("crm-api", "../Crm.Api/Crm.Api.csproj")
     .WithReference(servicebus)
     .WithReference(crmDb)
     .WithExternalHttpEndpoints()
     .WaitFor(crmDb)
     .WaitForCompletion(provisioner);
 
-var crmAdapter = builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
+var crmAdapter = builder.AddDotnetProject("crm-adapter", "../Crm.Adapter/Crm.Adapter.csproj")
     .WithReference(servicebus)
     .WithReference(crmApi)
     // The crm business DB doubles as the inbox deduplication store
@@ -367,7 +368,7 @@ var crmWeb = builder.AddViteApp("crm-web", "../Crm.Web")
     .WaitFor(crmApi);
 
 // ERP side.
-var erpApi = builder.AddProject<Projects.Erp_Api>("erp-api")
+var erpApi = builder.AddDotnetProject("erp-api", "../Erp.Api/Erp.Api.csproj")
     .WithReference(servicebus)
     .WithReference(erpDb)
     .WithExternalHttpEndpoints()
@@ -463,7 +464,7 @@ WithFunctionsServiceBus(dataPlatformAdapter);
 // don't pile up before the subscriber is listening.
 // The reference to crm-api is only for the "Partner leads" switch in crm-web: the portal asks
 // crm-api's flag before each lead (plain HTTP, still no NimBus).
-var partnerPortal = builder.AddProject<Projects.PartnerPortal>("partner-portal")
+var partnerPortal = builder.AddDotnetProject("partner-portal", "../PartnerPortal/PartnerPortal.csproj")
     .WithReference(servicebus)
     .WithReference(crmApi)
     .WaitFor(crmAdapter)
@@ -488,7 +489,7 @@ if (isPublish)
 // Crm.Adapter worker subscriber (WithReference(servicebus) + gate on the
 // provisioner): the AgentZoneEndpoint topology is created by the provisioner —
 // the same topology gate the other subscribers rely on.
-var agentZone = builder.AddProject<Projects.CrmErpDemo_AgentZone>("agent-zone")
+var agentZone = builder.AddDotnetProject("agent-zone", "../CrmErpDemo.AgentZone/CrmErpDemo.AgentZone.csproj")
     .WithReference(servicebus)
     .WaitForCompletion(provisioner);
 
@@ -497,7 +498,7 @@ var agentZone = builder.AddProject<Projects.CrmErpDemo_AgentZone>("agent-zone")
 // unconditionally above, so the agent binds to it directly — service discovery
 // rewrites "https+http://nimbus-ops" to the resolved endpoint. Without an
 // Anthropic API key the agent uses its deterministic classifier.
-var enrichmentAgent = builder.AddProject<Projects.EnrichmentAgent>("enrichment-agent")
+var enrichmentAgent = builder.AddDotnetProject("enrichment-agent", "../EnrichmentAgent/EnrichmentAgent.csproj")
     .WithReference(nimbusOps)
     .WaitFor(nimbusOps);
 
@@ -511,7 +512,7 @@ var regionalHubs = new[]
     (Name: "hub-dach", Endpoint: nameof(CrmErpDemo.Contracts.Endpoints.DachHubEndpoint)),
     (Name: "hub-unrouted", Endpoint: nameof(CrmErpDemo.Contracts.Endpoints.UnroutedHubEndpoint)),
 }
-.Select(hub => builder.AddProject<Projects.RegionalHub>(hub.Name)
+.Select(hub => builder.AddDotnetProject(hub.Name, "../RegionalHub/RegionalHub.csproj")
     .WithReference(servicebus)
     .WithEnvironment("RegionalHub__Endpoint", hub.Endpoint)
     .WaitForCompletion(provisioner))

@@ -13,8 +13,37 @@ public static class NimBusServiceBusEmulatorBuilderExtensions
     public const string EmulatorToolPackageId = "Akaule.NimBus.ServiceBusEmulator";
 
     /// <summary>
+    /// Adds the emulator from its project file and a connection-string resource named
+    /// <paramref name="name"/>. Use it in an AppHost that has the NimBus sources; an AppHost without
+    /// them uses <see cref="AddNimBusServiceBusEmulator(IDistributedApplicationBuilder, string, int?, string?)"/>.
+    /// </summary>
+    /// <param name="builder">The distributed application builder.</param>
+    /// <param name="name">The connection-string resource name, for example <c>servicebus</c>.</param>
+    /// <param name="projectPath">
+    /// The emulator's project file (<c>NimBus.ServiceBusEmulator.csproj</c>), absolute or relative to
+    /// the AppHost directory.
+    /// </param>
+    /// <param name="port">A fixed host port, or <c>null</c> for a dynamic one.</param>
+    /// <returns>The emulator project and its connection string.</returns>
+    public static NimBusServiceBusEmulatorProjectHandle
+        AddNimBusServiceBusEmulatorProject(
+            this IDistributedApplicationBuilder builder,
+            string name,
+            string projectPath,
+            int? port = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectPath);
+
+        var (project, connectionString) = Configure(builder, name, builder.AddDotnetProject($"{name}-emulator", projectPath), port);
+        return new(project, connectionString);
+    }
+
+    /// <summary>
     /// Adds the emulator project and a connection-string resource named <paramref name="name"/>.
     /// </summary>
+    [Obsolete("Aspire 17 retires AddProject and generated project metadata. Use AddNimBusServiceBusEmulatorProject(name, projectPath). This overload will be removed in the next major version.")]
     public static NimBusServiceBusEmulatorHandle
         AddNimBusServiceBusEmulator<TProject>(
             this IDistributedApplicationBuilder builder,
@@ -32,6 +61,7 @@ public static class NimBusServiceBusEmulatorBuilderExtensions
     /// <summary>
     /// Adds an emulator project by project-file path for AppHosts that do not use generated project metadata.
     /// </summary>
+    [Obsolete("Aspire 17 retires AddProject. Use AddNimBusServiceBusEmulatorProject(name, projectPath), which returns the Aspire 17 project resource. This overload will be removed in the next major version.")]
     public static NimBusServiceBusEmulatorHandle
         AddNimBusServiceBusEmulator(
             this IDistributedApplicationBuilder builder,

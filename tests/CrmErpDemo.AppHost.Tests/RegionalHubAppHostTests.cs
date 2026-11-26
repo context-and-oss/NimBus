@@ -2,6 +2,7 @@
 extern alias AppHost;
 
 using Aspire.Hosting.ApplicationModel;
+using Aspire.Hosting.Dotnet;
 using Aspire.Hosting.Testing;
 using CrmErpDemo.Contracts.Endpoints;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -20,7 +21,7 @@ public sealed class RegionalHubAppHostTests
             ["--operation", "publish"]);
 
         var hubResources = builder.Resources
-            .OfType<ProjectResource>()
+            .OfType<DotnetProjectResource>()
             .Where(resource => resource.Name.StartsWith("hub-", StringComparison.Ordinal))
             .Select(resource => resource.Name)
             .ToList();

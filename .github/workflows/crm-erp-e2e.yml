@@ -60,9 +60,9 @@ jobs:
           # AppHost project instead of pinning it here. A CLI one minor behind still reports
           # the AppHost as started, then cannot find it: every later step fails with
           # "No AppHost is currently running" and no scenario runs.
-          aspire_version="$(grep -oE 'Aspire\.AppHost\.Sdk/[0-9]+\.[0-9]+\.[0-9]+' "$E2E_APPHOST" | head -n 1 | cut -d/ -f2 || true)"
+          aspire_version="$(grep -oE 'Include="Aspire\.Hosting\.AppHost" Version="[0-9]+\.[0-9]+\.[0-9]+"' "$E2E_APPHOST" | head -n 1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
           if [ -z "$aspire_version" ]; then
-            echo "::error::Could not read the Aspire.AppHost.Sdk version from $E2E_APPHOST"
+            echo "::error::Could not read the Aspire.Hosting.AppHost package version from $E2E_APPHOST"
             exit 1
           fi
           echo "Aspire version of the AppHost: $aspire_version"
@@ -90,7 +90,26 @@ jobs:
 
       - name: Build demo
         timeout-minutes: 15
-        run: dotnet build "$E2E_APPHOST" --configuration Debug --maxcpucount:2
+        run: |
+          dotnet build "$E2E_APPHOST" --configuration Debug --maxcpucount:2
+          # The AppHost adds these projects by path (AddDotnetProject) and has no project
+          # reference to them, so building the AppHost does not build them. Build them here
+          # so the start step only starts things.
+          demo="${{ github.workspace }}/samples/CrmErpDemo"
+          src="${{ github.workspace }}/src"
+          for project in \
+            "$demo/CrmErpDemo.Provisioner/CrmErpDemo.Provisioner.csproj" \
+            "$demo/Crm.Api/Crm.Api.csproj" \
+            "$demo/Crm.Adapter/Crm.Adapter.csproj" \
+            "$demo/Erp.Api/Erp.Api.csproj" \
+            "$demo/PartnerPortal/PartnerPortal.csproj" \
+            "$demo/CrmErpDemo.AgentZone/CrmErpDemo.AgentZone.csproj" \
+            "$demo/EnrichmentAgent/EnrichmentAgent.csproj" \
+            "$demo/RegionalHub/RegionalHub.csproj" \
+            "$src/NimBus.WebApp/NimBus.WebApp.csproj" \
+            "$src/NimBus.ServiceBusEmulator/NimBus.ServiceBusEmulator.csproj"; do
+            dotnet build "$project" --configuration Debug --maxcpucount:2
+          done
 
       - name: Start isolated demo
         id: start
