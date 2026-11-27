@@ -28,7 +28,7 @@ public partial class StorageHookImplementation : IStorageHookApiController
 
     private readonly IHubContext<GridEventsHub> _hubContext;
     private readonly ILogger<StorageHookImplementation> _logger;
-    private readonly IMessageTrackingStore _messageStore;
+    private readonly IEndpointUpdateBroadcaster _endpointUpdates;
     private readonly IPlatform _platform;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IHostEnvironment _hostEnvironment;
@@ -37,7 +37,7 @@ public partial class StorageHookImplementation : IStorageHookApiController
     public StorageHookImplementation(
         IHubContext<GridEventsHub> gridEventsHubContext,
         ILogger<StorageHookImplementation> logger,
-        IMessageTrackingStore messageStore,
+        IEndpointUpdateBroadcaster endpointUpdates,
         IPlatform platform,
         IHttpContextAccessor httpContextAccessor,
         IHostEnvironment hostEnvironment,
@@ -45,7 +45,7 @@ public partial class StorageHookImplementation : IStorageHookApiController
     {
         _hubContext = gridEventsHubContext;
         _logger = logger;
-        _messageStore = messageStore;
+        _endpointUpdates = endpointUpdates;
         _platform = platform;
         _httpContextAccessor = httpContextAccessor;
         _hostEnvironment = hostEnvironment;
@@ -54,7 +54,8 @@ public partial class StorageHookImplementation : IStorageHookApiController
 
     // Cosmos deployments reach this through Change Feed → Event Grid; SQL deployments through
     // the Resolver write-path notifier. The route keeps its historical "cosmos" segment so
-    // existing Event Grid subscriptions keep working.
+    // existing Event Grid subscriptions keep working. Bursts are throttled per endpoint by the
+    // broadcaster: one recount and one broadcast per interval, the last state always sent.
     public async Task<IActionResult> StoragehookReceiveAsync(string endpointId)
     {
         if (!ValidateWebhookKey())
@@ -63,9 +64,7 @@ public partial class StorageHookImplementation : IStorageHookApiController
         var endpointIdValid = EndpointVerificationService.EndpointExists(_platform, endpointId);
         if (endpointIdValid)
         {
-            var state = await _messageStore.DownloadEndpointStateCount(endpointId);
-            var endpointStatus = Mapper.EndpointStatusCountFromEndpointStateCount(state);
-            await _hubContext.Clients.All.SendAsync(Constants.EventSignalNames.EndpointUpdate, endpointStatus);
+            await _endpointUpdates.RequestAsync(endpointId);
             return new OkResult();
         }
 
