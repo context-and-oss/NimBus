@@ -1,5 +1,11 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import moment from "moment";
 import * as api from "api-client";
@@ -26,6 +32,10 @@ vi.mock("functions/notifications.functions", () => ({
   notifyWithUndo: vi.fn(),
 }));
 
+const { postMessageAuditSpy } = vi.hoisted(() => ({
+  postMessageAuditSpy: vi.fn((..._args: unknown[]) => Promise.resolve(undefined)),
+}));
+
 vi.mock("api-client", async () => {
   const actual =
     await vi.importActual<typeof import("api-client")>("api-client");
@@ -33,8 +43,8 @@ vi.mock("api-client", async () => {
     getMe() {
       return Promise.resolve(undefined);
     }
-    postMessageAudit() {
-      return Promise.resolve(undefined);
+    postMessageAudit(...args: unknown[]) {
+      return postMessageAuditSpy(...args);
     }
   }
   return {
@@ -929,5 +939,50 @@ describe("MessageListing error card", () => {
     show("at OrderHandler.Handle()");
     expect(screen.getByText("Exception")).toBeTruthy();
     expect(screen.getByText("at OrderHandler.Handle()")).toBeTruthy();
+  });
+});
+
+describe("MessageListing — comment box", () => {
+  beforeEach(() => {
+    postMessageAuditSpy.mockClear();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+  });
+
+  it("posts only the comment; the server stamps auditor, time and type", async () => {
+    const onCommentAdded = vi.fn();
+    render(
+      <MemoryRouter>
+        <MessageListing
+          eventDetails={spec006BuildEvent()}
+          onCommentAdded={onCommentAdded}
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Comment" }), {
+      target: { value: "  Waiting for the ERP team.  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onCommentAdded).toHaveBeenCalledTimes(1));
+    expect(postMessageAuditSpy).toHaveBeenCalledTimes(1);
+    const [eventId, audit] = postMessageAuditSpy.mock.calls[0] as [
+      string,
+      api.MessageAudit,
+    ];
+    expect(eventId).toBe(spec006BuildEvent().eventId);
+    expect(audit.comment).toBe("Waiting for the ERP team.");
+    expect(audit.auditorName).toBeUndefined();
+    expect(audit.auditTimestamp).toBeUndefined();
+    expect(audit.auditType).toBeUndefined();
   });
 });

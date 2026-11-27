@@ -1573,7 +1573,8 @@ export class Client extends ApiClientBase {
     }
 
     /**
-     * @param body (optional) 
+     * Add an operator comment to the event's audit trail
+     * @param body (optional) Only `comment` is honoured; `auditorName`, `auditTimestamp` and `auditType` are set by the server.
      * @return OK
      */
     postMessageAudit(eventId: string, body?: MessageAudit | undefined): Promise<void> {
@@ -1606,6 +1607,18 @@ export class Client extends ApiClientBase {
         if (status === 200) {
             return response.text().then((_responseText) => {
             return;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("The comment could not be stored", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Contributor permission on the event\'s endpoint required", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("No stored history for the event, so no endpoint to authorize against", status, _responseText, _headers);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {

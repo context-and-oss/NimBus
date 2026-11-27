@@ -605,6 +605,15 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<MessageAudit>>> GetMessageAuditsEventIdAsync(string eventId);
 
+        /// <summary>
+        /// Add an operator comment to the event's audit trail
+        /// </summary>
+
+        /// <remarks>
+        /// Stores a comment row in the event's audit trail. Only `comment` is read from the body. The server sets `auditType` to `comment`, `auditorName` to the signed-in caller and `auditTimestamp` to the server's current time; values sent for those fields are accepted but ignored. The caller needs Contributor on an endpoint the event's stored history belongs to (a site-wide Contributor grant also passes).
+        /// </remarks>
+
+        /// <param name="body">Only `comment` is honoured; `auditorName`, `auditTimestamp` and `auditType` are set by the server.</param>
 
 
         /// <returns>OK</returns>
@@ -869,6 +878,13 @@ namespace NimBus.WebApp.ManagementApi
             return _implementation.GetMessageAuditsEventIdAsync(eventId);
         }
 
+        /// <summary>
+        /// Add an operator comment to the event's audit trail
+        /// </summary>
+        /// <remarks>
+        /// Stores a comment row in the event's audit trail. Only `comment` is read from the body. The server sets `auditType` to `comment`, `auditorName` to the signed-in caller and `auditTimestamp` to the server's current time; values sent for those fields are accepted but ignored. The caller needs Contributor on an endpoint the event's stored history belongs to (a site-wide Contributor grant also passes).
+        /// </remarks>
+        /// <param name="body">Only `comment` is honoured; `auditorName`, `auditTimestamp` and `auditType` are set by the server.</param>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/v1/event/audit/{eventId}")]
         public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostMessageAudit([Microsoft.AspNetCore.Mvc.FromBody] MessageAudit body, string eventId)

@@ -16,13 +16,28 @@ public partial class EventImplementation
 {
     public async Task<IActionResult> PostMessageAuditAsync(MessageAudit body, string eventId)
     {
-        // Writing an operator comment/audit row is an action, not a read.
-        if (!await authorizationService.HasRoleAsync(AccessRole.Contributor))
-            return new ForbidResult();
-
         try
         {
-            var audit = Mapper.MessageAuditEntityFromMessageAudit(body);
+            // Writing an operator comment is an action on the event, so it needs Contributor on
+            // an endpoint the event belongs to. The route names only the event, so those
+            // endpoints come from its stored history, never from the client. An event with no
+            // history has nothing to authorize against and is not found.
+            var endpointIds = await EventEndpointIdsAsync(eventId);
+            if (endpointIds.Count == 0)
+                return new NotFoundResult();
+
+            if (!await HasContributorOnAnyAsync(endpointIds))
+                return new ForbidResult();
+
+            // Only the comment comes from the body: the auditor, time and type are the server's,
+            // so a row cannot be attributed to someone else, backdated or posed as another action.
+            var audit = new MessageAuditEntity
+            {
+                AuditorName = AuditLogService.ResolveAuditorName(httpContextAccessor.HttpContext),
+                AuditTimestamp = timeProvider.GetUtcNow().UtcDateTime,
+                AuditType = MessageAuditType.Comment,
+                Comment = body?.Comment,
+            };
             await messageStore.StoreMessageAudit(eventId, audit);
             return new OkResult();
         }
@@ -31,6 +46,30 @@ public partial class EventImplementation
             LogFailedToPostMessageAudit(logger, e.Message);
             return new BadRequestResult();
         }
+    }
+
+    // The endpoints the event's stored messages are attributed to: the receiving endpoint of a
+    // request, the answering endpoint of a response — the endpoint whose row operators act on.
+    private async Task<IReadOnlyList<string>> EventEndpointIdsAsync(string eventId)
+    {
+        var history = await messageStore.GetEventHistory(eventId);
+        return (history ?? Enumerable.Empty<MessageEntity>())
+            .OrderByDescending(m => m.EnqueuedTimeUtc)
+            .Select(m => m.EndpointId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private async Task<bool> HasContributorOnAnyAsync(IEnumerable<string> endpointIds)
+    {
+        foreach (var endpointId in endpointIds)
+        {
+            if (await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
+                return true;
+        }
+
+        return false;
     }
 
     public async Task<IActionResult> PostResubmitEventIdsAsync(string eventId, string messageId)

@@ -1053,18 +1053,8 @@ function CommentSection({
     setSaved(false);
     try {
       const client = new api.Client(api.CookieAuth());
-      let userName = "Unknown";
-      try {
-        const me = await client.getMe();
-        if (me?.name) userName = me.name;
-      } catch {
-        /* fallback */
-      }
-
+      // The server stamps the auditor, time and type; only the comment is sent.
       const audit = new api.MessageAudit();
-      audit.auditorName = userName;
-      audit.auditTimestamp = new Date() as any;
-      audit.auditType = api.MessageAuditAuditType.Comment;
       audit.comment = comment.trim();
 
       await client.postMessageAudit(eventId, audit);

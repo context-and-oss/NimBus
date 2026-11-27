@@ -234,17 +234,6 @@ public static class Mapper
         };
     }
 
-    internal static MessageAuditEntity MessageAuditEntityFromMessageAudit(MessageAudit audit)
-    {
-        return new MessageAuditEntity()
-        {
-            AuditorName = audit.AuditorName,
-            AuditTimestamp = audit.AuditTimestamp,
-            AuditType = Enum.Parse<MessageAuditType>(audit.AuditType.ToString()),
-            Comment = audit.Comment
-        };
-    }
-
     internal static SessionStatus SessionStatusFromSessionState(SessionStateCount sessionState)
     {
         return new SessionStatus

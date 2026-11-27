@@ -30,6 +30,7 @@ public partial class EventImplementation : IEventApiController
     private readonly PayloadRedaction payloadRedaction;
     private readonly IEventJsonMasker masker;
     private readonly IOperatorCommands operatorCommands;
+    private readonly TimeProvider timeProvider;
 
     public EventImplementation(
         IApplicationInsightsService applicationInsightsService,
@@ -47,8 +48,10 @@ public partial class EventImplementation : IEventApiController
         PayloadRedaction payloadRedaction,
         IEventJsonMasker masker,
         ServiceBusAdministrationClient? serviceBusAdministrationClient = null,
-        IOperatorCommands? operatorCommands = null)
+        IOperatorCommands? operatorCommands = null,
+        TimeProvider? timeProvider = null)
     {
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         this.payloadRedaction = payloadRedaction;
         this.masker = masker ?? NullEventJsonMasker.Instance;
         this.platform = platform;
