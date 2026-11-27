@@ -42,6 +42,7 @@ services.AddNimBusSubscriber("BillingEndpoint", sub =>
         options.DeduplicationStore = InboxStore.SqlServer;
         options.RetentionPeriod = TimeSpan.FromDays(7);
         options.CleanupInterval = TimeSpan.FromHours(1);
+        options.CleanupTimeBudget = TimeSpan.FromMinutes(5);
     });
 });
 ```

@@ -21,6 +21,7 @@ builder.Services.AddNimBusSubscriber("BillingEndpoint", subscriber =>
         options.DeduplicationStore = InboxStore.SqlServer;
         options.RetentionPeriod = TimeSpan.FromDays(7);
         options.CleanupInterval = TimeSpan.FromHours(1);
+        options.CleanupTimeBudget = TimeSpan.FromMinutes(5);
     });
 });
 ```
@@ -65,7 +66,7 @@ builder.Services.AddNimBusSubscriber("BillingEndpoint", subscriber =>
 
 The managed identity example uses the adapter's `Azure.Identity` package. For local development, pass `new TableClient("UseDevelopmentStorage=true", "NimBusInbox")` and create the table in Azurite first. To run the provider tests, set `NIMBUS_TABLE_TEST_CONNECTION` to the emulator connection string. The suite creates and removes its own isolated tables.
 
-Each endpoint uses one partition. A duplicate check is one point read. A successful handler writes the receipt and a time-ordered index entry in one transaction. Cleanup queries the expired range in that partition and deletes each pair atomically. Only hashes and creation-time information are stored. Each pass examines up to 1,000 expired receipts per subscriber instance. For example, with hourly cleanup on one instance, sustained traffic above 1,000 new receipts per hour can build a cleanup backlog. Shorten `CleanupInterval` to keep pace. A busy endpoint is subject to the throughput limits of one Table Storage partition.
+Each endpoint uses one partition. A duplicate check is one point read. A successful handler writes the receipt and a time-ordered index entry in one transaction. Cleanup queries the expired range in that partition and deletes each pair atomically. Only hashes and creation-time information are stored. Each purge call examines up to 1,000 expired receipts. A cleanup pass keeps issuing these bounded calls until the backlog is cleared, `CleanupTimeBudget` runs out, or the host stops (see [Retention and cleanup](#retention-and-cleanup)). A busy endpoint is subject to the throughput limits of one Table Storage partition.
 
 ## Processing order
 
@@ -111,7 +112,7 @@ Stand-ins created before this behaviour shipped carry no `InboxMessageId`, and s
 
 ## Retention and cleanup
 
-`InboxOptions.RetentionPeriod` defaults to seven days. `CleanupInterval` defaults to one hour. The opt-in cleanup hosted service deletes a bounded batch of records older than `UtcNow - RetentionPeriod` on each pass. Cleanup propagates the host cancellation token, stops promptly during shutdown, and logs a failed pass before trying again on the next interval.
+`InboxOptions.RetentionPeriod` defaults to seven days. `CleanupInterval` defaults to one hour. `CleanupTimeBudget` defaults to five minutes. On each interval the opt-in cleanup hosted service runs one pass that deletes records older than `UtcNow - RetentionPeriod`, with the cutoff fixed at the start of the pass. Each provider call deletes a bounded batch, and the pass keeps purging batches until the backlog is cleared, `CleanupTimeBudget` runs out, or the host stops. The budget is checked between batches, so a running batch always finishes. Each pass logs one Information entry with the total it purged. A pass that runs out of budget also logs a warning, because expired records may remain until the next interval; a recurring warning means cleanup is falling behind and the budget or the interval needs adjusting. Cleanup propagates the host cancellation token, stops promptly during shutdown, and logs a failed pass before trying again on the next interval.
 
 Retention is configured — and enforced — per subscriber endpoint: each subscriber's cleanup service purges only its own endpoint's records (`IInboxStore.PurgeExpiredAsync` takes the endpoint scope). Endpoints with different retention periods can therefore safely share one physical table or container; a one-day-retention subscriber can never delete a seven-day-retention subscriber's still-valid records and reopen its duplicate window.
 

@@ -13,6 +13,12 @@ namespace NimBus.SDK.Hosting;
 /// <summary>
 /// Periodically removes inbox records that are older than the configured retention period.
 /// </summary>
+/// <remarks>
+/// Each timer tick runs one cleanup pass. A pass keeps calling
+/// <see cref="IInboxStore.PurgeExpiredAsync"/> until a call removes nothing, the
+/// <see cref="InboxOptions.CleanupTimeBudget"/> runs out, or the host stops, so a backlog larger
+/// than one provider batch is cleared in a single tick.
+/// </remarks>
 public sealed partial class InboxPurgeHostedService : BackgroundService
 {
     private const string PurgeOperation = "purge";
@@ -59,9 +65,7 @@ public sealed partial class InboxPurgeHostedService : BackgroundService
             {
                 try
                 {
-                    var cutoff = _timeProvider.GetUtcNow() - _options.RetentionPeriod;
-                    var purged = await _inboxStore.PurgeExpiredAsync(_endpointId, cutoff, stoppingToken);
-                    LogInboxCleanupPurgedExpiredRecords(_logger, purged, _endpointId);
+                    await RunPurgePassAsync(stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -84,8 +88,43 @@ public sealed partial class InboxPurgeHostedService : BackgroundService
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Inbox cleanup purged {PurgedRecordCount} expired records. EndpointId:{EndpointId}")]
-    private static partial void LogInboxCleanupPurgedExpiredRecords(ILogger logger, int purgedRecordCount, string endpointId);
+    private async Task RunPurgePassAsync(CancellationToken stoppingToken)
+    {
+        // One cutoff per pass bounds the eligible set: rows that expire during the pass wait
+        // for the next tick instead of extending this one.
+        var cutoff = _timeProvider.GetUtcNow() - _options.RetentionPeriod;
+        var startedAt = _timeProvider.GetTimestamp();
+        long purgedTotal = 0;
+        var batchCount = 0;
+
+        while (true)
+        {
+            // IInboxStore does not expose a provider's batch size, so a pass loops until a call
+            // removes nothing rather than until a call returns less than a full batch.
+            var purged = await _inboxStore.PurgeExpiredAsync(_endpointId, cutoff, stoppingToken);
+            batchCount++;
+            purgedTotal += purged;
+            if (purged <= 0)
+                break;
+
+            stoppingToken.ThrowIfCancellationRequested();
+
+            if (_timeProvider.GetElapsedTime(startedAt) >= _options.CleanupTimeBudget)
+            {
+                LogInboxCleanupPurgedExpiredRecords(_logger, purgedTotal, batchCount, _endpointId);
+                LogInboxCleanupTimeBudgetExhausted(_logger, purgedTotal, _options.CleanupTimeBudget, _endpointId);
+                return;
+            }
+        }
+
+        LogInboxCleanupPurgedExpiredRecords(_logger, purgedTotal, batchCount, _endpointId);
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Inbox cleanup purged {PurgedRecordCount} expired records in {BatchCount} batches. EndpointId:{EndpointId}")]
+    private static partial void LogInboxCleanupPurgedExpiredRecords(ILogger logger, long purgedRecordCount, int batchCount, string endpointId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Inbox cleanup purged {PurgedRecordCount} expired records and stopped after its {CleanupTimeBudget} time budget; expired records may remain until the next tick. EndpointId:{EndpointId}")]
+    private static partial void LogInboxCleanupTimeBudgetExhausted(ILogger logger, long purgedRecordCount, TimeSpan cleanupTimeBudget, string endpointId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Inbox cleanup failed with {ExceptionType}; cleanup will retry on the next tick.")]
     private static partial void LogInboxCleanupFailed(ILogger logger, string exceptionType);
