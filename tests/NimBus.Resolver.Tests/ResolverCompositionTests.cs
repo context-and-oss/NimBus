@@ -242,6 +242,7 @@ public class ResolverCompositionTests
         var coalescing = Assert.IsInstanceOfType<CoalescingEndpointStateChangeNotifier>(notifier);
         Assert.IsInstanceOfType<HttpEndpointStateChangeNotifier>(coalescing.Inner);
         Assert.AreEqual(CoalescingEndpointStateChangeNotifier.DefaultInterval, coalescing.Interval);
+        Assert.AreEqual(CoalescingEndpointStateChangeNotifier.DefaultMaxConcurrentSends, coalescing.MaxConcurrentSends);
     }
 
     [TestMethod]
@@ -261,6 +262,25 @@ public class ResolverCompositionTests
         var coalescing = Assert.IsInstanceOfType<CoalescingEndpointStateChangeNotifier>(
             provider.GetRequiredService<IMessageStateChangeNotifier>());
         Assert.AreEqual(TimeSpan.FromMilliseconds(expectedMilliseconds), coalescing.Interval);
+    }
+
+    [TestMethod]
+    [DataRow("8", 8)]
+    [DataRow("1", 1)]
+    [DataRow("0", 4)]
+    [DataRow("-2", 4)]
+    [DataRow("many", 4)]
+    public async Task Notifier_ReadsItsSendConcurrencyFromConfiguration(string maxConcurrency, int expected)
+    {
+        await using var provider = Build(Registration.ServiceCollection, new Dictionary<string, string?>
+        {
+            ["NimBus:Flow:WebAppUrl"] = "https://webapp.example.com",
+            ["NimBus:Flow:NotifyMaxConcurrency"] = maxConcurrency,
+        });
+
+        var coalescing = Assert.IsInstanceOfType<CoalescingEndpointStateChangeNotifier>(
+            provider.GetRequiredService<IMessageStateChangeNotifier>());
+        Assert.AreEqual(expected, coalescing.MaxConcurrentSends);
     }
 
     // ── Service Bus client ─────────────────────────────────────────────────────────────
