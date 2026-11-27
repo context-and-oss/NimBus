@@ -80,4 +80,11 @@ public class OutboxMessage
     /// originating activity carried no tracestate.
     /// </summary>
     public string? TraceState { get; set; }
+
+    /// <summary>
+    /// Number of failed dispatch attempts recorded for this row through
+    /// <see cref="IOutboxClaiming.RecordDispatchFailureAsync"/>. Zero for rows that have not
+    /// failed, and for rows read from stores that do not track attempts.
+    /// </summary>
+    public int AttemptCount { get; set; }
 }

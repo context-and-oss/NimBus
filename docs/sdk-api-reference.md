@@ -528,6 +528,45 @@ services.AddNimBusSqlServerOutbox(options =>
 });
 ```
 
+### Dispatch retries, parking and multiple replicas
+
+An outbox that also implements `IOutboxClaiming` (the SQL Server outbox does)
+gets three guarantees from `OutboxDispatcher`:
+
+- **Claiming.** Each poll leases its batch to the dispatcher (`LeaseUntilUtc`,
+  `ClaimedBy`), so several replicas can dispatch one outbox without sending a
+  row twice or out of session order. A crashed replica's rows become claimable
+  again when the lease expires.
+- **Backoff.** A failed row is retried after `InitialRetryDelay`, doubling up to
+  `MaxRetryDelay`. Until then the row and every later row of its session are
+  left out of the batch, so a failing session never crowds out other sessions
+  and never has a later row sent ahead of the failed one.
+- **Parking.** After `MaxAttempts` failures, or at once when the payload cannot
+  be deserialized, the row is parked: it is no longer retried and its session
+  stays blocked behind it. The dispatcher logs an error and increments
+  `nimbus.outbox.parked`. After fixing the cause, call
+  `SqlServerOutbox.RequeueParkedAsync()` (or pass one row id);
+  `GetParkedCountAsync()` reports how many rows are parked.
+
+```csharp
+services.AddNimBusOutboxDispatcher(options =>
+{
+    options.MaxAttempts = 20;                          // default: about an hour of retries
+    options.InitialRetryDelay = TimeSpan.FromSeconds(1);
+    options.MaxRetryDelay = TimeSpan.FromMinutes(5);
+    options.LeaseDuration = TimeSpan.FromMinutes(2);   // keep well above one batch's send time
+});
+```
+
+Outboxes that implement only `IOutbox` keep the earlier behaviour: a failed row
+is retried on every poll, without backoff or parking, and **only one dispatcher
+instance may run** against them. Provider authors can verify an
+`IOutboxClaiming` implementation with
+`NimBus.Testing.Conformance.OutboxClaimingConformanceTests`.
+
+`PurgeDispatchedAsync` deletes in batches of `SqlServerOutboxOptions.PurgeBatchSize`
+rows (default 1,000), so purging a large backlog never takes a table lock.
+
 ---
 
 ## IMessageContext

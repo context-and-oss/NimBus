@@ -276,6 +276,32 @@ public class SubscriberRegistrationTests
         StringAssert.Contains(ex.Message, "AddSingleton", StringComparison.Ordinal);
     }
 
+    [TestMethod]
+    public void AddNimBusOutboxDispatcher_with_options_passes_them_to_the_dispatcher()
+    {
+        var services = new ServiceCollection();
+        var client = new ServiceBusClient(FakeConnection);
+        services.AddSingleton(client);
+        services.AddSingleton<IOutbox>(new NoopOutbox());
+        services.AddSingleton(new OutboxDispatcherSender(client.CreateSender("endpoint")));
+        services.AddNimBusOutboxDispatcher(options => options.DispatcherId = "replica-7");
+
+        using var provider = services.BuildServiceProvider();
+        var hostedService = provider.GetServices<IHostedService>().OfType<OutboxDispatcherHostedService>().Single();
+        var dispatcher = (OutboxDispatcher)GetPrivateField(hostedService, "_dispatcher");
+
+        Assert.AreEqual("replica-7", dispatcher.DispatcherId);
+    }
+
+    [TestMethod]
+    public void AddNimBusOutboxDispatcher_rejects_invalid_options_at_registration()
+    {
+        var services = new ServiceCollection();
+
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+            () => services.AddNimBusOutboxDispatcher(options => options.MaxAttempts = 0));
+    }
+
     private static object GetPrivateField(object target, string fieldName)
     {
         var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);

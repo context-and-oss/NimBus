@@ -466,6 +466,34 @@ public static class ServiceCollectionExtensions
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddNimBusOutboxDispatcher(this IServiceCollection services, TimeSpan? pollingInterval = null, int batchSize = 100)
     {
+        return services.AddNimBusOutboxDispatcher(static _ => { }, pollingInterval, batchSize);
+    }
+
+    /// <summary>
+    /// Registers the outbox background dispatcher as a hosted service with explicit retry,
+    /// parking and claiming settings. Call this after registering an IOutbox implementation.
+    /// </summary>
+    /// <remarks>
+    /// Retry backoff, parking and leases apply when the outbox implements
+    /// <see cref="IOutboxClaiming"/> (the SQL Server outbox does); then several replicas may run
+    /// the dispatcher against one outbox. Other outboxes support a single dispatcher instance.
+    /// </remarks>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Configures the <see cref="OutboxDispatcherOptions"/>.</param>
+    /// <param name="pollingInterval">How often to poll for pending messages. Default: 1 second.</param>
+    /// <param name="batchSize">Maximum messages to dispatch per poll. Default: 100.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddNimBusOutboxDispatcher(
+        this IServiceCollection services,
+        Action<OutboxDispatcherOptions> configure,
+        TimeSpan? pollingInterval = null,
+        int batchSize = 100)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        var dispatcherOptions = new OutboxDispatcherOptions();
+        configure(dispatcherOptions);
+        dispatcherOptions.Validate();
+
         services.AddHostedService(sp =>
         {
             var outbox = sp.GetRequiredService<IOutbox>();
@@ -483,7 +511,7 @@ public static class ServiceCollectionExtensions
 
             var dispatcherLogger = sp.GetService<ILogger<OutboxDispatcher>>();
             var hostedLogger = sp.GetService<ILogger<OutboxDispatcherHostedService>>();
-            var dispatcher = new OutboxDispatcher(outbox, sender, dispatcherLogger);
+            var dispatcher = new OutboxDispatcher(outbox, sender, dispatcherOptions, dispatcherLogger);
             return new OutboxDispatcherHostedService(dispatcher, pollingInterval ?? TimeSpan.FromSeconds(1), batchSize, hostedLogger);
         });
 

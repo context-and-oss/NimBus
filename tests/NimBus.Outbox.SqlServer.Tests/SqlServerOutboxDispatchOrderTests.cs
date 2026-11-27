@@ -24,6 +24,7 @@ namespace NimBus.Outbox.SqlServer.Tests;
 public sealed class SqlServerOutboxDispatchOrderTests
 {
     private const string DispatchOrderIndex = "IX_OutboxMessages_DispatchOrder(SequenceNumber,CreatedAtUtc) WHERE ([DispatchedAtUtc] IS NULL)";
+    private const string PendingSessionIndex = "IX_OutboxMessages_PendingSession(SessionId) WHERE ([DispatchedAtUtc] IS NULL)";
 
     private SqlServerOutboxOptions _options = null!;
 
@@ -70,12 +71,12 @@ public sealed class SqlServerOutboxDispatchOrderTests
     }
 
     [TestMethod]
-    public async Task EnsureTableExistsAsync_creates_only_the_dispatch_order_index()
+    public async Task EnsureTableExistsAsync_creates_only_the_dispatch_order_and_pending_session_indexes()
     {
         var outbox = await CreateOutboxAsync();
         await outbox.EnsureTableExistsAsync();
 
-        CollectionAssert.AreEqual(new[] { DispatchOrderIndex }, await GetNonclusteredIndexesAsync());
+        CollectionAssert.AreEqual(new[] { DispatchOrderIndex, PendingSessionIndex }, await GetNonclusteredIndexesAsync());
     }
 
     [TestMethod]
@@ -125,7 +126,7 @@ public sealed class SqlServerOutboxDispatchOrderTests
         Assert.AreEqual(
             new DateTimeOffset(2030, 1, 1, 0, 0, 1, TimeSpan.Zero),
             await outbox.GetOldestPendingEnqueuedAtUtcAsync());
-        CollectionAssert.AreEqual(new[] { DispatchOrderIndex }, await GetNonclusteredIndexesAsync(options));
+        CollectionAssert.AreEqual(new[] { DispatchOrderIndex, PendingSessionIndex }, await GetNonclusteredIndexesAsync(options));
     }
 
     private static string GetConnectionString()
