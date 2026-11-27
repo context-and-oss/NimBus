@@ -164,6 +164,51 @@ public sealed class ComposeNewEventTests
         AssertDescribesComposedEvent(row.Data);
     }
 
+    [TestMethod]
+    public async Task Compose_failure_returns_400_with_a_generic_message_and_logs_the_exception()
+    {
+        // Review S4: a broker failure's message can name the namespace, entity or credentials;
+        // it is logged server-side and never sent to the browser.
+        const string secret = "sb://secret-namespace.servicebus.windows.net SharedAccessKey=leak";
+        var thrown = new InvalidOperationException(secret);
+        var logger = new CapturingLogger<EventImplementation>();
+        var sut = CreateSut(new ThrowingServiceBusClient(thrown), logger: logger);
+
+        var result = await sut.PostComposeNewEventAsync(new ResubmitWithChanges
+        {
+            EventTypeId = nameof(ComposedOrder),
+            EventContent = "{\"OrderId\":\"order-1\",\"Total\":1}",
+        });
+
+        var bad = result.Result as BadRequestObjectResult;
+        Assert.IsNotNull(bad, $"Expected 400 with a body, got {result.Result?.GetType().Name}.");
+        Assert.AreEqual(StatusCodes.Status400BadRequest, bad.StatusCode);
+        var body = (string)bad.Value!;
+        Assert.IsFalse(body.Contains("secret-namespace", StringComparison.Ordinal), $"The body leaked the exception message: {body}");
+        Assert.IsFalse(body.Contains("SharedAccessKey", StringComparison.Ordinal), $"The body leaked the exception message: {body}");
+        Assert.AreEqual("Could not compose event. See the server log for details.", body);
+
+        var entry = logger.Entries.Single(e => e.Exception != null);
+        Assert.AreEqual(Microsoft.Extensions.Logging.LogLevel.Error, entry.Level);
+        Assert.AreSame(thrown, entry.Exception, "The original exception (message and stack) must be logged.");
+    }
+
+    [TestMethod]
+    public async Task Compose_malformed_content_still_names_the_path()
+    {
+        var sut = CreateSut(new RecordingServiceBusClient());
+
+        var result = await sut.PostComposeNewEventAsync(new ResubmitWithChanges
+        {
+            EventTypeId = nameof(ComposedOrder),
+            EventContent = "{\"OrderId\":\"order-1\",\"Total\":}",
+        });
+
+        var bad = result.Result as BadRequestObjectResult;
+        Assert.IsNotNull(bad);
+        StringAssert.StartsWith((string)bad.Value!, "Could not parse the value 'Total'");
+    }
+
     private const string ComposedJson = "{\"OrderId\":\"order-composed-99\",\"Total\":12345.67}";
 
     private static void AssertDescribesComposedEvent(string? data)
@@ -184,13 +229,14 @@ public sealed class ComposeNewEventTests
         ServiceBusClient client,
         IEndpointAuthorizationService? authorization = null,
         InMemoryMessageStore? store = null,
-        IAuditLogService? auditLog = null) =>
+        IAuditLogService? auditLog = null,
+        Microsoft.Extensions.Logging.ILogger<EventImplementation>? logger = null) =>
         new(
             applicationInsightsService: null!,
             new ComposePlatform(),
             managerClient: null!,
             handoffClientFactory: null!,
-            NullLogger<EventImplementation>.Instance,
+            logger ?? NullLogger<EventImplementation>.Instance,
             store ?? new InMemoryMessageStore(),
             authorization ?? new AllowAllAuthorizationService(),
             adminService: null!,
@@ -218,6 +264,31 @@ public sealed class ComposeNewEventTests
             LastSenderEntityPath = queueOrTopicName;
             return Sender;
         }
+    }
+
+    private sealed class ThrowingServiceBusClient : ServiceBusClient
+    {
+        private readonly ThrowingServiceBusSender _sender;
+
+        public ThrowingServiceBusClient(Exception exception) => _sender = new ThrowingServiceBusSender(exception);
+
+        public override ServiceBusSender CreateSender(string queueOrTopicName) => _sender;
+
+        public override ServiceBusSender CreateSender(string queueOrTopicName, ServiceBusSenderOptions options) => _sender;
+    }
+
+    [SuppressMessage("Usage", "CA2215:Dispose methods should call base class dispose", Justification = "Test double avoids disposing uninitialized SDK internals.")]
+    private sealed class ThrowingServiceBusSender : ServiceBusSender
+    {
+        private readonly Exception _exception;
+
+        public ThrowingServiceBusSender(Exception exception) => _exception = exception;
+
+        public override Task SendMessageAsync(ServiceBusMessage message, CancellationToken cancellationToken = default) => Task.FromException(_exception);
+
+        public override Task SendMessagesAsync(IEnumerable<ServiceBusMessage> messages, CancellationToken cancellationToken = default) => Task.FromException(_exception);
+
+        public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     [SuppressMessage("Usage", "CA2215:Dispose methods should call base class dispose", Justification = "Test double avoids disposing uninitialized SDK internals.")]

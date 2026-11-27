@@ -135,7 +135,7 @@ public partial class AgentImplementation : IAgentApiController
         catch (Exception ex)
         {
             LogRejectedEventTypeJsonSchemaIsNot(_logger, ex, body.EventTypeId);
-            return new BadRequestObjectResult($"jsonSchema is not a valid JSON Schema: {ex.Message}");
+            return new BadRequestObjectResult($"jsonSchema is not a valid JSON Schema{JsonSyntaxLocation(ex)}.");
         }
 
         // A declared sessionKeyPath must be a plausible JSONPath (starts with '$').
@@ -315,7 +315,7 @@ public partial class AgentImplementation : IAgentApiController
         catch (Exception ex)
         {
             LogRegisteredSchemaForIsNotValid(_logger, ex, body.EventTypeId);
-            return new BadRequestObjectResult($"Registered schema for '{body.EventTypeId}' is not valid JSON Schema: {ex.Message}");
+            return new BadRequestObjectResult($"Registered schema for '{body.EventTypeId}' is not valid JSON Schema.");
         }
 
         ICollection<NJsonSchema.Validation.ValidationError> errors;
@@ -327,7 +327,8 @@ public partial class AgentImplementation : IAgentApiController
         // JSON (JsonReaderException, etc.) — catch-all is intentional.
         catch (Exception ex)
         {
-            return new BadRequestObjectResult($"Payload is not valid JSON: {ex.Message}");
+            LogRejectedPayloadIsNotValidJson(_logger, ex, body.EventTypeId);
+            return new BadRequestObjectResult($"Payload is not valid JSON{JsonSyntaxLocation(ex)}.");
         }
 
         if (errors.Count > 0)
@@ -533,6 +534,20 @@ public partial class AgentImplementation : IAgentApiController
     /// <summary>Prefixes a signed-in person's key in <see cref="IAgentSubscriptionRegistry"/>.</summary>
     internal const string PersonSubscriptionPrefix = "person:";
 
+    /// <summary>
+    /// Where a JSON syntax error sits in the caller's own text, taken from a
+    /// <see cref="Newtonsoft.Json.JsonReaderException"/> (empty for any other exception). The
+    /// exception message is never echoed: it is logged server-side only.
+    /// </summary>
+    private static string JsonSyntaxLocation(Exception ex)
+    {
+        if (ex is not Newtonsoft.Json.JsonReaderException reader || reader.LineNumber <= 0)
+            return string.Empty;
+
+        var path = string.IsNullOrEmpty(reader.Path) ? string.Empty : $", path '{reader.Path}'";
+        return $" (line {reader.LineNumber}, position {reader.LinePosition}{path})";
+    }
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Agent API refused a signed-in caller without the {Required} role on {EndpointId}")]
     private static partial void LogAgentApiAccessDenied(ILogger logger, AccessRole required, string endpointId);
 
@@ -547,6 +562,9 @@ public partial class AgentImplementation : IAgentApiController
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Registered schema for {EventTypeId} is not valid JSON Schema")]
     private static partial void LogRegisteredSchemaForIsNotValid(ILogger logger, Exception exception, string eventTypeId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rejected publish of {EventTypeId}: payload is not valid JSON")]
+    private static partial void LogRejectedPayloadIsNotValidJson(ILogger logger, Exception exception, string eventTypeId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not derive session key via '{Path}' for {EventTypeId}; using a random session")]
     private static partial void LogCouldNotDeriveSessionKey(ILogger logger, Exception exception, string path, string eventTypeId);

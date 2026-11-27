@@ -168,6 +168,13 @@ public class AgentImplementationTests
         IHttpContextAccessor? httpContextAccessor,
         IEndpointAuthorizationService authorization,
         params string[] endpointIds)
+        => BuildAgent(httpContextAccessor, authorization, logger: null, endpointIds);
+
+    private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher, CapturingHandoffClientFactory Handoffs, AgentSubscriptionRegistry Registry) BuildAgent(
+        IHttpContextAccessor? httpContextAccessor,
+        IEndpointAuthorizationService authorization,
+        Microsoft.Extensions.Logging.ILogger<AgentImplementation>? logger,
+        params string[] endpointIds)
     {
         httpContextAccessor ??= AgentApiTestCallers.AgentKey("demo-agent");
         var store = new InMemoryMessageStore();
@@ -192,7 +199,7 @@ public class AgentImplementationTests
             authorization,
             new MarkingMasker(),
             audit,
-            NullLogger<AgentImplementation>.Instance);
+            logger ?? NullLogger<AgentImplementation>.Instance);
         return (impl, store, publisher, handoffs, registry);
     }
 
@@ -960,6 +967,122 @@ public class AgentImplementationTests
 
         Assert.IsInstanceOfType<BadRequestObjectResult>(result, "Malformed JSON payload must yield 400");
         Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called for malformed JSON");
+    }
+
+    // ── Error responses carry no raw exception text (review S4) ─────────
+
+    // A $ref NJsonSchema cannot resolve: its exception message names the marker.
+    private const string LeakMarker = "LEAKMARKER-sb-secret-namespace";
+    private const string UnresolvableRefSchema = "{\"$ref\":\"#/definitions/" + LeakMarker + "\"}";
+
+    private static async Task<string> ExceptionMessageOf(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
+
+        Assert.Fail("Expected the call to throw.");
+        return string.Empty;
+    }
+
+    private static string BodyOf(object? result)
+    {
+        var bad = result as BadRequestObjectResult;
+        Assert.IsNotNull(bad, $"Expected 400 with a body, got {result?.GetType().Name}.");
+        Assert.AreEqual(StatusCodes.Status400BadRequest, bad.StatusCode);
+        Assert.IsInstanceOfType<string>(bad.Value);
+        return (string)bad.Value!;
+    }
+
+    [TestMethod]
+    public async Task PostAgentEventTypes_unloadable_schema_returns_400_without_the_exception_message()
+    {
+        var thrown = await ExceptionMessageOf(() => NJsonSchema.JsonSchema.FromJsonAsync(UnresolvableRefSchema));
+        StringAssert.Contains(thrown, LeakMarker, "Test premise: NJsonSchema's message names the marker.");
+        var logger = new CapturingLogger<AgentImplementation>();
+        var (impl, _, _, _, _) = BuildAgent(null, FixedRoleAuthorization.None, logger);
+
+        var result = await impl.PostAgentEventTypesAsync(ValidRequest(jsonSchema: UnresolvableRefSchema));
+
+        var body = BodyOf(result.Result);
+        StringAssert.StartsWith(body, "jsonSchema is not a valid JSON Schema");
+        Assert.IsFalse(body.Contains(LeakMarker, StringComparison.Ordinal), $"The body leaked the exception message: {body}");
+        Assert.IsFalse(body.Contains(thrown, StringComparison.Ordinal), $"The body leaked the exception message: {body}");
+        Assert.IsTrue(logger.Entries.Exists(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Warning && e.Exception?.Message == thrown),
+            "The exception must be logged server-side.");
+    }
+
+    [TestMethod]
+    public async Task PostAgentEventTypes_malformed_schema_json_returns_400_with_its_location_only()
+    {
+        const string malformed = "{\"type\": \"object\",\n \"properties\": LEAKMARKER}";
+        var thrown = await ExceptionMessageOf(() => NJsonSchema.JsonSchema.FromJsonAsync(malformed));
+        var logger = new CapturingLogger<AgentImplementation>();
+        var (impl, _, _, _, _) = BuildAgent(null, FixedRoleAuthorization.None, logger);
+
+        var result = await impl.PostAgentEventTypesAsync(ValidRequest(jsonSchema: malformed));
+
+        var body = BodyOf(result.Result);
+        StringAssert.StartsWith(body, "jsonSchema is not a valid JSON Schema");
+        Assert.IsFalse(body.Contains(thrown, StringComparison.Ordinal), $"The body leaked the exception message: {body}");
+        Assert.IsFalse(body.Contains("Unexpected character", StringComparison.Ordinal), $"The body leaked the exception message: {body}");
+        StringAssert.Contains(body, "line 2", "The caller's own syntax error location is reported.");
+        Assert.AreEqual(1, logger.Entries.Count(e => e.Exception != null), "The exception must be logged server-side.");
+    }
+
+    [TestMethod]
+    public async Task PostAgentPublish_unloadable_registered_schema_returns_400_without_the_exception_message()
+    {
+        var thrown = await ExceptionMessageOf(() => NJsonSchema.JsonSchema.FromJsonAsync(UnresolvableRefSchema));
+        var logger = new CapturingLogger<AgentImplementation>();
+        var (impl, store, publisher, _, _) = BuildAgent(null, FixedRoleAuthorization.None, logger);
+        await SeedSchema(store, "crm.broken.v1", UnresolvableRefSchema);
+
+        var result = await impl.PostAgentPublishAsync(new AgentPublishRequest
+        {
+            EventTypeId = "crm.broken.v1",
+            Payload = "{\"industry\":\"retail\"}",
+        });
+
+        var body = BodyOf(result);
+        Assert.AreEqual("Registered schema for 'crm.broken.v1' is not valid JSON Schema.", body);
+        Assert.AreEqual(0, publisher.CallCount);
+        Assert.IsTrue(logger.Entries.Exists(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Error && e.Exception?.Message == thrown),
+            "The exception must be logged at Error level.");
+    }
+
+    [TestMethod]
+    public async Task PostAgentPublish_unparseable_payload_returns_400_with_its_location_only()
+    {
+        const string payload = "{\"industry\":\n LEAKMARKER}";
+        var thrown = await ExceptionMessageOf(async () =>
+        {
+            var schema = await NJsonSchema.JsonSchema.FromJsonAsync(IndustrySchema);
+            schema.Validate(payload);
+        });
+        var logger = new CapturingLogger<AgentImplementation>();
+        var (impl, store, publisher, _, _) = BuildAgent(null, FixedRoleAuthorization.None, logger);
+        await SeedSchema(store, "crm.lead.v1", IndustrySchema);
+
+        var result = await impl.PostAgentPublishAsync(new AgentPublishRequest
+        {
+            EventTypeId = "crm.lead.v1",
+            Payload = payload,
+        });
+
+        var body = BodyOf(result);
+        StringAssert.StartsWith(body, "Payload is not valid JSON");
+        Assert.IsFalse(body.Contains(thrown, StringComparison.Ordinal), $"The body leaked the exception message: {body}");
+        Assert.IsFalse(body.Contains("Unexpected character", StringComparison.Ordinal), $"The body leaked the exception message: {body}");
+        StringAssert.Contains(body, "line 2", "The caller's own syntax error location is reported.");
+        Assert.AreEqual(0, publisher.CallCount);
+        Assert.IsTrue(logger.Entries.Exists(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Warning && e.Exception?.Message == thrown),
+            "The exception must be logged at Warning level.");
     }
 
     [TestMethod]

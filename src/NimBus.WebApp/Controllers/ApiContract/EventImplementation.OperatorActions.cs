@@ -185,8 +185,10 @@ public partial class EventImplementation
         }
         catch (Exception e)
         {
+            // The exception can carry Service Bus, auth or storage details; it goes to the
+            // server log only, and the browser gets a fixed message.
             LogCouldNotComposeEvent(logger, e);
-            return new BadRequestObjectResult($"Could not compose event: {e.Message}");
+            return new BadRequestObjectResult("Could not compose event. See the server log for details.");
         }
     }
 
