@@ -301,6 +301,19 @@ public class AlertWebhookSenderTests
     [DataRow("ff02::1", false)]
     [DataRow("::ffff:10.0.0.1", false)]
     [DataRow("::ffff:8.8.8.8", true)]
+    [DataRow("::ffff:169.254.169.254", false)]
+    [DataRow("64:ff9b::a9fe:a9fe", false)]      // NAT64 → 169.254.169.254
+    [DataRow("64:ff9b::a00:1", false)]          // NAT64 → 10.0.0.1
+    [DataRow("64:ff9b::7f00:1", false)]         // NAT64 → 127.0.0.1
+    [DataRow("64:ff9b::808:808", true)]         // NAT64 → 8.8.8.8
+    [DataRow("2002:0a00:0001::", false)]        // 6to4 → 10.0.0.1
+    [DataRow("2002:a9fe:a9fe::1", false)]       // 6to4 → 169.254.169.254
+    [DataRow("2002:0808:0808::1", true)]        // 6to4 → 8.8.8.8
+    [DataRow("::10.0.0.1", false)]              // IPv4-compatible
+    [DataRow("::169.254.169.254", false)]       // IPv4-compatible
+    [DataRow("::8.8.8.8", true)]                // IPv4-compatible
+    [DataRow("2001:4860:4860::8888", true)]
+    [DataRow("2606:4700:4700::1111", true)]
     public void Only_public_addresses_pass_the_connect_guard(string address, bool expected)
         => Assert.AreEqual(expected, AlertWebhookConnectGuard.IsPublic(IPAddress.Parse(address)));
 

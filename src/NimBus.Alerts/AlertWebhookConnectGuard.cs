@@ -64,13 +64,22 @@ internal static class AlertWebhookConnectGuard
 
     /// <summary>
     /// Whether <paramref name="address"/> is a routable public address: not loopback, private,
-    /// link-local, shared (CGNAT), benchmarking, multicast, reserved or unspecified.
+    /// link-local, shared (CGNAT), benchmarking, multicast, reserved or unspecified. An IPv6
+    /// address that carries an IPv4 address — IPv4-mapped (<c>::ffff:0:0/96</c>), NAT64
+    /// well-known prefix (<c>64:ff9b::/96</c>), 6to4 (<c>2002::/16</c>) or IPv4-compatible
+    /// (<c>::/96</c>, which includes <c>::</c> and <c>::1</c>) — is judged by that embedded IPv4
+    /// address, because a translator or relay on the path delivers it there. The address is
+    /// only classified, never rewritten.
     /// </summary>
     public static bool IsPublic(IPAddress address)
     {
         if (address.IsIPv4MappedToIPv6)
         {
             address = address.MapToIPv4();
+        }
+        else if (TryGetEmbeddedIPv4(address, out var embedded))
+        {
+            address = embedded;
         }
 
         if (address.AddressFamily == AddressFamily.InterNetwork)
@@ -101,4 +110,40 @@ internal static class AlertWebhookConnectGuard
 
         return false;
     }
+
+    /// <summary>
+    /// Extracts the IPv4 address embedded in a NAT64 well-known-prefix, 6to4 or IPv4-compatible
+    /// IPv6 address.
+    /// </summary>
+    private static bool TryGetEmbeddedIPv4(IPAddress address, out IPAddress embedded)
+    {
+        embedded = IPAddress.None;
+        if (address.AddressFamily != AddressFamily.InterNetworkV6)
+        {
+            return false;
+        }
+
+        var b = address.GetAddressBytes();
+
+        // 6to4, 2002::/16 (RFC 3056): the IPv4 address is bytes 2-5.
+        if (b[0] == 0x20 && b[1] == 0x02)
+        {
+            embedded = new IPAddress(b.AsSpan(2, 4));
+            return true;
+        }
+
+        // NAT64 well-known prefix, 64:ff9b::/96 (RFC 6052), and IPv4-compatible, ::/96
+        // (RFC 4291): the IPv4 address is the last 32 bits.
+        var isNat64 = b[0] == 0x00 && b[1] == 0x64 && b[2] == 0xFF && b[3] == 0x9B && IsZero(b.AsSpan(4, 8));
+        var isCompatible = IsZero(b.AsSpan(0, 12));
+        if (isNat64 || isCompatible)
+        {
+            embedded = new IPAddress(b.AsSpan(12, 4));
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsZero(ReadOnlySpan<byte> bytes) => !bytes.ContainsAnyExcept((byte)0);
 }
