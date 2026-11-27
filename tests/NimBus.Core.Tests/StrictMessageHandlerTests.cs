@@ -1049,8 +1049,8 @@ public class StrictMessageHandlerTests
             "event-1.handler",
             "event-1.response-error",
             "event-1.block",
-            "event-1.complete",
-            "event-1.response-retry");
+            "event-1.response-retry",
+            "event-1.complete");
     }
 
     [TestMethod]
@@ -1716,7 +1716,7 @@ public class StrictMessageHandlerTests
     [TestMethod]
     [DataRow("event-1.response-error")]
     [DataRow("event-1.block")]
-    [DataRow("event-1.complete")]
+    [DataRow("event-1.response-retry")]
     public async Task HandleEventRequest_HandlerFailure_ProcessorStopsDuringSettlement_StillCompletesAndSchedulesRetry(string stopAfter)
     {
         var trace = new OperationTrace();
@@ -1738,8 +1738,8 @@ public class StrictMessageHandlerTests
             "event-1.handler",
             "event-1.response-error",
             "event-1.block",
-            "event-1.complete",
-            "event-1.response-retry");
+            "event-1.response-retry",
+            "event-1.complete");
     }
 
     [TestMethod]
@@ -1771,8 +1771,8 @@ public class StrictMessageHandlerTests
             "event-1.response-error",
             "event-1.response-resolution",
             "event-1.block",
-            "event-1.complete",
-            "event-1.response-retry");
+            "event-1.response-retry",
+            "event-1.complete");
     }
 
     [TestMethod]
@@ -1855,7 +1855,7 @@ public class StrictMessageHandlerTests
 
     [TestMethod]
     [DataRow("event-1.response-error")]
-    [DataRow("event-1.complete")]
+    [DataRow("event-1.response-retry")]
     public async Task HandleRetryRequest_HandlerFailure_ProcessorStopsDuringSettlement_StillCompletesAndSchedulesNextRetry(string stopAfter)
     {
         var trace = new OperationTrace();
@@ -1878,8 +1878,8 @@ public class StrictMessageHandlerTests
             "event-1.verify-owner",
             "event-1.handler",
             "event-1.response-error",
-            "event-1.complete",
-            "event-1.response-retry");
+            "event-1.response-retry",
+            "event-1.complete");
         trace.AssertAbsent("event-1.unblock");
     }
 
@@ -2021,6 +2021,255 @@ public class StrictMessageHandlerTests
             "event-1.response-retry",
             "event-1.block",
             "event-1.unblock");
+    }
+
+    // ── Send failures while settling ────────────────────────────────────
+
+    // A broker that is busy or timed out after the SDK's own retries: the transport classifies
+    // it as transient (TimeoutException stands in for a transient ServiceBusException here).
+    private static ResponseService ResponseServiceOver(FailingSender sender) =>
+        new(new TransientFailureClassifyingSender(sender, exception => exception is TimeoutException));
+
+    [TestMethod]
+    public async Task HandleEventRequest_TransientFailureSendingResolutionResponse_AbandonsInsteadOfDeadLettering()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var sender = new FailingSender(m => m.MessageType == MessageType.ResolutionResponse, new TimeoutException("ServiceBusy"));
+        var handler = new FakeEventContextHandler();
+        var sut = new StrictMessageHandler(handler, ResponseServiceOver(sender), NullLogger.Instance);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, handler.HandleCalls);
+        Assert.AreEqual(0, ctx.DeadLetterCalls, "A delivery whose handler succeeded must not be dead-lettered");
+        Assert.AreEqual(0, sender.DeadLetterNotifications);
+        Assert.AreEqual(1, ctx.AbandonCalls);
+        Assert.AreEqual(0, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_NonTransientFailureSendingResolutionResponse_StillDeadLetters()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var sender = new FailingSender(m => m.MessageType == MessageType.ResolutionResponse, new InvalidOperationException("message too large"));
+        var sut = new StrictMessageHandler(new FakeEventContextHandler(), ResponseServiceOver(sender), NullLogger.Instance);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.AreEqual(1, sender.DeadLetterNotifications);
+        Assert.AreEqual(0, ctx.AbandonCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_TransientFailureSendingErrorResponse_AbandonsWithoutDeadLetteringOrBlocking()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var sender = new FailingSender(m => m.MessageType == MessageType.ErrorResponse && m.DeadLetterReason is null, new TimeoutException("ServiceTimeout"));
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
+        var sut = new StrictMessageHandler(handler, ResponseServiceOver(sender), NullLogger.Instance);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, ctx.DeadLetterCalls, "Dead-lettering without blocking the session would let later events overtake it");
+        Assert.AreEqual(0, sender.DeadLetterNotifications);
+        Assert.AreEqual(1, ctx.AbandonCalls);
+        Assert.AreEqual(0, ctx.BlockSessionCalls);
+        Assert.AreEqual(0, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_NonTransientFailureSendingErrorResponse_StillDeadLetters()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var sender = new FailingSender(m => m.MessageType == MessageType.ErrorResponse && m.DeadLetterReason is null, new InvalidOperationException("unauthorized"));
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
+        var sut = new StrictMessageHandler(handler, ResponseServiceOver(sender), NullLogger.Instance);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.AreEqual(0, ctx.AbandonCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_Blocked_TransientFailureSendingDeferralResponse_AbandonsInsteadOfDeadLettering()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        ctx.BlockedByEventId = "blocking-event";
+        var sender = new FailingSender(m => m.MessageType == MessageType.DeferralResponse, new TimeoutException("ServiceBusy"));
+        var sut = new StrictMessageHandler(new FakeEventContextHandler(), ResponseServiceOver(sender), NullLogger.Instance);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, ctx.DeadLetterCalls, "A follower of a blocked session must be parked, not dead-lettered");
+        Assert.AreEqual(0, sender.DeadLetterNotifications);
+        Assert.AreEqual(1, ctx.AbandonCalls);
+        Assert.AreEqual(0, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_Blocked_TransientFailureParkingInDeferredSubscription_AbandonsInsteadOfDeadLettering()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        ctx.BlockedByEventId = "blocking-event";
+        var sender = new FailingSender(m => m.To == Constants.DeferredSubscriptionName, new TimeoutException("ServiceBusy"));
+        var sut = new StrictMessageHandler(new FakeEventContextHandler(), ResponseServiceOver(sender), NullLogger.Instance);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, sender.Sent(MessageType.DeferralResponse));
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+        Assert.AreEqual(0, sender.DeadLetterNotifications);
+        Assert.AreEqual(1, ctx.AbandonCalls);
+        Assert.AreEqual(0, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_Blocked_NonTransientFailureSendingDeferralResponse_StillDeadLetters()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        ctx.BlockedByEventId = "blocking-event";
+        var sender = new FailingSender(m => m.MessageType == MessageType.DeferralResponse, new InvalidOperationException("unauthorized"));
+        var sut = new StrictMessageHandler(new FakeEventContextHandler(), ResponseServiceOver(sender), NullLogger.Instance);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.AreEqual(0, ctx.AbandonCalls);
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task HandleEventRequest_FailureSchedulingRetry_CompletesWithSessionBlockedAndNoDeadLetter(bool transient)
+    {
+        var trace = new OperationTrace();
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        ctx.Trace = trace;
+        Exception failure = transient ? new TimeoutException("ServiceBusy") : new InvalidOperationException("scheduling refused");
+        var sender = new FailingSender(m => m.MessageType == MessageType.RetryRequest, failure);
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
+        var retryProvider = new FakeRetryPolicyProvider { PolicyToReturn = new RetryPolicy { MaxRetries = 3 } };
+        var sut = new StrictMessageHandler(handler, ResponseServiceOver(sender), NullLogger.Instance, retryProvider);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, sender.Sent(MessageType.ErrorResponse));
+        Assert.AreEqual(1, sender.Attempted(MessageType.RetryRequest));
+        Assert.AreEqual(0, sender.DeadLetterNotifications);
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+        Assert.AreEqual(0, ctx.AbandonCalls);
+        Assert.AreEqual(1, ctx.BlockSessionCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls, "The session stays blocked by the failed event");
+        Assert.AreEqual(1, ctx.CompletedCalls);
+        trace.AssertInOrder("event-1.block", "event-1.complete");
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_RetryPolicyProviderThrows_CompletesWithSessionBlockedAndNoDeadLetter()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var sender = new FailingSender(_ => false, new InvalidOperationException("unused"));
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
+        var sut = new StrictMessageHandler(handler, ResponseServiceOver(sender), NullLogger.Instance, new ThrowingRetryPolicyProvider());
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+        Assert.AreEqual(0, sender.DeadLetterNotifications);
+        Assert.AreEqual(1, ctx.BlockSessionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task HandleRetryRequest_FailureSchedulingNextRetry_CompletesWithSessionBlockedAndNoDeadLetter(bool transient)
+    {
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = true;
+        ctx.RetryCount = 1;
+        Exception failure = transient ? new TimeoutException("ServiceBusy") : new InvalidOperationException("scheduling refused");
+        var sender = new FailingSender(m => m.MessageType == MessageType.RetryRequest, failure);
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
+        var retryProvider = new FakeRetryPolicyProvider { PolicyToReturn = new RetryPolicy { MaxRetries = 3 } };
+        var sut = new StrictMessageHandler(handler, ResponseServiceOver(sender), NullLogger.Instance, retryProvider);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, sender.Sent(MessageType.ErrorResponse));
+        Assert.AreEqual(1, sender.Attempted(MessageType.RetryRequest));
+        Assert.AreEqual(0, sender.DeadLetterNotifications);
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls, "The session stays blocked by the failed event");
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_RedeliveryAfterCompletionFailed_DoesNotScheduleASecondRetry()
+    {
+        // The first delivery sent its ErrorResponse, blocked the session and scheduled its retry,
+        // then lost its lock while completing. The redelivery finds the session blocked by it.
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        ctx.BlockedByEventId = ctx.EventId;
+        var sender = new FailingSender(_ => false, new InvalidOperationException("unused"));
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
+        var retryProvider = new FakeRetryPolicyProvider { PolicyToReturn = new RetryPolicy { MaxRetries = 3 } };
+        var sut = new StrictMessageHandler(handler, ResponseServiceOver(sender), NullLogger.Instance, retryProvider);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(0, sender.Attempted(MessageType.RetryRequest));
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    private sealed class FailingSender(Func<IMessage, bool> failWhen, Exception failure) : ISender
+    {
+        private readonly List<(MessageType Type, bool Sent)> _attempts = [];
+
+        public int Sent(MessageType type) => _attempts.Count(a => a.Type == type && a.Sent);
+
+        public int Attempted(MessageType type) => _attempts.Count(a => a.Type == type);
+
+        // A dead-letter notification travels as an ErrorResponse that carries a DeadLetterReason.
+        public int DeadLetterNotifications { get; private set; }
+
+        public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default) => Record(message);
+
+        public async Task Send(IEnumerable<IMessage> messages, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
+        {
+            foreach (var message in messages)
+                await Record(message);
+        }
+
+        public async Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+        {
+            await Record(message);
+            return 1;
+        }
+
+        public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        private Task Record(IMessage message)
+        {
+            if (!string.IsNullOrEmpty(message.DeadLetterReason))
+                DeadLetterNotifications++;
+            var fails = failWhen(message);
+            _attempts.Add((message.MessageType, !fails));
+            return fails ? Task.FromException(failure) : Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingRetryPolicyProvider : IRetryPolicyProvider
+    {
+        public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null) =>
+            throw new InvalidOperationException("policy lookup failed");
+
+        public RetryPolicy GetRetryPolicy(string eventTypeId, Exception exception, string? endpoint = null) =>
+            throw new InvalidOperationException("policy lookup failed");
     }
 
     private static StrictMessageHandler CreateHandler(

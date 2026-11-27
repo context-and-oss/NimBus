@@ -154,7 +154,8 @@ public sealed class SimulatedEndpointHost : ISimulatedEndpointHost
             throw new InvalidOperationException("A simulated endpoint host starts once; create a new host to start again.");
 
         _responseSender = _client.CreateSender(EndpointId);
-        var sender = NimBusOpenTelemetryDecorators.InstrumentSender(new Sender(_responseSender), MessagingSystem.ServiceBus);
+        var sender = ServiceBusTransientFailures.ClassifyTransientFailures(
+            NimBusOpenTelemetryDecorators.InstrumentSender(new Sender(_responseSender), MessagingSystem.ServiceBus));
         var handler = BuildMessageHandler(EndpointId, _eventTypeIds, _behavior, sender, _loggerFactory, _stopping.Token);
 
         _receiver = new NimBusReceiverHostedService(
