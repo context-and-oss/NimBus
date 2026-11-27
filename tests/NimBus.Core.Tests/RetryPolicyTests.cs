@@ -164,6 +164,203 @@ public class RetryPolicyTests
     }
 
     [TestMethod]
+    [DataRow(12)]
+    [DataRow(40)]
+    [DataRow(62)]
+    [DataRow(63)]
+    [DataRow(64)]
+    [DataRow(1000)]
+    [DataRow(int.MaxValue)]
+    public void GetDelay_ExponentialSmallBase_SaturatesAtMaxDelay(int retryAttempt)
+    {
+        var maxDelay = TimeSpan.FromMinutes(5);
+        var policy = new RetryPolicy
+        {
+            Strategy = BackoffStrategy.Exponential,
+            BaseDelay = TimeSpan.FromSeconds(1),
+            MaxDelay = maxDelay,
+        };
+
+        var delay = policy.GetDelay(retryAttempt);
+
+        Assert.AreEqual(maxDelay, delay);
+        Assert.IsTrue(delay > TimeSpan.Zero);
+    }
+
+    [TestMethod]
+    [DataRow(1L, 60L, 6)]
+    [DataRow(1L, 60L, 34)]
+    [DataRow(1L, 60L, 63)]
+    [DataRow(1L, 60L, 1000)]
+    [DataRow(1L, 60L, int.MaxValue)]
+    [DataRow(1440L, 43200L, 5)]
+    [DataRow(1440L, 43200L, 100)]
+    [DataRow(1440L, 43200L, int.MaxValue)]
+    public void GetDelay_ExponentialLargeBase_SaturatesAtMaxDelay(long baseMinutes, long maxMinutes, int retryAttempt)
+    {
+        var maxDelay = TimeSpan.FromMinutes(maxMinutes);
+        var policy = new RetryPolicy
+        {
+            Strategy = BackoffStrategy.Exponential,
+            BaseDelay = TimeSpan.FromMinutes(baseMinutes),
+            MaxDelay = maxDelay,
+        };
+
+        var delay = policy.GetDelay(retryAttempt);
+
+        Assert.AreEqual(maxDelay, delay);
+        Assert.IsTrue(delay > TimeSpan.Zero);
+    }
+
+    [TestMethod]
+    [DataRow(JitterMode.Full, false)]
+    [DataRow(JitterMode.Full, true)]
+    [DataRow(JitterMode.Bounded, false)]
+    [DataRow(JitterMode.Bounded, true)]
+    public void GetDelay_ExponentialWithJitterAtSaturation_ReturnsMaxDelay(JitterMode jitter, bool largestRandom)
+    {
+        var maxDelay = TimeSpan.FromMinutes(5);
+        var policy = new RetryPolicy
+        {
+            Strategy = BackoffStrategy.Exponential,
+            BaseDelay = TimeSpan.FromSeconds(1),
+            MaxDelay = maxDelay,
+            Jitter = jitter,
+            BoundedJitterFactor = 0.25,
+        };
+        Random random = largestRandom ? new FixedRandom(Math.BitDecrement(1.0)) : new Random(4242);
+
+        Assert.AreEqual(maxDelay, policy.GetDelay(int.MaxValue, random));
+    }
+
+    [TestMethod]
+    [DataRow(BackoffStrategy.Fixed, 5L, null, 0, 5L)]
+    [DataRow(BackoffStrategy.Fixed, 5L, null, 10, 5L)]
+    [DataRow(BackoffStrategy.Linear, 5L, null, 0, 5L)]
+    [DataRow(BackoffStrategy.Linear, 5L, null, 3, 20L)]
+    [DataRow(BackoffStrategy.Exponential, 5L, null, 0, 5L)]
+    [DataRow(BackoffStrategy.Exponential, 5L, null, 1, 10L)]
+    [DataRow(BackoffStrategy.Exponential, 5L, null, 6, 320L)]
+    [DataRow(BackoffStrategy.Exponential, 1L, null, 30, 1L << 30)]
+    [DataRow(BackoffStrategy.Exponential, 1L, 300L, 8, 256L)]
+    [DataRow(BackoffStrategy.Exponential, 600L, 300L, 0, 300L)]
+    public void GetDelay_NonOverflowingInputs_KeepExistingValues(
+        BackoffStrategy strategy, long baseSeconds, long? maxSeconds, int retryAttempt, long expectedSeconds)
+    {
+        var policy = new RetryPolicy
+        {
+            Strategy = strategy,
+            BaseDelay = TimeSpan.FromSeconds(baseSeconds),
+            MaxDelay = maxSeconds.HasValue ? TimeSpan.FromSeconds(maxSeconds.Value) : null,
+        };
+
+        Assert.AreEqual(TimeSpan.FromSeconds(expectedSeconds), policy.GetDelay(retryAttempt));
+    }
+
+    [TestMethod]
+    [DataRow(JitterMode.Full)]
+    [DataRow(JitterMode.Bounded)]
+    public void GetDelay_ExponentialSeededJitter_MatchesPreviousFormula(JitterMode jitter)
+    {
+        const int seed = 2024;
+        var baseDelay = TimeSpan.FromSeconds(5);
+        var maxDelay = TimeSpan.FromMinutes(1);
+        var policy = new RetryPolicy
+        {
+            Strategy = BackoffStrategy.Exponential,
+            BaseDelay = baseDelay,
+            MaxDelay = maxDelay,
+            Jitter = jitter,
+        };
+        var factor = jitter == JitterMode.Full ? 1 : policy.BoundedJitterFactor;
+        var actualRandom = new Random(seed);
+        var expectedRandom = new Random(seed);
+
+        for (var attempt = 0; attempt <= 5; attempt++)
+        {
+            // The pre-change formula, computed independently.
+            var delay = TimeSpan.FromTicks(baseDelay.Ticks * (long)Math.Pow(2, attempt));
+            var maximumJitterTicks = delay.Ticks * factor;
+            var jitterTicks = (long)(maximumJitterTicks * expectedRandom.NextDouble());
+            if (maximumJitterTicks > 0 && jitterTicks >= maximumJitterTicks)
+                jitterTicks = (long)Math.Ceiling(maximumJitterTicks) - 1;
+            var expected = (decimal)delay.Ticks + jitterTicks > maxDelay.Ticks
+                ? maxDelay
+                : TimeSpan.FromTicks(delay.Ticks + jitterTicks);
+
+            Assert.AreEqual(expected, policy.GetDelay(attempt, actualRandom), $"Attempt {attempt}.");
+        }
+    }
+
+    [TestMethod]
+    [DataRow(BackoffStrategy.Fixed, false, 0)]
+    [DataRow(BackoffStrategy.Fixed, false, 63)]
+    [DataRow(BackoffStrategy.Fixed, false, int.MaxValue)]
+    [DataRow(BackoffStrategy.Fixed, true, 0)]
+    [DataRow(BackoffStrategy.Fixed, true, 63)]
+    [DataRow(BackoffStrategy.Fixed, true, int.MaxValue)]
+    [DataRow(BackoffStrategy.Linear, false, 0)]
+    [DataRow(BackoffStrategy.Linear, false, 63)]
+    [DataRow(BackoffStrategy.Linear, false, int.MaxValue)]
+    [DataRow(BackoffStrategy.Linear, true, 0)]
+    [DataRow(BackoffStrategy.Linear, true, 63)]
+    [DataRow(BackoffStrategy.Linear, true, int.MaxValue)]
+    [DataRow(BackoffStrategy.Exponential, false, 0)]
+    [DataRow(BackoffStrategy.Exponential, false, 63)]
+    [DataRow(BackoffStrategy.Exponential, false, int.MaxValue)]
+    [DataRow(BackoffStrategy.Exponential, true, 0)]
+    [DataRow(BackoffStrategy.Exponential, true, 63)]
+    [DataRow(BackoffStrategy.Exponential, true, int.MaxValue)]
+    public void GetDelay_ZeroBaseDelay_ReturnsZero(BackoffStrategy strategy, bool withMaxDelay, int retryAttempt)
+    {
+        var policy = new RetryPolicy
+        {
+            Strategy = strategy,
+            BaseDelay = TimeSpan.Zero,
+            MaxDelay = withMaxDelay ? TimeSpan.FromMinutes(5) : null,
+        };
+
+        Assert.AreEqual(TimeSpan.Zero, policy.GetDelay(retryAttempt));
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(63)]
+    [DataRow(int.MaxValue)]
+    public void GetDelay_ExponentialZeroMaxDelay_ReturnsZero(int retryAttempt)
+    {
+        var policy = new RetryPolicy
+        {
+            Strategy = BackoffStrategy.Exponential,
+            BaseDelay = TimeSpan.FromMinutes(1),
+            MaxDelay = TimeSpan.Zero,
+        };
+
+        Assert.AreEqual(TimeSpan.Zero, policy.GetDelay(retryAttempt));
+        Assert.AreEqual(0, policy.GetDelayMinutes(retryAttempt));
+    }
+
+    [TestMethod]
+    [DataRow(0, 1)]
+    [DataRow(1, 2)]
+    [DataRow(2, 4)]
+    [DataRow(3, 5)]
+    [DataRow(34, 5)]
+    [DataRow(1000, 5)]
+    [DataRow(int.MaxValue, 5)]
+    public void GetDelayMinutes_ExponentialWithMaxDelay_SaturatesAtCap(int retryAttempt, int expectedMinutes)
+    {
+        var policy = new RetryPolicy
+        {
+            Strategy = BackoffStrategy.Exponential,
+            BaseDelay = TimeSpan.FromMinutes(1),
+            MaxDelay = TimeSpan.FromMinutes(5),
+        };
+
+        Assert.AreEqual(expectedMinutes, policy.GetDelayMinutes(retryAttempt));
+    }
+
+    [TestMethod]
     public void NewtonsoftSerialization_PreservesLegacyDefaultsAndJitterSettings()
     {
         const string legacyJson = "{\"MaxRetries\":3,\"Strategy\":2,\"BaseDelay\":\"00:00:05\",\"MaxDelay\":\"00:01:00\"}";

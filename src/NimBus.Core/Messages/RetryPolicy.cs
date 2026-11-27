@@ -58,7 +58,7 @@ public class RetryPolicy
         {
             BackoffStrategy.Fixed => BaseDelay,
             BackoffStrategy.Linear => TimeSpan.FromTicks(BaseDelay.Ticks * (retryAttempt + 1)),
-            BackoffStrategy.Exponential => TimeSpan.FromTicks(BaseDelay.Ticks * (long)Math.Pow(2, retryAttempt)),
+            BackoffStrategy.Exponential => GetExponentialDelay(retryAttempt),
             _ => BaseDelay
         };
 
@@ -73,6 +73,18 @@ public class RetryPolicy
             delay = MaxDelay.Value;
 
         return delay;
+    }
+
+    private TimeSpan GetExponentialDelay(int retryAttempt)
+    {
+        // Saturate at MaxDelay before multiplying: BaseDelay * 2^n exceeds MaxDelay exactly when
+        // 2^n > floor(MaxDelay / BaseDelay), so the comparison cannot overflow and the product is
+        // only computed when it fits within MaxDelay.
+        if (MaxDelay.HasValue && BaseDelay.Ticks > 0 && retryAttempt >= 0
+            && (retryAttempt >= 63 || (1L << retryAttempt) > MaxDelay.Value.Ticks / BaseDelay.Ticks))
+            return MaxDelay.Value;
+
+        return TimeSpan.FromTicks(BaseDelay.Ticks * (long)Math.Pow(2, retryAttempt));
     }
 
     private double GetBoundedJitterFactor()
