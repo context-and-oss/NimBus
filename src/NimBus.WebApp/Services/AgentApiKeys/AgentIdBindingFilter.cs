@@ -5,7 +5,8 @@ namespace NimBus.WebApp.Services.AgentApiKeys;
 
 /// <summary>
 /// Refuses an agent API key caller that claims a different agent in <c>X-Agent-Id</c> (Spec 039),
-/// so a mismatch is visible instead of silently ignored. Callers without a key keep the header.
+/// so a mismatch is visible instead of silently ignored. A signed-in person's header is not
+/// refused here; the agent API ignores it and records the person by name instead.
 /// </summary>
 internal sealed class AgentIdBindingFilter : IAsyncActionFilter
 {

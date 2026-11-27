@@ -164,8 +164,10 @@ public class AgentApiAuthorizationTests
     }
 
     [TestMethod]
-    public async Task A_signed_in_person_keeps_choosing_the_agent_id_header()
+    public async Task A_signed_in_persons_agent_id_header_is_not_refused_by_the_binding_filter()
     {
+        // The agent API ignores a person's X-Agent-Id and records them by name instead
+        // (AgentImplementationTests); only a key caller's mismatch is refused here.
         using var response = await SendAsync("/api/agent/catalog", signedIn: true, agentIdHeader: "someone-else");
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);

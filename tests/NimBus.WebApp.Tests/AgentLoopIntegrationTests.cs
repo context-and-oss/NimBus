@@ -154,7 +154,10 @@ public class AgentLoopIntegrationTests
             settlement,
             registry,
             config: null!,              // -> AgentZone.DefaultAgentZoneEndpointId
-            httpContextAccessor: null!, // -> CurrentAgentId() falls back to "demo-agent"
+            AgentApiTestCallers.AgentKey("demo-agent"), // an agent API key: never role-checked
+            FixedRoleAuthorization.None,
+            new MarkingMasker(),
+            audit,
             NullLogger<AgentImplementation>.Instance);
         return (impl, store, publisher, handoffs, registry);
     }

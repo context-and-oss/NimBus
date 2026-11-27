@@ -160,7 +160,16 @@ public class AgentImplementationTests
     private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher, CapturingHandoffClientFactory Handoffs, AgentSubscriptionRegistry Registry) BuildAgent(
         IHttpContextAccessor? httpContextAccessor,
         params string[] endpointIds)
+        => BuildAgent(httpContextAccessor, FixedRoleAuthorization.None, endpointIds);
+
+    // The default caller is the agent "demo-agent" on an agent API key; it is never
+    // role-checked, so the authorization service grants nothing unless a test says otherwise.
+    private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher, CapturingHandoffClientFactory Handoffs, AgentSubscriptionRegistry Registry) BuildAgent(
+        IHttpContextAccessor? httpContextAccessor,
+        IEndpointAuthorizationService authorization,
+        params string[] endpointIds)
     {
+        httpContextAccessor ??= AgentApiTestCallers.AgentKey("demo-agent");
         var store = new InMemoryMessageStore();
         var platform = new FakePlatform(endpointIds);
         var publisher = new CapturingPublisher();
@@ -179,29 +188,16 @@ public class AgentImplementationTests
             settlement,
             registry,
             config: null!,                 // -> AgentZone default zone id
-            httpContextAccessor,          // null -> CurrentAgentId() falls back to "demo-agent"
+            httpContextAccessor,
+            authorization,
+            new MarkingMasker(),
+            audit,
             NullLogger<AgentImplementation>.Instance);
         return (impl, store, publisher, handoffs, registry);
     }
 
-    // An accessor whose request carries the X-Agent-Id header, so CurrentAgentId()
-    // (and therefore the settle audit's auditor name) resolves to the given agent.
-    private static IHttpContextAccessor AgentContext(string agentId)
-    {
-        var ctx = new DefaultHttpContext();
-        ctx.Request.Headers["X-Agent-Id"] = agentId;
-        return new HttpContextAccessor { HttpContext = ctx };
-    }
-
     // An accessor whose caller authenticated with an agent API key (Spec 039) and sent no header.
-    private static IHttpContextAccessor AgentKeyContext(string agentId)
-    {
-        var identity = new System.Security.Claims.ClaimsIdentity(
-            new[] { new System.Security.Claims.Claim(NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.AgentIdClaim, agentId) },
-            NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.SchemeName);
-        var ctx = new DefaultHttpContext { User = new System.Security.Claims.ClaimsPrincipal(identity) };
-        return new HttpContextAccessor { HttpContext = ctx };
-    }
+    private static IHttpContextAccessor AgentKeyContext(string agentId) => AgentApiTestCallers.AgentKey(agentId);
 
     // Seeds a Pending+Handoff event under the Agent Zone endpoint, exactly as Task 7's
     // Agent Zone subscriber parks each agent event.
@@ -456,7 +452,7 @@ public class AgentImplementationTests
         });
 
         Assert.IsInstanceOfType<OkResult>(result, "Valid subscribe must yield 200");
-        // CurrentAgentId() falls back to "demo-agent" with no X-Agent-Id header.
+        // The default caller is the "demo-agent" agent key.
         CollectionAssert.Contains(registry.GetSubscriptions("demo-agent").ToArray(), "crm.lead.v1",
             "Registry must record the subscription for the current agent");
     }
@@ -526,7 +522,7 @@ public class AgentImplementationTests
             new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance),
             new AgentSubscriptionRegistry(),
             config: null!,
-            httpContextAccessor: null!,
+            AgentApiTestCallers.AgentKey("demo-agent"), FixedRoleAuthorization.None, new MarkingMasker(), audit,
             NullLogger<AgentImplementation>.Instance);
 
         var result = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
@@ -677,7 +673,7 @@ public class AgentImplementationTests
     [TestMethod]
     public async Task PostAgentSettle_complete_writes_audit_row_attributed_to_agent()
     {
-        var (impl, store, _, handoffs, _) = BuildAgent(AgentContext("agent-alice"));
+        var (impl, store, _, handoffs, _) = BuildAgent(AgentKeyContext("agent-alice"));
         await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-99");
 
         var result = await impl.PostAgentSettleAsync(
@@ -690,13 +686,13 @@ public class AgentImplementationTests
         Assert.AreEqual(1, rows.Count, "An agent-settled complete must write exactly one audit row (ADR-002)");
         Assert.AreEqual(NimBus.MessageStore.MessageAuditType.CompleteHandoff, rows[0].AuditType);
         Assert.AreEqual("agent-alice", rows[0].AuditorName,
-            "Auditor must be the settling agent (X-Agent-Id), not anonymous");
+            "Auditor must be the settling agent, not anonymous");
     }
 
     [TestMethod]
     public async Task PostAgentSettle_fail_writes_audit_row_attributed_to_agent()
     {
-        var (impl, store, _, handoffs, _) = BuildAgent(AgentContext("agent-bob"));
+        var (impl, store, _, handoffs, _) = BuildAgent(AgentKeyContext("agent-bob"));
         await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
 
         var result = await impl.PostAgentSettleAsync(
@@ -709,7 +705,7 @@ public class AgentImplementationTests
         Assert.AreEqual(1, rows.Count, "An agent-settled fail must write exactly one audit row (ADR-002)");
         Assert.AreEqual(NimBus.MessageStore.MessageAuditType.FailHandoff, rows[0].AuditType);
         Assert.AreEqual("agent-bob", rows[0].AuditorName,
-            "Auditor must be the settling agent (X-Agent-Id), not anonymous");
+            "Auditor must be the settling agent, not anonymous");
     }
 
     [TestMethod]
@@ -749,7 +745,7 @@ public class AgentImplementationTests
         var impl = new AgentImplementation(
             store, new FakePlatform(), new CapturingPublisher(), store, handoffs,
             new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance),
-            new AgentSubscriptionRegistry(), config: null!, httpContextAccessor: null!,
+            new AgentSubscriptionRegistry(), config: null!, AgentApiTestCallers.AgentKey("demo-agent"), FixedRoleAuthorization.None, new MarkingMasker(), audit,
             NullLogger<AgentImplementation>.Instance);
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
@@ -813,7 +809,7 @@ public class AgentImplementationTests
     [TestMethod]
     public async Task PostAgentSettle_twice_before_resolver_projects_settles_and_audits_once()
     {
-        var (impl, store, _, handoffs, _) = BuildAgent(AgentContext("enrichment-agent"));
+        var (impl, store, _, handoffs, _) = BuildAgent(AgentKeyContext("enrichment-agent"));
         await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
 
         var first = await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
@@ -1114,5 +1110,198 @@ public class AgentImplementationTests
 
         Assert.IsInstanceOfType<BadRequestObjectResult>(result, "Blank/whitespace payload must yield 400");
         Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called when payload is blank");
+    }
+
+    // ── Signed-in people: roles, masking and attribution ────────────────
+
+    private static int? StatusOf(IActionResult result) => (result as ObjectResult)?.StatusCode;
+
+    private static int? StatusOf<T>(ActionResult<T> result) => (result.Result as ObjectResult)?.StatusCode;
+
+    private static AgentPublishRequest LeadPublish() => new() { EventTypeId = "crm.lead.v1", Payload = "{\"industry\":\"retail\"}" };
+
+    private static string? PayloadOf(ActionResult<AgentReceivedMessage> result)
+        => ((AgentReceivedMessage)((OkObjectResult)result.Result!).Value!).Payload;
+
+    [TestMethod]
+    public async Task A_person_without_a_role_is_forbidden_on_every_agent_endpoint()
+    {
+        var authorization = FixedRoleAuthorization.None;
+        var (impl, store, publisher, handoffs, registry) = BuildAgent(AgentApiTestCallers.Person("Mallory"), authorization);
+        await SeedSchema(store, "crm.lead.v1", IndustrySchema);
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{\"industry\":\"retail\"}", messageId: "msg-99");
+
+        Assert.AreEqual(403, StatusOf(await impl.GetAgentCatalogAsync()), "catalog");
+        Assert.AreEqual(403, StatusOf(await impl.PostAgentEventTypesAsync(ValidRequest("squatted.v1"))), "event-types");
+        Assert.AreEqual(403, StatusOf(await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "crm.lead.v1" })), "subscribe");
+        Assert.AreEqual(403, StatusOf(await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0)), "receive");
+        Assert.AreEqual(403, StatusOf(await impl.PostAgentPublishAsync(LeadPublish())), "publish");
+        Assert.AreEqual(403, StatusOf(await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete))), "settle");
+
+        Assert.IsNull(await store.GetSchema("squatted.v1"), "A refused define must not register the schema");
+        Assert.AreEqual(0, publisher.CallCount, "A refused publish must not publish");
+        Assert.AreEqual(0, handoffs.CompleteCount, "A refused settle must not settle");
+        Assert.AreEqual(0, registry.GetSubscriptions("Mallory").Count, "A refused subscribe must not subscribe");
+        Assert.IsTrue(authorization.Checks.All(c => c.EndpointId == ZoneId), "Roles are checked on the Agent Zone endpoint");
+    }
+
+    [TestMethod]
+    public async Task A_refused_settle_is_audited_as_access_denied()
+    {
+        var (impl, store, _, handoffs, _) = BuildAgent(AgentApiTestCallers.Person("Mallory"), new FixedRoleAuthorization(AccessRole.Reader));
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-99");
+
+        var result = await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: "boom"));
+
+        Assert.AreEqual(403, StatusOf(result), "Reader is not enough to settle");
+        Assert.AreEqual(0, handoffs.FailCount);
+        var row = (await store.GetMessageAudits("evt-1")).Single();
+        Assert.AreEqual(NimBus.MessageStore.MessageAuditType.FailHandoff, row.AuditType);
+        Assert.IsTrue(row.AccessDenied);
+        Assert.AreEqual("Mallory", row.AuditorName);
+    }
+
+    [TestMethod]
+    public async Task A_reader_may_read_but_not_change_anything()
+    {
+        var (impl, store, publisher, _, _) = BuildAgent(AgentApiTestCallers.Person("Rita"), new FixedRoleAuthorization(AccessRole.Reader));
+        await SeedSchema(store, "crm.lead.v1", IndustrySchema);
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{\"industry\":\"retail\"}");
+
+        Assert.IsInstanceOfType<OkObjectResult>((await impl.GetAgentCatalogAsync()).Result);
+        Assert.IsInstanceOfType<OkObjectResult>((await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0)).Result);
+        Assert.IsInstanceOfType<OkResult>(await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "crm.lead.v1" }));
+
+        Assert.AreEqual(403, StatusOf(await impl.PostAgentEventTypesAsync(ValidRequest("new.type.v1"))), "event-types needs Contributor");
+        Assert.AreEqual(403, StatusOf(await impl.PostAgentPublishAsync(LeadPublish())), "publish needs Contributor");
+        Assert.AreEqual(0, publisher.CallCount);
+    }
+
+    [TestMethod]
+    [DataRow(false, MarkingMasker.Masked, DisplayName = "not a PiiReader: masked")]
+    [DataRow(true, "{\"industry\":\"retail\"}", DisplayName = "PiiReader: unmasked")]
+    public async Task A_person_receives_the_payload_masked_unless_a_PiiReader(bool piiReader, string expectedPayload)
+    {
+        var (impl, store, _, _, _) = BuildAgent(AgentApiTestCallers.Person("Rita"), new FixedRoleAuthorization(AccessRole.Reader, piiReader));
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{\"industry\":\"retail\"}");
+
+        Assert.AreEqual(expectedPayload, PayloadOf(await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0)));
+    }
+
+    [TestMethod]
+    public async Task A_non_PiiReader_person_gets_no_raw_value_from_the_production_masker()
+    {
+        // Agent events are classless, so the production masker cannot resolve their fields
+        // and fails closed rather than returning the payload.
+        var store = new InMemoryMessageStore();
+        var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
+        var impl = new AgentImplementation(
+            store, new FakePlatform(), new CapturingPublisher(), store, new CapturingHandoffClientFactory(),
+            new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance),
+            new AgentSubscriptionRegistry(), config: null!, AgentApiTestCallers.Person("Rita"),
+            new FixedRoleAuthorization(AccessRole.Reader), new NimBus.Core.Messages.PII.EventJsonMasker(new FakePlatform()), audit,
+            NullLogger<AgentImplementation>.Instance);
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{\"email\":\"someone@example.com\"}");
+
+        var payload = PayloadOf(await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0));
+
+        Assert.IsNotNull(payload);
+        Assert.IsFalse(payload.Contains("someone@example.com", StringComparison.Ordinal), payload);
+    }
+
+    [TestMethod]
+    public async Task A_person_settles_under_their_own_name_whatever_X_Agent_Id_says()
+    {
+        var (impl, store, _, handoffs, _) = BuildAgent(
+            AgentApiTestCallers.Person("Carol Contributor", agentIdHeader: "enrichment-agent"),
+            new FixedRoleAuthorization(AccessRole.Contributor));
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-99");
+
+        var result = await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
+
+        Assert.IsInstanceOfType<OkResult>(result);
+        Assert.AreEqual(1, handoffs.CompleteCount);
+        var row = (await store.GetMessageAudits("evt-1")).Single();
+        Assert.AreEqual("Carol Contributor", row.AuditorName, "X-Agent-Id must not attribute a person's settle to an agent");
+        Assert.IsFalse(row.AccessDenied);
+    }
+
+    [TestMethod]
+    public async Task A_person_defines_and_subscribes_under_their_own_name_whatever_X_Agent_Id_says()
+    {
+        var (impl, store, _, _, registry) = BuildAgent(
+            AgentApiTestCallers.Person("Carol Contributor", agentIdHeader: "enrichment-agent"),
+            new FixedRoleAuthorization(AccessRole.Contributor));
+
+        Assert.IsInstanceOfType<OkObjectResult>((await impl.PostAgentEventTypesAsync(ValidRequest("new.type.v1"))).Result);
+        Assert.IsInstanceOfType<OkResult>(await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "new.type.v1" }));
+
+        var schema = await store.GetSchema("new.type.v1");
+        Assert.IsNotNull(schema);
+        Assert.AreEqual("Carol Contributor", schema.CreatedBy);
+        Assert.AreEqual("Carol Contributor", schema.AgentId);
+        Assert.AreEqual(0, registry.GetSubscriptions("enrichment-agent").Count);
+        CollectionAssert.Contains(registry.GetSubscriptions("Carol Contributor").ToArray(), "new.type.v1");
+    }
+
+    [TestMethod]
+    public async Task A_contributor_may_publish()
+    {
+        var (impl, store, publisher, _, _) = BuildAgent(AgentApiTestCallers.Person("Carol"), new FixedRoleAuthorization(AccessRole.Contributor));
+        await SeedSchema(store, "crm.lead.v1", IndustrySchema);
+
+        Assert.IsInstanceOfType<OkResult>(await impl.PostAgentPublishAsync(LeadPublish()));
+        Assert.AreEqual(1, publisher.CallCount);
+    }
+
+    [TestMethod]
+    public async Task An_agent_key_needs_no_role_and_reads_the_payload_unmasked()
+    {
+        var authorization = FixedRoleAuthorization.None;
+        var (impl, store, publisher, handoffs, _) = BuildAgent(AgentApiTestCallers.AgentKey("enrichment-agent"), authorization);
+        await SeedSchema(store, "crm.lead.v1", IndustrySchema);
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{\"industry\":\"retail\"}", messageId: "msg-99");
+
+        Assert.AreEqual("{\"industry\":\"retail\"}", PayloadOf(await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0)));
+        Assert.IsInstanceOfType<OkObjectResult>((await impl.PostAgentEventTypesAsync(ValidRequest("agent.type.v1"))).Result);
+        Assert.IsInstanceOfType<OkResult>(await impl.PostAgentPublishAsync(LeadPublish()));
+        Assert.IsInstanceOfType<OkResult>(await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete)));
+
+        Assert.AreEqual(1, publisher.CallCount);
+        Assert.AreEqual(1, handoffs.CompleteCount);
+        Assert.AreEqual(0, authorization.Checks.Count, "An agent key is not role-checked");
+        Assert.AreEqual("enrichment-agent", (await store.GetMessageAudits("evt-1")).Single().AuditorName);
+    }
+
+    [TestMethod]
+    public async Task A_sign_in_identity_carrying_the_agent_claim_is_still_a_person()
+    {
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            new[]
+            {
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, "Mallory"),
+                new System.Security.Claims.Claim(NimBus.WebApp.Services.AgentApiKeys.AgentApiKeyDefaults.AgentIdClaim, "enrichment-agent"),
+            },
+            "Identity.Application");
+        var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = new System.Security.Claims.ClaimsPrincipal(identity) } };
+        var (impl, store, _, _, _) = BuildAgent(accessor, FixedRoleAuthorization.None);
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+        Assert.AreEqual(403, StatusOf(await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0)));
+    }
+
+    [TestMethod]
+    public async Task The_local_development_bypass_keeps_X_Agent_Id_as_the_agent()
+    {
+        // Development only: every LocalDev caller is already an Owner, and an agent run
+        // locally without a key must still act, and be audited, as itself.
+        var (impl, store, _, _, _) = BuildAgent(
+            AgentApiTestCallers.Person("Local Developer", agentIdHeader: "enrichment-agent", scheme: LocalDevAuthHandler.SchemeName),
+            FixedRoleAuthorization.None);
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{\"industry\":\"retail\"}", messageId: "msg-99");
+
+        Assert.AreEqual("{\"industry\":\"retail\"}", PayloadOf(await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0)));
+        Assert.IsInstanceOfType<OkResult>(await impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete)));
+        Assert.AreEqual("enrichment-agent", (await store.GetMessageAudits("evt-1")).Single().AuditorName);
     }
 }

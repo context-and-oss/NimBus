@@ -121,11 +121,25 @@ A new **Agent keys** feature in the "AI & agents" group of the Spec 038 Settings
 - README: deploy, create the key in Settings, then redeploy with `Parameters__enrichment_agent_key`. Until then the agent logs 401s and the Agent Zone holds contacts as Pending, which the README says.
 - Run mode is unchanged: the local auth bypass still admits the agent without a key.
 
+### Signed-in people on the agent API
+
+The agent API also accepts the sign-in scheme, so a person is held to the same rules as everywhere else in the WebApp. Roles are checked on the Agent Zone endpoint (`Agent:ZoneEndpointId`), and a site-wide role also counts.
+
+| Operation | A person needs |
+|---|---|
+| `GET catalog`, `POST subscribe`, `GET receive` | Reader |
+| `POST event-types`, `POST publish`, `POST settle` | Contributor |
+
+- A refused call returns 403. A refused settle also writes an access-denied `CompleteHandoff` or `FailHandoff` audit row, as the operator settle path does.
+- `receive` masks the payload for a person who is not a PiiReader, using the masker every other payload-returning endpoint uses. Agent events have no CLR class, so the masker fails closed and the person gets its marker instead of the payload.
+- A person is recorded under their own resolved name (the name used for every other audit row) on schema definitions, subscriptions and settle audit rows. `X-Agent-Id` is ignored, so a person cannot attribute an action to an agent.
+- Agent API key callers are unchanged: they are not role-checked, they read payloads unmasked, and they are recorded as the key's agent. Only the key scheme's own identity counts, so a sign-in token carrying the agent id claim is still a person.
+- The local development bypass (`EnableLocalDevAuthentication`, Development only, where every caller is already an Owner) keeps `X-Agent-Id`. An agent run locally without a key, as in CrmErpDemo Run mode, still acts and is audited as itself.
+
 ## Non-goals (v1)
 
 - Entra client-credential tokens for agents (a later `NimBusAgentBearer` scheme).
-- Per-key scopes, such as limiting a key to certain event types or endpoints, and PII masking on `receive`.
-- Making signed-in people's agent calls name the person rather than `X-Agent-Id`. The operator settle path already requires Contributor, but the agent path does not check roles for people. That is a separate issue.
+- Per-key scopes, such as limiting a key to certain event types or endpoints, and PII masking on `receive` for key callers.
 - A failed-key rate limiter.
 
 ## Compatibility

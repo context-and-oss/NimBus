@@ -82,7 +82,10 @@ public sealed class AgentSettleContractTests
             settlement,
             new AgentSubscriptionRegistry(),
             config: null!,
-            httpContextAccessor: null!,
+            AgentApiTestCallers.AgentKey("demo-agent"),
+            FixedRoleAuthorization.None,
+            new MarkingMasker(),
+            audit,
             NullLogger<AgentImplementation>.Instance);
 
         var builder = new HostBuilder()
