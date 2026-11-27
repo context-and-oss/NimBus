@@ -416,6 +416,8 @@ public partial class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHisto
             .Where(e => e.ResolutionStatus is ResolutionStatus.Pending or ResolutionStatus.Deferred or ResolutionStatus.Failed or ResolutionStatus.DeadLettered or ResolutionStatus.Unsupported)
             .OrderByDescending(e => e.UpdatedAt)
             .Take(take)
+            // Clone + strip EventJson — see GetEventsByFilter.
+            .Select(CloneWithoutEventJson)
             .ToList();
 
         return Task.FromResult<EndpointState?>(new EndpointState

@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.Data.SqlClient;
 using Newtonsoft.Json;
 using NimBus.Core.Messages;
@@ -37,15 +36,15 @@ internal sealed partial class SqlServerMessageTrackingStore : IMessageTrackingSt
         return escaped + "%";
     }
 
-    private static int DecodeOffset(string? token)
+    /// <summary>
+    /// Keyset continuation token for the last returned row of a list query that
+    /// projects <c>Id</c> and <paramref name="timestampColumn"/> (its sort column).
+    /// </summary>
+    private static string KeysetToken(object row, string timestampColumn)
     {
-        if (string.IsNullOrEmpty(token)) return 0;
-        try { return int.Parse(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(token!)), CultureInfo.InvariantCulture); }
-        catch { return 0; }
+        var values = (IDictionary<string, object>)row;
+        return new SqlKeysetCursor((DateTime)values[timestampColumn], (long)values["Id"]).Encode();
     }
-
-    private static string EncodeOffset(int offset)
-        => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(offset.ToString(CultureInfo.InvariantCulture)));
 
     private static UnresolvedEvent MapUnresolvedEventRow(dynamic row)
     {

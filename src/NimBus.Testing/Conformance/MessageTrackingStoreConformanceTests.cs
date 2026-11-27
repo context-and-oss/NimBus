@@ -2477,6 +2477,48 @@ public abstract partial class MessageTrackingStoreConformanceTests
     }
 
     /// <summary>
+    /// Endpoint-state paging follows the search projection contract: it omits the
+    /// heavy EventJson payload, returns every other property exactly as
+    /// <c>GetEventsByFilter</c> does, and leaves the stored event untouched.
+    /// </summary>
+    [TestMethod]
+    public async Task DownloadEndpointStatePaging_omits_EventJson_without_corrupting_the_stored_event()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-statejson");
+        var eventId = Id("statejson-1");
+        const string sessionId = "session-statejson";
+
+        await store.UploadFailedMessage(eventId, sessionId, endpointId, FullySetEvent(endpointId, eventId, sessionId));
+
+        var state = await store.DownloadEndpointStatePaging(endpointId, pageSize: 20, continuationToken: string.Empty);
+        var fromState = state!.EnrichedUnresolvedEvents.Single();
+        Assert.IsNull(fromState.MessageContent?.EventContent?.EventJson,
+            "Endpoint-state paging must omit the heavy EventJson payload.");
+        CollectionAssert.AreEqual(new[] { StoredId(eventId, sessionId) }, state.FailedEvents.ToList());
+
+        var searched = (await store.GetEventsByFilter(new EventFilter { EndPointId = endpointId, EventId = eventId }, null!, 50)).Events.Single();
+        foreach (var prop in typeof(UnresolvedEvent).GetProperties())
+        {
+            if (prop.Name == nameof(UnresolvedEvent.MessageContent))
+            {
+                Assert.AreEqual(
+                    Newtonsoft.Json.JsonConvert.SerializeObject(searched.MessageContent),
+                    Newtonsoft.Json.JsonConvert.SerializeObject(fromState.MessageContent),
+                    "Endpoint-state paging must return the same MessageContent as search (EventJson stripped).");
+                continue;
+            }
+
+            Assert.AreEqual(prop.GetValue(searched), prop.GetValue(fromState),
+                $"UnresolvedEvent.{prop.Name} differs between endpoint-state paging and search.");
+        }
+
+        var direct = await store.GetFailedEvent(endpointId, eventId, sessionId);
+        Assert.AreEqual("{\"secret\":\"payload\"}", direct!.MessageContent?.EventContent?.EventJson,
+            "Stripping EventJson from endpoint-state paging must not corrupt the stored event (in-memory must clone).");
+    }
+
+    /// <summary>
     /// Drift guard for the message search projection: reflects over every
     /// <see cref="MessageEntity"/> property. See the Cosmos
     /// <c>MessageSearchProjection</c> constant.

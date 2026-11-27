@@ -60,7 +60,6 @@ VALUES (
 
     public async Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount)
     {
-        var offset = DecodeOffset(continuationToken);
         var pageSize = PaginationLimits.Resolve(maxItemCount);
 
         var where = new List<string> { "1 = 1" };
@@ -88,19 +87,19 @@ VALUES (
         if (filter.CreatedAtFrom.HasValue) { where.Add("CreatedAtUtc >= @CreatedAtFrom"); p.Add("CreatedAtFrom", filter.CreatedAtFrom.Value); }
         if (filter.CreatedAtTo.HasValue) { where.Add("CreatedAtUtc <= @CreatedAtTo"); p.Add("CreatedAtTo", filter.CreatedAtTo.Value); }
 
-        p.Add("Offset", offset);
+        SqlKeysetCursor.Apply(continuationToken, "CreatedAtUtc", where, p);
         p.Add("PageSize", pageSize);
 
         var sql = $@"
-SELECT EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment, AccessDenied, Data,
+SELECT Id, EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment, AccessDenied, Data,
        CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject, CreatedAtUtc
 FROM {T("MessageAudits")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY CreatedAtUtc DESC, Id DESC
-OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
+OFFSET 0 ROWS FETCH NEXT @PageSize ROWS ONLY";
 
         await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync(sql, p, commandTimeout: _context.CommandTimeout);
+        var rows = (await conn.QueryAsync(sql, p, commandTimeout: _context.CommandTimeout)).ToList();
 
         var items = rows.Select(r => new AuditSearchItem
         {
@@ -128,7 +127,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         return new AuditSearchResult
         {
             Audits = items,
-            ContinuationToken = items.Count == pageSize ? EncodeOffset(offset + pageSize) : null,
+            ContinuationToken = items.Count == pageSize ? KeysetToken((object)rows[^1], "CreatedAtUtc") : null,
         };
     }
 

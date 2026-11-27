@@ -1,3 +1,4 @@
+using Dapper;
 using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore.SqlServer;
@@ -112,23 +113,29 @@ ORDER BY SessionId, UpdatedAtUtc DESC, Id DESC";
 
     public async Task<EndpointState?> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
     {
-        var offset = DecodeOffset(continuationToken);
         var effectivePageSize = pageSize > 0 ? pageSize : 100;
 
+        var where = new List<string>
+        {
+            "EndpointId = @EndpointId",
+            "Status IN ('Pending','Deferred','Failed','DeadLettered','Unsupported')",
+            "Deleted = 0",
+        };
+        var p = new DynamicParameters();
+        p.Add("EndpointId", endpointId);
+        p.Add("PageSize", effectivePageSize);
+        SqlKeysetCursor.Apply(continuationToken, "UpdatedAtUtc", where, p);
+
+        // Same projection as search: the heavy EventJson payload is stripped server-side.
         var sql = $@"
-SELECT *
+SELECT Id, {EventSearchColumns}
 FROM {T("UnresolvedEvents")}
-WHERE EndpointId = @EndpointId
-  AND Status IN ('Pending','Deferred','Failed','DeadLettered','Unsupported')
-  AND Deleted = 0
+WHERE {string.Join(" AND ", where)}
 ORDER BY UpdatedAtUtc DESC, Id DESC
-OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
+OFFSET 0 ROWS FETCH NEXT @PageSize ROWS ONLY";
 
         await using var conn = await OpenAsync();
-        var rows = (await conn.QueryAsync(
-            sql,
-            new { EndpointId = endpointId, Offset = offset, PageSize = effectivePageSize },
-            commandTimeout: _context.CommandTimeout)).ToList();
+        var rows = (await conn.QueryAsync(sql, p, commandTimeout: _context.CommandTimeout)).ToList();
 
         var events = rows.Select(MapUnresolvedEventRow).ToList();
         return new EndpointState
@@ -141,7 +148,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
             FailedEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Failed).Select(CompositeEventId).ToList(),
             DeadletteredEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.DeadLettered).Select(CompositeEventId).ToList(),
             UnsupportedEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Unsupported).Select(CompositeEventId).ToList(),
-            ContinuationToken = events.Count == effectivePageSize ? EncodeOffset(offset + effectivePageSize) : string.Empty,
+            ContinuationToken = events.Count == effectivePageSize ? KeysetToken((object)rows[^1], "UpdatedAtUtc") : string.Empty,
         };
     }
 }

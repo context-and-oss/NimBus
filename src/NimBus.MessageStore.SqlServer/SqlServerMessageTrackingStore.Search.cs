@@ -21,30 +21,29 @@ internal sealed partial class SqlServerMessageTrackingStore
 
     public async Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount)
     {
-        var offset = DecodeOffset(continuationToken);
         var pageSize = PaginationLimits.Resolve(maxSearchItemsCount);
 
         var (where, p) = BuildEventFilter(filter);
         if (filter.ResolutionStatus is { Count: > 0 }) { where.Add("Status IN @Statuses"); p.Add("Statuses", filter.ResolutionStatus); }
 
-        p.Add("Offset", offset);
+        SqlKeysetCursor.Apply(continuationToken, "UpdatedAtUtc", where, p);
         p.Add("PageSize", pageSize);
 
         var sql = $@"
-SELECT {EventSearchColumns}
+SELECT Id, {EventSearchColumns}
 FROM {T("UnresolvedEvents")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY UpdatedAtUtc DESC, Id DESC
-OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
+OFFSET 0 ROWS FETCH NEXT @PageSize ROWS ONLY";
 
         await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync(sql, p, commandTimeout: _context.CommandTimeout);
+        var rows = (await conn.QueryAsync(sql, p, commandTimeout: _context.CommandTimeout)).ToList();
         var events = rows.Select(MapUnresolvedEventRow).ToList();
 
         return new SearchResponse
         {
             Events = events,
-            ContinuationToken = events.Count == pageSize ? EncodeOffset(offset + pageSize) : null!,
+            ContinuationToken = events.Count == pageSize ? KeysetToken((object)rows[^1], "UpdatedAtUtc") : null!,
         };
     }
 
@@ -58,30 +57,31 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         if (endpointIds.Count == 0 || statuses.Count == 0)
             return new SearchResponse { Events = new List<UnresolvedEvent>(), ContinuationToken = null! };
 
-        var offset = DecodeOffset(continuationToken);
         var pageSize = PaginationLimits.Resolve(maxItemCount);
         var (where, p) = BuildFailedEventFilter(filter, endpointIds, statuses);
+        SqlKeysetCursor.Apply(continuationToken, "UpdatedAtUtc", where, p);
 
         // One row past the page tells whether another page exists, so a full last page does
         // not hand out a continuation token that returns nothing.
-        p.Add("Offset", offset);
         p.Add("Fetch", pageSize + 1);
 
         var sql = $@"
-SELECT {EventSearchColumns}
+SELECT Id, {EventSearchColumns}
 FROM {T("UnresolvedEvents")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY UpdatedAtUtc DESC, Id DESC
-OFFSET @Offset ROWS FETCH NEXT @Fetch ROWS ONLY";
+OFFSET 0 ROWS FETCH NEXT @Fetch ROWS ONLY";
 
         await using var conn = await OpenAsync();
         var rows = (await conn.QueryAsync(sql, p, commandTimeout: _context.CommandTimeout)).ToList();
         var hasMore = rows.Count > pageSize;
+        var page = rows.Take(pageSize).ToList();
 
         return new SearchResponse
         {
-            Events = rows.Take(pageSize).Select(MapUnresolvedEventRow).ToList(),
-            ContinuationToken = hasMore ? EncodeOffset(offset + pageSize) : null!,
+            Events = page.Select(MapUnresolvedEventRow).ToList(),
+            // The cursor is the last RETURNED row, never the look-ahead row.
+            ContinuationToken = hasMore ? KeysetToken((object)page[^1], "UpdatedAtUtc") : null!,
         };
     }
 
@@ -264,7 +264,6 @@ GROUP BY DATEDIFF_BIG(millisecond, @WindowFrom, UpdatedAtUtc) / @BucketMs, Endpo
 
     public async Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)
     {
-        var offset = DecodeOffset(continuationToken);
         var pageSize = PaginationLimits.Resolve(maxItemCount);
 
         var where = new List<string> { "1 = 1" };
@@ -285,7 +284,7 @@ GROUP BY DATEDIFF_BIG(millisecond, @WindowFrom, UpdatedAtUtc) / @BucketMs, Endpo
         if (filter.EnqueuedAtTo.HasValue) { where.Add("EnqueuedTimeUtc <= @EnqueuedAtTo"); p.Add("EnqueuedAtTo", filter.EnqueuedAtTo.Value); }
         if (filter.EventTypeId is { Count: > 0 }) { where.Add("EventTypeId IN @EventTypeIds"); p.Add("EventTypeIds", filter.EventTypeId); }
 
-        p.Add("Offset", offset);
+        SqlKeysetCursor.Apply(continuationToken, "EnqueuedTimeUtc", where, p);
         p.Add("PageSize", pageSize);
 
         // Search results never surface the full request payload (cross-provider
@@ -293,7 +292,7 @@ GROUP BY DATEDIFF_BIG(millisecond, @WindowFrom, UpdatedAtUtc) / @BucketMs, Endpo
         // NVARCHAR(MAX) EventJson server-side so it never crosses the wire.
         var sql = $@"
 SELECT
-    EventId, MessageId, EndpointId, SessionId, CorrelationId, EventTypeId,
+    Id, EventId, MessageId, EndpointId, SessionId, CorrelationId, EventTypeId,
     OriginatingMessageId, ParentMessageId, FromAddress, ToAddress, OriginatingFrom, OriginalSessionId,
     MessageType, EndpointRole, EnqueuedTimeUtc, RetryCount, RetryLimit, DeferralSequence,
     QueueTimeMs, ProcessingTimeMs, CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
@@ -303,16 +302,16 @@ SELECT
 FROM {T("Messages")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY EnqueuedTimeUtc DESC, Id DESC
-OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
+OFFSET 0 ROWS FETCH NEXT @PageSize ROWS ONLY";
 
         await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync(sql, p, commandTimeout: _context.CommandTimeout);
+        var rows = (await conn.QueryAsync(sql, p, commandTimeout: _context.CommandTimeout)).ToList();
         var messages = rows.Select(r => (MessageEntity)MapMessageRow(r)).ToList();
 
         return new MessageSearchResult
         {
             Messages = messages,
-            ContinuationToken = messages.Count == pageSize ? EncodeOffset(offset + pageSize) : null,
+            ContinuationToken = messages.Count == pageSize ? KeysetToken((object)rows[^1], "EnqueuedTimeUtc") : null,
         };
     }
 
