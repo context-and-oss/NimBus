@@ -17,6 +17,19 @@ public interface IServiceBusSession
     Task SetStateAsync(SessionState sessionState, CancellationToken cancellationToken = default);
     Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default);
     Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns <paramref name="message"/> to its session after a transient failure, so that it is
+    /// the first message delivered when the session is next accepted and later messages in the
+    /// session cannot overtake it. The default implementation does nothing, which leaves the
+    /// message unsettled under the session lock.
+    /// </summary>
+    /// <param name="message">The message whose delivery failed transiently.</param>
+    /// <param name="cancellationToken">A token that cuts short the retry backoff. The message is
+    /// still abandoned when it is cancelled.</param>
+    /// <returns>A task that completes once the message has been abandoned and the session
+    /// release requested.</returns>
+    Task AbandonAsync(IServiceBusMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 
 public class ServiceBusSession : IServiceBusSession
@@ -103,6 +116,112 @@ public class ServiceBusSession : IServiceBusSession
 
         throw new InvalidOperationException(
             "Cannot dead-letter message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
+    }
+
+    /// <summary>
+    /// Returns <paramref name="message"/> to the head of its session after a transient failure.
+    /// </summary>
+    /// <remarks>
+    /// <para>A session message has no lock of its own: an unsettled message stays locked to the
+    /// receiver that holds the session, and that receiver goes on to deliver the messages after
+    /// it. On the session processor and the Functions isolated worker this method therefore waits
+    /// a short backoff while it still holds the session (see <see cref="TransientRetryDelay"/>),
+    /// abandons the message, and releases the session, so the receiver closes after the callback
+    /// and drops anything it prefetched. The failed message is then the head when the session is
+    /// next accepted. The session is released even when the abandon fails.</para>
+    /// <para>A caller-owned <see cref="ServiceBusSessionReceiver"/> cannot be released from here,
+    /// so the message is only abandoned, after the same backoff, and the caller's next receive
+    /// returns it unless it prefetched later messages. A session built from
+    /// <see cref="ServiceBusSessionMessageActions"/> alone cannot settle, so it does nothing.</para>
+    /// <para>The backoff observes <paramref name="cancellationToken"/> and, on the processor, the
+    /// processor's own token, so host shutdown and an opening circuit cut it short. The message
+    /// is abandoned without a token either way.</para>
+    /// </remarks>
+    /// <param name="message">The message whose delivery failed transiently.</param>
+    /// <param name="cancellationToken">A token that cuts short the retry backoff.</param>
+    /// <returns>A task that completes once the message has been abandoned and the session
+    /// release requested.</returns>
+    public async Task AbandonAsync(IServiceBusMessage message, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        if (_processSessionArgs != null)
+        {
+            await WaitBeforeRetry(message, cancellationToken, _processSessionArgs.CancellationToken).ConfigureAwait(false);
+            try
+            {
+                await FromReceiver(() => _processSessionArgs.AbandonMessageAsync(message.Message, propertiesToModify: null, CancellationToken.None)).ConfigureAwait(false);
+            }
+            finally
+            {
+                _processSessionArgs.ReleaseSession();
+            }
+
+            return;
+        }
+
+        if (_messageActions != null)
+        {
+            await WaitBeforeRetry(message, cancellationToken, CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await FromHost(() => _messageActions.AbandonMessageAsync(message.Message, propertiesToModify: null, CancellationToken.None)).ConfigureAwait(false);
+            }
+            finally
+            {
+                // The two-actions constructor requires session actions.
+                await FromHost(() => _sessionActions!.ReleaseSession(CancellationToken.None)).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        if (_sessionReceiver != null)
+        {
+            await WaitBeforeRetry(message, cancellationToken, CancellationToken.None).ConfigureAwait(false);
+            await FromReceiver(() => _sessionReceiver.AbandonMessageAsync(message.Message, propertiesToModify: null, CancellationToken.None)).ConfigureAwait(false);
+        }
+
+        // Session actions alone cannot settle a message: leave it unsettled, as before.
+    }
+
+    /// <summary>The longest backoff <see cref="AbandonAsync"/> applies.</summary>
+    internal static readonly TimeSpan MaxTransientRetryDelay = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long <see cref="AbandonAsync"/> holds the session before it abandons a message that
+    /// failed transiently on its <paramref name="deliveryCount"/>th delivery: one second, doubling
+    /// with each delivery, capped at <see cref="MaxTransientRetryDelay"/>.
+    /// </summary>
+    /// <param name="deliveryCount">The failed delivery's <c>DeliveryCount</c> (1 for the first).</param>
+    /// <returns>The backoff before the abandon.</returns>
+    internal static TimeSpan TransientRetryDelay(int deliveryCount)
+    {
+        var delay = TimeSpan.FromSeconds(1 << Math.Clamp(deliveryCount - 1, 0, 5));
+        return delay < MaxTransientRetryDelay ? delay : MaxTransientRetryDelay;
+    }
+
+    /// <summary>
+    /// Replaces <see cref="TransientRetryDelay"/> for this session. Tests use it to avoid real waits.
+    /// </summary>
+    internal Func<int, TimeSpan> TransientRetryDelayPolicy { get; set; } = TransientRetryDelay;
+
+    private async Task WaitBeforeRetry(IServiceBusMessage message, CancellationToken cancellationToken, CancellationToken processorToken)
+    {
+        var delay = TransientRetryDelayPolicy(message.DeliveryCount);
+        if (delay <= TimeSpan.Zero)
+            return;
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, processorToken);
+        try
+        {
+            await Task.Delay(delay, linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (linked.IsCancellationRequested)
+        {
+            // Shutting down or the circuit opened: abandon straight away so the message is the
+            // session's head for whichever receiver accepts it next.
+        }
     }
 
     public async Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default)
