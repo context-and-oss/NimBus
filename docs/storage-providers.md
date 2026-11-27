@@ -573,7 +573,10 @@ These operator tools currently work only with the Cosmos provider:
 - **Storage hook webhook** — Cosmos Change Feed → Event Grid → SignalR. SQL
   deployments receive the same SignalR push events from the Resolver
   write-path (provider-neutral), so realtime UI updates work the same way for
-  the operator.
+  the operator. Both paths are coalesced per endpoint: the Resolver posts at most
+  one update per endpoint per `NimBus:Flow:NotifyInterval` (default `00:00:01`)
+  without holding up the message, and the WebApp recounts and broadcasts at most
+  once per endpoint per second. The last change in a burst is always pushed.
 
 ## Adding a new provider
 

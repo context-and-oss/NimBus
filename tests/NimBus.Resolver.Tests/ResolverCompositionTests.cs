@@ -237,7 +237,30 @@ public class ResolverCompositionTests
             ["EventGrid:WebhookKey"] = "key",
         });
 
-        Assert.IsInstanceOfType<HttpEndpointStateChangeNotifier>(provider.GetRequiredService<IMessageStateChangeNotifier>());
+        // The HTTP push sits behind the coalescer, so a message never waits on the WebApp.
+        var notifier = provider.GetRequiredService<IMessageStateChangeNotifier>();
+        var coalescing = Assert.IsInstanceOfType<CoalescingEndpointStateChangeNotifier>(notifier);
+        Assert.IsInstanceOfType<HttpEndpointStateChangeNotifier>(coalescing.Inner);
+        Assert.AreEqual(CoalescingEndpointStateChangeNotifier.DefaultInterval, coalescing.Interval);
+    }
+
+    [TestMethod]
+    [DataRow("00:00:05", 5000)]
+    [DataRow("00:00:00", 0)]
+    [DataRow("00:00:00.250", 250)]
+    [DataRow("-00:00:01", 1000)]
+    [DataRow("soon", 1000)]
+    public async Task Notifier_ReadsItsCoalescingIntervalFromConfiguration(string interval, int expectedMilliseconds)
+    {
+        await using var provider = Build(Registration.ServiceCollection, new Dictionary<string, string?>
+        {
+            ["NimBus:Flow:WebAppUrl"] = "https://webapp.example.com",
+            ["NimBus:Flow:NotifyInterval"] = interval,
+        });
+
+        var coalescing = Assert.IsInstanceOfType<CoalescingEndpointStateChangeNotifier>(
+            provider.GetRequiredService<IMessageStateChangeNotifier>());
+        Assert.AreEqual(TimeSpan.FromMilliseconds(expectedMilliseconds), coalescing.Interval);
     }
 
     // ── Service Bus client ─────────────────────────────────────────────────────────────

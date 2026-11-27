@@ -59,7 +59,7 @@ public sealed class StorageDependencyArchitectureTests
             [typeof(AuditImplementation)] = [typeof(IMessageTrackingStore)],
             [typeof(EventImplementation)] = [typeof(IMessageTrackingStore)],
             [typeof(AgentImplementation)] = [typeof(IMessageTrackingStore)],
-            [typeof(StorageHookImplementation)] = [typeof(IMessageTrackingStore)],
+            [typeof(EndpointUpdateBroadcaster)] = [typeof(IMessageTrackingStore)],
             [typeof(AuditLogService)] = [typeof(IMessageTrackingStore)],
             [typeof(HandoffSettlementService)] = [typeof(IMessageTrackingStore)],
             [typeof(HeartbeatService)] =
