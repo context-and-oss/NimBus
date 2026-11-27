@@ -239,6 +239,85 @@ public class EventJsonHandlerTests
         Assert.AreEqual(0, handler.Calls);
     }
 
+    // The routing-key receive check carries the payload it parsed; the handler reuses it only
+    // when it is a TEvent parsed from the same EventJson, and otherwise deserializes itself.
+
+    [TestMethod]
+    public async Task Handle_PayloadCarriedForTheSameJson_IsReusedWithoutDeserializing()
+    {
+        var handler = new RecordingHandler();
+        var sut = new EventJsonHandler<TestEvent>(handler);
+        const string json = "{\"Value\":\"carried\"}";
+        var context = MessageContextStub.ForEventType(nameof(TestEvent), json);
+        var carried = new TestEvent { Value = "carried" };
+        DeserializedEventPayload.Set(context, json, carried);
+
+        await sut.Handle(context);
+
+        Assert.AreEqual(1, handler.Calls);
+        Assert.AreSame(carried, handler.LastEvent);
+    }
+
+    [TestMethod]
+    public async Task Handle_NoPayloadCarried_DeserializesTheCurrentJson()
+    {
+        var handler = new RecordingHandler();
+        var sut = new EventJsonHandler<TestEvent>(handler);
+
+        await sut.Handle(MessageContextStub.ForEventType(nameof(TestEvent), "{\"Value\":\"current\"}"));
+
+        Assert.AreEqual(1, handler.Calls);
+        Assert.AreEqual("current", handler.LastEvent?.Value?.ToString());
+    }
+
+    [TestMethod]
+    public async Task Handle_CarriedPayloadOfAnotherType_IsIgnored()
+    {
+        var handler = new RecordingHandler();
+        var sut = new EventJsonHandler<TestEvent>(handler);
+        const string json = "{\"Value\":\"current\"}";
+        var context = MessageContextStub.ForEventType(nameof(TestEvent), json);
+        DeserializedEventPayload.Set(context, json, new ContractEvent { Name = "other" });
+
+        await sut.Handle(context);
+
+        Assert.AreEqual(1, handler.Calls);
+        Assert.AreEqual("current", handler.LastEvent?.Value?.ToString());
+    }
+
+    [TestMethod]
+    public async Task Handle_CarriedPayloadParsedFromDifferentJson_IsIgnored()
+    {
+        var handler = new RecordingHandler();
+        var sut = new EventJsonHandler<TestEvent>(handler);
+        var context = MessageContextStub.ForEventType(nameof(TestEvent), "{\"Value\":\"current\"}");
+        var stale = new TestEvent { Value = "stale" };
+        DeserializedEventPayload.Set(context, "{\"Value\":\"stale\"}", stale);
+
+        await sut.Handle(context);
+
+        Assert.AreEqual(1, handler.Calls);
+        Assert.AreNotSame(stale, handler.LastEvent);
+        Assert.AreEqual("current", handler.LastEvent?.Value?.ToString());
+    }
+
+    [TestMethod]
+    public async Task Handle_PayloadCarriedForAnotherContext_IsIgnored()
+    {
+        var handler = new RecordingHandler();
+        var sut = new EventJsonHandler<TestEvent>(handler);
+        const string json = "{\"Value\":\"current\"}";
+        var other = MessageContextStub.ForEventType(nameof(TestEvent), json);
+        var carried = new TestEvent { Value = "other message" };
+        DeserializedEventPayload.Set(other, json, carried);
+
+        await sut.Handle(MessageContextStub.ForEventType(nameof(TestEvent), json));
+
+        Assert.AreEqual(1, handler.Calls);
+        Assert.AreNotSame(carried, handler.LastEvent);
+        Assert.AreEqual("current", handler.LastEvent?.Value?.ToString());
+    }
+
     public sealed class TestEvent : Event
     {
         public object? Value { get; set; }

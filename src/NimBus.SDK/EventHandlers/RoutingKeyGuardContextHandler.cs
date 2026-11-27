@@ -21,8 +21,9 @@ namespace NimBus.SDK.EventHandlers;
 /// code silently loses it.
 /// </summary>
 /// <remarks>
-/// The payload is deserialised here a second time, only for event types the check covers. A
-/// handler registered by string key has no CLR type to derive a key from, so for it the
+/// For event types the check covers, the payload is deserialised here and carried to the typed
+/// handler of the same message through <see cref="DeserializedEventPayload"/>, so it is parsed
+/// only once. A handler registered by string key has no CLR type to derive a key from, so for it the
 /// <c>RoutingKey</c> property, when present, must be one of the declared keys.
 /// </remarks>
 internal sealed class RoutingKeyGuardContextHandler : IEventContextHandler
@@ -43,12 +44,30 @@ internal sealed class RoutingKeyGuardContextHandler : IEventContextHandler
     {
         ArgumentNullException.ThrowIfNull(context);
         var eventTypeId = context.EventTypeId;
-        if (!string.IsNullOrEmpty(eventTypeId) && _policies.TryGetValue(eventTypeId, out var policy))
-            Check(context, eventTypeId, policy);
+        if (!string.IsNullOrEmpty(eventTypeId) && _policies.TryGetValue(eventTypeId, out var policy)
+            && Check(context, eventTypeId, policy))
+        {
+            return HandleCarrying(context, cancellationToken);
+        }
+
         return _inner.Handle(context, cancellationToken);
     }
 
-    private void Check(IMessageContext context, string eventTypeId, RoutingKeyPolicy policy)
+    // The parsed payload lives exactly as long as this message is being handled.
+    private async Task HandleCarrying(IMessageContext context, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _inner.Handle(context, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            DeserializedEventPayload.Clear(context);
+        }
+    }
+
+    /// <summary>Throws when the message is rejected; returns true when a parsed payload is carried.</summary>
+    private bool Check(IMessageContext context, string eventTypeId, RoutingKeyPolicy policy)
     {
         var property = context.RoutingKey;
         if (string.IsNullOrEmpty(property))
@@ -59,12 +78,12 @@ internal sealed class RoutingKeyGuardContextHandler : IEventContextHandler
             // String-keyed handler: only the property can be checked.
             if (policy.Keys is not null && property is not null && !policy.Keys.Contains(property, StringComparer.Ordinal))
                 throw Reject($"Routing key '{property}' is not accepted by endpoint {_endpointId} (accepts: {string.Join(", ", policy.Keys)}).");
-            return;
+            return false;
         }
 
-        var payloadKey = PayloadKey(context, policy.EventClass, out var unreadable);
-        if (unreadable)
-            return; // The handler reports the unreadable payload itself.
+        var payloadKey = PayloadKey(context, policy.EventClass, out var json, out var payload);
+        if (payload is null)
+            return false; // The handler reports the unreadable payload itself.
 
         if (property is not null && !string.Equals(property, payloadKey, StringComparison.Ordinal))
         {
@@ -78,28 +97,30 @@ internal sealed class RoutingKeyGuardContextHandler : IEventContextHandler
             var keyText = payloadKey is null ? "No routing key" : $"Routing key '{payloadKey}'";
             throw Reject($"{keyText} is not accepted by endpoint {_endpointId} (accepts: {string.Join(", ", policy.Keys)}).");
         }
+
+        DeserializedEventPayload.Set(context, json!, payload);
+        return true;
     }
 
-    private static string? PayloadKey(IMessageContext context, Type eventClass, out bool unreadable)
+    /// <summary>
+    /// The routing key of the payload. <paramref name="payload"/> is null when the payload is
+    /// missing or unreadable; otherwise it is the object parsed from <paramref name="json"/>.
+    /// </summary>
+    private static string? PayloadKey(IMessageContext context, Type eventClass, out string? json, out object? payload)
     {
-        unreadable = false;
-        object? payload;
+        json = context.MessageContent?.EventContent?.EventJson;
         try
         {
-            var json = context.MessageContent?.EventContent?.EventJson;
             payload = json is null ? null : JsonConvert.DeserializeObject(json, eventClass, Constants.CreateSafeJsonSettings());
         }
         catch (JsonException)
         {
-            unreadable = true;
+            payload = null;
             return null;
         }
 
         if (payload is null)
-        {
-            unreadable = true;
             return null;
-        }
 
         try
         {

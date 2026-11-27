@@ -29,7 +29,10 @@ public class EventJsonHandler<TEvent> : IEventJsonHandler
             var eventJson = context.MessageContent?.EventContent?.EventJson
                 ?? throw new JsonSerializationException(
                     $"Event payload for '{context.EventTypeId}' is missing.");
-            @event = JsonConvert.DeserializeObject<TEvent>(
+            // Reuse the payload the routing-key receive check already parsed from this JSON.
+            @event = DeserializedEventPayload.TryGet<TEvent>(context, eventJson, out var carried)
+                ? carried
+                : JsonConvert.DeserializeObject<TEvent>(
                     eventJson,
                     Constants.CreateSafeJsonSettings())
                 ?? throw new JsonSerializationException(
