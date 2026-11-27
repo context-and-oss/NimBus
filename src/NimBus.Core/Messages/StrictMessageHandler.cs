@@ -178,8 +178,13 @@ public partial class StrictMessageHandler : MessageHandler
             LogError(messageContext, "Failed to handle event", exception);
             await SendErrorResponse(messageContext, exception);
             await BlockSession(messageContext);
-            await CompleteMessage(messageContext);
+            // The retry is scheduled before the delivery is completed: a completion that fails
+            // (a lost lock) redelivers the event, and that redelivery finds the session blocked
+            // by it and completes without scheduling a second retry. Completed first, a failed
+            // completion would lose the retry, and a failed schedule would reach the
+            // dead-letter path with the delivery already settled.
             await CheckForRetry(messageContext, exception);
+            await CompleteMessage(messageContext);
             throw;
         }
     }
@@ -267,8 +272,14 @@ public partial class StrictMessageHandler : MessageHandler
         {
             LogError(messageContext, "Failed to handle event (RetryRequest)", exception);
             await SendErrorResponse(messageContext, exception);
-            await CompleteMessage(messageContext);
+            // Scheduled before completing, as in HandleEventRequest. A completion that fails
+            // redelivers this RetryRequest while the session is still blocked by its event, so
+            // it runs again and can schedule a second retry with the same retry count. Whichever
+            // of the two arrives later either finds the session unblocked and is answered as
+            // resolved without running the handler, or runs as one more attempt; the retry count
+            // still bounds the attempts by the policy's MaxRetries.
             await CheckForRetry(messageContext, exception);
+            await CompleteMessage(messageContext);
             // Settled here rather than rethrown: report the failure through the context so
             // pipeline behaviors (the circuit breaker recorder) do not see a success.
             messageContext.HandledFailure = exception;
@@ -756,6 +767,11 @@ public partial class StrictMessageHandler : MessageHandler
         LogInfo(messageContext, "Send ProcessDeferredRequest (redelivered settlement on an unblocked session)");
     }
 
+    // Scheduling the retry is best effort. By now the ErrorResponse is recorded and the session
+    // is blocked by this event, so the failure is visible and an operator can resubmit or skip
+    // it. A failure to schedule must not reach the dead-letter path: dead-lettering the event
+    // would leave the session blocked by a message that is gone. Nor does abandoning help: the
+    // redelivery finds the session blocked by this event and completes without a retry.
     private async Task CheckForRetry(IMessageContext messageContext, EventContextHandlerException exception)
     {
         // No registered IRetryPolicyProvider means no retry — the failure
@@ -767,14 +783,21 @@ public partial class StrictMessageHandler : MessageHandler
             return;
         }
 
-        var eventTypeId = messageContext.EventTypeId;
-        var retryCount = messageContext.RetryCount ?? 0;
-
-        var policy = _retryPolicyProvider.GetRetryPolicy(eventTypeId, exception, messageContext.To);
-        if (policy != null && retryCount < policy.MaxRetries)
+        try
         {
-            var delay = ApplyRetryAfterHint(policy, policy.GetDelay(retryCount), exception);
-            await SendRetryResponse(messageContext, delay);
+            var eventTypeId = messageContext.EventTypeId;
+            var retryCount = messageContext.RetryCount ?? 0;
+
+            var policy = _retryPolicyProvider.GetRetryPolicy(eventTypeId, exception, messageContext.To);
+            if (policy != null && retryCount < policy.MaxRetries)
+            {
+                var delay = ApplyRetryAfterHint(policy, policy.GetDelay(retryCount), exception);
+                await SendRetryResponse(messageContext, delay);
+            }
+        }
+        catch (Exception retryFailure)
+        {
+            LogFailedToScheduleRetry(_logger, retryFailure, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
         }
     }
 
@@ -838,6 +861,9 @@ public partial class StrictMessageHandler : MessageHandler
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Discarding failed message without retry or dead-letter. Classifier:{ClassifierName}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
     private static partial void LogDiscardingFailedMessageWithoutRetry(ILogger logger, Exception exception, string classifierName, string eventTypeId, string? eventId, string? messageId, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to schedule the retry of a failed event; it stays failed and blocks its session until it is resubmitted or skipped. EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
+    private static partial void LogFailedToScheduleRetry(ILogger logger, Exception exception, string eventTypeId, string? eventId, string? messageId, string? sessionId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}")]
     private static partial void LogMessageInfo(ILogger logger, string prefix, string eventTypeId, string? eventId, string? messageId, string? sessionId);

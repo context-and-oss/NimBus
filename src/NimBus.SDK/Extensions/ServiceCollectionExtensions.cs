@@ -283,9 +283,12 @@ public static class ServiceCollectionExtensions
             // handler-side replies are correlated, not transactional with
             // a local DB write; reach for IPublisherClient when transactional
             // semantics are needed.)
+            // A transient broker failure while sending a response abandons the delivery for
+            // redelivery instead of dead-lettering it (the handler may already have committed).
             var serviceBusSender = client.CreateSender(options.Endpoint);
-            ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
-                new Sender(serviceBusSender), MessagingSystem.ServiceBus);
+            ISender sender = ServiceBusTransientFailures.ClassifyTransientFailures(
+                NimBusOpenTelemetryDecorators.InstrumentSender(
+                    new Sender(serviceBusSender), MessagingSystem.ServiceBus));
             var responseService = new ResponseService(sender,
                 new ResponseServiceOptions { IncludeStackTrace = options.IncludeStackTraceInErrorResponses });
             var eventHandlerProvider = new EventHandlerProvider(
