@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using NimBus.Core.Messages;
 using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore.Abstractions;
@@ -294,6 +295,26 @@ public interface IMessageTrackingStore
     /// "current request payload" without materialising the whole event history.
     /// </summary>
     Task<MessageEntity?> GetLatestEventRequestMessage(string eventId);
+    /// <summary>
+    /// Returns the <c>EnqueuedTimeUtc</c> of the event's earliest <c>EventRequest</c> when its
+    /// history contains a <c>PendingHandoffResponse</c>, otherwise <c>null</c> (no handoff, or no
+    /// <c>EventRequest</c> recorded). The Resolver uses it as the wall-clock anchor for the
+    /// terminal response of an event that went through async handoff, so it can learn that
+    /// without loading the full history and its payloads.
+    /// <para>The default implementation derives the answer from <see cref="GetEventHistory"/>;
+    /// providers override it with a narrow query.</para>
+    /// </summary>
+    async Task<DateTime?> GetHandoffEventRequestEnqueuedTime(string eventId)
+    {
+        var history = (await GetEventHistory(eventId).ConfigureAwait(false)).ToList();
+        if (!history.Any(m => m.MessageType == MessageType.PendingHandoffResponse))
+        {
+            return null;
+        }
+
+        var requests = history.Where(m => m.MessageType == MessageType.EventRequest).ToList();
+        return requests.Count == 0 ? null : requests.Min(m => m.EnqueuedTimeUtc);
+    }
     /// <summary>
     /// Returns the newest message for the event on the endpoint that carries
     /// <c>ErrorContent</c>, or null.

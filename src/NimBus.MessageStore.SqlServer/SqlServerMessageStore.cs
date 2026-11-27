@@ -108,6 +108,8 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<MessageEntity?> GetMessage(string eventId, string messageId) => _messageTracking.GetMessage(eventId, messageId);
     public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) => _messageTracking.GetEventHistory(eventId);
     public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId) => _messageTracking.GetLatestEventRequestMessage(eventId);
+    /// <inheritdoc />
+    public Task<DateTime?> GetHandoffEventRequestEnqueuedTime(string eventId) => _messageTracking.GetHandoffEventRequestEnqueuedTime(eventId);
     public Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId) => _messageTracking.GetFailedMessage(eventId, endpointId);
     public Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId) => _messageTracking.GetDeadletteredMessage(eventId, endpointId);
     public Task RemoveStoredMessage(string eventId, string messageId) => _messageTracking.RemoveStoredMessage(eventId, messageId);

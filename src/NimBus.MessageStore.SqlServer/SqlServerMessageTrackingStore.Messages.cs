@@ -81,6 +81,22 @@ VALUES (
         return rows.Select(MapMessageRow).ToList();
     }
 
+    public async Task<DateTime?> GetHandoffEventRequestEnqueuedTime(string eventId)
+    {
+        await using var conn = await OpenAsync();
+        // Scalar aggregate over the event's rows: no payload column is read and no row is
+        // mapped. MIN over an empty set is NULL, as is the whole answer without a handoff.
+        // The aggregate always yields one row; QuerySingleAsync carries the transient-error
+        // translation of SqlConnectionTransientExtensions.
+        var anchor = await conn.QuerySingleAsync<DateTime?>(
+            $@"SELECT MIN(EnqueuedTimeUtc) FROM {T("Messages")}
+                WHERE EventId = @EventId AND MessageType = 'EventRequest'
+                  AND EXISTS (SELECT 1 FROM {T("Messages")}
+                              WHERE EventId = @EventId AND MessageType = 'PendingHandoffResponse')",
+            new { EventId = eventId }, commandTimeout: _context.CommandTimeout);
+        return anchor is { } value ? DateTime.SpecifyKind(value, DateTimeKind.Utc) : null;
+    }
+
     public async Task<MessageEntity?> GetLatestEventRequestMessage(string eventId)
     {
         await using var conn = await OpenAsync();

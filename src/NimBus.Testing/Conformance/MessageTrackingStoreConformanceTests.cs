@@ -1002,6 +1002,103 @@ public abstract partial class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task GetHandoffEventRequestEnqueuedTime_returns_earliest_event_request_when_handoff_recorded()
+    {
+        var store = CreateStore();
+        var eventId = Id("evt-ho");
+        var ep = Id("ep1");
+        // Whole seconds: every provider round-trips them exactly.
+        var anchor = new DateTime(2026, 3, 1, 10, 0, 0, DateTimeKind.Utc);
+
+        // Stored out of chronological order so the provider must take the minimum, not the first.
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m-req-later"), EndpointId = ep,
+            MessageType = MessageType.EventRequest,
+            EnqueuedTimeUtc = anchor.AddMinutes(5),
+            MessageContent = new MessageContent { EventContent = new EventContent { EventJson = "{\"v\":2}" } },
+        });
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m-req"), EndpointId = ep,
+            MessageType = MessageType.EventRequest,
+            EnqueuedTimeUtc = anchor,
+            MessageContent = new MessageContent { EventContent = new EventContent { EventJson = "{\"v\":1}" } },
+        });
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m-handoff"), EndpointId = ep,
+            MessageType = MessageType.PendingHandoffResponse,
+            EnqueuedTimeUtc = anchor.AddSeconds(1),
+            PendingSubStatus = "Handoff",
+            MessageContent = new MessageContent(),
+        });
+        // A resubmission is a later request, never the anchor.
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m-resubmit"), EndpointId = ep,
+            MessageType = MessageType.ResubmissionRequest,
+            EnqueuedTimeUtc = anchor.AddMinutes(-1),
+            MessageContent = new MessageContent { EventContent = new EventContent { EventJson = "{\"v\":3}" } },
+        });
+        // Another event's earlier request must not leak in.
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = Id("evt-ho-other"), MessageId = Id("m-other"), EndpointId = ep,
+            MessageType = MessageType.EventRequest,
+            EnqueuedTimeUtc = anchor.AddHours(-1),
+            MessageContent = new MessageContent(),
+        });
+
+        var result = await store.GetHandoffEventRequestEnqueuedTime(eventId);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual(anchor, result.Value.ToUniversalTime());
+    }
+
+    [TestMethod]
+    public async Task GetHandoffEventRequestEnqueuedTime_returns_null_without_handoff()
+    {
+        var store = CreateStore();
+        var eventId = Id("evt-ho-none");
+        var ep = Id("ep1");
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m-req"), EndpointId = ep,
+            MessageType = MessageType.EventRequest,
+            EnqueuedTimeUtc = DateTime.UtcNow.AddMinutes(-1),
+            MessageContent = new MessageContent(),
+        });
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m-res"), EndpointId = ep,
+            MessageType = MessageType.ResolutionResponse,
+            EnqueuedTimeUtc = DateTime.UtcNow,
+            MessageContent = new MessageContent(),
+        });
+
+        Assert.IsNull(await store.GetHandoffEventRequestEnqueuedTime(eventId));
+        Assert.IsNull(await store.GetHandoffEventRequestEnqueuedTime(Id("evt-ho-missing")));
+    }
+
+    [TestMethod]
+    public async Task GetHandoffEventRequestEnqueuedTime_returns_null_when_handoff_has_no_event_request()
+    {
+        var store = CreateStore();
+        var eventId = Id("evt-ho-noreq");
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m-handoff"), EndpointId = Id("ep1"),
+            MessageType = MessageType.PendingHandoffResponse,
+            EnqueuedTimeUtc = DateTime.UtcNow,
+            PendingSubStatus = "Handoff",
+            MessageContent = new MessageContent(),
+        });
+
+        Assert.IsNull(await store.GetHandoffEventRequestEnqueuedTime(eventId));
+    }
+
+    [TestMethod]
     public async Task GetLatestEventRequestMessage_returns_null_when_no_request_carries_payload()
     {
         var store = CreateStore();
