@@ -484,14 +484,54 @@ public static class ServiceCollectionExtensions
                     "register it yourself as a singleton bound to your outbound endpoint before AddNimBusOutboxDispatcher, e.g. " +
                     "services.AddSingleton(sp => new OutboxDispatcherSender(sp.GetRequiredService<ServiceBusClient>().CreateSender(\"YourEndpoint\"))).");
 
+            var dispatcherOptions = new OutboxDispatcherOptions();
+            foreach (var configuration in sp.GetServices<OutboxDispatcherConfiguration>())
+            {
+                configuration.Configure(dispatcherOptions);
+            }
+
             var dispatcherLogger = sp.GetService<ILogger<OutboxDispatcher>>();
             var hostedLogger = sp.GetService<ILogger<OutboxDispatcherHostedService>>();
-            var dispatcher = new OutboxDispatcher(outbox, sender, dispatcherLogger);
+            // The constructor validates the options.
+            var dispatcher = new OutboxDispatcher(outbox, sender, dispatcherOptions, dispatcherLogger);
             return new OutboxDispatcherHostedService(dispatcher, pollingInterval ?? TimeSpan.FromSeconds(1), batchSize, hostedLogger);
         });
 
         return services;
     }
+
+    /// <summary>
+    /// Configures the retry, parking and claiming settings of the dispatcher that
+    /// <see cref="AddNimBusOutboxDispatcher"/> registers. Calls accumulate in registration order
+    /// and may come before or after <see cref="AddNimBusOutboxDispatcher"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Retry backoff, parking and leases apply when the outbox implements
+    /// <see cref="IOutboxClaiming"/> (the SQL Server outbox does); then several replicas may run
+    /// the dispatcher against one outbox. Other outboxes support a single dispatcher instance.
+    /// The settings are validated when the dispatcher is created, at host start.
+    /// </para>
+    /// <para>
+    /// This is a separate method rather than an <c>AddNimBusOutboxDispatcher</c> overload so the
+    /// existing call <c>AddNimBusOutboxDispatcher(null)</c> keeps binding to the polling-interval
+    /// overload.
+    /// </para>
+    /// </remarks>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Configures the <see cref="OutboxDispatcherOptions"/>.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection ConfigureNimBusOutboxDispatcher(
+        this IServiceCollection services,
+        Action<OutboxDispatcherOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
+        services.AddSingleton(new OutboxDispatcherConfiguration(configure));
+        return services;
+    }
+
+    private sealed record OutboxDispatcherConfiguration(Action<OutboxDispatcherOptions> Configure);
 
     /// <summary>
     /// Registers the Worker-side deferred-processor host as an

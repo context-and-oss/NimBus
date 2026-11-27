@@ -59,6 +59,13 @@ public static class NimBusMeters
     public static readonly Histogram<double> OutboxDispatchDuration = Outbox.CreateHistogram<double>(
         "nimbus.outbox.dispatch.duration", "ms", "Time the dispatcher took to forward a single outbox row.");
 
+    /// <summary>
+    /// <c>nimbus.outbox.parked</c>: rows the dispatcher parked, tagged with
+    /// <c>nimbus.endpoint</c> and <c>error.type</c>. Any increment needs operator attention.
+    /// </summary>
+    public static readonly Counter<long> OutboxParked =Outbox.CreateCounter<long>(
+        "nimbus.outbox.parked", "{messages}", "Outbox rows parked after exhausting their dispatch attempts or failing deterministically.");
+
     public static readonly Meter DeferredProcessor = new(NimBusInstrumentation.DeferredProcessorMeterName);
 
     public static readonly Counter<long> DeferredParked = DeferredProcessor.CreateCounter<long>(

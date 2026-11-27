@@ -276,6 +276,67 @@ public class SubscriberRegistrationTests
         StringAssert.Contains(ex.Message, "AddSingleton", StringComparison.Ordinal);
     }
 
+    [TestMethod]
+    public void ConfigureNimBusOutboxDispatcher_passes_its_options_to_the_dispatcher()
+    {
+        var services = CreateOutboxDispatcherServices();
+        services.ConfigureNimBusOutboxDispatcher(options => options.MaxAttempts = 7);
+        services.AddNimBusOutboxDispatcher();
+        // Calls accumulate, also after AddNimBusOutboxDispatcher.
+        services.ConfigureNimBusOutboxDispatcher(options => options.DispatcherId = "replica-7");
+
+        var dispatcher = ResolveOutboxDispatcher(services);
+
+        Assert.AreEqual("replica-7", dispatcher.DispatcherId);
+        Assert.AreEqual(7, ((OutboxDispatcherOptions)GetPrivateField(dispatcher, "_options")).MaxAttempts);
+    }
+
+    [TestMethod]
+    public void ConfigureNimBusOutboxDispatcher_rejects_invalid_options_when_the_dispatcher_is_created()
+    {
+        var services = CreateOutboxDispatcherServices();
+        services.AddNimBusOutboxDispatcher();
+        services.ConfigureNimBusOutboxDispatcher(options => options.MaxAttempts = 0);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => provider.GetServices<IHostedService>().ToList());
+    }
+
+    [TestMethod]
+    public void AddNimBusOutboxDispatcher_calls_with_null_still_bind_to_the_polling_interval_overload()
+    {
+        // Compile-level guard: these calls compiled before IOutboxClaiming existed and must keep
+        // compiling, unambiguously, with the polling-interval overload.
+        var positional = CreateOutboxDispatcherServices();
+        positional.AddNimBusOutboxDispatcher(null);
+        var withBatchSize = CreateOutboxDispatcherServices();
+        withBatchSize.AddNimBusOutboxDispatcher(null, 10);
+        var named = CreateOutboxDispatcherServices();
+        named.AddNimBusOutboxDispatcher(pollingInterval: null);
+
+        foreach (var services in new[] { positional, withBatchSize, named })
+        {
+            Assert.IsNotNull(ResolveOutboxDispatcher(services));
+        }
+    }
+
+    private static ServiceCollection CreateOutboxDispatcherServices()
+    {
+        var services = new ServiceCollection();
+        var client = new ServiceBusClient(FakeConnection);
+        services.AddSingleton(client);
+        services.AddSingleton<IOutbox>(new NoopOutbox());
+        services.AddSingleton(new OutboxDispatcherSender(client.CreateSender("endpoint")));
+        return services;
+    }
+
+    private static OutboxDispatcher ResolveOutboxDispatcher(ServiceCollection services)
+    {
+        using var provider = services.BuildServiceProvider();
+        var hostedService = provider.GetServices<IHostedService>().OfType<OutboxDispatcherHostedService>().Single();
+        return (OutboxDispatcher)GetPrivateField(hostedService, "_dispatcher");
+    }
+
     private static object GetPrivateField(object target, string fieldName)
     {
         var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
