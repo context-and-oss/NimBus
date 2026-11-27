@@ -192,12 +192,6 @@ public partial class EventImplementation
 
     public async Task<IActionResult> PostResubmitWithChangesEventIdsAsync(ResubmitWithChanges body, string eventId, string messageId)
     {
-        if (logger.IsEnabled(LogLevel.Information))
-        {
-            var bodyJson = JsonConvert.SerializeObject(body);
-            LogResubmitMessageWithChanges(logger, eventId, messageId, bodyJson);
-        }
-
         var lookup = await operatorCommands.FindByMessageAsync(eventId, messageId);
         if (lookup.Target == null)
             return LookupFailure(lookup.Status, eventId, messageId);
@@ -226,6 +220,10 @@ public partial class EventImplementation
                 eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
             return new ForbidResult();
         }
+
+        // Ids only, and only once the caller holds the role: the payload can carry
+        // [Sensitive] values, and the audit row records its hash, never the content.
+        LogResubmitMessageWithChanges(logger, eventId, messageId);
 
         // A non-PiiReader was served a payload whose [Sensitive] fields were masked.
         // Resubmitting that body verbatim would overwrite the real values with the
@@ -382,8 +380,8 @@ public partial class EventImplementation
     [LoggerMessage(Level = LogLevel.Error, Message = "Could not compose event.")]
     private static partial void LogCouldNotComposeEvent(ILogger logger, Exception exception);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Resubmit message with changes. EventId:{EventId}, MessageId:{MessageId}, Body:{Body}")]
-    private static partial void LogResubmitMessageWithChanges(ILogger logger, string eventId, string messageId, string body);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resubmit message with changes. EventId:{EventId}, MessageId:{MessageId}")]
+    private static partial void LogResubmitMessageWithChanges(ILogger logger, string eventId, string messageId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Operator command refused: message {MessageId} of event {EventId} is no longer current")]
     private static partial void LogOperatorCommandRefusedMessageOfEvent(ILogger logger, string messageId, string eventId);
