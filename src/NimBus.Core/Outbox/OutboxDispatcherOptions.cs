@@ -31,8 +31,10 @@ public sealed class OutboxDispatcherOptions
     /// <summary>
     /// How long a claimed batch stays leased to this dispatcher. Another replica can claim the
     /// rows once the lease expires, for example after this process crashed mid-batch. The
-    /// dispatcher stops starting new sends once half of the lease has elapsed, so keep it well
-    /// above the time one batch takes to send. Default: 2 minutes.
+    /// dispatcher stops starting new sends once half of the lease has elapsed, cancels a send
+    /// that is still running when only a tenth of the lease is left, and checkpoints each row
+    /// only while it still holds the claim, so keep the lease well above the time one batch
+    /// takes to send. Default: 2 minutes.
     /// </summary>
     public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromMinutes(2);
 
@@ -49,13 +51,16 @@ public sealed class OutboxDispatcherOptions
     /// <returns><c>min(InitialRetryDelay * 2^(attempt - 1), MaxRetryDelay)</c>.</returns>
     public TimeSpan GetRetryDelay(int attempt)
     {
-        if (attempt <= 1)
-            return Min(InitialRetryDelay, MaxRetryDelay);
+        var delay = Min(InitialRetryDelay, MaxRetryDelay);
+        // Saturating doubling: stop at the cap instead of clamping the exponent, so the delay
+        // reaches MaxRetryDelay for any InitialRetryDelay and MaxAttempts. A positive delay
+        // passes half the cap within 63 doublings, so the loop is short.
+        for (var failed = 1; failed < attempt && delay < MaxRetryDelay; failed++)
+        {
+            delay = delay.Ticks > MaxRetryDelay.Ticks / 2 ? MaxRetryDelay : TimeSpan.FromTicks(delay.Ticks * 2);
+        }
 
-        // Cap the exponent so the multiplication cannot overflow before the clamp.
-        var exponent = Math.Min(attempt - 1, 30);
-        var ticks = InitialRetryDelay.Ticks * Math.Pow(2, exponent);
-        return ticks >= MaxRetryDelay.Ticks ? MaxRetryDelay : TimeSpan.FromTicks((long)ticks);
+        return delay;
     }
 
     /// <summary>

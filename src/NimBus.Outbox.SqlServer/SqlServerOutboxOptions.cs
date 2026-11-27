@@ -30,8 +30,10 @@ public class SqlServerOutboxOptions
     /// <summary>
     /// Maximum number of rows one <c>DELETE</c> statement removes in
     /// <see cref="SqlServerOutbox.PurgeDispatchedAsync"/>; the purge repeats until no more rows
-    /// qualify. Keep it below 5,000 so a batch does not escalate to a table lock.
-    /// Default: 1,000.
+    /// qualify. Smaller batches keep each statement short and its locks and log use small.
+    /// <c>TOP</c> caps the rows a statement deletes, not the locks it takes, so a batch below
+    /// SQL Server's 5,000-lock escalation threshold makes escalation unlikely but does not rule
+    /// it out. Default: 1,000.
     /// </summary>
     public int PurgeBatchSize
     {

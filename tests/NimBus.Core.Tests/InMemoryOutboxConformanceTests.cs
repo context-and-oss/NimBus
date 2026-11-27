@@ -205,6 +205,29 @@ internal sealed class ConformanceInMemoryOutbox : IOutbox, IOutboxClaiming
         }
     }
 
+    public Task<IReadOnlyCollection<string>> MarkClaimedAsDispatchedAsync(
+        string claimantId,
+        IEnumerable<string> ids,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            var checkpointed = new List<string>();
+            foreach (var id in ids)
+            {
+                var row = _rows[id];
+                if (!string.Equals(row.ClaimedBy, claimantId, StringComparison.Ordinal))
+                    continue;
+
+                row.Message.DispatchedAtUtc ??= _utcNow;
+                row.LeaseUntilUtc = null;
+                checkpointed.Add(id);
+            }
+
+            return Task.FromResult<IReadOnlyCollection<string>>(checkpointed);
+        }
+    }
+
     public Task RecordDispatchFailureAsync(
         string id,
         string claimantId,

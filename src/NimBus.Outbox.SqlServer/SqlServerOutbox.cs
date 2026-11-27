@@ -44,14 +44,18 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
 
     private string SequenceName => $"[{_options.Schema}].[{_options.TableName}_SequenceNumber]";
 
+    // How long EnsureTableExistsAsync waits for another instance's migration of the same table.
+    private static readonly TimeSpan MigrationLockTimeout = TimeSpan.FromMinutes(5);
+
+    private string ClaimLockResource => LockResource("NimBus.Outbox.Claim");
+
+    private string MigrationLockResource => LockResource("NimBus.Outbox.Migrate");
+
     // sp_getapplock resources are limited to 255 characters.
-    private string ClaimLockResource
+    private string LockResource(string prefix)
     {
-        get
-        {
-            var resource = $"NimBus.Outbox.Claim/{_options.Schema}.{_options.TableName}";
-            return resource.Length <= 255 ? resource : resource[..255];
-        }
+        var resource = $"{prefix}/{_options.Schema}.{_options.TableName}";
+        return resource.Length <= 255 ? resource : resource[..255];
     }
 
     /// <summary>
@@ -61,6 +65,11 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
     /// them on next startup. Every added column is nullable, so adding it is a metadata-only
     /// change that does not rewrite existing rows.
     /// </summary>
+    /// <remarks>
+    /// The migration runs in one transaction under an exclusive, transaction-owned
+    /// <c>sp_getapplock</c> per table, so replicas that start together migrate one at a time: the
+    /// later ones wait (up to five minutes), then find every column and index in place.
+    /// </remarks>
     public async Task EnsureTableExistsAsync(CancellationToken cancellationToken = default)
     {
         // SequenceNumber is nullable so adding it to an existing table is a metadata-only change
@@ -145,19 +154,47 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
                         INCLUDE ([ParkedAtUtc], [NextAttemptAtUtc], [LeaseUntilUtc])
                         WHERE [DispatchedAtUtc] IS NULL;";
 
+        // Every check-then-alter step above races with another replica migrating the same table
+        // (both see a column missing, the second ALTER fails with a duplicate-column error), so
+        // both batches run in one transaction behind a per-table app lock. A transaction-owned
+        // lock is released by the commit or rollback, also on a pooled connection.
+        var lockSql = @"
+                DECLARE @LockResult INT;
+                EXEC @LockResult = sp_getapplock
+                    @Resource = @LockResource,
+                    @LockMode = 'Exclusive',
+                    @LockOwner = 'Transaction',
+                    @LockTimeout = @LockTimeoutMs;
+                IF @LockResult < 0
+                    THROW 51000, 'Timed out waiting for another instance to finish migrating the NimBus outbox table.', 1;";
+
         await using var connection = new SqlConnection(_options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
-        await using (var command = new SqlCommand(sql, connection))
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var lockCommand = new SqlCommand(lockSql, connection, transaction))
+        {
+            var lockTimeoutMs = ToMilliseconds(MigrationLockTimeout, nameof(MigrationLockTimeout));
+            lockCommand.Parameters.Add("@LockResource", SqlDbType.NVarChar, 255).Value = MigrationLockResource;
+            lockCommand.Parameters.Add("@LockTimeoutMs", SqlDbType.Int).Value = lockTimeoutMs;
+            // The command must outlive the lock wait.
+            lockCommand.CommandTimeout = (lockTimeoutMs / 1000) + 30;
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var command = new SqlCommand(sql, connection, transaction))
         {
             command.Parameters.AddWithValue("@Schema", _options.Schema);
             command.Parameters.AddWithValue("@TableName", _options.TableName);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await using (var indexCommand = new SqlCommand(indexSql, connection))
+        await using (var indexCommand = new SqlCommand(indexSql, connection, transaction))
         {
             await indexCommand.ExecuteNonQueryAsync(cancellationToken);
         }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task StoreAsync(OutboxMessage message, CancellationToken cancellationToken = default)
@@ -277,9 +314,11 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
     {
         // Store order: SequenceNumber is assigned as rows are inserted. Rows stored before the
         // column existed have NULL, sort first, and keep their previous CreatedAtUtc order.
+        // READCOMMITTEDLOCK accompanies READPAST because READPAST alone is rejected under
+        // READ_COMMITTED_SNAPSHOT (Azure SQL's default).
         var sql = $@"
-                SELECT TOP (@BatchSize) [Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc], [ScheduledEnqueueTimeUtc], [TraceParent], [TraceState]
-                FROM {_options.FullTableName} WITH (UPDLOCK, READPAST)
+                SELECT TOP (@BatchSize) {RowColumns}
+                FROM {_options.FullTableName} WITH (UPDLOCK, READPAST, READCOMMITTEDLOCK)
                 WHERE [DispatchedAtUtc] IS NULL
                 ORDER BY [SequenceNumber] ASC, [CreatedAtUtc] ASC";
 
@@ -293,22 +332,7 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            result.Add(new OutboxMessage
-            {
-                Id = reader.GetString(0),
-                MessageId = reader.GetString(1),
-                To = reader.IsDBNull(2) ? null : reader.GetString(2),
-                EventTypeId = reader.IsDBNull(3) ? null : reader.GetString(3),
-                SessionId = reader.IsDBNull(4) ? null : reader.GetString(4),
-                CorrelationId = reader.IsDBNull(5) ? null : reader.GetString(5),
-                Payload = reader.GetString(6),
-                EnqueueDelayMinutes = reader.GetInt32(7),
-                CreatedAtUtc = reader.GetDateTime(8),
-                ScheduledEnqueueTimeUtc = reader.IsDBNull(9) ? null : reader.GetDateTime(9),
-                DispatchedAtUtc = null,
-                TraceParent = reader.IsDBNull(10) ? null : reader.GetString(10),
-                TraceState = reader.IsDBNull(11) ? null : reader.GetString(11)
-            });
+            result.Add(ReadRow(reader));
         }
 
         return result;
@@ -354,10 +378,10 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
 
     /// <inheritdoc />
     /// <remarks>
-    /// Deletes in batches of <see cref="SqlServerOutboxOptions.PurgeBatchSize"/> rows, each its own
-    /// short autocommit statement, so a large backlog never holds one long lock or escalates to a
-    /// table lock. Cancellation is honoured between batches; rows deleted by earlier batches stay
-    /// deleted.
+    /// Deletes in batches of at most <see cref="SqlServerOutboxOptions.PurgeBatchSize"/> rows, each
+    /// its own short autocommit statement, so a large backlog is not removed by one long-running
+    /// statement holding its locks and log space until the end. Cancellation is honoured between
+    /// batches; rows deleted by earlier batches stay deleted.
     /// </remarks>
     public async Task<int> PurgeDispatchedAsync(TimeSpan olderThan, CancellationToken cancellationToken = default)
     {
@@ -405,6 +429,8 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
         // parked, waiting for a retry or leased: a blocked session contributes no rows, so it
         // neither fills the batch nor lets a later row overtake the one that blocks it. The
         // subquery sees the table as it was before this statement's own updates.
+        // READCOMMITTEDLOCK accompanies READPAST because READPAST alone is rejected under
+        // READ_COMMITTED_SNAPSHOT (Azure SQL's default).
         var sql = $@"
                 SET XACT_ABORT ON;
                 BEGIN TRANSACTION;
@@ -422,7 +448,7 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
 
                     WITH [Claimable] AS (
                         SELECT TOP (@BatchSize) [o].*
-                        FROM {_options.FullTableName} AS [o] WITH (UPDLOCK, ROWLOCK, READPAST)
+                        FROM {_options.FullTableName} AS [o] WITH (UPDLOCK, ROWLOCK, READPAST, READCOMMITTEDLOCK)
                         WHERE [o].[DispatchedAtUtc] IS NULL
                           AND [o].[ParkedAtUtc] IS NULL
                           AND ([o].[NextAttemptAtUtc] IS NULL OR [o].[NextAttemptAtUtc] <= @Now)
@@ -444,10 +470,7 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
                     SET [LeaseUntilUtc] = DATEADD(MILLISECOND, @LeaseMs, @Now),
                         [ClaimedBy] = @ClaimedBy
                     OUTPUT
-                        inserted.[Id], inserted.[MessageId], inserted.[To], inserted.[EventTypeId],
-                        inserted.[SessionId], inserted.[CorrelationId], inserted.[Payload],
-                        inserted.[EnqueueDelayMinutes], inserted.[CreatedAtUtc],
-                        inserted.[ScheduledEnqueueTimeUtc], inserted.[TraceParent], inserted.[TraceState],
+                        {InsertedRowColumns},
                         ISNULL(inserted.[AttemptCount], 0), inserted.[SequenceNumber];
                 END;
 
@@ -468,24 +491,9 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
         {
             while (await reader.ReadAsync(cancellationToken))
             {
-                var message = new OutboxMessage
-                {
-                    Id = reader.GetString(0),
-                    MessageId = reader.GetString(1),
-                    To = reader.IsDBNull(2) ? null : reader.GetString(2),
-                    EventTypeId = reader.IsDBNull(3) ? null : reader.GetString(3),
-                    SessionId = reader.IsDBNull(4) ? null : reader.GetString(4),
-                    CorrelationId = reader.IsDBNull(5) ? null : reader.GetString(5),
-                    Payload = reader.GetString(6),
-                    EnqueueDelayMinutes = reader.GetInt32(7),
-                    CreatedAtUtc = reader.GetDateTime(8),
-                    ScheduledEnqueueTimeUtc = reader.IsDBNull(9) ? null : reader.GetDateTime(9),
-                    DispatchedAtUtc = null,
-                    TraceParent = reader.IsDBNull(10) ? null : reader.GetString(10),
-                    TraceState = reader.IsDBNull(11) ? null : reader.GetString(11),
-                    AttemptCount = reader.GetInt32(12),
-                };
-                claimed.Add((message, reader.IsDBNull(13) ? null : reader.GetInt64(13)));
+                var message = ReadRow(reader);
+                message.AttemptCount = reader.GetInt32(RowColumnCount);
+                claimed.Add((message, reader.IsDBNull(RowColumnCount + 1) ? null : reader.GetInt64(RowColumnCount + 1)));
             }
         }
 
@@ -499,6 +507,55 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
         }
 
         return result;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The fence is <c>ClaimedBy</c>: another dispatcher's claim overwrites it, so a stale
+    /// dispatcher's checkpoint matches no row. The checkpoint also clears the lease.
+    /// </remarks>
+    public async Task<IReadOnlyCollection<string>> MarkClaimedAsDispatchedAsync(
+        string claimantId,
+        IEnumerable<string> ids,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateClaimant(claimantId);
+        ArgumentNullException.ThrowIfNull(ids);
+        var idList = new List<string>(ids);
+        var checkpointed = new List<string>(idList.Count);
+        if (idList.Count == 0)
+            return checkpointed;
+
+        await using var connection = new SqlConnection(_options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        for (var offset = 0; offset < idList.Count; offset += 100)
+        {
+            var count = Math.Min(100, idList.Count - offset);
+            await using var command = new SqlCommand { Connection = connection };
+            var paramNames = new string[count];
+            for (var i = 0; i < count; i++)
+            {
+                paramNames[i] = $"@Id{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                command.Parameters.Add(paramNames[i], SqlDbType.NVarChar, 128).Value = idList[offset + i];
+            }
+
+            command.Parameters.Add("@ClaimedBy", SqlDbType.NVarChar, 256).Value = claimantId;
+            // ISNULL keeps the original timestamp when the same claimant repeats the checkpoint.
+            command.CommandText = $@"
+                UPDATE {_options.FullTableName}
+                SET [DispatchedAtUtc] = ISNULL([DispatchedAtUtc], SYSUTCDATETIME()),
+                    [LeaseUntilUtc] = NULL
+                OUTPUT inserted.[Id]
+                WHERE [ClaimedBy] = @ClaimedBy
+                  AND [Id] IN ({string.Join(", ", paramNames)});";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                checkpointed.Add(reader.GetString(0));
+            }
+        }
+
+        return checkpointed;
     }
 
     /// <inheritdoc />
@@ -618,6 +675,30 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery, IOu
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return result is long count ? count : 0;
     }
+
+    // The columns every read path materializes into an OutboxMessage, in ReadRow's order.
+    private const string RowColumns = "[Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc], [ScheduledEnqueueTimeUtc], [TraceParent], [TraceState]";
+
+    private const string InsertedRowColumns = "inserted.[Id], inserted.[MessageId], inserted.[To], inserted.[EventTypeId], inserted.[SessionId], inserted.[CorrelationId], inserted.[Payload], inserted.[EnqueueDelayMinutes], inserted.[CreatedAtUtc], inserted.[ScheduledEnqueueTimeUtc], inserted.[TraceParent], inserted.[TraceState]";
+
+    private const int RowColumnCount = 12;
+
+    private static OutboxMessage ReadRow(SqlDataReader reader) => new()
+    {
+        Id = reader.GetString(0),
+        MessageId = reader.GetString(1),
+        To = reader.IsDBNull(2) ? null : reader.GetString(2),
+        EventTypeId = reader.IsDBNull(3) ? null : reader.GetString(3),
+        SessionId = reader.IsDBNull(4) ? null : reader.GetString(4),
+        CorrelationId = reader.IsDBNull(5) ? null : reader.GetString(5),
+        Payload = reader.GetString(6),
+        EnqueueDelayMinutes = reader.GetInt32(7),
+        CreatedAtUtc = reader.GetDateTime(8),
+        ScheduledEnqueueTimeUtc = reader.IsDBNull(9) ? null : reader.GetDateTime(9),
+        DispatchedAtUtc = null,
+        TraceParent = reader.IsDBNull(10) ? null : reader.GetString(10),
+        TraceState = reader.IsDBNull(11) ? null : reader.GetString(11),
+    };
 
     private static int CompareDispatchOrder((OutboxMessage Message, long? SequenceNumber) left, (OutboxMessage Message, long? SequenceNumber) right)
     {

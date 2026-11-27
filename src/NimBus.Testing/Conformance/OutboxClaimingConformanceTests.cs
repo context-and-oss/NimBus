@@ -207,6 +207,75 @@ public abstract class OutboxClaimingConformanceTests
         CollectionAssert.AreEqual(new[] { a2.Id }, Ids(await claiming.ClaimPendingAsync(10, "claimant-b", LongLease)));
     }
 
+    /// <summary>
+    /// Verifies that the fenced checkpoint marks the claimant's rows dispatched, is idempotent,
+    /// and leaves rows claimed by someone else untouched.
+    /// </summary>
+    [TestMethod]
+    public async Task MarkClaimedAsDispatchedAsync_checkpoints_only_the_claimants_rows()
+    {
+        var (outbox, claiming) = await CreateAsync();
+        var mine = CreateMessage("A");
+        var theirs = CreateMessage("B");
+        await outbox.StoreBatchAsync([mine, theirs]);
+        Assert.AreEqual(1, (await claiming.ClaimPendingAsync(1, "claimant-a", LongLease)).Count);
+        Assert.AreEqual(1, (await claiming.ClaimPendingAsync(1, "claimant-b", LongLease)).Count);
+
+        var checkpointed = await claiming.MarkClaimedAsDispatchedAsync("claimant-a", [mine.Id, theirs.Id]);
+
+        CollectionAssert.AreEqual(new[] { mine.Id }, checkpointed.ToArray());
+        CollectionAssert.AreEqual(new[] { theirs.Id }, Ids(await outbox.GetPendingAsync(10)));
+        CollectionAssert.AreEqual(new[] { mine.Id }, (await claiming.MarkClaimedAsDispatchedAsync("claimant-a", [mine.Id])).ToArray(), "Repeating the checkpoint succeeds.");
+    }
+
+    /// <summary>
+    /// Verifies the fence after a lease expired and another claimant took the rows over: the
+    /// previous claimant's checkpoint, failure report and release are all ignored, and the new
+    /// claimant's checkpoint applies.
+    /// </summary>
+    [TestMethod]
+    public async Task A_claimant_whose_lease_was_taken_over_can_no_longer_checkpoint_fail_or_release_the_rows()
+    {
+        var (outbox, claiming) = await CreateAsync();
+        var a1 = CreateMessage("A");
+        var a2 = CreateMessage("A");
+        await outbox.StoreBatchAsync([a1, a2]);
+        var lease = TimeSpan.FromSeconds(1);
+        Assert.AreEqual(2, (await claiming.ClaimPendingAsync(10, "claimant-a", lease)).Count);
+        await AdvanceClockAsync(lease);
+        CollectionAssert.AreEqual(new[] { a1.Id, a2.Id }, Ids(await claiming.ClaimPendingAsync(10, "claimant-b", LongLease)));
+
+        Assert.AreEqual(0, (await claiming.MarkClaimedAsDispatchedAsync("claimant-a", [a1.Id])).Count, "A's checkpoint is fenced out.");
+        await claiming.RecordDispatchFailureAsync(a2.Id, "claimant-a", "stale", TimeSpan.FromMinutes(30), park: true);
+        await claiming.ReleaseClaimsAsync("claimant-a", [a1.Id, a2.Id]);
+
+        CollectionAssert.AreEqual(new[] { a1.Id, a2.Id }, Ids(await outbox.GetPendingAsync(10)), "Nothing was marked dispatched by A.");
+        Assert.AreEqual(0, (await claiming.ClaimPendingAsync(10, "claimant-c", LongLease)).Count, "B's lease still holds.");
+        CollectionAssert.AreEqual(new[] { a1.Id }, (await claiming.MarkClaimedAsDispatchedAsync("claimant-b", [a1.Id])).ToArray());
+        await claiming.ReleaseClaimsAsync("claimant-b", [a2.Id]);
+        var reclaimed = await claiming.ClaimPendingAsync(10, "claimant-c", LongLease);
+        CollectionAssert.AreEqual(new[] { a2.Id }, Ids(reclaimed));
+        Assert.AreEqual(0, reclaimed[0].AttemptCount, "A's stale failure report must not count an attempt or park the row.");
+    }
+
+    /// <summary>
+    /// Verifies that a claimant whose lease expired, but whose rows nobody claimed since, can
+    /// still checkpoint them: no one else can have sent them.
+    /// </summary>
+    [TestMethod]
+    public async Task MarkClaimedAsDispatchedAsync_applies_after_the_lease_expired_when_nobody_reclaimed_the_row()
+    {
+        var (outbox, claiming) = await CreateAsync();
+        var message = CreateMessage("A");
+        await outbox.StoreAsync(message);
+        var lease = TimeSpan.FromSeconds(1);
+        Assert.AreEqual(1, (await claiming.ClaimPendingAsync(10, "claimant-a", lease)).Count);
+        await AdvanceClockAsync(lease);
+
+        CollectionAssert.AreEqual(new[] { message.Id }, (await claiming.MarkClaimedAsDispatchedAsync("claimant-a", [message.Id])).ToArray());
+        Assert.AreEqual(0, (await outbox.GetPendingAsync(10)).Count);
+    }
+
     private async Task<(IOutbox Outbox, IOutboxClaiming Claiming)> CreateAsync()
     {
         var outbox = await CreateOutboxAsync();

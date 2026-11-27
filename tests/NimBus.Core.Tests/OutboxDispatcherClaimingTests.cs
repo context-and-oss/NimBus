@@ -6,6 +6,7 @@ using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json;
 using NimBus.Core.Messages;
@@ -53,7 +54,7 @@ public sealed class OutboxDispatcherClaimingTests
         await outbox.StoreBatchAsync([a1, a2, b1]);
         var sender = new ScriptedSender(failing: a1.MessageId);
         var options = new OutboxDispatcherOptions { MaxAttempts = 3 };
-        var dispatcher = new OutboxDispatcher(outbox, sender, options);
+        var dispatcher = new OutboxDispatcher(outbox, sender, options, logger: null);
         using var parked = new ParkedCounter();
 
         for (var poll = 0; poll < 8; poll++)
@@ -78,7 +79,7 @@ public sealed class OutboxDispatcherClaimingTests
         await outbox.StoreBatchAsync(session);
         var sender = new ScriptedSender(failing: session[0].MessageId, failures: 2);
         var options = new OutboxDispatcherOptions();
-        var dispatcher = new OutboxDispatcher(outbox, sender, options);
+        var dispatcher = new OutboxDispatcher(outbox, sender, options, logger: null);
 
         for (var poll = 0; poll < 4; poll++)
         {
@@ -103,7 +104,7 @@ public sealed class OutboxDispatcherClaimingTests
             InitialRetryDelay = TimeSpan.FromSeconds(1),
             MaxRetryDelay = TimeSpan.FromSeconds(5),
         };
-        var dispatcher = new OutboxDispatcher(outbox, sender, options);
+        var dispatcher = new OutboxDispatcher(outbox, sender, options, logger: null);
 
         var delays = new List<TimeSpan?>();
         for (var attempt = 0; attempt < 5; attempt++)
@@ -163,7 +164,7 @@ public sealed class OutboxDispatcherClaimingTests
         await outbox.StoreBatchAsync(rows);
         var sent = new ConcurrentQueue<string?>();
         var dispatchers = Enumerable.Range(0, 3)
-            .Select(replica => new OutboxDispatcher(outbox, new ScriptedSender(sink: sent, yieldOnSend: true), new OutboxDispatcherOptions { DispatcherId = $"replica-{replica}" }))
+            .Select(replica => new OutboxDispatcher(outbox, new ScriptedSender(sink: sent, yieldOnSend: true), new OutboxDispatcherOptions { DispatcherId = $"replica-{replica}" }, logger: null))
             .ToList();
 
         await Task.WhenAll(dispatchers.Select(dispatcher => Task.Run(async () =>
@@ -195,7 +196,7 @@ public sealed class OutboxDispatcherClaimingTests
         var options = new OutboxDispatcherOptions { LeaseDuration = TimeSpan.FromSeconds(1) };
         var sender = new ScriptedSender(sendDelay: TimeSpan.FromMilliseconds(600));
 
-        var dispatched = await new OutboxDispatcher(outbox, sender, options).DispatchPendingAsync(batchSize: 10);
+        var dispatched = await new OutboxDispatcher(outbox, sender, options, logger: null).DispatchPendingAsync(batchSize: 10);
 
         Assert.AreEqual(1, dispatched);
         CollectionAssert.AreEqual(new[] { first.MessageId }, sender.Sent.ToArray());
@@ -204,16 +205,149 @@ public sealed class OutboxDispatcherClaimingTests
     }
 
     [TestMethod]
+    public async Task Backoff_reaches_MaxRetryDelay_with_a_tiny_initial_delay_and_many_attempts()
+    {
+        // With a one-tick initial delay the cap of five minutes is reached at attempt 33
+        // (2^32 ticks is about 430 s); a clamped exponent would stop growing at about 107 s.
+        var options = new OutboxDispatcherOptions
+        {
+            InitialRetryDelay = TimeSpan.FromTicks(1),
+            MaxRetryDelay = TimeSpan.FromMinutes(5),
+            MaxAttempts = 40,
+        };
+        Assert.AreEqual(TimeSpan.FromTicks(1), options.GetRetryDelay(1));
+        Assert.AreEqual(TimeSpan.FromTicks(1L << 31), options.GetRetryDelay(32));
+        Assert.AreEqual(options.MaxRetryDelay, options.GetRetryDelay(33));
+        Assert.AreEqual(options.MaxRetryDelay, options.GetRetryDelay(39));
+        Assert.AreEqual(options.MaxRetryDelay, options.GetRetryDelay(int.MaxValue));
+
+        var outbox = new ConformanceInMemoryOutbox();
+        var row = CreateRow("A", 0);
+        await outbox.StoreAsync(row);
+        var sender = new ScriptedSender(failing: row.MessageId);
+        var dispatcher = new OutboxDispatcher(outbox, sender, options, logger: null);
+        var delays = new List<TimeSpan?>();
+        for (var attempt = 1; attempt < options.MaxAttempts; attempt++)
+        {
+            await dispatcher.DispatchPendingAsync(batchSize: 10);
+            delays.Add(outbox.GetLastRetryDelay(row.Id));
+            outbox.AdvanceClock(options.MaxRetryDelay);
+        }
+
+        Assert.AreEqual(options.MaxRetryDelay, delays[^1], "The delay before the last retry is the cap.");
+        await dispatcher.DispatchPendingAsync(batchSize: 10);
+        Assert.IsTrue(outbox.IsParked(row.Id), "The 40th failure parks the row.");
+        Assert.AreEqual(options.MaxAttempts, sender.AttemptsOf(row.MessageId));
+    }
+
+    [TestMethod]
+    public async Task A_dispatcher_that_lost_its_claim_mid_send_stops_and_leaves_the_rows_to_the_new_owner()
+    {
+        var outbox = new ConformanceInMemoryOutbox();
+        var a1 = CreateRow("A", 0);
+        var a2 = CreateRow("A", 1);
+        var b1 = CreateRow("B", 0);
+        await outbox.StoreBatchAsync([a1, a2, b1]);
+        var options = new OutboxDispatcherOptions { DispatcherId = "replica-a" };
+        IReadOnlyList<OutboxMessage>? claimedByB = null;
+        // While A1 is being sent, the store's clock passes A's lease (a paused process, a slow
+        // broker) and replica B claims every row.
+        var sender = new ScriptedSender(onSend: async message =>
+        {
+            if (message.MessageId != a1.MessageId)
+                return;
+            outbox.AdvanceClock(options.LeaseDuration + TimeSpan.FromSeconds(1));
+            claimedByB = await outbox.ClaimPendingAsync(10, "replica-b", TimeSpan.FromMinutes(5));
+        });
+        var logger = new ListLogger();
+
+        var dispatched = await new OutboxDispatcher(outbox, sender, options, logger).DispatchPendingAsync(batchSize: 10);
+
+        Assert.AreEqual(0, dispatched, "A's checkpoint of A1 is fenced out by B's claim.");
+        CollectionAssert.AreEqual(new[] { a1.MessageId }, sender.Sent.ToArray(), "A must not send A2 or B1 once it lost its claim.");
+        Assert.IsNotNull(claimedByB);
+        CollectionAssert.AreEqual(new[] { a1.Id, a2.Id, b1.Id }, claimedByB.Select(row => row.Id).ToArray());
+        Assert.IsNull(outbox.GetDispatchedAtUtc(a1.Id), "A's stale checkpoint must not mark B's row dispatched.");
+        Assert.IsTrue(outbox.IsLeased(a2.Id) && outbox.IsLeased(b1.Id), "A's release must not free B's claims.");
+        Assert.IsTrue(
+            logger.Entries.Any(entry => entry.Level == LogLevel.Warning && entry.Message.Contains("lost its claim", StringComparison.Ordinal)),
+            "Losing the claim is logged as a warning.");
+
+        // B, the new owner, sends the session in order and checkpoints it.
+        CollectionAssert.AreEquivalent(
+            new[] { a1.Id, a2.Id, b1.Id },
+            (await outbox.MarkClaimedAsDispatchedAsync("replica-b", [a1.Id, a2.Id, b1.Id])).ToArray());
+    }
+
+    [TestMethod]
+    public async Task A_send_still_running_near_the_end_of_the_lease_is_cancelled_and_counted_as_a_failed_attempt()
+    {
+        var outbox = new ConformanceInMemoryOutbox();
+        var a1 = CreateRow("A", 0);
+        var a2 = CreateRow("A", 1);
+        await outbox.StoreBatchAsync([a1, a2]);
+        var options = new OutboxDispatcherOptions { LeaseDuration = TimeSpan.FromSeconds(2) };
+        // Honours cancellation, but would otherwise run far past the lease.
+        var sender = new ScriptedSender(sendDelay: TimeSpan.FromMinutes(5));
+        var logger = new ListLogger();
+        var started = System.Diagnostics.Stopwatch.StartNew();
+
+        var dispatched = await new OutboxDispatcher(outbox, sender, options, logger).DispatchPendingAsync(batchSize: 10);
+
+        Assert.IsTrue(started.Elapsed < options.LeaseDuration, $"The send must be cut off before the lease expires; took {started.Elapsed}.");
+        Assert.AreEqual(0, dispatched);
+        Assert.AreEqual(0, sender.Sent.Count);
+        Assert.AreEqual(1, outbox.GetAttemptCount(a1.Id), "The cut-off send is a failed attempt, backed off like any other.");
+        StringAssert.Contains(outbox.GetLastError(a1.Id), "lease", StringComparison.Ordinal);
+        Assert.AreEqual(0, sender.AttemptsOf(a2.MessageId), "A2 stays behind its failed predecessor.");
+        Assert.AreEqual(0, outbox.GetAttemptCount(a2.Id));
+        Assert.IsFalse(outbox.IsLeased(a2.Id));
+        Assert.IsTrue(logger.Entries.Any(entry => entry.Level == LogLevel.Warning && entry.Message.Contains("lease was about to expire", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task An_outbox_without_claiming_logs_the_single_dispatcher_requirement_once_as_a_warning()
+    {
+        var outbox = new PlainOutbox();
+        var logger = new ListLogger();
+        var dispatcher = new OutboxDispatcher(outbox, new ScriptedSender(), logger);
+
+        await dispatcher.DispatchPendingAsync();
+        await dispatcher.DispatchPendingAsync();
+
+        var diagnostics = logger.Entries.Where(entry => entry.Message.Contains("only one dispatcher instance", StringComparison.Ordinal)).ToList();
+        Assert.AreEqual(1, diagnostics.Count);
+        Assert.AreEqual(LogLevel.Warning, diagnostics[0].Level);
+    }
+
+    [TestMethod]
+    public async Task Existing_constructor_calls_with_null_still_bind_to_the_logger_constructors()
+    {
+        // Compile-level guard: these calls compiled before OutboxDispatcherOptions existed and
+        // must keep compiling, unambiguously, with the logger constructors.
+        var outbox = new ConformanceInMemoryOutbox();
+        var row = CreateRow("A", 0);
+        await outbox.StoreAsync(row);
+        var sender = new ScriptedSender();
+
+        var withNullLogger = new OutboxDispatcher(outbox, sender, null);
+        var withTimeoutAndNullLogger = new OutboxDispatcher(outbox, sender, TimeSpan.FromSeconds(1), null);
+
+        Assert.AreEqual(1, await withNullLogger.DispatchPendingAsync(batchSize: 10));
+        Assert.AreEqual(0, await withTimeoutAndNullLogger.DispatchPendingAsync(batchSize: 10));
+    }
+
+    [TestMethod]
     public void Options_validation_rejects_out_of_range_settings()
     {
         var outbox = new ConformanceInMemoryOutbox();
         var sender = new ScriptedSender();
 
-        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new OutboxDispatcher(outbox, sender, new OutboxDispatcherOptions { MaxAttempts = 0 }));
-        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new OutboxDispatcher(outbox, sender, new OutboxDispatcherOptions { InitialRetryDelay = TimeSpan.Zero }));
-        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new OutboxDispatcher(outbox, sender, new OutboxDispatcherOptions { MaxRetryDelay = TimeSpan.FromMilliseconds(1) }));
-        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new OutboxDispatcher(outbox, sender, new OutboxDispatcherOptions { LeaseDuration = TimeSpan.FromMilliseconds(10) }));
-        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxDispatcher(outbox, sender, (OutboxDispatcherOptions)null!));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new OutboxDispatcher(outbox, sender, new OutboxDispatcherOptions { MaxAttempts = 0 }, logger: null));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new OutboxDispatcher(outbox, sender, new OutboxDispatcherOptions { InitialRetryDelay = TimeSpan.Zero }, logger: null));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new OutboxDispatcher(outbox, sender, new OutboxDispatcherOptions { MaxRetryDelay = TimeSpan.FromMilliseconds(1) }, logger: null));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new OutboxDispatcher(outbox, sender, new OutboxDispatcherOptions { LeaseDuration = TimeSpan.FromMilliseconds(10) }, logger: null));
+        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxDispatcher(outbox, sender, (OutboxDispatcherOptions)null!, logger: null));
     }
 
     [TestMethod]
@@ -224,7 +358,7 @@ public sealed class OutboxDispatcherClaimingTests
 
         var first = new OutboxDispatcher(outbox, sender);
         var second = new OutboxDispatcher(outbox, sender);
-        var named = new OutboxDispatcher(outbox, sender, new OutboxDispatcherOptions { DispatcherId = "replica-1" });
+        var named = new OutboxDispatcher(outbox, sender, new OutboxDispatcherOptions { DispatcherId = "replica-1" }, logger: null);
 
         Assert.AreNotEqual(first.DispatcherId, second.DispatcherId);
         Assert.AreEqual("replica-1", named.DispatcherId);
@@ -255,7 +389,8 @@ public sealed class OutboxDispatcherClaimingTests
         int failures = int.MaxValue,
         ConcurrentQueue<string?>? sink = null,
         bool yieldOnSend = false,
-        TimeSpan sendDelay = default) : ISender
+        TimeSpan sendDelay = default,
+        Func<IMessage, Task>? onSend = null) : ISender
     {
         private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
 
@@ -272,6 +407,9 @@ public sealed class OutboxDispatcherClaimingTests
             else if (yieldOnSend)
                 await Task.Yield();
 
+            if (onSend is not null)
+                await onSend(message);
+
             if (string.Equals(message.MessageId, failing, StringComparison.Ordinal) && attempt <= failures)
                 throw new InvalidOperationException("poison");
 
@@ -286,6 +424,38 @@ public sealed class OutboxDispatcherClaimingTests
 
         public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    private sealed record LogEntry(LogLevel Level, string Message);
+
+    private sealed class ListLogger : ILogger<OutboxDispatcher>
+    {
+        private readonly ConcurrentQueue<LogEntry> _entries = new();
+
+        public IReadOnlyList<LogEntry> Entries => _entries.ToArray();
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            _entries.Enqueue(new LogEntry(logLevel, formatter(state, exception)));
+    }
+
+    /// <summary>An outbox that implements only <see cref="IOutbox"/> and is always empty.</summary>
+    private sealed class PlainOutbox : IOutbox
+    {
+        public Task StoreAsync(OutboxMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task StoreBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<OutboxMessage>> GetPendingAsync(int batchSize, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<OutboxMessage>>([]);
+
+        public Task MarkAsDispatchedAsync(string id, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task MarkAsDispatchedAsync(IEnumerable<string> ids, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class ParkedCounter : IDisposable

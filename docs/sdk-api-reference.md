@@ -534,9 +534,13 @@ An outbox that also implements `IOutboxClaiming` (the SQL Server outbox does)
 gets three guarantees from `OutboxDispatcher`:
 
 - **Claiming.** Each poll leases its batch to the dispatcher (`LeaseUntilUtc`,
-  `ClaimedBy`), so several replicas can dispatch one outbox without sending a
-  row twice or out of session order. A crashed replica's rows become claimable
-  again when the lease expires.
+  `ClaimedBy`), so several replicas can share one outbox. A crashed replica's
+  rows become claimable again when the lease expires. The dispatcher stops
+  starting sends once half of `LeaseDuration` has passed, cancels a send still
+  running when a tenth of the lease is left (recording a failed attempt), and
+  checkpoints each row only while it still holds the claim. A dispatcher that
+  finds its claim taken over logs a warning and stops sending the rest of its
+  batch, which the new owner sends in order.
 - **Backoff.** A failed row is retried after `InitialRetryDelay`, doubling up to
   `MaxRetryDelay`. Until then the row and every later row of its session are
   left out of the batch, so a failing session never crowds out other sessions
@@ -549,7 +553,8 @@ gets three guarantees from `OutboxDispatcher`:
   `GetParkedCountAsync()` reports how many rows are parked.
 
 ```csharp
-services.AddNimBusOutboxDispatcher(options =>
+services.AddNimBusOutboxDispatcher();
+services.ConfigureNimBusOutboxDispatcher(options =>
 {
     options.MaxAttempts = 20;                          // default: about an hour of retries
     options.InitialRetryDelay = TimeSpan.FromSeconds(1);
@@ -558,14 +563,29 @@ services.AddNimBusOutboxDispatcher(options =>
 });
 ```
 
+Delivery is **at-least-once**. A row can be sent twice when the outcome of a
+send is uncertain: the broker accepted it but the checkpoint did not happen
+(a crash, a cancelled or timed-out send the broker still completed, or a
+dispatcher that lost its claim after sending). Per-session order is preserved:
+a session's next row is only sent by the dispatcher that holds the claim, after
+the previous row was checkpointed, so a duplicate is always a repeat of a row
+already sent, never a later row overtaking an earlier one. Make consumers
+idempotent (for example with the inbox).
+
 Outboxes that implement only `IOutbox` keep the earlier behaviour: a failed row
 is retried on every poll, without backoff or parking, and **only one dispatcher
 instance may run** against them. Provider authors can verify an
 `IOutboxClaiming` implementation with
 `NimBus.Testing.Conformance.OutboxClaimingConformanceTests`.
 
-`PurgeDispatchedAsync` deletes in batches of `SqlServerOutboxOptions.PurgeBatchSize`
-rows (default 1,000), so purging a large backlog never takes a table lock.
+`PurgeDispatchedAsync` deletes in batches of at most
+`SqlServerOutboxOptions.PurgeBatchSize` rows (default 1,000), each its own short
+statement, so a large backlog is not purged by one long-running `DELETE`.
+
+`EnsureTableExistsAsync` migrates the table in one transaction under a per-table
+`sp_getapplock`, so replicas that start together upgrade it one at a time. The
+claim and pending queries pair `READPAST` with `READCOMMITTEDLOCK`, so they also
+run on databases with `READ_COMMITTED_SNAPSHOT` on (the Azure SQL default).
 
 ---
 

@@ -780,7 +780,10 @@ file sealed class OutboxRecordingLogger : Microsoft.Extensions.Logging.ILogger<O
     {
         if (logLevel == Microsoft.Extensions.Logging.LogLevel.Error)
             ErrorCalls++;
-        if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning)
+        // The one-time notice that these test outboxes do not implement IOutboxClaiming is not
+        // what the tests count.
+        if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning
+            && !formatter(state, exception).Contains("does not implement IOutboxClaiming", StringComparison.Ordinal))
         {
             WarningCalls++;
             LastWarningException = exception;

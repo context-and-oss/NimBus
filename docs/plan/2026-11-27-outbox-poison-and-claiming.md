@@ -37,6 +37,12 @@ replicas with skewed clocks agree on lease and retry expiry.
   increments `AttemptCount`, stores `LastError`, sets `NextAttemptAtUtc = now + retryDelay`
   (or `ParkedAtUtc = now` when `park`), and releases the lease. Only the current lease holder's
   report is applied.
+- `MarkClaimedAsDispatchedAsync(string claimantId, IEnumerable<string> ids, ct)` is the fenced
+  checkpoint: it marks only rows still claimed by `claimantId` (`ClaimedBy`, which another
+  claimant's claim overwrites) and returns the ids it checkpointed. A row whose lease expired but
+  that nobody reclaimed is still checkpointed, since no one else can have sent it. When a row is
+  missing from the result, the dispatcher has lost its claim: it logs a warning and releases
+  (fenced, so a no-op for the new owner's rows) the rest of its batch instead of sending it.
 - `ReleaseClaimsAsync(string claimantId, IEnumerable<string> ids, ct)` drops leases on rows the
   claimant did not attempt (rows queued behind a failed row of the same session, or rows left
   when the lease budget ran out).
@@ -52,16 +58,23 @@ replicas with skewed clocks agree on lease and retry expiry.
   in the poll, record the failure with exponential backoff
   (`min(InitialRetryDelay * 2^(attempt-1), MaxRetryDelay)`), park when
   `attempt >= MaxAttempts` or when the payload cannot be deserialized (deterministic failure).
-  Stop starting new sends once half the lease has elapsed so the lease does not expire under an
-  in-flight batch; release the unattempted rest. Order of bookkeeping after the sends: mark
-  dispatched (most important), record failures, release claims; the last two are best-effort
-  and logged, because an unreleased lease simply expires.
+  Stop starting new sends once half the lease has elapsed; release the unattempted rest.
+  Bound each send by the lease: it runs under a token that is cancelled when only a tenth of
+  the lease is left, and a send cut off that way is recorded as a failed attempt.
+  Checkpoint each sent row at once with the fenced `MarkClaimedAsDispatchedAsync` (see
+  below). Failure records and releases are best-effort and logged, because an unreleased lease
+  simply expires.
 - Without `IOutboxClaiming` (custom stores, test fakes): the previous behaviour, plus a one-time
   warning that poison rows are not parked and only one dispatcher instance may run.
 - Observability: `nimbus.outbox.parked` counter; warning log per failed attempt with attempt
   number and retry delay; error log on park. Pending gauges keep counting parked rows (they are
   undelivered), so a parked row also shows up as growing `nimbus.outbox.dispatch_lag`.
-- SDK: `AddNimBusOutboxDispatcher(Action<OutboxDispatcherOptions> configure, TimeSpan? pollingInterval, int batchSize)` overload.
+- SDK: `ConfigureNimBusOutboxDispatcher(Action<OutboxDispatcherOptions> configure)`, next to the
+  existing `AddNimBusOutboxDispatcher(TimeSpan?, int)`. A separate name, not an overload: an
+  `Action<...>` overload would make the existing call `AddNimBusOutboxDispatcher(null)` ambiguous.
+  For the same reason the options constructor `OutboxDispatcher(outbox, sender, options, logger)`
+  takes the logger without a default, so `new OutboxDispatcher(outbox, sender, null)` still binds
+  to the logger constructor.
 
 ### SQL Server (`SqlServerOutbox`)
 
@@ -87,6 +100,27 @@ replicas with skewed clocks agree on lease and retry expiry.
   the 5000-lock escalation threshold) until a batch deletes fewer rows, honouring cancellation
   between batches, and returns the total.
 
+### Delivery guarantee
+
+At-least-once. A row is sent twice when the broker accepted a send whose outcome the dispatcher
+could not record: a crash before the checkpoint, a send cancelled at the lease limit or by
+shutdown that the broker still completed, or a dispatcher paused past its lease whose late
+checkpoint is fenced out. Per-session order is preserved: a session's next row is sent only by
+the claim holder, after the previous row was checkpointed, so a duplicate is always a repeat of
+an already-sent row and never a later row overtaking an earlier one. Fencing cannot stop a send
+that is already on the wire when the lease expires (a sender that ignores cancellation); bounding
+the send by the lease makes that window the safety margin, and the fence keeps the stale
+dispatcher from sending anything after it.
+
+### Concurrency on SQL Server
+
+- `EnsureTableExistsAsync` runs both migration batches in one transaction under an exclusive,
+  transaction-owned `sp_getapplock` (`NimBus.Outbox.Migrate/{schema}.{table}`, distinct from the
+  claim lock, truncated to 255 characters), so replicas starting together cannot race on the
+  check-then-`ALTER TABLE` steps (duplicate-column errors) or the index creation.
+- The claim CTE and `GetPendingAsync` use `READPAST` together with `READCOMMITTEDLOCK`:
+  `READPAST` alone is rejected under `READ_COMMITTED_SNAPSHOT`, the Azure SQL default.
+
 ### Compatibility
 
 - Public API is additive only. `IOutbox` is unchanged.
@@ -109,4 +143,16 @@ replicas with skewed clocks agree on lease and retry expiry.
   re-claimable, a blocked session contributes no rows, failure/park/release semantics.
 - SQL Server live tests (skip without `NIMBUS_SQL_TEST_CONNECTION`): two concurrent dispatchers
   send each row exactly once and keep per-session order; migration of a table created by the
-  previous version; batched purge.
+  previous version; batched purge, with a statement-level trigger proving each `DELETE` removes
+  at most `PurgeBatchSize` rows; claim, read, checkpoint, failure and release on a database with
+  `READ_COMMITTED_SNAPSHOT` on; eight concurrent `EnsureTableExistsAsync` calls against a legacy
+  table and against an empty database; a dispatcher whose lease is taken over mid-send.
+- Fencing: conformance tests (in-memory and SQL Server) that a stale claimant's checkpoint,
+  failure report and release are ignored after another claimant took the rows over, and that an
+  expired but unclaimed row can still be checkpointed; a dispatcher test that a claim lost
+  mid-send stops the batch, and that a send running into the end of the lease is cancelled and
+  counted as a failed attempt.
+- Backoff saturates at `MaxRetryDelay` for any `MaxAttempts` (one-tick initial delay,
+  `MaxAttempts = 40`).
+- Compile-level tests that `new OutboxDispatcher(outbox, sender, null)` and
+  `AddNimBusOutboxDispatcher(null)` still bind as before.

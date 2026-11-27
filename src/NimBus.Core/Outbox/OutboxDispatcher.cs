@@ -6,6 +6,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -57,15 +58,20 @@ public partial class OutboxDispatcher
     /// <summary>
     /// Initializes an outbox dispatcher with explicit retry, parking and claiming settings.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="logger"/> has no default value on purpose: with one, the existing call
+    /// <c>new OutboxDispatcher(outbox, sender, null)</c> would be ambiguous between this
+    /// constructor and the logger constructor. Pass <c>null</c> for no logging.
+    /// </remarks>
     /// <param name="outbox">The transactional outbox store.</param>
     /// <param name="sender">The sender used to dispatch stored messages.</param>
     /// <param name="options">Retry, parking and claiming settings.</param>
-    /// <param name="logger">Optional dispatcher logger.</param>
+    /// <param name="logger">Dispatcher logger, or <c>null</c>.</param>
     public OutboxDispatcher(
         IOutbox outbox,
         ISender sender,
         OutboxDispatcherOptions options,
-        ILogger<OutboxDispatcher>? logger = null)
+        ILogger<OutboxDispatcher>? logger)
         : this(outbox, sender, options, DefaultCompensatingCheckpointTimeout, logger)
     {
     }
@@ -184,6 +190,7 @@ public partial class OutboxDispatcher
 
     private async Task<int> DispatchClaimedAsync(IOutboxClaiming claiming, int batchSize, CancellationToken cancellationToken)
     {
+        // Started before the claim, so local elapsed time never trails the store's lease clock.
         var claimStarted = Stopwatch.GetTimestamp();
         var claimed = await claiming.ClaimPendingAsync(batchSize, _dispatcherId, _options.LeaseDuration, cancellationToken);
         if (claimed.Count == 0)
@@ -191,13 +198,18 @@ public partial class OutboxDispatcher
 
         LogOutboxDispatchPollFoundPendingMessage(_logger, claimed.Count);
 
-        // Stop starting sends once half of the lease is gone, so the lease cannot expire (and
-        // another replica claim the rows) while this dispatcher is still sending them.
+        // Stop starting sends once half of the lease is gone, and cancel a send still running
+        // when only the safety margin is left, so this dispatcher is done with a row before its
+        // lease can expire and another replica claim it. Each checkpoint is also fenced on the
+        // claim, the last line of defence against a paused process or a sender that ignores
+        // cancellation.
         var sendBudget = _options.LeaseDuration / 2;
+        var leaseMargin = _options.LeaseDuration / 10;
         var dispatched = new List<string>();
-        var failures = new List<(OutboxMessage Message, DispatchFailure Failure)>();
         var release = new List<string>();
         var budgetExhausted = 0;
+        string? awaitingCheckpoint = null;
+        var claimLost = false;
         // FIFO per session (ADR-001): once a session's row fails, its later rows in this batch
         // are released unsent. The store keeps the whole session out of later batches while the
         // failed row waits for its retry or is parked, so it cannot crowd out other sessions.
@@ -209,62 +221,84 @@ public partial class OutboxDispatcher
                 var sessionId = outboxMessage.SessionId;
                 var hasSession = !string.IsNullOrEmpty(sessionId);
 
-                if (hasSession && failedSessions.Contains(sessionId!))
+                if (claimLost || (hasSession && failedSessions.Contains(sessionId!)))
                 {
                     release.Add(outboxMessage.Id);
                     continue;
                 }
 
-                if (Stopwatch.GetElapsedTime(claimStarted) >= sendBudget)
+                var elapsed = Stopwatch.GetElapsedTime(claimStarted);
+                if (elapsed >= sendBudget)
                 {
                     release.Add(outboxMessage.Id);
                     budgetExhausted++;
                     continue;
                 }
 
-                var failure = await DispatchOneAsync(outboxMessage, cancellationToken);
+                var sendWindow = _options.LeaseDuration - leaseMargin - elapsed;
+                DispatchFailure? failure;
+                using (var leaseTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    leaseTimeout.CancelAfter(sendWindow);
+                    failure = await DispatchOneAsync(outboxMessage, cancellationToken, leaseTimeout.Token);
+                    if (failure is not null && leaseTimeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    {
+                        LogOutboxSendExceededLease(_logger, outboxMessage.Id, outboxMessage.SessionId, sendWindow);
+                        failure = new DispatchFailure(
+                            new TimeoutException($"The send did not complete within the {sendWindow} left on the dispatcher's lease.", failure.Exception),
+                            IsPoison: false);
+                    }
+                }
+
                 if (failure is not null)
                 {
-                    failures.Add((outboxMessage, failure));
                     if (hasSession)
                         failedSessions.Add(sessionId!);
+                    await RecordFailureAsync(claiming, outboxMessage, failure, cancellationToken);
+                    continue;
+                }
+
+                awaitingCheckpoint = outboxMessage.Id;
+                var checkpointed = await claiming.MarkClaimedAsDispatchedAsync(_dispatcherId, [outboxMessage.Id], cancellationToken);
+                awaitingCheckpoint = null;
+                if (!checkpointed.Contains(outboxMessage.Id))
+                {
+                    // The lease expired and another dispatcher claimed the row: it owns the rest
+                    // of the batch now and sends it in order. Sending more here would duplicate
+                    // rows and could put a session's rows out of order.
+                    claimLost = true;
+                    LogOutboxClaimLost(_logger, outboxMessage.Id, outboxMessage.SessionId, Stopwatch.GetElapsedTime(claimStarted), _options.LeaseDuration);
                     continue;
                 }
 
                 dispatched.Add(outboxMessage.Id);
             }
-
-            if (dispatched.Count > 0)
-            {
-                await _outbox.MarkAsDispatchedAsync(dispatched, cancellationToken);
-            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Release every claimed row that was not sent (failed rows included: a cancelled poll
-            // does not count an attempt), so another replica can take them over at once.
-            var sent = new HashSet<string>(dispatched, StringComparer.Ordinal);
+            // does not count an attempt), so another replica can take them over at once. A row
+            // that was sent but whose checkpoint was interrupted is checkpointed instead.
+            var toCheckpoint = new List<string>();
+            if (awaitingCheckpoint is not null)
+                toCheckpoint.Add(awaitingCheckpoint);
+            var settled = new HashSet<string>(dispatched, StringComparer.Ordinal);
+            settled.UnionWith(toCheckpoint);
             var unsent = new List<string>();
             foreach (var outboxMessage in claimed)
             {
-                if (!sent.Contains(outboxMessage.Id))
+                if (!settled.Contains(outboxMessage.Id))
                     unsent.Add(outboxMessage.Id);
             }
 
-            await CompensateAfterCancellationAsync(dispatched, claiming, unsent);
+            await CompensateAfterCancellationAsync(toCheckpoint, claiming, unsent);
             throw;
         }
 
         if (budgetExhausted > 0)
             LogOutboxLeaseBudgetExhausted(_logger, sendBudget, budgetExhausted);
 
-        // Checkpointing sent rows came first; failure records and releases are best-effort,
-        // because a lease that is not cleared simply expires and the row is claimed again.
-        foreach (var (outboxMessage, failure) in failures)
-        {
-            await RecordFailureAsync(claiming, outboxMessage, failure, cancellationToken);
-        }
-
+        // Best-effort: a lease that is not released simply expires and the row is claimed again.
         if (release.Count > 0)
         {
             try
@@ -323,12 +357,15 @@ public partial class OutboxDispatcher
         // Sending and checkpointing are separate operations. Complete the
         // idempotent checkpoint without the canceled polling token, whether
         // cancellation interrupted sending or a partially-applied checkpoint.
+        // A claiming store checkpoints only rows this dispatcher still holds.
         if (dispatched.Count > 0)
         {
             Task? checkpointTask = null;
             try
             {
-                checkpointTask = _outbox.MarkAsDispatchedAsync(dispatched, CancellationToken.None);
+                checkpointTask = claiming is null
+                    ? _outbox.MarkAsDispatchedAsync(dispatched, CancellationToken.None)
+                    : claiming.MarkClaimedAsDispatchedAsync(_dispatcherId, dispatched, CancellationToken.None);
                 await checkpointTask.WaitAsync(_compensatingCheckpointTimeout, CancellationToken.None);
             }
             catch (Exception ex)
@@ -375,7 +412,12 @@ public partial class OutboxDispatcher
 
     private sealed record DispatchFailure(Exception Exception, bool IsPoison);
 
-    private async Task<DispatchFailure?> DispatchOneAsync(OutboxMessage outboxMessage, CancellationToken cancellationToken)
+    private Task<DispatchFailure?> DispatchOneAsync(OutboxMessage outboxMessage, CancellationToken cancellationToken) =>
+        DispatchOneAsync(outboxMessage, cancellationToken, cancellationToken);
+
+    // cancellationToken is the poll's token: its cancellation propagates. sendToken may also
+    // fire on a send timeout, which is reported as a failed attempt.
+    private async Task<DispatchFailure?> DispatchOneAsync(OutboxMessage outboxMessage, CancellationToken cancellationToken, CancellationToken sendToken)
     {
         // Detach from the polling-loop activity so the dispatch span is a root that
         // links (rather than nests under) the original publish context.
@@ -440,11 +482,11 @@ public partial class OutboxDispatcher
 
             if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
             {
-                await _sender.ScheduleMessage(message, new DateTimeOffset(outboxMessage.ScheduledEnqueueTimeUtc.Value, TimeSpan.Zero), cancellationToken);
+                await _sender.ScheduleMessage(message, new DateTimeOffset(outboxMessage.ScheduledEnqueueTimeUtc.Value, TimeSpan.Zero), sendToken);
             }
             else
             {
-                await _sender.Send(message, outboxMessage.EnqueueDelayMinutes, cancellationToken);
+                await _sender.Send(message, outboxMessage.EnqueueDelayMinutes, sendToken);
             }
 
             var elapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
@@ -525,7 +567,7 @@ public partial class OutboxDispatcher
     [LoggerMessage(Level = LogLevel.Error, Message = "Outbox dispatch failed for message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId}). Halting this poll; will retry next interval.")]
     private static partial void LogOutboxDispatchFailedForMessage(ILogger logger, Exception exception, string outboxId, string? eventTypeId, string? sessionId, string? messageId);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Outbox store {OutboxType} does not implement IOutboxClaiming: failed rows are retried every poll without backoff or parking, and only one dispatcher instance may run against it.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Outbox store {OutboxType} does not implement IOutboxClaiming: failed rows are retried every poll without backoff or parking, and only one dispatcher instance may run against it.")]
     private static partial void LogOutboxStoreDoesNotSupportClaiming(ILogger logger, string? outboxType);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Outbox dispatch attempt {Attempt} of {MaxAttempts} failed for message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId}); retrying in {RetryDelay}. Later messages of the session wait behind it.")]
@@ -539,6 +581,12 @@ public partial class OutboxDispatcher
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not release {Count} claimed outbox message(s); they become available when their lease expires.")]
     private static partial void LogCouldNotReleaseOutboxClaims(ILogger logger, Exception exception, int count);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Outbox dispatcher lost its claim on message {OutboxId} (session {SessionId}) {Elapsed} after claiming it with a {LeaseDuration} lease: another dispatcher claimed it after the lease expired. The message was sent and may be delivered twice; this dispatcher stops sending the rest of its batch, which the new owner sends in order. Consider a longer lease or a smaller batch size.")]
+    private static partial void LogOutboxClaimLost(ILogger logger, string outboxId, string? sessionId, TimeSpan elapsed, TimeSpan leaseDuration);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Outbox send of message {OutboxId} (session {SessionId}) was cancelled after {SendWindow} because the dispatcher's lease was about to expire; it is recorded as a failed attempt and retried. The broker may still have accepted it, so it can be delivered twice.")]
+    private static partial void LogOutboxSendExceededLease(ILogger logger, string outboxId, string? sessionId, TimeSpan sendWindow);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Outbox dispatcher used half of its lease ({SendBudget}) and released {Count} unsent message(s); consider a smaller batch size or a longer lease.")]
     private static partial void LogOutboxLeaseBudgetExhausted(ILogger logger, TimeSpan sendBudget, int count);

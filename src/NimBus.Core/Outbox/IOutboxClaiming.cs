@@ -13,7 +13,8 @@ namespace NimBus.Core.Outbox;
 /// <para>
 /// When the registered <see cref="IOutbox"/> also implements this interface,
 /// <see cref="OutboxDispatcher"/> claims rows with <see cref="ClaimPendingAsync"/> instead of
-/// reading them with <see cref="IOutbox.GetPendingAsync"/>, reports failed sends with
+/// reading them with <see cref="IOutbox.GetPendingAsync"/>, checkpoints each sent row with
+/// <see cref="MarkClaimedAsDispatchedAsync"/>, reports failed sends with
 /// <see cref="RecordDispatchFailureAsync"/> (retry backoff and parking), and releases rows it
 /// did not attempt with <see cref="ReleaseClaimsAsync"/>.
 /// </para>
@@ -52,14 +53,41 @@ public interface IOutboxClaiming
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Marks rows sent by <paramref name="claimantId"/> as dispatched, but only rows that are
+    /// still claimed by it, and returns the identifiers that were checkpointed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the fenced checkpoint. A row whose lease expired and was claimed by another
+    /// dispatcher is left unchanged and is missing from the result: the caller has lost its
+    /// claim, must stop sending the rest of the batch (the new owner sends them, in order), and
+    /// should treat the row it just sent as a possible duplicate. A row whose lease expired but
+    /// that nobody claimed since is still checkpointed, because no one else can have sent it.
+    /// </para>
+    /// <para>
+    /// The operation is idempotent: a row the same claimant already checkpointed is returned
+    /// again and keeps its original dispatch timestamp.
+    /// </para>
+    /// </remarks>
+    /// <param name="claimantId">The dispatcher instance that claimed and sent the rows.</param>
+    /// <param name="ids">The outbox row identifiers that were sent.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The identifiers of the rows that are now marked dispatched by this claimant.</returns>
+    Task<IReadOnlyCollection<string>> MarkClaimedAsDispatchedAsync(
+        string claimantId,
+        IEnumerable<string> ids,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Records a failed send of a row claimed by <paramref name="claimantId"/>: increments its
     /// attempt count, stores <paramref name="error"/>, releases the lease and either schedules
     /// the next attempt after <paramref name="retryDelay"/> or, when <paramref name="park"/> is
     /// <c>true</c>, parks the row so it is not claimed again until an operator requeues it.
     /// </summary>
     /// <remarks>
-    /// The report is ignored when the row is already dispatched or is no longer leased to
-    /// <paramref name="claimantId"/> (its lease expired and another dispatcher claimed it).
+    /// The report is ignored when the row is already dispatched, was released, or is no longer
+    /// claimed by <paramref name="claimantId"/> (its lease expired and another dispatcher
+    /// claimed it).
     /// </remarks>
     /// <param name="id">The outbox row identifier.</param>
     /// <param name="claimantId">The dispatcher instance that holds the row's lease.</param>

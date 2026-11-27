@@ -33,8 +33,8 @@ public sealed class SqlServerOutboxClaimingTests
         await new OutboxSender(outbox).Send(published);
 
         var sent = new ConcurrentQueue<SentEntry>();
-        var first = new OutboxDispatcher(outbox, new ConcurrentRecordingSender("replica-1", sent), new OutboxDispatcherOptions { DispatcherId = "replica-1" });
-        var second = new OutboxDispatcher(outbox, new ConcurrentRecordingSender("replica-2", sent), new OutboxDispatcherOptions { DispatcherId = "replica-2" });
+        var first = new OutboxDispatcher(outbox, new ConcurrentRecordingSender("replica-1", sent), new OutboxDispatcherOptions { DispatcherId = "replica-1" }, logger: null);
+        var second = new OutboxDispatcher(outbox, new ConcurrentRecordingSender("replica-2", sent), new OutboxDispatcherOptions { DispatcherId = "replica-2" }, logger: null);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         await Task.WhenAll(
@@ -76,7 +76,7 @@ public sealed class SqlServerOutboxClaimingTests
             MaxAttempts = 2,
             InitialRetryDelay = retryDelay,
             MaxRetryDelay = retryDelay,
-        });
+        }, logger: null);
 
         Assert.AreEqual(0, await dispatcher.DispatchPendingAsync(batchSize: 10));
         Assert.AreEqual(1, await dispatcher.DispatchPendingAsync(batchSize: 10), "The healthy session is dispatched on the second poll.");
@@ -104,37 +104,9 @@ public sealed class SqlServerOutboxClaimingTests
     public async Task EnsureTableExistsAsync_upgrades_a_table_created_before_rows_were_claimed()
     {
         var options = CreateOptions();
-        await ExecuteAsync(options, $"CREATE SCHEMA [{options.Schema}];");
         // The sequence, table and index exactly as EnsureTableExistsAsync created them before
         // claiming, with rows still pending from the previous version.
-        await ExecuteAsync(options, $@"
-            CREATE SEQUENCE [{options.Schema}].[{options.TableName}_SequenceNumber] AS BIGINT START WITH 1 INCREMENT BY 1;");
-        await ExecuteAsync(options, $@"
-            CREATE TABLE {FullTableName(options)} (
-                [Id]                  NVARCHAR(128) NOT NULL PRIMARY KEY,
-                [MessageId]           NVARCHAR(512) NOT NULL,
-                [To]                  NVARCHAR(256) NULL,
-                [EventTypeId]         NVARCHAR(256) NULL,
-                [SessionId]           NVARCHAR(256) NULL,
-                [CorrelationId]       NVARCHAR(256) NULL,
-                [Payload]             NVARCHAR(MAX) NOT NULL,
-                [EnqueueDelayMinutes] INT NOT NULL DEFAULT 0,
-                [ScheduledEnqueueTimeUtc] DATETIME2 NULL,
-                [CreatedAtUtc]        DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-                [DispatchedAtUtc]     DATETIME2 NULL,
-                [TraceParent]         NVARCHAR(55) NULL,
-                [TraceState]          NVARCHAR(256) NULL,
-                [SequenceNumber]      BIGINT NULL CONSTRAINT [DF_{options.TableName}_SequenceNumber] DEFAULT (NEXT VALUE FOR [{options.Schema}].[{options.TableName}_SequenceNumber])
-            );
-
-            CREATE NONCLUSTERED INDEX IX_OutboxMessages_DispatchOrder ON {FullTableName(options)} ([SequenceNumber], [CreatedAtUtc]) WHERE [DispatchedAtUtc] IS NULL;
-
-            INSERT INTO {FullTableName(options)} ([Id], [MessageId], [SessionId], [Payload], [CreatedAtUtc]) VALUES
-                (N'legacy-1', N'legacy-1', N'session-1', N'{{}}', '2030-01-01T00:00:01');
-            INSERT INTO {FullTableName(options)} ([Id], [MessageId], [SessionId], [Payload], [CreatedAtUtc]) VALUES
-                (N'legacy-2', N'legacy-2', N'session-1', N'{{}}', '2030-01-01T00:00:02');
-            INSERT INTO {FullTableName(options)} ([Id], [MessageId], [SessionId], [Payload], [CreatedAtUtc], [DispatchedAtUtc]) VALUES
-                (N'legacy-sent', N'legacy-sent', N'session-1', N'{{}}', '2030-01-01T00:00:00', '2030-01-01T00:00:03');");
+        await CreateLegacyTableAsync(options);
         var outbox = new SqlServerOutbox(options);
 
         await outbox.EnsureTableExistsAsync();
@@ -169,11 +141,207 @@ public sealed class SqlServerOutboxClaimingTests
         await ExecuteAsync(options, $@"
             UPDATE {FullTableName(options)} SET [DispatchedAtUtc] = DATEADD(DAY, -2, SYSUTCDATETIME()) WHERE [Id] LIKE N'old-%';");
 
+        // A statement-level trigger logs how many rows each DELETE statement removed, so the test
+        // sees the batch boundaries: one unbounded DELETE would log a single 10.
+        await ExecuteAsync(options, $"CREATE TABLE [{options.Schema}].[PurgeLog] ([Statement] INT IDENTITY(1,1) PRIMARY KEY, [Deleted] INT NOT NULL);");
+        await ExecuteAsync(options, $@"
+            CREATE TRIGGER [{options.Schema}].[TR_PurgeLog] ON {FullTableName(options)} AFTER DELETE AS
+            BEGIN
+                SET NOCOUNT ON;
+                INSERT INTO [{options.Schema}].[PurgeLog] ([Deleted]) SELECT COUNT(*) FROM deleted;
+            END;");
+
         var purged = await outbox.PurgeDispatchedAsync(TimeSpan.FromDays(1));
 
         Assert.AreEqual(old.Count, purged);
+        CollectionAssert.AreEqual(new[] { 3, 3, 3, 1 }, await ReadPurgeLogAsync(options), "Each DELETE statement must remove at most PurgeBatchSize rows.");
         Assert.AreEqual(2L, await CountRowsAsync(options));
         Assert.AreEqual(1L, await outbox.GetPendingCountAsync());
+    }
+
+    [TestMethod]
+    public async Task Claiming_and_reading_work_on_a_read_committed_snapshot_database()
+    {
+        // READPAST alone is rejected under READ_COMMITTED_SNAPSHOT (Azure SQL's default); the claim
+        // and the pending read must pair it with READCOMMITTEDLOCK. Exercised against a dedicated
+        // database with RCSI enabled.
+        var serverConnectionString = GetConnectionString();
+        var databaseName = $"nimbus_outbox_rcsi_{Guid.NewGuid():N}"[..30];
+        await ExecuteOnServerAsync(
+            serverConnectionString,
+            $"CREATE DATABASE [{databaseName}]; ALTER DATABASE [{databaseName}] SET READ_COMMITTED_SNAPSHOT ON;");
+
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(serverConnectionString) { InitialCatalog = databaseName };
+            var options = new SqlServerOutboxOptions { ConnectionString = builder.ConnectionString };
+            Assert.IsTrue(await IsReadCommittedSnapshotOnAsync(builder.ConnectionString, databaseName));
+            var outbox = new SqlServerOutbox(options);
+            await outbox.EnsureTableExistsAsync();
+            var a1 = CreateRow("a1", sessionId: "A");
+            var a2 = CreateRow("a2", sessionId: "A");
+            var b1 = CreateRow("b1", sessionId: "B");
+            await outbox.StoreBatchAsync([a1, a2, b1]);
+
+            Assert.AreEqual(3, (await outbox.GetPendingAsync(10)).Count);
+            var claimed = await outbox.ClaimPendingAsync(2, "replica-a", TimeSpan.FromMinutes(1));
+            CollectionAssert.AreEqual(new[] { "a1", "a2" }, claimed.Select(message => message.Id).ToArray());
+            CollectionAssert.AreEqual(new[] { "b1" }, (await outbox.ClaimPendingAsync(10, "replica-b", TimeSpan.FromMinutes(1))).Select(message => message.Id).ToArray());
+
+            CollectionAssert.AreEqual(new[] { "a1" }, (await outbox.MarkClaimedAsDispatchedAsync("replica-a", ["a1"])).ToArray());
+            await outbox.RecordDispatchFailureAsync("a2", "replica-a", "boom", TimeSpan.Zero, park: false);
+            await outbox.ReleaseClaimsAsync("replica-b", ["b1"]);
+
+            CollectionAssert.AreEqual(new[] { "a2", "b1" }, (await outbox.GetPendingAsync(10)).Select(message => message.Id).ToArray());
+            var reclaimed = await outbox.ClaimPendingAsync(10, "replica-c", TimeSpan.FromMinutes(1));
+            CollectionAssert.AreEqual(new[] { "a2", "b1" }, reclaimed.Select(message => message.Id).ToArray());
+            Assert.AreEqual(1, reclaimed[0].AttemptCount);
+        }
+        finally
+        {
+            SqlConnection.ClearAllPools();
+            await ExecuteOnServerAsync(
+                serverConnectionString,
+                $"ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{databaseName}];");
+        }
+    }
+
+    [TestMethod]
+    public async Task Concurrent_EnsureTableExistsAsync_calls_upgrade_a_legacy_table_once()
+    {
+        // Replicas that start together all migrate the same table. Without serialisation two of
+        // them see a column missing and the second ALTER TABLE fails with a duplicate column.
+        var options = CreateOptions();
+        await CreateLegacyTableAsync(options);
+
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => new SqlServerOutbox(options).EnsureTableExistsAsync())));
+
+        foreach (var column in new[] { "AttemptCount", "NextAttemptAtUtc", "LastError", "ParkedAtUtc", "LeaseUntilUtc", "ClaimedBy" })
+        {
+            Assert.IsTrue(await ColumnIsNullableAsync(options, column), $"{column} must be added as a nullable column.");
+        }
+
+        CollectionAssert.AreEqual(
+            new[] { "IX_OutboxMessages_DispatchOrder", "IX_OutboxMessages_PendingSession" },
+            await GetNonclusteredIndexNamesAsync(options));
+        var claimed = await new SqlServerOutbox(options).ClaimPendingAsync(10, "upgraded", TimeSpan.FromMinutes(1));
+        CollectionAssert.AreEqual(new[] { "legacy-1", "legacy-2" }, claimed.Select(message => message.Id).ToArray());
+    }
+
+    [TestMethod]
+    public async Task Concurrent_EnsureTableExistsAsync_calls_create_a_new_table_once()
+    {
+        var options = CreateOptions();
+
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => new SqlServerOutbox(options).EnsureTableExistsAsync())));
+
+        CollectionAssert.AreEqual(
+            new[] { "IX_OutboxMessages_DispatchOrder", "IX_OutboxMessages_PendingSession" },
+            await GetNonclusteredIndexNamesAsync(options));
+        var outbox = new SqlServerOutbox(options);
+        await outbox.StoreAsync(CreateRow("fresh"));
+        Assert.AreEqual(1, (await outbox.ClaimPendingAsync(10, "fresh", TimeSpan.FromMinutes(1))).Count);
+    }
+
+    [TestMethod]
+    public async Task A_dispatcher_whose_lease_was_taken_over_mid_send_stops_and_leaves_the_session_to_the_new_owner()
+    {
+        var options = CreateOptions();
+        var outbox = new SqlServerOutbox(options);
+        await outbox.EnsureTableExistsAsync();
+        var session = Enumerable.Range(0, 3).Select(position => CreateMessage("fenced", position)).ToList();
+        await new OutboxSender(outbox).Send(session);
+
+        // Replica A's first send outlives its lease (the sender ignores cancellation), and replica
+        // B claims the session meanwhile. A's checkpoint is fenced: it must not mark the row
+        // dispatched under B's claim, nor send the session's later rows.
+        var lease = TimeSpan.FromSeconds(2);
+        var takenOver = new TaskCompletionSource<IReadOnlyList<OutboxMessage>>();
+        var stalled = new ConcurrentRecordingSender("replica-a", onSend: async message =>
+        {
+            if (message.MessageId != session[0].MessageId)
+                return;
+            await Task.Delay(lease + TimeSpan.FromMilliseconds(500));
+            takenOver.SetResult(await outbox.ClaimPendingAsync(10, "replica-b", TimeSpan.FromMinutes(1)));
+        });
+        var replicaA = new OutboxDispatcher(outbox, stalled, new OutboxDispatcherOptions { DispatcherId = "replica-a", LeaseDuration = lease }, logger: null);
+
+        Assert.AreEqual(0, await replicaA.DispatchPendingAsync(batchSize: 10));
+
+        CollectionAssert.AreEqual(new[] { session[0].MessageId }, stalled.Sent.Select(entry => entry.MessageId).ToArray());
+        var claimedByB = await takenOver.Task;
+        Assert.AreEqual(session.Count, claimedByB.Count, "Replica B claimed the whole session after A's lease expired.");
+        Assert.AreEqual(3L, await outbox.GetPendingCountAsync(), "A's stale checkpoint must not mark B's row dispatched.");
+        var claimedIds = claimedByB.Select(message => message.Id).ToArray();
+        CollectionAssert.AreEquivalent(claimedIds, (await outbox.MarkClaimedAsDispatchedAsync("replica-b", claimedIds)).ToArray());
+        Assert.AreEqual(0L, await outbox.GetPendingCountAsync());
+    }
+
+    private static async Task CreateLegacyTableAsync(SqlServerOutboxOptions options)
+    {
+        await ExecuteAsync(options, $"CREATE SCHEMA [{options.Schema}];");
+        await ExecuteAsync(options, $@"
+            CREATE SEQUENCE [{options.Schema}].[{options.TableName}_SequenceNumber] AS BIGINT START WITH 1 INCREMENT BY 1;");
+        await ExecuteAsync(options, $@"
+            CREATE TABLE {FullTableName(options)} (
+                [Id]                  NVARCHAR(128) NOT NULL PRIMARY KEY,
+                [MessageId]           NVARCHAR(512) NOT NULL,
+                [To]                  NVARCHAR(256) NULL,
+                [EventTypeId]         NVARCHAR(256) NULL,
+                [SessionId]           NVARCHAR(256) NULL,
+                [CorrelationId]       NVARCHAR(256) NULL,
+                [Payload]             NVARCHAR(MAX) NOT NULL,
+                [EnqueueDelayMinutes] INT NOT NULL DEFAULT 0,
+                [ScheduledEnqueueTimeUtc] DATETIME2 NULL,
+                [CreatedAtUtc]        DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+                [DispatchedAtUtc]     DATETIME2 NULL,
+                [TraceParent]         NVARCHAR(55) NULL,
+                [TraceState]          NVARCHAR(256) NULL,
+                [SequenceNumber]      BIGINT NULL CONSTRAINT [DF_{options.TableName}_SequenceNumber] DEFAULT (NEXT VALUE FOR [{options.Schema}].[{options.TableName}_SequenceNumber])
+            );
+
+            CREATE NONCLUSTERED INDEX IX_OutboxMessages_DispatchOrder ON {FullTableName(options)} ([SequenceNumber], [CreatedAtUtc]) WHERE [DispatchedAtUtc] IS NULL;
+
+            INSERT INTO {FullTableName(options)} ([Id], [MessageId], [SessionId], [Payload], [CreatedAtUtc]) VALUES
+                (N'legacy-1', N'legacy-1', N'session-1', N'{{}}', '2030-01-01T00:00:01');
+            INSERT INTO {FullTableName(options)} ([Id], [MessageId], [SessionId], [Payload], [CreatedAtUtc]) VALUES
+                (N'legacy-2', N'legacy-2', N'session-1', N'{{}}', '2030-01-01T00:00:02');
+            INSERT INTO {FullTableName(options)} ([Id], [MessageId], [SessionId], [Payload], [CreatedAtUtc], [DispatchedAtUtc]) VALUES
+                (N'legacy-sent', N'legacy-sent', N'session-1', N'{{}}', '2030-01-01T00:00:00', '2030-01-01T00:00:03');");
+    }
+
+    private static async Task ExecuteOnServerAsync(string connectionString, string sql)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<bool> IsReadCommittedSnapshotOnAsync(string connectionString, string databaseName)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(
+            "SELECT is_read_committed_snapshot_on FROM sys.databases WHERE name = @Name;",
+            connection);
+        command.Parameters.Add("@Name", System.Data.SqlDbType.NVarChar, 128).Value = databaseName;
+        return (bool)(await command.ExecuteScalarAsync())!;
+    }
+
+    private static async Task<int[]> ReadPurgeLogAsync(SqlServerOutboxOptions options)
+    {
+        await using var connection = new SqlConnection(options.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand($"SELECT [Deleted] FROM [{options.Schema}].[PurgeLog] ORDER BY [Statement]", connection);
+        var counts = new List<int>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            counts.Add(reader.GetInt32(0));
+        }
+
+        return counts.ToArray();
     }
 
     private static async Task DrainAsync(OutboxDispatcher dispatcher, SqlServerOutbox outbox, CancellationToken cancellationToken)
@@ -262,13 +430,13 @@ public sealed class SqlServerOutboxClaimingTests
         return names.ToArray();
     }
 
-    private static OutboxMessage CreateRow(string id) => new()
+    private static OutboxMessage CreateRow(string id, string? sessionId = null) => new()
     {
         Id = id,
         MessageId = id,
         To = "ErpEndpoint",
         EventTypeId = "CustomerUpdated",
-        SessionId = id,
+        SessionId = sessionId ?? id,
         Payload = "{}",
         CreatedAtUtc = DateTime.UtcNow,
     };
@@ -294,7 +462,8 @@ public sealed class SqlServerOutboxClaimingTests
     private sealed class ConcurrentRecordingSender(
         string replica,
         ConcurrentQueue<SentEntry>? sink = null,
-        string? failMessageId = null) : ISender
+        string? failMessageId = null,
+        Func<IMessage, Task>? onSend = null) : ISender
     {
         private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
 
@@ -308,6 +477,8 @@ public sealed class SqlServerOutboxClaimingTests
             _attempts.AddOrUpdate(message.MessageId!, 1, (_, attempts) => attempts + 1);
             // Yield so the two dispatchers' sends interleave.
             await Task.Delay(1, cancellationToken);
+            if (onSend is not null)
+                await onSend(message);
             if (string.Equals(message.MessageId, failMessageId, StringComparison.Ordinal))
                 throw new InvalidOperationException("poison");
 
