@@ -19,10 +19,12 @@ namespace NimBus.ServiceBus;
 /// <para>
 /// Disposing the cache disposes every cached sender once; disposing it again does nothing. After
 /// disposal <see cref="GetSender"/> throws <see cref="ObjectDisposedException"/>. The cache does
-/// not dispose the <see cref="ServiceBusClient"/> it was given.
+/// not dispose the <see cref="ServiceBusClient"/> it was given. <see cref="Dispose"/> exists so a
+/// container that is disposed synchronously can still release the cache; it blocks on
+/// <see cref="DisposeAsync"/>.
 /// </para>
 /// </remarks>
-public sealed class ServiceBusSenderCache : IAsyncDisposable
+public sealed class ServiceBusSenderCache : IAsyncDisposable, IDisposable
 {
     private readonly ServiceBusClient _client;
     private readonly ConcurrentDictionary<string, ServiceBusSender> _senders = new(StringComparer.Ordinal);
@@ -86,4 +88,10 @@ public sealed class ServiceBusSenderCache : IAsyncDisposable
             await sender.DisposeAsync().ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// Disposes every cached sender once, blocking until they are closed. Prefer
+    /// <see cref="DisposeAsync"/>; this exists for synchronously disposed containers.
+    /// </summary>
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 }

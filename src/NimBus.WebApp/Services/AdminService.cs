@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
@@ -30,7 +29,7 @@ namespace NimBus.WebApp.Services;
 // Adding a new operation? Put it in the partial file whose topic it fits;
 // only the constructor, the storage capability guard, the shared field
 // declarations, and the topology-comparison DTOs live in this file.
-public partial class AdminService : IAdminService, IAsyncDisposable
+public partial class AdminService : IAdminService
 {
     private readonly IPlatform _platform;
     private readonly IMessageTrackingStore _messageStore;
@@ -47,9 +46,8 @@ public partial class AdminService : IAdminService, IAsyncDisposable
     private readonly IOperatorCommands? _operatorCommands;
     private readonly ILogger<AdminService> _logger;
     // The WebApp's singleton sender cache, so a scoped AdminService reuses one link per endpoint.
-    // Null when built without it; the instance then caches its own senders and disposes them.
+    // Null when built without it; each send then creates and disposes its own sender, as before.
     private readonly ServiceBusSenderCache? _sharedSenders;
-    private ServiceBusSenderCache? _ownedSenders;
 
     private const int PageSize = 20;
     private const int AgeThresholdMinutes = 10;
@@ -112,32 +110,25 @@ public partial class AdminService : IAdminService, IAsyncDisposable
         _sharedSenders = senderCache ?? throw new ArgumentNullException(nameof(senderCache));
     }
 
-    private ServiceBusSender SenderFor(string entityName)
+    // Sends through the shared cache. Without it the scoped service has no owner that outlives
+    // the call, so it keeps the original create-per-call behavior.
+    private async Task SendAsync(string entityName, Azure.Messaging.ServiceBus.ServiceBusMessage message)
     {
         if (_sharedSenders is not null)
-            return _sharedSenders.GetSender(entityName);
-
-        var owned = Volatile.Read(ref _ownedSenders);
-        if (owned is null)
         {
-            var created = new ServiceBusSenderCache(_sbClient);
-            owned = Interlocked.CompareExchange(ref _ownedSenders, created, null) ?? created;
+            await _sharedSenders.GetSender(entityName).SendMessageAsync(message);
+            return;
         }
 
-        return owned.GetSender(entityName);
-    }
-
-    /// <summary>
-    /// Disposes the senders this instance created for itself, when it was built without the shared
-    /// <see cref="ServiceBusSenderCache"/>. The shared cache is left to its owner.
-    /// </summary>
-    /// <returns>A task that completes once the senders are disposed.</returns>
-    public async ValueTask DisposeAsync()
-    {
-        var owned = Volatile.Read(ref _ownedSenders);
-        if (owned is not null)
-            await owned.DisposeAsync().ConfigureAwait(false);
-        GC.SuppressFinalize(this);
+        var sender = _sbClient.CreateSender(entityName);
+        try
+        {
+            await sender.SendMessageAsync(message);
+        }
+        finally
+        {
+            await sender.DisposeAsync();
+        }
     }
 
     private void EnsureCosmosOnlyOperation(string operationName)

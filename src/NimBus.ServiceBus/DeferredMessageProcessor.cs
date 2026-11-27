@@ -15,7 +15,7 @@ namespace NimBus.ServiceBus;
 /// republish replays are cached per topic for the processor's lifetime and disposed in
 /// <see cref="DisposeAsync"/>; the <see cref="ServiceBusClient"/> it was given is not disposed.
 /// </summary>
-public class DeferredMessageProcessor : IDeferredMessageProcessor, IAsyncDisposable
+public class DeferredMessageProcessor : IDeferredMessageProcessor, IAsyncDisposable, IDisposable
 {
     private readonly ServiceBusClient _serviceBusClient;
     private readonly ServiceBusSenderCache _senders;
@@ -44,6 +44,17 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor, IAsyncDisposa
     {
         _disposed = true;
         await _senders.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Synchronous counterpart of <see cref="DisposeAsync"/>, for containers disposed
+    /// synchronously; it blocks until the senders are closed.
+    /// </summary>
+    public void Dispose()
+    {
+        _disposed = true;
+        _senders.Dispose();
         GC.SuppressFinalize(this);
     }
 

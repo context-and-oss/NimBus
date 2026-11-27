@@ -216,7 +216,7 @@ public sealed class SenderCacheOwnerTests
     }
 
     [TestMethod]
-    public async Task An_AdminService_built_without_the_cache_still_sends_and_disposes_what_it_created()
+    public async Task An_AdminService_built_without_the_cache_still_sends_and_disposes_its_per_call_sender()
     {
         var client = new CountingClient();
         var sut = new AdminService(
@@ -229,12 +229,10 @@ public sealed class SenderCacheOwnerTests
             subscriptionAdmin: null!,
             logger: NullLogger<AdminService>.Instance);
 
-        var first = await sut.ReprocessDeferredAsync("Crm", "session-1");
-        var second = await sut.ReprocessDeferredAsync("Crm", "session-2");
-        await sut.DisposeAsync();
+        var result = await sut.ReprocessDeferredAsync("Crm", "session-1");
 
-        Assert.IsTrue(first.ProcessRequestSent && second.ProcessRequestSent);
-        Assert.AreEqual(1, client.CreateCalls);
+        Assert.IsTrue(result.ProcessRequestSent);
+        Assert.AreEqual(1, client.SenderFor("Crm").Sent.Count);
         Assert.AreEqual(1, client.SenderFor("Crm").DisposeCount);
     }
 

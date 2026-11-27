@@ -11,7 +11,7 @@ namespace NimBus.WebApp.Services.Heartbeat;
 /// Sends heartbeat probes over the WebApp's shared <see cref="ServiceBusClient"/>. One sender is
 /// cached per topic and disposed with this instance; the client itself is not disposed.
 /// </summary>
-public sealed class ServiceBusHeartbeatMessageSender : IHeartbeatMessageSender, IAsyncDisposable
+public sealed class ServiceBusHeartbeatMessageSender : IHeartbeatMessageSender, IAsyncDisposable, IDisposable
 {
     private readonly ServiceBusSenderCache _senders;
 
@@ -39,4 +39,10 @@ public sealed class ServiceBusHeartbeatMessageSender : IHeartbeatMessageSender, 
     /// </summary>
     /// <returns>A task that completes once the senders are disposed.</returns>
     public ValueTask DisposeAsync() => _senders.DisposeAsync();
+
+    /// <summary>
+    /// Synchronous counterpart of <see cref="DisposeAsync"/>, for containers disposed
+    /// synchronously; it blocks until the senders are closed.
+    /// </summary>
+    public void Dispose() => _senders.Dispose();
 }

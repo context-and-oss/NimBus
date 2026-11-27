@@ -50,7 +50,7 @@ public interface IServiceBusAdapter
 /// senders its sessions use to schedule redeliveries, one per topic, and disposes them in
 /// <see cref="DisposeAsync"/>; the <see cref="ServiceBusClient"/> it was given is not disposed.
 /// </summary>
-public class ServiceBusAdapter : IServiceBusAdapter, IAsyncDisposable
+public class ServiceBusAdapter : IServiceBusAdapter, IAsyncDisposable, IDisposable
 {
     private readonly IMessageHandler _messageHandler;
     private readonly ServiceBusClient? _serviceBusClient;
@@ -86,6 +86,16 @@ public class ServiceBusAdapter : IServiceBusAdapter, IAsyncDisposable
     {
         if (_senderCache is not null)
             await _senderCache.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Synchronous counterpart of <see cref="DisposeAsync"/>, for containers disposed
+    /// synchronously; it blocks until the senders are closed.
+    /// </summary>
+    public void Dispose()
+    {
+        _senderCache?.Dispose();
         GC.SuppressFinalize(this);
     }
 

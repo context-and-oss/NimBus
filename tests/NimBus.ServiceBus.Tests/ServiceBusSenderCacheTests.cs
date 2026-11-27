@@ -95,6 +95,20 @@ public sealed class ServiceBusSenderCacheTests
     }
 
     [TestMethod]
+    public async Task A_synchronous_dispose_releases_the_senders_once_too()
+    {
+        var client = new CountingServiceBusClient();
+        var cache = new ServiceBusSenderCache(client);
+        cache.GetSender("orders");
+
+        cache.Dispose();
+        await cache.DisposeAsync();
+
+        Assert.AreEqual(1, client.Created.Single().Sender.DisposeCount);
+        Assert.ThrowsExactly<ObjectDisposedException>(() => cache.GetSender("orders"));
+    }
+
+    [TestMethod]
     public async Task After_disposal_no_sender_is_created()
     {
         var client = new CountingServiceBusClient();

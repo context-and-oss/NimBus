@@ -58,7 +58,7 @@ public interface IManagerCommandClient
 /// disposed in <see cref="DisposeAsync"/>; the injected <see cref="ServiceBusClient"/> is not
 /// disposed.
 /// </summary>
-public partial class ManagerClient : IManagerClient, IManagerCommandClient, IAsyncDisposable
+public partial class ManagerClient : IManagerClient, IManagerCommandClient, IAsyncDisposable, IDisposable
 {
     /// <summary>Longest Service Bus message id.</summary>
     private const int MaximumMessageIdLength = 128;
@@ -85,6 +85,16 @@ public partial class ManagerClient : IManagerClient, IManagerCommandClient, IAsy
     {
         if (_senders is not null)
             await _senders.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Synchronous counterpart of <see cref="DisposeAsync"/>, for containers disposed
+    /// synchronously; it blocks until the senders are closed.
+    /// </summary>
+    public void Dispose()
+    {
+        _senders?.Dispose();
         GC.SuppressFinalize(this);
     }
 
