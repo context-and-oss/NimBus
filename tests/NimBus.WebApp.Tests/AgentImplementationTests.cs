@@ -1162,6 +1162,19 @@ public class AgentImplementationTests
     }
 
     [TestMethod]
+    public async Task A_settle_by_a_person_without_the_role_is_refused_before_the_body_is_validated()
+    {
+        var (impl, _, _, handoffs, _) = BuildAgent(AgentApiTestCallers.Person("Mallory"), new FixedRoleAuthorization(AccessRole.Reader));
+
+        // An empty or malformed body must not decide whether the role check runs: the caller
+        // is refused (403), not told what the request is missing (400).
+        Assert.AreEqual(403, StatusOf(await impl.PostAgentSettleAsync(new AgentSettleRequest())));
+        Assert.AreEqual(403, StatusOf(await impl.PostAgentSettleAsync(
+            SettleRequest("", AgentSettleRequestOutcome.Complete))));
+        Assert.AreEqual(0, handoffs.CompleteCount + handoffs.FailCount);
+    }
+
+    [TestMethod]
     public async Task A_reader_may_read_but_not_change_anything()
     {
         var (impl, store, publisher, _, _) = BuildAgent(AgentApiTestCallers.Person("Rita"), new FixedRoleAuthorization(AccessRole.Reader));
