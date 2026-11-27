@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 using NimBus.WebApp.Services;
@@ -242,6 +243,10 @@ public partial class Startup
         // controllers are transient, so a shorter lifetime would never hit.
         services.AddMemoryCache();
         services.AddSingleton<IStoreResultCache, StoreResultCache>();
+        // Singleton so storage-hook bursts (one call per Resolver write or Change Feed batch)
+        // share one per-endpoint throttle; the hook controller itself is transient.
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IEndpointUpdateBroadcaster, EndpointUpdateBroadcaster>();
         // Spec 026: the ACL snapshot cache must be a singleton (the consuming
         // authorization service is scoped, so a shorter lifetime would never
         // hit); the authorization service memoizes one resolution per request.

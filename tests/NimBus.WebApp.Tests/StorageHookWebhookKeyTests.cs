@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -18,6 +19,7 @@ using NimBus.Core.Events;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers;
 using NimBus.WebApp.Hubs;
+using NimBus.WebApp.Services;
 
 namespace NimBus.WebApp.Tests;
 
@@ -178,17 +180,23 @@ public class StorageHookWebhookKeyTests
 
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(configValues).Build();
 
+        var hub = new FakeHubContext(proxy);
         return new StorageHookImplementation(
-            new FakeHubContext(proxy),
+            hub,
             NullLogger<StorageHookImplementation>.Instance,
-            new InMemoryMessageStore(),
+            new EndpointUpdateBroadcaster(
+                hub,
+                new InMemoryMessageStore(),
+                new StoreResultCache(new MemoryCache(new MemoryCacheOptions())),
+                TimeProvider.System,
+                NullLogger<EndpointUpdateBroadcaster>.Instance),
             new FakePlatform(KnownEndpointId),
             new HttpContextAccessor { HttpContext = httpContext },
             new FakeHostEnvironment(environment),
             configuration);
     }
 
-    private sealed class FakeHostEnvironment : IHostEnvironment
+    internal sealed class FakeHostEnvironment : IHostEnvironment
     {
         public FakeHostEnvironment(string environmentName) => EnvironmentName = environmentName;
 
@@ -198,7 +206,7 @@ public class StorageHookWebhookKeyTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
-    private sealed class FakeHubContext : IHubContext<GridEventsHub>
+    internal sealed class FakeHubContext : IHubContext<GridEventsHub>
     {
         public FakeHubContext(RecordingClientProxy proxy) => Clients = new FakeHubClients(proxy);
 
@@ -206,7 +214,7 @@ public class StorageHookWebhookKeyTests
         public IGroupManager Groups => throw new NotSupportedException();
     }
 
-    private sealed class FakeHubClients : IHubClients
+    internal sealed class FakeHubClients : IHubClients
     {
         private readonly RecordingClientProxy _proxy;
 
@@ -223,18 +231,35 @@ public class StorageHookWebhookKeyTests
         public IClientProxy Users(IReadOnlyList<string> userIds) => _proxy;
     }
 
-    private sealed class RecordingClientProxy : IClientProxy
+    internal sealed class RecordingClientProxy : IClientProxy
     {
-        public List<string> SentMethods { get; } = new();
+        private readonly object _gate = new();
+        private readonly List<string> _sentMethods = new();
+        private readonly List<object?[]> _sentArgs = new();
+
+        public List<string> SentMethods
+        {
+            get { lock (_gate) return [.. _sentMethods]; }
+        }
+
+        public List<object?[]> SentArgs
+        {
+            get { lock (_gate) return [.. _sentArgs]; }
+        }
 
         public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default)
         {
-            SentMethods.Add(method);
+            lock (_gate)
+            {
+                _sentMethods.Add(method);
+                _sentArgs.Add(args);
+            }
+
             return Task.CompletedTask;
         }
     }
 
-    private sealed class FakePlatform : IPlatform
+    internal sealed class FakePlatform : IPlatform
     {
         private readonly List<IEndpoint> _endpoints;
 
@@ -249,7 +274,7 @@ public class StorageHookWebhookKeyTests
         public IEnumerable<IEndpoint> GetProducers(IEventType eventType) => Enumerable.Empty<IEndpoint>();
     }
 
-    private sealed class FakeEndpoint : IEndpoint
+    internal sealed class FakeEndpoint : IEndpoint
     {
         public FakeEndpoint(string id) => Id = id;
 

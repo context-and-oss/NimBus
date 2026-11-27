@@ -191,7 +191,11 @@ public static class EndpointStateCountCache
     public static Task<EndpointStateCount> GetEndpointStateCountAsync(
         this IStoreResultCache cache, IMessageTrackingStore store, string endpointId)
         => cache.GetOrCreateAsync(
-            $"endpoint-state-count:{endpointId}",
+            CacheKey(endpointId),
             Ttl,
             () => store.DownloadEndpointStateCount(endpointId));
+
+    /// <summary>The cache key of <paramref name="endpointId"/>'s status count.</summary>
+    /// <param name="endpointId">The endpoint.</param>
+    public static string CacheKey(string endpointId) => $"endpoint-state-count:{endpointId}";
 }
