@@ -251,13 +251,30 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
 
 
     /// <summary>
-    /// We actually don't do anything when Abandon is called.
-    /// The intention of abandoning a message is to make a retry attempt, and if we actually call IMessageSession.AbandonAsync, then the lock will be released and the message will be picked up again immediately.
-    /// By doing nothing the message stays unsettled, so the broker redelivers it once the
-    /// session lock is released or expires — a session lock, not a per-message one, so the
-    /// pause before the retry is however long the session stays held.
+    /// Returns the message to the head of its session for another attempt after a transient
+    /// failure (see <see cref="IServiceBusSession.AbandonAsync"/>).
     /// </summary>
-    public Task Abandon(TransientException exception) => Task.CompletedTask;
+    /// <remarks>
+    /// A session message has no lock of its own. Leaving it unsettled, as earlier versions did,
+    /// kept it locked to the receiver holding the session while that receiver delivered the
+    /// messages after it, so later events overtook the failed one. The session now waits a short
+    /// backoff, abandons the message and releases the session, so the failed message is
+    /// redelivered first. A lost session or message lock is not reported: the broker has already
+    /// returned the message to the session.
+    /// </remarks>
+    /// <param name="exception">The transient failure.</param>
+    /// <returns>A task that completes once the message has been returned to its session.</returns>
+    public async Task Abandon(TransientException exception)
+    {
+        try
+        {
+            await _sbSession.AbandonAsync(_sbMessage).ConfigureAwait(false);
+        }
+        catch (ServiceBusException e) when (e.Reason is ServiceBusFailureReason.SessionLockLost or ServiceBusFailureReason.MessageLockLost)
+        {
+            // The lock is gone, so Service Bus returns the message to the session by itself.
+        }
+    }
 
     public async Task BlockSession(CancellationToken cancellationToken = default)
     {

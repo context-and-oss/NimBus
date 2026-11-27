@@ -161,8 +161,9 @@ public async Task Handle(IMessageContext context, MessagePipelineDelegate next, 
 }
 ```
 
-`TransientException` abandons the message: Service Bus redelivers it after the
-lock expires, with no audit record and no retry policy. Use it for
+`TransientException` abandons the message after a short backoff and releases
+its session, so Service Bus redelivers it before the rest of the session, with
+no audit record and no retry policy. Use it for
 infrastructure faults like this one. For a slow or failing downstream API,
 throw a typed exception from the client and retry it with
 `AddExceptionRule<T>` instead; see

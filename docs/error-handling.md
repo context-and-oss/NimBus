@@ -31,7 +31,7 @@ flowchart TD
     Mw -- MessageAlreadyDeadLetteredException --> MwDLQ[middleware already dead-lettered<br/>send dead-letter notification only]
     Mw -- any other Exception --> MwUnex[catch unexpected<br/>send dead-letter notification + DeadLetter inbound]
 
-    Hc -- TransientException --> Trans[Abandon → SB redelivers after lock expiry<br/>no Resolver notification]
+    Hc -- TransientException --> Trans[backoff → Abandon → ReleaseSession<br/>redelivered first in its session<br/>no Resolver notification]
     Hc -- EventHandlerNotFoundException --> Unsup[SendUnsupportedResponse → Complete<br/>Resolver: Unsupported]
     Hc -- ordinary Exception --> Classify{failure disposition}
     Classify -- DeadLetter --> Perm[wrap as PermanentFailureException<br/>send dead-letter notification + DeadLetter inbound<br/>Resolver: DeadLettered]
@@ -51,7 +51,7 @@ flowchart TD
 
 | Exception | Origin | Inbound | Resolver | Adapter sees |
 |---|---|---|---|---|
-| `TransientException` | Handler | **Abandon** (lock expires, SB redelivers) | — | Same message redelivered; lifecycle observers fire `OnFailed` only |
+| `TransientException` | Handler | **Abandon** after a backoff, then release the session | — | Same message redelivered before the rest of its session; lifecycle observers fire `OnFailed` only |
 | `EventHandlerNotFoundException` | Handler | Complete | `Unsupported` | One-shot — there's no handler, so nothing replays |
 | `SessionBlockedException` | Handler — internal, raised when session is already blocked | Complete + parked on `Deferred` sub | `Deferred` | Will replay when session unblocks (resubmit / skip / retry success) |
 | `EventContextHandlerException` (auto-wrap for the `Retry` disposition) | Handler | BlockSession + Complete | `Failed` | Retry scheduled if `IRetryPolicyProvider` matches; otherwise stays Failed until operator action |
@@ -96,26 +96,34 @@ exceptions to `DeadLetter`; every other ordinary exception maps to `Retry`.
 
 The handler (or the transport) raises `TransientException` to signal an
 infrastructure fault where redelivering the same message is enough, such as a
-lost session lock. NimBus does not call SB Abandon explicitly —
-`MessageContext.Abandon` is a no-op so the SB peek-lock can expire on its own
-and the message is redelivered. No notification reaches the Resolver, so audit
-visibility is intentionally minimal for this path, and every attempt counts
-toward the subscription's max delivery count. For downstream outages and
-throttling, use typed exceptions and retry rules instead (see
-[When to throw what](#when-to-throw-what)).
+lost session lock. The message must be retried before anything behind it in
+its session. NimBus waits a backoff while it still holds the session: 1 s,
+doubling with each delivery up to 30 s. It then abandons the message and
+releases the session, so the receiver drops anything it prefetched and the
+failed message is first when the session is accepted again. A message left
+unsettled would stay locked to the receiver holding the session, and later
+events would overtake it. See
+[Transient Failure → Abandon → Redeliver](message-flows.md#11-transient-failure--abandon--redeliver)
+for the details.
+
+No notification reaches the Resolver, so audit visibility is intentionally
+minimal for this path. Every attempt counts toward the subscription's max
+delivery count (10), which runs out about 2.5 minutes after the first failure.
+For downstream outages and throttling, use typed exceptions and retry rules
+instead (see [When to throw what](#when-to-throw-what)).
 
 ```mermaid
 sequenceDiagram
     participant Ep as Endpoint Topic
     participant Sub as SubscriberClient
-    participant Lock as SB Peek-Lock
+    participant Lock as SB Session Lock
 
     Ep->>Sub: EventRequest via main sub
     Sub->>Sub: handler throws TransientException
-    Sub->>Lock: Abandon (no-op, lock held)
-    Note over Lock: peek-lock expires (~30s)
-    Lock-->>Ep: redeliver same message
-    Ep->>Sub: EventRequest (delivery #2)
+    Note over Sub: backoff, session still held
+    Sub->>Ep: Abandon (DeliveryCount +1)
+    Sub->>Lock: ReleaseSession
+    Ep->>Sub: EventRequest (delivery #2), ahead of later events
 ```
 
 ### Permanent failure (`DeadLetter` → dead-letter)
@@ -255,8 +263,9 @@ rules and breaker settings are worked through in
 `TransientException` is not the tool for downstream outages. It takes the
 [abandon path](#transient-failure-abandon--redeliver): no audit record reaches
 the Resolver, retry policies and `Retry-After` are ignored, the same message is
-redelivered only after its lock expires, and each attempt spends a Service Bus
-delivery, so after 10 the message is dead-lettered by the broker rather than
+redelivered after a short fixed backoff (1 s doubling to 30 s) while its session
+waits, and each attempt spends a Service Bus delivery. After 10 deliveries,
+about 2.5 minutes, the message is dead-lettered by the broker rather than
 failed in NimBus. Reserve it for infrastructure faults where redelivering the
 identical message is the right answer and nothing is worth recording — NimBus
 itself throws it for a lost session lock or a transient Service Bus SDK error.
