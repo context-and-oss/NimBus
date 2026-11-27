@@ -300,7 +300,15 @@ then filters on the message's `RoutingKey` property too; see [Routing keys](rout
 
 ### 11. Transient Failure → Abandon → Redeliver
 
-When the handler throws `TransientException` (an infrastructure fault where redelivering the identical message is enough, such as a lost session lock), NimBus **does not** call SB Abandon explicitly — `MessageContext.Abandon` is a deliberate no-op. The peek-lock simply expires after ~30 seconds and Service Bus redelivers the same message. No notification is sent to the Resolver, so audit visibility is intentionally minimal for this path. Each attempt counts toward the subscription's max delivery count. Downstream outages and throttling belong on the [scheduled retry](#6-retry-automatic) path instead, through typed exceptions and `AddExceptionRule<T>` (see [error-handling.md](error-handling.md#when-to-throw-what)).
+When the handler throws `TransientException`, NimBus puts the message back at the head of its session and retries it before anything queued behind it. `TransientException` is for an infrastructure fault where redelivering the identical message is enough, such as a lost session lock. The transport raises it too: for a lost lock, a transient `Complete` or session-state call, or an inbox write that failed after the handler succeeded.
+
+A session message has no lock of its own. An unsettled message stays locked to the receiver that holds the session, and that receiver goes on to deliver the messages after it. Leaving the failed message unsettled, as NimBus did before, let later events overtake it. `MessageContext.Abandon` therefore does three things while the session is still held:
+
+1. **Waits a backoff**: 1 s on the first delivery, doubling with each delivery up to 30 s (1, 2, 4, 8, 16, 30 s). Host shutdown or an opening [circuit](circuit-breaker.md) cuts the wait short.
+2. **Abandons the message.** The abandon spends one delivery of the subscription's max delivery count (10).
+3. **Releases the session.** The receiver closes after the callback and drops anything it prefetched. When a receiver accepts the session again, the failed message is first.
+
+After ten deliveries the broker dead-letters the message (`MaxDeliveryCountExceeded`). With the default budget that happens about 2.5 minutes after the first failure. During each wait the failing session holds one of the receiver's `MaxConcurrentSessions` slots, which is the cost of keeping its order. On the Functions isolated worker the same steps run through `ServiceBusMessageActions` and `ServiceBusSessionMessageActions.ReleaseSession`. A caller-owned `ServiceBusSessionReceiver` (`SubscriberClient`) cannot be released by NimBus, so the message is only abandoned. That caller should not prefetch. No notification is sent to the Resolver, so audit visibility is intentionally minimal for this path. Downstream outages and throttling belong on the [scheduled retry](#6-retry-automatic) path instead, through typed exceptions and `AddExceptionRule<T>` (see [error-handling.md](error-handling.md#when-to-throw-what)).
 
 Resolver treats Cosmos DB 429s more deliberately. Scheduled replacements and
 broker redeliveries consume one shared ten-attempt budget
@@ -320,20 +328,21 @@ sequenceDiagram
     participant Pub as Publisher
     participant Ep as Endpoint Topic
     participant Sub as SubscriberClient
-    participant Lock as SB Peek-Lock
+    participant Lock as SB Session Lock
 
-    Pub->>Ep: EventRequest
-    Ep->>Sub: main sub (delivery #1)
+    Pub->>Ep: EventRequest E1, then E2 (same session)
+    Ep->>Sub: main sub: E1 (delivery #1)
     Sub->>Sub: handle throws TransientException
-    Sub->>Lock: Abandon (no-op — lock held)
-    Note over Lock: peek-lock expires (~30s)
-    Lock-->>Ep: lock released
-    Ep->>Sub: main sub (delivery #2)
+    Note over Sub: backoff (1 s, doubling to 30 s), session still held
+    Sub->>Ep: Abandon E1 (DeliveryCount +1)
+    Sub->>Lock: ReleaseSession
+    Ep->>Sub: session accepted again: E1 (delivery #2)
     Sub->>Sub: handle (success)
     Sub->>Ep: ResolutionResponse (To=Resolver)
+    Ep->>Sub: E2
 ```
 
-Handlers must be **idempotent** for this to be safe — the same event can be delivered repeatedly until the lock-expiry / max-delivery-count terminal kicks in.
+Handlers must be **idempotent** for this to be safe. The same event can be delivered again and again until it succeeds or the max delivery count dead-letters it.
 
 ### 12. Dead-letter Routed to Resolver
 
