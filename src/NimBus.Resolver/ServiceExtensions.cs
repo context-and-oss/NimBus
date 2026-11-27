@@ -81,7 +81,8 @@ public static partial class ServiceExtensions
     /// without a Change Feed). Absent that config it registers the no-op
     /// notifier, so existing deployments are unaffected (spec NFR-004).
     /// The pushes leave the message path and are coalesced per endpoint, at most
-    /// one per <c>NimBus:Flow:NotifyInterval</c> (default 1 s).
+    /// one per <c>NimBus:Flow:NotifyInterval</c> (default 1 s), with at most
+    /// <c>NimBus:Flow:NotifyMaxConcurrency</c> endpoints (default 4) in flight at once.
     /// </summary>
     internal static IServiceCollection AddFlowStateChangeNotifier(this IServiceCollection services)
     {
@@ -107,7 +108,8 @@ public static partial class ServiceExtensions
                 http,
                 ReadNotifyInterval(config),
                 sp.GetService<TimeProvider>(),
-                sp.GetService<ILogger<CoalescingEndpointStateChangeNotifier>>());
+                sp.GetService<ILogger<CoalescingEndpointStateChangeNotifier>>(),
+                maxConcurrentSends: ReadNotifyMaxConcurrency(config));
         });
 
         return services;
@@ -226,6 +228,18 @@ public static partial class ServiceExtensions
         return TimeSpan.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, out var interval) && interval >= TimeSpan.Zero
             ? interval
             : CoalescingEndpointStateChangeNotifier.DefaultInterval;
+    }
+
+    /// <summary>
+    /// <c>NimBus:Flow:NotifyMaxConcurrency</c>, how many endpoints' pushes may be in flight at
+    /// once; a missing, unreadable or non-positive value keeps the default of 4.
+    /// </summary>
+    internal static int ReadNotifyMaxConcurrency(IConfiguration config)
+    {
+        var raw = config.GetValue<string>("NimBus:Flow:NotifyMaxConcurrency");
+        return int.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var max) && max >= 1
+            ? max
+            : CoalescingEndpointStateChangeNotifier.DefaultMaxConcurrentSends;
     }
 
     private static string EnsureTrailingSlash(string url) =>

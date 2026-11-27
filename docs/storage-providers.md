@@ -575,7 +575,9 @@ These operator tools currently work only with the Cosmos provider:
   write-path (provider-neutral), so realtime UI updates work the same way for
   the operator. Both paths are coalesced per endpoint: the Resolver posts at most
   one update per endpoint per `NimBus:Flow:NotifyInterval` (default `00:00:01`)
-  without holding up the message, and the WebApp recounts and broadcasts at most
+  without holding up the message, sending up to `NimBus:Flow:NotifyMaxConcurrency`
+  (default `4`) endpoints at once so a slow call for one endpoint does not delay the
+  others, and the WebApp recounts and broadcasts at most
   once per endpoint per second. The last change in a burst is always pushed.
 
 ## Adding a new provider
