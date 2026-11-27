@@ -741,6 +741,8 @@ public partial class ResolverService : IMessageHandler
     // EnqueuedTimeUtc when settling a terminal response (Resolution/Error)
     // for an event that previously emitted a PendingHandoffResponse.
     // Returns null otherwise so the regular per-hop ProcessingTimeMs wins.
+    // The store answers with a narrow query (handoff exists + earliest EventRequest enqueue
+    // time) instead of the full history with its payloads.
     private async Task<long?> ComputeHandoffWallClockMsIfTerminal(MessageEntity message)
     {
         if (message.MessageType != MessageType.ResolutionResponse &&
@@ -749,19 +751,13 @@ public partial class ResolverService : IMessageHandler
             return null;
         }
 
-        var history = (await _store.GetEventHistory(message.EventId)).ToList();
-        if (!history.Any(m => m.MessageType == MessageType.PendingHandoffResponse))
+        var eventRequestEnqueuedUtc = await _store.GetHandoffEventRequestEnqueuedTime(message.EventId);
+        if (eventRequestEnqueuedUtc is null)
         {
             return null;
         }
 
-        var eventRequest = history.FirstOrDefault(m => m.MessageType == MessageType.EventRequest);
-        if (eventRequest is null)
-        {
-            return null;
-        }
-
-        return (long)Math.Max(0, (DateTime.UtcNow - eventRequest.EnqueuedTimeUtc).TotalMilliseconds);
+        return (long)Math.Max(0, (DateTime.UtcNow - eventRequestEnqueuedUtc.Value).TotalMilliseconds);
     }
 
     /// <summary>

@@ -196,6 +196,34 @@ public sealed class StoreDecoratorTests
         Assert.AreEqual(RetentionPurgeResult.None, purged);
     }
 
+    [TestMethod]
+    public async Task Decorator_forwards_GetHandoffEventRequestEnqueuedTime_without_loading_history()
+    {
+        var inner = new HistoryCountingStore();
+        var anchor = new DateTime(2026, 3, 1, 10, 0, 0, DateTimeKind.Utc);
+        await inner.StoreMessage(new NimBus.MessageStore.MessageEntity { EventId = "e1", MessageId = "m1", EndpointId = "ep-1", MessageType = NimBus.Core.Messages.MessageType.EventRequest, EnqueuedTimeUtc = anchor });
+        await inner.StoreMessage(new NimBus.MessageStore.MessageEntity { EventId = "e1", MessageId = "m2", EndpointId = "ep-1", MessageType = NimBus.Core.Messages.MessageType.PendingHandoffResponse, EnqueuedTimeUtc = anchor.AddSeconds(1) });
+        var sut = NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore(inner, "test");
+
+        var result = await sut.GetHandoffEventRequestEnqueuedTime("e1");
+
+        Assert.AreEqual(anchor, result);
+        // Forwarded to the inner override, not answered by the interface default (which
+        // would load the full history through the decorator).
+        Assert.AreEqual(0, inner.GetEventHistoryCalls);
+    }
+
+    private sealed class HistoryCountingStore : InMemoryMessageStore, IMessageTrackingStore
+    {
+        public int GetEventHistoryCalls { get; private set; }
+
+        Task<IEnumerable<NimBus.MessageStore.MessageEntity>> IMessageTrackingStore.GetEventHistory(string eventId)
+        {
+            GetEventHistoryCalls++;
+            return GetEventHistory(eventId);
+        }
+    }
+
     private static MetricPoint First(Metric metric)
     {
         foreach (ref readonly var point in metric.GetMetricPoints())
