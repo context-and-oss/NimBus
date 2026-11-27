@@ -541,6 +541,147 @@ public class MessageContextTests
         Assert.AreEqual("evt-1", await ctx.GetBlockedByEventId());
     }
 
+    // ── Session state: per-context cache ────────────────────────────────
+
+    [TestMethod]
+    public async Task HandleEventRequest_UnblockedSessionWithoutParkedMessages_ReadsSessionStateOnce()
+    {
+        var session = new FakeServiceBusSession();
+        var ctx = CreateMessageContext(session: session);
+        var responses = new RecordingResponseService();
+        var handler = new StrictMessageHandler(new NoopEventContextHandler(), responses);
+
+        await handler.Handle(ctx);
+
+        Assert.AreEqual(1, responses.ResolutionResponses, "The event must be handled and resolved.");
+        Assert.AreEqual(1, session.CompleteCalls);
+        Assert.AreEqual(1, session.GetStateCalls, "One EventRequest must read session state from the broker once.");
+    }
+
+    [TestMethod]
+    public async Task SessionStateAccessors_OnOneContext_ReadTheBrokerOnce()
+    {
+        var session = new FakeServiceBusSession();
+        session.State.BlockedByEventId = "evt-1";
+        session.State.BlockedByMessageId = "msg-0";
+        session.State.DeferredCount = 2;
+        session.State.NextDeferralSequence = 3;
+        session.State.DrainRequestedForSequence = 1;
+        var ctx = CreateMessageContext(session: session, eventId: "evt-1");
+
+        Assert.IsTrue(await ctx.IsSessionBlocked());
+        Assert.IsTrue(await ctx.IsSessionBlockedByEventId());
+        Assert.IsTrue(await ctx.IsSessionBlockedByThis());
+        Assert.AreEqual("evt-1", await ctx.GetBlockedByEventId());
+        Assert.AreEqual("msg-0", await ctx.GetBlockedByMessageId());
+        Assert.IsTrue(await ctx.HasUnreplayedDeferredMessages());
+        Assert.AreEqual(1, (await ctx.GetDeferredDrainRequest())!.DeferralSequence);
+        Assert.AreEqual(2, await ctx.GetDeferredCount());
+        Assert.IsTrue(await ctx.HasDeferredMessages());
+
+        Assert.AreEqual(1, session.GetStateCalls);
+    }
+
+    [TestMethod]
+    public async Task SessionStateWrite_FollowedByARead_ReturnsTheWrittenStateWithoutAnotherBrokerRead()
+    {
+        var session = new FakeServiceBusSession();
+        var ctx = CreateMessageContext(session: session, eventId: "evt-1");
+
+        await ctx.BlockSession();
+        Assert.AreEqual("evt-1", await ctx.GetBlockedByEventId());
+        Assert.IsTrue(await ctx.IsSessionBlockedByThis());
+        Assert.AreEqual("msg-1", await ctx.GetBlockedByMessageId());
+
+        Assert.AreEqual(0, await ctx.GetNextDeferralSequenceAndIncrement());
+        await ctx.IncrementDeferredCount();
+        Assert.AreEqual(1, await ctx.GetDeferredCount());
+        Assert.IsTrue(await ctx.HasUnreplayedDeferredMessages());
+
+        Assert.AreEqual(1, session.GetStateCalls, "Reads and writes on one context must read the broker at most once.");
+        Assert.AreEqual(3, session.SetStateCalls, "Every write must still reach the broker.");
+        Assert.AreEqual("evt-1", session.State.BlockedByEventId);
+        Assert.AreEqual(1, session.State.DeferredCount);
+    }
+
+    [TestMethod]
+    public async Task SessionStateWrite_SessionLockLost_ThrowsTransientAndTheNextReadReturnsTheBrokersState()
+    {
+        var session = new FakeServiceBusSession();
+        var ctx = CreateMessageContext(session: session, eventId: "evt-1");
+        Assert.IsFalse(await ctx.IsSessionBlocked());
+        session.SetStateException = new ServiceBusException("lost", ServiceBusFailureReason.SessionLockLost);
+
+        await Assert.ThrowsExactlyAsync<TransientException>(() => ctx.BlockSession());
+
+        session.SetStateException = null;
+        Assert.IsNull(await ctx.GetBlockedByEventId(), "A write that did not reach the broker must not be observed.");
+        Assert.AreEqual(2, session.GetStateCalls, "A failed write must clear the cached state.");
+    }
+
+    [TestMethod]
+    public async Task SessionStateWrite_NonTransientFailure_PropagatesAndTheNextReadReturnsTheBrokersState()
+    {
+        var session = new FakeServiceBusSession();
+        session.State.DeferredCount = 4;
+        var ctx = CreateMessageContext(session: session);
+        var failure = new InvalidOperationException("state rejected");
+        session.SetStateException = failure;
+
+        var thrown = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => ctx.IncrementDeferredCount());
+
+        Assert.AreSame(failure, thrown);
+        session.SetStateException = null;
+        Assert.AreEqual(4, await ctx.GetDeferredCount());
+        Assert.AreEqual(2, session.GetStateCalls);
+    }
+
+    [TestMethod]
+    public async Task SessionStateRead_Failure_CachesNothingAndTheNextReadCallsTheBrokerAgain()
+    {
+        var session = new FakeServiceBusSession
+        {
+            GetStateException = new ServiceBusException("busy", ServiceBusFailureReason.ServiceBusy),
+            FailGetStateOnce = true,
+        };
+        session.State.BlockedByEventId = "evt-9";
+        var ctx = CreateMessageContext(session: session);
+
+        await Assert.ThrowsExactlyAsync<TransientException>(() => ctx.GetBlockedByEventId());
+
+        Assert.AreEqual("evt-9", await ctx.GetBlockedByEventId());
+        Assert.AreEqual(2, session.GetStateCalls);
+    }
+
+    [TestMethod]
+    public async Task SessionStateCache_IsPerContext_ASecondContextSeesAWriteOnlyThroughItsOwnBrokerRead()
+    {
+        var session = new FakeServiceBusSession();
+        var first = CreateMessageContext(session: session, eventId: "evt-1");
+        var second = CreateMessageContext(session: session, eventId: "evt-2");
+
+        Assert.IsFalse(await first.IsSessionBlocked());
+        Assert.AreEqual(1, session.GetStateCalls);
+
+        await first.BlockSession();
+
+        Assert.AreEqual("evt-1", await second.GetBlockedByEventId());
+        Assert.AreEqual(2, session.GetStateCalls, "The second context must make its own first broker read.");
+    }
+
+    [TestMethod]
+    public async Task MarkDeferredMessageReplayed_And_DecrementDeferredCount_WithNothingToChange_DoNotWrite()
+    {
+        var session = new FakeServiceBusSession();
+        var ctx = CreateMessageContext(session: session);
+
+        await ctx.MarkDeferredMessageReplayed(3);
+        await ctx.DecrementDeferredCount();
+
+        Assert.AreEqual(0, session.SetStateCalls);
+        Assert.AreEqual(1, session.GetStateCalls);
+    }
+
     // ── Session state: Deferred counts ──────────────────────────────────
 
     [TestMethod]
@@ -1155,6 +1296,47 @@ public class MessageContextTests
         msg.UserProperties[UserPropertyName.MessageType.ToString()] = messageType.ToString();
     }
 
+    private sealed class RecordingResponseService : IResponseService
+    {
+        public int ResolutionResponses { get; private set; }
+
+        public Task SendResolutionResponse(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            ResolutionResponses++;
+            return Task.CompletedTask;
+        }
+
+        public Task SendSkipResponse(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException("Unexpected skip response.");
+
+        public Task SendErrorResponse(IMessageContext messageContext, Exception exception, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException($"Unexpected error response: {exception}");
+
+        public Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception? exception, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException($"Unexpected dead-letter response: {reason}");
+
+        public Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException("Unexpected deferral response.");
+
+        public Task SendContinuationRequestToSelf(IMessageContext deferredMessageContext, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException("Unexpected continuation request.");
+
+        public Task SendRetryResponse(IMessageContext messageContext, int messageDelayMinutes, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException("Unexpected retry response.");
+
+        public Task SendUnsupportedResponse(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException("Unexpected unsupported response.");
+
+        public Task SendToDeferredSubscription(IMessageContext messageContext, int deferralSequence, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException("Unexpected park.");
+
+        public Task SendProcessDeferredRequest(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException("Unexpected drain request.");
+
+        public Task SendPendingHandoffResponse(IMessageContext messageContext, HandoffMetadata handoff, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException("Unexpected handoff response.");
+    }
+
     private sealed class NoopEventContextHandler : IEventContextHandler
     {
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default) =>
@@ -1274,17 +1456,33 @@ public class MessageContextTests
             return Task.CompletedTask;
         }
 
+        public int GetStateCalls { get; private set; }
+        public int SetStateCalls { get; private set; }
+        public Exception? SetStateException { get; set; }
+
+        // Like the broker, the session stores and returns serialized copies, so a caller that
+        // mutates the state object it read or tried to write does not change the stored state.
         public Task SetStateAsync(SessionState state, CancellationToken ct = default)
         {
-            State = state;
+            SetStateCalls++;
+            if (SetStateException != null) throw SetStateException;
+            State = SessionState.FromBinaryData(state.ToBinaryData());
             return Task.CompletedTask;
         }
 
         public Task<SessionState> GetStateAsync(CancellationToken ct = default)
         {
-            if (GetStateException != null) throw GetStateException;
-            return Task.FromResult(State);
+            GetStateCalls++;
+            if (GetStateException != null)
+            {
+                var failure = GetStateException;
+                if (FailGetStateOnce) GetStateException = null;
+                throw failure;
+            }
+            return Task.FromResult(SessionState.FromBinaryData(State.ToBinaryData()));
         }
+
+        public bool FailGetStateOnce { get; set; }
 
         public Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledTime, CancellationToken ct = default)
         {

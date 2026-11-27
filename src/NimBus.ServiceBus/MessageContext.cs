@@ -533,7 +533,34 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     }
 
 
+    /// <summary>
+    /// The session state this context last read from, or successfully wrote to, the broker;
+    /// null until the first read. It is per context: <see cref="ServiceBusAdapter"/> creates one
+    /// context per delivery, and the context holds the session lock while it handles that
+    /// delivery, so no other receiver can change the state and the cached value is the broker's
+    /// current state. A redelivery or the next message gets a new context with an empty cache.
+    /// It is replaced by the written state after a successful <c>SetStateAsync</c> and cleared
+    /// when a write fails, because the helpers mutate it before persisting it. It needs no
+    /// locking: the session lock serializes access, and a context is used sequentially.
+    /// </summary>
+    private SessionState? _sessionState;
+
     private async Task UpdateSessionState(SessionState sessionState, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await PersistSessionState(sessionState, cancellationToken);
+            _sessionState = sessionState;
+        }
+        catch
+        {
+            // The mutated state did not reach the broker; the next read must fetch it again.
+            _sessionState = null;
+            throw;
+        }
+    }
+
+    private async Task PersistSessionState(SessionState sessionState, CancellationToken cancellationToken)
     {
         try
         {
@@ -553,7 +580,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     {
         try
         {
-            return await _sbSession.GetStateAsync(cancellationToken);
+            return _sessionState ??= await _sbSession.GetStateAsync(cancellationToken);
         }
         catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
         {
