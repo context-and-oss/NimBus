@@ -507,6 +507,19 @@ public partial class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId)
         => Task.FromResult<IEnumerable<MessageEntity>>(_messages.Values.Where(m => m.EventId == eventId).ToList());
 
+    /// <inheritdoc />
+    public Task<DateTime?> GetHandoffEventRequestEnqueuedTime(string eventId)
+    {
+        var history = _messages.Values.Where(m => m.EventId == eventId).ToList();
+        if (!history.Any(m => m.MessageType == MessageType.PendingHandoffResponse))
+        {
+            return Task.FromResult<DateTime?>(null);
+        }
+
+        var requests = history.Where(m => m.MessageType == MessageType.EventRequest).ToList();
+        return Task.FromResult<DateTime?>(requests.Count == 0 ? null : requests.Min(m => m.EnqueuedTimeUtc));
+    }
+
     public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId)
         => Task.FromResult(
             _messages.Values

@@ -244,6 +244,9 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId) =>
         InstrumentAsync(nameof(GetLatestEventRequestMessage), () => _inner.GetLatestEventRequestMessage(eventId));
 
+    public Task<DateTime?> GetHandoffEventRequestEnqueuedTime(string eventId) =>
+        InstrumentAsync(nameof(GetHandoffEventRequestEnqueuedTime), () => _inner.GetHandoffEventRequestEnqueuedTime(eventId));
+
     public Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId) =>
         InstrumentAsync(nameof(GetFailedMessage), () => _inner.GetFailedMessage(eventId, endpointId));
 

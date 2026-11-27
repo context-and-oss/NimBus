@@ -448,6 +448,7 @@ public class ResolverServiceTests
         // Per-message audit row preserves the raw last-hop duration.
         var resolutionRow = cosmos.StoredMessages.Single(m => m.MessageType == MessageType.ResolutionResponse);
         Assert.AreEqual(250, resolutionRow.ProcessingTimeMs);
+        AssertHandoffAnchorQueriedWithoutHistory(cosmos);
     }
 
     [TestMethod]
@@ -476,6 +477,7 @@ public class ResolverServiceTests
 
         Assert.AreEqual(1, cosmos.CompletedUploads.Count);
         Assert.AreEqual(75, cosmos.CompletedUploads[0].Content.ProcessingTimeMs);
+        AssertHandoffAnchorQueriedWithoutHistory(cosmos);
     }
 
     [TestMethod]
@@ -515,6 +517,117 @@ public class ResolverServiceTests
 
         Assert.AreEqual(1, cosmos.FailedUploads.Count);
         Assert.IsTrue(cosmos.FailedUploads[0].Content.ProcessingTimeMs >= 30_000);
+        AssertHandoffAnchorQueriedWithoutHistory(cosmos);
+    }
+
+    [TestMethod]
+    public async Task Handle_TerminalAfterHandoffAndResubmit_AnchorsWallClockOnOriginalEventRequest()
+    {
+        // Handoff → failed → operator resubmit → completed. The PendingHandoffResponse is still
+        // in the history, so the terminal row carries the wall-clock span; the anchor is the
+        // original EventRequest, not the later ResubmissionRequest.
+        var cosmos = new FakeCosmosDbClient();
+        var eventRequestEnqueued = DateTime.UtcNow.AddSeconds(-120);
+
+        cosmos.StoredMessages.Add(new MessageEntity
+        {
+            EventId = "event-1",
+            MessageId = "msg-event-request",
+            MessageType = MessageType.EventRequest,
+            EnqueuedTimeUtc = eventRequestEnqueued,
+            EndpointId = "BillingEndpoint",
+        });
+        cosmos.StoredMessages.Add(new MessageEntity
+        {
+            EventId = "event-1",
+            MessageId = "msg-pending-handoff",
+            MessageType = MessageType.PendingHandoffResponse,
+            EnqueuedTimeUtc = eventRequestEnqueued.AddMilliseconds(200),
+            EndpointId = "BillingEndpoint",
+            PendingSubStatus = "Handoff",
+        });
+        cosmos.StoredMessages.Add(new MessageEntity
+        {
+            EventId = "event-1",
+            MessageId = "msg-error",
+            MessageType = MessageType.ErrorResponse,
+            EnqueuedTimeUtc = eventRequestEnqueued.AddSeconds(30),
+            EndpointId = "BillingEndpoint",
+        });
+        cosmos.StoredMessages.Add(new MessageEntity
+        {
+            EventId = "event-1",
+            MessageId = "msg-resubmission",
+            MessageType = MessageType.ResubmissionRequest,
+            EnqueuedTimeUtc = DateTime.UtcNow.AddSeconds(-5),
+            EndpointId = "BillingEndpoint",
+        });
+
+        var resolutionResponse = CreateMessageContext(
+            messageType: MessageType.ResolutionResponse,
+            to: "Resolver",
+            from: "BillingEndpoint");
+        resolutionResponse.ProcessingTimeMs = 40;
+
+        await CreateService(cosmos).Handle(resolutionResponse);
+
+        Assert.AreEqual(1, cosmos.CompletedUploads.Count);
+        var processingTimeMs = cosmos.CompletedUploads[0].Content.ProcessingTimeMs;
+        Assert.IsTrue(processingTimeMs >= 120_000,
+            $"Expected the span since the original EventRequest (≥ 120s); got {processingTimeMs}ms.");
+        Assert.IsTrue(processingTimeMs < 180_000, $"Got {processingTimeMs}ms.");
+        AssertHandoffAnchorQueriedWithoutHistory(cosmos);
+    }
+
+    [TestMethod]
+    public async Task Handle_TerminalAfterHandoffWithoutEventRequest_KeepsHandlerProcessingTime()
+    {
+        // A handoff marker but no recorded EventRequest (e.g. expired by retention): there is no
+        // anchor, so the response's own handler duration stays.
+        var cosmos = new FakeCosmosDbClient();
+        cosmos.StoredMessages.Add(new MessageEntity
+        {
+            EventId = "event-1",
+            MessageId = "msg-pending-handoff",
+            MessageType = MessageType.PendingHandoffResponse,
+            EnqueuedTimeUtc = DateTime.UtcNow.AddSeconds(-30),
+            EndpointId = "BillingEndpoint",
+            PendingSubStatus = "Handoff",
+        });
+
+        var resolutionResponse = CreateMessageContext(
+            messageType: MessageType.ResolutionResponse,
+            to: "Resolver",
+            from: "BillingEndpoint");
+        resolutionResponse.ProcessingTimeMs = 65;
+
+        await CreateService(cosmos).Handle(resolutionResponse);
+
+        Assert.AreEqual(65, cosmos.CompletedUploads[0].Content.ProcessingTimeMs);
+        AssertHandoffAnchorQueriedWithoutHistory(cosmos);
+    }
+
+    [TestMethod]
+    public async Task Handle_NonTerminalResponse_DoesNotQueryHandoffAnchor()
+    {
+        var cosmos = new FakeCosmosDbClient();
+        var pendingHandoff = CreateMessageContext(
+            messageType: MessageType.PendingHandoffResponse,
+            to: "Resolver",
+            from: "BillingEndpoint");
+
+        await CreateService(cosmos).Handle(pendingHandoff);
+
+        Assert.AreEqual(0, cosmos.HandoffAnchorCalls);
+        Assert.AreEqual(0, cosmos.GetEventHistoryCalls);
+    }
+
+    // The terminal path asks the store the narrow question once and never loads the full
+    // event history (every row with its payload) to answer it.
+    private static void AssertHandoffAnchorQueriedWithoutHistory(FakeCosmosDbClient cosmos)
+    {
+        Assert.AreEqual(1, cosmos.HandoffAnchorCalls, "The handoff anchor should be queried once.");
+        Assert.AreEqual(0, cosmos.GetEventHistoryCalls, "The full event history must not be loaded.");
     }
 
     [TestMethod]
@@ -940,8 +1053,30 @@ public class ResolverServiceTests
         public Task<List<string>> SweepTimedOutServiceProbes(DateTime cutoffUtc) => Task.FromResult(new List<string>());
         public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => throw new NotSupportedException();
         public Task<MessageEntity?> GetMessage(string eventId, string messageId) => throw new NotSupportedException();
-        public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) =>
-            Task.FromResult<IEnumerable<MessageEntity>>(StoredMessages.Where(m => m.EventId == eventId).ToList());
+        /// <summary>How often the full history (with payloads) was loaded.</summary>
+        public int GetEventHistoryCalls { get; private set; }
+
+        /// <summary>How often the narrow handoff wall-clock anchor was queried.</summary>
+        public int HandoffAnchorCalls { get; private set; }
+
+        public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId)
+        {
+            GetEventHistoryCalls++;
+            return Task.FromResult<IEnumerable<MessageEntity>>(StoredMessages.Where(m => m.EventId == eventId).ToList());
+        }
+
+        public Task<DateTime?> GetHandoffEventRequestEnqueuedTime(string eventId)
+        {
+            HandoffAnchorCalls++;
+            var history = StoredMessages.Where(m => m.EventId == eventId).ToList();
+            if (!history.Any(m => m.MessageType == MessageType.PendingHandoffResponse))
+            {
+                return Task.FromResult<DateTime?>(null);
+            }
+
+            var requests = history.Where(m => m.MessageType == MessageType.EventRequest).ToList();
+            return Task.FromResult<DateTime?>(requests.Count == 0 ? null : requests.Min(m => m.EnqueuedTimeUtc));
+        }
         public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId) =>
             Task.FromResult(StoredMessages
                 .Where(m => m.EventId == eventId

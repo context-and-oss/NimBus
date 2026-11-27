@@ -1,6 +1,7 @@
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using NimBus.Core.Messages;
 using System.Net;
 
 namespace NimBus.MessageStore;
@@ -104,8 +105,10 @@ internal sealed partial class CosmosDbMessageTrackingStore
         // Bound page size so an event with a long history streams in pages
         // instead of one oversized response (documents carry the full EventJson
         // payload). The loop still drains every match.
+        // The messages container is partitioned by /eventId: target that one partition
+        // instead of fanning the query out.
         var result = container.GetItemQueryIterator<MessageDocument>(query, null,
-            new QueryRequestOptions { MaxItemCount = 100 });
+            new QueryRequestOptions { MaxItemCount = 100, PartitionKey = new PartitionKey(eventId) });
         var messages = new List<MessageEntity>();
 
         while (result.HasMoreResults)
@@ -120,6 +123,55 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
 
         return messages;
+    }
+
+    public async Task<DateTime?> GetHandoffEventRequestEnqueuedTime(string eventId)
+    {
+        var container = await _getMessagesContainer();
+        // Single-partition query projecting only the type and enqueue time of the two message
+        // types that matter; no document payload crosses the wire. The minimum is taken
+        // client-side: EnqueuedTimeUtc is stored as an ISO string with trimmed fractional
+        // seconds, so a server-side MIN would compare it lexically, not chronologically.
+        var query = new QueryDefinition(
+                "SELECT c.message.MessageType AS messageType, c.message.EnqueuedTimeUtc AS enqueuedTimeUtc " +
+                "FROM c WHERE c.eventId = @eventId " +
+                "AND c.message.MessageType IN ('EventRequest', 'PendingHandoffResponse')")
+            .WithParameter("@eventId", eventId);
+        var result = container.GetItemQueryIterator<HandoffAnchorProjection>(query, null,
+            new QueryRequestOptions { PartitionKey = new PartitionKey(eventId) });
+
+        var hasHandoff = false;
+        DateTime? earliestRequest = null;
+        while (result.HasMoreResults)
+        {
+            var feed = await CosmosExceptionTranslation.TranslateTransientAsync(
+                () => result.ReadNextAsync(),
+                _logger);
+            foreach (var row in feed)
+            {
+                if (row.MessageType == MessageType.PendingHandoffResponse)
+                {
+                    hasHandoff = true;
+                }
+                else if (row.MessageType == MessageType.EventRequest
+                         && (earliestRequest is null || row.EnqueuedTimeUtc < earliestRequest))
+                {
+                    earliestRequest = row.EnqueuedTimeUtc;
+                }
+            }
+        }
+
+        return hasHandoff ? earliestRequest : null;
+    }
+
+    private sealed class HandoffAnchorProjection
+    {
+        [JsonProperty("messageType")]
+        [JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public MessageType MessageType { get; set; }
+
+        [JsonProperty("enqueuedTimeUtc")]
+        public DateTime EnqueuedTimeUtc { get; set; }
     }
 
     public async Task<MessageEntity?> GetLatestEventRequestMessage(string eventId)
