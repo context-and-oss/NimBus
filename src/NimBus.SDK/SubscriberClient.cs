@@ -54,8 +54,11 @@ public class SubscriberClient : ISubscriberClient
         // Without this wrapper the response leg of every consumer would
         // be invisible to OTel even when the consumer span is open.
         var serviceBusSender = client.CreateSender(endpoint);
-        ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
-            new Sender(serviceBusSender), MessagingSystem.ServiceBus);
+        // A transient broker failure while sending a response abandons the delivery for
+        // redelivery instead of dead-lettering it.
+        ISender sender = ServiceBusTransientFailures.ClassifyTransientFailures(
+            NimBusOpenTelemetryDecorators.InstrumentSender(
+                new Sender(serviceBusSender), MessagingSystem.ServiceBus));
         var responseService = new ResponseService(sender);
         var eventHandlerProvider = new EventHandlerProvider();
 
