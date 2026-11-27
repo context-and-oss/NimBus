@@ -44,8 +44,9 @@ Agents built on `NimBus.Agents` call the agent API (`/api/v1/agent/*`) without a
 | `DELETE /api/v1/admin/agent-keys/{keyId}` | Removes a revoked or expired key |
 
 - **Works in every sign-in mode**, Identity-only included. The key travels in the `X-NimBus-Agent-Key` header and has a scheme of its own, `AgentApiKey`, which is never a default.
-- **Admits only `/api/v1/agent/*`.** A key gets 401 on every other endpoint, and its principal carries no admin marker and no object id, so it cannot hold a site or endpoint role. Signed-in people keep using the agent API as before.
+- **Admits only `/api/v1/agent/*`.** A key gets 401 on every other endpoint, and its principal carries no admin marker and no object id, so it cannot hold a site or endpoint role. A key caller is not role-checked on the agent API.
 - **The key names the agent.** Schema definitions, subscriptions and the audit row of a settled hand-off record the key's agent. A request whose `X-Agent-Id` names a different agent gets 403.
+- **Signed-in people need a role.** A person calling the agent API needs Reader on the Agent Zone endpoint to read (`catalog`, `subscribe`, `receive`) and Contributor to change anything (`event-types`, `publish`, `settle`); a site-wide role also counts. `receive` masks the payload unless the person is a PiiReader. A person is recorded under their own name, and their `X-Agent-Id` is ignored. Under the local development bypass, `X-Agent-Id` still names the agent.
 - **Shown once, stored hashed.** The full key (`nbak_<keyId>_<secret>`) appears once, when it is issued. nimbus-ops stores only a SHA-256 of the secret. Issuing, revoking and removing are Owner-only and always audited, with the key id but never the key.
 - **Revocation takes effect within 30 seconds** on every instance, and at once on the instance that saved it. A key can also carry an expiry. "Last used" is updated at most every 5 minutes per instance.
 

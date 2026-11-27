@@ -4698,6 +4698,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentCatalog'
+        '403':
+          description: A signed-in person without the role the operation requires on the Agent Zone endpoint
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/agent/event-types:
     post:
       summary: Define or retrieve an event type
@@ -4722,6 +4728,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: A signed-in person without the role the operation requires on the Agent Zone endpoint
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/agent/subscribe:
     post:
       summary: Subscribe to an event type
@@ -4736,6 +4748,12 @@ paths:
       responses:
         '200':
           description: OK
+        '403':
+          description: A signed-in person without the role the operation requires on the Agent Zone endpoint
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/agent/receive:
     get:
       summary: Receive the next available event
@@ -4762,6 +4780,12 @@ paths:
                 $ref: '#/components/schemas/AgentReceivedMessage'
         '204':
           description: No message available in the wait window
+        '403':
+          description: A signed-in person without the role the operation requires on the Agent Zone endpoint
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/agent/publish:
     post:
       summary: Publish an event
@@ -4788,6 +4812,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: A signed-in person without the role the operation requires on the Agent Zone endpoint
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/agent/settle:
     post:
       summary: Settle a received event
@@ -4802,6 +4832,12 @@ paths:
       responses:
         '200':
           description: OK
+        '403':
+          description: A signed-in person without the role the operation requires on the Agent Zone endpoint
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/access-control:
     get:
       summary: Get the site-wide access-control lists
