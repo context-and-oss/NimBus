@@ -1141,7 +1141,7 @@ public class AgentImplementationTests
         Assert.IsNull(await store.GetSchema("squatted.v1"), "A refused define must not register the schema");
         Assert.AreEqual(0, publisher.CallCount, "A refused publish must not publish");
         Assert.AreEqual(0, handoffs.CompleteCount, "A refused settle must not settle");
-        Assert.AreEqual(0, registry.GetSubscriptions("Mallory").Count, "A refused subscribe must not subscribe");
+        Assert.AreEqual(0, registry.GetSubscriptions(AgentImplementation.PersonSubscriptionPrefix + "Mallory").Count, "A refused subscribe must not subscribe");
         Assert.IsTrue(authorization.Checks.All(c => c.EndpointId == ZoneId), "Roles are checked on the Agent Zone endpoint");
     }
 
@@ -1254,7 +1254,44 @@ public class AgentImplementationTests
         Assert.AreEqual("Carol Contributor", schema.CreatedBy);
         Assert.AreEqual("Carol Contributor", schema.AgentId);
         Assert.AreEqual(0, registry.GetSubscriptions("enrichment-agent").Count);
-        CollectionAssert.Contains(registry.GetSubscriptions("Carol Contributor").ToArray(), "new.type.v1");
+        CollectionAssert.Contains(registry.GetSubscriptions(AgentImplementation.PersonSubscriptionPrefix + "Carol Contributor").ToArray(), "new.type.v1");
+    }
+
+    [TestMethod]
+    public async Task A_person_and_an_agent_with_the_same_name_do_not_share_subscriptions()
+    {
+        // One registry, as in production (a singleton): a Reader whose resolved name equals an
+        // agent id subscribes, and the agent's unfiltered receive must not be narrowed by it.
+        var (personImpl, store, _, _, registry) = BuildAgent(
+            AgentApiTestCallers.Person("enrichment-agent"),
+            new FixedRoleAuthorization(AccessRole.Reader));
+        Assert.IsInstanceOfType<OkResult>(await personImpl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "other.type.v1" }));
+
+        var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
+        var agentImpl = new AgentImplementation(
+            store,
+            new FakePlatform(),
+            new CapturingPublisher(),
+            store,
+            new CapturingHandoffClientFactory(),
+            new HandoffSettlementService(store, audit, new HandoffSettlementTracker(TimeProvider.System), NullLogger<HandoffSettlementService>.Instance),
+            registry,
+            config: null!,
+            AgentApiTestCallers.AgentKey("enrichment-agent"),
+            FixedRoleAuthorization.None,
+            new MarkingMasker(),
+            audit,
+            NullLogger<AgentImplementation>.Instance);
+        await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+        Assert.AreEqual(0, registry.GetSubscriptions("enrichment-agent").Count, "The person's subscription must not land under the agent's id");
+        var received = await agentImpl.GetAgentReceiveAsync(eventTypeId: null!, waitSeconds: 0);
+        Assert.IsInstanceOfType<OkObjectResult>(received.Result, "The agent has no subscriptions of its own, so its receive matches any type");
+
+        // And the other way round: the agent's subscription does not change the person's.
+        Assert.IsInstanceOfType<OkResult>(await agentImpl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "crm.lead.v1" }));
+        CollectionAssert.AreEquivalent(new[] { "crm.lead.v1" }, registry.GetSubscriptions("enrichment-agent").ToArray());
+        CollectionAssert.AreEquivalent(new[] { "other.type.v1" }, registry.GetSubscriptions(AgentImplementation.PersonSubscriptionPrefix + "enrichment-agent").ToArray());
     }
 
     [TestMethod]

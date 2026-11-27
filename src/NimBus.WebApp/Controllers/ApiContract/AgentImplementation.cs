@@ -188,7 +188,7 @@ public partial class AgentImplementation : IAgentApiController
         if (string.IsNullOrWhiteSpace(body?.EventTypeId))
             return new BadRequestObjectResult("eventTypeId is required.");
 
-        _subscriptions.Subscribe(caller.Name, body.EventTypeId);
+        _subscriptions.Subscribe(caller.SubscriptionKey, body.EventTypeId);
         LogAgentSubscribed(_logger, caller.Name, body.EventTypeId);
         return new OkResult();
     }
@@ -230,7 +230,7 @@ public partial class AgentImplementation : IAgentApiController
 
         // Build the type filter once: explicit query param wins; otherwise fall back
         // to the agent's registered subscriptions; otherwise match anything (null).
-        var subscribed = _subscriptions.GetSubscriptions(caller.Name);
+        var subscribed = _subscriptions.GetSubscriptions(caller.SubscriptionKey);
         IReadOnlyCollection<string>? eventTypeIds;
         if (!string.IsNullOrWhiteSpace(eventTypeId))
             eventTypeIds = new[] { eventTypeId };
@@ -484,8 +484,8 @@ public partial class AgentImplementation : IAgentApiController
         var context = _httpContextAccessor?.HttpContext;
         var user = context?.User;
 
-        var keyAgent = FindIdentity(user, AgentApiKeyDefaults.SchemeName)?.FindFirst(AgentApiKeyDefaults.AgentIdClaim)?.Value;
-        if (!string.IsNullOrEmpty(keyAgent))
+        var keyAgent = AgentApiKeyDefaults.FindAgentId(user);
+        if (keyAgent is not null)
             return new AgentCaller(keyAgent, IsAgent: true);
 
         if (FindIdentity(user, LocalDevAuthHandler.SchemeName) is not null)
@@ -522,7 +522,16 @@ public partial class AgentImplementation : IAgentApiController
         { StatusCode = StatusCodes.Status403Forbidden };
     }
 
-    private readonly record struct AgentCaller(string Name, bool IsAgent);
+    // Name is for display and audit. SubscriptionKey keeps people and agents apart in the
+    // subscription registry: an agent keeps its plain id (unchanged), a person is prefixed.
+    // A key's agent id cannot contain ':' (AgentApiKeyService), so the two never collide.
+    private readonly record struct AgentCaller(string Name, bool IsAgent)
+    {
+        public string SubscriptionKey => IsAgent ? Name : PersonSubscriptionPrefix + Name;
+    }
+
+    /// <summary>Prefixes a signed-in person's key in <see cref="IAgentSubscriptionRegistry"/>.</summary>
+    internal const string PersonSubscriptionPrefix = "person:";
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Agent API refused a signed-in caller without the {Required} role on {EndpointId}")]
     private static partial void LogAgentApiAccessDenied(ILogger logger, AccessRole required, string endpointId);
