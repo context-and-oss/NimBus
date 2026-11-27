@@ -183,6 +183,8 @@ public sealed partial class EndpointUpdateBroadcaster : IEndpointUpdateBroadcast
         await Task.Yield();
         try
         {
+            // RefreshAsync never joins a read that has already begun, so this count is read
+            // after the hook call that scheduled the run, and so after the write it reports.
             var state = await _cache.RefreshAsync(
                 EndpointStateCountCache.CacheKey(slot.EndpointId),
                 EndpointStateCountCache.Ttl,

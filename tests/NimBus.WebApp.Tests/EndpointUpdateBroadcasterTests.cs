@@ -149,6 +149,46 @@ public sealed class EndpointUpdateBroadcasterTests
         Assert.AreEqual(2, fixture.Store.Reads(Endpoint));
     }
 
+    [TestMethod]
+    public async Task The_trailing_recount_does_not_reuse_a_read_that_began_before_the_last_write()
+    {
+        var fixture = new Fixture();
+        var cache = new SignallingCache(fixture.Cache);
+        using var broadcaster = new EndpointUpdateBroadcaster(
+            fixture.Hub, fixture.Store, cache, fixture.Time, NullLogger<EndpointUpdateBroadcaster>.Instance, Interval);
+        await broadcaster.RequestAsync(Endpoint);
+        Assert.AreEqual(1, fixture.Store.Reads(Endpoint));
+
+        // The status API or the Monitor starts a refresh that reads the count before the last write.
+        fixture.Store.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<EndpointStateCount> older;
+        try
+        {
+            older = fixture.Cache.RefreshAsync(
+                EndpointStateCountCache.CacheKey(Endpoint),
+                EndpointStateCountCache.Ttl,
+                () => fixture.Store.DownloadEndpointStateCount(Endpoint));
+            Assert.AreEqual(2, fixture.Store.Reads(Endpoint), "The older read has begun.");
+
+            fixture.Store.FailedCount = 9;
+            await broadcaster.RequestAsync(Endpoint);
+            fixture.Time.Advance(Interval);
+
+            // The trailing recount asks for its refresh while the older read is still open.
+            await cache.Refreshed.Task.WaitAsync(Guard);
+        }
+        finally
+        {
+            fixture.Store.Gate.TrySetResult();
+        }
+
+        Assert.AreEqual(0, (await older.WaitAsync(Guard)).FailedCount);
+        await broadcaster.CurrentBroadcast(Endpoint).WaitAsync(Guard);
+
+        Assert.AreEqual(3, fixture.Store.Reads(Endpoint), "The trailing recount reads again after the older read.");
+        Assert.AreEqual(9, LastStatus(fixture.Proxy).FailedCount, "The trailing broadcast carries the count after the last write.");
+    }
+
     private static EndpointStatusCount LastStatus(RecordingClientProxy proxy) =>
         (EndpointStatusCount)proxy.SentArgs[^1][0]!;
 
@@ -176,6 +216,23 @@ public sealed class EndpointUpdateBroadcasterTests
             new HttpContextAccessor { HttpContext = new DefaultHttpContext() },
             new FakeHostEnvironment(Environments.Development),
             new ConfigurationBuilder().Build());
+    }
+
+    // Signals when a refresh is requested, so a test knows the trailing recount has asked for it.
+    private sealed class SignallingCache(IStoreResultCache inner) : IStoreResultCache
+    {
+        public TaskCompletionSource Refreshed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<T> GetOrCreateAsync<T>(string key, TimeSpan ttl, Func<Task<T>> factory) => inner.GetOrCreateAsync(key, ttl, factory);
+
+        public Task<T> RefreshAsync<T>(string key, TimeSpan ttl, Func<Task<T>> factory)
+        {
+            var refresh = inner.RefreshAsync(key, ttl, factory);
+            Refreshed.TrySetResult();
+            return refresh;
+        }
+
+        public void Remove(string key) => inner.Remove(key);
     }
 
     private sealed class CountingStore : InMemoryMessageStore
