@@ -5,7 +5,10 @@ namespace NimBus.WebApp.Services.AgentApiKeys;
 
 /// <summary>
 /// Refuses an agent API key caller that claims a different agent in <c>X-Agent-Id</c> (Spec 039),
-/// so a mismatch is visible instead of silently ignored. Callers without a key keep the header.
+/// so a mismatch is visible instead of silently ignored. A signed-in person's header is not
+/// refused here; the agent API ignores it and records the person by name instead. Only the
+/// identity the key scheme authenticated counts (<see cref="AgentApiKeyDefaults.FindAgentId"/>),
+/// so a sign-in token carrying the agent id claim is still a person's.
 /// </summary>
 internal sealed class AgentIdBindingFilter : IAsyncActionFilter
 {
@@ -14,7 +17,9 @@ internal sealed class AgentIdBindingFilter : IAsyncActionFilter
 
     public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
-        var keyAgent = context.HttpContext.User.FindFirst(AgentApiKeyDefaults.AgentIdClaim)?.Value;
+        // Only the key scheme's own identity counts, as in AgentImplementation: a signed-in
+        // person whose token carries the claim is a person, and their header is ignored later.
+        var keyAgent = AgentApiKeyDefaults.FindAgentId(context.HttpContext.User);
         var header = context.HttpContext.Request.Headers[HeaderName].ToString().Trim();
         if (!string.IsNullOrEmpty(keyAgent) && header.Length > 0 && !string.Equals(header, keyAgent, StringComparison.Ordinal))
         {

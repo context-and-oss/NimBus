@@ -1,5 +1,6 @@
 #pragma warning disable CA1707, CA2007
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Security.Claims;
@@ -36,6 +37,9 @@ public class AgentApiAuthorizationTests
 {
     private const string SignInScheme = "TestSignIn";
     private const string SignInHeader = "X-Test-Sign-In";
+
+    // A sign-in token that happens to carry the agent id claim, as an Entra token could.
+    private const string SignInAgentClaimHeader = "X-Test-Sign-In-Agent-Claim";
 
     private static IHost _host = null!;
     private static HttpClient _client = null!;
@@ -164,18 +168,32 @@ public class AgentApiAuthorizationTests
     }
 
     [TestMethod]
-    public async Task A_signed_in_person_keeps_choosing_the_agent_id_header()
+    public async Task A_signed_in_persons_agent_id_header_is_not_refused_by_the_binding_filter()
     {
+        // The agent API ignores a person's X-Agent-Id and records them by name instead
+        // (AgentImplementationTests); only a key caller's mismatch is refused here.
         using var response = await SendAsync("/api/agent/catalog", signedIn: true, agentIdHeader: "someone-else");
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
     }
 
-    private static Task<HttpResponseMessage> SendAsync(string path, string? key = null, bool signedIn = false, string? agentIdHeader = null)
+    [TestMethod]
+    public async Task A_signed_in_persons_agent_id_claim_does_not_make_the_binding_filter_refuse_them()
+    {
+        // Only the key scheme's identity counts: the claim on a sign-in identity is a person's,
+        // so a mismatching X-Agent-Id is left for the agent API to ignore, not refused here.
+        using var response = await SendAsync("/api/agent/catalog", signedIn: true, signInAgentClaim: "enrichment-agent", agentIdHeader: "someone-else");
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreEqual("Test User", await response.Content.ReadAsStringAsync());
+    }
+
+    private static Task<HttpResponseMessage> SendAsync(string path, string? key = null, bool signedIn = false, string? agentIdHeader = null, string? signInAgentClaim = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, path);
         if (key is not null) request.Headers.Add(AgentApiKeyDefaults.HeaderName, key);
         if (signedIn) request.Headers.Add(SignInHeader, "1");
+        if (signInAgentClaim is not null) request.Headers.Add(SignInAgentClaimHeader, signInAgentClaim);
         if (agentIdHeader is not null) request.Headers.Add("X-Agent-Id", agentIdHeader);
         return _client.SendAsync(request);
     }
@@ -210,9 +228,11 @@ public class AgentApiAuthorizationTests
             if (!Request.Headers.ContainsKey(SignInHeader))
                 return Task.FromResult(AuthenticateResult.NoResult());
 
-            var identity = new ClaimsIdentity(
-                new[] { new Claim(ClaimTypes.NameIdentifier, "test-user"), new Claim(ClaimTypes.Name, "Test User") },
-                Scheme.Name);
+            var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, "test-user"), new(ClaimTypes.Name, "Test User") };
+            var agentClaim = Request.Headers[SignInAgentClaimHeader].ToString();
+            if (agentClaim.Length > 0)
+                claims.Add(new Claim(AgentApiKeyDefaults.AgentIdClaim, agentClaim));
+            var identity = new ClaimsIdentity(claims, Scheme.Name);
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name)));
         }
     }

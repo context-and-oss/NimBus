@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using NimBus.Core;
+using NimBus.Core.Messages.PII;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
@@ -24,14 +25,17 @@ using CoreEventContent = NimBus.Core.Messages.EventContent;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
+/// <summary>
+/// The agent API (<c>/api/v1/agent/*</c>). An agent that authenticated with an agent API key
+/// (Spec 039) is identified by its key and is not role-checked. A signed-in person is held to
+/// the roles that apply everywhere else: Reader on the Agent Zone endpoint to read, Contributor
+/// on it to change anything, PiiReader to see an unmasked payload. A person is always recorded
+/// under their own name; <c>X-Agent-Id</c> never names a person.
+/// </summary>
 public partial class AgentImplementation : IAgentApiController
 {
-    // The agent identity a signed-in caller may claim. A caller with an agent API key is
-    // identified by the key instead (Spec 039).
+    // The agent identity the local development bypass may claim (see ResolveCaller).
     private const string AgentIdHeader = AgentIdBindingFilter.HeaderName;
-    private const string DefaultAgentId = "demo-agent";
-
-    // The pending sub-status discriminator the Agent Zone subscriber parks events under.
 
     private readonly IEventSchemaStore _schemas;
     private readonly IPlatform _platform;
@@ -42,8 +46,12 @@ public partial class AgentImplementation : IAgentApiController
     private readonly IAgentSubscriptionRegistry _subscriptions;
     private readonly IConfiguration _config;
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IEndpointAuthorizationService _authorization;
+    private readonly IEventJsonMasker _masker;
+    private readonly IAuditLogService _audit;
     private readonly ILogger<AgentImplementation> _logger;
 
+    /// <summary>Creates the agent API implementation.</summary>
     public AgentImplementation(
         IEventSchemaStore schemas,
         IPlatform platform,
@@ -54,6 +62,9 @@ public partial class AgentImplementation : IAgentApiController
         IAgentSubscriptionRegistry subscriptions,
         IConfiguration config,
         IHttpContextAccessor? httpContextAccessor,
+        IEndpointAuthorizationService authorization,
+        IEventJsonMasker masker,
+        IAuditLogService audit,
         ILogger<AgentImplementation> logger)
     {
         _schemas = schemas;
@@ -65,13 +76,20 @@ public partial class AgentImplementation : IAgentApiController
         _subscriptions = subscriptions;
         _config = config;
         _httpContextAccessor = httpContextAccessor;
+        _authorization = authorization;
+        _masker = masker;
+        _audit = audit;
         _logger = logger;
     }
 
     // ── GET /api/agent/catalog ────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<ActionResult<AgentCatalog>> GetAgentCatalogAsync()
     {
+        if (await AuthorizeAsync(ResolveCaller(), AccessRole.Reader) is { } denied)
+            return denied;
+
         var schemas = await _schemas.GetSchemas();
 
         var catalog = new AgentCatalog
@@ -91,8 +109,14 @@ public partial class AgentImplementation : IAgentApiController
 
     // ── POST /api/agent/event-types ───────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<ActionResult<EventTypeInfo>> PostAgentEventTypesAsync(DefineEventTypeRequest body)
     {
+        // Schemas are immutable and an EventTypeId is global, so defining one is a change.
+        var caller = ResolveCaller();
+        if (await AuthorizeAsync(caller, AccessRole.Contributor) is { } denied)
+            return denied;
+
         if (string.IsNullOrWhiteSpace(body.EventTypeId))
             return new BadRequestObjectResult("eventTypeId is required.");
 
@@ -118,7 +142,7 @@ public partial class AgentImplementation : IAgentApiController
         if (!string.IsNullOrWhiteSpace(body.SessionKeyPath) && !body.SessionKeyPath.TrimStart().StartsWith('$'))
             return new BadRequestObjectResult("sessionKeyPath must be a JSONPath expression starting with '$'.");
 
-        var agentId = CurrentAgentId();
+        var agentId = caller.Name;
         var schema = new EventSchema
         {
             EventTypeId = body.EventTypeId,
@@ -153,15 +177,20 @@ public partial class AgentImplementation : IAgentApiController
 
     // ── POST /api/agent/subscribe ─────────────────────────────────────────
 
-    public Task<IActionResult> PostAgentSubscribeAsync(AgentSubscribeRequest body)
+    /// <inheritdoc/>
+    public async Task<IActionResult> PostAgentSubscribeAsync(AgentSubscribeRequest body)
     {
-        if (string.IsNullOrWhiteSpace(body?.EventTypeId))
-            return Task.FromResult<IActionResult>(new BadRequestObjectResult("eventTypeId is required."));
+        // A subscription only narrows the caller's own receive, so it needs what receive needs.
+        var caller = ResolveCaller();
+        if (await AuthorizeAsync(caller, AccessRole.Reader) is { } denied)
+            return denied;
 
-        var agentId = CurrentAgentId();
-        _subscriptions.Subscribe(agentId, body.EventTypeId);
-        LogAgentSubscribed(_logger, agentId, body.EventTypeId);
-        return Task.FromResult<IActionResult>(new OkResult());
+        if (string.IsNullOrWhiteSpace(body?.EventTypeId))
+            return new BadRequestObjectResult("eventTypeId is required.");
+
+        _subscriptions.Subscribe(caller.SubscriptionKey, body.EventTypeId);
+        LogAgentSubscribed(_logger, caller.Name, body.EventTypeId);
+        return new OkResult();
     }
 
     // ── GET /api/agent/receive ────────────────────────────────────────────
@@ -180,8 +209,17 @@ public partial class AgentImplementation : IAgentApiController
     // the query; otherwise an agent that loops straight back to receive gets the event
     // it just settled. The record is per process, so across scaled-out instances that
     // window stays at-least-once.
+    /// <inheritdoc/>
     public async Task<ActionResult<AgentReceivedMessage>> GetAgentReceiveAsync(string eventTypeId, int? waitSeconds)
     {
+        var caller = ResolveCaller();
+        if (await AuthorizeAsync(caller, AccessRole.Reader) is { } denied)
+            return denied;
+
+        // A person sees the payload masked unless they hold PiiReader, as on every other
+        // payload-returning endpoint. An agent key reads it unmasked (Spec 039).
+        var maskPayload = !caller.IsAgent && !await _authorization.CanReadPiiAsync();
+
         var zoneId = AgentZone.ResolveEndpointId(_config);
         // Clamp the long-poll window so a client can't pin a request thread (and burn
         // store RUs) for hours by passing a huge waitSeconds.
@@ -192,7 +230,7 @@ public partial class AgentImplementation : IAgentApiController
 
         // Build the type filter once: explicit query param wins; otherwise fall back
         // to the agent's registered subscriptions; otherwise match anything (null).
-        var subscribed = _subscriptions.GetSubscriptions(CurrentAgentId());
+        var subscribed = _subscriptions.GetSubscriptions(caller.SubscriptionKey);
         IReadOnlyCollection<string>? eventTypeIds;
         if (!string.IsNullOrWhiteSpace(eventTypeId))
             eventTypeIds = new[] { eventTypeId };
@@ -211,10 +249,14 @@ public partial class AgentImplementation : IAgentApiController
 
             if (parked != null && !_settlement.IsSettlementInFlight(zoneId, parked))
             {
+                var payload = parked.MessageContent?.EventContent?.EventJson;
+                if (maskPayload && !string.IsNullOrEmpty(payload))
+                    payload = _masker.Mask(parked.EventTypeId ?? string.Empty, payload);
+
                 return new OkObjectResult(new AgentReceivedMessage
                 {
                     EventTypeId = parked.EventTypeId,
-                    Payload = parked.MessageContent?.EventContent?.EventJson,
+                    Payload = payload,
                     Coordinates = new HandoffCoordinates
                     {
                         EventId = parked.EventId,
@@ -247,8 +289,13 @@ public partial class AgentImplementation : IAgentApiController
 
     // ── POST /api/agent/publish ───────────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<IActionResult> PostAgentPublishAsync(AgentPublishRequest body)
     {
+        // Publishing puts an EventRequest on the Agent Zone topic.
+        if (await AuthorizeAsync(ResolveCaller(), AccessRole.Contributor) is { } denied)
+            return denied;
+
         if (string.IsNullOrWhiteSpace(body.EventTypeId))
             return new BadRequestObjectResult("eventTypeId is required.");
         if (string.IsNullOrWhiteSpace(body.Payload))
@@ -311,9 +358,28 @@ public partial class AgentImplementation : IAgentApiController
 
     // ── POST /api/agent/settle ────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<IActionResult> PostAgentSettleAsync(AgentSettleRequest body)
     {
+        var zoneId = AgentZone.ResolveEndpointId(_config);
+        var httpContext = _httpContextAccessor?.HttpContext;
         var coords = body?.Coordinates;
+
+        // A person settles under the operator path's rule: Contributor on the endpoint, with a
+        // refusal audited as access denied. Authorization runs before any request validation so
+        // that nothing in the body decides whether the role check (and its audit) happens.
+        var caller = ResolveCaller();
+        if (await AuthorizeAsync(caller, AccessRole.Contributor) is { } denied)
+        {
+            var deniedType = body?.Outcome == AgentSettleRequestOutcome.Fail
+                ? MessageAuditType.FailHandoff
+                : MessageAuditType.CompleteHandoff;
+            await _audit.LogAuditAsync(deniedType, httpContext!, accessDenied: true,
+                eventId: string.IsNullOrWhiteSpace(coords?.EventId) ? null : coords.EventId,
+                endpointId: zoneId);
+            return denied;
+        }
+
         if (coords == null || string.IsNullOrWhiteSpace(coords.EventId))
             return new BadRequestObjectResult("coordinates.eventId is required.");
         if (string.IsNullOrWhiteSpace(coords.MessageId))
@@ -324,11 +390,9 @@ public partial class AgentImplementation : IAgentApiController
             return new BadRequestObjectResult("outcome must be 'complete' or 'fail'.");
         }
 
-        var zoneId = AgentZone.ResolveEndpointId(_config);
-        // Auditor for the settlement is the agent, not a request principal — the X-Agent-Id
-        // header stand-in (spec 022). Recorded on the CompleteHandoff/FailHandoff audit row.
-        var auditor = CurrentAgentId();
-        var httpContext = _httpContextAccessor?.HttpContext;
+        // The auditor is the key's agent, or the signed-in person by name, never a
+        // caller-chosen X-Agent-Id. Recorded on the CompleteHandoff/FailHandoff audit row.
+        var auditor = caller.Name;
 
         if (body.Outcome == AgentSettleRequestOutcome.Complete)
         {
@@ -407,19 +471,70 @@ public partial class AgentImplementation : IAgentApiController
         }
     }
 
-    // A caller that authenticated with an agent API key is the key's agent (Spec 039); a
-    // mismatched X-Agent-Id never reaches here (AgentIdBindingFilter returns 403). Signed-in
-    // people keep the header, defaulting to "demo-agent" when absent.
-    private string CurrentAgentId()
+    // Who is calling, and whether they are an agent.
+    //   - An agent API key (Spec 039) is the key's agent. A mismatched X-Agent-Id never
+    //     reaches here (AgentIdBindingFilter returns 403). Only the key scheme's own identity
+    //     counts, so a sign-in token that happens to carry the claim is not an agent.
+    //   - The local development bypass (Development only, where every caller is already an
+    //     Owner) keeps X-Agent-Id, so an agent run locally without a key still acts as itself.
+    //   - Anyone else is a person, recorded under their own resolved name. X-Agent-Id is
+    //     ignored, so a person cannot attribute their actions to an agent.
+    private AgentCaller ResolveCaller()
     {
         var context = _httpContextAccessor?.HttpContext;
-        var keyAgent = context?.User.FindFirst(AgentApiKeyDefaults.AgentIdClaim)?.Value;
-        if (!string.IsNullOrEmpty(keyAgent))
-            return keyAgent;
+        var user = context?.User;
 
-        var header = context?.Request?.Headers[AgentIdHeader].ToString();
-        return string.IsNullOrWhiteSpace(header) ? DefaultAgentId : header.Trim();
+        var keyAgent = AgentApiKeyDefaults.FindAgentId(user);
+        if (keyAgent is not null)
+            return new AgentCaller(keyAgent, IsAgent: true);
+
+        if (FindIdentity(user, LocalDevAuthHandler.SchemeName) is not null)
+        {
+            var header = context!.Request.Headers[AgentIdHeader].ToString().Trim();
+            if (header.Length > 0)
+                return new AgentCaller(header, IsAgent: true);
+        }
+
+        return new AgentCaller(AuditLogService.ResolveAuditorName(context), IsAgent: false);
     }
+
+    private static System.Security.Claims.ClaimsIdentity? FindIdentity(System.Security.Claims.ClaimsPrincipal? user, string scheme)
+        => user?.Identities.FirstOrDefault(i => i.IsAuthenticated && string.Equals(i.AuthenticationType, scheme, StringComparison.Ordinal));
+
+    // Null when the caller may proceed. An agent always may (keys carry no roles; Spec 039); a
+    // person needs the role on the Agent Zone endpoint, where a site-wide grant also counts.
+    private async Task<ActionResult?> AuthorizeAsync(AgentCaller caller, AccessRole required)
+    {
+        if (caller.IsAgent)
+            return null;
+
+        var zoneId = AgentZone.ResolveEndpointId(_config);
+        if (await _authorization.HasRoleAsync(required, zoneId))
+            return null;
+
+        LogAgentApiAccessDenied(_logger, required, zoneId);
+        return new ObjectResult(new Microsoft.AspNetCore.Mvc.ProblemDetails
+        {
+            Status = StatusCodes.Status403Forbidden,
+            Title = "Forbidden",
+            Detail = $"This requires the {required} role on endpoint '{zoneId}'.",
+        })
+        { StatusCode = StatusCodes.Status403Forbidden };
+    }
+
+    // Name is for display and audit. SubscriptionKey keeps people and agents apart in the
+    // subscription registry: an agent keeps its plain id (unchanged), a person is prefixed.
+    // A key's agent id cannot contain ':' (AgentApiKeyService), so the two never collide.
+    private readonly record struct AgentCaller(string Name, bool IsAgent)
+    {
+        public string SubscriptionKey => IsAgent ? Name : PersonSubscriptionPrefix + Name;
+    }
+
+    /// <summary>Prefixes a signed-in person's key in <see cref="IAgentSubscriptionRegistry"/>.</summary>
+    internal const string PersonSubscriptionPrefix = "person:";
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Agent API refused a signed-in caller without the {Required} role on {EndpointId}")]
+    private static partial void LogAgentApiAccessDenied(ILogger logger, AccessRole required, string endpointId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Rejected event type {EventTypeId}: jsonSchema is not valid JSON Schema")]
     private static partial void LogRejectedEventTypeJsonSchemaIsNot(ILogger logger, Exception exception, string eventTypeId);

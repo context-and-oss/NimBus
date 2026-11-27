@@ -8269,6 +8269,13 @@ export class Client extends ApiClientBase {
             result200 = AgentCatalog.fromJS(resultData200);
             return result200;
             });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("A signed-in person without the role the operation requires on the Agent Zone endpoint", status, _responseText, _headers, result403);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
@@ -8313,6 +8320,13 @@ export class Client extends ApiClientBase {
             let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
             result200 = EventTypeInfo.fromJS(resultData200);
             return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("A signed-in person without the role the operation requires on the Agent Zone endpoint", status, _responseText, _headers, result403);
             });
         } else if (status === 409) {
             return response.text().then((_responseText) => {
@@ -8361,6 +8375,13 @@ export class Client extends ApiClientBase {
         if (status === 200) {
             return response.text().then((_responseText) => {
             return;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("A signed-in person without the role the operation requires on the Agent Zone endpoint", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -8416,6 +8437,13 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             return throwException("No message available in the wait window", status, _responseText, _headers);
             });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("A signed-in person without the role the operation requires on the Agent Zone endpoint", status, _responseText, _headers, result403);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
@@ -8464,6 +8492,13 @@ export class Client extends ApiClientBase {
             result400 = ProblemDetails.fromJS(resultData400);
             return throwException("Payload failed schema validation", status, _responseText, _headers, result400);
             });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("A signed-in person without the role the operation requires on the Agent Zone endpoint", status, _responseText, _headers, result403);
+            });
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             let result404: any = null;
@@ -8511,6 +8546,13 @@ export class Client extends ApiClientBase {
         if (status === 200) {
             return response.text().then((_responseText) => {
             return;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("A signed-in person without the role the operation requires on the Agent Zone endpoint", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
