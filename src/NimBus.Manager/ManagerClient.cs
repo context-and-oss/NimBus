@@ -53,19 +53,44 @@ public interface IManagerCommandClient
     Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId, string commandMessageId);
 }
 
-public partial class ManagerClient : IManagerClient, IManagerCommandClient
+/// <summary>
+/// Sends Manager commands (resubmit, skip) to endpoints. One sender is cached per endpoint and
+/// disposed in <see cref="DisposeAsync"/>; the injected <see cref="ServiceBusClient"/> is not
+/// disposed.
+/// </summary>
+public partial class ManagerClient : IManagerClient, IManagerCommandClient, IAsyncDisposable
 {
     /// <summary>Longest Service Bus message id.</summary>
     private const int MaximumMessageIdLength = 128;
 
-    private readonly ServiceBusClient _serviceBusClient;
+    private readonly ServiceBusSenderCache? _senders;
     private readonly ILogger _logger;
 
+    /// <summary>Creates a client that sends commands over <paramref name="serviceBusClient"/>.</summary>
+    /// <param name="serviceBusClient">The Service Bus client; not disposed by this instance.</param>
+    /// <param name="logger">Optional logger.</param>
     public ManagerClient(ServiceBusClient serviceBusClient, ILogger<ManagerClient>? logger = null)
     {
-        _serviceBusClient = serviceBusClient;
+        // A null client still constructs, as before; sending through it then fails.
+        _senders = serviceBusClient is null ? null : new ServiceBusSenderCache(serviceBusClient);
         _logger = logger ?? NullLogger<ManagerClient>.Instance;
     }
+
+    /// <summary>
+    /// Disposes the cached senders. Calling it again does nothing; a command sent afterwards
+    /// throws <see cref="ObjectDisposedException"/>.
+    /// </summary>
+    /// <returns>A task that completes once the senders are disposed.</returns>
+    public async ValueTask DisposeAsync()
+    {
+        if (_senders is not null)
+            await _senders.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
+    }
+
+    private ServiceBusSender SenderFor(string endpoint) =>
+        (_senders ?? throw new InvalidOperationException("ManagerClient was created without a ServiceBusClient."))
+            .GetSender(endpoint);
 
     public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
         => SendResubmit(errorResponse, endpoint, eventTypeId, eventJson, commandMessageId: null);
@@ -115,8 +140,7 @@ public partial class ManagerClient : IManagerClient, IManagerCommandClient
             },
         };
 
-        await using var sender = _serviceBusClient.CreateSender(endpoint);
-        await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
+        await SenderFor(endpoint).SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
     }
 
     private async Task SendSkip(MessageEntity errorResponse, string endpoint, string eventTypeId, string? commandMessageId)
@@ -137,8 +161,7 @@ public partial class ManagerClient : IManagerClient, IManagerCommandClient
             OriginatingMessageId = errorResponse.OriginatingMessageId ?? errorResponse.MessageId
         };
 
-        await using var sender = _serviceBusClient.CreateSender(endpoint);
-        await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
+        await SenderFor(endpoint).SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
     }
 
 

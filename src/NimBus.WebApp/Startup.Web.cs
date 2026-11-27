@@ -102,6 +102,14 @@ public partial class Startup
         services.AddNimBusRateLimiting(Configuration);
     }
 
+    /// <summary>
+    /// Registers the singleton <see cref="NimBus.ServiceBus.ServiceBusSenderCache"/> that scoped
+    /// services such as <see cref="AdminService"/> send through, so they reuse one sender per
+    /// entity. The container disposes it, and its senders, at shutdown.
+    /// </summary>
+    internal static void AddServiceBusSenderCache(IServiceCollection services) =>
+        services.TryAddSingleton(sp => new NimBus.ServiceBus.ServiceBusSenderCache(sp.GetRequiredService<ServiceBusClient>()));
+
     private void AddApiControllers(IServiceCollection services)
     {
         services.AddTransient<IEndpointApiController, EndpointImplementation>();
@@ -111,6 +119,7 @@ public partial class Startup
         services.AddTransient<IApplicationApiController, ApplicationImplementation>();
         services.AddTransient<IMessageApiController, MessageImplementation>();
         services.AddTransient<IFailedApiController, FailedImplementation>();
+        AddServiceBusSenderCache(services);
         services.AddScoped<IAdminService, AdminService>();
         services.AddScoped<ISessionStateService, SessionStateService>();
         // The emulator caps entity TTLs far below a real namespace, so a rebuild has to

@@ -42,6 +42,13 @@ public class ServiceBusSession : IServiceBusSession
     private readonly string? _entityPath;
 
     /// <summary>
+    /// The owner-held cache that <see cref="SendScheduledMessageAsync"/> takes its sender from.
+    /// <see cref="ServiceBusAdapter"/> sets it so every session it builds shares one sender per
+    /// topic. When null, each scheduled send creates and disposes its own sender.
+    /// </summary>
+    internal ServiceBusSenderCache? SenderCache { get; init; }
+
+    /// <summary>
     /// Creates a session backed only by <see cref="ServiceBusSessionMessageActions"/>. A session built
     /// this way supports session state and scheduled sends, but <see cref="CompleteAsync"/> and
     /// <see cref="DeadLetterAsync"/> throw <see cref="InvalidOperationException"/> because session
@@ -271,8 +278,24 @@ public class ServiceBusSession : IServiceBusSession
         }
 
         var (topicName, _) = ParseEntityPath();
-        await using var sender = _serviceBusClient.CreateSender(topicName);
-        await sender.ScheduleMessageAsync(message, scheduledEnqueueTime, cancellationToken);
+        if (SenderCache is not null)
+        {
+            // The cache owns the sender: it lives as long as the adapter, not this message.
+            await SenderCache.GetSender(topicName).ScheduleMessageAsync(message, scheduledEnqueueTime, cancellationToken);
+            return;
+        }
+
+        // A session built outside an adapter has no owner to hold a sender, so it keeps the
+        // original create-per-call behavior.
+        var sender = _serviceBusClient.CreateSender(topicName);
+        try
+        {
+            await sender.ScheduleMessageAsync(message, scheduledEnqueueTime, cancellationToken);
+        }
+        finally
+        {
+            await sender.DisposeAsync();
+        }
     }
 
     // The Functions isolated worker settles messages and reads session state through the host

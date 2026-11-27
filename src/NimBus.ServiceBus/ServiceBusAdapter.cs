@@ -45,10 +45,16 @@ public interface IServiceBusAdapter
     Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default);
 }
 
-public class ServiceBusAdapter : IServiceBusAdapter
+/// <summary>
+/// Adapts Service Bus deliveries to NimBus's <see cref="IMessageHandler"/>. The adapter caches the
+/// senders its sessions use to schedule redeliveries, one per topic, and disposes them in
+/// <see cref="DisposeAsync"/>; the <see cref="ServiceBusClient"/> it was given is not disposed.
+/// </summary>
+public class ServiceBusAdapter : IServiceBusAdapter, IAsyncDisposable
 {
     private readonly IMessageHandler _messageHandler;
     private readonly ServiceBusClient? _serviceBusClient;
+    private readonly ServiceBusSenderCache? _senderCache;
     private readonly string? _entityPath;
     private readonly CloudEventReadOptions? _cloudEventReadOptions;
 
@@ -65,8 +71,22 @@ public class ServiceBusAdapter : IServiceBusAdapter
     {
         _messageHandler = messageHandler ?? throw new ArgumentNullException(nameof(messageHandler));
         _serviceBusClient = serviceBusClient;
+        _senderCache = serviceBusClient is null ? null : new ServiceBusSenderCache(serviceBusClient);
         _entityPath = entityPath;
         _cloudEventReadOptions = cloudEventReadOptions;
+    }
+
+    /// <summary>
+    /// Disposes the senders cached for scheduled redeliveries. Calling it again does nothing; a
+    /// scheduled send through a session of this adapter afterwards throws
+    /// <see cref="ObjectDisposedException"/>.
+    /// </summary>
+    /// <returns>A task that completes once the senders are disposed.</returns>
+    public async ValueTask DisposeAsync()
+    {
+        if (_senderCache is not null)
+            await _senderCache.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
     }
 
     /// <inheritdoc />
@@ -74,7 +94,7 @@ public class ServiceBusAdapter : IServiceBusAdapter
     public async Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default)
     {
         var messageWrapper = new ServiceBusMessage(message);
-        var sessionWrapper = new ServiceBusSession(sessionActions, _serviceBusClient, _entityPath, message.SessionId);
+        var sessionWrapper = new ServiceBusSession(sessionActions, _serviceBusClient, _entityPath, message.SessionId) { SenderCache = _senderCache };
         var messageContext = new MessageContext(messageWrapper, sessionWrapper, isDeferred: false, _cloudEventReadOptions);
 
         await HandleWithLatencyTracking(message, messageContext, cancellationToken);
@@ -84,7 +104,7 @@ public class ServiceBusAdapter : IServiceBusAdapter
     public async Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default)
     {
         var messageWrapper = new ServiceBusMessage(message);
-        var sessionWrapper = new ServiceBusSession(messageActions, sessionActions, _serviceBusClient, _entityPath, message.SessionId);
+        var sessionWrapper = new ServiceBusSession(messageActions, sessionActions, _serviceBusClient, _entityPath, message.SessionId) { SenderCache = _senderCache };
         var messageContext = new MessageContext(messageWrapper, sessionWrapper, isDeferred: false, _cloudEventReadOptions);
 
         await HandleWithLatencyTracking(message, messageContext, cancellationToken);
@@ -102,7 +122,7 @@ public class ServiceBusAdapter : IServiceBusAdapter
     public async Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default)
     {
         var messageWrapper = new ServiceBusMessage(args.Message);
-        var sessionWrapper = new ServiceBusSession(args, _serviceBusClient, _entityPath);
+        var sessionWrapper = new ServiceBusSession(args, _serviceBusClient, _entityPath) { SenderCache = _senderCache };
         var messageContext = new MessageContext(messageWrapper, sessionWrapper, isDeferred: false, _cloudEventReadOptions);
 
         await HandleWithLatencyTracking(args.Message, messageContext, cancellationToken);

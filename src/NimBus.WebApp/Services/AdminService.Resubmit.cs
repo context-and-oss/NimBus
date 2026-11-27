@@ -335,8 +335,7 @@ public partial class AdminService
                 CorrelationId = Guid.NewGuid().ToString(),
             });
 
-            await using var sender = _sbClient.CreateSender(endpointId);
-            await sender.SendMessageAsync(message);
+            await SenderFor(endpointId).SendMessageAsync(message);
             result.ProcessRequestSent = true;
         }
         catch (Exception ex)

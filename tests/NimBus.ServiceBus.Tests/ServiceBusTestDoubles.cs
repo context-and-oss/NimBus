@@ -46,9 +46,16 @@ internal sealed class RecordingServiceBusClient : ServiceBusClient
     public string? LastSubscriptionName { get; private set; }
     public string? LastSessionId { get; private set; }
 
+    /// <summary>How many times <see cref="CreateSender(string)"/> was called.</summary>
+    public int CreateSenderCount { get; private set; }
+
+    /// <summary>How many times the client itself was disposed.</summary>
+    public int DisposeCount { get; private set; }
+
     public override ServiceBusSender CreateSender(string queueOrTopicName)
     {
         LastSenderEntityPath = queueOrTopicName;
+        CreateSenderCount++;
         if (CreateSenderException != null)
         {
             throw CreateSenderException;
@@ -88,6 +95,64 @@ internal sealed class RecordingServiceBusClient : ServiceBusClient
         if (AcceptSessionException != null)
             throw AcceptSessionException;
         return Task.FromResult<ServiceBusSessionReceiver>(SessionReceiver);
+    }
+
+    [SuppressMessage("Usage", "CA2215:Dispose methods should call base class dispose", Justification = "Test double avoids disposing uninitialized SDK internals.")]
+    public override ValueTask DisposeAsync()
+    {
+        DisposeCount++;
+        return ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>
+/// A client that hands out a new <see cref="RecordingServiceBusSender"/> per
+/// <see cref="CreateSender(string)"/> call and counts the calls per entity, for sender-cache tests.
+/// </summary>
+internal sealed class CountingServiceBusClient : ServiceBusClient
+{
+    private int _createSenderCount;
+
+    public System.Collections.Concurrent.ConcurrentQueue<(string Entity, RecordingServiceBusSender Sender)> Created { get; } = new();
+
+    private Exception? _failNextCreate;
+
+    /// <summary>Thrown by the next <see cref="CreateSender(string)"/> call only.</summary>
+    public Exception? FailNextCreate
+    {
+        get => Volatile.Read(ref _failNextCreate);
+        set => Volatile.Write(ref _failNextCreate, value);
+    }
+
+    /// <summary>Delay inside <see cref="CreateSender(string)"/>, to widen races in concurrency tests.</summary>
+    public TimeSpan CreateDelay { get; set; }
+
+    public int CreateSenderCount => Volatile.Read(ref _createSenderCount);
+
+    public int DisposeCount { get; private set; }
+
+    public int CreateSenderCountFor(string entity) => Created.Count(c => c.Entity == entity);
+
+    public override ServiceBusSender CreateSender(string queueOrTopicName)
+    {
+        Interlocked.Increment(ref _createSenderCount);
+        if (CreateDelay > TimeSpan.Zero)
+            Thread.Sleep(CreateDelay);
+
+        var failure = Interlocked.Exchange(ref _failNextCreate, null);
+        if (failure is not null)
+            throw failure;
+
+        var sender = new RecordingServiceBusSender();
+        Created.Enqueue((queueOrTopicName, sender));
+        return sender;
+    }
+
+    [SuppressMessage("Usage", "CA2215:Dispose methods should call base class dispose", Justification = "Test double avoids disposing uninitialized SDK internals.")]
+    public override ValueTask DisposeAsync()
+    {
+        DisposeCount++;
+        return ValueTask.CompletedTask;
     }
 }
 
@@ -129,7 +194,16 @@ internal sealed class RecordingServiceBusSender : ServiceBusSender
 
     public override Task CloseAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-    public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    private int _disposeCount;
+
+    /// <summary>How many times the sender was disposed.</summary>
+    public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+    public override ValueTask DisposeAsync()
+    {
+        Interlocked.Increment(ref _disposeCount);
+        return ValueTask.CompletedTask;
+    }
 }
 
 [SuppressMessage("Usage", "CA2215:Dispose methods should call base class dispose", Justification = "Test double avoids disposing uninitialized SDK internals.")]

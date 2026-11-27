@@ -34,7 +34,8 @@ static class Container
 
     public static async Task SkipMessages(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, CommandArgument nameArg, List<string> statuses, DateTime? before)
     {
-        await SendSkipRequests(new ManagerClient(serviceBusClient), dbClient, nameArg.Value!, statuses, before);
+        await using var manager = new ManagerClient(serviceBusClient);
+        await SendSkipRequests(manager, dbClient, nameArg.Value!, statuses, before);
     }
 
     public static async Task DeleteMessages(CosmosClient cosmosClient, string to)

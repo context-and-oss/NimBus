@@ -67,6 +67,8 @@ public sealed class SimulatedEndpointHost : ISimulatedEndpointHost
     private readonly TimeProvider _timeProvider;
     private readonly CancellationTokenSource _stopping = new();
     private ServiceBusSender? _responseSender;
+    private ServiceBusAdapter? _adapter;
+    private DeferredMessageProcessor? _deferredProcessor;
     private NimBusReceiverHostedService? _receiver;
     private DeferredMessageProcessorHostedService? _deferred;
 
@@ -158,9 +160,11 @@ public sealed class SimulatedEndpointHost : ISimulatedEndpointHost
             NimBusOpenTelemetryDecorators.InstrumentSender(new Sender(_responseSender), MessagingSystem.ServiceBus));
         var handler = BuildMessageHandler(EndpointId, _eventTypeIds, _behavior, sender, _loggerFactory, _stopping.Token);
 
+        _adapter = new ServiceBusAdapter(handler, _client);
+        _deferredProcessor = new DeferredMessageProcessor(_client);
         _receiver = new NimBusReceiverHostedService(
             _client,
-            new ServiceBusAdapter(handler, _client),
+            _adapter,
             new NimBusReceiverOptions
             {
                 TopicName = EndpointId,
@@ -171,7 +175,7 @@ public sealed class SimulatedEndpointHost : ISimulatedEndpointHost
 
         _deferred = new DeferredMessageProcessorHostedService(
             _client,
-            new DeferredMessageProcessor(_client),
+            _deferredProcessor,
             new DeferredMessageProcessorHostedServiceOptions(EndpointId, DeferredProcessorSubscription),
             _loggerFactory.CreateLogger<DeferredMessageProcessorHostedService>());
 
@@ -221,6 +225,13 @@ public sealed class SimulatedEndpointHost : ISimulatedEndpointHost
                 // Abandon rather than wait on a slow close: the sender is private to this host.
                 _ = _responseSender.DisposeAsync().AsTask();
             }
+
+            // The adapter and the deferred processor cache senders for this host only; dispose
+            // them the same way, so their links close with the host.
+            if (_adapter is not null)
+                _ = _adapter.DisposeAsync().AsTask();
+            if (_deferredProcessor is not null)
+                _ = _deferredProcessor.DisposeAsync().AsTask();
         }
     }
 

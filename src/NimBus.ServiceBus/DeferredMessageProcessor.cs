@@ -11,11 +11,15 @@ using System.Threading.Tasks;
 namespace NimBus.ServiceBus;
 
 /// <summary>
-/// Processes deferred messages from the session-enabled deferred subscription.
+/// Processes deferred messages from the session-enabled deferred subscription. The senders that
+/// republish replays are cached per topic for the processor's lifetime and disposed in
+/// <see cref="DisposeAsync"/>; the <see cref="ServiceBusClient"/> it was given is not disposed.
 /// </summary>
-public class DeferredMessageProcessor : IDeferredMessageProcessor
+public class DeferredMessageProcessor : IDeferredMessageProcessor, IAsyncDisposable
 {
     private readonly ServiceBusClient _serviceBusClient;
+    private readonly ServiceBusSenderCache _senders;
+    private volatile bool _disposed;
     private readonly string _deferredSubscriptionName;
     private const int BatchSize = 100;
 
@@ -27,7 +31,20 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
     public DeferredMessageProcessor(ServiceBusClient serviceBusClient, string? deferredSubscriptionName = null)
     {
         _serviceBusClient = serviceBusClient ?? throw new ArgumentNullException(nameof(serviceBusClient));
+        _senders = new ServiceBusSenderCache(_serviceBusClient);
         _deferredSubscriptionName = deferredSubscriptionName ?? Constants.DeferredSubscriptionName;
+    }
+
+    /// <summary>
+    /// Disposes the cached republish senders. Calling it again does nothing; a drain started
+    /// afterwards throws <see cref="ObjectDisposedException"/>.
+    /// </summary>
+    /// <returns>A task that completes once the senders are disposed.</returns>
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        await _senders.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -45,6 +62,7 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
             throw new ArgumentException("Session ID is required", nameof(sessionId));
         if (string.IsNullOrEmpty(topicName))
             throw new ArgumentException("Topic name is required", nameof(topicName));
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var replaySpan = NimBusActivitySources.DeferredProcessor.StartActivity(
             "NimBus.DeferredProcessor.Replay", ActivityKind.Internal);
@@ -72,8 +90,9 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
             }
 
             await using (receiver)
-            await using (var sender = _serviceBusClient.CreateSender(topicName))
             {
+                // Cached for the processor's lifetime: a drain no longer attaches its own link.
+                var sender = _senders.GetSender(topicName);
                 try
                 {
                     // MessageIds of this drain's replays. A parked message whose ParentMessageId
