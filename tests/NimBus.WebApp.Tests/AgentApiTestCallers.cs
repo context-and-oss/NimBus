@@ -33,12 +33,19 @@ internal static class AgentApiTestCallers
         return Accessor(new ClaimsPrincipal(identity), agentIdHeader);
     }
 
-    private static HttpContextAccessor Accessor(ClaimsPrincipal user, string? agentIdHeader)
+    private static FixedHttpContextAccessor Accessor(ClaimsPrincipal user, string? agentIdHeader)
     {
         var context = new DefaultHttpContext { User = user };
         if (agentIdHeader is not null)
             context.Request.Headers[AgentIdBindingFilter.HeaderName] = agentIdHeader;
-        return new HttpContextAccessor { HttpContext = context };
+        return new FixedHttpContextAccessor(context);
+    }
+
+    // HttpContextAccessor keeps its value in an AsyncLocal, which does not flow into a
+    // TestServer request; a plain field keeps the caller visible wherever the request runs.
+    private sealed class FixedHttpContextAccessor(HttpContext context) : IHttpContextAccessor
+    {
+        public HttpContext? HttpContext { get; set; } = context;
     }
 }
 

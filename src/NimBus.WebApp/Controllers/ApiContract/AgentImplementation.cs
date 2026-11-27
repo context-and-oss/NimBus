@@ -361,7 +361,25 @@ public partial class AgentImplementation : IAgentApiController
     /// <inheritdoc/>
     public async Task<IActionResult> PostAgentSettleAsync(AgentSettleRequest body)
     {
+        var zoneId = AgentZone.ResolveEndpointId(_config);
+        var httpContext = _httpContextAccessor?.HttpContext;
         var coords = body?.Coordinates;
+
+        // A person settles under the operator path's rule: Contributor on the endpoint, with a
+        // refusal audited as access denied. Authorization runs before any request validation so
+        // that nothing in the body decides whether the role check (and its audit) happens.
+        var caller = ResolveCaller();
+        if (await AuthorizeAsync(caller, AccessRole.Contributor) is { } denied)
+        {
+            var deniedType = body?.Outcome == AgentSettleRequestOutcome.Fail
+                ? MessageAuditType.FailHandoff
+                : MessageAuditType.CompleteHandoff;
+            await _audit.LogAuditAsync(deniedType, httpContext!, accessDenied: true,
+                eventId: string.IsNullOrWhiteSpace(coords?.EventId) ? null : coords.EventId,
+                endpointId: zoneId);
+            return denied;
+        }
+
         if (coords == null || string.IsNullOrWhiteSpace(coords.EventId))
             return new BadRequestObjectResult("coordinates.eventId is required.");
         if (string.IsNullOrWhiteSpace(coords.MessageId))
@@ -370,22 +388,6 @@ public partial class AgentImplementation : IAgentApiController
             and not AgentSettleRequestOutcome.Fail)
         {
             return new BadRequestObjectResult("outcome must be 'complete' or 'fail'.");
-        }
-
-        var zoneId = AgentZone.ResolveEndpointId(_config);
-        var httpContext = _httpContextAccessor?.HttpContext;
-
-        // A person settles under the operator path's rule: Contributor on the endpoint, with a
-        // refusal audited as access denied.
-        var caller = ResolveCaller();
-        if (await AuthorizeAsync(caller, AccessRole.Contributor) is { } denied)
-        {
-            var deniedType = body.Outcome == AgentSettleRequestOutcome.Complete
-                ? MessageAuditType.CompleteHandoff
-                : MessageAuditType.FailHandoff;
-            await _audit.LogAuditAsync(deniedType, httpContext!, accessDenied: true,
-                eventId: coords.EventId, endpointId: zoneId);
-            return denied;
         }
 
         // The auditor is the key's agent, or the signed-in person by name, never a
