@@ -276,6 +276,48 @@ public abstract class OutboxClaimingConformanceTests
         Assert.AreEqual(0, (await outbox.GetPendingAsync(10)).Count);
     }
 
+    /// <summary>
+    /// Verifies that one fenced checkpoint call can mark more than 100 claimed rows dispatched
+    /// (crossing a provider's per-command chunk) and returns every identifier.
+    /// </summary>
+    [TestMethod]
+    public async Task MarkClaimedAsDispatchedAsync_checkpoints_more_than_100_rows_in_one_call()
+    {
+        var (outbox, claiming) = await CreateAsync();
+        var messages = Enumerable.Range(0, 150).Select(_ => CreateMessage(sessionId: null)).ToList();
+        await outbox.StoreBatchAsync(messages);
+        Assert.AreEqual(150, (await claiming.ClaimPendingAsync(150, "claimant-a", LongLease)).Count);
+
+        var checkpointed = await claiming.MarkClaimedAsDispatchedAsync("claimant-a", messages.Select(message => message.Id).ToList());
+
+        CollectionAssert.AreEquivalent(messages.Select(message => message.Id).ToArray(), checkpointed.ToArray());
+        Assert.AreEqual(0, (await outbox.GetPendingAsync(200)).Count);
+    }
+
+    /// <summary>
+    /// Verifies that a multi-row checkpoint, after another claimant took over some of the rows
+    /// once the lease expired, marks and returns only the rows the caller still holds.
+    /// </summary>
+    [TestMethod]
+    public async Task MarkClaimedAsDispatchedAsync_with_many_ids_returns_only_the_rows_not_taken_over()
+    {
+        var (outbox, claiming) = await CreateAsync();
+        var messages = Enumerable.Range(0, 130).Select(_ => CreateMessage(sessionId: null)).ToList();
+        await outbox.StoreBatchAsync(messages);
+        var lease = TimeSpan.FromSeconds(1);
+        Assert.AreEqual(130, (await claiming.ClaimPendingAsync(130, "claimant-a", lease)).Count);
+        await AdvanceClockAsync(lease);
+        var takenOver = Ids(await claiming.ClaimPendingAsync(30, "claimant-b", LongLease));
+        Assert.AreEqual(30, takenOver.Length);
+
+        var checkpointed = await claiming.MarkClaimedAsDispatchedAsync("claimant-a", messages.Select(message => message.Id).ToList());
+
+        var expected = messages.Select(message => message.Id).Except(takenOver).ToArray();
+        CollectionAssert.AreEquivalent(expected, checkpointed.ToArray());
+        CollectionAssert.AreEquivalent(takenOver, Ids(await outbox.GetPendingAsync(200)), "Rows taken over by claimant-b stay pending.");
+        CollectionAssert.AreEquivalent(takenOver, (await claiming.MarkClaimedAsDispatchedAsync("claimant-b", takenOver)).ToArray());
+    }
+
     private async Task<(IOutbox Outbox, IOutboxClaiming Claiming)> CreateAsync()
     {
         var outbox = await CreateOutboxAsync();

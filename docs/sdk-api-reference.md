@@ -541,6 +541,15 @@ gets three guarantees from `OutboxDispatcher`:
   checkpoints each row only while it still holds the claim. A dispatcher that
   finds its claim taken over logs a warning and stops sending the rest of its
   batch, which the new owner sends in order.
+- **Batched sends.** When the sender also implements `IBatchingSender` (the
+  Service Bus `Sender` does, on top of `ServiceBusMessageBatch`), the dispatcher
+  sends each session's consecutive rows for one destination as a single batch
+  and checkpoints the batch with one fenced call, instead of one broker and one
+  store round trip per row. A batch never mixes sessions or destinations, so it
+  is valid on partitioned entities, and a session's rows still leave in claim
+  order. Scheduled rows are sent alone. If a batch cannot be created, a row
+  cannot be added, or the batch send fails, the rows fall back to one-at-a-time
+  sends, so only a row that really fails counts an attempt.
 - **Backoff.** A failed row is retried after `InitialRetryDelay`, doubling up to
   `MaxRetryDelay`. Until then the row and every later row of its session are
   left out of the batch, so a failing session never crowds out other sessions
@@ -568,7 +577,7 @@ send is uncertain: the broker accepted it but the checkpoint did not happen
 (a crash, a cancelled or timed-out send the broker still completed, or a
 dispatcher that lost its claim after sending). Per-session order is preserved:
 a session's next row is only sent by the dispatcher that holds the claim, after
-the previous row was checkpointed, so a duplicate is always a repeat of a row
+the previous row (or batch) was checkpointed, so a duplicate is always a repeat of a row
 already sent, never a later row overtaking an earlier one. Make consumers
 idempotent (for example with the inbox).
 

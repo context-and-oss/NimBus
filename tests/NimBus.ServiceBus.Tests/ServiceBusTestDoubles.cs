@@ -121,6 +121,29 @@ internal sealed class RecordingServiceBusSender : ServiceBusSender
         return Task.CompletedTask;
     }
 
+    /// <summary>The most messages a batch from <see cref="CreateMessageBatchAsync(CancellationToken)"/> accepts.</summary>
+    public int BatchCapacity { get; set; } = int.MaxValue;
+
+    /// <summary>The batches sent with <see cref="SendMessagesAsync(ServiceBusMessageBatch, CancellationToken)"/>, in order.</summary>
+    public List<List<Azure.Messaging.ServiceBus.ServiceBusMessage>> SentBatches { get; } = new();
+
+    private readonly Dictionary<ServiceBusMessageBatch, List<Azure.Messaging.ServiceBus.ServiceBusMessage>> _batchStores = new();
+
+    public override ValueTask<ServiceBusMessageBatch> CreateMessageBatchAsync(CancellationToken cancellationToken = default)
+    {
+        var store = new List<Azure.Messaging.ServiceBus.ServiceBusMessage>();
+        var capacity = BatchCapacity;
+        var batch = ServiceBusModelFactory.ServiceBusMessageBatch(0, store, tryAddCallback: _ => store.Count < capacity);
+        _batchStores[batch] = store;
+        return ValueTask.FromResult(batch);
+    }
+
+    public override Task SendMessagesAsync(ServiceBusMessageBatch messageBatch, CancellationToken cancellationToken = default)
+    {
+        SentBatches.Add(_batchStores[messageBatch].ToList());
+        return Task.CompletedTask;
+    }
+
     public override Task<long> ScheduleMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
     {
         ScheduledMessages.Add((message, scheduledEnqueueTime));

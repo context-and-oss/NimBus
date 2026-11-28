@@ -203,86 +203,26 @@ public partial class OutboxDispatcher
         // lease can expire and another replica claim it. Each checkpoint is also fenced on the
         // claim, the last line of defence against a paused process or a sender that ignores
         // cancellation.
-        var sendBudget = _options.LeaseDuration / 2;
-        var leaseMargin = _options.LeaseDuration / 10;
-        var dispatched = new List<string>();
-        var release = new List<string>();
-        var budgetExhausted = 0;
-        string? awaitingCheckpoint = null;
-        var claimLost = false;
-        // FIFO per session (ADR-001): once a session's row fails, its later rows in this batch
-        // are released unsent. The store keeps the whole session out of later batches while the
-        // failed row waits for its retry or is parked, so it cannot crowd out other sessions.
-        var failedSessions = new HashSet<string>(StringComparer.Ordinal);
+        var poll = new ClaimedPoll(claiming, claimed, claimStarted, _options.LeaseDuration);
         try
         {
-            foreach (var outboxMessage in claimed)
+            if (_sender is IBatchingSender batching)
             {
-                var sessionId = outboxMessage.SessionId;
-                var hasSession = !string.IsNullOrEmpty(sessionId);
-
-                if (claimLost || (hasSession && failedSessions.Contains(sessionId!)))
-                {
-                    release.Add(outboxMessage.Id);
-                    continue;
-                }
-
-                var elapsed = Stopwatch.GetElapsedTime(claimStarted);
-                if (elapsed >= sendBudget)
-                {
-                    release.Add(outboxMessage.Id);
-                    budgetExhausted++;
-                    continue;
-                }
-
-                var sendWindow = _options.LeaseDuration - leaseMargin - elapsed;
-                DispatchFailure? failure;
-                using (var leaseTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
-                {
-                    leaseTimeout.CancelAfter(sendWindow);
-                    failure = await DispatchOneAsync(outboxMessage, cancellationToken, leaseTimeout.Token);
-                    if (failure is not null && leaseTimeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                    {
-                        LogOutboxSendExceededLease(_logger, outboxMessage.Id, outboxMessage.SessionId, sendWindow);
-                        failure = new DispatchFailure(
-                            new TimeoutException($"The send did not complete within the {sendWindow} left on the dispatcher's lease.", failure.Exception),
-                            IsPoison: false);
-                    }
-                }
-
-                if (failure is not null)
-                {
-                    if (hasSession)
-                        failedSessions.Add(sessionId!);
-                    await RecordFailureAsync(claiming, outboxMessage, failure, cancellationToken);
-                    continue;
-                }
-
-                awaitingCheckpoint = outboxMessage.Id;
-                var checkpointed = await claiming.MarkClaimedAsDispatchedAsync(_dispatcherId, [outboxMessage.Id], cancellationToken);
-                awaitingCheckpoint = null;
-                if (!checkpointed.Contains(outboxMessage.Id))
-                {
-                    // The lease expired and another dispatcher claimed the row: it owns the rest
-                    // of the batch now and sends it in order. Sending more here would duplicate
-                    // rows and could put a session's rows out of order.
-                    claimLost = true;
-                    LogOutboxClaimLost(_logger, outboxMessage.Id, outboxMessage.SessionId, Stopwatch.GetElapsedTime(claimStarted), _options.LeaseDuration);
-                    continue;
-                }
-
-                dispatched.Add(outboxMessage.Id);
+                await DispatchSegmentsAsync(poll, batching, cancellationToken);
+            }
+            else
+            {
+                foreach (var outboxMessage in claimed)
+                    await DispatchClaimedRowAsync(poll, outboxMessage, cancellationToken);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Release every claimed row that was not sent (failed rows included: a cancelled poll
-            // does not count an attempt), so another replica can take them over at once. A row
-            // that was sent but whose checkpoint was interrupted is checkpointed instead.
-            var toCheckpoint = new List<string>();
-            if (awaitingCheckpoint is not null)
-                toCheckpoint.Add(awaitingCheckpoint);
-            var settled = new HashSet<string>(dispatched, StringComparer.Ordinal);
+            // does not count an attempt), so another replica can take them over at once. Rows
+            // that were sent but whose checkpoint was interrupted are checkpointed instead.
+            var toCheckpoint = new List<string>(poll.AwaitingCheckpoint);
+            var settled = new HashSet<string>(poll.Dispatched, StringComparer.Ordinal);
             settled.UnionWith(toCheckpoint);
             var unsent = new List<string>();
             foreach (var outboxMessage in claimed)
@@ -295,23 +235,465 @@ public partial class OutboxDispatcher
             throw;
         }
 
-        if (budgetExhausted > 0)
-            LogOutboxLeaseBudgetExhausted(_logger, sendBudget, budgetExhausted);
+        if (poll.BudgetExhausted > 0)
+            LogOutboxLeaseBudgetExhausted(_logger, poll.SendBudget, poll.BudgetExhausted);
 
         // Best-effort: a lease that is not released simply expires and the row is claimed again.
-        if (release.Count > 0)
+        if (poll.Release.Count > 0)
         {
             try
             {
-                await claiming.ReleaseClaimsAsync(_dispatcherId, release, cancellationToken);
+                await claiming.ReleaseClaimsAsync(_dispatcherId, poll.Release, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
-                LogCouldNotReleaseOutboxClaims(_logger, ex, release.Count);
+                LogCouldNotReleaseOutboxClaims(_logger, ex, poll.Release.Count);
             }
         }
 
-        return dispatched.Count;
+        return poll.Dispatched.Count;
+    }
+
+    // Sends one claimed row on its own, the path every row takes when the sender cannot batch.
+    private async Task DispatchClaimedRowAsync(ClaimedPoll poll, OutboxMessage outboxMessage, CancellationToken cancellationToken)
+    {
+        if (poll.IsBlocked(outboxMessage))
+        {
+            poll.Release.Add(outboxMessage.Id);
+            return;
+        }
+
+        var elapsed = poll.Elapsed;
+        if (elapsed >= poll.SendBudget)
+        {
+            poll.ReleaseForBudget(outboxMessage);
+            return;
+        }
+
+        var sendWindow = poll.SendWindow(elapsed);
+        DispatchFailure? failure;
+        using (var leaseTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        {
+            leaseTimeout.CancelAfter(sendWindow);
+            failure = await DispatchOneAsync(outboxMessage, cancellationToken, leaseTimeout.Token);
+            if (failure is not null && leaseTimeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                LogOutboxSendExceededLease(_logger, outboxMessage.Id, outboxMessage.SessionId, sendWindow);
+                failure = new DispatchFailure(CreateLeaseTimeout(sendWindow, failure.Exception), IsPoison: false);
+            }
+        }
+
+        if (failure is not null)
+        {
+            poll.BlockSession(outboxMessage);
+            await RecordFailureAsync(poll.Claiming, outboxMessage, failure, cancellationToken);
+            return;
+        }
+
+        await CheckpointAsync(poll, [outboxMessage], cancellationToken);
+    }
+
+    // Fenced checkpoint of rows that were sent. A row missing from the result means the lease
+    // expired and another dispatcher claimed it: it owns the rest of the batch now and sends it in
+    // order. Sending more here would duplicate rows and could put a session's rows out of order.
+    private async Task CheckpointAsync(ClaimedPoll poll, List<OutboxMessage> sent, CancellationToken cancellationToken)
+    {
+        var ids = new List<string>(sent.Count);
+        foreach (var outboxMessage in sent)
+            ids.Add(outboxMessage.Id);
+
+        poll.AwaitingCheckpoint.AddRange(ids);
+        var checkpointed = await poll.Claiming.MarkClaimedAsDispatchedAsync(_dispatcherId, ids, cancellationToken);
+        poll.AwaitingCheckpoint.Clear();
+
+        var confirmed = new HashSet<string>(checkpointed, StringComparer.Ordinal);
+        OutboxMessage? firstLost = null;
+        foreach (var outboxMessage in sent)
+        {
+            if (confirmed.Contains(outboxMessage.Id))
+                poll.Dispatched.Add(outboxMessage.Id);
+            else
+                firstLost ??= outboxMessage;
+        }
+
+        if (firstLost is not null && !poll.ClaimLost)
+        {
+            poll.ClaimLost = true;
+            LogOutboxClaimLost(_logger, firstLost.Id, firstLost.SessionId, poll.Elapsed, _options.LeaseDuration);
+        }
+    }
+
+    // Batched dispatch: each segment is a run of one routing key's rows (in that key's claim
+    // order) that share a destination, or a single row that cannot be batched. Segments are sent
+    // one after another, in the claim order of their first row, so every session keeps its order.
+    private async Task DispatchSegmentsAsync(ClaimedPoll poll, IBatchingSender batching, CancellationToken cancellationToken)
+    {
+        foreach (var segment in BuildSegments(poll.Claimed))
+        {
+            if (segment.Messages is null)
+            {
+                await DispatchClaimedRowAsync(poll, segment.Rows[0], cancellationToken);
+                continue;
+            }
+
+            var next = 0;
+            while (next < segment.Rows.Count)
+            {
+                var outboxMessage = segment.Rows[next];
+                if (poll.IsBlocked(outboxMessage))
+                {
+                    poll.Release.Add(outboxMessage.Id);
+                    next++;
+                    continue;
+                }
+
+                var elapsed = poll.Elapsed;
+                if (elapsed >= poll.SendBudget)
+                {
+                    poll.ReleaseForBudget(outboxMessage);
+                    next++;
+                    continue;
+                }
+
+                var (resumeAt, sendAlone) = await DispatchBatchAsync(poll, batching, segment, next, elapsed, cancellationToken);
+                // A row that could not be added (too large, or the add threw) is sent on its own
+                // after its batch was disposed; its outcome is decided by that send.
+                if (sendAlone is not null)
+                    await DispatchClaimedRowAsync(poll, sendAlone, cancellationToken);
+                next = resumeAt;
+            }
+        }
+    }
+
+    // Fills one batch from segment rows starting at start and sends it. Returns the index of the
+    // first row left for the next batch, and a row that must be sent on its own.
+    private async Task<(int ResumeAt, OutboxMessage? SendAlone)> DispatchBatchAsync(
+        ClaimedPoll poll,
+        IBatchingSender batching,
+        Segment segment,
+        int start,
+        TimeSpan elapsed,
+        CancellationToken cancellationToken)
+    {
+        var window = poll.SendWindow(elapsed);
+        using var leaseTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        leaseTimeout.CancelAfter(window);
+        var started = new BatchStart(Stopwatch.GetTimestamp(), DateTime.UtcNow);
+
+        ISenderBatch batch;
+        try
+        {
+            batch = await batching.CreateBatchAsync(leaseTimeout.Token);
+        }
+        catch (Exception ex) when (cancellationToken.IsCancellationRequested && ex is not OperationCanceledException)
+        {
+            throw new OperationCanceledException("The outbox poll was cancelled.", ex, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            if (leaseTimeout.IsCancellationRequested)
+            {
+                await FailBatchOnLeaseWindowAsync(poll, [segment.Rows[start]], window, started, ex, cancellationToken);
+                return (start + 1, null);
+            }
+
+            // Nothing is recorded for the failed creation: the rows are sent one at a time, so
+            // only a row that really fails gets an attempt. The next segment tries a batch again.
+            LogOutboxBatchCreationFailed(_logger, ex);
+            for (var index = start; index < segment.Rows.Count; index++)
+                await DispatchClaimedRowAsync(poll, segment.Rows[index], cancellationToken);
+            return (segment.Rows.Count, null);
+        }
+
+        using (batch)
+        {
+            var added = new List<OutboxMessage>();
+            var next = start;
+            while (next < segment.Rows.Count)
+            {
+                var outboxMessage = segment.Rows[next];
+                if (poll.IsBlocked(outboxMessage))
+                {
+                    poll.Release.Add(outboxMessage.Id);
+                    next++;
+                    continue;
+                }
+
+                // The add is synchronous and cannot be interrupted: check for cancellation and an
+                // expired lease window right before and right after it instead.
+                cancellationToken.ThrowIfCancellationRequested();
+                if (leaseTimeout.IsCancellationRequested)
+                {
+                    if (added.Count == 0)
+                    {
+                        await FailBatchOnLeaseWindowAsync(poll, [outboxMessage], window, started, null, cancellationToken);
+                        return (next + 1, null);
+                    }
+
+                    await FailBatchOnLeaseWindowAsync(poll, added, window, started, null, cancellationToken);
+                    return (next, null);
+                }
+
+                bool fits;
+                Exception? addError = null;
+                try
+                {
+                    fits = batch.TryAdd(segment.Messages![next], outboxMessage.EnqueueDelayMinutes);
+                }
+                catch (Exception ex)
+                {
+                    fits = false;
+                    addError = ex;
+                }
+
+                if (fits)
+                    added.Add(outboxMessage);
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (leaseTimeout.IsCancellationRequested)
+                {
+                    var assigned = new List<OutboxMessage>(added);
+                    if (!fits)
+                        assigned.Add(outboxMessage);
+                    await FailBatchOnLeaseWindowAsync(poll, assigned, window, started, null, cancellationToken);
+                    return (next + 1, null);
+                }
+
+                if (addError is not null)
+                {
+                    LogOutboxBatchAddFailed(_logger, addError, outboxMessage.Id, outboxMessage.SessionId);
+                    if (added.Count > 0)
+                        await SendBatchAsync(poll, batch, added, leaseTimeout, window, started, cancellationToken);
+                    return (next + 1, outboxMessage);
+                }
+
+                if (fits)
+                {
+                    next++;
+                    continue;
+                }
+
+                if (added.Count == 0)
+                {
+                    // Too large even for an empty batch: the single send reports the broker's
+                    // size error as a normal failed attempt.
+                    return (next + 1, outboxMessage);
+                }
+
+                // The batch is full: send it, and this row starts the next batch.
+                await SendBatchAsync(poll, batch, added, leaseTimeout, window, started, cancellationToken);
+                return (next, null);
+            }
+
+            if (added.Count > 0)
+                await SendBatchAsync(poll, batch, added, leaseTimeout, window, started, cancellationToken);
+            return (next, null);
+        }
+    }
+
+    private async Task SendBatchAsync(
+        ClaimedPoll poll,
+        ISenderBatch batch,
+        List<OutboxMessage> added,
+        CancellationTokenSource leaseTimeout,
+        TimeSpan window,
+        BatchStart started,
+        CancellationToken cancellationToken)
+    {
+        if (poll.Elapsed >= poll.SendBudget)
+        {
+            foreach (var outboxMessage in added)
+                poll.ReleaseForBudget(outboxMessage);
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (leaseTimeout.IsCancellationRequested)
+        {
+            await FailBatchOnLeaseWindowAsync(poll, added, window, started, null, cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await batch.SendAsync(leaseTimeout.Token);
+        }
+        catch (Exception ex) when (cancellationToken.IsCancellationRequested && ex is not OperationCanceledException)
+        {
+            throw new OperationCanceledException("The outbox poll was cancelled.", ex, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            if (leaseTimeout.IsCancellationRequested)
+            {
+                await FailBatchOnLeaseWindowAsync(poll, added, window, started, ex, cancellationToken);
+                return;
+            }
+
+            // Isolate the bad row: resend one at a time through the per-row path, which keeps
+            // attempt counts, backoff, parking and session blocking per row.
+            LogOutboxBatchSendFailed(_logger, ex, added.Count, added[0].SessionId);
+            foreach (var outboxMessage in added)
+                await DispatchClaimedRowAsync(poll, outboxMessage, cancellationToken);
+            return;
+        }
+
+        foreach (var outboxMessage in added)
+            RecordRowOutcome(outboxMessage, started, error: null);
+
+        await CheckpointAsync(poll, added, cancellationToken);
+    }
+
+    // The lease window cancelled the batch (or expired around an add): blame only its first row,
+    // as a timed-out row send is blamed today, and release the rest of the batch unsent.
+    private async Task FailBatchOnLeaseWindowAsync(
+        ClaimedPoll poll,
+        List<OutboxMessage> assigned,
+        TimeSpan window,
+        BatchStart started,
+        Exception? innerException,
+        CancellationToken cancellationToken)
+    {
+        var first = assigned[0];
+        LogOutboxSendExceededLease(_logger, first.Id, first.SessionId, window);
+        var timeout = CreateLeaseTimeout(window, innerException);
+        RecordRowOutcome(first, started, timeout);
+        poll.BlockSession(first);
+        for (var index = 1; index < assigned.Count; index++)
+            poll.Release.Add(assigned[index].Id);
+
+        await RecordFailureAsync(poll.Claiming, first, new DispatchFailure(timeout, IsPoison: false), cancellationToken);
+    }
+
+    private static TimeoutException CreateLeaseTimeout(TimeSpan window, Exception? innerException) =>
+        new($"The send did not complete within the {window} left on the dispatcher's lease.", innerException);
+
+    private static List<Segment> BuildSegments(IReadOnlyList<OutboxMessage> claimed)
+    {
+        var segments = new List<Segment>();
+        // The open batchable segment of each routing key ("" stands for no session).
+        var open = new Dictionary<string, Segment>(StringComparer.Ordinal);
+        foreach (var outboxMessage in claimed)
+        {
+            var message = TryReadPayload(outboxMessage);
+            if (message is null || outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
+            {
+                // An unreadable row fails through the per-row path (as poison), and a scheduled
+                // row is sent with ScheduleMessage. Either one ends its key's open segment.
+                open.Remove(message?.SessionId ?? outboxMessage.SessionId ?? string.Empty);
+                segments.Add(new Segment([outboxMessage], null));
+                continue;
+            }
+
+            var routingKey = message.SessionId ?? string.Empty;
+            if (!open.TryGetValue(routingKey, out var segment) || !string.Equals(segment.To, message.To, StringComparison.Ordinal))
+            {
+                segment = new Segment([], []) { To = message.To };
+                segments.Add(segment);
+                open[routingKey] = segment;
+            }
+
+            segment.Rows.Add(outboxMessage);
+            segment.Messages!.Add(message);
+        }
+
+        return segments;
+    }
+
+    private static Message? TryReadPayload(OutboxMessage outboxMessage)
+    {
+        try
+        {
+            return JsonConvert.DeserializeObject<Message>(outboxMessage.Payload, Constants.CreateSafeJsonSettings());
+        }
+#pragma warning disable CA1031 // The per-row path reports the failure, with the same classification as today.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            return null;
+        }
+    }
+
+    private void RecordRowOutcome(OutboxMessage outboxMessage, BatchStart started, Exception? error)
+    {
+        var savedCurrent = Activity.Current;
+        Activity.Current = null;
+        Activity? activity = null;
+        try
+        {
+            activity = StartDispatchActivity(outboxMessage);
+            activity?.SetStartTime(started.UtcTime);
+            var elapsed = Stopwatch.GetElapsedTime(started.Timestamp).TotalMilliseconds;
+            if (error is null)
+            {
+                var tags = BuildDispatchTags(outboxMessage.To, "dispatched", errorType: null);
+                NimBusMeters.OutboxDispatchDuration.Record(elapsed, tags);
+                NimBusMeters.OutboxDispatched.Add(1, tags);
+                activity?.SetStatus(ActivityStatusCode.Ok);
+                LogOutboxDispatchedMessage(_logger, outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
+            }
+            else
+            {
+                var errorType = error.GetType().FullName;
+                var tags = BuildDispatchTags(outboxMessage.To, "failed", errorType);
+                NimBusMeters.OutboxDispatchDuration.Record(elapsed, tags);
+                NimBusMeters.OutboxDispatched.Add(1, tags);
+                MarkActivityFailed(activity, error, errorType);
+            }
+        }
+        finally
+        {
+            activity?.Dispose();
+            Activity.Current = savedCurrent;
+        }
+    }
+
+    private readonly record struct BatchStart(long Timestamp, DateTime UtcTime);
+
+    /// <summary>A run of rows sent as batches, or (when <see cref="Messages"/> is null) one row sent alone.</summary>
+    private sealed class Segment(List<OutboxMessage> rows, List<Message>? messages)
+    {
+        public List<OutboxMessage> Rows { get; } = rows;
+        public List<Message>? Messages { get; } = messages;
+        public string? To { get; init; }
+    }
+
+    /// <summary>The state of one claiming poll, shared by the per-row and batch paths.</summary>
+    private sealed class ClaimedPoll(IOutboxClaiming claiming, IReadOnlyList<OutboxMessage> claimed, long claimStarted, TimeSpan leaseDuration)
+    {
+        private readonly TimeSpan _leaseMargin = leaseDuration / 10;
+        // FIFO per session (ADR-001): once a session's row fails, its later rows in this batch
+        // are released unsent. The store keeps the whole session out of later batches while the
+        // failed row waits for its retry or is parked, so it cannot crowd out other sessions.
+        private readonly HashSet<string> _failedSessions = new(StringComparer.Ordinal);
+
+        public IOutboxClaiming Claiming { get; } = claiming;
+        public IReadOnlyList<OutboxMessage> Claimed { get; } = claimed;
+        public TimeSpan SendBudget { get; } = leaseDuration / 2;
+        public List<string> Dispatched { get; } = new();
+        public List<string> Release { get; } = new();
+        public List<string> AwaitingCheckpoint { get; } = new();
+        public int BudgetExhausted { get; private set; }
+        public bool ClaimLost { get; set; }
+        public TimeSpan Elapsed => Stopwatch.GetElapsedTime(claimStarted);
+
+        public TimeSpan SendWindow(TimeSpan elapsed) => leaseDuration - _leaseMargin - elapsed;
+
+        public bool IsBlocked(OutboxMessage outboxMessage) =>
+            ClaimLost || (!string.IsNullOrEmpty(outboxMessage.SessionId) && _failedSessions.Contains(outboxMessage.SessionId));
+
+        // Block only this session; session-less rows fail independently.
+        public void BlockSession(OutboxMessage outboxMessage)
+        {
+            if (!string.IsNullOrEmpty(outboxMessage.SessionId))
+                _failedSessions.Add(outboxMessage.SessionId);
+        }
+
+        public void ReleaseForBudget(OutboxMessage outboxMessage)
+        {
+            Release.Add(outboxMessage.Id);
+            BudgetExhausted++;
+        }
     }
 
     private async Task RecordFailureAsync(
@@ -434,37 +816,7 @@ public partial class OutboxDispatcher
 
         try
         {
-            ActivityLink? link = TryBuildLink(outboxMessage.TraceParent, outboxMessage.TraceState);
-            // FR-015: messaging spans use "{operation.type} {destination.name}".
-            var spanName = string.IsNullOrEmpty(endpoint) ? "publish" : $"publish {endpoint}";
-            activity = NimBusActivitySources.Outbox.StartActivity(
-                spanName,
-                ActivityKind.Producer,
-                parentContext: default,
-                tags: null,
-                links: link.HasValue ? new[] { link.Value } : null);
-
-            if (activity is not null)
-            {
-                if (!link.HasValue)
-                    activity.AddEvent(new ActivityEvent("nimbus.outbox.orphan_row"));
-                // FR-020: messaging spans MUST set messaging.system /
-                // messaging.operation.type / messaging.destination.name.
-                // System is unknown at this layer (NimBus.Core is transport-
-                // agnostic) — set what we know; transport wrappers may add it.
-                activity.SetTag(MessagingAttributes.OperationType, "publish");
-                if (!string.IsNullOrEmpty(endpoint))
-                {
-                    activity.SetTag(MessagingAttributes.DestinationName, endpoint);
-                    activity.SetTag(MessagingAttributes.NimBusEndpoint, endpoint);
-                }
-                if (!string.IsNullOrEmpty(outboxMessage.EventTypeId))
-                    activity.SetTag(MessagingAttributes.NimBusEventType, outboxMessage.EventTypeId);
-                if (!string.IsNullOrEmpty(outboxMessage.MessageId))
-                    activity.SetTag(MessagingAttributes.MessageId, outboxMessage.MessageId);
-                if (!string.IsNullOrEmpty(outboxMessage.CorrelationId))
-                    activity.SetTag(MessagingAttributes.MessageConversationId, outboxMessage.CorrelationId);
-            }
+            activity = StartDispatchActivity(outboxMessage);
 
             try
             {
@@ -512,17 +864,7 @@ public partial class OutboxDispatcher
             var tags = BuildDispatchTags(endpoint, "failed", errorType);
             NimBusMeters.OutboxDispatchDuration.Record(elapsed, tags);
             NimBusMeters.OutboxDispatched.Add(1, tags);
-            if (activity is not null)
-            {
-                activity.SetStatus(ActivityStatusCode.Error, ex.Message);
-                activity.SetTag(MessagingAttributes.ErrorType, errorType);
-                activity.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
-                {
-                    { "exception.type", errorType },
-                    { "exception.message", ex.Message },
-                    { "exception.stacktrace", ex.ToString() },
-                }));
-            }
+            MarkActivityFailed(activity, ex, errorType);
 
             return new DispatchFailure(ex, payloadUnreadable);
         }
@@ -531,6 +873,61 @@ public partial class OutboxDispatcher
             activity?.Dispose();
             Activity.Current = savedCurrent;
         }
+    }
+
+    private static Activity? StartDispatchActivity(OutboxMessage outboxMessage)
+    {
+        // Endpoint comes from the persisted column so dispatch spans are
+        // tagged even when payload deserialization fails on a malformed row.
+        var endpoint = outboxMessage.To;
+        ActivityLink? link = TryBuildLink(outboxMessage.TraceParent, outboxMessage.TraceState);
+        // FR-015: messaging spans use "{operation.type} {destination.name}".
+        var spanName = string.IsNullOrEmpty(endpoint) ? "publish" : $"publish {endpoint}";
+        var activity = NimBusActivitySources.Outbox.StartActivity(
+            spanName,
+            ActivityKind.Producer,
+            parentContext: default,
+            tags: null,
+            links: link.HasValue ? new[] { link.Value } : null);
+
+        if (activity is not null)
+        {
+            if (!link.HasValue)
+                activity.AddEvent(new ActivityEvent("nimbus.outbox.orphan_row"));
+            // FR-020: messaging spans MUST set messaging.system /
+            // messaging.operation.type / messaging.destination.name.
+            // System is unknown at this layer (NimBus.Core is transport-
+            // agnostic) — set what we know; transport wrappers may add it.
+            activity.SetTag(MessagingAttributes.OperationType, "publish");
+            if (!string.IsNullOrEmpty(endpoint))
+            {
+                activity.SetTag(MessagingAttributes.DestinationName, endpoint);
+                activity.SetTag(MessagingAttributes.NimBusEndpoint, endpoint);
+            }
+            if (!string.IsNullOrEmpty(outboxMessage.EventTypeId))
+                activity.SetTag(MessagingAttributes.NimBusEventType, outboxMessage.EventTypeId);
+            if (!string.IsNullOrEmpty(outboxMessage.MessageId))
+                activity.SetTag(MessagingAttributes.MessageId, outboxMessage.MessageId);
+            if (!string.IsNullOrEmpty(outboxMessage.CorrelationId))
+                activity.SetTag(MessagingAttributes.MessageConversationId, outboxMessage.CorrelationId);
+        }
+
+        return activity;
+    }
+
+    private static void MarkActivityFailed(Activity? activity, Exception ex, string? errorType)
+    {
+        if (activity is null)
+            return;
+
+        activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+        activity.SetTag(MessagingAttributes.ErrorType, errorType);
+        activity.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+        {
+            { "exception.type", errorType },
+            { "exception.message", ex.Message },
+            { "exception.stacktrace", ex.ToString() },
+        }));
     }
 
     private static ActivityLink? TryBuildLink(string? traceParent, string? traceState)
@@ -590,5 +987,14 @@ public partial class OutboxDispatcher
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Outbox dispatcher used half of its lease ({SendBudget}) and released {Count} unsent message(s); consider a smaller batch size or a longer lease.")]
     private static partial void LogOutboxLeaseBudgetExhausted(ILogger logger, TimeSpan sendBudget, int count);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Outbox batch send of {Count} message(s) (session {SessionId}) failed; sending them one at a time so only a failing message counts an attempt.")]
+    private static partial void LogOutboxBatchSendFailed(ILogger logger, Exception exception, int count, string? sessionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not create an outbox send batch; sending the messages of this run one at a time.")]
+    private static partial void LogOutboxBatchCreationFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not add outbox message {OutboxId} (session {SessionId}) to a send batch; sending it on its own.")]
+    private static partial void LogOutboxBatchAddFailed(ILogger logger, Exception exception, string outboxId, string? sessionId);
 
 }

@@ -239,6 +239,12 @@ constructing several multiplies connections without adding throughput.
   `batchSize` (250–500) for high-volume publishing; lower `pollingInterval`
   (200–500 ms) only if publish latency at low volume matters, and note it costs
   a store query per tick.
+  With a claiming outbox (SQL Server) and the Service Bus sender, each session's
+  consecutive rows for one destination go out as one `ServiceBusMessageBatch`
+  with one checkpoint, so throughput grows with the rows per session in a
+  batch; rows spread over many sessions gain less. The harness in
+  [`OutboxDispatchThroughputBenchmark.cs`](../tests/NimBus.Core.Tests/OutboxDispatchThroughputBenchmark.cs)
+  compares per-row and batched dispatch.
 
 ---
 
